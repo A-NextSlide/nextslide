@@ -1,0 +1,42 @@
+{
+  "description": "Slide Generation Knowledge Base Index",
+  "version": "1.0.0",
+  "generated": "2025-07-08T03:45:33.657187",
+  "sections": [
+    "typography",
+    "layout",
+    "components",
+    "component_combinations",
+    "design_patterns",
+    "color_theory",
+    "emphasis_techniques",
+    "chart_guidelines",
+    "image_guidelines",
+    "animation",
+    "best_practices",
+    "accessibility",
+    "metadata"
+  ],
+  "files": {
+    "complete": "complete_knowledge_base.json",
+    "sections": {
+      "typography": "typography.json",
+      "layout": "layout.json",
+      "components": "components.json",
+      "component_combinations": "component_combinations.json",
+      "design_patterns": "design_patterns.json",
+      "color_theory": "color_theory.json",
+      "emphasis_techniques": "emphasis_techniques.json",
+      "chart_guidelines": "chart_guidelines.json",
+      "image_guidelines": "image_guidelines.json",
+      "animation": "animation.json",
+      "best_practices": "best_practices.json",
+      "accessibility": "accessibility.json"
+    }
+  },
+  "usage": {
+    "complete": "Load complete_knowledge_base.json for all knowledge",
+    "sections": "Load individual section files for specific topics",
+    "editing": "Edit section files and rebuild to update"
+  }
+}

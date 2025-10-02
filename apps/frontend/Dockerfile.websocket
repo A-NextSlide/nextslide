@@ -1,0 +1,31 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production
+
+# Copy the WebSocket server file
+COPY src/server/WebSocketServer.ts ./server/WebSocketServer.ts
+
+# Install TypeScript and ts-node for running TypeScript files
+RUN npm install typescript ts-node @types/node @types/ws
+
+# Copy tsconfig
+COPY tsconfig.json ./
+
+# Expose the WebSocket port
+EXPOSE 1234
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV YJS_PORT=1234
+
+# Health check to ensure the service is running
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:1234/ || exit 1
+
+# Run the WebSocket server
+CMD ["npx", "ts-node", "server/WebSocketServer.ts"]

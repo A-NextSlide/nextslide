@@ -1,0 +1,33 @@
+{
+  "text_on_image": {
+    "components": [
+      "Image",
+      "TiptapTextBlock"
+    ],
+    "technique": "Image with gradient overlay, text on top",
+    "overlay_options": {
+      "gradient": "Linear gradient with 60-80% opacity",
+      "solid": "Black at 60% opacity",
+      "blur": "Backdrop blur for glassmorphism"
+    }
+  },
+  "data_with_insight": {
+    "components": [
+      "Chart",
+      "TiptapTextBlock"
+    ],
+    "layout": "Chart on one half, insights on other",
+    "content_strategy": "Chart shows what, text explains why"
+  },
+  "card_grid": {
+    "components": [
+      "TiptapTextBlock",
+      "Image",
+      "Shape"
+    ],
+    "layouts": {
+      "3_cards": "560px wide each, 40px gaps",
+      "4_cards": "400px wide, 2\u00d72 grid"
+    }
+  }
+}

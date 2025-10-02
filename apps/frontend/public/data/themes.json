@@ -1,0 +1,114 @@
+[
+  {
+    "id": "theme_001",
+    "name": "Minimalist Dark",
+    "paletteId": "p_001",
+    "typography": {
+      "headings": {
+        "fontFamily": "\"Inter\", sans-serif",
+        "fontSize": "2rem",
+        "fontWeight": 700
+      },
+      "body": {
+        "fontFamily": "\"Inter\", sans-serif",
+        "fontSize": "1rem",
+        "lineHeight": 1.6
+      }
+    },
+    "componentDefaults": {
+      "slide": {
+        "backgroundColor": "#343A40",
+        "textColor": "#F8F9FA"
+      },
+      "shape": {
+        "fill": "#6C757D",
+        "stroke": "#F8F9FA"
+      },
+      "textBox": {
+        "backgroundColor": "transparent",
+        "textColor": "#F8F9FA"
+      }
+    },
+    "visualElements": {
+      "shadows": {
+        "small": "0 1px 2px rgba(0,0,0,0.5)",
+        "medium": "0 3px 6px rgba(0,0,0,0.5)",
+        "large": "0 10px 20px rgba(0,0,0,0.5)"
+      }
+    },
+    "tags": ["dark", "minimalist", "corporate"]
+  },
+  {
+    "id": "theme_002",
+    "name": "Blue Tech",
+    "paletteId": "p_002",
+    "typography": {
+      "headings": {
+        "fontFamily": "\"Roboto Mono\", monospace",
+        "fontSize": "2.2rem",
+        "fontWeight": 500
+      },
+      "body": {
+        "fontFamily": "\"Roboto\", sans-serif",
+        "fontSize": "1rem",
+        "lineHeight": 1.5
+      }
+    },
+    "componentDefaults": {
+      "slide": {
+        "backgroundColor": "#E3F2FD",
+        "textColor": "#0D47A1"
+      },
+      "shape": {
+        "fill": "#42A5F5",
+        "stroke": "#0D47A1"
+      },
+      "textBox": {
+        "backgroundColor": "transparent",
+        "textColor": "#0D47A1"
+      }
+    },
+     "visualElements": {
+      "borders": {
+        "default": "1px solid #90CAF9",
+        "radius": {
+           "small": "3px",
+           "medium": "6px"
+        }
+      }
+    },
+    "tags": ["light", "cool", "tech", "modern"]
+  },
+  {
+    "id": "theme_003",
+    "name": "Sunny Citrus",
+    "paletteId": "p_003",
+    "typography": {
+      "headings": {
+        "fontFamily": "\"Poppins\", sans-serif",
+        "fontSize": "2.5rem",
+        "fontWeight": 600
+      },
+      "body": {
+        "fontFamily": "\"Lato\", sans-serif",
+        "fontSize": "1.1rem",
+        "lineHeight": 1.7
+      }
+    },
+    "componentDefaults": {
+      "slide": {
+        "backgroundColor": "#FFF8E1",
+        "textColor": "#E65100"
+      },
+      "shape": {
+        "fill": "#FFD54F",
+        "stroke": "#FFB300"
+      },
+      "textBox": {
+        "backgroundColor": "transparent",
+        "textColor": "#E65100"
+      }
+    },
+    "tags": ["light", "warm", "vibrant", "playful"]
+  }
+] 

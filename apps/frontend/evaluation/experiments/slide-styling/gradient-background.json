@@ -1,0 +1,38 @@
+{
+  "id": "gradient-background",
+  "description": "Add a gradient background to the slide",
+  "currentSlideId": "slide-1",
+  "prompt": "Change the background of the slide to a professional-looking gradient from blue to light blue",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Experiment Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#ffffff"
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 200,
+            "texts": [{ "text": "Presentation Title", "style": {} }],
+            "fontSize": 60,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    }
+  ]
+} 

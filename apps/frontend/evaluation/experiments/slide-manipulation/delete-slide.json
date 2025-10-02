@@ -1,0 +1,136 @@
+{
+  "id": "delete-slide",
+  "description": "Delete a specific slide",
+  "currentSlideId": "slide-2",
+  "prompt": "Delete slide 3 (About Us) because it contains outdated information. Keep only the Title slide and the Products slide.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Title Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 200,
+            "texts": [{ "text": "Company Introduction", "style": {} }],
+            "fontSize": 60,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    },
+    {
+      "id": "slide-2",
+      "title": "Products",
+      "components": [
+        {
+          "id": "background-2",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        },
+        {
+          "id": "title-2",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "Our Products", "style": {} }],
+            "fontSize": 48,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "content-2",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 400,
+            "texts": [
+              {
+                "text": "• Product A: Innovation at its finest\n• Product B: The future of technology\n• Product C: Simple yet powerful",
+                "style": {}
+              }
+            ],
+            "fontSize": 32,
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    },
+    {
+      "id": "slide-3",
+      "title": "About Us",
+      "components": [
+        {
+          "id": "background-3",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        },
+        {
+          "id": "title-3",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "About Us", "style": {} }],
+            "fontSize": 48,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "content-3",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 400,
+            "texts": [
+              {
+                "text": "Founded in 2010, our company has been at the forefront of innovation.\n\nWe have offices in New York, London, and Tokyo with over 500 employees.",
+                "style": {}
+              }
+            ],
+            "fontSize": 32,
+            "fontWeight": "normal",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    }
+  ]
+} 

@@ -1,0 +1,64 @@
+{
+  "id": "rearrange-components",
+  "description": "Rearrange components for better layout",
+  "currentSlideId": "slide-1",
+  "prompt": "Rearrange the components on this slide to create a more balanced and professional layout. The current layout feels disorganized.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Disorganized Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "image-1",
+          "type": "Image",
+          "props": {
+            "position": { "x": 200, "y": 300 },
+            "width": 300,
+            "height": 200,
+            "src": "https://source.unsplash.com/random/300x200/?business",
+            "alt": "Business image"
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 900, "y": 100 },
+            "width": 400,
+            "height": 150,
+            "texts": [{ "text": "Company Overview", "style": {} }],
+            "fontSize": 42,
+            "fontWeight": "bold",
+            "textAlign": "left",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "text-2",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 600, "y": 500 },
+            "width": 500,
+            "height": 200,
+            "texts": [{ "text": "Our company provides innovative solutions for modern businesses. We specialize in digital transformation and process optimization.", "style": {} }],
+            "fontSize": 24,
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#555555"
+          }
+        }
+      ]
+    }
+  ]
+} 

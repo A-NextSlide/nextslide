@@ -1,0 +1,11 @@
+*/__pycache__*
+*__pycache__
+*.pyc
+*.env
+schemas/
+.DS_Store
+test_output/
+services/debug_json_parse.txt
+.venv/
+venv/
+.venv311/

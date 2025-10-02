@@ -1,0 +1,70 @@
+/* Chart-specific styles */
+
+/* Ensure chart containers maintain proper sizing */
+[data-component-type="Chart"] {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Highcharts container */
+[data-component-type="Chart"] .highcharts-container {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Highcharts root */
+[data-component-type="Chart"] .highcharts-root {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Prevent chart overflow */
+[data-component-type="Chart"] svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Disable animations during resize and drag */
+body.charts-resizing [data-component-type="Chart"] *,
+body.charts-dragging [data-component-type="Chart"] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Specifically disable Highcharts animations during resize */
+body.charts-resizing .highcharts-container *,
+body.charts-resizing .highcharts-root *,
+body.charts-resizing [data-component-type="Chart"] path,
+body.charts-resizing [data-component-type="Chart"] rect,
+body.charts-resizing [data-component-type="Chart"] circle,
+body.charts-resizing [data-component-type="Chart"] text {
+  transition: none !important;
+  animation: none !important;
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* Ensure legend text is readable and consistent */
+.highcharts-legend-item text {
+  font-size: 12px !important;
+  font-weight: normal !important;
+}
+
+/* Consistent legend styling */
+.highcharts-legend {
+  font-size: 12px !important;
+}
+
+/* Legacy Nivo legend styles (kept for compatibility) */
+.nivo-legend text {
+  font-size: 12px;
+  fill: #666;
+}
+
+/* Adjust legend appearance on hover */
+.nivo-legend:hover text {
+  fill: #333;
+}

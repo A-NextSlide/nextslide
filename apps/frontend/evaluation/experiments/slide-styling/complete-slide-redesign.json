@@ -1,0 +1,52 @@
+{
+  "id": "complete-slide-redesign",
+  "description": "Complete redesign of a basic slide",
+  "currentSlideId": "slide-1",
+  "prompt": "Completely redesign this slide to make it more visually appealing and professional. Use a theme appropriate for a technology conference. Keep the same core content but feel free to enhance it and add visual elements.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Basic Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#ffffff"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 200 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "Future of AI", "style": {} }],
+            "fontSize": 48,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#000000"
+          }
+        },
+        {
+          "id": "content-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 400 },
+            "width": 800,
+            "height": 300,
+            "texts": [{ "text": "• Machine Learning advances\n• Natural Language Processing\n• Computer Vision\n• Ethics and Regulations", "style": {} }],
+            "fontSize": 32,
+            "fontWeight": "normal",
+            "textAlign": "center",
+            "textColor": "#000000"
+          }
+        }
+      ]
+    }
+  ]
+} 

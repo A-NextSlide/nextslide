@@ -1,0 +1,216 @@
+[
+  {
+    "name": "mental wellness - Website Basic",
+    "colors": [
+      "#f1f3f4",
+      "#d3d3d1",
+      "#040202",
+      "#282827"
+    ],
+    "description": "Website with nav, text, and accent for mental wellness",
+    "category": "website",
+    "tags": [
+      "health",
+      "wellness",
+      "calm",
+      "website",
+      "transformer"
+    ],
+    "context": "websites, web apps",
+    "temperature": 0.8,
+    "mode": "transformer",
+    "adjacency_matrix": [
+      0,
+      10,
+      85,
+      70,
+      10,
+      0,
+      75,
+      60,
+      85,
+      75,
+      0,
+      40,
+      70,
+      60,
+      40,
+      0
+    ],
+    "adjacency_template": "Website Basic",
+    "topic": "mental wellness",
+    "score": -3.380547285079956,
+    "created_at": "2025-08-07T01:07:10.178816"
+  },
+  {
+    "name": "mental wellness - Website Basic",
+    "colors": [
+      "#122a6a",
+      "#363895",
+      "#ffca05",
+      "#f7fafe"
+    ],
+    "description": "Website with nav, text, and accent for mental wellness",
+    "category": "website",
+    "tags": [
+      "health",
+      "wellness",
+      "calm",
+      "website",
+      "diffusion"
+    ],
+    "context": "websites, web apps",
+    "temperature": 0.8,
+    "mode": "diffusion",
+    "adjacency_matrix": [
+      0,
+      10,
+      85,
+      70,
+      10,
+      0,
+      75,
+      60,
+      85,
+      75,
+      0,
+      40,
+      70,
+      60,
+      40,
+      0
+    ],
+    "adjacency_template": "Website Basic",
+    "topic": "mental wellness",
+    "score": 0,
+    "created_at": "2025-08-07T01:07:22.604879"
+  },
+  {
+    "name": "financial report - Website Basic",
+    "colors": [
+      "#111515",
+      "#262726",
+      "#fffefe",
+      "#e3bb1a"
+    ],
+    "description": "Website with nav, text, and accent for financial report",
+    "category": "website",
+    "tags": [
+      "business",
+      "finance",
+      "corporate",
+      "website",
+      "transformer"
+    ],
+    "context": "websites, web apps",
+    "temperature": 0.7,
+    "mode": "transformer",
+    "adjacency_matrix": [
+      0,
+      10,
+      85,
+      70,
+      10,
+      0,
+      75,
+      60,
+      85,
+      75,
+      0,
+      40,
+      70,
+      60,
+      40,
+      0
+    ],
+    "adjacency_template": "Website Basic",
+    "topic": "financial report",
+    "score": -3.125387668609619,
+    "created_at": "2025-08-07T01:07:29.086852"
+  },
+  {
+    "name": "financial report - Website Basic",
+    "colors": [
+      "#111a2e",
+      "#202d4a",
+      "#ebca71",
+      "#69d3ef"
+    ],
+    "description": "Website with nav, text, and accent for financial report",
+    "category": "website",
+    "tags": [
+      "business",
+      "finance",
+      "corporate",
+      "website",
+      "diffusion"
+    ],
+    "context": "websites, web apps",
+    "temperature": 0.7,
+    "mode": "diffusion",
+    "adjacency_matrix": [
+      0,
+      10,
+      85,
+      70,
+      10,
+      0,
+      75,
+      60,
+      85,
+      75,
+      0,
+      40,
+      70,
+      60,
+      40,
+      0
+    ],
+    "adjacency_template": "Website Basic",
+    "topic": "financial report",
+    "score": 0,
+    "created_at": "2025-08-07T01:07:39.816022"
+  },
+  {
+    "name": "online learning - Website Basic",
+    "colors": [
+      "#f9fdfc",
+      "#cccece",
+      "#000103",
+      "#313333"
+    ],
+    "description": "Website with nav, text, and accent for online learning",
+    "category": "website",
+    "tags": [
+      "education",
+      "elearning",
+      "website",
+      "transformer"
+    ],
+    "context": "websites, web apps",
+    "temperature": 1.0,
+    "mode": "transformer",
+    "adjacency_matrix": [
+      0,
+      10,
+      85,
+      70,
+      10,
+      0,
+      75,
+      60,
+      85,
+      75,
+      0,
+      40,
+      70,
+      60,
+      40,
+      0
+    ],
+    "adjacency_template": "Website Basic",
+    "topic": "online learning",
+    "score": -3.4632625579833984,
+    "created_at": "2025-08-07T01:07:46.500485"
+  }
+]

@@ -1,0 +1,12 @@
+/* Webfont: Acure-Bold */@font-face {
+    font-family: 'AcureBold';
+    src: url('Acure Bold.eot'); /* IE9 Compat Modes */
+    src: url('Acure Bold.eot?#iefix') format('embedded-opentype'), /* IE6-IE8 */
+         url('Acure Bold.woff') format('woff'), /* Modern Browsers */
+         url('Acure Bold.woff2') format('woff2'), /* Modern Browsers */
+         url('Acure Bold.ttf') format('truetype'); /* Safari, Android, iOS */
+             font-style: normal;
+    font-weight: bold;
+    text-rendering: optimizeLegibility;
+}
+

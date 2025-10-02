@@ -1,0 +1,66 @@
+{
+  "custom_component_stacking_rules": {
+    "mandatory_structure": {
+      "description": "ALL CustomComponents MUST follow this structure to prevent content overflow",
+      "root_container": {
+        "display": "flex",
+        "flexDirection": "column",
+        "width": "100%",
+        "height": "100%",
+        "maxWidth": "100%",
+        "maxHeight": "100%",
+        "boxSizing": "border-box",
+        "overflow": "hidden",
+        "position": "relative",
+        "alignItems": "stretch",
+        "justifyContent": "flex-start"
+      },
+      "critical_rules": [
+        "ALWAYS use flexDirection: 'column' for vertical stacking",
+        "NEVER use fixed heights for text elements",
+        "ALWAYS calculate font sizes dynamically based on container dimensions",
+        "ALWAYS include padding in dimension calculations",
+        "NEVER let content exceed container bounds"
+      ]
+    },
+    "standard_metric_component": {
+      "description": "Template for metric/stat components with title, value, and label",
+      "example": "function render({ props, state, updateState, id, isThumbnail }) {\\n  const title = props.title || '';\\n  const value = props.value || '0';\\n  const unit = props.unit || '';\\n  const label = props.label || '';\\n  const primaryColor = props.primaryColor || '#ffffff';\\n  const secondaryColor = props.secondaryColor || '#d7a865';\\n  const fontFamily = props.fontFamily || 'Cinzel';\\n  \\n  const padding = 24;\\n  const availableWidth = props.width - (padding * 2);\\n  const availableHeight = props.height - (padding * 2);\\n  \\n  // Dynamic font sizing to prevent overflow\\n  const titleSize = title ? Math.min(32, Math.floor(availableWidth / (title.length * 0.5))) : 0;\\n  const valueSize = Math.min(96, Math.floor(availableWidth / ((value + unit).length * 0.6)));\\n  const labelSize = label ? Math.min(24, Math.floor(availableWidth / (label.length * 0.4))) : 0;\\n  \\n  return React.createElement('div', {\\n    style: {\\n      width: '100%',\\n      height: '100%',\\n      maxWidth: '100%',\\n      maxHeight: '100%',\\n      boxSizing: 'border-box',\\n      overflow: 'hidden',\\n      display: 'flex',\\n      flexDirection: 'column',\\n      alignItems: 'center',\\n      justifyContent: 'space-between',\\n      padding: padding + 'px',\\n      backgroundColor: primaryColor + '10',\\n      borderLeft: '4px solid ' + secondaryColor,\\n      borderRadius: '12px'\\n    }\\n  }, [\\n    title && React.createElement('div', {\\n      key: 'title',\\n      style: {\\n        fontSize: titleSize + 'px',\\n        fontWeight: '700',\\n        color: secondaryColor,\\n        textAlign: 'center',\\n        flex: '0 0 auto',\\n        marginBottom: '8px'\\n      }\\n    }, title),\\n    React.createElement('div', {\\n      key: 'value',\\n      style: {\\n        fontSize: valueSize + 'px',\\n        fontWeight: '900',\\n        color: primaryColor,\\n        fontFamily: fontFamily,\\n        textAlign: 'center',\\n        flex: '1 1 auto',\\n        display: 'flex',\\n        alignItems: 'center',\\n        justifyContent: 'center'\\n      }\\n    }, value + unit),\\n    label && React.createElement('div', {\\n      key: 'label',\\n      style: {\\n        fontSize: labelSize + 'px',\\n        color: secondaryColor,\\n        fontWeight: '600',\\n        textAlign: 'center',\\n        flex: '0 0 auto',\\n        marginTop: '8px'\\n      }\\n    }, label)\\n  ]);\\n}"
+    },
+    "multi_value_component": {
+      "description": "Template for components with multiple values stacked vertically",
+      "example": "function render({ props, state, updateState, id, isThumbnail }) {\\n  const values = props.values || [{label: 'Metric 1', value: '100', unit: '%'}];\\n  const primaryColor = props.primaryColor || '#ffffff';\\n  const secondaryColor = props.secondaryColor || '#d7a865';\\n  \\n  const padding = 20;\\n  const availableWidth = props.width - (padding * 2);\\n  const availableHeight = props.height - (padding * 2);\\n  const itemHeight = availableHeight / values.length;\\n  \\n  return React.createElement('div', {\\n    style: {\\n      width: '100%',\\n      height: '100%',\\n      maxWidth: '100%',\\n      maxHeight: '100%',\\n      boxSizing: 'border-box',\\n      overflow: 'hidden',\\n      display: 'flex',\\n      flexDirection: 'column',\\n      padding: padding + 'px',\\n      gap: '16px'\\n    }\\n  }, values.map(function(item, index) {\\n    const valueText = (item.value || '0') + (item.unit || '');\\n    const valueSize = Math.min(48, Math.floor(availableWidth / (valueText.length * 0.7)), Math.floor(itemHeight * 0.5));\\n    const labelSize = Math.min(20, Math.floor(availableWidth / ((item.label || '').length * 0.5)));\\n    \\n    return React.createElement('div', {\\n      key: 'item-' + index,\\n      style: {\\n        flex: '1 1 auto',\\n        display: 'flex',\\n        flexDirection: 'column',\\n        justifyContent: 'center',\\n        alignItems: 'center',\\n        backgroundColor: primaryColor + '08',\\n        borderRadius: '8px',\\n        padding: '12px'\\n      }\\n    }, [\\n      React.createElement('div', {\\n        key: 'value',\\n        style: {\\n          fontSize: valueSize + 'px',\\n          fontWeight: '800',\\n          color: primaryColor,\\n          marginBottom: '4px'\\n        }\\n      }, valueText),\\n      React.createElement('div', {\\n        key: 'label',\\n        style: {\\n          fontSize: labelSize + 'px',\\n          color: secondaryColor,\\n          fontWeight: '500'\\n        }\\n      }, item.label)\\n    ]);\\n  }));\\n}"
+    },
+    "sizing_formulas": {
+      "title": "Math.min(desiredSize, Math.floor(availableWidth / (text.length * 0.5)))",
+      "value": "Math.min(desiredSize, Math.floor(availableWidth / (text.length * 0.6)))",
+      "label": "Math.min(desiredSize, Math.floor(availableWidth / (text.length * 0.4)))",
+      "multi_line": "Math.min(desiredSize, Math.floor(availableHeight / (lineCount * 1.5)))",
+      "with_padding": "Always subtract padding * 2 from available dimensions"
+    },
+    "layout_patterns": {
+      "single_metric": {
+        "structure": "title (optional) -> value -> label (optional)",
+        "flex_distribution": "title: '0 0 auto', value: '1 1 auto', label: '0 0 auto'"
+      },
+      "multiple_metrics": {
+        "structure": "Use flex: '1 1 auto' for each metric container",
+        "gap": "Use gap: '16px' or '20px' between items"
+      },
+      "grid_layout": {
+        "structure": "display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'",
+        "gap": "gap: '20px'"
+      }
+    },
+    "common_mistakes_to_avoid": [
+      "Using flexDirection: 'row' when content should stack vertically",
+      "Not calculating font sizes based on container dimensions",
+      "Using fixed font sizes that don't scale with container",
+      "Forgetting to include padding in dimension calculations",
+      "Not using flex properties to distribute space properly",
+      "Using alignItems: 'center' with flexDirection: 'column' (use 'stretch' instead)",
+      "Not setting maxWidth/maxHeight to 100%",
+      "Missing overflow: 'hidden' on root container"
+    ]
+  }
+}

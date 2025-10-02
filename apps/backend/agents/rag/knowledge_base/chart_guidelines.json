@@ -1,0 +1,56 @@
+{
+  "enhanced": {
+    "chart_selection_matrix": {
+      "comparison": {
+        "few_items": "bar",
+        "many_items": "column",
+        "over_time": "line",
+        "parts_of_whole": "pie"
+      },
+      "relationship": {
+        "correlation": "scatter",
+        "distribution": "histogram",
+        "flow": "sankey"
+      },
+      "composition": {
+        "static": "pie",
+        "over_time": "stacked_area",
+        "hierarchical": "treemap"
+      }
+    },
+    "data_storytelling": {
+      "techniques": {
+        "annotation": "Call out key points",
+        "progression": "Reveal data in stages",
+        "comparison": "Benchmark lines",
+        "forecast": "Dotted projection lines"
+      },
+      "narrative_flow": {
+        "setup": "Context and baseline",
+        "conflict": "Problem or change",
+        "resolution": "Insight or action"
+      }
+    },
+    "visual_enhancement": {
+      "declutter": [
+        "Remove unnecessary gridlines",
+        "Simplify axis labels",
+        "Direct label instead of legend",
+        "Round numbers appropriately"
+      ],
+      "highlight": {
+        "techniques": [
+          "Color one bar differently",
+          "Add reference line",
+          "Use arrows for trends",
+          "Gradient for progression"
+        ]
+      },
+      "animation": {
+        "entrance": "Bars grow, lines draw",
+        "transition": "Smooth morphing",
+        "interaction": "Hover details"
+      }
+    }
+  }
+}

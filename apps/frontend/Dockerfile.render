@@ -1,0 +1,31 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install production dependencies
+RUN npm ci --only=production
+
+# Copy the server code
+# Copy agent server (ESM JS)
+COPY ssr/agent-server.mjs ./agent-server.mjs
+
+# Install TypeScript and ts-node for running TypeScript files
+RUN npm install typescript ts-node @types/node @types/ws yjs ws
+
+# Copy tsconfig
+COPY tsconfig.json ./
+
+# Default port - will be overridden by Render
+EXPOSE 10000
+
+# Set environment variables
+ENV NODE_ENV=production
+
+# Health check (used by Render)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-10000}/ || exit 1
+
+# Start the agent server (uses PORT env)
+CMD ["node", "agent-server.mjs"]

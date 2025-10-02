@@ -1,0 +1,56 @@
+{
+  "q2_presentation": {
+    "hero": [
+      "professional",
+      "tech",
+      "sans"
+    ],
+    "body": [
+      "sans",
+      "professional"
+    ]
+  },
+  "corporate": {
+    "hero": [
+      "professional",
+      "elegant",
+      "serif"
+    ],
+    "body": [
+      "sans",
+      "professional"
+    ]
+  },
+  "creative": {
+    "hero": [
+      "display",
+      "creative",
+      "retro"
+    ],
+    "body": [
+      "sans",
+      "general"
+    ]
+  },
+  "tech_startup": {
+    "hero": [
+      "tech",
+      "display",
+      "sans"
+    ],
+    "body": [
+      "sans",
+      "tech"
+    ]
+  },
+  "educational": {
+    "hero": [
+      "serif",
+      "professional"
+    ],
+    "body": [
+      "sans",
+      "professional"
+    ]
+  }
+}

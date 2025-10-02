@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "title": "CustomComponent Cookbook",
+    "version": "1.0",
+    "description": "Practical guidance and safe skeletons for building CustomComponents that our runtime can execute."
+  },
+  "signature": "function render({ props, state, updateState, id, isThumbnail }) { ... }",
+  "root_container_style": [
+    "width: '100%'", "height: '100%'", "maxWidth: '100%'", "maxHeight: '100%'",
+    "boxSizing: 'border-box'", "overflow: 'hidden'",
+    "display: 'flex'", "flexDirection: 'column'", "position: 'relative'"
+  ],
+  "golden_rules": [
+    "Single escaped string for render (use \\n for newlines; no backticks)",
+    "Use React.createElement only (no JSX/imports/exports)",
+    "Do not call updateState during render; only in handlers/timeouts",
+    "Define padding FIRST, then derive sizes from props.width/height",
+    "All text, numbers, and colors must be extracted from props (no hardcoding)",
+    "Throttle/skip heavy effects when isThumbnail is true"
+  ],
+  "skeleton_js": "function render({ props, state, updateState, id, isThumbnail }) {\n  const padding = props.padding || 32;\n  const width = props.width || 600;\n  const height = props.height || 300;\n  const availableWidth = width - padding * 2;\n  const availableHeight = height - padding * 2;\n  const title = props.title || '';\n  const value = props.value || props.mainText || props.content || props.text || '';\n  const label = props.label || '';\n  const primaryColor = props.primaryColor || '#00D4FF';\n  const secondaryColor = props.secondaryColor || '#06FFA5';\n  const textColor = props.textColor || '#FFFFFF';\n  const fontFamily = props.fontFamily || 'Poppins';\n  const valueSize = Math.min( Math.floor(availableWidth / Math.max(3, String(value).length * 0.6)), Math.floor(availableHeight * 0.5) );\n  const labelSize = Math.min(36, Math.floor(availableWidth / 12));\n  const titleSize = title ? Math.min(48, Math.floor(availableWidth / Math.max(8, title.length * 0.5))) : 0;\n  return React.createElement('div', {\n    style: { width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative', alignItems: 'center', justifyContent: 'center', padding: padding + 'px', fontFamily }\n  }, [\n    title && React.createElement('div', { key: 'title', style: { fontSize: titleSize + 'px', color: textColor, opacity: 0.85, marginBottom: '12px', letterSpacing: '0.5px', fontWeight: '700', textAlign: 'center', width: '100%' } }, title),\n    React.createElement('div', { key: 'value', style: { fontSize: Math.max(24, valueSize) + 'px', fontWeight: '900', background: 'linear-gradient(135deg, ' + primaryColor + ' 0%, ' + secondaryColor + ' 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', lineHeight: 1, letterSpacing: '-0.02em', textAlign: 'center', width: '100%' } }, String(value)),\n    label && React.createElement('div', { key: 'label', style: { fontSize: labelSize + 'px', color: textColor, opacity: 0.8, marginTop: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', width: '100%' } }, label)\n  ]);\n}",
+  "patterns": {
+    "metric": [
+      "title at top (optional)",
+      "hero value with gradient text",
+      "small uppercase label below"
+    ],
+    "multi_stat": [
+      "grid with gap, each cell uses theme color",
+      "value big, label medium, trend chip"
+    ],
+    "timeline": [
+      "row/column of steps with dots/bars",
+      "use theme accent for progress"
+    ]
+  }
+}
+

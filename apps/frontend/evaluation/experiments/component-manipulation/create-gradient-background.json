@@ -1,0 +1,45 @@
+{
+  "id": "create-gradient-background",
+  "description": "Create a complex gradient background for a slide",
+  "currentSlideId": "slide-1",
+  "prompt": "Add a beautiful gradient background to the slide that transitions from purple (#8a2be2) at the top to deep blue (#0000cd) at the bottom. Make it a linear gradient at a 135-degree angle.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Gradient Background Demo",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 200 },
+            "width": 800,
+            "height": 120,
+            "texts": [{ "text": "Stunning Presentation Backgrounds", "style": {} }]
+          }
+        },
+        {
+          "id": "subtitle-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 300, "y": 350 },
+            "width": 600,
+            "height": 80,
+            "texts": [{ "text": "Using gradients for visual impact", "style": {} }]
+          }
+        }
+      ]
+    }
+  ]
+} 

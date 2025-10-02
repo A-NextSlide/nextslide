@@ -1,0 +1,161 @@
+{
+  "title_slides": {
+    "hero_centered": {
+      "description": "Massive centered title",
+      "components": [
+        "Background",
+        "TiptapTextBlock"
+      ],
+      "typography": {
+        "size": "400-600pt",
+        "weight": "900",
+        "alignment": "center"
+      },
+      "tips": [
+        "Use full-bleed background image",
+        "Add gradient overlay for contrast",
+        "Keep it to 1-5 words max"
+      ]
+    },
+    "left_aligned_hero": {
+      "description": "Massive left-aligned title with subtle metadata row",
+      "components": [
+        "Background",
+        "TiptapTextBlock"
+      ],
+      "typography": {
+        "size": "280-400pt",
+        "weight": "900",
+        "alignment": "left"
+      },
+      "metadata": {
+        "fields": ["presenter", "organization", "date"],
+        "size": "24-48pt",
+        "color": "muted",
+        "placement": "bottom-left or bottom-right"
+      },
+      "tips": [
+        "Maintain 80px edge margins",
+        "Increase letter-spacing for metadata",
+        "Ensure hierarchy: title > subtitle > metadata"
+      ]
+    },
+    "split_screen": {
+      "description": "Text and image side by side",
+      "components": [
+        "Background",
+        "Image",
+        "TiptapTextBlock"
+      ],
+      "layout": {
+        "image": "Left or right half (960px wide)",
+        "text": "Opposite half, vertically centered"
+      }
+    },
+    "corner_accent": {
+      "description": "Title with functional text background",
+      "components": [
+        "Background",
+        "TiptapTextBlock"
+      ],
+      "placement": "Title with backgroundColor property for emphasis"
+    }
+  },
+  "content_slides": {
+    "bullet_points": {
+      "description": "Classic list format",
+      "typography": {
+        "title": "96-120pt",
+        "bullets": "48-64pt",
+        "spacing": "24px between items"
+      },
+      "enhancements": [
+        "Use color coding for categories",
+        "Reveal points progressively",
+        "Use size hierarchy for emphasis"
+      ]
+    },
+    "comparison": {
+      "description": "Side-by-side comparison",
+      "layouts": {
+        "two_column": "Equal halves with divider",
+        "versus": "Dramatic split with VS in center",
+        "table": "Structured comparison grid"
+      }
+    },
+    "process_flow": {
+      "description": "Step-by-step visualization",
+      "components": [
+        "TiptapTextBlock",
+        "Shape",
+        "CustomComponent"
+      ],
+      "options": [
+        "Horizontal arrow flow",
+        "Vertical timeline",
+        "Circular process"
+      ]
+    }
+  },
+  "data_slides": {
+    "single_chart_focus": {
+      "description": "One chart with insights",
+      "layout": "Chart left/right, text opposite",
+      "chart_size": "880\u00d7700px",
+      "text_content": [
+        "Key insight as title",
+        "3-4 bullet points explaining",
+        "Call-to-action if needed"
+      ]
+    },
+    "dashboard": {
+      "description": "Multiple data points",
+      "components": [
+        "Chart",
+        "TiptapTextBlock",
+        "CustomComponent"
+      ],
+      "arrangements": [
+        "2\u00d72 grid of smaller charts",
+        "One main chart + 3 KPIs",
+        "Stats row + supporting chart"
+      ]
+    },
+    "stat_hero": {
+      "description": "Single statistic emphasis",
+      "typography": "300-600pt for number",
+      "enhancements": [
+        "Animated counter",
+        "Progress visualization",
+        "Comparison context"
+      ]
+    }
+  },
+  "closing_slides": {
+    "cta": {
+      "description": "Call to action",
+      "components": [
+        "TiptapTextBlock",
+        "Shape"
+      ],
+      "styling": {
+        "action": "Large button-style shape",
+        "text": "96-144pt, high contrast",
+        "placement": "Centered or bottom third"
+      }
+    },
+    "thank_you": {
+      "description": "Closing gratitude",
+      "variations": [
+        "Simple centered text",
+        "With contact info",
+        "With QR code"
+      ]
+    },
+    "questions": {
+      "description": "Q&A slide",
+      "styling": "Large '?' or 'Questions?' text",
+      "additions": "Contact info, social handles"
+    }
+  }
+}

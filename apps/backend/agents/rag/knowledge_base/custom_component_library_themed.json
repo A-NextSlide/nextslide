@@ -1,0 +1,99 @@
+{
+  "themed_custom_components": {
+    "description": "CustomComponents that accept and use theme colors/fonts for consistency",
+    "hero_statistics": {
+      "themed_animated_counter": {
+        "description": "Number counter that uses slide theme colors",
+        "usage": "For key metrics, KPIs, growth percentages",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 560, "y": 300},
+            "width": 800,
+            "height": 400,
+            "render": "function render({ props }, instanceId) {\n  const value = props.value || '0';\n  const label = props.label || '';\n  const suffix = props.suffix || '';\n  const primaryColor = props.primaryColor || '#00F0FF';\n  const secondaryColor = props.secondaryColor || '#FF5722';\n  const fontFamily = props.fontFamily || 'Poppins';\n  const fontSize = props.fontSize || 180;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      fontFamily: fontFamily,\n      position: 'relative'\n    }\n  }, [\n    // Decorative gradient background\n    React.createElement('div', {\n      key: 'bg-glow',\n      style: {\n        position: 'absolute',\n        width: '120%',\n        height: '120%',\n        background: `radial-gradient(circle, ${primaryColor}20 0%, transparent 70%)`,\n        filter: 'blur(40px)'\n      }\n    }),\n    // Main value\n    React.createElement('div', {\n      key: 'value',\n      style: {\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,\n        WebkitBackgroundClip: 'text',\n        WebkitTextFillColor: 'transparent',\n        backgroundClip: 'text',\n        lineHeight: 1,\n        letterSpacing: '-0.03em',\n        textShadow: `0 8px 32px ${primaryColor}60`\n      }\n    }, value + suffix),\n    // Label\n    React.createElement('div', {\n      key: 'label',\n      style: {\n        fontSize: '32px',\n        color: primaryColor,\n        marginTop: '24px',\n        fontWeight: '600',\n        letterSpacing: '0.05em',\n        textTransform: 'uppercase',\n        opacity: 0.9\n      }\n    }, label)\n  ]);\n}",
+            "props": {
+              "value": "340",
+              "suffix": "%",
+              "label": "Revenue Growth",
+              "fontSize": 200,
+              "primaryColor": "#00F0FF",
+              "secondaryColor": "#FF5722",
+              "fontFamily": "Poppins"
+            }
+          }
+        }
+      },
+      "themed_comparison_bars": {
+        "description": "Before/after comparison using theme colors",
+        "usage": "For showing improvements, changes, comparisons",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 200, "y": 350},
+            "width": 1520,
+            "height": 350,
+            "render": "function render({ props }, instanceId) {\n  const beforeValue = props.beforeValue || 0;\n  const afterValue = props.afterValue || 100;\n  const beforeLabel = props.beforeLabel || 'Before';\n  const afterLabel = props.afterLabel || 'After';\n  const primaryColor = props.primaryColor || '#00F0FF';\n  const secondaryColor = props.secondaryColor || '#FF5722';\n  const backgroundColor = props.backgroundColor || '#0A0E27';\n  const textColor = props.textColor || '#FFFFFF';\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  const maxValue = Math.max(beforeValue, afterValue);\n  const beforeWidth = (beforeValue / maxValue) * 100;\n  const afterWidth = (afterValue / maxValue) * 100;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      justifyContent: 'center',\n      gap: '48px',\n      fontFamily: fontFamily\n    }\n  }, [\n    // Before bar\n    React.createElement('div', { key: 'before-group' }, [\n      React.createElement('div', {\n        style: {\n          fontSize: '24px',\n          color: textColor,\n          opacity: 0.6,\n          marginBottom: '12px'\n        }\n      }, beforeLabel),\n      React.createElement('div', {\n        style: {\n          height: '80px',\n          background: `${backgroundColor}80`,\n          borderRadius: '40px',\n          position: 'relative',\n          overflow: 'hidden'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            height: '100%',\n            width: beforeWidth + '%',\n            background: `linear-gradient(90deg, ${primaryColor}60, ${primaryColor}40)`,\n            borderRadius: '40px',\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'flex-end',\n            paddingRight: '32px'\n          }\n        }, React.createElement('span', {\n          style: {\n            fontSize: '36px',\n            fontWeight: '700',\n            color: textColor,\n            opacity: 0.8\n          }\n        }, beforeValue))\n      ])\n    ]),\n    // After bar\n    React.createElement('div', { key: 'after-group' }, [\n      React.createElement('div', {\n        style: {\n          fontSize: '24px',\n          color: primaryColor,\n          fontWeight: '600',\n          marginBottom: '12px'\n        }\n      }, afterLabel),\n      React.createElement('div', {\n        style: {\n          height: '80px',\n          background: `${backgroundColor}80`,\n          borderRadius: '40px',\n          position: 'relative',\n          overflow: 'hidden'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            height: '100%',\n            width: afterWidth + '%',\n            background: `linear-gradient(90deg, ${primaryColor}, ${secondaryColor})`,\n            borderRadius: '40px',\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'flex-end',\n            paddingRight: '32px',\n            boxShadow: `0 4px 24px ${primaryColor}40`\n          }\n        }, React.createElement('span', {\n          style: {\n            fontSize: '48px',\n            fontWeight: '900',\n            color: textColor\n          }\n        }, afterValue))\n      ])\n    ])\n  ]);\n}",
+            "props": {
+              "beforeValue": 45,
+              "afterValue": 340,
+              "beforeLabel": "Last Year",
+              "afterLabel": "This Year",
+              "primaryColor": "#00F0FF",
+              "secondaryColor": "#FF5722",
+              "backgroundColor": "#0A0E27",
+              "textColor": "#FFFFFF",
+              "fontFamily": "Inter"
+            }
+          }
+        }
+      }
+    },
+    "data_visualizations": {
+      "themed_progress_ring": {
+        "description": "Circular progress with theme colors and glow effects",
+        "usage": "For completion rates, progress indicators, percentages",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 710, "y": 250},
+            "width": 500,
+            "height": 500,
+            "render": "function render({ props }, instanceId) {\n  const percentage = props.percentage || 75;\n  const label = props.label || 'Progress';\n  const primaryColor = props.primaryColor || '#00F0FF';\n  const secondaryColor = props.secondaryColor || '#FF5722';\n  const backgroundColor = props.backgroundColor || '#0A0E27';\n  const textColor = props.textColor || '#FFFFFF';\n  const fontFamily = props.fontFamily || 'Poppins';\n  \n  const radius = 160;\n  const strokeWidth = 32;\n  const circumference = 2 * Math.PI * radius;\n  const strokeDashoffset = circumference - (percentage / 100) * circumference;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      fontFamily: fontFamily,\n      position: 'relative'\n    }\n  }, [\n    // Glow effect\n    React.createElement('div', {\n      key: 'glow',\n      style: {\n        position: 'absolute',\n        width: '400px',\n        height: '400px',\n        background: `radial-gradient(circle, ${primaryColor}30 0%, transparent 70%)`,\n        filter: 'blur(60px)'\n      }\n    }),\n    // SVG Ring\n    React.createElement('svg', {\n      key: 'ring',\n      width: 360,\n      height: 360,\n      style: { transform: 'rotate(-90deg)' }\n    }, [\n      // Gradient definition\n      React.createElement('defs', { key: 'defs' }, [\n        React.createElement('linearGradient', {\n          id: `gradient-${instanceId}`,\n          x1: '0%',\n          y1: '0%',\n          x2: '100%',\n          y2: '100%'\n        }, [\n          React.createElement('stop', {\n            offset: '0%',\n            style: { stopColor: primaryColor }\n          }),\n          React.createElement('stop', {\n            offset: '100%',\n            style: { stopColor: secondaryColor }\n          })\n        ])\n      ]),\n      // Background ring\n      React.createElement('circle', {\n        key: 'bg-ring',\n        cx: 180,\n        cy: 180,\n        r: radius,\n        fill: 'none',\n        stroke: `${backgroundColor}40`,\n        strokeWidth: strokeWidth\n      }),\n      // Progress ring\n      React.createElement('circle', {\n        key: 'progress-ring',\n        cx: 180,\n        cy: 180,\n        r: radius,\n        fill: 'none',\n        stroke: `url(#gradient-${instanceId})`,\n        strokeWidth: strokeWidth,\n        strokeDasharray: circumference,\n        strokeDashoffset: strokeDashoffset,\n        strokeLinecap: 'round',\n        filter: `drop-shadow(0 0 20px ${primaryColor}60)`\n      })\n    ]),\n    // Percentage text\n    React.createElement('div', {\n      key: 'percentage',\n      style: {\n        position: 'absolute',\n        fontSize: '96px',\n        fontWeight: '900',\n        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,\n        WebkitBackgroundClip: 'text',\n        WebkitTextFillColor: 'transparent',\n        backgroundClip: 'text'\n      }\n    }, percentage + '%'),\n    // Label\n    React.createElement('div', {\n      key: 'label',\n      style: {\n        marginTop: '40px',\n        fontSize: '28px',\n        color: primaryColor,\n        fontWeight: '600',\n        textTransform: 'uppercase',\n        letterSpacing: '0.1em',\n        opacity: 0.9\n      }\n    }, label)\n  ]);\n}",
+            "props": {
+              "percentage": 85,
+              "label": "Completion Rate",
+              "primaryColor": "#00F0FF",
+              "secondaryColor": "#FF5722",
+              "backgroundColor": "#0A0E27",
+              "textColor": "#FFFFFF",
+              "fontFamily": "Poppins"
+            }
+          }
+        }
+      }
+    },
+    "creative_text_effects": {
+      "themed_glowing_text": {
+        "description": "Text with theme-colored glow effect",
+        "usage": "For emphasis, key messages, impact statements",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 160, "y": 400},
+            "width": 1600,
+            "height": 200,
+            "render": "function render({ props }, instanceId) {\n  const text = props.text || 'IMPACT';\n  const fontSize = props.fontSize || 144;\n  const primaryColor = props.primaryColor || '#00F0FF';\n  const secondaryColor = props.secondaryColor || '#FF5722';\n  const fontFamily = props.fontFamily || 'Poppins';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center',\n      position: 'relative'\n    }\n  }, [\n    // Multiple glow layers for depth\n    React.createElement('div', {\n      key: 'glow1',\n      style: {\n        position: 'absolute',\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        fontFamily: fontFamily,\n        color: primaryColor,\n        filter: 'blur(40px)',\n        opacity: 0.6\n      }\n    }, text),\n    React.createElement('div', {\n      key: 'glow2',\n      style: {\n        position: 'absolute',\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        fontFamily: fontFamily,\n        color: secondaryColor,\n        filter: 'blur(20px)',\n        opacity: 0.4\n      }\n    }, text),\n    // Main text with gradient\n    React.createElement('div', {\n      key: 'main',\n      style: {\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        fontFamily: fontFamily,\n        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,\n        WebkitBackgroundClip: 'text',\n        WebkitTextFillColor: 'transparent',\n        backgroundClip: 'text',\n        position: 'relative',\n        letterSpacing: '-0.02em',\n        textTransform: 'uppercase'\n      }\n    }, text)\n  ]);\n}",
+            "props": {
+              "text": "INNOVATION",
+              "fontSize": 156,
+              "primaryColor": "#00F0FF",
+              "secondaryColor": "#FF5722",
+              "fontFamily": "Poppins"
+            }
+          }
+        }
+      }
+    }
+  }
+}

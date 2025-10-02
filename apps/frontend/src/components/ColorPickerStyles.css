@@ -1,0 +1,32 @@
+/* Custom styles for react-colorful color pickers */
+
+/* Make the color picker wider to fit the popup better */
+.react-colorful {
+  width: 100% !important; /* Take 100% of the parent container width */
+  margin-bottom: 6px; /* Add some bottom spacing for consistency */
+}
+
+/* Replace circular pointer with bar-shaped handle for the hue slider */
+.react-colorful__hue-pointer {
+  width: 6px !important;
+  height: 25px !important;
+  border-radius: 1px !important;
+}
+
+/* Replace circular pointer with bar-shaped handle for the alpha slider */
+.react-colorful__alpha-pointer {
+  width: 6px !important;
+  height: 25px !important;
+  border-radius: 1px !important;
+}
+
+/* Keep saturation pointer as circle but make it slightly larger */
+.react-colorful__saturation-pointer {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Add consistent spacing for the gradient picker */
+.gradient-picker {
+  padding: 4px 3px 8px 8px; /* Top 4px, right 3px, bottom 8px, left 8px */
+}

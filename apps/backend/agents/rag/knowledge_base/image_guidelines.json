@@ -1,0 +1,84 @@
+{
+  "boundary_constraints": {
+    "critical_rules": [
+      "Maximum image width: 1920px (full canvas width)",
+      "Maximum image height: 1080px (full canvas height)",
+      "Right edge constraint: x + width must be <= 1920",
+      "Bottom edge constraint: y + height must be <= 1080",
+      "No negative positions: x >= 0, y >= 0"
+    ],
+    "safe_positioning": {
+      "full_bleed": {"x": 0, "y": 0, "max_width": 1920, "max_height": 1080},
+      "left_aligned": {"x": 80, "max_width": 880},
+      "right_aligned": {"x": 960, "max_width": 880},
+      "centered": {"x": 160, "max_width": 1600}
+    },
+    "overflow_prevention": [
+      "If positioning at x > 960, reduce width to fit: width = 1920 - x",
+      "If positioning at y > 540, reduce height to fit: height = 1080 - y",
+      "Always validate: x + width <= 1920 AND y + height <= 1080",
+      "Scale proportionally to maintain aspect ratio"
+    ]
+  },
+  "enhanced": {
+    "composition_rules": {
+      "rule_of_thirds": "Place subjects at intersections",
+      "leading_lines": "Guide eye to focal point",
+      "framing": "Use natural frames",
+      "symmetry": "For formal, balanced feel",
+      "patterns": "For visual interest"
+    },
+    "treatment_techniques": {
+      "overlays": {
+        "gradient": {
+          "linear": "Top-down for text at bottom",
+          "radial": "Center focus vignette",
+          "directional": "Guide eye movement"
+        },
+        "color": {
+          "brand": "Unify with brand color",
+          "duotone": "Two-color treatment",
+          "multiply": "Darken for text"
+        }
+      },
+      "filters": {
+        "blur": {
+          "background": "3-5px for depth",
+          "foreground": "Selective focus"
+        },
+        "color_grading": {
+          "warm": "Orange/yellow tint",
+          "cool": "Blue/green tint",
+          "desaturated": "Professional look"
+        }
+      },
+      "masks": {
+        "geometric": "Circle, hexagon, etc.",
+        "organic": "Blob, wave shapes",
+        "text": "Image inside letters",
+        "critical_rules": [
+          "Circle mask requires a square container: width === height to avoid side cropping",
+          "When applying circle mask, set width = height (use min(current width, current height))",
+          "If preserving area is important, increase the smaller dimension to match the larger and recenter"
+        ]
+      }
+    },
+    "layout_systems": {
+      "editorial": {
+        "full_bleed": "Edge to edge impact",
+        "margin_wrap": "Text flows around",
+        "cutout": "Subject extends out"
+      },
+      "grid_based": {
+        "modular": "Consistent sizing",
+        "masonry": "Pinterest-style varied",
+        "mosaic": "Artistic arrangement"
+      },
+      "asymmetric": {
+        "off_center": "Dynamic tension",
+        "overlapping": "Layered depth",
+        "diagonal": "Energy and movement"
+      }
+    }
+  }
+}

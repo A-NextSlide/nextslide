@@ -1,0 +1,29 @@
+{
+  "name": "nextslide",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:backend": "cd apps/backend && ./venv/bin/python -m api.chat_server",
+    "build:frontend": "npm run build --workspace=apps/frontend",
+    "test:frontend": "npm run test --workspace=apps/frontend"
+  },
+  "devDependencies": {},
+  "description": "NextSlide monorepo - AI-powered slide generation platform",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/nextslide.git"
+  },
+  "keywords": [
+    "slides",
+    "presentation",
+    "ai",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "ISC"
+}

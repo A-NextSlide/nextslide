@@ -1,0 +1,32 @@
+{
+  "total_fonts": 699,
+  "fonts_with_descriptions": 699,
+  "common_uses": {
+    "body_text": 87,
+    "print": 215,
+    "packaging": 197,
+    "logos": 574,
+    "posters": 247,
+    "web": 272,
+    "advertising": 389,
+    "headlines": 406,
+    "invitations": 133,
+    "presentations": 3
+  },
+  "personality_distribution": {
+    "vintage": 189,
+    "bold": 185,
+    "professional": 226,
+    "elegant": 84,
+    "modern": 254,
+    "artistic": 167,
+    "playful": 110,
+    "friendly": 51
+  },
+  "file_types": [
+    "ttf",
+    "woff",
+    "otf",
+    "svg"
+  ]
+}

@@ -1,0 +1,103 @@
+/* Presentation Mode Styles */
+
+/* Disable scrolling when in presentation mode */
+body.presentation-mode {
+  overflow: hidden;
+}
+
+/* Smooth transitions for presentation elements */
+.presentation-slide-transition {
+  transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+}
+
+/* Ensure cursor is visible during presentation */
+.presentation-mode * {
+  cursor: default !important;
+}
+
+/* Navigation area should have pointer cursor */
+.presentation-nav-area {
+  cursor: pointer !important;
+}
+
+/* Beautiful backdrop blur for controls */
+.presentation-control-glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Smooth fade animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.fade-in-down {
+  animation: fadeInDown 0.4s ease-out;
+}
+
+/* Thumbnail grid animations */
+.thumbnail-grid-enter {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.thumbnail-grid-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: all 0.3s ease-out;
+}
+
+/* Disable text selection in presentation mode */
+.presentation-mode {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Horizontal scrolling for thumbnails */
+.thumbnail-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Custom scrollbar for thumbnail view */
+.thumbnail-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.thumbnail-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.thumbnail-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.thumbnail-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+} 

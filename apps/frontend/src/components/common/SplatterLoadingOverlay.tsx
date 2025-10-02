@@ -1,0 +1,240 @@
+import React from 'react';
+import { cn } from '@/lib/utils';
+
+interface SplatterLoadingOverlayProps {
+  isVisible: boolean;
+  message?: string;
+  progress?: { current: number; total: number } | null;
+  stage?: string | null;
+  phase?: string | null;
+  totalProgress?: number | null;
+}
+
+// Phase ranges according to backend documentation
+const PHASE_RANGES = {
+  initialization: { start: 0, end: 15, label: "Setting up..." },
+  theme_generation: { start: 15, end: 30, label: "Creating theme..." },
+  image_collection: { start: 30, end: 55, label: "Finding images..." },
+  slide_generation: { start: 55, end: 95, label: "Generating slides..." },
+  finalization: { start: 95, end: 100, label: "Finalizing..." }
+};
+
+const SplatterLoadingOverlay: React.FC<SplatterLoadingOverlayProps> = ({ 
+  isVisible, 
+  message, 
+  progress,
+  stage,
+  phase,
+  totalProgress 
+}) => {
+  // Calculate actual progress percentage
+  const calculateProgress = () => {
+    // If total progress is provided, use it
+    if (totalProgress !== null && totalProgress !== undefined) {
+      return Math.min(100, Math.max(0, totalProgress));
+    }
+    
+    // If we have slide progress and are in slide generation phase
+    if (progress && phase === 'slide_generation') {
+      const slideProgress = (progress.current / progress.total) * 40; // 40% of total
+      return Math.min(95, 55 + slideProgress); // Start at 55%, cap at 95%
+    }
+    
+    // If we have progress for other phases
+    if (progress && progress.total > 0) {
+      const percentage = (progress.current / progress.total) * 100;
+      
+      // Map to phase range
+      if (phase && PHASE_RANGES[phase as keyof typeof PHASE_RANGES]) {
+        const phaseRange = PHASE_RANGES[phase as keyof typeof PHASE_RANGES];
+        const phaseSize = phaseRange.end - phaseRange.start;
+        return phaseRange.start + (percentage / 100) * phaseSize;
+      }
+    }
+    
+    // Default based on phase
+    if (phase && PHASE_RANGES[phase as keyof typeof PHASE_RANGES]) {
+      return PHASE_RANGES[phase as keyof typeof PHASE_RANGES].start;
+    }
+    
+    return 0;
+  };
+  
+  const progressPercentage = calculateProgress();
+  const phaseInfo = phase ? PHASE_RANGES[phase as keyof typeof PHASE_RANGES] : null;
+  const PaintSplatter1 = () => (
+    <svg width="150" height="150" viewBox="0 0 156 188" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M71.4169 11.2228C71.4169 -2.42471 91.3273 -3.82704 93.4064 9.66116C94.9191 19.4752 107.599 22.5023 113.355 14.4109L118.685 6.91864C126.14 -3.56157 142.242 6.16504 136.434 17.6406L131.455 27.4786C128.192 33.9246 135.386 40.6279 141.586 36.9188C148.285 32.9111 155.686 40.9261 151.158 47.285L139.71 63.3623C136.358 68.0686 138.087 74.6611 143.317 77.1169L145.227 78.0137C151.567 80.9909 151.567 90.0086 145.227 92.9858C139.701 95.5808 138.795 103.064 143.542 106.903L151.871 113.638C160.301 120.455 152.578 133.804 142.467 129.895C134.45 126.796 126.825 135.21 130.517 142.971C135.377 153.189 122.007 162.451 114.576 153.92L113.325 152.484C107.49 145.786 96.4694 149.464 95.8282 158.325L94.4162 177.834C93.525 190.147 75.4526 190.147 74.5614 177.834L73.5086 163.288C72.8692 154.453 61.2144 151.726 56.7223 159.361C51.3742 168.45 37.4422 162.561 40.2347 152.392L41.9494 146.147C44.3493 137.407 34.705 130.313 27.076 135.207L24.9102 136.596C13.5543 143.88 1.72166 128.065 11.9147 119.226L16.4471 115.296C23.571 109.119 19.6889 97.413 10.2856 96.7168C-2.4809 95.7714 -2.94331 77.2064 9.76032 75.6267L23.0287 73.9768C29.4883 73.1735 33.4953 66.5394 31.2 60.4482L26.0047 46.6605C24.6486 43.0618 28.3991 39.6615 31.8481 41.3627C35.9058 43.3641 39.8575 38.4695 37.0457 34.9249L22.7139 16.8577C15.4735 7.73022 27.9891 -3.83115 36.515 4.10896L52.8364 19.309C59.9026 25.8898 71.4169 20.8788 71.4169 11.2228Z" fill="#FF4301"/>
+    </svg>
+  );
+
+  const PaintSplatter2 = () => (
+    <svg width="150" height="150" viewBox="0 0 187 212" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M94.993 8.07456C94.993 -1.80364 109.389 -2.91031 110.899 6.85184L118.221 54.1956C119.317 61.2852 128.471 63.4597 132.638 57.6206L161.161 17.6584C166.91 9.60444 179.286 17.1054 174.806 25.9282L155.247 64.4457C151.968 70.9023 159.17 77.6311 165.389 73.9225C172.11 69.9148 179.517 77.9608 174.968 84.3281L162.643 101.579C159.737 105.648 161.233 111.356 165.761 113.475L169.562 115.254C175.707 118.13 175.707 126.869 169.562 129.745L168.662 130.167C163.304 132.674 162.427 139.929 167.033 143.641L183.216 156.685C190.322 162.412 183.836 173.66 175.32 170.379L162.692 165.513C155.941 162.912 149.48 169.895 152.596 176.424L159.951 191.836C163.958 200.23 152.829 207.55 146.708 200.546L133.838 185.82C129.161 180.469 120.35 183.417 119.835 190.505L119.079 200.915C118.092 214.519 98.1251 214.519 97.1373 200.915L96.8471 196.919C96.2791 189.098 85.9656 186.678 81.979 193.431L76.2093 203.205C71.4602 211.25 59.1262 206.019 61.6075 197.013L66.7419 178.377C68.689 171.309 60.8964 165.563 54.7201 169.512L14.541 195.199C6.17829 200.545 -2.50901 188.896 5.0008 182.406L44.5685 148.21C49.9582 143.553 47.0305 134.704 39.9263 134.179L7.41816 131.78C-2.22028 131.069 -2.56833 117.051 7.02293 115.863L49.0643 110.652C54.2069 110.015 57.3959 104.731 55.5633 99.8837L49.436 83.6767C48.073 80.0714 51.8276 76.6591 55.2865 78.3596C59.3569 80.3607 63.3115 75.4478 60.487 71.8989L34.2637 38.9504C28.1028 31.2095 38.7146 21.3746 45.9656 28.1052L81.5506 61.1355C86.6697 65.8872 94.993 62.2567 94.993 55.2721V8.07456Z" fill="#FF4301"/>
+    </svg>
+  );
+
+  const PaintSplatter3 = () => (
+    <svg width="150" height="150" viewBox="0 0 201 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M103.263 8.19154C103.263 -1.52039 117.315 -2.83998 119.123 6.70216L130.476 66.6178C131.718 73.173 139.966 75.4171 144.358 70.3949L186.123 22.6377C192.598 15.2337 204.134 23.7788 198.938 32.1302L167.361 82.8822C164.046 88.2111 167.878 95.1083 174.154 95.1083H175.622C182.28 95.1083 185.96 102.831 181.767 108.002C178.377 112.182 180.06 118.455 185.088 120.375L187.629 121.346C194.489 123.966 194.489 133.672 187.629 136.292L182.909 138.095C178.575 139.751 176.553 144.734 178.509 148.941L179.539 151.158C182.004 156.46 178.132 162.53 172.285 162.53H170.31C165.01 162.53 161.175 167.59 162.608 172.693L181.178 238.818C183.832 248.269 170.415 253.269 166.237 244.386L146.124 201.627C142.649 194.239 131.64 196.191 130.916 204.324L129.357 221.851C128.167 235.218 108.632 235.218 107.443 221.851L105.161 196.202C104.505 188.829 95.0489 186.225 90.7106 192.223L77.2473 210.836C71.8714 218.268 60.2517 212.28 63.1854 203.589L71.3843 179.3C73.5862 172.777 67.0678 166.704 60.7168 169.361L57.8659 170.554C50.2556 173.738 43.3905 164.716 48.4887 158.23L52.4672 153.169C56.4564 148.094 53.1021 140.627 46.6588 140.239L8.00076 137.911C-1.82236 137.319 -2.11432 122.956 7.67664 121.966L29.7764 119.73C37.8251 118.916 39.3061 107.816 31.7523 104.92C23.3048 101.682 26.431 89.0494 35.4137 90.1247L63.0758 93.4361C69.2371 94.1736 73.8559 87.9201 71.3392 82.2482L55.9936 47.6632C52.1642 39.0328 63.8253 32.0542 69.6213 39.5076L88.9478 64.3606C93.6241 70.374 103.263 67.0673 103.263 59.4497V8.19154Z" fill="#FF4301"/>
+    </svg>
+  );
+
+  return (
+    <div className={cn(
+      "fixed inset-0 z-[100] pointer-events-none transition-all duration-500",
+      isVisible ? "opacity-100" : "opacity-0"
+    )}
+    style={{
+      visibility: isVisible ? 'visible' : 'hidden'
+    }}>
+      {/* Background overlay - matches app background */}
+      <div className="absolute inset-0 bg-[#F5F5DC]/85 dark:bg-zinc-900/85 backdrop-blur-sm" />
+      
+      {/* Center content */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <style>{`
+          .dot-animation-1 {
+            opacity: 0;
+            animation: show-hide-1 3s infinite;
+          }
+
+          .dot-animation-2 {
+            opacity: 0;
+            animation: show-hide-2 3s infinite;
+          }
+
+          .dot-animation-3 {
+            opacity: 0;
+            animation: show-hide-3 3s infinite;
+          }
+
+          .dot-animation-4 {
+            opacity: 0;
+            animation: show-hide-4 3s infinite;
+          }
+
+          .dot-animation-5 {
+            opacity: 0;
+            animation: show-hide-5 3s infinite;
+          }
+
+          @keyframes show-hide-1 {
+            0%, 16.66% { opacity: 1; }
+            16.67%, 100% { opacity: 0; }
+          }
+
+          @keyframes show-hide-2 {
+            0%, 16.66% { opacity: 0; }
+            16.67%, 33.33% { opacity: 1; }
+            33.34%, 100% { opacity: 0; }
+          }
+
+          @keyframes show-hide-3 {
+            0%, 33.33% { opacity: 0; }
+            33.34%, 50% { opacity: 1; }
+            50.01%, 100% { opacity: 0; }
+          }
+
+          @keyframes show-hide-4 {
+            0%, 50% { opacity: 0; }
+            50.01%, 66.66% { opacity: 1; }
+            66.67%, 100% { opacity: 0; }
+          }
+
+          @keyframes show-hide-5 {
+            0%, 66.66% { opacity: 0; }
+            66.67%, 100% { opacity: 1; }
+          }
+          
+          .animate-shimmer {
+            animation: shimmer 2s linear infinite;
+          }
+          
+          @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+          }
+        `}</style>
+
+        {/* Paint splatter dots spanning the full width */}
+        <div className="flex items-center justify-center w-full max-w-7xl px-8 mb-16">
+          <div className="flex items-center justify-between w-full">
+            <div className="dot-animation-1 transform-gpu">
+              <PaintSplatter1 />
+            </div>
+            <div className="dot-animation-2 transform-gpu">
+              <PaintSplatter2 />
+            </div>
+            <div className="dot-animation-3 transform-gpu">
+              <PaintSplatter3 />
+            </div>
+            <div className="dot-animation-4 transform-gpu">
+              <PaintSplatter1 />
+            </div>
+            <div className="dot-animation-5 transform-gpu">
+              <PaintSplatter2 />
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center max-w-2xl px-8">
+          {/* Main message */}
+          <h2 
+            className="text-[#383636] dark:text-gray-300 mb-4"
+            style={{
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+              fontWeight: 900,
+              fontSize: '32px',
+              lineHeight: '120%',
+              letterSpacing: '0%',
+              textTransform: 'uppercase',
+              WebkitFontSmoothing: 'antialiased',
+              MozOsxFontSmoothing: 'grayscale'
+            }}
+          >
+            {message || 'Generating Your Presentation'}
+          </h2>
+
+          {/* Stage information */}
+          {stage && (
+            <p className="text-lg text-zinc-600 dark:text-zinc-400 mb-6 animate-pulse">
+              {stage}
+            </p>
+          )}
+
+          {/* Progress bar: only show once there is measurable progress */}
+          {progressPercentage > 0 && (
+            <div className="max-w-sm mx-auto">
+              <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-3 overflow-hidden relative">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#FF4301] to-[#FF6B35] transition-all duration-500 ease-out rounded-full relative overflow-hidden"
+                  style={{ width: `${progressPercentage}%` }}
+                >
+                  {/* Shimmer effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                </div>
+              </div>
+              <div className="flex justify-between items-center mt-2">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {phaseInfo ? phaseInfo.label : (stage || 'Processing...')}
+                </p>
+                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                  {Math.round(progressPercentage)}%
+                </p>
+              </div>
+              {/* Show slide progress if in slide generation phase */}
+              {phase === 'slide_generation' && progress && (
+                <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 text-center">
+                  Slide {progress.current} of {progress.total}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SplatterLoadingOverlay; 

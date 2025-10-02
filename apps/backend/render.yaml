@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: slide-backend
+    env: python
+    region: oregon 
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn api.chat_server:app --host 0.0.0.0 --port $PORT"
+    # For debugging: startCommand: "uvicorn api.test_server:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: USE_RAG_GENERATION
+        value: "true" 

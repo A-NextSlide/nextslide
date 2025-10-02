@@ -1,0 +1,1289 @@
+/* Import Google Fonts */
+@import './fonts.css';
+@import './styles/presentation.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap');
+
+/* HK Grotesk Wide - Local fonts */
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 900;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-Black.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 800;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-ExtraBold.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 700;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-Bold.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 600;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-SemiBold.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 500;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-Medium.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 400;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-Regular.otf') format('opentype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HK Grotesk Wide';
+  font-weight: 300;
+  font-style: normal;
+  src: url('/fonts/HKGroteskWide-Light.otf') format('opentype');
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Slide progressive loading animations */
+@keyframes slideContentFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.slide-progressive-load {
+  animation: slideContentFadeIn 0.5s ease-out forwards;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+/* Ensure fonts are properly rendered */
+html {
+  font-feature-settings: "rlig" 1, "calt" 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  overscroll-behavior: none;
+  scroll-behavior: smooth;
+  /* Remove fixed positioning to allow scrolling */
+  /* position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; */
+}
+
+/* Hide scrollbars for certain elements while maintaining scroll functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Custom scrollbar for outline textareas */
+.outline-textarea-scrollbar {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent; /* Firefox */
+}
+
+.outline-textarea-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.outline-textarea-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.outline-textarea-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.outline-textarea-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.5);
+}
+
+.dark .outline-textarea-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(209, 213, 219, 0.3);
+}
+
+.dark .outline-textarea-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(209, 213, 219, 0.5);
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 240 10% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+
+    --radius: 0.5rem;
+    
+    /* Slide-specific variables that stay constant regardless of theme */
+    --slide-title-color: #111;
+    --slide-content-color: #555;
+    --slide-bg-color: #fff;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    
+    /* Slide variables remain the same in dark mode unless explicitly changed */
+  }
+  
+  /* For slides with independent themes */
+  [data-deck-theme="dark"] {
+    --slide-title-color: #f8f8f8;
+    --slide-content-color: #d0d0d0;
+    --slide-bg-color: #121212;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    overscroll-behavior: none;
+    scroll-behavior: smooth;
+    /* Remove fixed positioning to allow scrolling */
+    /* position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden; */
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply backdrop-blur-md shadow-lg;
+    /* Avoid black gradient artifacts on Safari over dark backgrounds */
+    background-image: none;
+    background-color: color-mix(in oklab, var(--background) 6%, transparent);
+  }
+
+  /* Performance overrides on Safari/Firefox */
+  .safari .glass-panel,
+  .firefox .glass-panel {
+    /* Backdrop blur on large, scrolling chat areas tanks FPS on Safari/Firefox */
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: 0 0 0 rgba(0,0,0,0) !important;
+    background-image: none !important;
+    background-color: color-mix(in oklab, var(--background) 8%, transparent) !important;
+  }
+
+  /* Reduce other heavy effects on Safari/Firefox */
+  .safari .scroll-fade,
+  .firefox .scroll-fade,
+  .safari .scroll-fade-bottom,
+  .firefox .scroll-fade-bottom {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+  
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+  
+  .slide-transition {
+    @apply transition-all duration-500 ease-in-out;
+  }
+  
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scroll-fade {
+    /* Disabled due to Safari black gradient artifact in chat views */
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .scroll-fade-bottom {
+    /* Disabled due to Safari black gradient artifact in chat views */
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  /* Scrollable content containers */
+  .scrollable-content {
+    @apply overflow-y-auto;
+    max-height: 100%;
+    scrollbar-width: thin;
+  }
+
+  .tab-content-scrollable {
+    @apply overflow-y-auto;
+    max-height: calc(100% - 1rem); /* Account for padding */
+  }
+
+  /* Slide container and canvas */
+  .slide-container {
+    width: 100%;
+    max-height: 100%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .slide-canvas {
+    position: relative;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    background-color: white;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit; /* Inherit border radius to ensure corners render properly */
+  }
+  
+  /* Ensure the content container is identical in both view and edit modes */
+  .slide-content-container {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+    overflow: visible !important;
+  }
+
+  /* Common text element styling for both edit and view modes */
+  .slide-element-text {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    letter-spacing: inherit !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    word-wrap: break-word !important;
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
+    transform: none !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    transition: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    min-height: 0 !important;
+    position: static !important;
+    text-align: inherit !important;
+    background-color: transparent !important;
+  }
+
+  /* Ensure text maintains the same size in both edit and view modes */
+  .slide-element h1, 
+  .slide-element h2, 
+  .slide-element h3, 
+  .slide-element p, 
+  .slide-element span,
+  .slide-element [contenteditable="true"] {
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    margin: 0 !important;
+    padding: 0 !important;
+    word-wrap: break-word !important;
+    text-overflow: ellipsis !important;
+    overflow: hidden !important;
+    transform: none !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    transition: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    min-height: 0 !important;
+    position: static !important;
+    text-align: inherit;
+    background-color: transparent !important;
+  }
+
+  /* Remove explicit font sizes that override custom font sizing */
+  .slide-element h1, .slide-element div[contenteditable="true"].font-bold {
+    line-height: 1.2 !important;
+    color: var(--slide-title-color);
+    background-color: transparent !important;
+  }
+
+  .slide-element h2 {
+    line-height: 1.3 !important;
+    color: var(--slide-title-color);
+    background-color: transparent !important;
+  }
+
+  .slide-element h3 {
+    line-height: 1.4 !important;
+    color: var(--slide-title-color);
+    background-color: transparent !important;
+  }
+
+  .slide-element p, .slide-element div[contenteditable="true"].text-muted-foreground {
+    line-height: 1.5 !important;
+    color: var(--slide-content-color);
+    background-color: transparent !important;
+  }
+
+  .slide-element span {
+    line-height: 1.5 !important;
+    color: var(--slide-content-color);
+    background-color: transparent !important;
+  }
+
+  /* Ensure slide-element-content inherits the correct styling */
+  .slide-element-content {
+    overflow: hidden !important; /* Default to hidden */
+    text-overflow: ellipsis !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: 100% !important; /* Use 100% height to fill container */
+    min-height: 0 !important; /* Remove minimum height constraint */
+    font-size: inherit;
+    line-height: inherit;
+    background-color: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Form fields */
+  .slide-element input, 
+  .slide-element textarea {
+    font-size: inherit !important;
+    width: 100% !important;
+    background-color: transparent !important;
+    line-height: inherit !important;
+    letter-spacing: inherit !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transition: none !important;
+  }
+
+  /* Keep form fields consistent in both modes */
+  .slide-element input:focus, 
+  .slide-element textarea:focus {
+    outline: none !important;
+    background-color: transparent !important;
+  }
+
+  /* Ensure text elements maintain consistent styling */
+  [contenteditable="true"] {
+    overflow: hidden !important; /* Default to hidden */
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    transition: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important; /* Remove minimum height constraint */
+    font-size: inherit;
+    line-height: inherit;
+    position: static !important; /* Keep position consistent */
+    text-align: inherit; /* Keep inherit for now, TextBlockRenderer will override */
+    caret-color: black !important; /* Improve cursor visibility */
+  }
+
+  .slide-element {
+    box-sizing: border-box !important;
+    position: relative !important;
+    overflow: hidden !important; /* Default to hidden */
+    transition: none !important;
+  }
+
+  /* Fix for text sizing and spacing in edit mode */
+  .slide-element div, 
+  .slide-element p, 
+  .slide-element span, 
+  .slide-element h1, 
+  .slide-element h2, 
+  .slide-element h3 {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    border: none !important;
+    outline: none !important;
+    transition: none !important;
+    font-size: inherit;
+    line-height: inherit;
+    height: 100% !important; /* Use 100% to fill parent container */
+  }
+  
+  /* For editable mode, ensure styles are consistent */
+  .slide-element[contenteditable="true"] {
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    min-height: 0 !important; /* Remove minimum height constraint */
+    outline: none !important;
+    transition: none !important;
+  }
+
+  /* Enhanced element selection styles */
+  .selected-element {
+    @apply ring-2 ring-blue-500 ring-offset-1 ring-offset-black/20;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+    overflow: visible !important;
+  }
+  
+  .editing-mode .selected-element::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border: 2px dashed rgba(59, 130, 246, 0.7);
+    pointer-events: none;
+    animation: pulse 2s infinite;
+    border-radius: inherit; /* Inherit border radius from parent */
+  }
+  
+  @keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
+
+  /* --- Overrides for Text Editing --- */
+  /* Allow the direct parent (.slide-element) to show overflow when its child is being edited */
+  .slide-element:has(> [data-edit-mode="true"]) {
+    overflow: visible !important; 
+  }
+  /* Allow the inner editable content div itself to show overflow and adjust height */
+  [data-edit-mode="true"] .text-block-inner-editable {
+      overflow: visible !important; 
+      height: auto !important; /* Allow height to grow based on content */
+      min-height: 1em !important; /* Keep a minimum height */
+  }
+  /* Specifically target the contentEditable div if nested differently */
+  [contenteditable="true"][data-edit-mode="true"] {
+      overflow: visible !important;
+      height: auto !important;
+      min-height: 1em !important;
+  }
+  /* Ensure the direct content wrapper also allows overflow if it exists */
+  .slide-element-content:has(> [data-edit-mode="true"]) {
+      overflow: visible !important;
+      height: auto !important; 
+  }
+  /* --- End Overrides --- */
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Slide animations */
+.slide-enter {
+  opacity: 0;
+  transform: translateX(50px);
+}
+
+.slide-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 500ms, transform 500ms;
+}
+
+.slide-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.slide-exit-active {
+  opacity: 0;
+  transform: translateX(-50px);
+  transition: opacity 500ms, transform 500ms;
+}
+
+/* Tiptap List Styling removed - styles moved to src/styles/TiptapStyles.css */
+
+/* Base styles for editable text content */
+.text-block-content {
+  width: 100%;
+  height: 100%;
+  outline: none; /* Remove browser default outline */
+  white-space: pre-wrap; /* Preserve whitespace and wrap text */
+  word-wrap: break-word; /* Break long words */
+  overflow-wrap: break-word; /* Ensure compatibility */
+  cursor: text; /* Text cursor when editable */
+  padding: 0; /* Base padding, renderer might override */
+  margin: 0; /* Base margin, renderer might override */
+  border: none; /* Ensure no default border */
+  background-color: transparent; /* Ensure no default background */
+  color: inherit; /* Inherit text color */
+  font: inherit; /* Inherit font properties */
+  line-height: inherit; /* Inherit line height */
+  /* text-align: inherit; */ /* Keep inherit for now, TextBlockRenderer will override */
+}
+
+/* Styles when the text block is being edited */
+/* ... existing code ... */
+
+/* Add this CSS rule to prevent scroll anchoring behavior */
+.slide-item-animate {
+  overflow-anchor: none;
+}
+
+/* Prevent iOS Safari bounce scrolling */
+/* Commented out to allow scrolling on landing page */
+/* html {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+} */
+
+/* Allow scrolling only in designated containers */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Content visibility utility for large lists/panels */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 500px 800px;
+}
+
+/* Smooth cursor animations */
+.remote-cursor {
+  transition: transform 0.05s ease-out;
+  will-change: transform;
+}
+
+/* Optimize performance for multiple cursors */
+.cursor-container {
+  transform: translateZ(0); /* Force GPU acceleration */
+  backface-visibility: hidden;
+}
+
+/* Slide card animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* New: fade-and-grow for cards/containers */
+@keyframes fade-grow-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cardReorder {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out;
+}
+
+.animate-fade-grow-in {
+  animation: fade-grow-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Opacity-only fade for cards/decks to avoid transform conflicts */
+@keyframes opacity-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-opacity-in {
+  animation: opacity-in 0.35s ease-out;
+  animation-fill-mode: both;
+}
+
+.animate-slide-in-down {
+  animation: slide-in-down 0.3s ease-out;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out;
+}
+
+/* Expand/collapse transition for chat panel */
+
+/* ... existing code ... */
+
+/* Noise overlay effect */
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.03;
+  z-index: 1;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.03) 2px,
+      rgba(255, 255, 255, 0.03) 4px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    );
+  background-size: 100px 100px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .noise-overlay {
+    opacity: 0.02;
+    background-image: 
+      repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 2px,
+        rgba(255, 255, 255, 0.02) 2px,
+        rgba(255, 255, 255, 0.02) 4px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.02) 2px,
+        rgba(0, 0, 0, 0.02) 4px
+      );
+  }
+}
+
+:global(.dark) .noise-overlay {
+  opacity: 0.02;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.02) 2px,
+      rgba(255, 255, 255, 0.02) 4px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.02) 2px,
+      rgba(0, 0, 0, 0.02) 4px
+    );
+}
+
+/* Image Picker Styles */
+/* Smooth scrollbar for image picker */
+.image-picker-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.3) rgba(0, 0, 0, 0.05);
+}
+
+.dark .image-picker-scroll {
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.05);
+}
+
+.image-picker-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.image-picker-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.image-picker-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.image-picker-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dark .image-picker-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark .image-picker-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.dark .image-picker-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Tab content transitions */
+.image-picker-overlay [role="tabpanel"] {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Selected image indicator animation */
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.image-selected-indicator {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Topic filter pills */
+.topic-filter-pill {
+  transition: all 0.2s ease;
+}
+
+.topic-filter-pill:hover {
+  transform: scale(1.05);
+}
+
+/* Image picker button animation */
+@keyframes sparkle {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+  }
+}
+
+.sparkle-icon {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+/* Loading animation for image search */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Smooth scrollbar for search results */
+.search-results-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+}
+
+.search-results-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search-results-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search-results-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(155, 155, 155, 0.5);
+  border-radius: 3px;
+}
+
+.search-results-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(155, 155, 155, 0.7);
+}
+
+@keyframes blob-float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-50px, -100px) scale(1.1);
+  }
+  66% {
+    transform: translate(50px, -50px) scale(0.9);
+  }
+}
+
+/* Hide scrollbars utility class */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
+
+/* ImagePlaceholder animations */
+@keyframes float-animation {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes sparkle-animation {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(180deg);
+  }
+}
+
+.float-animation {
+  animation: float-animation 3s ease-in-out infinite;
+}
+
+.sparkle-animation {
+  animation: sparkle-animation 2s ease-in-out infinite;
+}
+
+/* Pulsing animation for Select Image button */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5), 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0), 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+  border: 2px solid white !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
+  position: relative !important;
+  background-color: #3b82f6 !important;
+  color: white !important;
+  font-weight: 600 !important;
+}
+
+/* Generate Presentation Button Animation - Subtle version */
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 3s ease-in-out infinite;
+}
+
+/* Disable animations in thumbnail context */
+.slide-thumbnail *,
+.slide-thumbnail *::before,
+.slide-thumbnail *::after {
+  animation: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition: none !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* Force transparent backgrounds in thumbnails to prevent white overlays */
+.slide-thumbnail,
+.slide-thumbnail .slide-container,
+.slide-thumbnail .slide-canvas,
+.slide-thumbnail [data-slide-width],
+.slide-thumbnail [data-slide-height] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Disable custom component animations in thumbnails */
+.slide-thumbnail .custom-component-container * {
+  animation: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+/* Force static rendering for thumbnail custom components */
+.slide-thumbnail [data-component-id] {
+  pointer-events: none !important;
+  animation: none !important;
+}
+
+/* Smooth typing animation for ChatInputView */
+@keyframes typewriter {
+  from {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  }
+  to {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes cursorBlink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+.typing-animation {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter var(--animation-duration, 1.5s) steps(var(--message-length, 50), end) forwards;
+  animation-fill-mode: forwards;
+  /* Ensure text doesn't wrap */
+  max-width: 100%;
+  /* Ensure consistent font sizing */
+  font-size: inherit;
+  line-height: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  /* GPU acceleration for smooth performance */
+  transform: translateZ(0);
+  will-change: clip-path;
+  backface-visibility: hidden;
+  /* Fix for text jump - ensure consistent vertical alignment */
+  vertical-align: baseline;
+  /* Prevent subpixel rendering issues */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.typing-cursor {
+  display: inline-block;
+  font-weight: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  animation: cursorBlink 1s infinite;
+  color: currentColor;
+  margin-left: 1px;
+}
+
+/* Ensure the animation runs smoothly even under heavy load */
+@media (prefers-reduced-motion: no-preference) {
+  .typing-animation {
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Animation for enhancing cards */
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: rgb(249 115 22);
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.7);
+  }
+  50% {
+    border-color: rgb(236 72 153);
+    box-shadow: 0 0 0 10px rgba(249, 115, 22, 0);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border-width: 3px !important;
+}
+
+/* Shimmer animation class */
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Alternative gradient animation */
+@keyframes gradient-x {
+  0%, 100% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-gradient-x {
+  background-size: 200% 100%;
+  animation: gradient-x 3s ease-in-out infinite;
+}
+
+/* Shimmer animation for loading overlays */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Carousel Scrollbar Styles */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thumb-zinc-400::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170);
+  border-radius: 3px;
+}
+
+.scrollbar-thumb-zinc-400::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(113 113 122);
+}
+
+.dark .scrollbar-thumb-zinc-600::-webkit-scrollbar-thumb {
+  background-color: rgb(82 82 91);
+  border-radius: 3px;
+}
+
+.dark .scrollbar-thumb-zinc-600::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(113 113 122);
+}
+
+/* Animations */
+@keyframes animate-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+/* Add shimmer animation class */
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+  animation-fill-mode: forwards; /* Keep the final state */
+}
+
+/* Ensure login page maintains desktop viewport */
+#login-page {
+  min-width: 100vw;
+  width: 100vw;
+  transform: none !important;
+  zoom: 1 !important;
+}
+
+#login-page * {
+  -webkit-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
+}
+
+/* Prevent any viewport scaling during authentication */
+body:has(#login-page) {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}

@@ -1,0 +1,43 @@
+{
+  "id": "modify-video-properties",
+  "description": "Modify video player settings and appearance",
+  "currentSlideId": "slide-1",
+  "prompt": "Modify the existing video component to: 1) enable autoplay with muted audio, 2) add a 10px rounded border with a light blue color, 3) disable the controls, and 4) add a subtle shadow effect.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Product Demo Video",
+      "components": [
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 100 },
+            "width": 600,
+            "height": 80,
+            "texts": [{ "text": "New Product Demo", "style": {} }]
+          }
+        },
+        {
+          "id": "video-1",
+          "type": "Video",
+          "props": {
+            "position": { "x": 350, "y": 220 },
+            "width": 640,
+            "height": 360,
+            "src": "https://example.com/demo-video.mp4",
+            "autoplay": false,
+            "controls": true,
+            "loop": false,
+            "muted": false,
+            "objectFit": "contain",
+            "borderRadius": 0,
+            "borderWidth": 0,
+            "borderColor": "#000000ff",
+            "shadow": false
+          }
+        }
+      ]
+    }
+  ]
+} 

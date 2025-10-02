@@ -1,0 +1,87 @@
+{
+  "color_contrast": {
+    "WCAG_levels": {
+      "AAA": {
+        "normal_text": 7.0,
+        "large_text": 4.5,
+        "description": "Enhanced level"
+      },
+      "AA": {
+        "normal_text": 4.5,
+        "large_text": 3.0,
+        "description": "Minimum level"
+      }
+    },
+    "testing_tools": [
+      "WebAIM Contrast Checker",
+      "Stark (Figma/Sketch)",
+      "Chrome DevTools",
+      "Wave"
+    ],
+    "safe_combinations": [
+      {
+        "bg": "#FFFFFF",
+        "text": "#000000",
+        "ratio": 21
+      },
+      {
+        "bg": "#000000",
+        "text": "#FFFFFF",
+        "ratio": 21
+      },
+      {
+        "bg": "#FFFFFF",
+        "text": "#595959",
+        "ratio": 7.0
+      },
+      {
+        "bg": "#000000",
+        "text": "#969696",
+        "ratio": 7.0
+      }
+    ]
+  },
+  "typography": {
+    "minimum_sizes": {
+      "presentation": "24pt absolute minimum",
+      "handout": "12pt minimum",
+      "captions": "14pt minimum"
+    },
+    "readability": {
+      "fonts": "Sans-serif preferred",
+      "line_height": "1.5\u00d7 minimum",
+      "line_length": "45-75 characters",
+      "justification": "Left-align body text"
+    }
+  },
+  "color_blindness": {
+    "types": {
+      "protanopia": "No red",
+      "deuteranopia": "No green",
+      "tritanopia": "No blue",
+      "achromatopsia": "No color"
+    },
+    "strategies": [
+      "Don't rely on color alone",
+      "Use patterns or labels",
+      "Test with simulators",
+      "High contrast always works"
+    ]
+  },
+  "motion": {
+    "considerations": [
+      "Respect prefers-reduced-motion",
+      "Provide pause controls",
+      "No flashing >3Hz",
+      "Essential info not only in animation"
+    ]
+  },
+  "screen_readers": {
+    "support": [
+      "Logical reading order",
+      "Descriptive alt text",
+      "Proper heading hierarchy",
+      "Meaningful link text"
+    ]
+  }
+}

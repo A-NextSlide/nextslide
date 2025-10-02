@@ -1,0 +1,2020 @@
+{
+  "BACKGROUND_GRADIENT_STRUCTURE_CRITICAL": {
+    "ABSOLUTE_PRIORITY": "⚠️⚠️⚠️ THIS IS THE #1 VALIDATION RULE ⚠️⚠️⚠️",
+    "RULE": "Background component gradient properties MUST ALWAYS be nested inside 'gradient' object",
+    "CORRECT_FORMAT": {
+      "backgroundType": "gradient",
+      "gradient": {
+        "type": "linear",
+        "angle": 135,
+        "stops": [{"color": "#hex", "position": 0}]
+      }
+    },
+    "WRONG_FORMAT_NEVER_USE": {
+      "gradientType": "linear",
+      "gradientAngle": 135,
+      "gradientStops": "[...]",
+      "gradientDirection": 135
+    },
+    "VALIDATION": "If gradientType, gradientAngle, gradientStops, or gradientDirection appear as direct props in Background, REJECT AND FIX IMMEDIATELY",
+    "EXAMPLES_OF_FAILURES": [
+      "Slide 2 error: gradientType, gradientAngle, gradientStops as direct props instead of nested in gradient object",
+      "Slide 3 error: gradientType, gradientStops, gradientDirection as direct props instead of nested in gradient object"
+    ],
+    "HOW_TO_FIX": "Move ALL gradient properties inside a 'gradient' object: gradient: {type: 'linear', angle: 135, stops: [...]}"
+  },
+  "visual_storytelling_mandatory": {
+    "philosophy": "NEVER just display text. ALWAYS transform into visual narratives.",
+    "priority": "HIGHEST - This overrides all other rules",
+    "mandatory_transformations": [
+      "Numbers → Visual achievements (300-800pt)",
+      "Bullets → Designed cards or visual elements",
+      "Processes → Visual journeys or timelines",
+      "Comparisons → Dramatic visual contrasts",
+      "Quotes → Typography art pieces",
+      "Data → Stories with emotion"
+    ],
+    "design_patterns_required": {
+      "title_slides": "Cinematic hero with 600-1000pt text",
+      "data_slides": "Hero statistics with visual hierarchy",
+      "content_slides": "Magazine layouts or card symphonies",
+      "conclusion_slides": "Single powerful visual statement"
+    },
+    "emphasis_techniques": {
+      "use_all": true,
+      "minimum_per_slide": 3,
+      "techniques": [
+        "SIZE: Make heroes 5-10x larger than context",
+        "COLOR: White on accent, accent on neutral",
+        "POSITION: Center = important, asymmetric = dynamic",
+        "SPACING: Isolation = importance",
+        "LAYERING: Create depth with overlapping"
+      ]
+    },
+    "component_requirements": {
+      "minimum_per_slide": 8,
+      "maximum_per_slide": 15,
+      "required_diversity": [
+        "Background with theme color",
+        "2-3 Images (minimum 600×400)",
+        "3-5 TiptapTextBlocks with varied sizes",
+        "0-2 Shapes for functional containers ONLY (text backgrounds)",
+        "1-3 CustomComponents for special effects"
+      ]
+    }
+  },
+  "design_philosophy": {
+    "core_principle": "You're not making slides. You're creating EXPERIENCES.",
+    "visual_hierarchy": [
+      "Find the ONE thing to emphasize",
+      "Make that thing IMPOSSIBLY large",
+      "Everything else supports the hero",
+      "White space is a design element",
+      "Break conventions purposefully"
+    ],
+    "color_usage": {
+      "background": "Can be ANY color from palette, not just white",
+      "accents": "Use BOLDLY for hero elements",
+      "text": "White on dark is POWERFUL - use it",
+      "consistency": "Same palette, different emphasis per slide"
+    },
+    "typography_scale": {
+      "hero_elements": "300-800pt (YES, THAT BIG!)",
+      "supporting_stars": "120-240pt",
+      "context_whispers": "48-72pt",
+      "never_all_same_size": true
+    }
+  },
+  "critical_rules_summary": {
+    "text_sizing": "NO MINIMUM SIZE - Titles maximize to fill space (200-500pt common), body text shrinks to fit ALL content (can go to 8pt if needed)",
+    "dynamic_font_sizing": "Calculate: container_width / (character_count * 0.6) for optimal size. NEVER truncate, always fit.",
+    "height_calculation": "Single line: fontSize × 1.2, Multi-line: fontSize × lines × 1.3, Always add 10-20% buffer",
+    "chart_positioning": "ALWAYS left (x=80) or right (x=960) half, NEVER center, 880px wide",
+    "chart_legends": "ALWAYS false for bar/column/pie charts, only show for multi-series line charts",
+    "overlap_prevention": "Minimum 40px gap between all components, 60px for charts/images",
+    "icon_placement": "Icons NEXT TO text (x: text.x - 60), NEVER overlapping. Align vertically centered with text.",
+    "edge_margins": "Text must be 80px from edges, charts 60px, images can be full-bleed",
+    "shapes_with_text": "ALWAYS use single TiptapTextBlock (NO backgroundColor unless overlaying images)",
+    "image_minimum": "Hero: 1600×900, Feature: 800×600, Cards: 400×500 minimum",
+    "image_boundaries": "CRITICAL: x + width <= 1920, y + height <= 1080. Right-aligned images: max width = 1920 - x",
+    "color_usage": "Use the 3 provided theme colors consistently. Apply accent colors to emphasize key data."
+  },
+  "custom_component_rules": {
+    "no_template_literals": "NEVER use backticks (`) or ${} in CustomComponent render strings; use string concatenation instead",
+    "encoding": "Render must be a single escaped string with \\n for newlines; escape quotes and backslashes",
+    "no_jsx": "Use React.createElement, no JSX/imports/exports",
+    "runtime_note": "Our runtime wraps render code in a template string; nested backticks will cause a SyntaxError",
+    "root_container_style": "Root MUST include: width:'100%', height:'100%', maxWidth:'100%', maxHeight:'100%', boxSizing:'border-box', overflow:'hidden', display:'flex', flexDirection:'column', position:'relative', alignItems:'stretch', justifyContent:'flex-start'",
+    "padding_definition": "CRITICAL: ALWAYS define padding FIRST: const padding = props.padding || 32; before using it in calculations",
+    "compact_layout": [
+      "CRITICAL: MAIN CONTAINER MUST USE flexDirection: 'column' - NEVER 'row'",
+      "BANNED: flexDirection: 'row' for root container (causes title-left content-right layout)",
+      "MANDATORY STRUCTURE: Title at TOP (full width), content BELOW in grid/column",
+      "For content items: Use CSS Grid: display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px'",
+      "Title placement: ALWAYS in separate div at top with width: '100%', marginBottom: '24px'",
+      "Content placement: ALWAYS below title in grid or column layout"
+    ],
+    "fit_and_responsiveness": [
+      "CRITICAL: Define padding FIRST: const padding = props.padding || 32;",
+      "CRITICAL: Always use flexDirection:'column' for vertical stacking of title/value/label elements",
+      "Compute availableWidth = props.width - padding*2 and availableHeight = props.height - padding*2",
+      "Dynamic font sizing: Calculate based on container and text length to prevent overflow",
+      "Title sizing: Math.min(desiredSize, Math.floor(availableWidth / (title.length * 0.5)))",
+      "Value sizing: Math.min(desiredSize, Math.floor(availableWidth / ((value + unit).length * 0.6)))",
+      "Multi-element spacing: Distribute height proportionally (title: 30%, value: 50%, label: 20%)",
+      "For metrics/stats: Stack vertically with title at top, value in middle, label at bottom",
+      "Ensure all text stays within bounds: fontSize * lineHeight <= availableHeight",
+      "Padding management: Use consistent padding (16-32px) and include in size calculations",
+      "Never use fixed heights for text elements; use flex: 1 or percentages"
+    ]
+  },
+  "javascript_string_safety": {
+    "rules": [
+      "CRITICAL: NEVER split string literals across lines in JavaScript code",
+      "CRITICAL: All text must be on ONE LINE - use string concatenation if needed",
+      "Example WRONG: const desc3 = 'Absorbing \\nCO2 from atmosphere'; (newline in code)",
+      "Example RIGHT: const desc3 = 'Absorbing CO2 from atmosphere'; (all on one line)",
+      "If you want visible line break in output, use: 'Line 1\\nLine 2' (escaped \\n)",
+      "Escape all quotes and backslashes in the render string",
+      "Keep ALL variable definitions on single lines, no matter how long"
+    ]
+  },
+  "color_application_rules": {
+    "use_provided_colors": {
+      "mandatory": [
+        "Use ONLY the colors provided by the theme",
+        "Background component: Use the provided background color",
+        "Text: Use the provided text color (auto-selected for contrast)",
+        "Key statistics/numbers: Use PRIMARY ACCENT color",
+        "Secondary emphasis: Use SECONDARY ACCENT color",
+        "Never invent new colors"
+      ],
+      "emphasis_techniques": [
+        "Use accent colors to highlight important data",
+        "Use color and size for emphasis (NO backgrounds)",
+        "White text on accent backgrounds for impact",
+        "Create visual hierarchy with the provided colors"
+      ]
+    }
+  },
+  "overlap_prevention": {
+    "absolute_rules": [
+      "NO component may overlap another - not even 1 pixel",
+      "Minimum 40px vertical gap between all text components",
+      "Minimum 60px gap around charts and images",
+      "Dividers/Lines MUST be placed BELOW text with 40px minimum gap",
+      "Check every component's bounds against every other component",
+      "If components might overlap, reduce sizes or reposition"
+    ],
+    "positioning_strategy": [
+      "Start from top with title at y=80",
+      "Place subtitle below title with 40px gap",
+      "Place content below subtitle with proper gap",
+      "Place dividers LAST, after all text components",
+      "Use x=80 for left-aligned content",
+      "Use x=960 for right-aligned content (charts)",
+      "Center content uses x=80, width=1840, alignment='center'"
+    ],
+    "size_limits": {
+      "max_text_height": "fontSize × lines × 1.3 + 20px buffer",
+      "max_component_width": 1840,
+      "charts": "width=880, height=600-800",
+      "images": "maintain aspect ratio, max-height=800"
+    }
+  },
+  "component_boundary_rules": {
+    "canvas_dimensions": {
+      "width": 1920,
+      "height": 1080,
+      "description": "All components MUST fit within these bounds"
+    },
+    "universal_constraints": [
+      "⚠️ CRITICAL: EVERY component must satisfy: x >= 0 AND y >= 0",
+      "⚠️ CRITICAL: EVERY component must satisfy: x + width <= 1920",
+      "⚠️ CRITICAL: EVERY component must satisfy: y + height <= 1080",
+      "⚠️ CRITICAL: Calculate bounds BEFORE placing ANY component",
+      "⚠️ CRITICAL: If overflow detected, MUST resize or reposition"
+    ],
+    "safe_positioning_zones": {
+      "full_width": {"x": 80, "width": 1760, "description": "80px margins on both sides"},
+      "left_half": {"x": 80, "width": 880, "description": "Left side with margin"},
+      "right_half": {"x": 960, "width": 880, "description": "Right side with margin"},
+      "center": {"x": 160, "width": 1600, "description": "Centered with margins"},
+      "top_safe": {"y": 80, "max_y": 300, "description": "Title area"},
+      "middle_safe": {"y": 300, "max_y": 800, "description": "Main content area"},
+      "bottom_safe": {"min_y": 800, "max_y": 1000, "description": "Footer area"}
+    },
+    "component_specific_limits": {
+      "TiptapTextBlock": {
+        "max_height": 400,
+        "exception": "Full-screen quotes can be 600px",
+        "positioning": "Keep 80px from edges unless intentional overlap"
+      },
+      "Chart": {
+        "max_width": 880,
+        "max_height": 800,
+        "positioning": "ALWAYS position at x=80 (left) or x=960 (right), NEVER center",
+        "margins": "Keep 60px from other components"
+      },
+      "Image": {
+        "min_size": {"width": 200, "height": 150},
+        "max_size": {"width": 1920, "height": 1080},
+        "positioning": "Can be full-bleed (x=0, y=0) or follow safe zones",
+        "overflow_rule": "If x > 960, max width = 1920 - x - 80"
+      },
+      "Icon": {
+        "max_size": {"width": 64, "height": 64},
+        "positioning": "ALWAYS next to text, x = text.x - 70",
+        "alignment": "Vertically center with associated text"
+      },
+      "Shape": {
+        "purpose": "Text containers or dividers ONLY",
+        "positioning": "Must contain associated text components",
+        "overflow_rule": "Container bounds must include all child components"
+      },
+      "CustomComponent": {
+        "min_size": {"width": 600, "height": 400},
+        "max_size": {"width": 1760, "height": 920},
+        "positioning": "Center or use safe zones",
+        "padding": "Internal padding 60-80px to prevent content cutoff"
+      }
+    },
+    "overflow_prevention_rules": [
+      "BEFORE placing: calculate rightEdge = x + width",
+      "BEFORE placing: calculate bottomEdge = y + height",
+      "VERIFY: rightEdge <= 1920 AND bottomEdge <= 1080",
+      "IF overflow: Option 1 - Reduce dimensions to fit",
+      "IF overflow: Option 2 - Reposition to safe zone",
+      "IF overflow: Option 3 - Use standard safe dimensions",
+      "NEVER trust auto-resize - components have fixed dimensions"
+    ],
+    "common_overflow_mistakes": [
+      "❌ Component at y=900 with height=300 (total 1200 > 1080)",
+      "❌ Component at x=1200 with width=800 (total 2000 > 1920)",
+      "❌ Negative positions like x=-50 or y=-20",
+      "❌ Assuming components will auto-fit (they won't)",
+      "❌ Placing multiple components without checking cumulative bounds",
+      "❌ Forgetting to account for component margins/padding"
+    ],
+    "validation_examples": [
+      {
+        "component": "Chart at x=1100, y=200, width=880, height=600",
+        "check_x": "1100 + 880 = 1980 > 1920 ❌",
+        "check_y": "200 + 600 = 800 <= 1080 ✓",
+        "fix": "Move to x=960 (right half position)"
+      },
+      {
+        "component": "TextBlock at x=80, y=850, width=1760, height=300",
+        "check_x": "80 + 1760 = 1840 <= 1920 ✓",
+        "check_y": "850 + 300 = 1150 > 1080 ❌",
+        "fix": "Reduce height to 150 or move to y=700"
+      }
+    ]
+  },
+  "image_boundary_rules": {
+    "note": "See component_boundary_rules for comprehensive constraints",
+    "quick_reference": [
+      "x + width <= 1920",
+      "y + height <= 1080",
+      "Right-aligned: max width = 1920 - x - 80",
+      "Bottom-aligned: max height = 1080 - y - 80"
+    ]
+  },
+  "creative_image_styling": {
+    "rule": "TRANSFORM STATIC IMAGES INTO DYNAMIC VISUAL ELEMENTS",
+    "animation_effects": {
+      "ken_burns": {
+        "use_for": "Hero images, backgrounds, emotional moments",
+        "settings": {"duration": 20, "scale": 1.1},
+        "impact": "Creates subtle movement and life"
+      },
+      "parallax": {
+        "use_for": "Layered compositions, depth effects",
+        "settings": {"layers": "2-3", "speed": "variable"},
+        "impact": "Adds dimensional depth"
+      },
+      "fade_in": {
+        "use_for": "Sequential reveals, emphasis",
+        "settings": {"duration": 0.8, "delay": "staggered"},
+        "impact": "Smooth, professional entrances"
+      },
+      "zoom": {
+        "use_for": "Focus moments, transitions",
+        "settings": {"scale": 1.2, "duration": 1.5},
+        "impact": "Draws attention dramatically"
+      }
+    },
+    "filter_presets": {
+      "dramatic": "High contrast for impact - tech, innovation",
+      "cyberpunk": "Neon teal/purple tints - future tech",
+      "vintage": "Warm sepia tones - nostalgia, history",
+      "dreamy": "Soft blur + light leak - aspirational",
+      "noir": "High contrast B&W - serious, dramatic",
+      "vibrant": "Boosted saturation - energy, excitement",
+      "muted": "Desaturated elegance - luxury, minimal"
+    },
+    "creative_masks": {
+      "circle": "Perfect for portraits, team photos",
+      "hexagon": "Modern tech aesthetic",
+      "diagonal": "Dynamic angular cuts for energy",
+      "rounded": "Soft, friendly appearance",
+      "polaroid": "Instant photo nostalgia"
+    },
+    "overlay_strategies": {
+      "gradient_overlays": [
+        "bottomFade: Ensures text readability",
+        "vignette: Creates focus on center",
+        "radialFade: Spotlight effect",
+        "cinematic: Black bars for movie feel"
+      ],
+      "blend_modes": [
+        "multiply: Rich color blending",
+        "screen: Light, airy effects",
+        "overlay: Balanced enhancement"
+      ]
+    },
+    "layout_patterns": {
+      "full_bleed": "Hero images that command attention",
+      "split_screen": "50/50 image and content balance",
+      "asymmetric": "2/3 or 1/3 dynamic compositions",
+      "collage": "Multiple images creatively arranged",
+      "layered": "Overlapping with transparency for depth",
+      "scattered": "Polaroid-style casual arrangement"
+    }
+  },
+  "creative_layouts": {
+    "split_layouts": {
+      "text_left_chart_right": {
+        "text": {"x": 80, "width": 800},
+        "chart": {"x": 960, "width": 880}
+      },
+      "chart_left_text_right": {
+        "chart": {"x": 80, "width": 880},
+        "text": {"x": 1040, "width": 800}
+      }
+    },
+    "centered_layouts": {
+      "hero_centered": {
+        "title": {"x": 80, "y": 400, "width": 1840, "alignment": "center"},
+        "subtitle": {"x": 80, "y": 520, "width": 1840, "alignment": "center"}
+      },
+      "stats_grid": {
+        "stat1": {"x": 80, "y": 300, "width": 560},
+        "stat2": {"x": 680, "y": 300, "width": 560},
+        "stat3": {"x": 1280, "y": 300, "width": 560}
+      }
+    },
+    "dynamic_layouts": {
+      "cascading": "Components at different x positions creating visual flow",
+      "zigzag": "Alternating left/right alignment",
+      "focal_point": "Large central element with supporting content around"
+    }
+  },
+  "content_transformation": {
+    "mandatory": [
+      "TRANSFORM content, don't just display it!",
+      "EXTRACT key data points and make them HUGE",
+      "BREAK UP text into visual chunks with shapes and colors",
+      "HIGHLIGHT important information with accent colors",
+      "CREATE visual hierarchy - NOT equal-sized paragraphs",
+      "Every word from outline must appear BUT reimagined"
+    ],
+    "transformation_techniques": [
+      "Statistics → Giant numbers (120-240pt) on accent backgrounds with WHITE text",
+      "Paragraphs → Split into 3-5 visual zones with different treatments",
+      "Lists → Each item in its own shape with varied sizes based on importance",
+      "Comparisons → Visual containers showing contrast with size/color/position",
+      "Quotes → Large italic WHITE text on dark shape with attribution",
+      "Long content → Break into magazine-style columns with images between",
+      "Key facts → Pull out and make HUGE with surrounding smaller context",
+      "Numbers → Always emphasize with size + color + background + position"
+    ],
+    "examples": [
+      "\"Revenue grew 45%\" → Giant \"45%\" in accent color with shape_color_1 background",
+      "\"We have 3 key features\" → 3 cards with borders or shadows (NO backgrounds)",
+      "\"Our mission is...\" → Quote-style with subtle shape_color_2 background",
+      "Data table → Visual chart with key numbers in accent colors",
+      "\"92% satisfaction\" → Large 92% on light shape background for contrast"
+    ]
+  },
+  "content_inclusion": {
+    "mandatory": [
+      "ALL text from slide outline MUST appear on the slide",
+      "NEVER truncate or summarize outline content",
+      "If content is long, use smaller font or multiple text blocks",
+      "Charts MUST be included when extractedData exists",
+      "Every word from the outline must be visible"
+    ],
+    "strategies": [
+      "Break long content into multiple TiptapTextBlocks",
+      "Use bullet points for lists",
+      "Adjust font sizes to fit all content",
+      "Use scrollable areas only as last resort"
+    ]
+  },
+  "component_hierarchy": {
+    "text_components": {
+      "tiptap_text_block": {
+        "use_for": "99% of text needs",
+        "when": "ALL regular text, headings, body, lists, tables"
+      },
+      "custom_component": {
+        "use_for": "1% of text needs",
+        "when": "ONLY animated text, counters, special effects"
+      },
+      "text_block": {
+        "use_for": "Fallback only",
+        "when": "If TiptapTextBlock has issues"
+      },
+
+      "custom_component_excellence": {
+        "design_elements": [
+          "Animated backgrounds (particles, waves, gradients)",
+          "Creative text effects (glowing, morphing, typewriter)",
+          "Data visualizations beyond basic charts",
+          "Interactive elements that enhance the story",
+          "Unique brand-specific components"
+        ],
+        "examples": [
+          "Floating geometric patterns in background",
+          "Animated gradient meshes",
+          "Creative progress indicators",
+          "Dynamic typography effects",
+          "Themed decorative elements (e.g., lightning bolts for Pikachu)"
+        ]
+      }
+    }
+  },
+  "design_philosophy": {
+    "no_decoration": [
+      "NO decorative shapes - shapes ONLY for text containers",
+      "NO random geometric elements floating on slides",
+      "NO decorative icons - icons ONLY for bullets/data/infographics",
+      "NO shapes as design elements or visual interest",
+      "NO floating icons in backgrounds or corners",
+      "NO icon patterns or embellishments",
+      "Let content, typography, and images carry the presentation",
+      "Use white space powerfully"
+    ],
+    "gradients": {
+      "professional": "NO gradients or very subtle (5-10% opacity)",
+      "creative": "Subtle gradients allowed",
+      "playful": "Vibrant gradients allowed"
+    },
+    "focus": [
+      "Content is king",
+      "Typography hierarchy creates emphasis",
+      "Clean minimal layouts always win",
+      "Break conventions purposefully, not randomly"
+    ]
+  },
+  "title_slide_requirements": {
+    "mandatory": [
+      "HERO IMAGE (full-bleed 1920×1080 preferred)",
+      "LARGE TYPOGRAPHY (180-300pt for impact)",
+      "CRITICAL: Split title into MULTIPLE TiptapTextBlocks",
+      "Example: 'The Future' → Block 1: 'The' (96pt), Block 2: 'FUTURE' (280pt)",
+      "Use different colors/sizes for each word",
+      "Dramatic gradient overlays for text contrast",
+      "Consider off-center positioning",
+      "TITLE MUST OVERLAP BACKGROUND (image/gradient). Use overlays to ensure readability",
+      "DO NOT use 50/50 split on title slides unless explicitly requested",
+      "Include subtle metadata row when available: presenter • organization • date (24–48pt, muted color)",
+      "Alignment: Support centered OR left-aligned hero titles based on vibe/context",
+      "Optional logo placement: small (80–160px) in a bottom corner with clearspace"
+    ],
+    "layout_options": {
+      "centered_hero": {
+        "text_position": {"x": 160, "y": 240},
+        "text_width": 1840,
+        "font_size": "480pt+"
+      },
+      "off_center_dramatic": {
+        "text_position": {"x": 120, "y": 150},
+        "text_width": 1840,
+        "font_size": "600pt+"
+      },
+      "single_word_mega": {
+        "text_position": {"x": 0, "y": 200},
+        "text_width": 1920,
+        "font_size": "800pt",
+        "alignment": "center"
+      },
+      "left_aligned_stack": {
+        "text_position": {"x": 160, "y": 280},
+        "text_width": 1440,
+        "font_size": "360pt",
+        "alignment": "left",
+        "metadata": {
+          "position": {"x": 160, "y": 920},
+          "size": 32,
+          "color": "#888888"
+        }
+      }
+    }
+  },
+  "data_slide_requirements": {
+    "mandatory": [
+      "CRITICAL: Make data BEAUTIFUL and IMPACTFUL",
+      "Charts are just ONE way - consider creative alternatives",
+      "If using chart: Modern styling with gradients, animations",
+      "ALWAYS complement with HUGE typography for key numbers",
+      "Use CustomComponents for innovative data viz"
+    ],
+    "creative_data_displays": [
+      "Split numbers into multiple TiptapTextBlocks with size/color hierarchy",
+      "Use kpi_cards CustomComponent for metric dashboards",
+      "animated_progress_rings for percentages and progress",
+      "comparison_bars for before/after scenarios",
+      "Combine tiny chart (400x300) with MASSIVE stat display",
+      "Use gradient-filled shapes as backgrounds for numbers"
+    ],
+    "typography_for_data": [
+      "Main number: 200-300pt in accent color",
+      "Descriptor: 72-96pt in secondary color",
+      "Context: 48pt in muted color",
+      "NEVER put important numbers in small text",
+      "Use fontWeight: 'bold' for impact"
+    ],
+    "layout_patterns": [
+      "Hero stat center stage with supporting viz",
+      "3-stat dashboard with size hierarchy",
+      "Before/after split with dramatic contrast",
+      "Trend visualization with key metric highlighted"
+    ]
+  },
+  "stat_emphasis": {
+    "detection": "Look for numbers, percentages, dollar amounts, metrics, KPIs",
+    "treatment": {
+      "size": "180-300pt for KEY stats (MASSIVE impact)",
+      "color": "Use BOLD accent colors, gradients, or contrasting colors",
+      "background": "Glowing shapes, gradient fills, or custom components",
+      "spacing": "Stats should dominate 40-60% of slide space",
+      "multi_block": "Split into multiple TiptapTextBlocks - number huge, descriptor smaller"
+    },
+    "techniques": [
+      "CRITICAL: Use 2-3 TiptapTextBlocks with different sizes/colors",
+      "Example: '$2.5M' at 280pt accent color + 'Revenue' at 96pt secondary",
+      "CustomComponent for animated counting, progress rings, gauges",
+      "Gradient text effects using multiple overlapping blocks",
+      "Background shapes with blur/glow effects",
+      "Consider kpi_cards or animated_progress_rings CustomComponents"
+    ],
+    "layout_patterns": [
+      "Center hero stat with supporting context below",
+      "Split screen - stat left, visualization right",
+      "Multiple stats in dynamic grid with size hierarchy",
+      "Stat with trend arrow/indicator",
+      "Before/after comparison with dramatic size difference"
+    ]
+  },
+  "common_mistakes_to_avoid": {
+    "layout": [
+      "Components too close (< 40px gap)",
+      "Random positioning (not on grid)",
+      "Text too close to edges",
+      "Charts centered instead of half-slide",
+      "Images too small for impact"
+    ],
+    "components": [
+      "Using CustomComponent for static text",
+      "Separate Shape + Text (use single component)",
+      "Setting properties to null (omit instead)",
+      "Hardcoded values in CustomComponent render",
+      "Wrong padding format ('0px' instead of 0)"
+    ],
+    "design": [
+      "Too many decorative elements",
+      "Inconsistent spacing",
+      "Poor text hierarchy",
+      "Images pushing text to corners",
+      "No gradient overlay on hero images"
+    ]
+  },
+  "minimal_content_approach": {
+    "philosophy": "Few words = INFINITE POSSIBILITIES",
+    "options": [
+      "Make it microscopic and force intimacy",
+      "Planet-sized to break boundaries",
+      "Scatter letters across the cosmos",
+      "Stack them into towers",
+      "One word can fill a universe"
+    ]
+  },
+  "content_rich_approach": {
+    "philosophy": "More content = More playground",
+    "options": [
+      "Layer into dimensions",
+      "Create text mazes",
+      "Build information cities",
+      "Compress into dense beauty",
+      "Turn essays into visual symphonies"
+    ]
+  },
+  "creative_approaches": {
+    "paths": {
+      "the_whisper": "So quiet it demands attention",
+      "the_shout": "Overwhelming but harmonious",
+      "the_unexpected": "Text behind shapes, images as typography",
+      "the_classic": "Timeless Swiss design principles",
+      "the_future": "Designs that feel like 2050"
+    },
+    "principle": "There are no mistakes, only discoveries"
+  },
+  "technical_validation": {
+    "always_check": [
+      "All components snap to grid points",
+      "Minimum gaps maintained",
+      "Edge margins validated",
+      "No overlapping components",
+      "Correct property formats (padding: 0 not '0px')",
+      "No null values (omit properties instead)",
+      "Background component: backgroundType must be one of: 'color', 'gradient', 'image', 'pattern'",
+      "Background component GRADIENT FORMAT: When backgroundType='gradient', MUST have 'gradient' object with 'type', 'angle', and 'stops' array",
+      "Background component COLOR FORMAT: When backgroundType='color', MUST have 'backgroundColor' property (single property)",
+      "Background component: NEVER include gradientType, gradientEnabled, gradientDirection, gradientStartColor, gradientStopColor (these are LEGACY)",
+      "Background component: patternType (if used) must be one of: 'dots', 'lines', 'checkered', 'grid' (NEVER 'none' - omit pattern fields if not needed)",
+      "Background component: If backgroundType is NOT 'pattern', DO NOT include patternType field at all",
+      "Image component: animationType must be from allowed values ['none', 'fade-in', 'slide-up', 'slide-down', 'slide-left', 'slide-right']",
+      "Image component: animationEasing must be one of: 'linear', 'ease-in', 'ease-out', 'ease-in-out', 'cubic-bezier' (NEVER 'ease')",
+      "Image component: requires textColor property"
+    ]
+  },
+    "text_component_rules": {
+    "absolute_requirements": [
+      "ALWAYS use TiptapTextBlock for ALL text (99% of cases)",
+      "Set fontFamily in component props (from theme)",
+      "fontWeight must be 'normal' or 'bold' (NEVER numeric)",
+      "fontSize must be numeric (not string)",
+      "Include all styling in props, not just texts array"
+    ],
+    "design_padding_and_backgrounds": [
+      "Padding: Prefer 16–32 for text containers to create breathing room (numeric, not string)",
+      "CRITICAL: NO backgroundColor by default - text should be transparent over slide background",
+      "ONLY add backgrounds for: Card grids, data tiles, or when text overlays images",
+      "If background needed: Maximum 5-10% opacity (e.g., '#00000008' or '{accent}10')",
+      "Border radius: 8–24 ONLY when background is present",
+      "Borders: Optional 1–3px accent border as alternative to backgrounds",
+      "Shadows: Use text shadows for contrast instead of backgrounds"
+    ],
+    "long_title_layout": {
+      "preference": "Prefer widening title blocks over increasing height",
+      "rules": [
+        "Increase width to accommodate long single words; reduce height proportionally",
+        "Allow overlay over images when needed; ensure contrast with gradient/solid overlay",
+        "Keep within safe horizontal margins when possible; if overlapping, maintain readability"
+      ]
+    },
+    "example_correct": {
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 80, "y": 100},
+        "width": 1840,
+        "height": 160,
+        "padding": 24,
+        "fontFamily": "{theme.typography.hero_title.family}",
+        "fontSize": 72,
+        "fontWeight": "bold",
+        "textColor": "#1A1A1A",
+        "backgroundColor": "{accent_1}20",
+        "borderRadius": 16,
+        "texts": [{"text": "Your Title Here"}],
+        "alignment": "center",
+        "verticalAlignment": "middle"
+      }
+    },
+    "common_mistakes": [
+      "Setting padding to 20 or any non-zero value",
+      "Using string '0' or '0px' instead of numeric 0",
+      "Not setting fontFamily in props",
+      "Using numeric fontWeight like 400, 600, 700",
+      "Forgetting to set fontSize in props"
+    ]
+  },
+  "vertical_stacking_rules": {
+    "MANDATORY": "Title and body text MUST stack vertically - NEVER side-by-side",
+    "title_position": "ALWAYS at top (y: 80-200)",
+    "body_position": "ALWAYS below title (y: 300+)",
+    "FORBIDDEN_PATTERNS": [
+      "Title at x:80, Body at x:960 - NEVER DO THIS",
+      "Side-by-side text blocks - BANNED",
+      "Horizontal title/content split - BANNED"
+    ],
+    "correct_pattern": {
+      "title": {"x": 80, "y": 100},
+      "body": {"x": 80, "y": 300},
+      "description": "Both aligned left, stacked vertically"
+    }
+  },
+  "text_background_rules": {
+    "MANDATORY": "OMIT backgroundColor PROPERTY ENTIRELY - DO NOT EVEN INCLUDE IT",
+    "critical": "99% of text should have NO backgroundColor property at all",
+    "default_behavior": "TRANSPARENT - Simply OMIT the backgroundColor property",
+    "never": [
+      "Regular text blocks on slide backgrounds - OMIT backgroundColor",
+      "Headers and titles - OMIT backgroundColor (use size/color for emphasis)",
+      "Bullet points and lists - OMIT backgroundColor",
+      "Standalone quotes or statements - OMIT backgroundColor",
+      "Section headers - OMIT backgroundColor",
+      "Subtitles - OMIT backgroundColor",
+      "Body text - OMIT backgroundColor",
+      "Captions - OMIT backgroundColor"
+    ],
+    "BANNED_PATTERNS": [
+      "backgroundColor: 'transparent' - DON'T include this, just OMIT the property",
+      "backgroundColor: '#00000010' - NO semi-transparent backgrounds by default",
+      "backgroundColor: '{color}20' - NO tinted backgrounds unless critical",
+      "backgroundColor: 'rgba(...)' - NO rgba backgrounds unless overlaying images"
+    ],
+    "RARE_EXCEPTIONS_ONLY": {
+      "overlaying_busy_images": {
+        "frequency": "1% of cases",
+        "when": "Text DIRECTLY over complex busy images",
+        "opacity": "80-90% for readability",
+        "example": "backgroundColor: '#00000090' ONLY when image makes text unreadable"
+      },
+      "data_visualization_labels": {
+        "frequency": "0.5% of cases",
+        "when": "Labels INSIDE complex charts",
+        "opacity": "Match chart requirements",
+        "example": "Only if chart library requires it"
+      }
+    },
+    "alternatives_to_backgrounds": [
+      "textShadow: '2px 2px 8px rgba(0,0,0,0.5)' for strong contrast",
+      "Larger fontSize (200-300pt) for emphasis",
+      "Bright accent colors from theme palette",
+      "fontWeight: 'bold' or 900 for importance",
+      "Strategic positioning in clear areas",
+      "Outline text using text-stroke (CustomComponents only)",
+      "Gradient text using WebkitBackgroundClip (CustomComponents only)"
+    ],
+    "VALIDATION": "If >10% of TiptapTextBlocks have backgroundColor, REDESIGN THE SLIDE"
+  },
+  "theme_consistency_rules": {
+    "critical": "EVERY slide must follow the theme's design system",
+    "background_usage": {
+      "mandatory": "Use theme.background_variations for coordinated backgrounds",
+      "rotation": [
+        "Slide 1 (title): Use 'hero_gradient' variant",
+        "Content slides: Rotate through 'content_mesh' and 'data_gradient'",
+        "Section dividers: Use 'accent_gradient' variant",
+        "Data slides: Use 'data_gradient' variant",
+        "Conclusion: Use 'conclusion_gradient' variant"
+      ],
+      "implementation": "Access via theme.background_variations[index].config"
+    },
+    "theme_overlay_component": {
+      "deprecated": "ThemeOverlay component removed. Do not add overlay components automatically.",
+      "guidance": "Maintain consistency via background_variations, slide_templates, and explicit logo injection."
+    },
+    "slide_templates": {
+      "usage": "Follow theme.slide_templates for consistent positioning",
+      "types": ["title", "content", "data", "section", "conclusion"],
+      "apply": "Use template positions and sizes as starting points"
+    },
+    "color_consistency": {
+      "backgrounds": "Use only colors from theme.background_variations",
+      "text": "Use theme typography colors consistently",
+      "accents": "Apply theme accent colors for emphasis",
+      "forbidden": "NEVER use colors outside the theme palette"
+    },
+    "layout_consistency": {
+      "margins": "Maintain consistent margins across slides (80px standard)",
+      "positioning": "Follow theme.slide_templates for element placement",
+      "spacing": "Use consistent spacing between elements",
+      "alignment": "Follow theme's alignment preferences (centered vs left)"
+    }
+  },
+  "background_component_structure": {
+    "CRITICAL": "⚠️⚠️⚠️ NEVER use gradientType, gradientAngle, gradientStops, gradientDirection as direct props! They MUST be nested inside 'gradient' object!",
+    "MANDATORY_FORMAT": "Background gradient MUST ALWAYS use nested 'gradient' object - NEVER flatten gradient properties to top level",
+    "TOP_PRIORITY": "If you see gradientType, gradientAngle, gradientStops, or gradientDirection as direct props in Background, YOU ARE WRONG!",
+    "CORRECT_STRUCTURE": {
+      "type": "Background",
+      "props": {
+        "position": {"x": 0, "y": 0},
+        "width": 1920,
+        "height": 1080,
+        "backgroundType": "gradient",
+        "gradient": {
+          "type": "linear",
+          "angle": 135,
+          "stops": [
+            {"color": "#011830", "position": 0},
+            {"color": "#003151", "position": 100}
+          ]
+        }
+      }
+    },
+    "color_format": {
+      "type": "Background",
+      "props": {
+        "position": {"x": 0, "y": 0},
+        "width": 1920,
+        "height": 1080,
+        "backgroundType": "color",
+        "backgroundColor": "#hexcolor"
+      }
+    },
+    "WRONG_STRUCTURES": {
+      "NEVER_1": {
+        "comment": "❌ WRONG - gradientType/gradientAngle/gradientStops as direct props",
+        "props": {
+          "gradientType": "linear",
+          "gradientAngle": 145,
+          "gradientStops": "[...]"
+        }
+      },
+      "NEVER_2": {
+        "comment": "❌ WRONG - gradientType/gradientDirection as direct props",
+        "props": {
+          "gradientType": "linear",
+          "gradientDirection": 135,
+          "gradientStops": "[...]"
+        }
+      }
+    },
+    "FORBIDDEN_PROPERTIES": [
+      "gradientType - ❌ NEVER as direct prop - MUST be inside gradient.type",
+      "gradientDirection - ❌ NEVER as direct prop - MUST be inside gradient.angle",
+      "gradientAngle - ❌ NEVER as direct prop - MUST be inside gradient.angle",
+      "gradientStops - ❌ NEVER as direct prop - MUST be inside gradient.stops",
+      "gradientStartColor - ❌ COMPLETELY BANNED",
+      "gradientEndColor - ❌ COMPLETELY BANNED",
+      "gradientStopColor - ❌ COMPLETELY BANNED",
+      "gradientEnabled - ❌ COMPLETELY BANNED",
+      "gradientColors - ❌ COMPLETELY BANNED"
+    ],
+    "VALIDATION": "If you use gradientType, gradientAngle, gradientStops as direct props YOU ARE WRONG!"
+  },
+  "slide_composition_rules": {
+    "mandatory_components": [
+      "EVERY slide MUST START WITH: Background component as the FIRST component",
+      "EVERY slide MUST have: TiptapTextBlock, Image",
+      "Consider: CustomComponent for data visualization only",
+      "Shapes: ONLY for text containers/backgrounds - NO decorative usage",
+      "Icons: For functional purposes ONLY - bullets, data viz, infographics (NO decoration)",
+      "Chart when extractedData exists (ABSOLUTELY MANDATORY - REJECTION IF MISSING)"
+    ],
+    "vertical_stacking_rules": [
+      "CRITICAL: STACK VERTICALLY - Title at TOP, content BELOW",
+      "NEVER place title and body text side-by-side horizontally",
+      "Title position: y=80-200 for top placement",
+      "Body content: y=300+ to be clearly below title",
+      "For multi-block titles: Stack blocks vertically with increasing y values",
+      "Example: 'Welcome to' at y=150, 'THE FUTURE' at y=220",
+      "BANNED LAYOUT: Title at x=100, Body at x=960 (side-by-side)",
+      "CORRECT LAYOUT: Title at y=100, Body at y=300 (stacked)"
+    ],
+    "background_requirements": [
+      "CRITICAL: CRITICAL: Background MUST be the FIRST component in the components array",
+      "CRITICAL: CRITICAL: NO SLIDE WITHOUT BACKGROUND - INSTANT REJECTION",
+      "CRITICAL: USE SOLID BACKGROUNDS from the palette/theme for consistency and readability",
+      "Background types: 'color' (default), 'custom' (animated effects), 'pattern' (very subtle)",
+      "NO GRADIENT BACKGROUNDS: Avoid mesh/linear/radial gradients in backgrounds",
+      "Optional subtle overlays: blurred solid-color shapes at low opacity",
+      "Consider CustomComponent for: animated effects using solid colors",
+      "Choose SOLID COLOR for: ALL slides unless a hero image is used",
+      "Background position MUST be {\"x\": 0, \"y\": 0}",
+      "Background size MUST be width: 1920, height: 1080",
+      "MANDATORY SOLID FORMAT: When backgroundType='color', MUST include 'backgroundColor' with #RRGGBB",
+      "CORRECT EXAMPLE: {\"backgroundType\": \"color\", \"backgroundColor\": \"#F8F9FA\"}",
+      "BANNED PROPERTIES: gradientType, gradientEnabled, gradientDirection, gradientStartColor, gradientEndColor, gradientStopColor, gradientAngle, gradientColors, gradient",
+      "IF YOU USE ANY gradient property YOU WILL BE REJECTED",
+      "MESH GRADIENT: Combine 2-3 gradients at different angles for organic flow",
+      "COLOR SELECTION: Bold, unexpected combinations that still harmonize",
+      "NEVER BORING: Every background should enhance the visual story"
+    ],
+    "chart_enforcement": [
+      "CRITICAL: Include charts on EVERY slide with ANY quantitative data",
+      "Look for: percentages, growth rates, metrics, comparisons, trends",
+      "If slide mentions numbers, CREATE A CHART",
+      "Chart MUST use the exact data from content/extractedData",
+      "Charts should be LARGE (1000x800 min) and DOMINATE the slide",
+      "NO EXCEPTIONS - every data point needs visualization"
+    ],
+    "creative_usage": {
+      "background": "Choose gradient from theme colors OR solid colors based on content needs",
+      "images": "Use multiple images for magazine-style layouts",
+      "shapes": "ONLY for text backgrounds/containers - NO decoration",
+      "customcomponent": "For animated text, counters, special effects"
+    },
+    "layout_variety": [
+      "Don't just stack components vertically",
+      "Use asymmetric layouts for dynamism",
+      "Overlap images with semi-transparent shapes for depth",
+      "Create visual hierarchy with size and position"
+    ]
+  },
+  "component_diversity": {
+    "background": {
+      "use_for": "Visual interest, depth, and consistency",
+      "when": "Every slide, can be gradient, pattern, or solid"
+    },
+    "image": {
+      "use_for": "Content, storytelling, and visual appeal",
+      "when": "Hero, feature, cards, charts, and general content"
+    },
+    "shape": {
+      "use_for": "Text containers ONLY",
+      "when": "Text backgrounds (use semi-transparent)",
+      "transparency_rules": [
+        "Use theme shape_color_1 and shape_color_2 for text backgrounds",
+        "Avoid backgrounds entirely - use shadows/borders instead",
+        "Only use opaque shapes when contrast is excellent",
+        "Test: Can you easily read the text on the shape color?"
+      ]
+    },
+
+    "custom_component": {
+      "use_for": "Animated text, counters, special effects, and complex interactions",
+      "when": "Counters, animated text, special effects, and complex interactions"
+    }
+  },
+  "visual_design_requirements": {
+    "mandatory": [
+      "CRITICAL: Use solid backgrounds from palette/theme for all slides",
+      "CRITICAL: CORRECT SOLID FORMAT: {\"backgroundType\": \"color\", \"backgroundColor\": \"#hex\"}",
+      "CRITICAL: NEVER use any gradient properties on Background components",
+      "CRITICAL: Maintain strong contrast between text and background",
+      "Use sophisticated layouts like uploaded examples - asymmetric, layered",
+      "CREATE visual hierarchy with 4-6 different font sizes",
+      "USE gradient overlays on images for text contrast",
+      "Apply transparency layers (0.1-0.3 for shapes, 0.5-0.7 for overlays)",
+      "Position elements asymmetrically for layout balance",
+      "MINIMUM 8-12 components per slide for richness"
+    ],
+    "background_excellence": {
+      "solid_mastery": [
+        "CRITICAL: Use solid, palette-derived backgrounds as the default",
+        "Choose light or dark based on theme and readability",
+        "Use opacity and blur for subtle depth (no gradients)",
+        "Test readability - ensure text contrast works with your solid background"
+      ],
+      "color_patterns": [
+        "Professional: primary_light background with primary_text",
+        "Executive: primary_dark background with white text",
+        "Creative: light_bg background with accent color highlights"
+      ]
+    },
+    "shape_usage": {
+      "functional_only": [
+        "CRITICAL: Shapes ONLY for text containers/backgrounds",
+        "NO decorative shapes or geometric patterns",
+        "NO layered shape compositions",
+        "Semi-transparent backgrounds for text readability only",
+        "Maximum 1-2 shapes per slide for functional needs"
+      ]
+    },
+    "image_mastery": {
+      "creative_layouts": [
+        "Magazine spread: One massive image (1200×1080+)",
+        "Three-card staggered: Dynamic vertical offsets",
+        "Masonry/Pinterest: Varying heights, tightly packed",
+        "Overlapping depth: Layer with different z-index",
+        "Split screen: Multiple images dividing space"
+      ],
+      "advanced_effects": [
+        "Gradient overlays for text readability",
+        "Filter presets: dramatic, cyberpunk, vintage, dreamy",
+        "Masks: circle, hexagon, diagonal cuts",
+        "Animations: ken-burns, float, parallax",
+        "Blend modes for artistic effects"
+      ],
+      "minimum_sizes": [
+        "Hero: 1920×1080 or 1600×900",
+        "Feature: 800×600 minimum",
+        "Cards: 400×500 minimum",
+        "NO images smaller than 400×400"
+      ]
+    },
+    "color_system": {
+      "5_colors_mandatory": {
+        "primary_dark": "Use for headers, strong emphasis, gradient starts",
+        "primary_mid": "Use for subheaders, gradient transitions",
+        "accent_color": "Use for CTAs, key statistics, highlights",
+        "light_accent": "Use for cards, subtle backgrounds, shape fills",
+        "light_bg": "Use for main backgrounds, gradient ends"
+      },
+      "application": [
+        "Gradients: Combine 2-3 colors smoothly",
+        "Transparency: Layer colors with opacity",
+        "Contrast: Use full range from dark to light",
+        "Never use colors outside the 5-color palette"
+      ]
+    },
+    "component_minimum": {
+      "per_slide": "8-12 components minimum",
+      "required": [
+        "Background (gradient always - linear, radial, or multi-color)",
+        "2-3 Images or visual elements",
+        "3-5 TiptapTextBlocks with varied sizes",
+        "0-2 Shapes - for text containers/backgrounds ONLY",
+        "0-5 Icons - for bullets, data viz, infographics ONLY (NO decoration)",
+        "1-2 CustomComponents for data visualization and effects"
+      ],
+      "layout": "NEVER center everything - use asymmetric compositions"
+    },
+    "layout_principles": {
+      "hero_layouts": "Large image with text overlay or side-by-side",
+      "grid_layouts": "Use 3-column or 2x2 grids for multiple items",
+      "asymmetric": "60/40 or 70/30 splits for layout balance",
+      "layered": "Overlap shapes and images with transparency",
+      "never": ["Center everything", "List everything vertically", "Use same font size throughout"]
+    },
+    "pikachu_example": {
+      "what_went_wrong": [
+        "No hero image of Pikachu",
+        "Plain white background instead of yellow theme",
+        "Boring 3-column text layout",
+        "No visual hierarchy in typography",
+        "Tiny '120 Power' box instead of dramatic visualization",
+        "No functional text containers"
+      ],
+      "how_to_fix": [
+        "Add large Pikachu image as hero element",
+        "Yellow gradient background",
+        "Large dramatic '120 POWER' with electric effects",
+        "Varied font sizes (96pt title, 48pt headers, 32pt body)",
+
+        "CustomComponent for animated power display"
+      ]
+    }
+  },
+  "beautiful_slide_checklist": {
+    "visual_impact": [
+      "Does it have a strong focal point?",
+      "Are images used effectively?",
+      "Is there visual hierarchy?",
+      "Are theme colors applied?"
+    ],
+    "layout_quality": [
+      "Is space used effectively?",
+      "Are components arranged creatively?",
+      "Is there good visual flow?",
+      "Are key elements emphasized?"
+    ],
+    "component_usage": [
+      "Background: Not just white - use colors/gradients",
+      "Images: Large and impactful, not tiny",
+      "Shapes: For text containers ONLY",
+      "Icons: For functional purposes - bullets, data viz (NO decoration)",
+      "CustomComponents: For wow factor on key data"
+    ]
+  },
+  "visual_analysis_aggressive_control": {
+    "take_total_control": {
+      "move_dramatically": "Move components by 100s of pixels, not 10s",
+      "resize_aggressively": "Change font sizes by 2x, 3x, or 0.5x - not 10%",
+      "no_component_safe": "Every component can and should be modified",
+      "dramatic_changes": "Subtle tweaks = failure, dramatic improvements = success"
+    },
+    "shape_positioning": {
+      "underline_shapes": "MUST be positioned BELOW their text",
+      "proper_offset": "position.y = text.y + text.height + 5",
+      "divider_lines": {
+        "critical_rule": "ALWAYS position dividers BELOW all text components",
+        "minimum_gap": "divider.y = lastTextComponent.y + lastTextComponent.height + 40",
+        "order": "Title → Subtitle → Content → THEN Divider",
+        "never_overlap": "Dividers must NEVER overlap with titles, subtitles, or any text"
+      },
+      "z_index_layers": "Background shapes have lower zIndex than text"
+    },
+    "font_sizing_no_limits": {
+      "shrink_to_fit": "Cut off text? Shrink by 50%, 70%, even 90%",
+      "expand_for_impact": "Empty space? Make text 200pt, 300pt, whatever fills it",
+      "no_minimum": "Dense content can go down to 1pt if needed",
+      "never_truncate": "NEVER leave text truncated - shrink until ALL fits",
+      "readability_only": "Font size rules don't exist - only readability matters"
+    },
+    "content_verification": {
+      "check_every_word": "Verify EVERY word from outline appears on screen",
+      "find_truncation": "Look for ... or text cut off mid-sentence",
+      "check_bounds": "Ensure text doesn't extend beyond component bounds",
+      "fix_missing": "If ANY text is missing or cut off, MUST fix it"
+    },
+    "aggressive_repositioning": {
+      "use_full_canvas": "Start at x:0, y:0 or go to x:1920, y:1080",
+      "negative_positions": "OK if part should be off-screen",
+      "rotate_for_flow": "Rotate components for better visual flow",
+      "diagonal_layouts": "Think outside the grid",
+      "scatter_positioning": "Break conventional layouts"
+    }
+  },
+  "absolute_requirements": {
+    "font_sizing": {
+      "no_minimum_size": true,
+      "shrink_until_fits": true,
+      "use_any_size_needed": true,
+      "1pt_to_1000pt": true
+    },
+    "layout_fixes": {
+      "move_overlapping_components": true,
+      "fix_all_truncated_text": true,
+      "position_shapes_correctly": true,
+      "verify_all_content_visible": true
+    },
+    "visual_hierarchy": {
+      "title_massive_vs_body": true,
+      "key_stats_2x_to_5x_larger": true,
+      "dramatic_size_differences": true,
+      "make_important_huge": true
+    }
+  },
+  "content_completeness": {
+    "priority": "highest",
+    "rules": [
+      "Every word from outline MUST be visible",
+      "No text truncation allowed",
+      "All content must fit within bounds",
+      "Shrink font size as much as needed",
+      "Expand containers if necessary",
+      "Break into multiple components if needed"
+    ]
+  },
+  "visual_improvements": {
+    "priority": "critical",
+    "requirements": [
+      "No plain text-only slides",
+      "Use Images, Shapes, Icons, CustomComponents",
+      "Apply theme colors throughout",
+      "Create visual hierarchy with font sizes",
+      "Use full 1920x1080 canvas"
+    ]
+  },
+  "critical_design_rules": {
+    "layout_creativity": {
+      "break_the_grid": {
+        "rule": "CRITICAL: NEVER USE BORING CENTERED STACKS - BE CREATIVE!",
+        "priority": "CRITICAL",
+        "alternatives": [
+          "DIAGONAL COMPOSITIONS: Tilt text 15-45°, create dynamic flow",
+          "SCATTERED CHAOS: Place elements at unexpected positions",
+          "ASYMMETRIC POWER: 70/30 or 80/20 visual weight distribution", 
+          "OVERLAPPING LAYERS: Text over shapes, images under transparent blocks",
+          "CIRCULAR LAYOUTS: Arrange content in curves or circles",
+          "MAGAZINE STYLE: Big image left, text overlay right",
+          "SPLIT SCREEN: Bold color block + content area",
+          "Z-PATTERN: Guide eye movement in Z shape across slide",
+          "CORNER ANCHORING: Push main content to corners",
+          "FLOATING ELEMENTS: No alignment to edges, free-floating design"
+        ]
+      },
+      "size_variation": {
+        "rule": "CREATE DRAMATIC SIZE CONTRASTS",
+        "guidelines": [
+          "Hero elements 3-5x larger than secondary",
+          "Mix tiny details with massive statements",
+          "Use size to create visual hierarchy",
+          "Don't make everything the same size"
+        ]
+      },
+      "creative_positioning": {
+        "rule": "USE THE ENTIRE CANVAS",
+        "techniques": [
+          "Place titles in corners for impact",
+          "Scatter related content across the slide",
+          "Use negative space as a design element",
+          "Create visual flow with positioning"
+        ]
+      }
+    },
+    "component_creativity": {
+      "custom_components": {
+        "rule": "CRITICAL: MANDATORY: CREATE INFOGRAPHIC-STYLE CUSTOMCOMPONENTS",
+        "priority": "HIGHEST",
+        "requirements": [
+          "ALWAYS use CustomComponents for data visualization",
+          "Replace static numbers with kpi_cards or animated_progress_rings",
+          "Replace comparisons with comparison_bars or feature_toggle",
+          "Replace timelines with interactive_timeline",
+          "Replace processes with decision_tree",
+          "Add quiz_component or interactive_poll for engagement",
+          "Use countdown_timer for deadlines",
+          "Use interactive_slider for calculations",
+          "MINIMUM 1-2 CustomComponents per slide when triggers detected"
+        ],
+        "content_triggers": [
+          "Numbers/percentages → kpi_cards",
+          "Before/after → comparison_bars",
+          "Timeline/roadmap → interactive_timeline",
+          "Process/flow → decision_tree",
+          "Quiz/poll → engagement components",
+          "ROI/budget → interactive_slider"
+        ],
+        "avoid": [
+          "Static text for data",
+          "Bullet points for comparisons",
+          "Plain numbers without visualization",
+          "Missing opportunities to visualize"
+        ]
+      },
+      "shape_usage": {
+        "rule": "SHAPES MUST BE FUNCTIONAL, NOT DECORATIVE",
+        "priority": "CRITICAL",
+        "guidelines": [
+          "ONLY use shapes as containers for text or data",
+          "Shapes should frame content, not float randomly",
+          "Every shape must have a purpose (background, container, divider)",
+          "NO scattered decorative circles or squares",
+          "Use shapes to create visual hierarchy and grouping",
+          "Shape opacity: 10-30% for subtle backgrounds"
+        ],
+        "functional_uses": [
+          "Text containers with subtle backgrounds",
+          "Data visualization backgrounds",
+          "Section dividers (thin lines or bars)",
+          "Image frames or masks",
+          "Call-out boxes for important info"
+        ],
+        "allowed_shape_types": {
+          "rectangle": {
+            "use": "Text containers only",
+            "guidelines": "Semi-transparent backgrounds for text"
+          },
+          "restrictions": [
+            "NO decorative shapes",
+            "NO shape compositions",
+            "NO shapes for visual effects",
+            "ONLY functional text containers"
+          ]
+        }
+      }
+    },
+      "animation_choreography": {
+    "rule": "BRING SLIDES TO LIFE WITH PURPOSEFUL ANIMATION",
+    "entrance_animations": {
+      "fade_in": {
+        "use_for": "Subtle text and image reveals",
+        "timing": "400-600ms",
+        "easing": "ease-out"
+      },
+      "slide_in": {
+        "use_for": "Sequential content, lists, steps",
+        "timing": "300-500ms",
+        "direction": "from left/right/bottom"
+      },
+      "scale_up": {
+        "use_for": "Important numbers, key points",
+        "timing": "500-700ms",
+        "scale": "0.8 to 1.0"
+      },
+      "bounce_in": {
+        "use_for": "Playful elements, achievements",
+        "timing": "600-800ms",
+        "easing": "spring"
+      }
+    },
+    "choreography_patterns": {
+      "staggered_reveal": {
+        "description": "Elements appear one by one with overlap",
+        "delay": "100-200ms between elements",
+        "use_for": "Lists, process steps, timelines"
+      },
+      "parallel_entrance": {
+        "description": "Related elements animate together",
+        "timing": "Same duration for all",
+        "use_for": "Comparison data, related stats"
+      },
+      "cascade_effect": {
+        "description": "Wave-like appearance from direction",
+        "delay": "50-100ms progressive",
+        "use_for": "Grid layouts, card collections"
+      }
+    },
+    "attention_effects": {
+      "pulse": "Subtle scale animation for CTAs",
+      "glow": "Soft shadow pulse for emphasis",
+      "shake": "Micro movement for alerts",
+      "float": "Gentle up-down for ambient motion"
+    },
+    "timing_guidelines": [
+      "Title elements: 600-800ms entrance",
+      "Body content: 400-600ms staggered",
+      "Data/stats: 500-700ms with emphasis",
+      "Images: 800-1000ms with ken-burns",
+      "Total choreography: Under 2 seconds"
+    ]
+  },
+  "creative_chart_visualization": {
+    "rule": "TRANSFORM DATA INTO VISUAL STORIES",
+    "innovative_chart_types": {
+      "treemap": {
+        "use_for": "Hierarchical data, market segments",
+        "visual": "Nested rectangles with size = value"
+      },
+      "sankey": {
+        "use_for": "Flow diagrams, conversion funnels",
+        "visual": "Flowing ribbons showing connections"
+      },
+      "sunburst": {
+        "use_for": "Multi-level breakdowns",
+        "visual": "Radial hierarchy, interactive drill-down"
+      },
+      "radar": {
+        "use_for": "Multi-dimensional comparisons",
+        "visual": "Spider web showing strengths/weaknesses"
+      },
+      "waterfall": {
+        "use_for": "Progressive changes, financial breakdowns",
+        "visual": "Floating columns showing increases/decreases"
+      },
+      "gauge": {
+        "use_for": "Single KPI performance",
+        "visual": "Speedometer-style metric display"
+      },
+      "bubble": {
+        "use_for": "3-variable relationships",
+        "visual": "Circles where size = third dimension"
+      }
+    },
+    "creative_styling": {
+      "gradient_fills": "Use theme gradients in bars/areas",
+      "animated_entrance": "Bars grow, lines draw, pies rotate in",
+      "highlight_key_data": "Different color for important values",
+      "annotations": "Callout boxes for insights",
+      "3d_depth": "Subtle shadows and perspective",
+      "custom_markers": "Icons instead of dots in line charts"
+    },
+    "storytelling_techniques": [
+      "Progressive reveal: Show data in stages",
+      "Comparison lines: Add benchmarks/targets",
+      "Trend arrows: Indicate direction of change",
+      "Color coding: Use semantics (green=good, red=bad)",
+      "Mixed types: Line + column for dual metrics"
+    ],
+    "variety_rules": [
+      "NEVER repeat chart type on consecutive slides",
+      "Prefer innovative types over basic bar/pie",
+      "Match visualization metaphor to content",
+      "Consider memorability over convention"
+    ]
+  },
+  "creative_color_strategies": {
+    "rule": "USE BOLD, UNEXPECTED COLOR COMBINATIONS",
+    "color_psychology": {
+      "energy_palettes": {
+        "electric": ["#00FFFF", "#FF00FF", "#FFFF00", "#00FF00"],
+        "sunset": ["#FF6B6B", "#FF8E53", "#FE6B8B", "#FF8E53"],
+        "ocean": ["#00B4D8", "#0077B6", "#90E0EF", "#00F5FF"]
+      },
+      "mood_palettes": {
+        "innovative": "Combine unexpected colors like teal + coral",
+        "luxurious": "Deep jewel tones + metallic accents",
+        "playful": "Bright primaries + pastels",
+        "sophisticated": "Monochromatic with accent pops"
+      }
+    },
+    "gradient_strategies": {
+      "mesh_gradients": "Multiple color points for organic flow",
+      "duo_tone": "Two bold colors for striking effect",
+      "iridescent": "Shifting colors like oil slick",
+      "aurora": "Flowing northern lights effect",
+      "sunset_blend": "Warm oranges to cool purples"
+    },
+    "color_application": {
+      "hero_elements": "Use brightest, most saturated colors",
+      "backgrounds": "Gradient meshes or deep tones",
+      "accents": "Neon or metallic highlights",
+      "text": "High contrast but not pure black/white",
+      "shapes": "Gradient fills with color transitions"
+    },
+    "creative_rules": [
+      "NEVER use safe corporate blue/gray combos",
+      "Always include at least one unexpected color",
+      "Use color to create emotional impact",
+      "Gradient everything - backgrounds, shapes, even text shadows",
+      "Think like a festival poster designer"
+    ]
+    },
+    "visual_impact": {
+      "be_memorable": {
+        "rule": "EVERY SLIDE SHOULD BE SCREENSHOT-WORTHY",
+        "priority": "HIGH",
+        "techniques": [
+          "Create 'wow' moments",
+          "Use unexpected layouts",
+          "Apply theme colors boldly",
+          "Unique visual metaphors",
+          "Professional but not predictable"
+        ]
+      },
+      "data_as_art": {
+        "rule": "MAKE DATA BEAUTIFUL",
+        "implementation": [
+          "Unconventional chart types",
+          "Integrated visualizations",
+          "Data as part of the design",
+          "Creative representations"
+        ]
+      }
+    },
+    "spacing_and_hierarchy": {
+      "rule": "ZERO TOLERANCE FOR OVERLAPS",
+      "priority": "CRITICAL",
+      "spacing_rules": {
+        "text_to_text": "Minimum 60px between ANY text blocks",
+        "component_gaps": "80px standard, 60px absolute minimum",
+        "section_dividers": "100-150px between major sections",
+        "edge_margins": "80px from ALL canvas edges (no exceptions)",
+        "chart_buffers": "100px minimum around charts",
+        "vertical_spacing": "Components MUST NOT overlap vertically - check y + height",
+        "horizontal_spacing": "Components MUST NOT overlap horizontally - check x + width"
+      },
+      "overlap_prevention": [
+        "MANDATORY: Calculate bounds for EVERY component",
+        "If comp1.y + comp1.height > comp2.y, they overlap!",
+        "If comp1.x + comp1.width > comp2.x AND same vertical space, they overlap!",
+        "ANY overlap detected = immediate repositioning required",
+        "When in doubt, add 100px spacing",
+        "Visual analyzer MUST fix ALL overlaps aggressively"
+      ],
+      "text_overflow_prevention": [
+        "Calculate required height: fontSize × estimated_lines × 1.8",
+        "If text doesn't fit, SHRINK fontSize immediately",
+        "Never let text extend beyond component bounds",
+        "Check for '...' or truncation - fix immediately"
+      ]
+    },
+    "font_sizing": {
+      "rule": "NO MINIMUM FONT SIZE - FIT THE CONTENT",
+      "priority": "CRITICAL",
+      "guidelines": {
+        "hero_text": "Can be 400-800pt for single words",
+        "body_text": "Can be 8pt if needed to fit content",
+        "dynamic_sizing": "Adjust font size to make ALL content visible",
+        "readability": "Ensure contrast and spacing, not just size"
+      }
+    },
+    "charts_and_data": {
+      "rule": "CHARTS MUST DOMINATE THE SLIDE AND OVERLAP FOR IMPACT",
+      "priority": "CRITICAL - INCLUDE CHARTS ON EVERY DATA SLIDE",
+      "requirements": {
+        "minimum_size": "1000x700px absolute minimum",
+        "optimal_size": "1200x900px for maximum impact",
+        "positioning": "Can overlap with titles and text for modern design",
+        "theme_mode": "Match chart theme to background (light/dark)",
+        "legends": "ALWAYS disable legends - showLegend: false",
+        "tick_spacing": "Default to 1 (show all labels)",
+        "label_size": "Keep axis labels SMALL (12-16px) to emphasize data"
+      },
+      "size_guidelines": {
+        "large_impactful_chart": {
+          "width": 1200,
+          "height": 900,
+          "position": {"x": 0, "y": 100},
+          "note": "Can extend to edges for dramatic effect"
+        },
+        "standard_overlapping_chart": {
+          "width": 1000,
+          "height": 800,
+          "position_left": {"x": 20, "y": 120},
+          "position_right": {"x": 920, "y": 120},
+          "note": "Overlap with titles at top"
+        },
+        "modern_layout": {
+          "full_bleed": "Charts can go edge-to-edge",
+          "overlapping": "Position text OVER chart areas",
+          "dramatic": "Use 60-80% of slide for chart",
+          "labels": "Keep all text labels at 12-16px"
+        }
+      },
+      "color_requirements": {
+        "critical": "MUST use theme colors, NEVER default chart colors",
+        "data_colors": {
+          "primary": "theme.primary_accent",
+          "secondary": "theme.secondary_accent",
+          "tertiary": "theme.text_color with opacity",
+          "additional": "variations of primary/secondary"
+        },
+        "forbidden_colors": [
+          "Default Chart.js colors (#FF6384, #36A2EB, #FFCE56)",
+          "Any color not from theme palette",
+          "Random or hardcoded colors"
+        ],
+        "example": "bar chart colors: [{color: primary_accent}, {color: secondary_accent}]"
+      }
+    },
+    "aggressive_visual_analysis": {
+      "rule": "VISUAL ANALYZER CAN OVERRIDE EVERYTHING",
+      "priority": "ULTIMATE",
+      "powers": [
+        "Move components by 100s of pixels",
+        "Resize fonts by 2-3x",
+        "Completely reorganize layouts",
+        "Ensure ALL content is visible",
+        "Fix any design issues"
+      ]
+    }
+  },
+  "text_shape_alignment": {
+    "critical_rule": "Text should be TRANSPARENT by default - NO backgroundColor unless critical",
+    "never_do": "NEVER create separate Shape and Text components",
+    "correct_approach": {
+      "component": "TiptapTextBlock",
+      "properties": {
+        "backgroundColor": "OMIT (transparent) or use ONLY when overlaying images",
+        "borderRadius": "OMIT unless backgroundColor is used",
+        "padding": 0,
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "textShadow": "Use for contrast instead of backgrounds"
+      }
+    },
+    "alignment_rules": {
+      "title_blocks": {
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "why": "Prevents text from overlapping with block edges"
+      },
+      "centered_content": {
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "why": "Perfect for single stats or key points"
+      },
+      "body_text": {
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "why": "Natural reading flow for longer content"
+      },
+      "critical": "ALWAYS set both alignment AND verticalAlignment to prevent text overlap"
+    },
+    "why": "When text moves, its background MUST move with it as ONE unit",
+    "priority": "HIGHEST"
+  },
+  "theme_fonts_enforcement": {
+    "critical_rule": "ALWAYS use theme fonts, NEVER default to Inter unless it's the theme font",
+    "implementation": {
+      "every_text_component": "fontFamily MUST be set from theme.typography",
+      "tiptap_text_block": "fontFamily in props, not just in texts array",
+      "custom_components": "Replace 'Inter' with theme fonts in render functions"
+    },
+    "theme_access": {
+      "hero_font": "theme.typography.hero_title.family",
+      "body_font": "theme.typography.body_text.family"
+    },
+    "priority": "HIGHEST"
+  },
+  "design_philosophy": {
+    "modern_sophisticated": [
+      " GRADIENTS: Use SUBTLE gradients for 80% of slides - elegant depth without distraction",
+      "🌈 GRADIENT SUBTLETY: 10-20% color difference between stops for sophistication",
+      " COLOR HARMONY: Use 2-3 main colors with 2 supporting colors for balance",
+      "📐 LAYOUT: Clean, purposeful asymmetry - not chaotic scattering",
+      "🔤 TYPOGRAPHY: Elegant size hierarchy (36pt to 240pt) with clear purpose",
+      "🧩 COMPONENTS: Use 6-10 FUNCTIONAL components per slide",
+      "🖼️ IMAGES: High-quality images with subtle treatments",
+      "⚪ SHAPES: ONLY functional shapes - containers, dividers, backgrounds",
+      "FORBIDDEN: FORBIDDEN: Random decorative shapes, harsh gradients, color chaos",
+      "GOAL: GOAL: Beautiful, sophisticated slides with purpose and clarity"
+    ],
+    "background_strategy": {
+      "default_choice": " Use SUBTLE gradients for sophisticated depth - avoid harsh transitions",
+      "gradient_format": "backgroundType: 'gradient', gradient: {type: 'linear'|'radial', angle: 90|135|180, stops: [{color: palette_color, position: 0-100}]}",
+      "solid_format": "backgroundType: 'color', backgroundColor: '#hex' (clean and minimal)",
+      "when_to_use_gradients": "60-70% of slides - subtle depth and sophistication",
+      "when_to_use_solids": "30-40% of slides - for clean, focused content",
+      "gradient_rules": [
+        "Use colors that are only 10-20% different in brightness",
+        "Prefer analogous colors from the palette",
+        "Avoid extreme color transitions",
+        "Consider using opacity gradients for extra subtlety"
+      ],
+      "examples": [
+        "Elegant: Linear gradient with 15% brightness difference at 135°",
+        "Professional: Primary color to 90% opacity of same color at 90°",
+        "Sophisticated: Radial gradient with subtle color shift from center",
+        "Clean: Solid background with functional shape overlays",
+        "Refined: Two analogous colors with smooth transition",
+        "Minimal: Very subtle gradient using neighboring palette colors",
+        "Premium: Three-stop gradient with harmonious color progression"
+      ]
+    },
+    "typography_hierarchy": {
+      "mandatory_sizes": {
+        "hero": "120-180pt for main element (up to 240pt for single words)",
+        "secondary": "80-120pt for supporting headers",
+        "tertiary": "56-80pt for section titles",
+        "body": "32-48pt for main content",
+        "details": "24-32pt for supporting text"
+      },
+      "creative_placement": [
+        "Off-center positioning",
+        "Overlapping with transparency",
+        "Diagonal baselines",
+        "Text bleeding off edges"
+      ],
+      "key_information_emphasis": {
+        "rule": "USE LARGE, OUTSIZED TEXT TO HIGHLIGHT KEY POINTS",
+        "guidelines": [
+          "Key statistics/numbers: 180-240pt minimum",
+          "Important single words: 200-300pt for maximum impact",
+          "Critical takeaways: 120-180pt with bold weight",
+          "Make the MOST IMPORTANT info IMPOSSIBLE to miss",
+          "Use size contrast to create visual hierarchy",
+          "Less important text should be 3-4x smaller than key points"
+        ],
+        "examples": [
+          "Revenue number '$2.5M' at 240pt while context at 48pt",
+          "Growth percentage '300%' at 200pt with supporting text at 36pt",
+          "Key word 'INNOVATION' at 280pt as slide focal point",
+          "Main statistic takes up 30-40% of slide space"
+        ]
+      }
+    }
+  },
+  "icon_functional_usage": {
+    "critical_rule": "Icons ONLY for functional purposes - NO decoration",
+    "description": "Icons allowed for bullets, data visualization, infographics - FORBIDDEN for decoration",
+    "allowed_uses": [
+      "Bullet point replacements with meaningful icons",
+      "Data visualization (4/10 as 4 filled + 6 empty icons)",
+      "Inline icons to support text meaning",
+      "Process step indicators",
+      "Metric enhancement (growth arrows, user icons)"
+    ],
+    "forbidden_uses": [
+      "NO floating background icons",
+      "NO decorative icon patterns",
+      "NO icons just to fill space",
+      "NO random icon placement",
+      "NO icons as slide embellishment"
+    ],
+    "implementation": {
+      "type": "Icon",
+      "libraries": ["lucide", "heroicons", "feather", "tabler"],
+      "sizes": {
+        "bullets": "24-32px",
+        "inline": "16-24px",
+        "features": "48px",
+        "infographics": "32-48px"
+      }
+    }
+  },
+  "emoji_prohibition": {
+    "priority": "CRITICAL",
+    "description": "NEVER use emojis in any slide content",
+    "rules": [
+      "NO emojis in text content",
+      "NO emojis in CustomComponents",
+      "NO emojis in titles or headings",
+      "NO emojis as bullet points",
+      "NO emojis for decoration",
+      "NO emoji reactions or icons"
+    ],
+    "examples": {
+      "wrong": "Welcome! 🎉", 
+      "correct": "Welcome!",
+      "wrong_bullet": "• 🚀 Launch new product",
+      "correct_bullet": "• Launch new product",
+      "wrong_custom": "render: '🔥 Hot Deal!'",
+      "correct_custom": "render: 'Hot Deal!'"
+    }
+  },
+  "customcomponent_excellence": {
+    "description": "CRITICAL: MANDATORY: Use CustomComponents for ANY data visualization or infographic opportunity",
+    "priority": "CRITICAL",
+    "minimum_usage": "At least 1-2 CustomComponents per slide when relevant content is detected",
+    "layout_integration": {
+      "holistic_design": "CustomComponents must be designed with the ENTIRE slide layout in mind",
+      "not_isolated_boxes": "NEVER create components that are just 'data in boxes' - integrate with other elements",
+      "composition_rules": {
+        "with_textblocks": "When paired with TextBlocks, CustomComponent should visually complement and extend the text content",
+        "with_images": "CustomComponents can overlay or integrate with images for infographic effects",
+        "with_shapes": "Use shapes to create visual connections between CustomComponent and other elements",
+        "standalone": "When alone, CustomComponent should fill the slide meaningfully, not just center a small box"
+      },
+      "layout_patterns": {
+        "side_by_side": "Text on left (40%), CustomComponent visualization on right (60%)",
+        "top_bottom": "Key message text at top, supporting CustomComponent below",
+        "integrated": "CustomComponent as background with text overlays",
+        "full_slide": "CustomComponent takes full slide with integrated text elements",
+        "asymmetric": "CustomComponent as hero element (70%) with supporting text (30%)"
+      },
+      "visual_flow": "Guide the eye through the slide - CustomComponent should lead to or support the main message"
+    },
+    "sizing_rules": {
+      "container_sizing": "ALWAYS use full available space - width: 1600-1800px, height: 600-800px minimum",
+      "prevent_cropping": "Add 100-200px extra height buffer to prevent bottom content from being cut off",
+      "text_sizing": "APPROPRIATE sizes: 24-32px for body text, 48-64px for headers, 96-144px for hero numbers",
+      "padding": "Use generous padding: 60-80px to prevent edge cropping",
+      "overflow": "Set overflow: 'hidden' on outer container to prevent content from spilling outside the component bounds",
+      "content_fitting": {
+        "critical": "ALL content MUST fit within the component's width and height",
+        "calculations": "Calculate element sizes based on container dimensions",
+        "responsive_text": "If text might overflow, reduce fontSize until it fits",
+        "grid_layouts": "Use CSS Grid with proper gap spacing to prevent overflow",
+        "flex_layouts": "Use flexWrap: 'wrap' if items might exceed width",
+        "absolute_positioning": "Ensure absolutely positioned elements stay within bounds"
+      }
+    },
+    "creativity_requirements": {
+      "unique_to_content": "EVERY CustomComponent must be UNIQUELY designed for the specific slide content",
+      "examples": {
+        "photosynthesis": "Create an interactive chloroplast cell with labeled organelles, animated electron transport chain, hoverable thylakoid stacks showing light reactions",
+        "business_metrics": "Design a 3D dashboard with floating metric cards, animated trend lines, interactive drill-down capabilities",
+        "process_flow": "Build a dynamic pipeline with flowing particles, stage transitions, real-time progress indicators",
+        "comparison": "Develop a morphing visualization that transforms between states, with smooth interpolation"
+      },
+      "minimum_complexity": "Each CustomComponent should have at least 3-5 interactive or animated elements",
+      "visual_richness": "Use gradients, shadows, animations, hover effects, and transitions extensively"
+    },
+    "when_to_use": {
+      "quiz_slides": {
+        "triggers": ["test", "quiz", "assessment", "check understanding", "knowledge", "question"],
+        "component": "quiz_component",
+        "reason": "Interactive learning reinforces retention"
+      },
+      "audience_feedback": {
+        "triggers": ["poll", "vote", "opinion", "feedback", "what do you think", "survey"],
+        "component": "interactive_poll", 
+        "reason": "Real-time engagement captures audience sentiment"
+      },
+      "statistics_hero": {
+        "triggers": ["growth", "increase", "improvement", "metrics", "kpi", "performance", "%", "roi", "revenue", "cost", "data", "statistics", "numbers"],
+        "component": "hero_metric_showcase, multi_stat_dashboard, animated_progress_rings or kpi_cards",
+        "reason": "CRITICAL: Make every number a visual masterpiece! Use multiple TiptapTextBlocks + CustomComponents",
+        "technique": "Split data: huge number (240pt) + descriptor (96pt) + context (48pt) + visual enhancement"
+      },
+
+      "percentage_infographics": {
+        "triggers": ["% of people", "out of", "proportion", "fraction", "75%", "80%", "majority"],
+        "component": "icon_percentage_display",
+        "reason": "Use filled/unfilled icons to visualize percentages (e.g., 3 filled + 1 empty icon for 75%)",
+        "technique": "Create CustomComponent with icons: filled={Math.round(percentage/100*totalIcons)} unfilled={totalIcons-filled}"
+      },
+      "comparisons": {
+        "triggers": ["before after", "vs", "comparison", "difference", "change", "old new", "then now"],
+        "component": "comparison_bars or feature_toggle",
+        "reason": "Interactive comparisons are more memorable"
+      },
+      "timelines": {
+        "triggers": ["timeline", "roadmap", "journey", "phases", "steps", "milestones", "schedule", "plan"],
+        "component": "interactive_timeline",
+        "reason": "Clickable progression enhances understanding"
+      },
+      "processes": {
+        "triggers": ["process", "flow", "decision", "framework", "methodology", "approach", "strategy"],
+        "component": "decision_tree",
+        "reason": "Interactive decision flows clarify complex processes"
+      },
+      "calculations": {
+        "triggers": ["calculator", "roi", "budget", "investment", "savings", "cost benefit"],
+        "component": "interactive_slider",
+        "reason": "Dynamic calculations engage analytical audiences"
+      },
+      "urgency": {
+        "triggers": ["deadline", "launch", "countdown", "limited time", "expires", "coming soon"],
+        "component": "countdown_timer",
+        "reason": "Dynamic countdowns create excitement"
+      },
+      "decisions": {
+        "triggers": ["choose", "decision", "options", "paths", "alternatives"],
+        "component": "decision_tree",
+        "reason": "Interactive exploration of choices"
+      },
+      "calculations": {
+        "triggers": ["calculate", "roi", "savings", "budget", "cost"],
+        "component": "interactive_slider",
+        "reason": "Let audience explore scenarios themselves"
+      }
+    },
+    "component_pairing": {
+      "quiz_with_results": "Quiz → animated results display",
+      "poll_with_insights": "Poll → data visualization of results",
+      "metrics_with_context": "KPI cards → supporting explanation",
+      "timeline_with_details": "Timeline → expandable event details"
+    },
+    "slide_enhancement_rules": [
+      "Title slides: Add morphing_blob background effects (NO decorative icons)",
+      "Data slides: Replace static numbers with animated_counters",
+      "Process slides: Convert to interactive_timeline",
+      "Comparison slides: Use feature_toggle for dynamic comparison",
+      "Achievement slides: Add particle_burst for celebration",
+      "Question slides: Include reaction_picker for feedback"
+    ],
+    "advanced_patterns": {
+      "progressive_disclosure": "Start simple, reveal complexity through interaction",
+      "gamification": "Use quizzes and polls to maintain engagement",
+      "data_storytelling": "Animate metrics to show progression",
+      "interactive_exploration": "Let audience control information flow"
+    },
+    "technical_implementation": {
+      "use_react_hooks": "useState for state, useEffect for lifecycle",
+      "animation_performance": "CSS animations over JS when possible",
+      "prop_extraction": "EVERY value must be a configurable prop",
+      "theme_integration": "Always use theme colors, never hardcode",
+      "responsive_sizing": "Calculate sizes based on container",
+      "minimum_dimensions": {
+        "container": "width >= 1600px, height >= 700px",
+        "text_elements": "fontSize >= 48px for any text, 72px preferred",
+        "interactive_areas": "min 80x80px for touch targets",
+        "padding": "minimum 80px to prevent edge clipping"
+      },
+      "text_size_guidelines": {
+        "small_labels": "16-20px with fontWeight: 600",
+        "labels": "18-24px with fontWeight: 600-700",
+        "body_text": "24-32px with fontWeight: 500-600",
+        "headings": "48-64px with fontWeight: 700-900",
+        "hero_numbers": "96-144px with fontWeight: 800-900",
+        "small_annotations": "16px minimum with fontWeight: 500",
+        "rule": "Make text BOLD and IMPACTFUL through weight and contrast"
+      },
+      "text_formatting_excellence": {
+        "font_weights": {
+          "regular_text": "fontWeight: 500 minimum - never 400 or normal",
+          "emphasis": "fontWeight: 700-800 for important content",
+          "hero_text": "fontWeight: 900 for maximum impact",
+          "labels": "fontWeight: 600-700 for clarity"
+        },
+        "visual_hierarchy": {
+          "contrast": "Use color contrast to make text pop - bright colors on dark backgrounds",
+          "spacing": "Add letterSpacing: '0.5px' to '2px' for headers",
+          "line_height": "lineHeight: 1.4-1.6 for body, 1.2 for headers",
+          "text_shadow": "Add subtle shadows for depth: textShadow: '0 2px 4px rgba(0,0,0,0.3)'"
+        },
+        "standout_techniques": {
+          "color_emphasis": "Use theme accent colors for key metrics and data",
+          "background_highlights": "Add semi-transparent backgrounds to important text blocks",
+          "border_accents": "Use colored borders or underlines for section headers",
+          "gradient_text": "Apply gradients to hero numbers: background: linear-gradient, WebkitBackgroundClip: 'text'"
+        }
+      },
+      "content_boundary_rules": {
+        "box_sizing": "ALWAYS use boxSizing: 'border-box' on containers",
+        "width_calculation": "content width = container width - (padding * 2)",
+        "height_calculation": "content height = container height - (padding * 2)",
+        "text_overflow_prevention": {
+          "use_ellipsis": "textOverflow: 'ellipsis' for single lines",
+          "word_wrap": "wordWrap: 'break-word' for multi-line text",
+          "dynamic_sizing": "Calculate fontSize based on text length and container width",
+          "formula": "fontSize = Math.min(maxSize, containerWidth / (characterCount * 0.6))"
+        },
+        "layout_constraints": {
+          "grid_gaps": "Include gap in total width: totalWidth = itemWidth * columns + gap * (columns - 1)",
+          "flex_spacing": "Account for all margins and gaps in flex layouts",
+          "absolute_bounds": "x + width must be <= container width, y + height must be <= container height"
+        },
+        "safe_zones": {
+          "inner_padding": "Keep 40-60px from all edges",
+          "element_spacing": "Minimum 20px between elements",
+          "text_padding": "Add 20px padding around text blocks"
+        }
+      }
+    },
+    "creative_examples_by_topic": {
+      "science": {
+        "biology": "Interactive 3D cell with organelles, animated DNA replication, protein synthesis visualization",
+        "chemistry": "Periodic table with element details on hover, molecular bonding animations, reaction simulations",
+        "physics": "Force vector diagrams, wave interference patterns, gravity simulations with orbiting objects"
+      },
+      "business": {
+        "metrics": "Real-time dashboard with animated counters, trend sparklines, predictive projections",
+        "process": "Conveyor belt visualization, pipeline with flowing data, stage-gate animations",
+        "org_chart": "Interactive hierarchy with expand/collapse, role details on hover, connection animations"
+      },
+      "education": {
+        "timeline": "Scrollable timeline with era zoom, event popups, parallel track comparisons",
+        "concept_map": "Mind map with expandable nodes, relationship lines, topic clustering",
+        "quiz": "Gamified quiz with progress bar, score animations, achievement unlocks"
+      }
+    },
+    "data_presentation_patterns": {
+      "comparison_layouts": {
+        "split_screen": "Two datasets side by side with visual connectors showing relationships",
+        "overlapping_circles": "Venn diagram style with interactive hover regions",
+        "balance_scale": "Visual weighing of pros/cons or options",
+        "radar_chart": "Multi-dimensional comparison with filled areas"
+      },
+      "progress_displays": {
+        "journey_map": "Path visualization with milestones and current position",
+        "growth_tree": "Organic growth visualization with branches for different metrics",
+        "speedometer": "Performance gauge with zones and needle animation",
+        "filling_container": "Liquid fill animation showing completion percentage"
+      },
+      "hierarchy_visualizations": {
+        "pyramid": "Layered structure with size indicating importance",
+        "nested_circles": "Concentric rings showing relationships",
+        "flow_diagram": "Connected nodes with directional arrows",
+        "tree_map": "Rectangular areas sized by value"
+      },
+      "temporal_data": {
+        "animated_timeline": "Events appearing in sequence with smooth transitions",
+        "clock_visualization": "Circular time representation with segments",
+        "calendar_heatmap": "Grid showing intensity over time",
+        "gantt_style": "Project phases with overlaps and dependencies"
+      }
+    },
+    "layout_patterns_with_proper_sizing": {
+      "three_column_grid": {
+        "container": "width: 1600px, height: 600px, padding: 80px",
+        "calculation": "Available: 1440px width, 3 columns + 2 gaps",
+        "result": "Each column: 440px wide with 60px gaps",
+        "code": "gridTemplateColumns: 'repeat(3, 440px)', gap: '60px'"
+      },
+      "centered_hero_metric": {
+        "container": "width: 1600px, height: 700px",
+        "content": "Center a 600px wide metric card",
+        "positioning": "x: (1600 - 600) / 2 = 500px",
+        "code": "position: {x: 500, y: 150}, width: 600, height: 400"
+      },
+      "responsive_text_calculation": {
+        "scenario": "Fit 'REVENUE GROWTH' in 800px width",
+        "calculation": "14 chars * 0.6 * fontSize = 800px",
+        "result": "fontSize = 800 / (14 * 0.6) = 95px",
+        "code": "fontSize: Math.min(120, 800 / (text.length * 0.6))"
+      }
+    },
+    "quality_checklist": [
+      "Does it enhance the message?",
+      "Is interaction intuitive?",
+      "Are animations smooth?",
+      "Does it work with theme colors?",
+      "Is complexity appropriate?",
+      "Will it work during presentation?"
+    ]
+  },
+  "dynamic_font_sizing": {
+    "priority": "CRITICAL",
+    "philosophy": "Font size should ALWAYS adapt to content, not vice versa",
+    "rules": {
+      "no_minimums": "REMOVE ALL MINIMUM FONT SIZE CONSTRAINTS",
+      "maximize_titles": {
+        "goal": "Make titles as LARGE as possible without overflow",
+        "range": "200-800pt for short titles on content slides",
+        "calculation": "width_available / (character_count * 0.6)",
+        "example": "10 chars in 1600px = 1600/(10*0.6) = 266pt"
+      },
+      "fit_all_content": {
+        "priority": "HIGHEST - Never truncate text",
+        "approach": "Shrink fontSize until ALL text fits",
+        "minimum": "Can go as low as 8pt if needed",
+        "formula": "If text overflows, reduce fontSize by 20% and recalculate"
+      },
+      "responsive_sizing": {
+        "title_slides": "Single words can be 600-1000pt",
+        "content_slides": "Titles 200-500pt based on length",
+        "body_text": "Start at theme size, shrink to fit",
+        "captions": "24-36pt but can go smaller"
+      }
+    },
+    "implementation": [
+      "Calculate container space first",
+      "Estimate character width (fontSize * 0.6)",
+      "Start with maximum possible size",
+      "Reduce incrementally if overflow detected",
+      "NEVER give up - always find a size that fits"
+    ]
+  },
+
+  "icon_positioning": {
+    "priority": "CRITICAL",
+    "philosophy": "Icons support content, never decorate slides",
+    "rules": {
+      "functional_placement": {
+        "bullet_points": "Icon left of text, x = text.x - iconSize - 20",
+        "inline_icons": "Within text flow, properly aligned",
+        "infographics": "Organized grid showing data proportions",
+        "forbidden": "NO floating icons, NO corner decorations, NO background patterns"
+      },
+      "alignment": {
+        "vertical": "Center align: icon.y = text.y + (text.height - icon.size) / 2",
+        "horizontal": "Maintain consistent gaps: 20-40px from text"
+      },
+      "sizing": {
+        "bullets": "24-32px",
+        "inline": "16-24px matching text height",
+        "features": "48px maximum",
+        "infographics": "32-48px for data viz"
+      },
+      "data_visualization": {
+        "percentage": "Show X filled + Y empty icons for X/(X+Y) percentage",
+        "scale": "Use multiple icons where 1 icon = N units",
+        "comparison": "Different icon states (filled/outlined) for before/after"
+      }
+    }
+  },
+  "overlap_prevention_strict": {
+    "absolute_rules": [
+      "NO component may overlap another - not even 1 pixel",
+      "Minimum 40px vertical gap between all text components",
+      "Minimum 60px gap around charts and images",
+      "Check every component's bounds against every other component",
+      "If components might overlap, reduce sizes or reposition"
+    ],
+    "positioning_strategy": [
+      "Start from top with title at y=80",
+      "Place each component below previous with proper gap",
+      "Use x=80 for left-aligned content",
+      "Use x=960 for right-aligned content (charts)",
+      "Center content uses x=80, width=1840, alignment='center'"
+    ],
+    "size_limits": {
+      "max_text_height": "fontSize × lines × 1.3 + 20px buffer",
+      "max_component_width": 1840,
+      "charts": "width=880, height=600-800",
+      "images": "maintain aspect ratio, max-height=800"
+    }
+  }
+} 

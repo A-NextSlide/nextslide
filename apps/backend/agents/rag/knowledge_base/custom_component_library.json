@@ -1,0 +1,220 @@
+{
+  "advanced_custom_components": {
+    "hero_statistics": {
+      "animated_counter_with_particles": {
+        "description": "Number counts up with particle explosion effect",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 560, "y": 300},
+            "width": 800,
+            "height": 400,
+            "render": "function render({ props }, instanceId) {\n  const targetValue = props.targetValue || 1000;\n  const suffix = props.suffix || '';\n  const label = props.label || '';\n  const duration = props.duration || 2000;\n  const fontSize = props.fontSize || 180;\n  const particleCount = props.particleCount || 20;\n  const primaryColor = props.primaryColor || '#FF6B6B';\n  const labelColor = props.labelColor || '#666666';\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  // Simple static version with decorative elements\n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      position: 'relative',\n      fontFamily: fontFamily\n    }\n  }, [\n    // Particle effects (decorative circles)\n    ...Array(particleCount).fill(0).map((_, i) => \n      React.createElement('div', {\n        key: `particle-${i}`,\n        style: {\n          position: 'absolute',\n          width: '10px',\n          height: '10px',\n          backgroundColor: primaryColor,\n          borderRadius: '50%',\n          opacity: 0.3,\n          left: `${50 + (Math.random() - 0.5) * 80}%`,\n          top: `${50 + (Math.random() - 0.5) * 80}%`,\n          transform: `scale(${0.5 + Math.random() * 1.5})`\n        }\n      })\n    ),\n    // Main number\n    React.createElement('div', {\n      key: 'value',\n      style: {\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        color: primaryColor,\n        lineHeight: 1,\n        letterSpacing: '-0.03em',\n        textShadow: `0 4px 20px ${primaryColor}40`\n      }\n    }, targetValue + suffix),\n    // Label\n    label && React.createElement('div', {\n      key: 'label',\n      style: {\n        fontSize: '36px',\n        color: labelColor,\n        marginTop: '24px',\n        fontWeight: '500',\n        letterSpacing: '0.05em',\n        textTransform: 'uppercase'\n      }\n    }, label)\n  ]);\n}",
+            "props": {
+              "targetValue": 340,
+              "suffix": "%",
+              "label": "Growth Rate",
+              "fontSize": 240,
+              "primaryColor": "#FF6B6B",
+              "particleCount": 30,
+              "fontFamily": "Montserrat"
+            }
+          }
+        }
+      },
+      "split_comparison_stat": {
+        "description": "Before/after statistics with visual drama",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 200, "y": 350},
+            "width": 1520,
+            "height": 300,
+            "render": "function render({ props }, instanceId) {\n  const beforeValue = props.beforeValue || '45';\n  const afterValue = props.afterValue || '340';\n  const suffix = props.suffix || '%';\n  const beforeLabel = props.beforeLabel || 'Then';\n  const afterLabel = props.afterLabel || 'Now';\n  const mutedColor = props.mutedColor || '#999999';\n  const heroColor = props.heroColor || '#00D4FF';\n  const fontSize = props.fontSize || 120;\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'space-around',\n      fontFamily: fontFamily\n    }\n  }, [\n    // Before (muted)\n    React.createElement('div', {\n      key: 'before',\n      style: {\n        textAlign: 'center',\n        opacity: 0.4\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          fontSize: '24px',\n          color: mutedColor,\n          marginBottom: '16px',\n          textTransform: 'uppercase',\n          letterSpacing: '0.1em'\n        }\n      }, beforeLabel),\n      React.createElement('div', {\n        style: {\n          fontSize: fontSize + 'px',\n          fontWeight: '300',\n          color: mutedColor,\n          lineHeight: 1\n        }\n      }, beforeValue + suffix)\n    ]),\n    // Arrow\n    React.createElement('div', {\n      key: 'arrow',\n      style: {\n        fontSize: '72px',\n        color: heroColor,\n        margin: '0 60px'\n      }\n    }, '→'),\n    // After (hero)\n    React.createElement('div', {\n      key: 'after',\n      style: {\n        textAlign: 'center'\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          fontSize: '24px',\n          color: heroColor,\n          marginBottom: '16px',\n          textTransform: 'uppercase',\n          letterSpacing: '0.1em',\n          fontWeight: '600'\n        }\n      }, afterLabel),\n      React.createElement('div', {\n        style: {\n          fontSize: (fontSize * 1.5) + 'px',\n          fontWeight: '900',\n          color: heroColor,\n          lineHeight: 1,\n          textShadow: `0 8px 32px ${heroColor}60`\n        }\n      }, afterValue + suffix)\n    ])\n  ]);\n}",
+            "props": {
+              "beforeValue": "45",
+              "afterValue": "340",
+              "suffix": "%",
+              "beforeLabel": "Last Year",
+              "afterLabel": "This Year",
+              "mutedColor": "#666666",
+              "heroColor": "#FF6B6B",
+              "fontSize": 100,
+              "fontFamily": "Montserrat"
+            }
+          }
+        }
+      }
+    },
+    "text_effects": {
+      "glitch_text": {
+        "description": "Text with digital glitch effect",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 360, "y": 400},
+            "width": 1200,
+            "height": 200,
+            "render": "function render({ props }, instanceId) {\n  const text = props.text || 'INNOVATION';\n  const fontSize = props.fontSize || 120;\n  const primaryColor = props.primaryColor || '#00D4FF';\n  const glitchColor1 = props.glitchColor1 || '#FF006E';\n  const glitchColor2 = props.glitchColor2 || '#00FF88';\n  const fontFamily = props.fontFamily || 'Space Grotesk';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center',\n      position: 'relative',\n      fontFamily: fontFamily\n    }\n  }, [\n    // Glitch layer 1\n    React.createElement('div', {\n      key: 'glitch1',\n      style: {\n        position: 'absolute',\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        color: glitchColor1,\n        transform: 'translateX(-2px)',\n        opacity: 0.7,\n        mixBlendMode: 'screen'\n      }\n    }, text),\n    // Glitch layer 2\n    React.createElement('div', {\n      key: 'glitch2',\n      style: {\n        position: 'absolute',\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        color: glitchColor2,\n        transform: 'translateX(2px)',\n        opacity: 0.7,\n        mixBlendMode: 'screen'\n      }\n    }, text),\n    // Main text\n    React.createElement('div', {\n      key: 'main',\n      style: {\n        fontSize: fontSize + 'px',\n        fontWeight: '900',\n        color: primaryColor,\n        position: 'relative',\n        letterSpacing: '-0.02em'\n      }\n    }, text)\n  ]);\n}",
+            "props": {
+              "text": "DISRUPTION",
+              "fontSize": 144,
+              "primaryColor": "#FFFFFF",
+              "glitchColor1": "#FF006E",
+              "glitchColor2": "#00FF88",
+              "fontFamily": "Space Grotesk"
+            }
+          }
+        }
+      },
+      "gradient_text": {
+        "description": "Text with gradient fill",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 160, "y": 400},
+            "width": 1600,
+            "height": 200,
+            "render": "function render({ props }, instanceId) {\n  const text = props.text || 'The Future is Now';\n  const fontSize = props.fontSize || 96;\n  const gradientStart = props.gradientStart || '#667eea';\n  const gradientEnd = props.gradientEnd || '#764ba2';\n  const fontFamily = props.fontFamily || 'Poppins';\n  const fontWeight = props.fontWeight || '800';\n  \n  const gradientId = `gradient-${instanceId}`;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center'\n    }\n  }, [\n    React.createElement('svg', {\n      key: 'gradient-svg',\n      width: '100%',\n      height: '100%',\n      style: { position: 'absolute', visibility: 'hidden' }\n    }, [\n      React.createElement('defs', { key: 'defs' }, [\n        React.createElement('linearGradient', {\n          key: 'gradient',\n          id: gradientId,\n          x1: '0%',\n          y1: '0%',\n          x2: '100%',\n          y2: '0%'\n        }, [\n          React.createElement('stop', {\n            key: 'stop1',\n            offset: '0%',\n            style: { stopColor: gradientStart }\n          }),\n          React.createElement('stop', {\n            key: 'stop2',\n            offset: '100%',\n            style: { stopColor: gradientEnd }\n          })\n        ])\n      ])\n    ]),\n    React.createElement('div', {\n      key: 'text',\n      style: {\n        fontSize: fontSize + 'px',\n        fontWeight: fontWeight,\n        fontFamily: fontFamily,\n        background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})`,\n        WebkitBackgroundClip: 'text',\n        WebkitTextFillColor: 'transparent',\n        backgroundClip: 'text',\n        textAlign: 'center',\n        letterSpacing: '-0.02em'\n      }\n    }, text)\n  ]);\n}",
+            "props": {
+              "text": "Transform Your Vision",
+              "fontSize": 108,
+              "gradientStart": "#FF006E",
+              "gradientEnd": "#8B00FF",
+              "fontFamily": "Montserrat",
+              "fontWeight": "900"
+            }
+          }
+        }
+      }
+    },
+    "data_visualizations": {
+      "progress_ring": {
+        "description": "Circular progress indicator with percentage",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 710, "y": 300},
+            "width": 500,
+            "height": 500,
+            "render": "function render({ props }, instanceId) {\n  const percentage = props.percentage || 75;\n  const label = props.label || 'Complete';\n  const ringColor = props.ringColor || '#00D4FF';\n  const bgRingColor = props.bgRingColor || '#E5E5E5';\n  const textColor = props.textColor || '#1A1A1A';\n  const fontSize = props.fontSize || 72;\n  const strokeWidth = props.strokeWidth || 40;\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  const radius = 180;\n  const circumference = 2 * Math.PI * radius;\n  const strokeDashoffset = circumference - (percentage / 100) * circumference;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      fontFamily: fontFamily\n    }\n  }, [\n    React.createElement('svg', {\n      key: 'ring',\n      width: 400,\n      height: 400,\n      style: { transform: 'rotate(-90deg)' }\n    }, [\n      // Background ring\n      React.createElement('circle', {\n        key: 'bg-ring',\n        cx: 200,\n        cy: 200,\n        r: radius,\n        fill: 'none',\n        stroke: bgRingColor,\n        strokeWidth: strokeWidth\n      }),\n      // Progress ring\n      React.createElement('circle', {\n        key: 'progress-ring',\n        cx: 200,\n        cy: 200,\n        r: radius,\n        fill: 'none',\n        stroke: ringColor,\n        strokeWidth: strokeWidth,\n        strokeDasharray: circumference,\n        strokeDashoffset: strokeDashoffset,\n        strokeLinecap: 'round'\n      })\n    ]),\n    // Percentage text\n    React.createElement('div', {\n      key: 'percentage',\n      style: {\n        position: 'absolute',\n        fontSize: fontSize + 'px',\n        fontWeight: '700',\n        color: textColor\n      }\n    }, percentage + '%'),\n    // Label\n    React.createElement('div', {\n      key: 'label',\n      style: {\n        marginTop: '32px',\n        fontSize: '24px',\n        color: textColor,\n        fontWeight: '500',\n        textTransform: 'uppercase',\n        letterSpacing: '0.1em'\n      }\n    }, label)\n  ]);\n}",
+            "props": {
+              "percentage": 87,
+              "label": "Customer Satisfaction",
+              "ringColor": "#00D4FF",
+              "bgRingColor": "#E5E5E5",
+              "textColor": "#1A1A1A",
+              "fontSize": 96,
+              "strokeWidth": 40,
+              "fontFamily": "Inter"
+            }
+          }
+        }
+      }
+    },
+    "decorative_elements": {
+      "floating_particles": {
+        "description": "Ambient floating particles for atmosphere",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 0, "y": 0},
+            "width": 1920,
+            "height": 1080,
+            "render": "function render({ props }, instanceId) {\n  const particleCount = props.particleCount || 50;\n  const particleColor = props.particleColor || '#FFD700';\n  const minSize = props.minSize || 2;\n  const maxSize = props.maxSize || 8;\n  const opacity = props.opacity || 0.6;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      position: 'relative',\n      pointerEvents: 'none'\n    }\n  }, Array(particleCount).fill(0).map((_, i) => {\n    const size = minSize + Math.random() * (maxSize - minSize);\n    const x = Math.random() * 100;\n    const y = Math.random() * 100;\n    const delay = Math.random() * 10;\n    \n    return React.createElement('div', {\n      key: `particle-${i}`,\n      style: {\n        position: 'absolute',\n        width: size + 'px',\n        height: size + 'px',\n        backgroundColor: particleColor,\n        borderRadius: '50%',\n        left: x + '%',\n        top: y + '%',\n        opacity: opacity * (0.5 + Math.random() * 0.5),\n        boxShadow: `0 0 ${size}px ${particleColor}`\n      }\n    });\n  }));\n}",
+            "props": {
+              "particleCount": 40,
+              "particleColor": "#FFD700",
+              "minSize": 2,
+              "maxSize": 6,
+              "opacity": 0.4
+            }
+          }
+        }
+      }
+    }
+  },
+  "component_combinations": {
+    "hero_stat_with_context": {
+      "description": "Combine CustomComponent stat with supporting elements",
+      "components": [
+        {
+          "type": "CustomComponent",
+          "note": "Main statistic with animation"
+        },
+        {
+          "type": "Shape",
+          "note": "Background accent shape at low opacity"
+        },
+        {
+          "type": "TiptapTextBlock",
+          "note": "Context explanation below"
+        },
+        {
+          "type": "Image",
+          "note": "Supporting visual metaphor"
+        }
+      ]
+    },
+    "data_story_sequence": {
+      "description": "Multiple CustomComponents telling data story",
+      "layout": "Horizontal flow with visual progression",
+      "components": [
+        {
+          "type": "CustomComponent",
+          "note": "Starting point (small, muted)"
+        },
+        {
+          "type": "CustomComponent",
+          "note": "Journey/process (medium, transitioning)"
+        },
+        {
+          "type": "CustomComponent",
+          "note": "Result (large, vibrant)"
+        }
+      ]
+    },
+    "beautiful_data_displays": {
+      "hero_metric_showcase": {
+        "description": "Massive metric with gradient glow and supporting context",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 400, "y": 200},
+            "width": 1120,
+            "height": 600,
+            "render": "function render({ props }, instanceId) {\n  const value = props.value || '247%';\n  const label = props.label || 'Revenue Growth';\n  const subtext = props.subtext || 'Year over Year';\n  const comparison = props.comparison || '+124% vs competitor avg';\n  const primaryColor = props.primaryColor || '#06ffa5';\n  const secondaryColor = props.secondaryColor || '#00d4ff';\n  const textColor = props.textColor || '#ffffff';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      position: 'relative',\n      background: `radial-gradient(ellipse at center, ${primaryColor}10 0%, transparent 70%)`,\n      borderRadius: '40px'\n    }\n  }, [\n    // Animated glow background\n    React.createElement('div', {\n      key: 'glow1',\n      style: {\n        position: 'absolute',\n        width: '500px',\n        height: '500px',\n        background: `radial-gradient(circle, ${primaryColor}30 0%, transparent 60%)`,\n        filter: 'blur(80px)',\n        top: '50%',\n        left: '50%',\n        transform: 'translate(-50%, -50%)'\n      }\n    }),\n    React.createElement('div', {\n      key: 'glow2',\n      style: {\n        position: 'absolute',\n        width: '300px',\n        height: '300px',\n        background: `radial-gradient(circle, ${secondaryColor}20 0%, transparent 60%)`,\n        filter: 'blur(60px)',\n        top: '30%',\n        left: '60%',\n        transform: 'translate(-50%, -50%)'\n      }\n    }),\n    // Main value\n    React.createElement('div', {\n      key: 'value',\n      style: {\n        fontSize: '220px',\n        fontWeight: '900',\n        background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,\n        WebkitBackgroundClip: 'text',\n        WebkitTextFillColor: 'transparent',\n        backgroundClip: 'text',\n        lineHeight: '0.9',\n        letterSpacing: '-0.03em',\n        marginBottom: '20px',\n        filter: `drop-shadow(0 0 30px ${primaryColor}40)`\n      }\n    }, value),\n    // Label\n    React.createElement('div', {\n      key: 'label',\n      style: {\n        fontSize: '56px',\n        fontWeight: '700',\n        color: textColor,\n        marginBottom: '8px',\n        letterSpacing: '-0.01em'\n      }\n    }, label),\n    // Subtext\n    React.createElement('div', {\n      key: 'subtext',\n      style: {\n        fontSize: '32px',\n        fontWeight: '400',\n        color: textColor,\n        opacity: 0.7,\n        marginBottom: '32px'\n      }\n    }, subtext),\n    // Comparison\n    React.createElement('div', {\n      key: 'comparison',\n      style: {\n        fontSize: '24px',\n        fontWeight: '600',\n        color: primaryColor,\n        padding: '12px 24px',\n        background: `${primaryColor}15`,\n        borderRadius: '20px',\n        border: `2px solid ${primaryColor}30`\n      }\n    }, comparison)\n  ]);\n}",
+            "props": {
+              "value": "247%",
+              "label": "Revenue Growth", 
+              "subtext": "Year over Year",
+              "comparison": "+124% vs competitor avg",
+              "primaryColor": "#06ffa5",
+              "secondaryColor": "#00d4ff",
+              "textColor": "#ffffff"
+            }
+          }
+        }
+      },
+      "multi_stat_dashboard": {
+        "description": "Multiple stats with visual hierarchy and beautiful styling",
+        "example": {
+          "type": "CustomComponent",
+          "props": {
+            "position": {"x": 160, "y": 240},
+            "width": 1600,
+            "height": 600,
+            "render": "function render({ props }, instanceId) {\n  const stats = props.stats || [\n    { value: '$4.2M', label: 'Revenue', color: '#06ffa5', trend: '+23%' },\n    { value: '847', label: 'Customers', color: '#00d4ff', trend: '+156' },\n    { value: '98.7%', label: 'Satisfaction', color: '#a78bfa', trend: '+2.3%' }\n  ];\n  const bgColor = props.bgColor || '#0a0a0a';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'grid',\n      gridTemplateColumns: `repeat(${stats.length}, 1fr)`,\n      gap: '40px',\n      padding: '40px'\n    }\n  }, stats.map((stat, index) => \n    React.createElement('div', {\n      key: index,\n      style: {\n        display: 'flex',\n        flexDirection: 'column',\n        alignItems: 'center',\n        justifyContent: 'center',\n        background: `linear-gradient(135deg, ${stat.color}10 0%, ${stat.color}05 100%)`,\n        borderRadius: '32px',\n        border: `2px solid ${stat.color}20`,\n        position: 'relative',\n        overflow: 'hidden'\n      }\n    }, [\n      // Glow effect\n      React.createElement('div', {\n        style: {\n          position: 'absolute',\n          width: '150px',\n          height: '150px',\n          background: `radial-gradient(circle, ${stat.color}30 0%, transparent 70%)`,\n          filter: 'blur(40px)',\n          top: '-20%',\n          right: '-20%'\n        }\n      }),\n      // Value\n      React.createElement('div', {\n        style: {\n          fontSize: index === 0 ? '84px' : '72px',\n          fontWeight: '800',\n          color: stat.color,\n          marginBottom: '12px',\n          lineHeight: '1'\n        }\n      }, stat.value),\n      // Label\n      React.createElement('div', {\n        style: {\n          fontSize: '28px',\n          fontWeight: '600',\n          color: '#ffffff',\n          opacity: 0.8,\n          marginBottom: '16px'\n        }\n      }, stat.label),\n      // Trend\n      React.createElement('div', {\n        style: {\n          fontSize: '20px',\n          fontWeight: '700',\n          color: stat.color,\n          padding: '8px 16px',\n          background: `${stat.color}20`,\n          borderRadius: '12px'\n        }\n      }, stat.trend)\n    ])\n  ));\n}",
+            "props": {
+              "stats": [
+                { "value": "$4.2M", "label": "Revenue", "color": "#06ffa5", "trend": "+23%" },
+                { "value": "847", "label": "Customers", "color": "#00d4ff", "trend": "+156" },
+                { "value": "98.7%", "label": "Satisfaction", "color": "#a78bfa", "trend": "+2.3%" }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+} 

@@ -1,0 +1,161 @@
+/**
+ * CSS for ensuring components stay within their bounds
+ */
+
+/* Base component wrapper - ensure content stays within bounds */
+.component-wrapper {
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Text components - handle text overflow gracefully */
+.component-type-TextBlock,
+.component-type-TiptapTextBlock {
+  overflow: hidden;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Enable scrolling for text overflow when needed */
+.component-type-TextBlock.scrollable,
+.component-type-TiptapTextBlock.scrollable {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Shape components with text */
+.component-type-Shape .text-content,
+.component-type-ShapeWithText .text-content {
+  overflow: hidden;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Image and video components */
+.component-type-Image img,
+.component-type-Video video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* Table components - enable scrolling */
+.component-type-Table {
+  overflow: auto;
+}
+
+.component-type-Table table {
+  min-width: 100%;
+}
+
+/* Chart components */
+.component-type-Chart {
+  overflow: hidden;
+}
+
+.component-type-Chart > * {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+/* Custom components */
+.component-type-CustomComponent {
+  overflow: hidden;
+}
+
+/* Prevent content from spilling during resize/drag */
+.component-wrapper.is-resizing,
+.component-wrapper.is-dragging {
+  overflow: hidden !important;
+}
+
+/* TipTap editor specific bounds */
+.tiptap-editor,
+.ProseMirror {
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Prevent ProseMirror from expanding beyond bounds */
+.ProseMirror-focused {
+  outline: none;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* Handle long words that might overflow */
+.ProseMirror p,
+.ProseMirror li,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Ensure lists don't overflow */
+.ProseMirror ul,
+.ProseMirror ol {
+  max-width: 100%;
+  padding-left: 1.5em;
+}
+
+/* Handle code blocks */
+.ProseMirror pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* Icon component bounds */
+.component-type-Icon {
+  overflow: visible; /* Icons can have shadows */
+}
+
+.component-type-Icon svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Lines component - special handling */
+.component-type-Lines {
+  overflow: visible; /* Lines need to render outside bounds */
+  pointer-events: none;
+}
+
+/* Background component */
+.component-type-Background {
+  overflow: hidden;
+}
+
+/* Group component */
+.component-type-Group {
+  overflow: visible; /* Groups can contain elements that extend beyond */
+}
+
+/* Responsive font scaling helper classes */
+.text-fit-shrink {
+  font-size: calc(1em * var(--text-scale-factor, 1));
+  line-height: calc(1.5 * var(--text-scale-factor, 1));
+}
+
+/* Ellipsis truncation helper */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Multi-line truncation with ellipsis */
+.text-truncate-multiline {
+  display: -webkit-box;
+  -webkit-line-clamp: var(--line-clamp, 3);
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

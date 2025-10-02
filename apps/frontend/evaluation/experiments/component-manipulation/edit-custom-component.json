@@ -1,0 +1,46 @@
+{
+  "id": "edit-custom-component",
+  "description": "Modify custom component code to create an interactive counter",
+  "currentSlideId": "slide-1",
+  "prompt": "Modify the custom component to create an interactive counter with increment and decrement buttons. The counter should start at 0, have styled buttons with '+' and '-' signs, and display the current count in a large font in the center.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Interactive Elements",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 100 },
+            "width": 600,
+            "height": 80,
+            "texts": [{ "text": "Interactive Component Demo", "style": {} }]
+          }
+        },
+        {
+          "id": "custom-1",
+          "type": "CustomComponent",
+          "props": {
+            "position": { "x": 350, "y": 220 },
+            "width": 500,
+            "height": 300,
+            "render": "({ props, state, setState }) => {\n  // Basic component that just displays text\n  return <div style={{ padding: '20px', border: '1px solid #ccc' }}>\n    <p>This is a custom component. Edit the code to make it interactive.</p>\n  </div>;\n}",
+            "props": {}
+          }
+        }
+      ]
+    }
+  ]
+} 

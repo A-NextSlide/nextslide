@@ -1,0 +1,35 @@
+{
+  "id": "customize-background",
+  "description": "Create a gradient background with pattern overlay",
+  "currentSlideId": "slide-1",
+  "prompt": "Change the slide background to have a gradient from light blue to dark blue, and add a subtle grid pattern overlay with 20% opacity.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Presentation Background",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 200 },
+            "width": 600,
+            "height": 200,
+            "texts": [{ "text": "Presentation with Plain Background", "style": {} }]
+          }
+        }
+      ]
+    }
+  ]
+} 

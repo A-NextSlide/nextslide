@@ -1,0 +1,97 @@
+{
+  "id": "align-and-distribute",
+  "description": "Align and distribute components evenly",
+  "currentSlideId": "slide-1",
+  "prompt": "The items on this slide need to be aligned and distributed evenly. Create a clean layout by aligning the shapes horizontally with even spacing between them. Also align the text labels under each shape.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Needs Alignment",
+      "components": [
+        {
+          "id": "title-1",
+          "type": "TextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 80,
+            "text": "Our Services",
+            "fontSize": 48,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "shape-1",
+          "type": "Shape",
+          "props": {
+            "position": { "x": 300, "y": 250 },
+            "width": 120,
+            "height": 120,
+            "shapeType": "circle",
+            "fill": "#4287f5ff",
+            "stroke": "#000000ff",
+            "strokeWidth": 2
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 280, "y": 390 },
+            "width": 150,
+            "height": 50,
+            "texts": [{ "text": "Consulting", "style": {} }],
+          }
+        },
+        {
+          "id": "shape-2",
+          "type": "Shape",
+          "props": {
+            "position": { "x": 710, "y": 230 },
+            "width": 120,
+            "height": 120,
+            "shapeType": "circle",
+            "fill": "#f54242ff",
+            "stroke": "#000000ff",
+            "strokeWidth": 2
+          }
+        },
+        {
+          "id": "text-2",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 700, "y": 370 },
+            "width": 150,
+            "height": 50,
+            "texts": [{ "text": "Development", "style": {} }],
+          }
+        },
+        {
+          "id": "shape-3",
+          "type": "Shape",
+          "props": {
+            "position": { "x": 1050, "y": 260 },
+            "width": 120,
+            "height": 120,
+            "shapeType": "circle",
+            "fill": "#42f554ff",
+            "stroke": "#000000ff",
+            "strokeWidth": 2
+          }
+        },
+        {
+          "id": "text-3",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 1040, "y": 400 },
+            "width": 150,
+            "height": 50,
+            "texts": [{ "text": "Support", "style": {} }]
+          }
+        }
+      ]
+    }
+  ]
+} 

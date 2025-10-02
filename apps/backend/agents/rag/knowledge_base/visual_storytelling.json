@@ -1,0 +1,470 @@
+{
+  "visual_storytelling_principles": {
+    "content_transformation": {
+      "philosophy": "Never display outline text as-is. Transform it into visual narratives.",
+      "mandatory_rules": [
+        "Extract the EMOTION and STORY from dry facts",
+        "Every number tells a human story - find it",
+        "Replace bullet points with visual metaphors",
+        "Turn processes into journeys",
+        "Make abstract concepts tangible"
+      ]
+    },
+    "the_hero_journey": {
+      "description": "Every slide is a mini-story with conflict and resolution",
+      "structure": {
+        "setup": "The challenge or current state (small, muted)",
+        "conflict": "The problem or tension (growing, warning colors)",
+        "resolution": "The solution or achievement (large, celebratory)"
+      },
+      "visual_progression": "Size, color, and position tell the story arc"
+    }
+  },
+  "transformation_techniques": {
+    "statistics_to_stories": {
+      "revenue_growth": {
+        "boring": "Revenue increased 45%",
+        "transformed": [
+          "Giant '45%' in accent color taking 50% of slide",
+          "Small 'last year' number fading in background",
+          "Upward arrow or rocket ship metaphor",
+          "Add human context: 'That's 2,000 more families served'"
+        ]
+      },
+      "efficiency_gains": {
+        "boring": "Process time reduced from 8 hours to 2 hours",
+        "transformed": [
+          "Clock showing 8 hours morphing to 2 hours",
+          "Before: cramped, cluttered visual",
+          "After: spacious, breathing room",
+          "Show what people can do with 6 hours saved"
+        ]
+      },
+      "market_share": {
+        "boring": "We have 35% market share",
+        "transformed": [
+          "Pie chart where our slice EXPLODES out",
+          "Or 35 vs 65 as David vs Goliath visual",
+          "Or filling 35% of screen with brand color"
+        ]
+      }
+    },
+    "bullet_points_to_visuals": {
+      "feature_list": {
+        "boring": "• Fast\n• Secure\n• Reliable",
+        "transformed": {
+          "racing_metaphor": "Speedometer, lock, and shield icons",
+          "card_layout": "Each feature as a designed card with icon",
+          "word_size_hierarchy": "FAST (200pt), Secure (150pt), Reliable (100pt)"
+        }
+      },
+      "process_steps": {
+        "boring": "1. Research\n2. Design\n3. Build\n4. Launch",
+        "transformed": {
+          "timeline": "Horizontal journey with milestones",
+          "ascending_stairs": "Each step literally higher",
+          "rocket_launch": "Stages of a rocket taking off"
+        }
+      }
+    },
+    "comparisons_to_drama": {
+      "before_after": {
+        "visual_techniques": [
+          "Split screen with stark contrast",
+          "Faded/grayed 'before' vs vibrant 'after'",
+          "Small cramped 'before' vs expansive 'after'",
+          "Broken/whole metaphor"
+        ]
+      },
+      "us_vs_them": {
+        "approaches": [
+          "David vs Goliath sizing",
+          "Color contrast (muted vs vibrant)",
+          "Complexity vs simplicity visuals",
+          "Many vs one (showing efficiency)"
+        ]
+      }
+    }
+  },
+  "emotional_design_triggers": {
+    "triumph": {
+      "visual_cues": [
+        "Upward movement and arrows",
+        "Bright, warm colors",
+        "Expansive layouts",
+        "Trophy or summit imagery"
+      ],
+      "typography": "Bold, large, centered"
+    },
+    "urgency": {
+      "visual_cues": [
+        "Red accents and warnings",
+        "Countdown timers",
+        "Broken or cracking elements",
+        "Storm or fire metaphors"
+      ],
+      "typography": "Condensed, angular, tilted"
+    },
+    "innovation": {
+      "visual_cues": [
+        "Gradient meshes and aurora effects",
+        "Circuit patterns",
+        "Constellation connections",
+        "Lightbulb or spark imagery"
+      ],
+      "typography": "Light, modern, spacious"
+    },
+    "trust": {
+      "visual_cues": [
+        "Solid foundations",
+        "Shield or lock icons",
+        "Blue tones",
+        "Symmetrical layouts"
+      ],
+      "typography": "Classic, serif, centered"
+    }
+  },
+  "data_visualization_drama": {
+    "make_charts_tell_stories": {
+      "growth_charts": [
+        "Start line chart below ground (negative) to show journey",
+        "Make the growth line THICK and in accent color",
+        "Add milestone markers for key events",
+        "End with arrow continuing beyond chart"
+      ],
+      "pie_charts": [
+        "Explode the most important slice",
+        "Use transparency for less important segments",
+        "Replace with donut chart for modern feel",
+        "Or use actual imagery (pizza, clock, etc.)"
+      ],
+      "bar_charts": [
+        "Make bars look like buildings, trees, or rockets",
+        "Use gradient fills for depth",
+        "Animate from zero when possible",
+        "Break the frame - let success bars overflow"
+      ]
+    }
+  },
+  "typography_storytelling": {
+    "size_as_narrative": {
+      "technique": "Font size = importance in story",
+      "example": "Start 24pt → problem 72pt → SOLUTION 400pt"
+    },
+    "weight_as_emotion": {
+      "thin": "Delicate, premium, minimal",
+      "regular": "Informative, neutral",
+      "bold": "Important, confident",
+      "black": "URGENT, POWERFUL"
+    },
+    "positioning_as_journey": {
+      "scattered": "Chaos or creativity",
+      "aligned": "Order and professionalism",
+      "ascending": "Growth and progress",
+      "centered": "Focus and importance"
+    }
+  },
+  "color_storytelling": {
+    "color_progression": {
+      "description": "Colors change to show transformation",
+      "examples": [
+        "Gray → Color (problem → solution)",
+        "Cold → Warm (distant → personal)",
+        "Muted → Vibrant (past → future)",
+        "Dark → Light (challenge → success)"
+      ]
+    },
+    "color_coding_meaning": {
+      "red": "Urgent, stop, problem, passion",
+      "green": "Growth, go, success, natural",
+      "blue": "Trust, calm, professional, stable",
+      "yellow": "Energy, attention, innovation",
+      "purple": "Premium, creative, mystical",
+      "orange": "Friendly, energetic, affordable"
+    }
+  },
+  "slide_type_transformations": {
+    "title_slides": {
+      "philosophy": "First impression = lasting impression",
+      "techniques": [
+        "One powerful word filling screen",
+        "Question that haunts the audience",
+        "Striking statistic with no context (yet)",
+        "Visual metaphor for the entire presentation",
+        "Cinematic opening scene"
+      ]
+    },
+    "data_slides": {
+      "philosophy": "Data without story = forgotten immediately",
+      "techniques": [
+        "Lead with the insight, not the numbers",
+        "Use visual size to show scale",
+        "Compare to relatable objects",
+        "Show the human impact",
+        "Create tension then resolution"
+      ]
+    },
+    "conclusion_slides": {
+      "philosophy": "End with action, not summary",
+      "techniques": [
+        "Single powerful call-to-action",
+        "The transformed future state",
+        "One memorable takeaway",
+        "Contact info as design element",
+        "Loop back to opening metaphor"
+      ]
+    }
+  },
+  "advanced_techniques": {
+    "visual_metaphors": {
+      "growth": "Plants, rockets, stairs, mountains",
+      "connection": "Bridges, webs, constellations, chains",
+      "transformation": "Butterflies, phoenixes, before/after",
+      "speed": "Rockets, cheetahs, lightning, blur",
+      "strength": "Mountains, anchors, foundations, shields"
+    },
+    "layout_as_meaning": {
+      "circular": "Continuous, cyclical, complete",
+      "ascending": "Growth, improvement, achievement",
+      "radiating": "Impact, influence, expansion",
+      "converging": "Focus, unity, solution",
+      "scattered": "Chaos, diversity, creativity"
+    },
+    "animation_with_purpose": {
+      "reveal_timing": "Show information as story unfolds",
+      "movement_direction": "Up=positive, down=negative",
+      "speed_variation": "Slow=important, fast=energy",
+      "sequence": "Guide eye through narrative"
+    }
+  },
+  "content_extraction_rules": {
+    "find_the_hook": [
+      "What's the most surprising fact?",
+      "What's the human impact?",
+      "What's the transformation?",
+      "What's at stake?",
+      "What's the one thing to remember?"
+    ],
+    "visual_priority": [
+      "Numbers and percentages = HUGE",
+      "Key outcomes = Center stage",
+      "Process steps = Visual journey",
+      "Comparisons = Dramatic contrast",
+      "Quotes = Typography art"
+    ]
+  },
+  "icon_storytelling": {
+    "philosophy": "Icons are visual vocabulary that transcend language",
+    "narrative_techniques": {
+      "progression_stories": {
+        "description": "Use icon sequences to show transformation",
+        "examples": [
+          "Seed → Sprout → Tree → Forest (growth story)",
+          "Lock → Key → Unlock → OpenDoor (access story)",
+          "Lightbulb → Gear → Rocket → Trophy (innovation journey)",
+          "X → AlertTriangle → Settings → CheckCircle (problem solving)"
+        ]
+      },
+      "metaphorical_icons": {
+        "speed": {
+          "primary": ["Zap", "Rocket", "FastForward"],
+          "avoid": ["Star", "Circle"]
+        },
+        "security": {
+          "primary": ["Shield", "Lock", "ShieldCheck"],
+          "avoid": ["Star", "Square"]
+        },
+        "growth": {
+          "primary": ["TrendingUp", "Sprout", "BarChart3"],
+          "avoid": ["Plus", "ArrowUp" ] 
+        },
+        "innovation": {
+          "primary": ["Lightbulb", "Sparkles", "Brain"],
+          "avoid": ["Star", "Sun"]
+        }
+      },
+      "emotional_icons": {
+        "success": ["Trophy", "Crown", "Medal", "Award"],
+        "warning": ["AlertTriangle", "AlertCircle", "XOctagon"],
+        "celebration": ["PartyPopper", "Gift", "Sparkles"],
+        "collaboration": ["Users", "HandshakeIcon", "Share2"]
+      }
+    },
+    "icon_as_bullet_evolution": {
+      "level_1_basic": "Replace bullets with CheckCircle",
+      "level_2_contextual": "Use content-specific icons (Shield for security)",
+      "level_3_progressive": "Different icon per point showing progression",
+      "level_4_narrative": "Icons that tell a story together"
+    },
+    "size_storytelling": {
+      "hero_icon": {
+        "size": "72-96px",
+        "use": "Main concept anchor",
+        "position": "Center or top focal point"
+      },
+      "supporting_icons": {
+        "size": "48px",
+        "use": "Feature or section markers",
+        "position": "Left-aligned with content"
+      },
+      "inline_icons": {
+        "size": "24-32px", 
+        "use": "Within text or as bullets",
+        "position": "Baseline aligned"
+      }
+    },
+    "color_storytelling_with_icons": {
+      "monochrome_elegance": {
+        "approach": "All icons in text_color with opacity",
+        "when": "Professional, minimal presentations"
+      },
+      "accent_highlighting": {
+        "approach": "Key icons in primary_accent",
+        "when": "Draw attention to main points"
+      },
+      "semantic_coloring": {
+        "approach": "Green for success, red for warnings",
+        "when": "Quick visual understanding needed"
+      },
+      "gradient_icons": {
+        "approach": "CSS gradients on icon fills",
+        "when": "Premium, modern aesthetic"
+      }
+    },
+    "icon_layout_patterns": {
+      "feature_showcase": {
+        "pattern": "Icon centered above feature title",
+        "spacing": "24-32px gap",
+        "alignment": "Center aligned stack"
+      },
+      "process_flow": {
+        "pattern": "Icons connected by arrows or lines",
+        "spacing": "Equal distribution",
+        "connection": "ChevronRight or ArrowRight between"
+      },
+      "comparison_layout": {
+        "pattern": "Icons as visual differentiators",
+        "approach": "Unique icon per option",
+        "contrast": "Different sizes or colors for emphasis"
+      },
+      "stat_enhancement": {
+        "pattern": "Small icon near large number",
+        "position": "Top-right or inline",
+        "purpose": "Visual context for metric"
+      }
+    },
+    "advanced_icon_techniques": {
+      "icon_morphing": {
+        "description": "Transform one icon to another",
+        "example": "Lock morphing to Unlock"
+      },
+      "icon_particles": {
+        "description": "Icons as particle effects",
+        "example": "Star icons floating up for celebration"
+      },
+      "icon_patterns": {
+        "description": "Repeating icons as backgrounds",
+        "example": "Faded icon grid as texture"
+      },
+      "icon_combinations": {
+        "description": "Overlapping icons for compound meaning",
+        "example": "Shield + Check for verified security"
+      }
+    },
+    "common_icon_mistakes": {
+      "generic_overuse": {
+        "problem": "Using Star for everything",
+        "solution": "Choose contextually relevant icons"
+      },
+      "size_inconsistency": {
+        "problem": "Random icon sizes",
+        "solution": "Stick to 24/32/48/72px hierarchy"
+      },
+      "color_chaos": {
+        "problem": "Rainbow of icon colors",
+        "solution": "Use theme colors consistently"
+      },
+      "meaningless_decoration": {
+        "problem": "Icons that don't add meaning",
+        "solution": "Every icon must enhance understanding"
+      }
+    }
+  },
+  "mood_based_transformations": {
+    "celebration": {
+      "visual_cues": [
+        "Confetti particle effects",
+        "Radiating light bursts",
+        "Trophy or medal imagery",
+        "Upward floating elements"
+      ],
+      "color_approach": "Bright, warm, golden accents",
+      "typography": "Dancing, varied baselines",
+      "component_ideas": [
+        "CustomComponent with fireworks animation",
+        "Numbers that sparkle or glow",
+        "Text that appears with flourish"
+      ]
+    },
+    "urgency_crisis": {
+      "visual_cues": [
+        "Red warning frames",
+        "Countdown timers",
+        "Breaking or shattering effects",
+        "Alarm or alert icons"
+      ],
+      "color_approach": "Red, orange, high contrast",
+      "typography": "Condensed, tilted, aggressive",
+      "component_ideas": [
+        "Pulsing red backgrounds",
+        "Text that shakes or vibrates",
+        "Statistics that flash"
+      ]
+    },
+    "innovation_future": {
+      "visual_cues": [
+        "Holographic effects",
+        "Circuit board patterns",
+        "DNA helixes",
+        "Constellation connections"
+      ],
+      "color_approach": "Cyan, purple, neon accents",
+      "typography": "Futuristic, tech fonts",
+      "component_ideas": [
+        "Glitch text effects",
+        "Matrix-style number rain",
+        "Animated tech patterns"
+      ]
+    },
+    "trust_stability": {
+      "visual_cues": [
+        "Solid foundations",
+        "Mountain imagery",
+        "Shield or fortress icons",
+        "Symmetrical layouts"
+      ],
+      "color_approach": "Deep blues, forest greens",
+      "typography": "Classic serifs, centered",
+      "component_ideas": [
+        "Pillars supporting text",
+        "Stats in stone texture",
+        "Timeless, classic layouts"
+      ]
+    },
+    "playful_energetic": {
+      "visual_cues": [
+        "Bouncing elements",
+        "Rainbow gradients",
+        "Cartoon speech bubbles",
+        "Hand-drawn doodles"
+      ],
+      "color_approach": "Primary colors, high saturation",
+      "typography": "Rounded, friendly, varied sizes",
+      "component_ideas": [
+        "Text that bounces in",
+        "Emoji reactions",
+        "Playful shape frames"
+      ]
+    }
+  }
+} 

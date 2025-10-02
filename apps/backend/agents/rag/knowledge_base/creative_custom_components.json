@@ -1,0 +1,150 @@
+{
+  "ultra_creative_components": {
+    "morphing_gradient_background": {
+      "description": "Animated gradient background that morphs between colors",
+      "use_cases": ["Dynamic backgrounds", "Mood transitions", "Visual interest"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const [phase, setPhase] = React.useState(0);\n  const colors = props.colors || ['#667eea', '#764ba2', '#f093fb', '#f5576c'];\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setPhase(prev => (prev + 0.01) % (Math.PI * 2));\n    }, 50);\n    return () => clearInterval(interval);\n  }, []);\n  \n  const gradient1 = `radial-gradient(circle at ${50 + Math.sin(phase) * 30}% ${50 + Math.cos(phase) * 30}%, ${colors[0]} 0%, transparent 50%)`;\n  const gradient2 = `radial-gradient(circle at ${50 + Math.cos(phase) * 30}% ${50 + Math.sin(phase * 1.3) * 30}%, ${colors[1]} 0%, transparent 50%)`;\n  const gradient3 = `radial-gradient(circle at ${50 + Math.sin(phase * 0.7) * 30}% ${50 + Math.cos(phase * 0.9) * 30}%, ${colors[2]} 0%, transparent 50%)`;\n  const gradient4 = `radial-gradient(circle at ${50 + Math.cos(phase * 1.1) * 30}% ${50 + Math.sin(phase * 0.8) * 30}%, ${colors[3]} 0%, transparent 50%)`;\n  \n  return React.createElement('div', {\n    style: {\n      position: 'absolute',\n      width: '100%',\n      height: '100%',\n      background: `${gradient1}, ${gradient2}, ${gradient3}, ${gradient4}`,\n      opacity: 0.3,\n      filter: 'blur(40px)'\n    }\n  });\n}",
+          "props": {
+            "colors": ["#667eea", "#764ba2", "#f093fb", "#f5576c"]
+          }
+        }
+      }
+    },
+    "glitch_text_effect": {
+      "description": "Text with cyberpunk glitch animation effect",
+      "use_cases": ["Tech presentations", "Futuristic themes", "Attention grabbing"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 400},
+          "width": 1600,
+          "height": 280},
+          "render": "function render({ props }, instanceId) {\n  const [glitch, setGlitch] = React.useState(false);\n  const text = props.text || 'FUTURE TECH';\n  const primaryColor = props.primaryColor || '#00ffff';\n  const secondaryColor = props.secondaryColor || '#ff00ff';\n  const textColor = props.textColor || '#ffffff';\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setGlitch(true);\n      setTimeout(() => setGlitch(false), 200);\n    }, 3000);\n    return () => clearInterval(interval);\n  }, []);\n  \n  const glitchStyle = {\n    position: 'relative',\n    fontSize: '120px',\n    fontWeight: '900',\n    color: textColor,\n    textTransform: 'uppercase',\n    letterSpacing: '0.1em',\n    textShadow: glitch ? `${primaryColor} -2px 0, ${secondaryColor} 2px 0` : 'none',\n    animation: glitch ? 'glitch 0.2s infinite' : 'none'\n  };\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center',\n      backgroundColor: '#0a0a0a',\n      position: 'relative',\n      overflow: 'hidden'\n    }\n  }, [\n    React.createElement('style', {\n      key: 'glitch-style'\n    }, `\n      @keyframes glitch {\n        0% { transform: translate(0); }\n        20% { transform: translate(-2px, 2px); }\n        40% { transform: translate(-2px, -2px); }\n        60% { transform: translate(2px, 2px); }\n        80% { transform: translate(2px, -2px); }\n        100% { transform: translate(0); }\n      }\n    `),\n    React.createElement('div', {\n      style: glitchStyle\n    }, text),\n    glitch && React.createElement('div', {\n      style: {\n        ...glitchStyle,\n        position: 'absolute',\n        left: '2px',\n        opacity: 0.8,\n        color: primaryColor,\n        animation: 'glitch 0.3s infinite reverse'\n      }\n    }, text),\n    glitch && React.createElement('div', {\n      style: {\n        ...glitchStyle,\n        position: 'absolute',\n        left: '-2px',\n        opacity: 0.8,\n        color: secondaryColor,\n        animation: 'glitch 0.3s infinite'\n      }\n    }, text)\n  ]);\n}",
+          "props": {
+            "text": "FUTURE TECH",
+            "primaryColor": "#00ffff",
+            "secondaryColor": "#ff00ff",
+            "textColor": "#ffffff"
+          }
+        }
+      }
+    },
+    "floating_3d_cards": {
+      "description": "Cards that float and rotate in 3D space",
+      "use_cases": ["Feature showcases", "Product highlights", "Portfolio displays"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 200},
+          "width": 1600,
+          "height": 680},
+          "render": "function render({ props }, instanceId) {\n  const cards = [\n    { title: props.title1 || 'Innovation', icon: 'Rocket', color: props.color1 || '#3b82f6' },\n    { title: props.title2 || 'Growth', icon: 'TrendingUp', color: props.color2 || '#10b981' },\n    { title: props.title3 || 'Security', icon: 'Lock', color: props.color3 || '#8b5cf6' }\n  ];\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      justifyContent: 'space-around',\n      alignItems: 'center',\n      perspective: '1000px'\n    }\n  }, cards.map((card, index) => {\n    const delay = index * 0.2;\n    \n    return React.createElement('div', {\n      key: `card-${index}`,\n      style: {\n        width: '400px',\n        height: '500px',\n        backgroundColor: 'white',\n        borderRadius: '24px',\n        padding: '48px',\n        boxShadow: '0 20px 60px rgba(0,0,0,0.1)',\n        display: 'flex',\n        flexDirection: 'column',\n        alignItems: 'center',\n        justifyContent: 'center',\n        gap: '32px',\n        transform: 'rotateY(15deg) rotateX(-10deg)',\n        transformStyle: 'preserve-3d',\n        animation: `float ${3 + index}s ease-in-out infinite`,\n        animationDelay: `${delay}s`\n      }\n    }, [\n      React.createElement('style', {\n        key: `float-style-${index}`\n      }, `\n        @keyframes float {\n          0%, 100% { transform: rotateY(15deg) rotateX(-10deg) translateY(0); }\n          50% { transform: rotateY(15deg) rotateX(-10deg) translateY(-20px); }\n        }\n      `),\n      React.createElement('div', {\n        style: {\n          width: '80px',\n          height: '80px',\n          marginBottom: '16px',\n          backgroundColor: card.color,\n          borderRadius: '20px',\n          display: 'flex',\n          alignItems: 'center',\n          justifyContent: 'center'\n        }\n      }),\n      React.createElement('h3', {\n        style: {\n          fontSize: '48px',\n          fontWeight: '800',\n          color: card.color,\n          margin: 0,\n          letterSpacing: '1px',\n          textTransform: 'uppercase',\n          textShadow: '0 2px 6px rgba(0,0,0,0.1)'\n        }\n      }, card.title),\n      React.createElement('div', {\n        style: {\n          width: '100px',\n          height: '4px',\n          backgroundColor: card.color,\n          borderRadius: '2px'\n        }\n      })\n    ]);\n  }));\n}",
+          "props": {
+            "title1": "Innovation",
+            "color1": "#3b82f6",
+            "title2": "Growth", 
+            "color2": "#10b981",
+            "title3": "Security",
+            "color3": "#8b5cf6"
+          }
+        }
+      }
+    },
+    "liquid_progress_bars": {
+      "description": "Progress bars with liquid wave animation",
+      "use_cases": ["Loading states", "Progress tracking", "Skill levels"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 260, "y": 300},
+          "width": 1400,
+          "height": 480},
+          "render": "function render({ props }, instanceId) {\n  const [wave, setWave] = React.useState(0);\n  const items = [\n    { label: props.label1 || 'Performance', value: props.value1 || 85, color: props.color1 || '#3b82f6' },\n    { label: props.label2 || 'Efficiency', value: props.value2 || 92, color: props.color2 || '#10b981' },\n    { label: props.label3 || 'Innovation', value: props.value3 || 78, color: props.color3 || '#f59e0b' }\n  ];\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setWave(prev => prev + 0.1);\n    }, 50);\n    return () => clearInterval(interval);\n  }, []);\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      gap: '48px',\n      padding: '80px',\n      boxSizing: 'border-box',\n      overflow: 'hidden'\n    }\n  }, items.map((item, index) => {\n    const waveHeight = 10;\n    const waveY = 100 - item.value + Math.sin(wave + index) * waveHeight;\n    \n    return React.createElement('div', {\n      key: `item-${index}`,\n      style: {\n        display: 'flex',\n        alignItems: 'center',\n        gap: '32px'\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          width: '280px',\n          fontSize: '32px',\n          fontWeight: '700',\n          color: '#1f2937',\n          textTransform: 'uppercase',\n          letterSpacing: '1px',\n          textShadow: '0 2px 4px rgba(0,0,0,0.1)'\n        }\n      }, item.label),\n      React.createElement('div', {\n        style: {\n          flex: 1,\n          height: '60px',\n          backgroundColor: '#f3f4f6',\n          borderRadius: '30px',\n          position: 'relative',\n          overflow: 'hidden'\n        }\n      }, [\n        React.createElement('svg', {\n          style: {\n            position: 'absolute',\n            width: '100%',\n            height: '100%'\n          },\n          viewBox: '0 0 100 100',\n          preserveAspectRatio: 'none'\n        }, [\n          React.createElement('defs', {}, [\n            React.createElement('linearGradient', {\n              id: `gradient-${index}`,\n              x1: '0%',\n              y1: '0%',\n              x2: '100%',\n              y2: '0%'\n            }, [\n              React.createElement('stop', {\n                offset: '0%',\n                stopColor: item.color,\n                stopOpacity: 0.8\n              }),\n              React.createElement('stop', {\n                offset: '100%',\n                stopColor: item.color,\n                stopOpacity: 1\n              })\n            ])\n          ]),\n          React.createElement('path', {\n            d: `M 0 ${waveY} Q 25 ${waveY - waveHeight} 50 ${waveY} T 100 ${waveY} L 100 100 L 0 100 Z`,\n            fill: `url(#gradient-${index})`\n          })\n        ]),\n        React.createElement('div', {\n          style: {\n            position: 'absolute',\n            right: '32px',\n            top: '50%',\n            transform: 'translateY(-50%)',\n            fontSize: '32px',\n            fontWeight: '800',\n            color: item.value > 50 ? 'white' : item.color,\n            textShadow: item.value > 50 ? '0 2px 4px rgba(0,0,0,0.2)' : 'none',\n            letterSpacing: '0.5px'\n          }\n        }, `${item.value}%`)\n      ])\n    ]);\n  }));\n}",
+          "props": {
+            "label1": "Performance",
+            "value1": 85,
+            "color1": "#3b82f6",
+            "label2": "Efficiency",
+            "value2": 92,
+            "color2": "#10b981"
+          }
+        }
+      }
+    },
+    "neon_glow_text": {
+      "description": "Text with animated neon glow effect",
+      "use_cases": ["Headlines", "CTAs", "Night/tech themes"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 400},
+          "width": 1600,
+          "height": 280},
+          "render": "function render({ props }, instanceId) {\n  const [intensity, setIntensity] = React.useState(1);\n  const text = props.text || 'NEON DREAMS';\n  const glowColor = props.glowColor || '#00ffff';\n  const textColor = props.textColor || '#ffffff';\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setIntensity(0.7 + Math.random() * 0.3);\n    }, 100);\n    return () => clearInterval(interval);\n  }, []);\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      backgroundColor: '#0a0a0a',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center'\n    }\n  }, React.createElement('h1', {\n    style: {\n      fontSize: '120px',\n      fontWeight: '900',\n      color: textColor,\n      textTransform: 'uppercase',\n      letterSpacing: '0.1em',\n      textShadow: `\n        0 0 10px ${glowColor},\n        0 0 20px ${glowColor},\n        0 0 30px ${glowColor},\n        0 0 40px ${glowColor},\n        0 0 ${70 * intensity}px ${glowColor},\n        0 0 ${80 * intensity}px ${glowColor},\n        0 0 ${100 * intensity}px ${glowColor}\n      `,\n      animation: 'flicker 2s infinite alternate'\n    }\n  }, text));\n}",
+          "props": {
+            "text": "NEON DREAMS",
+            "glowColor": "#00ffff",
+            "textColor": "#ffffff"
+          }
+        }
+      }
+    },
+    "aurora_wave_background": {
+      "description": "Northern lights inspired animated wave background",
+      "use_cases": ["Creative presentations", "Artistic themes", "Nature topics"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const [time, setTime] = React.useState(0);\n  const colors = props.colors || ['#00d4ff', '#00ff88', '#a78bfa', '#f472b6'];\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setTime(t => t + 0.02);\n    }, 50);\n    return () => clearInterval(interval);\n  }, []);\n  \n  const gradients = colors.map((color, i) => {\n    const offset = i * 0.25;\n    const x = 50 + Math.sin(time + offset) * 30;\n    const y = 50 + Math.cos(time * 0.7 + offset) * 20;\n    const size = 60 + Math.sin(time * 0.5 + offset) * 20;\n    return `radial-gradient(ellipse ${size}% ${size * 0.6}% at ${x}% ${y}%, ${color}22 0%, transparent 60%)`;\n  });\n  \n  return React.createElement('div', {\n    style: {\n      position: 'absolute',\n      width: '100%',\n      height: '100%',\n      background: `${gradients.join(', ')}, linear-gradient(180deg, #0a0a0a 0%, #1a1a2e 100%)`,\n      filter: 'blur(60px) saturate(150%)'\n    }\n  });\n}",
+          "props": {
+            "colors": ["#00d4ff", "#00ff88", "#a78bfa", "#f472b6"]
+          }
+        }
+      }
+    },
+    "mesh_gradient_clouds": {
+      "description": "Organic cloud-like mesh gradient background",
+      "use_cases": ["Soft presentations", "Dreamy themes", "Creative backgrounds"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const colors = props.colors || ['#e0aaff', '#c77dff', '#9d4edd', '#7209b7'];\n  const bgColor = props.bgColor || '#10002b';\n  \n  const meshPoints = [\n    { x: 20, y: 30, color: colors[0], size: 80 },\n    { x: 70, y: 20, color: colors[1], size: 70 },\n    { x: 30, y: 70, color: colors[2], size: 90 },\n    { x: 80, y: 60, color: colors[3], size: 75 }\n  ];\n  \n  const gradients = meshPoints.map((point, i) => \n    `radial-gradient(circle at ${point.x}% ${point.y}%, ${point.color}40 0%, transparent ${point.size}%)`\n  ).join(', ');\n  \n  return React.createElement('div', {\n    style: {\n      position: 'absolute',\n      width: '100%',\n      height: '100%',\n      background: `${gradients}, ${bgColor}`,\n      filter: 'blur(80px) brightness(1.2)'\n    }\n  });\n}",
+          "props": {
+            "colors": ["#e0aaff", "#c77dff", "#9d4edd", "#7209b7"],
+            "bgColor": "#10002b"
+          }
+        }
+      }
+    },
+    "geometric_aura_background": {
+      "description": "Geometric shapes with glowing aura effects",
+      "use_cases": ["Tech presentations", "Modern themes", "Abstract backgrounds"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const [rotation, setRotation] = React.useState(0);\n  const primaryColor = props.primaryColor || '#06ffa5';\n  const secondaryColor = props.secondaryColor || '#ff006e';\n  const bgColor = props.bgColor || '#0a0a0a';\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setRotation(r => r + 0.5);\n    }, 50);\n    return () => clearInterval(interval);\n  }, []);\n  \n  return React.createElement('div', {\n    style: {\n      position: 'absolute',\n      width: '100%',\n      height: '100%',\n      background: bgColor,\n      overflow: 'hidden'\n    }\n  }, [\n    React.createElement('div', {\n      key: 'hex1',\n      style: {\n        position: 'absolute',\n        width: '400px',\n        height: '400px',\n        left: '20%',\n        top: '30%',\n        background: `radial-gradient(circle, ${primaryColor}40 0%, transparent 70%)`,\n        filter: 'blur(60px)',\n        transform: `rotate(${rotation}deg)`,\n        borderRadius: '30%'\n      }\n    }),\n    React.createElement('div', {\n      key: 'hex2',\n      style: {\n        position: 'absolute',\n        width: '600px',\n        height: '600px',\n        right: '10%',\n        bottom: '20%',\n        background: `radial-gradient(circle, ${secondaryColor}30 0%, transparent 70%)`,\n        filter: 'blur(80px)',\n        transform: `rotate(${-rotation * 0.7}deg)`,\n        borderRadius: '40%'\n      }\n    })\n  ]);\n}",
+          "props": {
+            "primaryColor": "#06ffa5",
+            "secondaryColor": "#ff006e",
+            "bgColor": "#0a0a0a"
+          }
+        }
+      }
+    }
+  }
+}

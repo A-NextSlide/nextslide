@@ -1,0 +1,283 @@
+/* Font imports */
+
+/* 
+ * External font loading is now enabled. 
+ * We're importing core fonts directly and loading others dynamically.
+ */
+
+/* Core Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Inter:wght@400;700&family=Poppins:wght@400;500;700&display=swap');
+
+/* Monospace Fonts */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Source+Code+Pro:wght@400;700&family=Ubuntu+Mono:wght@400;700&family=Inconsolata:wght@400;700&family=Fira+Code:wght@400;700&family=Courier+Prime:wght@400;700&display=swap');
+
+/* System Replacements - Use distinct fonts for each system font */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito+Sans:wght@400;700&display=swap');
+
+/* CSS Variables for Font Families */
+:root {
+  /* Original Design Font Families */
+  --font-abril-fatface: 'Abril Fatface', cursive, serif;
+  --font-galgo-condensed: 'Galgo Condensed', serif;
+  --font-archivo-black: 'Archivo Black', sans-serif;
+  --font-cabinet-grotesk: 'Cabinet Grotesk', sans-serif;
+  --font-caparica: 'Caparica', sans-serif;
+  --font-chillax: 'Chillax', sans-serif;
+  --font-clash-display: 'Clash Display', sans-serif;
+  --font-corben: 'Corben', cursive, serif;
+  --font-dela-gothic-one: 'Dela Gothic One', cursive, sans-serif;
+  --font-geist: 'Geist', sans-serif;
+  --font-general-sans: 'General Sans', sans-serif;
+  --font-gloock: 'Gloock', serif;
+  --font-hk-grotesk: 'HK Grotesk', sans-serif;
+  --font-humane: 'Humane', sans-serif;
+  --font-inter-tight: 'Inter Tight', sans-serif;
+  --font-italiana: 'Italiana', serif;
+  --font-josefin-sans: 'Josefin Sans', sans-serif;
+  --font-melodrama: 'Melodrama', serif;
+  --font-monoton: 'Monoton', cursive, sans-serif;
+  --font-nohemi: 'NOHEMI', sans-serif;
+  --font-orbitron: 'Orbitron', sans-serif;
+  --font-outfit: 'Outfit', sans-serif;
+  --font-plus-jakarta-display: 'Plus Jakarta Display', sans-serif;
+  --font-poiret-one: 'Poiret One', cursive, sans-serif;
+  --font-ranade: 'Ranade', sans-serif;
+  --font-recia: 'Recia', serif;
+  --font-satoshi: 'Satoshi', sans-serif;
+  --font-sentient: 'Sentient', serif;
+  --font-switzer: 'Switzer', sans-serif;
+  --font-syncopate: 'Syncopate', sans-serif;
+  --font-syne: 'Syne', sans-serif;
+  --font-tanker: 'Tanker', sans-serif;
+  --font-unbounded: 'Unbounded', cursive, sans-serif;
+  --font-yeseva-one: 'Yeseva One', cursive, serif;
+  --font-zen-dots: 'Zen Dots', cursive, sans-serif;
+  --font-zodiak: 'Zodiak', serif;
+  
+  /* New Google Fonts Additions */
+  --font-akshar: 'Akshar', sans-serif;
+  --font-black-top: 'Black Top', sans-serif;
+  --font-caladea: 'Caladea', serif;
+  --font-comme: 'Comme', sans-serif;
+  --font-commissioner: 'Commissioner', sans-serif;
+  --font-familjen-grotesk: 'Familjen Grotesk', sans-serif;
+  --font-figtree: 'Figtree', sans-serif;
+  --font-fragment-mono: 'Fragment Mono', monospace;
+  --font-gabarito: 'Gabarito', sans-serif;
+  --font-grandstander: 'Grandstander', cursive;
+  --font-instrument-sans: 'Instrument Sans', sans-serif;
+  --font-m-plus-rounded-1c: 'M PLUS Rounded 1c', sans-serif;
+  --font-newsreader: 'Newsreader', serif;
+  --font-quicksand: 'Quicksand', sans-serif;
+  --font-sora: 'Sora', sans-serif;
+  --font-varela-round: 'Varela Round', sans-serif;
+  --font-zilla-slab: 'Zilla Slab', serif;
+  
+  /* Script & Decorative Fonts */
+  --font-allura: 'Allura', cursive;
+  --font-berkshire-swash: 'Berkshire Swash', cursive;
+  --font-brucker-script: 'Brucker Script', cursive;
+  --font-calligraffitti: 'Calligraffitti', cursive;
+  --font-cedarville-cursive: 'Cedarville Cursive', cursive;
+  --font-damion: 'Damion', cursive;
+  --font-gambarino: 'Gambarino', serif;
+  --font-gochi-hand: 'Gochi Hand', cursive;
+  --font-great-vibes: 'Great Vibes', cursive;
+  --font-homemade-apple: 'Homemade Apple', cursive;
+  --font-kalam: 'Kalam', cursive;
+  --font-marck-script: 'Marck Script', cursive;
+  --font-mrs-saint-delafield: 'Mrs Saint Delafield', cursive;
+  --font-oooh-baby: 'Oooh Baby', cursive;
+  --font-parisienne: 'Parisienne', cursive;
+  --font-sacramento: 'Sacramento', cursive;
+  --font-sharpie: 'Sharpie', cursive;
+  --font-waterfall: 'Waterfall', cursive;
+  
+  /* Sans-Serif Font Families */
+  --font-roboto: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-open-sans: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-lato: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-montserrat: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-poppins: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-nunito: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-work-sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-source-sans-pro: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-raleway: 'Raleway', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-pt-sans: 'PT Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-rubik: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-dm-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-noto-sans: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  
+  /* Serif Font Families */
+  --font-playfair-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-merriweather: 'Merriweather', Georgia, 'Times New Roman', serif;
+  --font-lora: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-pt-serif: 'PT Serif', Georgia, 'Times New Roman', serif;
+  --font-libre-baskerville: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+  --font-noto-serif: 'Noto Serif', Georgia, 'Times New Roman', serif;
+  --font-eb-garamond: 'EB Garamond', Georgia, 'Times New Roman', serif;
+  --font-crimson-text: 'Crimson Text', Georgia, 'Times New Roman', serif;
+  --font-cormorant-garamond: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-vollkorn: 'Vollkorn', Georgia, 'Times New Roman', serif;
+  
+  /* Display Font Families */
+  --font-bebas-neue: 'Bebas Neue', Impact, sans-serif;
+  --font-comfortaa: 'Comfortaa', cursive, sans-serif;
+  --font-pacifico: 'Pacifico', cursive, sans-serif;
+  --font-caveat: 'Caveat', cursive, sans-serif;
+  --font-dancing-script: 'Dancing Script', cursive, sans-serif;
+  --font-satisfy: 'Satisfy', cursive, sans-serif;
+  --font-lobster: 'Lobster', cursive, sans-serif;
+  --font-anton: 'Anton', Impact, sans-serif;
+  --font-permanent-marker: 'Permanent Marker', cursive, sans-serif;
+  --font-righteous: 'Righteous', cursive, sans-serif;
+  
+  /* Monospace Font Families - Use explicit fonts without fallbacks to ensure uniqueness */
+  --font-roboto-mono: 'Roboto Mono', monospace;
+  --font-source-code-pro: 'Source Code Pro', monospace;
+  --font-jetbrains-mono: 'JetBrains Mono', monospace;
+  --font-fira-code: 'Fira Code', monospace;
+  --font-space-mono: 'Space Mono', monospace;
+  --font-ubuntu-mono: 'Ubuntu Mono', monospace;
+  --font-inconsolata: 'Inconsolata', monospace;
+  --font-ibm-plex-mono: 'IBM Plex Mono', monospace;
+  --font-courier-prime: 'Courier Prime', monospace;
+  
+  /* System Font Stacks - Using distinct Google Fonts for each */
+  --font-system-ui: 'Nunito Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sf-pro: 'Work Sans', 'SF Pro Text', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-segoe-ui: 'Source Sans Pro', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --font-lucida-sans: 'Source Sans Pro', 'Lucida Sans', 'Lucida Sans Unicode', 'Lucida Grande', sans-serif;
+}
+
+/* Apply font-families explicitly for browsers that need it */
+/* Original Design Fonts */
+.font-abril-fatface { font-family: var(--font-abril-fatface); }
+.font-galgo-condensed { font-family: var(--font-galgo-condensed); }
+.font-archivo-black { font-family: var(--font-archivo-black); }
+.font-cabinet-grotesk { font-family: var(--font-cabinet-grotesk); }
+.font-caparica { font-family: var(--font-caparica); }
+.font-chillax { font-family: var(--font-chillax); }
+.font-clash-display { font-family: var(--font-clash-display); }
+.font-corben { font-family: var(--font-corben); }
+.font-dela-gothic-one { font-family: var(--font-dela-gothic-one); }
+.font-geist { font-family: var(--font-geist); }
+.font-general-sans { font-family: var(--font-general-sans); }
+.font-gloock { font-family: var(--font-gloock); }
+.font-hk-grotesk { font-family: var(--font-hk-grotesk); }
+.font-humane { font-family: var(--font-humane); }
+.font-inter-tight { font-family: var(--font-inter-tight); }
+.font-italiana { font-family: var(--font-italiana); }
+.font-josefin-sans { font-family: var(--font-josefin-sans); }
+.font-melodrama { font-family: var(--font-melodrama); }
+.font-monoton { font-family: var(--font-monoton); }
+.font-nohemi { font-family: var(--font-nohemi); }
+.font-orbitron { font-family: var(--font-orbitron); }
+.font-outfit { font-family: var(--font-outfit); }
+.font-plus-jakarta-display { font-family: var(--font-plus-jakarta-display); }
+.font-poiret-one { font-family: var(--font-poiret-one); }
+.font-ranade { font-family: var(--font-ranade); }
+.font-recia { font-family: var(--font-recia); }
+.font-satoshi { font-family: var(--font-satoshi); }
+.font-sentient { font-family: var(--font-sentient); }
+.font-switzer { font-family: var(--font-switzer); }
+.font-syncopate { font-family: var(--font-syncopate); }
+.font-syne { font-family: var(--font-syne); }
+.font-tanker { font-family: var(--font-tanker); }
+.font-unbounded { font-family: var(--font-unbounded); }
+.font-yeseva-one { font-family: var(--font-yeseva-one); }
+.font-zen-dots { font-family: var(--font-zen-dots); }
+.font-zodiak { font-family: var(--font-zodiak); }
+
+/* New Google Fonts Additions */
+.font-akshar { font-family: var(--font-akshar); }
+.font-black-top { font-family: var(--font-black-top); }
+.font-caladea { font-family: var(--font-caladea); }
+.font-comme { font-family: var(--font-comme); }
+.font-commissioner { font-family: var(--font-commissioner); }
+.font-familjen-grotesk { font-family: var(--font-familjen-grotesk); }
+.font-figtree { font-family: var(--font-figtree); }
+.font-fragment-mono { font-family: var(--font-fragment-mono); }
+.font-gabarito { font-family: var(--font-gabarito); }
+.font-grandstander { font-family: var(--font-grandstander); }
+.font-instrument-sans { font-family: var(--font-instrument-sans); }
+.font-m-plus-rounded-1c { font-family: var(--font-m-plus-rounded-1c); }
+.font-newsreader { font-family: var(--font-newsreader); }
+.font-quicksand { font-family: var(--font-quicksand); }
+.font-sora { font-family: var(--font-sora); }
+.font-varela-round { font-family: var(--font-varela-round); }
+.font-zilla-slab { font-family: var(--font-zilla-slab); }
+
+/* Script & Decorative Fonts */
+.font-allura { font-family: var(--font-allura); }
+.font-berkshire-swash { font-family: var(--font-berkshire-swash); }
+.font-brucker-script { font-family: var(--font-brucker-script); }
+.font-calligraffitti { font-family: var(--font-calligraffitti); }
+.font-cedarville-cursive { font-family: var(--font-cedarville-cursive); }
+.font-damion { font-family: var(--font-damion); }
+.font-gambarino { font-family: var(--font-gambarino); }
+.font-gochi-hand { font-family: var(--font-gochi-hand); }
+.font-great-vibes { font-family: var(--font-great-vibes); }
+.font-homemade-apple { font-family: var(--font-homemade-apple); }
+.font-kalam { font-family: var(--font-kalam); }
+.font-marck-script { font-family: var(--font-marck-script); }
+.font-mrs-saint-delafield { font-family: var(--font-mrs-saint-delafield); }
+.font-oooh-baby { font-family: var(--font-oooh-baby); }
+.font-parisienne { font-family: var(--font-parisienne); }
+.font-sacramento { font-family: var(--font-sacramento); }
+.font-sharpie { font-family: var(--font-sharpie); }
+.font-waterfall { font-family: var(--font-waterfall); }
+
+/* Sans-Serif Fonts */
+.font-roboto { font-family: var(--font-roboto); }
+.font-open-sans { font-family: var(--font-open-sans); }
+.font-lato { font-family: var(--font-lato); }
+.font-montserrat { font-family: var(--font-montserrat); }
+.font-poppins { font-family: var(--font-poppins); }
+.font-nunito { font-family: var(--font-nunito); }
+.font-inter { font-family: var(--font-inter); }
+.font-work-sans { font-family: var(--font-work-sans); }
+.font-source-sans-pro { font-family: var(--font-source-sans-pro); }
+.font-raleway { font-family: var(--font-raleway); }
+.font-pt-sans { font-family: var(--font-pt-sans); }
+.font-rubik { font-family: var(--font-rubik); }
+.font-dm-sans { font-family: var(--font-dm-sans); }
+.font-noto-sans { font-family: var(--font-noto-sans); }
+
+.font-playfair-display { font-family: var(--font-playfair-display); }
+.font-merriweather { font-family: var(--font-merriweather); }
+.font-lora { font-family: var(--font-lora); }
+.font-pt-serif { font-family: var(--font-pt-serif); }
+.font-libre-baskerville { font-family: var(--font-libre-baskerville); }
+.font-noto-serif { font-family: var(--font-noto-serif); }
+.font-eb-garamond { font-family: var(--font-eb-garamond); }
+.font-crimson-text { font-family: var(--font-crimson-text); }
+.font-cormorant-garamond { font-family: var(--font-cormorant-garamond); }
+.font-vollkorn { font-family: var(--font-vollkorn); }
+
+.font-bebas-neue { font-family: var(--font-bebas-neue); }
+.font-comfortaa { font-family: var(--font-comfortaa); }
+.font-pacifico { font-family: var(--font-pacifico); }
+.font-caveat { font-family: var(--font-caveat); }
+.font-dancing-script { font-family: var(--font-dancing-script); }
+.font-satisfy { font-family: var(--font-satisfy); }
+.font-lobster { font-family: var(--font-lobster); }
+.font-anton { font-family: var(--font-anton); }
+.font-permanent-marker { font-family: var(--font-permanent-marker); }
+.font-righteous { font-family: var(--font-righteous); }
+
+.font-roboto-mono { font-family: var(--font-roboto-mono); }
+.font-source-code-pro { font-family: var(--font-source-code-pro); }
+.font-jetbrains-mono { font-family: var(--font-jetbrains-mono); }
+.font-fira-code { font-family: var(--font-fira-code); }
+.font-space-mono { font-family: var(--font-space-mono); }
+.font-ubuntu-mono { font-family: var(--font-ubuntu-mono); }
+.font-inconsolata { font-family: var(--font-inconsolata); }
+.font-ibm-plex-mono { font-family: var(--font-ibm-plex-mono); }
+.font-courier-prime { font-family: var(--font-courier-prime); }
+
+.font-system-ui { font-family: var(--font-system-ui); }
+.font-sf-pro { font-family: var(--font-sf-pro); }
+.font-segoe-ui { font-family: var(--font-segoe-ui); }
+.font-lucida-sans { font-family: var(--font-lucida-sans); }

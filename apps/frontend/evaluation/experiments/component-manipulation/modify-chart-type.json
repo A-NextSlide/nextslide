@@ -1,0 +1,54 @@
+{
+  "id": "modify-chart-type",
+  "description": "Convert and customize chart visualization",
+  "currentSlideId": "slide-1",
+  "prompt": "Change the existing bar chart to a line chart, add animations, update the theme to 'dark', and make the line thicker with larger data points.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Sales Trends",
+      "components": [
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 100 },
+            "width": 600,
+            "height": 80,
+            "texts": [{ "text": "Monthly Sales Performance", "style": {} }],
+            "fontSize": 52,
+            "fontWeight": "bold",
+            "textAlign": "left",
+            "textColor": "#ff0000"
+          }
+        },
+        {
+          "id": "chart-1",
+          "type": "Chart",
+          "props": {
+            "position": { "x": 210, "y": 200 },
+            "width": 1000,
+            "height": 500,
+            "chartType": "bar",
+            "data": [
+              { "name": "Jan", "value": 45, "color": "#61cdbb" },
+              { "name": "Feb", "value": 52, "color": "#97e3d5" },
+              { "name": "Mar", "value": 63, "color": "#e8c1a0" },
+              { "name": "Apr", "value": 58, "color": "#f47560" },
+              { "name": "May", "value": 48, "color": "#61cdbb" },
+              { "name": "Jun", "value": 43, "color": "#97e3d5" }
+            ],
+            "enableLabel": true,
+            "enableAxisTicks": true,
+            "enableGrid": true,
+            "showLegend": false,
+            "theme": "light",
+            "animate": false,
+            "axisBottom": { "legend": "Month", "legendOffset": 36 },
+            "axisLeft": { "legend": "Sales", "legendOffset": -40 }
+          }
+        }
+      ]
+    }
+  ]
+} 

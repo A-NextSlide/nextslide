@@ -1,0 +1,72 @@
+:root {
+  /* Default theme variables - will be overridden by ThemeContext */
+  --theme-bg-color: #ffffff;
+  --theme-text-color: #000000;
+  --theme-font-family: 'Inter', sans-serif;
+  --theme-font-size: 16px;
+  --theme-font-weight: 400;
+  --theme-accent-color: #4287f5;
+  --theme-accent-secondary: #90b8f8;
+  --theme-heading-font-family: 'Inter', sans-serif;
+  --theme-heading-color: #000000;
+}
+
+/* Theme-aware component styling */
+.theme-aware-bg {
+  background-color: var(--theme-bg-color);
+}
+
+.theme-aware-text {
+  color: var(--theme-text-color);
+  font-family: var(--theme-font-family);
+}
+
+.theme-aware-heading {
+  color: var(--theme-heading-color, var(--theme-text-color));
+  font-family: var(--theme-heading-font-family, var(--theme-font-family));
+  font-weight: 700;
+}
+
+.theme-aware-accent {
+  color: var(--theme-accent-color);
+  border-color: var(--theme-accent-color);
+}
+
+.theme-aware-accent-bg {
+  background-color: var(--theme-accent-color);
+}
+
+.theme-aware-accent-fill {
+  fill: var(--theme-accent-color);
+}
+
+/* Theme-aware buttons */
+.theme-aware-button {
+  background-color: var(--theme-accent-color);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-family: var(--theme-font-family);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.theme-aware-button:hover {
+  background-color: var(--theme-accent-secondary);
+}
+
+/* Theme-aware borders */
+.theme-aware-border {
+  border: 1px solid var(--theme-accent-color);
+}
+
+/* Theme-aware links */
+.theme-aware-link {
+  color: var(--theme-accent-color);
+  text-decoration: none;
+}
+
+.theme-aware-link:hover {
+  text-decoration: underline;
+}

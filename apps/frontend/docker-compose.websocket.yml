@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  websocket-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.websocket
+    container_name: slide-sorcery-websocket
+    ports:
+      - "1234:1234"
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - YJS_PORT=1234
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1234/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - websocket-logs:/app/logs
+
+volumes:
+  websocket-logs:

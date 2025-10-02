@@ -1,0 +1,245 @@
+{
+  "grid_system": {
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "aspect_ratio": "16:9",
+      "safe_area": {
+        "x": 80,
+        "y": 80,
+        "width": 1760,
+        "height": 920
+      }
+    },
+    "margins": {
+      "outer": 80,
+      "inner": 60,
+      "minimum": 40,
+      "generous": 120,
+      "edge_cases": {
+        "full_bleed": 0,
+        "breathing_room": 160
+      }
+    },
+    "columns": {
+      "single": {
+        "x": 80,
+        "width": 1760,
+        "use_for": "Centered content, full-width elements"
+      },
+      "halves": {
+        "left": {
+          "x": 80,
+          "width": 880
+        },
+        "right": {
+          "x": 960,
+          "width": 880
+        },
+        "gap": 80,
+        "use_for": "Side-by-side content, comparisons"
+      },
+      "thirds": {
+        "columns": [
+          {
+            "x": 80,
+            "width": 560
+          },
+          {
+            "x": 680,
+            "width": 560
+          },
+          {
+            "x": 1280,
+            "width": 560
+          }
+        ],
+        "gap": 40,
+        "use_for": "Three options, triads"
+      },
+      "golden_ratio": {
+        "large": {
+          "x": 80,
+          "width": 1104
+        },
+        "small": {
+          "x": 1224,
+          "width": 616
+        },
+        "ratio": 1.618
+      }
+    },
+    "snap_points": {
+      "x": [
+        80,
+        240,
+        400,
+        560,
+        720,
+        880,
+        960,
+        1040,
+        1200,
+        1360,
+        1520,
+        1680,
+        1840
+      ],
+      "y": [
+        80,
+        120,
+        240,
+        360,
+        480,
+        540,
+        600,
+        720,
+        840,
+        960,
+        1000
+      ]
+    }
+  },
+  "spacing": {
+    "component_gaps": {
+      "minimum": 40,
+      "standard": 60,
+      "generous": 80,
+      "section_break": 120
+    },
+    "text_spacing": {
+      "title_to_subtitle": 40,
+      "title_to_body": 60,
+      "paragraph_gap": 40,
+      "list_items": 24
+    },
+    "overlap_prevention": {
+      "formula": "comp1.x >= comp2.x + comp2.width + 40",
+      "buffer_zones": {
+        "text": 40,
+        "images": 60,
+        "charts": 60
+      }
+    }
+  },
+  "positioning": {
+    "center_x": "(1920 - width) / 2",
+    "center_y": "(1080 - height) / 2",
+    "cumulative": "nextY = prevY + prevHeight + gap",
+    "alignment_rules": [
+      "Align to grid points",
+      "Maintain consistent gaps",
+      "Group related elements",
+      "Create visual hierarchy with position"
+    ]
+  },
+  "advanced": {
+    "composition_techniques": {
+      "rule_of_thirds": {
+        "grid": "3\u00d73 division",
+        "placement": "Key elements at intersections",
+        "creates": "Dynamic, balanced layouts"
+      },
+      "golden_ratio": {
+        "value": 1.618,
+        "applications": {
+          "spacing": "Fibonacci sequence",
+          "proportions": "61.8% / 38.2% split"
+        }
+      },
+      "diagonal_method": {
+        "technique": "45\u00b0 angle guides",
+        "creates": "Movement and energy",
+        "use_for": "Breaking grid monotony"
+      },
+      "symmetry_types": {
+        "reflection": "Mirror across axis",
+        "rotation": "Around center point",
+        "translation": "Repeated pattern"
+      }
+    },
+    "whitespace_mastery": {
+      "macro_space": {
+        "description": "Large areas of emptiness",
+        "creates": "Elegance, focus",
+        "minimum": "30% of slide"
+      },
+      "micro_space": {
+        "description": "Small gaps between elements",
+        "consistency": "Use spacing system",
+        "hierarchy": "More space = less related"
+      },
+      "active_space": {
+        "description": "Whitespace that guides eye",
+        "techniques": [
+          "Leading lines of space",
+          "Isolation for emphasis",
+          "Breathing room for readability"
+        ]
+      }
+    },
+    "responsive_principles": {
+      "safe_areas": {
+        "projection": "10% margin for variability",
+        "different_ratios": "Test 4:3 and 16:10",
+        "text_safety": "Keep critical info centered"
+      },
+      "scalable_layouts": {
+        "percentage_based": "Use relative sizing",
+        "anchor_points": "Fix to corners/edges",
+        "fluid_grids": "Columns that adapt"
+      }
+    }
+  },
+  "image_positioning": {
+    "boundary_validation": {
+      "max_canvas_width": 1920,
+      "max_canvas_height": 1080,
+      "validation_rules": [
+        "position.x + width <= 1920",
+        "position.y + height <= 1080",
+        "position.x >= 0",
+        "position.y >= 0"
+      ]
+    },
+    "safe_image_zones": {
+      "full_bleed": {
+        "position": {"x": 0, "y": 0},
+        "max_size": {"width": 1920, "height": 1080},
+        "use_case": "Hero images, backgrounds"
+      },
+      "left_content": {
+        "position": {"x": 80, "y": 80},
+        "max_size": {"width": 880, "height": 920},
+        "use_case": "Side-by-side with text"
+      },
+      "right_content": {
+        "position": {"x": 960, "y": 80},
+        "max_size": {"width": 880, "height": 920},
+        "use_case": "Side-by-side with text"
+      },
+      "centered": {
+        "position": {"x": 160, "y": 140},
+        "max_size": {"width": 1600, "height": 800},
+        "use_case": "Featured content"
+      },
+      "grid_cards": {
+        "max_size": {"width": 560, "height": 600},
+        "spacing": 40,
+        "use_case": "Multiple images in grid"
+      }
+    },
+    "overflow_prevention": {
+      "right_edge": "If x > 960, max_width = 1920 - x",
+      "bottom_edge": "If y > 540, max_height = 1080 - y",
+      "automatic_resizing": "Scale down proportionally if exceeds bounds",
+      "margin_safety": "Keep 80px from edges unless full-bleed"
+    },
+    "responsive_sizing": {
+      "aspect_ratio_preservation": "Always maintain original ratio",
+      "max_scale": "Never scale above original resolution",
+      "min_size": {"width": 200, "height": 150},
+      "dynamic_adjustment": "Reduce size to fit within boundaries"
+    }
+  }
+}

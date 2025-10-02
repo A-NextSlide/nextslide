@@ -1,0 +1,52 @@
+{
+  "id": "add-two-slides",
+  "description": "Add two new slides to create a 3-slide sequence",
+  "currentSlideId": "slide-1",
+  "prompt": "This slide will be our introduction. Add two more slides: one for 'Key Features' with 3-4 bullet points, and a final slide for 'Contact Information'.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Introduction",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 200,
+            "texts": [{ "text": "Product Overview", "style": {} }],
+            "fontSize": 60,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "subtitle-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 420 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "An introduction to our new service", "style": {} }],
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "textAlign": "center",
+            "textColor": "#666666"
+          }
+        }
+      ]
+    }
+  ]
+} 

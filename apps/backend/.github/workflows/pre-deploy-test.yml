@@ -1,0 +1,45 @@
+name: Pre-deployment Tests
+
+on:
+  push:
+    branches: [ ahmed/backend, main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black
+        
+    - name: Check syntax
+      run: |
+        python -m py_compile agents/deck_composer.py
+        python -m py_compile api/chat_server.py
+        python -m py_compile services/text_validation_service.py
+        
+    - name: Check for f-string issues
+      run: |
+        # Check for hex colors in f-strings
+        ! grep -r 'f["'\''"][^"'\'']*#[0-9a-fA-F]\{6\}' --include="*.py" . || (echo "Found hex colors in f-strings!" && exit 1)
+        
+    - name: Lint with flake8
+      run: |
+        # Stop on critical errors
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,__pycache__
+        # Full lint (warnings allowed)
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics --exclude=venv,__pycache__ 

@@ -1,0 +1,215 @@
+{
+  "psychology": {
+    "red": {
+      "emotions": [
+        "Energy",
+        "Urgency",
+        "Passion",
+        "Danger"
+      ],
+      "physiological": "Increases heart rate",
+      "use_for": [
+        "CTAs",
+        "Warnings",
+        "Sales",
+        "Food"
+      ],
+      "cultural_notes": "Lucky in China, danger in West"
+    },
+    "blue": {
+      "emotions": [
+        "Trust",
+        "Calm",
+        "Professional",
+        "Cold"
+      ],
+      "physiological": "Lowers blood pressure",
+      "use_for": [
+        "Corporate",
+        "Tech",
+        "Finance",
+        "Healthcare"
+      ],
+      "shades": {
+        "navy": "Authority, tradition",
+        "sky": "Freedom, optimism",
+        "teal": "Clarity, communication"
+      }
+    },
+    "green": {
+      "emotions": [
+        "Growth",
+        "Nature",
+        "Money",
+        "Health"
+      ],
+      "physiological": "Easiest on eyes",
+      "use_for": [
+        "Environment",
+        "Finance",
+        "Health",
+        "Organic"
+      ],
+      "shades": {
+        "forest": "Stability, wealth",
+        "lime": "Energy, freshness",
+        "mint": "Calm, cleanliness"
+      }
+    },
+    "yellow": {
+      "emotions": [
+        "Happiness",
+        "Caution",
+        "Energy"
+      ],
+      "physiological": "Stimulates mental activity",
+      "use_for": [
+        "Warnings",
+        "Children",
+        "Optimism"
+      ],
+      "note": "Use sparingly - can cause strain"
+    },
+    "purple": {
+      "emotions": [
+        "Luxury",
+        "Creativity",
+        "Mystery"
+      ],
+      "historical": "Royalty (expensive dye)",
+      "use_for": [
+        "Premium",
+        "Beauty",
+        "Spiritual"
+      ]
+    },
+    "orange": {
+      "emotions": [
+        "Friendly",
+        "Confident",
+        "Cheerful"
+      ],
+      "physiological": "Stimulates activity",
+      "use_for": [
+        "CTA buttons",
+        "Sports",
+        "Youth"
+      ]
+    },
+    "black": {
+      "emotions": [
+        "Sophistication",
+        "Power",
+        "Elegance"
+      ],
+      "use_for": [
+        "Luxury",
+        "Fashion",
+        "Tech"
+      ],
+      "tip": "Rarely pure black - use #0A0A0A"
+    },
+    "white": {
+      "emotions": [
+        "Purity",
+        "Space",
+        "Cleanliness"
+      ],
+      "use_for": [
+        "Minimal",
+        "Health",
+        "Tech"
+      ],
+      "tip": "Off-white (#FAFAFA) easier on eyes"
+    }
+  },
+  "color_schemes": {
+    "monochromatic": {
+      "description": "Single hue, varied lightness/saturation",
+      "formula": "Base + tints/shades",
+      "mood": "Cohesive, sophisticated",
+      "example": [
+        "#0066CC",
+        "#3385D6",
+        "#6699E0",
+        "#99BBEB",
+        "#CCE0F5"
+      ]
+    },
+    "analogous": {
+      "description": "Adjacent on color wheel",
+      "formula": "Base \u00b1 30\u00b0",
+      "mood": "Harmonious, natural",
+      "example": [
+        "Blue",
+        "Blue-violet",
+        "Violet"
+      ]
+    },
+    "complementary": {
+      "description": "Opposite on wheel",
+      "formula": "Base + 180\u00b0",
+      "mood": "High contrast, vibrant",
+      "tip": "Use 80/20 ratio"
+    },
+    "split_complementary": {
+      "description": "Base + two adjacent to complement",
+      "formula": "Base, (complement \u00b1 30\u00b0)",
+      "mood": "Vibrant but less tension"
+    },
+    "triadic": {
+      "description": "Three equidistant colors",
+      "formula": "Base + 120\u00b0 + 240\u00b0",
+      "mood": "Vibrant, balanced",
+      "ratio": "60-30-10"
+    },
+    "tetradic": {
+      "description": "Two complementary pairs",
+      "formula": "Rectangle on wheel",
+      "mood": "Rich, complex",
+      "warning": "Difficult to balance"
+    }
+  },
+  "practical_application": {
+    "60_30_10_rule": {
+      "60%": "Dominant/background (usually neutral)",
+      "30%": "Secondary/support (brand color)",
+      "10%": "Accent/CTA (high contrast)"
+    },
+    "contrast_hierarchy": {
+      "highest": "CTA buttons, key stats",
+      "high": "Headings, important info",
+      "medium": "Body text, standard elements",
+      "low": "Decorative, backgrounds"
+    },
+    "accessibility_safe": {
+      "combinations": [
+        {
+          "bg": "#FFFFFF",
+          "text": "#000000",
+          "ratio": 21
+        },
+        {
+          "bg": "#000000",
+          "text": "#FFFFFF",
+          "ratio": 21
+        },
+        {
+          "bg": "#FFFFFF",
+          "text": "#595959",
+          "ratio": 7.0
+        },
+        {
+          "bg": "#000000",
+          "text": "#969696",
+          "ratio": 7.0
+        }
+      ],
+      "tools": [
+        "WebAIM Contrast Checker",
+        "Stark",
+        "Able"
+      ]
+    }
+  }
+}

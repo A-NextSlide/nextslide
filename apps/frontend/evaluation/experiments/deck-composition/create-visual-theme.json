@@ -1,0 +1,57 @@
+{
+  "id": "create-visual-theme",
+  "description": "Create a cohesive visual theme",
+  "currentSlideId": "slide-1",
+  "prompt": "Create a cohesive visual theme for this slide using a modern professional color scheme. Add visual elements that would make this appropriate for a corporate finance presentation.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Financial Report",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#ffffff"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "Q2 Financial Performance", "style": {} }],
+            "fontSize": 48,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#000000"
+          }
+        },
+        {
+          "id": "content-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 300 },
+            "width": 800,
+            "height": 400,
+            "texts": [
+              {
+                "text": "• Revenue increased by 15% year-over-year\n• Operating margin improved to 22%\n• New client acquisition up by 30%\n• Launched 2 new product lines",
+                "style": {}
+              }
+            ],
+            "fontSize": 32,
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#000000"
+          }
+        }
+      ]
+    }
+  ]
+} 

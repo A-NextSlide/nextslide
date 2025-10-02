@@ -1,0 +1,24 @@
+{
+  "id": "add-shape-with-styling",
+  "description": "Add a shape to the slide and style it",
+  "currentSlideId": "slide-1",
+  "prompt": "Add a blue circle to the slide and give it a subtle shadow effect",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Experiment Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        }
+      ]
+    }
+  ]
+} 

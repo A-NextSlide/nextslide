@@ -1,0 +1,58 @@
+{
+  "size_contrast": {
+    "ratios": {
+      "subtle": "1.5\u00d7",
+      "moderate": "2-3\u00d7",
+      "dramatic": "4-5\u00d7",
+      "extreme": "8-10\u00d7"
+    },
+    "application": "Make important elements 2-3\u00d7 larger"
+  },
+  "color_emphasis": {
+    "techniques": {
+      "isolation": "One color in grayscale",
+      "contrast": "Complementary color",
+      "saturation": "Bright vs muted",
+      "temperature": "Warm vs cool"
+    }
+  },
+  "spatial_emphasis": {
+    "isolation": {
+      "description": "Surround with whitespace",
+      "minimum_space": "2\u00d7 element size",
+      "creates": "Immediate focus"
+    },
+    "positioning": {
+      "center": "Natural focal point",
+      "golden_ratio": "Pleasing off-center",
+      "rule_of_thirds": "Dynamic placement"
+    }
+  },
+  "motion_emphasis": {
+    "entrance": {
+      "fade": "Subtle appearance",
+      "slide": "Directional attention",
+      "scale": "Growing importance",
+      "rotate": "Playful energy"
+    },
+    "continuous": {
+      "pulse": "Breathing effect",
+      "float": "Gentle movement",
+      "rotate": "Constant motion"
+    }
+  },
+  "statistical_emphasis": {
+    "techniques": {
+      "isolation": "Number alone on slide",
+      "comparison": "Before/after",
+      "visualization": "Chart or icon",
+      "animation": "Counting up"
+    },
+    "formatting": {
+      "large_numbers": "Use K, M, B",
+      "decimals": "Max 1-2 places",
+      "context": "Always provide",
+      "color": "Green up, red down"
+    }
+  }
+}

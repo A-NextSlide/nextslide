@@ -1,0 +1,59 @@
+{
+  "id": "combine-text-and-visuals",
+  "description": "Combine text and visuals effectively",
+  "currentSlideId": "slide-1",
+  "prompt": "Create a visually balanced slide that effectively combines text and visual elements to explain the concept of 'machine learning'. Include a relevant image or diagram and organize the text for maximum clarity.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Machine Learning",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#ffffff"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 80,
+            "texts": [{ "text": "Understanding Machine Learning", "style": {} }],
+            "fontSize": 48,
+            "fontFamily": "Arial",
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "content-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 400 },
+            "width": 800,
+            "height": 300,
+            "texts": [
+              {
+                "text": "Machine learning is a subset of artificial intelligence that enables systems to learn from data, identify patterns, and make decisions with minimal human intervention. It involves algorithms that can improve automatically through experience.\n\nCommon applications include:\n• Predictive analytics\n• Image and speech recognition\n• Natural language processing\n• Recommendation systems",
+                "style": {}
+              }
+            ],
+            "fontSize": 24,
+            "fontFamily": "Arial",
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    }
+  ]
+} 

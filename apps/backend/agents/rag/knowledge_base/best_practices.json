@@ -1,0 +1,89 @@
+{
+  "design_process": {
+    "content_first": [
+      "Understand the message",
+      "Identify key points",
+      "Structure narrative",
+      "Then design"
+    ],
+    "audience_centered": [
+      "Consider viewing distance",
+      "Account for environment",
+      "Match expectations",
+      "Test readability"
+    ],
+    "iterative": [
+      "Start with wireframes",
+      "Get feedback early",
+      "Refine progressively",
+      "Test on device"
+    ]
+  },
+  "visual_hierarchy": {
+    "techniques": {
+      "size": "Bigger = more important",
+      "color": "Contrast draws attention",
+      "space": "Isolation emphasizes",
+      "position": "Top/center prioritized",
+      "style": "Bold, italic, underline"
+    },
+    "scanning_patterns": {
+      "F_pattern": "Top-left to right, down",
+      "Z_pattern": "Diagonal scanning",
+      "focal_point": "Natural center attention"
+    }
+  },
+  "consistency": {
+    "maintain": [
+      "Color palette throughout",
+      "Font families (max 2)",
+      "Spacing system",
+      "Visual style",
+      "Animation timing"
+    ],
+    "vary": [
+      "Layouts for interest",
+      "Emphasis techniques",
+      "Content density"
+    ]
+  },
+  "common_mistakes": {
+    "typography": [
+      "Too small for viewing distance",
+      "Poor contrast with background",
+      "Too many fonts",
+      "Centered body text",
+      "Inconsistent sizing"
+    ],
+    "layout": [
+      "Overcrowding",
+      "Inconsistent margins",
+      "No visual hierarchy",
+      "Random positioning",
+      "Ignoring alignment"
+    ],
+    "color": [
+      "Too many colors",
+      "Clashing combinations",
+      "Poor contrast",
+      "Ignoring brand",
+      "No consistency"
+    ],
+    "content": [
+      "Too much text",
+      "No clear message",
+      "Missing context",
+      "Jargon overload",
+      "No call to action"
+    ]
+  },
+  "quality_checklist": [
+    "Is the main message clear?",
+    "Can it be read from back of room?",
+    "Does it follow brand guidelines?",
+    "Is there visual hierarchy?",
+    "Are animations purposeful?",
+    "Is it accessible?",
+    "Does it tell a story?"
+  ]
+}

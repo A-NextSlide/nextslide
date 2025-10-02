@@ -1,0 +1,52 @@
+{
+  "id": "formatting-complex-data",
+  "description": "Format complex data effectively",
+  "currentSlideId": "slide-1",
+  "prompt": "This slide has complex numerical data that needs to be presented clearly. Create a well-formatted presentation of the quarterly sales data by region. Use appropriate formatting techniques to make the data easy to understand at a glance.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Quarterly Sales Data",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#f5f5f5"
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 80,
+            "texts": [{ "text": "Quarterly Sales by Region (2023)", "style": {} }],
+            "fontSize": 42,
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 400 },
+            "width": 800,
+            "height": 300,
+            "texts": [{ "text": "North America: Q1: $2.3M, Q2: $2.7M, Q3: $3.1M, Q4: $3.8M\nEurope: Q1: $1.8M, Q2: $2.0M, Q3: $2.2M, Q4: $2.5M\nAsia-Pacific: Q1: $1.2M, Q2: $1.5M, Q3: $1.9M, Q4: $2.3M\nLatin America: Q1: $0.5M, Q2: $0.6M, Q3: $0.7M, Q4: $0.9M\nMiddle East & Africa: Q1: $0.3M, Q2: $0.4M, Q3: $0.5M, Q4: $0.6M\n\nTotal Annual Sales: $27.8M\nYear-over-Year Growth: 17.3%", "style": {} }],
+            "fontSize": 24,
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#333333"
+          }
+        }
+      ]
+    }
+  ]
+} 

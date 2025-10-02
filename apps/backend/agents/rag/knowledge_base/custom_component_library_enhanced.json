@@ -1,0 +1,413 @@
+{
+  "interactive_components": {
+    "3d_rotating_cube_stats": {
+      "description": "3D rotating cube showing different metrics on each face",
+      "use_cases": ["Multi-dimensional data", "Product features", "360-degree view"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 560, "y": 240},
+          "width": 800,
+          "height": 600,
+          "render": "function render({ props }, instanceId) {\n  const [rotation, setRotation] = React.useState({ x: -20, y: 45 });\n  const metrics = [\n    { label: props.metric1 || 'Growth', value: props.value1 || '245%', color: props.color1 || '#3b82f6' },\n    { label: props.metric2 || 'Users', value: props.value2 || '1.2M', color: props.color2 || '#10b981' },\n    { label: props.metric3 || 'Revenue', value: props.value3 || '$4.5M', color: props.color3 || '#f59e0b' },\n    { label: props.metric4 || 'Retention', value: props.value4 || '92%', color: props.color4 || '#8b5cf6' },\n    { label: props.metric5 || 'NPS', value: props.value5 || '85', color: props.color5 || '#ef4444' },\n    { label: props.metric6 || 'Efficiency', value: props.value6 || '98%', color: props.color6 || '#06b6d4' }\n  ];\n  \n  React.useEffect(() => {\n    const interval = setInterval(() => {\n      setRotation(prev => ({ x: prev.x, y: prev.y + 1 }));\n    }, 50);\n    return () => clearInterval(interval);\n  }, []);\n  \n  const cubeStyle = {\n    width: '300px',\n    height: '300px',\n    position: 'relative',\n    transformStyle: 'preserve-3d',\n    transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,\n    transition: 'transform 0.1s'\n  };\n  \n  const faceStyle = (translateZ, rotateY = 0, rotateX = 0) => ({\n    position: 'absolute',\n    width: '300px',\n    height: '300px',\n    display: 'flex',\n    flexDirection: 'column',\n    alignItems: 'center',\n    justifyContent: 'center',\n    backgroundColor: 'rgba(255, 255, 255, 0.9)',\n    border: '2px solid #e5e7eb',\n    borderRadius: '20px',\n    transform: `rotateY(${rotateY}deg) rotateX(${rotateX}deg) translateZ(${translateZ}px)`,\n    backfaceVisibility: 'hidden',\n    boxShadow: '0 10px 40px rgba(0,0,0,0.1)'\n  });\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center',\n      perspective: '1200px'\n    }\n  }, [\n    React.createElement('div', {\n      style: cubeStyle\n    }, [\n      // Front face\n      React.createElement('div', {\n        key: 'front',\n        style: faceStyle(150)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[0].color }\n        }, metrics[0].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[0].label)\n      ]),\n      // Back face\n      React.createElement('div', {\n        key: 'back',\n        style: faceStyle(150, 180)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[1].color }\n        }, metrics[1].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[1].label)\n      ]),\n      // Right face\n      React.createElement('div', {\n        key: 'right',\n        style: faceStyle(150, 90)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[2].color }\n        }, metrics[2].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[2].label)\n      ]),\n      // Left face\n      React.createElement('div', {\n        key: 'left',\n        style: faceStyle(150, -90)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[3].color }\n        }, metrics[3].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[3].label)\n      ]),\n      // Top face\n      React.createElement('div', {\n        key: 'top',\n        style: faceStyle(150, 0, -90)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[4].color }\n        }, metrics[4].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[4].label)\n      ]),\n      // Bottom face\n      React.createElement('div', {\n        key: 'bottom',\n        style: faceStyle(150, 0, 90)\n      }, [\n        React.createElement('div', {\n          style: { fontSize: '120px', fontWeight: '900', color: metrics[5].color }\n        }, metrics[5].value),\n        React.createElement('div', {\n          style: { fontSize: '32px', fontWeight: '600', color: '#374151', marginTop: '16px' }\n        }, metrics[5].label)\n      ])\n    ])\n  ]);\n}",
+          "props": {
+            "metric1": "Growth",
+            "value1": "245%",
+            "color1": "#3b82f6",
+            "metric2": "Users",
+            "value2": "1.2M",
+            "color2": "#10b981"
+          }
+        }
+      }
+    },
+    "particle_explosion_reveal": {
+      "description": "Text/number reveals with particle explosion effect",
+      "use_cases": ["Big announcements", "Achievement unlocks", "Milestone celebrations"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 300},
+          "width": 1600,
+          "height": 480,
+          "render": "function render({ props }, instanceId) {\n  const [revealed, setRevealed] = React.useState(false);\n  const mainText = props.mainText || '$10M';\n  const subText = props.subText || 'Revenue Milestone Achieved!';\n  const particleColors = props.particleColors || ['#fbbf24', '#f59e0b', '#f97316', '#fb923c'];\n  const textColor = props.textColor || '#1a1a1a';\n  \n  React.useEffect(() => {\n    setTimeout(() => setRevealed(true), 500);\n  }, []);\n  \n  const particles = Array(40).fill(0).map((_, i) => {\n    const angle = (i / 40) * Math.PI * 2;\n    const velocity = 200 + Math.random() * 300;\n    const size = 8 + Math.random() * 16;\n    const color = particleColors[Math.floor(Math.random() * particleColors.length)];\n    \n    return React.createElement('div', {\n      key: `particle-${i}`,\n      style: {\n        position: 'absolute',\n        width: `${size}px`,\n        height: `${size}px`,\n        backgroundColor: color,\n        borderRadius: '50%',\n        left: '50%',\n        top: '40%',\n        transform: revealed \n          ? `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px) scale(0)`\n          : 'translate(-50%, -50%) scale(1)',\n        opacity: revealed ? 0 : 1,\n        transition: 'all 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)',\n        transitionDelay: `${i * 20}ms`\n      }\n    });\n  });\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      position: 'relative',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      overflow: 'hidden'\n    }\n  }, [\n    ...particles,\n    React.createElement('h1', {\n      style: {\n        fontSize: '180px',\n        fontWeight: '900',\n        color: textColor,\n        margin: 0,\n        transform: revealed ? 'scale(1)' : 'scale(0)',\n        opacity: revealed ? 1 : 0,\n        transition: 'all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',\n        transitionDelay: '0.3s',\n        textShadow: '0 10px 40px rgba(0,0,0,0.1)'\n      }\n    }, mainText),\n    React.createElement('p', {\n      style: {\n        fontSize: '48px',\n        fontWeight: '600',\n        color: textColor,\n        margin: 0,\n        marginTop: '24px',\n        transform: revealed ? 'translateY(0)' : 'translateY(40px)',\n        opacity: revealed ? 1 : 0,\n        transition: 'all 0.8s ease-out',\n        transitionDelay: '0.6s'\n      }\n    }, subText)\n  ]);\n}",
+          "props": {
+            "mainText": "$10M",
+            "subText": "Revenue Milestone Achieved!",
+            "particleColors": ["#fbbf24", "#f59e0b", "#f97316", "#fb923c"],
+            "textColor": "#1a1a1a"
+          }
+        }
+      }
+    },
+    "quiz_component": {
+      "description": "Interactive multiple choice quiz with visual feedback",
+      "use_cases": ["Knowledge checks", "Audience engagement", "Training assessments"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 200},
+          "width": 1600,
+          "height": 680,
+          "render": "function render({ props }, instanceId) {\n  const [selectedAnswer, setSelectedAnswer] = React.useState(null);\n  const [showResult, setShowResult] = React.useState(false);\n  \n  const question = props.question || 'What drives innovation?';\n  const options = [\n    props.option1 || 'Creativity',\n    props.option2 || 'Technology',\n    props.option3 || 'Collaboration',\n    props.option4 || 'All of the above'\n  ];\n  const correctAnswer = props.correctAnswer || 3;\n  const primaryColor = props.primaryColor || '#2563eb';\n  const successColor = props.successColor || '#10b981';\n  const errorColor = props.errorColor || '#ef4444';\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  const handleSelect = (index) => {\n    if (!showResult) {\n      setSelectedAnswer(index);\n      setTimeout(() => setShowResult(true), 300);\n    }\n  };\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      gap: '32px',\n      padding: '48px',\n      backgroundColor: 'rgba(255, 255, 255, 0.05)',\n      borderRadius: '24px',\n      fontFamily: fontFamily\n    }\n  }, [\n    // Question\n    React.createElement('h2', {\n      key: 'question',\n      style: {\n        fontSize: '72px',\n        fontWeight: '800',\n        color: '#1a1a1a',\n        marginBottom: '32px',\n        textAlign: 'center'\n      }\n    }, question),\n    \n    // Options\n    React.createElement('div', {\n      key: 'options',\n      style: {\n        display: 'grid',\n        gridTemplateColumns: 'repeat(2, 1fr)',\n        gap: '24px',\n        flex: 1\n      }\n    }, options.map((option, index) => {\n      const isSelected = selectedAnswer === index;\n      const isCorrect = index === correctAnswer;\n      const showCorrect = showResult && isCorrect;\n      const showWrong = showResult && isSelected && !isCorrect;\n      \n      return React.createElement('button', {\n        key: `option-${index}`,\n        onClick: () => handleSelect(index),\n        style: {\n          padding: '32px',\n          borderRadius: '16px',\n          border: `3px solid ${isSelected ? primaryColor : '#e5e7eb'}`,\n          backgroundColor: showCorrect ? successColor : showWrong ? errorColor : isSelected ? primaryColor : 'white',\n          color: showCorrect || showWrong || isSelected ? 'white' : '#4b5563',\n          fontSize: '56px',\n          fontWeight: '600',\n          cursor: showResult ? 'default' : 'pointer',\n          transition: 'all 0.3s ease',\n          transform: isSelected ? 'scale(1.02)' : 'scale(1)',\n          boxShadow: isSelected ? '0 10px 30px rgba(0,0,0,0.1)' : '0 4px 12px rgba(0,0,0,0.05)'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            display: 'flex',\n            alignItems: 'center',\n            gap: '16px'\n          }\n        }, [\n          React.createElement('span', {\n            style: {\n              width: '40px',\n              height: '40px',\n              borderRadius: '50%',\n              backgroundColor: showCorrect || showWrong || isSelected ? 'rgba(255,255,255,0.3)' : primaryColor,\n              color: showCorrect || showWrong || isSelected ? 'white' : 'white',\n              display: 'flex',\n              alignItems: 'center',\n              justifyContent: 'center',\n              fontWeight: '700',\n              fontSize: '20px'\n            }\n          }, String.fromCharCode(65 + index)),\n          React.createElement('span', {}, option),\n          showCorrect && React.createElement('span', {\n            style: { marginLeft: 'auto', fontSize: '32px' }\n          }, '✓'),\n          showWrong && React.createElement('span', {\n            style: { marginLeft: 'auto', fontSize: '32px' }\n          }, '✗')\n        ])\n      ]);\n    })),\n    \n    // Result message\n    showResult && React.createElement('div', {\n      key: 'result',\n      style: {\n        textAlign: 'center',\n        fontSize: '36px',\n        color: selectedAnswer === correctAnswer ? successColor : errorColor,\n        fontWeight: '600',\n        marginTop: '16px'\n      }\n    }, selectedAnswer === correctAnswer ? 'Correct! Well done! 🎉' : 'Not quite. Try again! 💡')\n  ]);\n}",
+          "props": {
+            "question": "What's the key to digital transformation?",
+            "option1": "New Technology",
+            "option2": "Cultural Change",
+            "option3": "Data Analytics",
+            "option4": "All of the above",
+            "correctAnswer": 3,
+            "primaryColor": "#2563eb",
+            "successColor": "#10b981",
+            "errorColor": "#ef4444"
+          }
+        }
+      }
+    },
+    
+    "interactive_poll": {
+      "description": "Live polling component with animated results",
+      "use_cases": ["Audience engagement", "Real-time feedback", "Decision making"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 260, "y": 250},
+          "width": 1400,
+          "height": 580,
+          "render": "function render({ props }, instanceId) {\n  const [votes, setVotes] = React.useState(props.initialVotes || [120, 95, 156, 78]);\n  const [hasVoted, setHasVoted] = React.useState(false);\n  const [selectedOption, setSelectedOption] = React.useState(null);\n  \n  const question = props.pollQuestion || 'Which technology excites you most?';\n  const options = [\n    props.pollOption1 || 'Artificial Intelligence',\n    props.pollOption2 || 'Blockchain',\n    props.pollOption3 || 'Quantum Computing',\n    props.pollOption4 || 'Virtual Reality'\n  ];\n  const colors = [\n    props.color1 || '#3b82f6',\n    props.color2 || '#8b5cf6',\n    props.color3 || '#ef4444',\n    props.color4 || '#10b981'\n  ];\n  \n  const totalVotes = votes.reduce((a, b) => a + b, 0);\n  const percentages = votes.map(v => Math.round((v / totalVotes) * 100));\n  \n  const handleVote = (index) => {\n    if (!hasVoted) {\n      const newVotes = [...votes];\n      newVotes[index] += 1;\n      setVotes(newVotes);\n      setSelectedOption(index);\n      setHasVoted(true);\n    }\n  };\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '40px',\n      backgroundColor: 'rgba(255, 255, 255, 0.95)',\n      borderRadius: '24px',\n      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)'\n    }\n  }, [\n    React.createElement('h2', {\n      key: 'question',\n      style: {\n        fontSize: '64px',\n        fontWeight: '700',\n        marginBottom: '40px',\n        textAlign: 'center',\n        color: '#1a1a1a'\n      }\n    }, question),\n    \n    React.createElement('div', {\n      key: 'options',\n      style: {\n        display: 'flex',\n        flexDirection: 'column',\n        gap: '20px'\n      }\n    }, options.map((option, index) => {\n      const percentage = percentages[index];\n      const isSelected = selectedOption === index;\n      \n      return React.createElement('div', {\n        key: `option-${index}`,\n        onClick: () => handleVote(index),\n        style: {\n          position: 'relative',\n          padding: '20px 24px',\n          borderRadius: '12px',\n          backgroundColor: hasVoted ? '#f9fafb' : '#ffffff',\n          border: `2px solid ${isSelected ? colors[index] : '#e5e7eb'}`,\n          cursor: hasVoted ? 'default' : 'pointer',\n          transition: 'all 0.3s ease',\n          transform: !hasVoted && 'scale(1)',\n          ':hover': !hasVoted && { transform: 'scale(1.02)' }\n        }\n      }, [\n        // Progress bar background\n        hasVoted && React.createElement('div', {\n          style: {\n            position: 'absolute',\n            top: 0,\n            left: 0,\n            width: `${percentage}%`,\n            height: '100%',\n            backgroundColor: colors[index],\n            opacity: 0.2,\n            borderRadius: '10px',\n            transition: 'width 1s ease-out'\n          }\n        }),\n        \n        // Content\n        React.createElement('div', {\n          style: {\n            position: 'relative',\n            display: 'flex',\n            justifyContent: 'space-between',\n            alignItems: 'center',\n            zIndex: 1\n          }\n        }, [\n          React.createElement('span', {\n            style: {\n              fontSize: '36px',\n              fontWeight: isSelected ? '600' : '500',\n              color: isSelected ? colors[index] : '#374151'\n            }\n          }, option),\n          \n          hasVoted && React.createElement('div', {\n            style: {\n              display: 'flex',\n              alignItems: 'center',\n              gap: '12px'\n            }\n          }, [\n            React.createElement('span', {\n              style: {\n                fontSize: '56px',\n                fontWeight: '700',\n                color: colors[index]\n              }\n            }, `${percentage}%`),\n            React.createElement('span', {\n              style: {\n                fontSize: '28px',\n                color: '#6b7280'\n              }\n            }, `(${votes[index]} votes)`)\n          ])\n        ])\n      ]);\n    })),\n    \n    hasVoted && React.createElement('div', {\n      key: 'total',\n      style: {\n        marginTop: '32px',\n        textAlign: 'center',\n        fontSize: '32px',\n        color: '#6b7280'\n      }\n    }, `Total votes: ${totalVotes}`)\n  ]);\n}",
+          "props": {
+            "pollQuestion": "What's your biggest challenge?",
+            "pollOption1": "Time Management",
+            "pollOption2": "Resource Constraints",
+            "pollOption3": "Technical Complexity",
+            "pollOption4": "Team Alignment",
+            "initialVotes": [45, 78, 123, 67],
+            "color1": "#3b82f6",
+            "color2": "#8b5cf6",
+            "color3": "#ef4444",
+            "color4": "#10b981"
+          }
+        }
+      }
+    },
+    
+    "interactive_slider": {
+      "description": "Value adjustment slider with real-time calculation",
+      "use_cases": ["ROI calculators", "Budget planning", "Scenario modeling"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 260, "y": 300},
+          "width": 1400,
+          "height": 480,
+          "render": "function render({ props }, instanceId) {\n  const [value, setValue] = React.useState(props.initialValue || 50);\n  \n  const title = props.title || 'Investment Calculator';\n  const label = props.label || 'Monthly Investment';\n  const min = props.min || 0;\n  const max = props.max || 100;\n  const unit = props.unit || '$';\n  const multiplier = props.multiplier || 1000;\n  const resultLabel = props.resultLabel || 'Projected Annual Return';\n  const resultMultiplier = props.resultMultiplier || 12.5;\n  const primaryColor = props.primaryColor || '#3b82f6';\n  \n  const displayValue = value * multiplier;\n  const resultValue = Math.round(displayValue * resultMultiplier);\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '48px',\n      backgroundColor: 'white',\n      borderRadius: '24px',\n      boxShadow: '0 10px 30px rgba(0,0,0,0.1)'\n    }\n  }, [\n    React.createElement('h3', {\n      key: 'title',\n      style: {\n        fontSize: '56px',\n        fontWeight: '700',\n        marginBottom: '40px',\n        textAlign: 'center',\n        color: '#1a1a1a'\n      }\n    }, title),\n    \n    React.createElement('div', {\n      key: 'input-section',\n      style: {\n        marginBottom: '48px'\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          display: 'flex',\n          justifyContent: 'space-between',\n          alignItems: 'baseline',\n          marginBottom: '16px'\n        }\n      }, [\n        React.createElement('label', {\n          style: {\n            fontSize: '36px',\n            fontWeight: '600',\n            color: '#4b5563'\n          }\n        }, label),\n        React.createElement('div', {\n          style: {\n            fontSize: '72px',\n            fontWeight: '700',\n            color: primaryColor\n          }\n        }, `${unit}${displayValue.toLocaleString()}`)\n      ]),\n      \n      React.createElement('input', {\n        type: 'range',\n        min: min,\n        max: max,\n        value: value,\n        onChange: (e) => setValue(parseInt(e.target.value)),\n        style: {\n          width: '100%',\n          height: '8px',\n          borderRadius: '4px',\n          background: `linear-gradient(to right, ${primaryColor} 0%, ${primaryColor} ${(value - min) / (max - min) * 100}%, #e5e7eb ${(value - min) / (max - min) * 100}%, #e5e7eb 100%)`,\n          outline: 'none',\n          WebkitAppearance: 'none',\n          cursor: 'pointer'\n        }\n      })\n    ]),\n    \n    React.createElement('div', {\n      key: 'result',\n      style: {\n        padding: '32px',\n        backgroundColor: `${primaryColor}10`,\n        borderRadius: '16px',\n        textAlign: 'center'\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          fontSize: '32px',\n          color: '#6b7280',\n          marginBottom: '8px'\n        }\n      }, resultLabel),\n      React.createElement('div', {\n        style: {\n          fontSize: '64px',\n          fontWeight: '800',\n          color: primaryColor\n        }\n      }, `${unit}${resultValue.toLocaleString()}`)\n    ])\n  ]);\n}",
+          "props": {
+            "title": "ROI Calculator",
+            "label": "Monthly Marketing Spend",
+            "min": 10,
+            "max": 200,
+            "initialValue": 50,
+            "unit": "$",
+            "multiplier": 1000,
+            "resultLabel": "Expected Annual Revenue",
+            "resultMultiplier": 15.5,
+            "primaryColor": "#3b82f6"
+          }
+        }
+      }
+    },
+    
+    "feature_toggle": {
+      "description": "Interactive feature comparison toggle",
+      "use_cases": ["Before/after comparisons", "Feature demonstrations", "Plan comparisons"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 200},
+          "width": 1600,
+          "height": 680,
+          "render": "function render({ props }, instanceId) {\n  const [isToggled, setIsToggled] = React.useState(false);\n  \n  const title = props.title || 'Experience the Difference';\n  const beforeLabel = props.beforeLabel || 'Standard';\n  const afterLabel = props.afterLabel || 'Premium';\n  const beforeFeatures = [\n    props.beforeFeature1 || 'Basic Analytics',\n    props.beforeFeature2 || 'Email Support',\n    props.beforeFeature3 || '10GB Storage',\n    props.beforeFeature4 || 'Standard Security'\n  ];\n  const afterFeatures = [\n    props.afterFeature1 || 'Advanced AI Analytics',\n    props.afterFeature2 || '24/7 Priority Support',\n    props.afterFeature3 || 'Unlimited Storage',\n    props.afterFeature4 || 'Enterprise Security'\n  ];\n  const primaryColor = props.primaryColor || '#3b82f6';\n  const secondaryColor = props.secondaryColor || '#10b981';\n  \n  const currentFeatures = isToggled ? afterFeatures : beforeFeatures;\n  const currentLabel = isToggled ? afterLabel : beforeLabel;\n  const currentColor = isToggled ? secondaryColor : primaryColor;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '48px',\n      backgroundColor: 'white',\n      borderRadius: '24px',\n      boxShadow: '0 20px 40px rgba(0,0,0,0.1)'\n    }\n  }, [\n    React.createElement('h2', {\n      key: 'title',\n      style: {\n        fontSize: '48px',\n        fontWeight: '700',\n        textAlign: 'center',\n        marginBottom: '48px',\n        color: '#1a1a1a'\n      }\n    }, title),\n    \n    React.createElement('div', {\n      key: 'toggle',\n      style: {\n        display: 'flex',\n        justifyContent: 'center',\n        marginBottom: '48px'\n      }\n    }, React.createElement('div', {\n      style: {\n        display: 'flex',\n        backgroundColor: '#f3f4f6',\n        borderRadius: '50px',\n        padding: '4px',\n        position: 'relative'\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          position: 'absolute',\n          width: '50%',\n          height: 'calc(100% - 8px)',\n          backgroundColor: currentColor,\n          borderRadius: '46px',\n          transition: 'transform 0.3s ease',\n          transform: isToggled ? 'translateX(100%)' : 'translateX(0)'\n        }\n      }),\n      React.createElement('button', {\n        onClick: () => setIsToggled(false),\n        style: {\n          padding: '16px 48px',\n          fontSize: '36px',\n          fontWeight: '600',\n          color: !isToggled ? 'white' : '#6b7280',\n          backgroundColor: 'transparent',\n          border: 'none',\n          borderRadius: '46px',\n          cursor: 'pointer',\n          position: 'relative',\n          zIndex: 1,\n          transition: 'color 0.3s ease'\n        }\n      }, beforeLabel),\n      React.createElement('button', {\n        onClick: () => setIsToggled(true),\n        style: {\n          padding: '16px 48px',\n          fontSize: '36px',\n          fontWeight: '600',\n          color: isToggled ? 'white' : '#6b7280',\n          backgroundColor: 'transparent',\n          border: 'none',\n          borderRadius: '46px',\n          cursor: 'pointer',\n          position: 'relative',\n          zIndex: 1,\n          transition: 'color 0.3s ease'\n        }\n      }, afterLabel)\n    ])),\n    \n    React.createElement('div', {\n      key: 'features',\n      style: {\n        display: 'grid',\n        gridTemplateColumns: 'repeat(2, 1fr)',\n        gap: '24px',\n        maxWidth: '800px',\n        margin: '0 auto'\n      }\n    }, currentFeatures.map((feature, index) => \n      React.createElement('div', {\n        key: `feature-${index}`,\n        style: {\n          display: 'flex',\n          alignItems: 'center',\n          gap: '16px',\n          padding: '20px',\n          backgroundColor: `${currentColor}10`,\n          borderRadius: '12px',\n          transform: 'scale(1)',\n          transition: 'all 0.3s ease',\n          opacity: 0,\n          animation: `fadeIn 0.5s ease ${index * 0.1}s forwards`\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            width: '32px',\n            height: '32px',\n            borderRadius: '50%',\n            backgroundColor: currentColor,\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'center',\n            color: 'white',\n            fontSize: '72px',\n            fontWeight: '700'\n          }\n        }, '✓'),\n        React.createElement('span', {\n          style: {\n            fontSize: '72px',\n            fontWeight: '500',\n            color: '#374151'\n          }\n        }, feature)\n      ])\n    ))\n  ]);\n}",
+          "props": {
+            "title": "Choose Your Experience",
+            "beforeLabel": "Basic",
+            "afterLabel": "Pro",
+            "beforeFeature1": "5 Projects",
+            "beforeFeature2": "Basic Templates",
+            "beforeFeature3": "Email Support",
+            "beforeFeature4": "1GB Storage",
+            "afterFeature1": "Unlimited Projects",
+            "afterFeature2": "Premium Templates",
+            "afterFeature3": "Priority Support",
+            "afterFeature4": "100GB Storage",
+            "primaryColor": "#6b7280",
+            "secondaryColor": "#3b82f6"
+          }
+        }
+      }
+    }
+  },
+  
+  "data_visualizations": {
+    "animated_progress_rings": {
+      "description": "Multiple circular progress indicators with staggered animation",
+      "use_cases": ["KPI dashboards", "Performance metrics", "Goal tracking"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 300},
+          "width": 1600,
+          "height": 480,
+          "render": "function render({ props }, instanceId) {\n  const metrics = [\n    { label: props.label1 || 'Efficiency', value: props.value1 || 92, color: props.color1 || '#3b82f6' },\n    { label: props.label2 || 'Quality', value: props.value2 || 87, color: props.color2 || '#10b981' },\n    { label: props.label3 || 'Speed', value: props.value3 || 95, color: props.color3 || '#f59e0b' },\n    { label: props.label4 || 'Satisfaction', value: props.value4 || 89, color: props.color4 || '#8b5cf6' }\n  ];\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      justifyContent: 'space-around',\n      alignItems: 'center',\n      padding: '40px'\n    }\n  }, metrics.map((metric, index) => {\n    const radius = 70;\n    const circumference = 2 * Math.PI * radius;\n    const strokeDashoffset = circumference - (metric.value / 100) * circumference;\n    \n    return React.createElement('div', {\n      key: `metric-${index}`,\n      style: {\n        display: 'flex',\n        flexDirection: 'column',\n        alignItems: 'center',\n        gap: '24px'\n      }\n    }, [\n      React.createElement('div', {\n        style: { position: 'relative' }\n      }, [\n        React.createElement('svg', {\n          width: 160,\n          height: 160,\n          style: { transform: 'rotate(-90deg)' }\n        }, [\n          React.createElement('circle', {\n            cx: 80,\n            cy: 80,\n            r: radius,\n            fill: 'none',\n            stroke: '#e5e7eb',\n            strokeWidth: 12\n          }),\n          React.createElement('circle', {\n            cx: 80,\n            cy: 80,\n            r: radius,\n            fill: 'none',\n            stroke: metric.color,\n            strokeWidth: 12,\n            strokeDasharray: circumference,\n            strokeDashoffset: strokeDashoffset,\n            strokeLinecap: 'round',\n            style: {\n              transition: 'stroke-dashoffset 2s ease',\n              animation: `drawCircle 2s ease ${index * 0.2}s forwards`\n            }\n          })\n        ]),\n        React.createElement('div', {\n          style: {\n            position: 'absolute',\n            top: '50%',\n            left: '50%',\n            transform: 'translate(-50%, -50%)',\n            fontSize: '56px',\n            fontWeight: '700',\n            color: metric.color\n          }\n        }, `${metric.value}%`)\n      ]),\n      React.createElement('div', {\n        style: {\n          fontSize: '32px',\n          fontWeight: '600',\n          color: '#374151',\n          textAlign: 'center'\n        }\n      }, metric.label)\n    ]);\n  }));\n}",
+          "props": {
+            "label1": "Revenue Growth",
+            "value1": 127,
+            "color1": "#3b82f6",
+            "label2": "Cost Reduction", 
+            "value2": 43,
+            "color2": "#10b981",
+            "label3": "Time Saved",
+            "value3": 68,
+            "color3": "#f59e0b",
+            "label4": "ROI",
+            "value4": 234,
+            "color4": "#8b5cf6"
+          }
+        }
+      }
+    },
+    
+    "comparison_bars": {
+      "description": "Side-by-side animated comparison bars",
+      "use_cases": ["Before/after metrics", "Competitive analysis", "Performance comparison"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 260, "y": 250},
+          "width": 1400,
+          "height": 580,
+          "render": "function render({ props }, instanceId) {\n  const title = props.title || 'Performance Comparison';\n  const items = [\n    {\n      label: props.item1Label || 'Speed',\n      before: props.item1Before || 45,\n      after: props.item1After || 89,\n      unit: props.item1Unit || 'ms'\n    },\n    {\n      label: props.item2Label || 'Accuracy',\n      before: props.item2Before || 72,\n      after: props.item2After || 96,\n      unit: props.item2Unit || '%'\n    },\n    {\n      label: props.item3Label || 'Efficiency',\n      before: props.item3Before || 58,\n      after: props.item3After || 94,\n      unit: props.item3Unit || '%'\n    }\n  ];\n  const beforeColor = props.beforeColor || '#e5e7eb';\n  const afterColor = props.afterColor || '#3b82f6';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '40px',\n      backgroundColor: 'white',\n      borderRadius: '24px',\n      boxShadow: '0 10px 30px rgba(0,0,0,0.1)'\n    }\n  }, [\n    React.createElement('h3', {\n      key: 'title',\n      style: {\n        fontSize: '56px',\n        fontWeight: '700',\n        marginBottom: '48px',\n        textAlign: 'center',\n        color: '#1a1a1a'\n      }\n    }, title),\n    \n    React.createElement('div', {\n      key: 'legend',\n      style: {\n        display: 'flex',\n        justifyContent: 'center',\n        gap: '40px',\n        marginBottom: '40px'\n      }\n    }, [\n      React.createElement('div', {\n        style: { display: 'flex', alignItems: 'center', gap: '8px' }\n      }, [\n        React.createElement('div', {\n          style: {\n            width: '24px',\n            height: '24px',\n            backgroundColor: beforeColor,\n            borderRadius: '4px'\n          }\n        }),\n        React.createElement('span', {\n          style: { fontSize: '18px', color: '#6b7280' }\n        }, 'Before')\n      ]),\n      React.createElement('div', {\n        style: { display: 'flex', alignItems: 'center', gap: '8px' }\n      }, [\n        React.createElement('div', {\n          style: {\n            width: '24px',\n            height: '24px',\n            backgroundColor: afterColor,\n            borderRadius: '4px'\n          }\n        }),\n        React.createElement('span', {\n          style: { fontSize: '18px', color: '#6b7280' }\n        }, 'After')\n      ])\n    ]),\n    \n    React.createElement('div', {\n      key: 'bars',\n      style: {\n        display: 'flex',\n        flexDirection: 'column',\n        gap: '32px'\n      }\n    }, items.map((item, index) => \n      React.createElement('div', {\n        key: `item-${index}`,\n        style: { display: 'flex', flexDirection: 'column', gap: '8px' }\n      }, [\n        React.createElement('div', {\n          style: {\n            display: 'flex',\n            justifyContent: 'space-between',\n            alignItems: 'baseline'\n          }\n        }, [\n          React.createElement('span', {\n            style: {\n              fontSize: '72px',\n              fontWeight: '600',\n              color: '#374151'\n            }\n          }, item.label),\n          React.createElement('div', {\n            style: {\n              display: 'flex',\n              gap: '24px',\n              fontSize: '18px'\n            }\n          }, [\n            React.createElement('span', {\n              style: { color: '#9ca3af' }\n            }, `${item.before}${item.unit}`),\n            React.createElement('span', {\n              style: { color: afterColor, fontWeight: '700' }\n            }, `${item.after}${item.unit}`)\n          ])\n        ]),\n        React.createElement('div', {\n          style: {\n            position: 'relative',\n            height: '40px',\n            backgroundColor: '#f3f4f6',\n            borderRadius: '8px',\n            overflow: 'hidden'\n          }\n        }, [\n          React.createElement('div', {\n            style: {\n              position: 'absolute',\n              top: '50%',\n              transform: 'translateY(-50%)',\n              height: '32px',\n              backgroundColor: beforeColor,\n              borderRadius: '6px',\n              width: `${item.before}%`,\n              transition: 'width 1.5s ease',\n              animation: `slideIn 1.5s ease ${index * 0.2}s`\n            }\n          }),\n          React.createElement('div', {\n            style: {\n              position: 'absolute',\n              top: '50%',\n              transform: 'translateY(-50%)',\n              height: '32px',\n              backgroundColor: afterColor,\n              borderRadius: '6px',\n              width: `${item.after}%`,\n              transition: 'width 1.5s ease',\n              animation: `slideIn 1.5s ease ${index * 0.2 + 0.3}s`,\n              boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)'\n            }\n          })\n        ])\n      ])\n    ))\n  ]);\n}",
+          "props": {
+            "title": "System Performance Improvements",
+            "item1Label": "Load Time",
+            "item1Before": 85,
+            "item1After": 23,
+            "item1Unit": "ms",
+            "item2Label": "Success Rate",
+            "item2Before": 78,
+            "item2After": 99,
+            "item2Unit": "%",
+            "item3Label": "User Satisfaction",
+            "item3Before": 62,
+            "item3After": 94,
+            "item3Unit": "%",
+            "beforeColor": "#e5e7eb",
+            "afterColor": "#3b82f6"
+          }
+        }
+      }
+    },
+    
+    "kpi_cards": {
+      "description": "Animated KPI cards with icons and trends",
+      "use_cases": ["Dashboards", "Executive summaries", "Performance snapshots"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 240},
+          "width": 1600,
+          "height": 600,
+          "render": "function render({ props }, instanceId) {\n  const kpis = [\n    {\n      label: props.kpi1Label || 'Revenue',\n      value: props.kpi1Value || '$2.4M',\n      change: props.kpi1Change || '+32%',\n      trend: props.kpi1Trend || 'up',\n      icon: '💰',\n      color: '#3b82f6'\n    },\n    {\n      label: props.kpi2Label || 'Users',\n      value: props.kpi2Value || '48.2K',\n      change: props.kpi2Change || '+18%',\n      trend: props.kpi2Trend || 'up',\n      icon: '👥',\n      color: '#10b981'\n    },\n    {\n      label: props.kpi3Label || 'Conversion',\n      value: props.kpi3Value || '24.8%',\n      change: props.kpi3Change || '+5.2%',\n      trend: props.kpi3Trend || 'up',\n      icon: '📈',\n      color: '#f59e0b'\n    },\n    {\n      label: props.kpi4Label || 'Satisfaction',\n      value: props.kpi4Value || '4.8/5',\n      change: props.kpi4Change || '+0.3',\n      trend: props.kpi4Trend || 'up',\n      icon: '⭐',\n      color: '#8b5cf6'\n    }\n  ];\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'grid',\n      gridTemplateColumns: 'repeat(4, 1fr)',\n      gap: '32px',\n      padding: '40px'\n    }\n  }, kpis.map((kpi, index) => \n    React.createElement('div', {\n      key: `kpi-${index}`,\n      style: {\n        backgroundColor: 'white',\n        borderRadius: '20px',\n        padding: '32px',\n        boxShadow: '0 10px 30px rgba(0,0,0,0.08)',\n        display: 'flex',\n        flexDirection: 'column',\n        gap: '20px',\n        transform: 'translateY(20px)',\n        opacity: 0,\n        animation: `slideUp 0.6s ease ${index * 0.1}s forwards`,\n        transition: 'transform 0.3s ease',\n        ':hover': { transform: 'translateY(-4px)' }\n      }\n    }, [\n      React.createElement('div', {\n        style: {\n          display: 'flex',\n          justifyContent: 'space-between',\n          alignItems: 'flex-start'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            width: '56px',\n            height: '56px',\n            backgroundColor: `${kpi.color}15`,\n            borderRadius: '12px',\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'center',\n            fontSize: '28px'\n          }\n        }, kpi.icon),\n        React.createElement('div', {\n          style: {\n            display: 'flex',\n            alignItems: 'center',\n            gap: '4px',\n            padding: '6px 12px',\n            backgroundColor: kpi.trend === 'up' ? '#10b98115' : '#ef444415',\n            borderRadius: '20px'\n          }\n        }, [\n          React.createElement('span', {\n            style: {\n              fontSize: '20px',\n              fontWeight: '600',\n              color: kpi.trend === 'up' ? '#10b981' : '#ef4444'\n            }\n          }, kpi.change),\n          React.createElement('span', {\n            style: {\n              fontSize: '24px',\n              color: kpi.trend === 'up' ? '#10b981' : '#ef4444'\n            }\n          }, kpi.trend === 'up' ? '↑' : '↓')\n        ])\n      ]),\n      React.createElement('div', {}, [\n        React.createElement('div', {\n          style: {\n            fontSize: '72px',\n            fontWeight: '800',\n            color: '#111827',\n            marginBottom: '4px'\n          }\n        }, kpi.value),\n        React.createElement('div', {\n          style: {\n            fontSize: '24px',\n            color: '#6b7280',\n            fontWeight: '500'\n          }\n        }, kpi.label)\n      ])\n    ])\n  ));\n}",
+          "props": {
+            "kpi1Label": "Monthly Revenue",
+            "kpi1Value": "$485K",
+            "kpi1Change": "+22%",
+            "kpi1Trend": "up",
+            "kpi2Label": "Active Users",
+            "kpi2Value": "12.4K",
+            "kpi2Change": "+15%",
+            "kpi2Trend": "up",
+            "kpi3Label": "Avg Order Value",
+            "kpi3Value": "$127",
+            "kpi3Change": "-3%",
+            "kpi3Trend": "down",
+            "kpi4Label": "NPS Score",
+            "kpi4Value": "72",
+            "kpi4Change": "+8",
+            "kpi4Trend": "up"
+          }
+        }
+      }
+    }
+  },
+  
+  "content_enhancers": {
+    "interactive_timeline": {
+      "description": "Clickable timeline with expandable events",
+      "use_cases": ["Project roadmaps", "Company history", "Process flows"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 300},
+          "width": 1600,
+          "height": 480,
+          "render": "function render({ props }, instanceId) {\n  const [selectedEvent, setSelectedEvent] = React.useState(0);\n  \n  const events = [\n    {\n      date: props.date1 || 'Q1 2024',\n      title: props.title1 || 'Project Kickoff',\n      description: props.desc1 || 'Initial planning and team formation'\n    },\n    {\n      date: props.date2 || 'Q2 2024',\n      title: props.title2 || 'Development Phase',\n      description: props.desc2 || 'Core features implementation'\n    },\n    {\n      date: props.date3 || 'Q3 2024',\n      title: props.title3 || 'Beta Launch',\n      description: props.desc3 || 'Limited release to test users'\n    },\n    {\n      date: props.date4 || 'Q4 2024',\n      title: props.title4 || 'Full Release',\n      description: props.desc4 || 'Public launch and marketing campaign'\n    }\n  ];\n  const primaryColor = props.primaryColor || '#3b82f6';\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '48px',\n      backgroundColor: 'white',\n      borderRadius: '24px'\n    }\n  }, [\n    React.createElement('div', {\n      key: 'timeline',\n      style: {\n        position: 'relative',\n        marginBottom: '60px'\n      }\n    }, [\n      // Timeline line\n      React.createElement('div', {\n        style: {\n          position: 'absolute',\n          top: '24px',\n          left: '10%',\n          right: '10%',\n          height: '4px',\n          backgroundColor: '#e5e7eb'\n        }\n      }),\n      // Progress line\n      React.createElement('div', {\n        style: {\n          position: 'absolute',\n          top: '24px',\n          left: '10%',\n          width: `${(selectedEvent / (events.length - 1)) * 80}%`,\n          height: '4px',\n          backgroundColor: primaryColor,\n          transition: 'width 0.5s ease'\n        }\n      }),\n      // Event nodes\n      React.createElement('div', {\n        style: {\n          display: 'flex',\n          justifyContent: 'space-between',\n          position: 'relative',\n          padding: '0 10%'\n        }\n      }, events.map((event, index) => \n        React.createElement('div', {\n          key: `node-${index}`,\n          onClick: () => setSelectedEvent(index),\n          style: {\n            display: 'flex',\n            flexDirection: 'column',\n            alignItems: 'center',\n            cursor: 'pointer'\n          }\n        }, [\n          React.createElement('div', {\n            style: {\n              width: '48px',\n              height: '48px',\n              borderRadius: '50%',\n              backgroundColor: index <= selectedEvent ? primaryColor : '#e5e7eb',\n              display: 'flex',\n              alignItems: 'center',\n              justifyContent: 'center',\n              color: 'white',\n              fontSize: '72px',\n              fontWeight: '700',\n              transition: 'all 0.3s ease',\n              transform: index === selectedEvent ? 'scale(1.2)' : 'scale(1)'\n            }\n          }, index + 1),\n          React.createElement('div', {\n            style: {\n              marginTop: '16px',\n              fontSize: '24px',\n              fontWeight: '600',\n              color: index === selectedEvent ? primaryColor : '#6b7280',\n              transition: 'color 0.3s ease'\n            }\n          }, event.date)\n        ])\n      ))\n    ]),\n    \n    // Selected event details\n    React.createElement('div', {\n      key: 'details',\n      style: {\n        textAlign: 'center',\n        opacity: 0,\n        transform: 'translateY(10px)',\n        animation: 'fadeInUp 0.5s ease forwards'\n      }\n    }, [\n      React.createElement('h3', {\n        style: {\n          fontSize: '56px',\n          fontWeight: '700',\n          color: primaryColor,\n          marginBottom: '16px'\n        }\n      }, events[selectedEvent].title),\n      React.createElement('p', {\n        style: {\n          fontSize: '36px',\n          color: '#6b7280',\n          maxWidth: '800px',\n          margin: '0 auto'\n        }\n      }, events[selectedEvent].description)\n    ])\n  ]);\n}",
+          "props": {
+            "date1": "Jan 2024",
+            "title1": "Research Phase",
+            "desc1": "Market analysis and user research completed",
+            "date2": "Mar 2024",
+            "title2": "Design Sprint",
+            "desc2": "UI/UX prototypes and testing",
+            "date3": "Jun 2024",
+            "title3": "Development",
+            "desc3": "Building core features and infrastructure",
+            "date4": "Sep 2024",
+            "title4": "Launch",
+            "desc4": "Go-to-market strategy execution",
+            "primaryColor": "#3b82f6"
+          }
+        }
+      }
+    },
+    
+    "decision_tree": {
+      "description": "Interactive decision flow diagram",
+      "use_cases": ["Process flows", "User journeys", "Decision frameworks"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 160, "y": 200},
+          "width": 1600,
+          "height": 680,
+          "render": "function render({ props }, instanceId) {\n  const [currentStep, setCurrentStep] = React.useState(0);\n  const [path, setPath] = React.useState([]);\n  \n  const title = props.title || 'Decision Framework';\n  const startNode = props.startNode || 'Identify Need';\n  const option1 = props.option1 || 'Build In-House';\n  const option2 = props.option2 || 'Buy Solution';\n  const result1 = props.result1 || 'Custom fit, Higher control, More resources';\n  const result2 = props.result2 || 'Faster deployment, Lower cost, Less customization';\n  const primaryColor = props.primaryColor || '#3b82f6';\n  const secondaryColor = props.secondaryColor || '#10b981';\n  \n  const handleChoice = (choice) => {\n    setPath([...path, choice]);\n    setCurrentStep(currentStep + 1);\n  };\n  \n  const reset = () => {\n    setCurrentStep(0);\n    setPath([]);\n  };\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '48px',\n      backgroundColor: 'white',\n      borderRadius: '24px',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center'\n    }\n  }, [\n    React.createElement('h2', {\n      key: 'title',\n      style: {\n        fontSize: '64px',\n        fontWeight: '700',\n        marginBottom: '48px',\n        color: '#1a1a1a'\n      }\n    }, title),\n    \n    // Decision tree visualization\n    React.createElement('div', {\n      key: 'tree',\n      style: {\n        flex: 1,\n        width: '100%',\n        display: 'flex',\n        flexDirection: 'column',\n        alignItems: 'center',\n        justifyContent: 'center',\n        gap: '48px'\n      }\n    }, [\n      // Start node\n      React.createElement('div', {\n        style: {\n          padding: '24px 48px',\n          backgroundColor: currentStep >= 0 ? primaryColor : '#e5e7eb',\n          color: 'white',\n          borderRadius: '12px',\n          fontSize: '56px',\n          fontWeight: '600',\n          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',\n          transform: currentStep === 0 ? 'scale(1.05)' : 'scale(1)',\n          transition: 'all 0.3s ease'\n        }\n      }, startNode),\n      \n      // Connection lines\n      currentStep === 0 && React.createElement('div', {\n        style: {\n          width: '2px',\n          height: '40px',\n          backgroundColor: primaryColor\n        }\n      }),\n      \n      // Decision options\n      currentStep === 0 && React.createElement('div', {\n        style: {\n          display: 'flex',\n          gap: '120px'\n        }\n      }, [\n        React.createElement('button', {\n          onClick: () => handleChoice(option1),\n          style: {\n            padding: '20px 40px',\n            backgroundColor: 'white',\n            border: `3px solid ${primaryColor}`,\n            borderRadius: '12px',\n            fontSize: '36px',\n            fontWeight: '600',\n            color: primaryColor,\n            cursor: 'pointer',\n            transition: 'all 0.3s ease',\n            ':hover': {\n              backgroundColor: primaryColor,\n              color: 'white'\n            }\n          }\n        }, option1),\n        React.createElement('button', {\n          onClick: () => handleChoice(option2),\n          style: {\n            padding: '20px 40px',\n            backgroundColor: 'white',\n            border: `3px solid ${secondaryColor}`,\n            borderRadius: '12px',\n            fontSize: '36px',\n            fontWeight: '600',\n            color: secondaryColor,\n            cursor: 'pointer',\n            transition: 'all 0.3s ease',\n            ':hover': {\n              backgroundColor: secondaryColor,\n              color: 'white'\n            }\n          }\n        }, option2)\n      ]),\n      \n      // Results\n      currentStep === 1 && React.createElement('div', {\n        style: {\n          textAlign: 'center',\n          opacity: 0,\n          animation: 'fadeIn 0.5s ease forwards'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            padding: '32px',\n            backgroundColor: path[0] === option1 ? `${primaryColor}10` : `${secondaryColor}10`,\n            borderRadius: '16px',\n            marginBottom: '24px'\n          }\n        }, [\n          React.createElement('h3', {\n            style: {\n              fontSize: '72px',\n              fontWeight: '700',\n              color: path[0] === option1 ? primaryColor : secondaryColor,\n              marginBottom: '16px'\n            }\n          }, `You chose: ${path[0]}`),\n          React.createElement('p', {\n            style: {\n              fontSize: '72px',\n              color: '#6b7280',\n              lineHeight: '1.6'\n            }\n          }, path[0] === option1 ? result1 : result2)\n        ]),\n        React.createElement('button', {\n          onClick: reset,\n          style: {\n            padding: '12px 24px',\n            backgroundColor: '#6b7280',\n            color: 'white',\n            border: 'none',\n            borderRadius: '8px',\n            fontSize: '28px',\n            fontWeight: '600',\n            cursor: 'pointer'\n          }\n        }, 'Start Over')\n      ])\n    ])\n  ]);\n}",
+          "props": {
+            "title": "Solution Selection",
+            "startNode": "Need Identified",
+            "option1": "Custom Development",
+            "option2": "SaaS Platform",
+            "result1": "Full control, Tailored features, Higher initial cost, Longer timeline",
+            "result2": "Quick setup, Regular updates, Monthly fees, Standard features",
+            "primaryColor": "#6366f1",
+            "secondaryColor": "#10b981"
+          }
+        }
+      }
+    },
+    
+    "countdown_timer": {
+      "description": "Dynamic countdown timer with urgency messaging",
+      "use_cases": ["Launch countdowns", "Deadline reminders", "Event promotions"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 360, "y": 300},
+          "width": 1200,
+          "height": 480,
+          "render": "function render({ props }, instanceId) {\n  const [timeLeft, setTimeLeft] = React.useState({\n    days: props.days || 15,\n    hours: props.hours || 8,\n    minutes: props.minutes || 42,\n    seconds: props.seconds || 17\n  });\n  \n  const title = props.title || 'Launch Countdown';\n  const subtitle = props.subtitle || 'Something amazing is coming';\n  const primaryColor = props.primaryColor || '#ef4444';\n  const fontFamily = props.fontFamily || 'Inter';\n  \n  React.useEffect(() => {\n    const timer = setInterval(() => {\n      setTimeLeft(prev => {\n        let { days, hours, minutes, seconds } = prev;\n        \n        if (seconds > 0) {\n          seconds--;\n        } else if (minutes > 0) {\n          minutes--;\n          seconds = 59;\n        } else if (hours > 0) {\n          hours--;\n          minutes = 59;\n          seconds = 59;\n        } else if (days > 0) {\n          days--;\n          hours = 23;\n          minutes = 59;\n          seconds = 59;\n        }\n        \n        return { days, hours, minutes, seconds };\n      });\n    }, 1000);\n    \n    return () => clearInterval(timer);\n  }, []);\n  \n  const timeUnits = [\n    { label: 'Days', value: timeLeft.days },\n    { label: 'Hours', value: timeLeft.hours },\n    { label: 'Minutes', value: timeLeft.minutes },\n    { label: 'Seconds', value: timeLeft.seconds }\n  ];\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      justifyContent: 'center',\n      fontFamily: fontFamily,\n      backgroundColor: 'rgba(0, 0, 0, 0.03)',\n      borderRadius: '24px',\n      padding: '48px'\n    }\n  }, [\n    React.createElement('h2', {\n      key: 'title',\n      style: {\n        fontSize: '48px',\n        fontWeight: '800',\n        color: '#1a1a1a',\n        marginBottom: '8px',\n        textAlign: 'center'\n      }\n    }, title),\n    \n    React.createElement('p', {\n      key: 'subtitle',\n      style: {\n        fontSize: '36px',\n        color: '#6b7280',\n        marginBottom: '48px',\n        textAlign: 'center'\n      }\n    }, subtitle),\n    \n    React.createElement('div', {\n      key: 'timer',\n      style: {\n        display: 'flex',\n        gap: '32px'\n      }\n    }, timeUnits.map((unit, index) => \n      React.createElement('div', {\n        key: unit.label,\n        style: {\n          display: 'flex',\n          flexDirection: 'column',\n          alignItems: 'center',\n          gap: '16px'\n        }\n      }, [\n        React.createElement('div', {\n          style: {\n            width: '140px',\n            height: '140px',\n            backgroundColor: primaryColor,\n            borderRadius: '20px',\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'center',\n            boxShadow: `0 10px 30px ${primaryColor}40`,\n            transform: unit.label === 'Seconds' ? 'scale(1)' : 'scale(1)',\n            animation: unit.label === 'Seconds' ? 'pulse 1s ease-in-out infinite' : 'none'\n          }\n        }, React.createElement('span', {\n          style: {\n            fontSize: '96px',\n            fontWeight: '800',\n            color: 'white',\n            fontFamily: 'monospace'\n          }\n        }, unit.value.toString().padStart(2, '0'))),\n        \n        React.createElement('span', {\n          style: {\n            fontSize: '28px',\n            fontWeight: '600',\n            color: '#6b7280',\n            textTransform: 'uppercase',\n            letterSpacing: '0.1em'\n          }\n        }, unit.label)\n      ])\n    )),\n    \n    // Urgency message\n    timeLeft.days < 3 && React.createElement('div', {\n      key: 'urgency',\n      style: {\n        marginTop: '48px',\n        padding: '16px 32px',\n        backgroundColor: `${primaryColor}20`,\n        borderRadius: '12px',\n        animation: 'pulse 2s ease-in-out infinite'\n      }\n    }, React.createElement('span', {\n      style: {\n        fontSize: '32px',\n        fontWeight: '600',\n        color: primaryColor\n      }\n    }, '⚡ Time is running out!'))\n  ]);\n}",
+          "props": {
+            "title": "Product Launch",
+            "subtitle": "Get ready for something revolutionary",
+            "days": 7,
+            "hours": 12,
+            "minutes": 30,
+            "seconds": 0,
+            "primaryColor": "#dc2626",
+            "fontFamily": "Inter"
+          }
+        }
+      }
+    }
+  },
+  
+  "visual_effects": {
+    "particle_burst": {
+      "description": "Celebratory particle explosion effect",
+      "use_cases": ["Success states", "Milestones", "Achievements"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const particleCount = props.particleCount || 50;\n  const colors = [\n    props.color1 || '#ff6b6b',\n    props.color2 || '#4ecdc4',\n    props.color3 || '#ffe66d',\n    props.color4 || '#a8e6cf',\n    props.color5 || '#ff8b94'\n  ];\n  \n  const particles = Array(particleCount).fill(0).map((_, i) => ({\n    id: i,\n    x: Math.random() * 100,\n    y: Math.random() * 100,\n    size: 4 + Math.random() * 12,\n    color: colors[Math.floor(Math.random() * colors.length)],\n    angle: Math.random() * 360,\n    distance: 50 + Math.random() * 300,\n    duration: 1 + Math.random() * 2,\n    delay: Math.random() * 0.5\n  }));\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      position: 'absolute',\n      pointerEvents: 'none',\n      overflow: 'hidden'\n    }\n  }, particles.map(particle => \n    React.createElement('div', {\n      key: particle.id,\n      style: {\n        position: 'absolute',\n        left: particle.x + '%',\n        top: particle.y + '%',\n        width: particle.size + 'px',\n        height: particle.size + 'px',\n        backgroundColor: particle.color,\n        borderRadius: '50%',\n        transform: `translate(-50%, -50%) rotate(${particle.angle}deg) translateX(${particle.distance}px)`,\n        opacity: 0,\n        animation: `particleBurst ${particle.duration}s ease-out ${particle.delay}s`,\n        '@keyframes particleBurst': {\n          '0%': {\n            transform: 'translate(-50%, -50%) rotate(0deg) translateX(0px)',\n            opacity: 1\n          },\n          '100%': {\n            transform: `translate(-50%, -50%) rotate(${particle.angle}deg) translateX(${particle.distance}px)`,\n            opacity: 0\n          }\n        }\n      }\n    })\n  ));\n}",
+          "props": {
+            "particleCount": 60,
+            "color1": "#ff6b6b",
+            "color2": "#4ecdc4",
+            "color3": "#ffe66d",
+            "color4": "#a8e6cf",
+            "color5": "#ff8b94"
+          }
+        }
+      }
+    },
+    
+    "morphing_blob": {
+      "description": "Organic animated shape background",
+      "use_cases": ["Background decoration", "Visual interest", "Modern aesthetics"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 1200, "y": 100},
+          "width": 600,
+          "height": 600,
+          "render": "function render({ props }, instanceId) {\n  const color = props.color || '#3b82f6';\n  const opacity = props.opacity || 0.1;\n  const size = props.size || 400;\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      display: 'flex',\n      alignItems: 'center',\n      justifyContent: 'center'\n    }\n  }, React.createElement('div', {\n    style: {\n      width: size + 'px',\n      height: size + 'px',\n      background: `radial-gradient(circle, ${color} 0%, transparent 70%)`,\n      opacity: opacity,\n      borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',\n      animation: 'morph 8s ease-in-out infinite',\n      '@keyframes morph': {\n        '0%, 100%': {\n          borderRadius: '40% 60% 70% 30% / 40% 50% 60% 50%',\n          transform: 'rotate(0deg) scale(1)'\n        },\n        '33%': {\n          borderRadius: '70% 30% 50% 50% / 30% 30% 70% 70%',\n          transform: 'rotate(120deg) scale(1.1)'\n        },\n        '66%': {\n          borderRadius: '30% 70% 40% 60% / 70% 40% 60% 30%',\n          transform: 'rotate(240deg) scale(0.9)'\n        }\n      }\n    }\n  }));\n}",
+          "props": {
+            "color": "#8b5cf6",
+            "opacity": 0.15,
+            "size": 500
+          }
+        }
+      }
+    },
+    
+    "floating_icons": {
+      "description": "Ambient floating icon animation",
+      "use_cases": ["Tech presentations", "Feature highlights", "Visual atmosphere"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 0, "y": 0},
+          "width": 1920,
+          "height": 1080,
+          "render": "function render({ props }, instanceId) {\n  const icons = [\n    props.icon1 || '⚡',\n    props.icon2 || '🚀',\n    props.icon3 || '💡',\n    props.icon4 || '⭐',\n    props.icon5 || '🎯',\n    props.icon6 || '🔥'\n  ];\n  const iconCount = props.iconCount || 12;\n  const color = props.color || '#3b82f6';\n  const opacity = props.opacity || 0.1;\n  \n  const floatingIcons = Array(iconCount).fill(0).map((_, i) => ({\n    id: i,\n    icon: icons[i % icons.length],\n    x: Math.random() * 100,\n    y: Math.random() * 100,\n    size: 24 + Math.random() * 48,\n    duration: 15 + Math.random() * 10,\n    delay: Math.random() * 5,\n    floatDistance: 100 + Math.random() * 200\n  }));\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      position: 'absolute',\n      pointerEvents: 'none',\n      overflow: 'hidden'\n    }\n  }, floatingIcons.map(item => \n    React.createElement('div', {\n      key: item.id,\n      style: {\n        position: 'absolute',\n        left: item.x + '%',\n        top: item.y + '%',\n        fontSize: item.size + 'px',\n        color: color,\n        opacity: opacity,\n        animation: `float ${item.duration}s ease-in-out ${item.delay}s infinite`,\n        '@keyframes float': {\n          '0%, 100%': {\n            transform: 'translateY(0px) rotate(0deg)'\n          },\n          '50%': {\n            transform: `translateY(-${item.floatDistance}px) rotate(180deg)`\n          }\n        }\n      }\n    }, item.icon)\n  ));\n}",
+          "props": {
+            "icon1": "💻",
+            "icon2": "☁️",
+            "icon3": "🔒",
+            "icon4": "📊",
+            "icon5": "🌐",
+            "icon6": "⚙️",
+            "iconCount": 15,
+            "color": "#6366f1",
+            "opacity": 0.08
+          }
+        }
+      }
+    }
+  },
+  
+  "engagement_tools": {
+    "reaction_picker": {
+      "description": "Emoji reaction selector for audience feedback",
+      "use_cases": ["Feedback collection", "Mood assessment", "Interactive Q&A"],
+      "example": {
+        "type": "CustomComponent",
+        "props": {
+          "position": {"x": 560, "y": 400},
+          "width": 800,
+          "height": 280,
+          "render": "function render({ props }, instanceId) {\n  const [selectedReaction, setSelectedReaction] = React.useState(null);\n  const [counts, setCounts] = React.useState({\n    love: props.loveCount || 24,\n    like: props.likeCount || 18,\n    think: props.thinkCount || 12,\n    wow: props.wowCount || 31,\n    question: props.questionCount || 8\n  });\n  \n  const title = props.title || 'How do you feel about this?';\n  const reactions = [\n    { emoji: '❤️', key: 'love', label: 'Love it!' },\n    { emoji: '👍', key: 'like', label: 'Like it' },\n    { emoji: '🤔', key: 'think', label: 'Thinking...' },\n    { emoji: '😮', key: 'wow', label: 'Amazing!' },\n    { emoji: '❓', key: 'question', label: 'Question' }\n  ];\n  \n  const handleReaction = (key) => {\n    if (selectedReaction === key) return;\n    \n    if (selectedReaction) {\n      setCounts(prev => ({\n        ...prev,\n        [selectedReaction]: prev[selectedReaction] - 1,\n        [key]: prev[key] + 1\n      }));\n    } else {\n      setCounts(prev => ({\n        ...prev,\n        [key]: prev[key] + 1\n      }));\n    }\n    setSelectedReaction(key);\n  };\n  \n  return React.createElement('div', {\n    style: {\n      width: '100%',\n      height: '100%',\n      padding: '32px',\n      backgroundColor: 'white',\n      borderRadius: '24px',\n      boxShadow: '0 10px 30px rgba(0,0,0,0.1)',\n      display: 'flex',\n      flexDirection: 'column',\n      alignItems: 'center',\n      gap: '32px'\n    }\n  }, [\n    React.createElement('h3', {\n      key: 'title',\n      style: {\n        fontSize: '28px',\n        fontWeight: '600',\n        color: '#1a1a1a',\n        textAlign: 'center'\n      }\n    }, title),\n    \n    React.createElement('div', {\n      key: 'reactions',\n      style: {\n        display: 'flex',\n        gap: '24px'\n      }\n    }, reactions.map(reaction => {\n      const isSelected = selectedReaction === reaction.key;\n      const count = counts[reaction.key];\n      \n      return React.createElement('button', {\n        key: reaction.key,\n        onClick: () => handleReaction(reaction.key),\n        style: {\n          display: 'flex',\n          flexDirection: 'column',\n          alignItems: 'center',\n          gap: '8px',\n          padding: '16px',\n          backgroundColor: isSelected ? '#3b82f615' : 'transparent',\n          border: isSelected ? '2px solid #3b82f6' : '2px solid transparent',\n          borderRadius: '16px',\n          cursor: 'pointer',\n          transition: 'all 0.2s ease',\n          transform: isSelected ? 'scale(1.1)' : 'scale(1)',\n          ':hover': { transform: 'scale(1.05)' }\n        }\n      }, [\n        React.createElement('span', {\n          style: {\n            fontSize: '72px',\n            lineHeight: 1,\n            transform: isSelected ? 'scale(1.2)' : 'scale(1)',\n            transition: 'transform 0.2s ease'\n          }\n        }, reaction.emoji),\n        React.createElement('span', {\n          style: {\n            fontSize: '20px',\n            fontWeight: '500',\n            color: '#6b7280'\n          }\n        }, reaction.label),\n        React.createElement('span', {\n          style: {\n            fontSize: '24px',\n            fontWeight: '700',\n            color: isSelected ? '#3b82f6' : '#374151'\n          }\n        }, count)\n      ]);\n    }))\n  ]);\n}",
+          "props": {
+            "title": "What's your reaction?",
+            "loveCount": 42,
+            "likeCount": 28,
+            "thinkCount": 15,
+            "wowCount": 56,
+            "questionCount": 12
+          }
+        }
+      }
+    }
+  }
+} 

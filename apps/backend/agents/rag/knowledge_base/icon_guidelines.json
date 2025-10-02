@@ -1,0 +1,104 @@
+{
+  "icon_functional_usage_guide": {
+    "description": "Icons are allowed for functional purposes only - NO decorative usage",
+    "critical_rule": "Icons ONLY for meaningful content - bullet points, data visualization, infographics. NO random decorative icons.",
+    "allowed_uses": {
+      "bullet_points": {
+        "description": "Replace standard bullets with meaningful icons",
+        "examples": [
+          "Checkmark for completed items",
+          "Arrow for next steps",
+          "Warning triangle for cautions",
+          "Target for goals"
+        ],
+        "size": "24-32px aligned with text"
+      },
+      "infographics": {
+        "description": "Visual data representation using icons",
+        "examples": [
+          "4 out of 10: Show 4 colored icons and 6 gray/outlined icons",
+          "75% satisfaction: 3 filled stars and 1 empty star",
+          "User count: Multiple user icons to show scale",
+          "Process steps: Icons representing each stage"
+        ],
+        "implementation": "Use multiple icons with color/fill states to show proportions"
+      },
+      "inline_text": {
+        "description": "Icons within sentences for clarity",
+        "examples": [
+          "Growth trends with small arrow icon",
+          "Time-based data with clock icon",
+          "Financial metrics with currency icons",
+          "User statistics with person icon"
+        ],
+        "size": "16-24px matching text line height"
+      },
+      "data_enhancement": {
+        "description": "Support metrics and statistics",
+        "examples": [
+          "TrendingUp for growth metrics",
+          "Users for people counts",
+          "Clock for time data",
+          "DollarSign for financial data"
+        ],
+        "placement": "Adjacent to numbers, not overlapping"
+      }
+    },
+    "forbidden_uses": {
+      "decorative_backgrounds": "NO floating icons as background decoration",
+      "visual_interest": "NO icons just to 'fill space' or 'add interest'",
+      "random_placement": "NO scattered icons without meaning",
+      "slide_embellishment": "NO icons as general slide decoration",
+      "corner_accents": "NO decorative icon patterns",
+      "examples": [
+        "WRONG: Random stars floating in background",
+        "WRONG: Icon patterns as slide borders",
+        "WRONG: Decorative icon clusters in corners",
+        "WRONG: Icons used just because slide looks empty"
+      ]
+    },
+    "implementation_rules": {
+      "meaningful_selection": "Every icon must reinforce content meaning",
+      "size_hierarchy": {
+        "inline": "16-24px",
+        "bullets": "24-32px",
+        "features": "48px",
+        "hero": "72px maximum"
+      },
+      "placement": {
+        "bullets": "Left of text with 16-20px gap",
+        "inline": "Within text flow, properly aligned",
+        "infographics": "Organized grid or row layout"
+      },
+      "color_usage": {
+        "functional": "Use theme colors for meaning",
+        "infographic_states": "Filled vs outlined to show proportions",
+        "consistency": "Same style throughout presentation"
+      }
+    },
+    "infographic_patterns": {
+      "percentage_display": {
+        "pattern": "X out of Y",
+        "implementation": "Show X filled/colored icons and Y-X empty/gray icons",
+        "example": "70% approval = 7 filled + 3 empty icons"
+      },
+      "comparison": {
+        "pattern": "Before vs After",
+        "implementation": "Different icon states or colors",
+        "example": "5 gray icons → 8 colored icons for growth"
+      },
+      "scale_representation": {
+        "pattern": "Quantity visualization",
+        "implementation": "Multiple icons to show scale",
+        "example": "1 icon = 1000 users, show 5 icons for 5000"
+      }
+    },
+    "quality_checklist": [
+      "Does the icon add meaning to the content?",
+      "Is it replacing something less effective (like a bullet)?",
+      "Does it help visualize data or concepts?",
+      "Would removing it lose information?",
+      "If answer is NO to any → Don't use the icon"
+    ]
+  }
+}

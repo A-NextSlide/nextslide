@@ -1,0 +1,35 @@
+{
+  "id": "image-with-border",
+  "description": "Add an image with border and caption",
+  "currentSlideId": "slide-1",
+  "prompt": "Add an image to the slide with a rounded border and a caption below it. Use this image URL: https://source.unsplash.com/random/800x600/?nature",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Experiment Slide",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "text-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 100 },
+            "width": 800,
+            "height": 100,
+            "texts": [{ "text": "Nature Photography", "style": {} }]
+          }
+        }
+      ]
+    }
+  ]
+} 

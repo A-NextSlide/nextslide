@@ -1,0 +1,64 @@
+{
+  "id": "format-table-data",
+  "description": "Style an existing data table",
+  "currentSlideId": "slide-1",
+  "prompt": "Format the existing table to have alternating row colors (light blue for even rows, white for odd rows), bold column headers with a dark blue background, and center-align all the numeric data columns.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Sales Report",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "color": "#ffffffff",
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "zIndex": 0
+          }
+        },
+        {
+          "id": "title-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 200, "y": 100 },
+            "width": 600,
+            "height": 80,
+            "texts": [{ "text": "Regional Sales Report - 2023", "style": {} }]
+          }
+        },
+        {
+          "id": "table-1",
+          "type": "Table",
+          "props": {
+            "position": { "x": 200, "y": 220 },
+            "width": 800,
+            "height": 400,
+            "headers": ["Region", "Q1 Sales", "Q2 Sales", "Q3 Sales", "Q4 Sales", "Total"],
+            "data": [
+              ["North", "$125,000", "$142,000", "$158,000", "$172,000", "$597,000"],
+              ["South", "$98,000", "$112,000", "$127,000", "$135,000", "$472,000"],
+              ["East", "$156,000", "$168,000", "$184,000", "$192,000", "$700,000"],
+              ["West", "$142,000", "$155,000", "$166,000", "$178,000", "$641,000"]
+            ],
+            "showHeader": true,
+            "tableStyles": {
+              "fontFamily": "Arial",
+              "fontSize": 14,
+              "borderColor": "#e2e8f0",
+              "borderWidth": 1,
+              "cellPadding": 10,
+              "headerBackgroundColor": "#f8fafc",
+              "headerTextColor": "#334155",
+              "cellBackgroundColor": "#ffffff",
+              "textColor": "#334155",
+              "alignment": "left"
+            }
+          }
+        }
+      ]
+    }
+  ]
+} 

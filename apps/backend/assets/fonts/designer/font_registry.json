@@ -1,0 +1,1616 @@
+{
+  "fonts": {
+    "5010-thoth-legacy-egyptian-typeface": {
+      "id": "5010-thoth-legacy-egyptian-typeface",
+      "name": "Thoth Legacy Egyptian Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5010_thoth_legacy_egyptian_typeface/Thoth Legacy.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5010_thoth_legacy_egyptian_typeface/Thoth Legacy.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5013-earthbound-organic-typeface": {
+      "id": "5013-earthbound-organic-typeface",
+      "name": "Earthbound Organic Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5013_earthbound_organic_typeface/Earthbound-Distort.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5013_earthbound_organic_typeface/Earthbound-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5013_earthbound_organic_typeface/Earthbound-Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5013_earthbound_organic_typeface/Earthbound-Distort.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "5014-hyperion-sleek-modern-sans": {
+      "id": "5014-hyperion-sleek-modern-sans",
+      "name": "Hyperion Sleek Modern Sans",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "light": [
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Light.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Thin.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Light.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Thin.ttf",
+            "format": "ttf"
+          }
+        ],
+        "medium": [
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Medium.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Medium.ttf",
+            "format": "ttf"
+          }
+        ],
+        "regular": [
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-VF.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-VF.ttf",
+            "format": "ttf"
+          }
+        ],
+        "bold": [
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Black.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Black.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5014_hyperion_sleek_modern_sans/Hyperion-Bold.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 14
+    },
+    "5041-freestyle-graffiti-display": {
+      "id": "5041-freestyle-graffiti-display",
+      "name": "Freestyle Graffiti Display",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5041_freestyle_graffiti_display/Freestyle.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5041_freestyle_graffiti_display/Freestyle.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5057-lovage-lane": {
+      "id": "5057-lovage-lane",
+      "name": "Lovage Lane",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5057_lovage_lane/Lovage Lane.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5057_lovage_lane/Lovage Lane.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5057-lovage-lane-(1)": {
+      "id": "5057-lovage-lane-(1)",
+      "name": "Lovage Lane (1)",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5057_lovage_lane (1)/Lovage Lane.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5057_lovage_lane (1)/Lovage Lane.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5058-razor-titan-halloween-typeface": {
+      "id": "5058-razor-titan-halloween-typeface",
+      "name": "Razor Titan Halloween Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5058_razor_titan_halloween_typeface/Razor Titan.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5058_razor_titan_halloween_typeface/Razor Titan.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5059-boho-melody-groovy-typeface": {
+      "id": "5059-boho-melody-groovy-typeface",
+      "name": "Boho Melody Groovy Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5059_boho_melody_groovy_typeface/Boho Melody.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5059_boho_melody_groovy_typeface/Boho Melody.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5060-eleanora-medieval-blackletter-font": {
+      "id": "5060-eleanora-medieval-blackletter-font",
+      "name": "Eleanora Medieval Blackletter Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5060_eleanora_medieval_blackletter_font/Eleanora.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5060_eleanora_medieval_blackletter_font/Eleanora.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5061-graffitopia-urban-graffiti-font": {
+      "id": "5061-graffitopia-urban-graffiti-font",
+      "name": "Graffitopia Urban Graffiti Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5061_graffitopia_urban_graffiti_font/Graffitopia.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5061_graffitopia_urban_graffiti_font/Graffitopia.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5062-canyon-slab-wild-west-typeface": {
+      "id": "5062-canyon-slab-wild-west-typeface",
+      "name": "Canyon Slab Wild West Typeface",
+      "category": "slab",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5062_canyon_slab_wild_west_typeface/CanyonSlab.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5062_canyon_slab_wild_west_typeface/CanyonSlab.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5064-hf-pensional-marker-handwriting-font-dingbats": {
+      "id": "5064-hf-pensional-marker-handwriting-font-dingbats",
+      "name": "Hf Pensional Marker Handwriting Font Dingbats",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "italic": [
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional OTF/HF Pensional - Oblique.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Oblique.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Oblique.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Oblique.woff2",
+            "format": "woff2"
+          }
+        ],
+        "regular": [
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional OTF/HF Pensional.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional OTF/HF Pensional - DingbatsTwo.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional OTF/HF Pensional - Dingbats.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Dingbats.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - DingbatsTwo.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - DingbatsTwo.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Dingbats.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - Dingbats.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "5064_hf_pensional_marker_handwriting_font_dingbats/HFPensional TTF WOFF WOFF2/HF Pensional - DingbatsTwo.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 16
+    },
+    "5112-nebula-swirl-retro-modern-font": {
+      "id": "5112-nebula-swirl-retro-modern-font",
+      "name": "Nebula Swirl Retro Modern Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5112_nebula_swirl_retro_modern_font/Nebula Swirl.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5112_nebula_swirl_retro_modern_font/Nebula Swirl.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5113-gridiron-glory-sport-typeface": {
+      "id": "5113-gridiron-glory-sport-typeface",
+      "name": "Gridiron Glory Sport Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5113_gridiron_glory_sport_typeface/Gridiron Glory.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5113_gridiron_glory_sport_typeface/Gridiron Glory.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5114-cosmic-hippie-groovy-font": {
+      "id": "5114-cosmic-hippie-groovy-font",
+      "name": "Cosmic Hippie Groovy Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Outline.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Shadow.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Outline.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5114_cosmic_hippie_groovy_font/Cosmic Hippie - Shadow.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 6
+    },
+    "5115-hexaplex-geometric-typeface": {
+      "id": "5115-hexaplex-geometric-typeface",
+      "name": "Hexaplex Geometric Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5115_hexaplex_geometric_typeface/Hexaplex.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5115_hexaplex_geometric_typeface/Hexaplex.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5126-hf-lonehope-western-slab-serif-display-font": {
+      "id": "5126-hf-lonehope-western-slab-serif-display-font",
+      "name": "Hf Lonehope Western Slab Serif Display Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope OTF/Hf Lonehope Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope OTF/Hf Lonehope Stamp.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Stamp.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Regular.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Stamp.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Regular.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "5126_hf_lonehope_western_slab_serif_display_font/HF Lonehope TTF, WOFF, WOFF2/Hf Lonehope Stamp.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 8
+    },
+    "5134-binary-groove-groovy-1980s-typeface": {
+      "id": "5134-binary-groove-groovy-1980s-typeface",
+      "name": "Binary Groove Groovy 1980S Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5134_binary_groove_groovy_1980s_typeface/Binary Groove.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5134_binary_groove_groovy_1980s_typeface/Binary Groove.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5135-synthetika-futuristic-typeface": {
+      "id": "5135-synthetika-futuristic-typeface",
+      "name": "Synthetika Futuristic Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5135_synthetika_futuristic_typeface/Synthetika.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5135_synthetika_futuristic_typeface/Synthetika.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5135_synthetika_futuristic_typeface/Synthetika.woff",
+            "format": "woff"
+          }
+        ]
+      },
+      "file_count": 3
+    },
+    "5136-upside-down-1980s-retro-typeface": {
+      "id": "5136-upside-down-1980s-retro-typeface",
+      "name": "Upside Down 1980S Retro Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Outline.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Outline.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Outline WOFF/Upside Down - Outline.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Regular WOFF/Upside Down - Regular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Outline WOFF/Upside Down - Outline.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5136_upside_down_1980s_retro_typeface/Upside Down - Regular WOFF/Upside Down - Regular.woff",
+            "format": "woff"
+          }
+        ]
+      },
+      "file_count": 8
+    },
+    "5137-double-bubble-3d-typeface": {
+      "id": "5137-double-bubble-3d-typeface",
+      "name": "Double Bubble 3D Typeface",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5137_double_bubble_3d_typeface/Double Bubble 3D.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5137_double_bubble_3d_typeface/Double Bubble.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5138-avalar-elegant-display": {
+      "id": "5138-avalar-elegant-display",
+      "name": "Avalar Elegant Display",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "bold": [
+          {
+            "path": "5138_avalar_elegant_display/Avalar-Bold.ttf",
+            "format": "ttf"
+          }
+        ],
+        "regular": [
+          {
+            "path": "5138_avalar_elegant_display/Avalar-Regular.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5147-the-rascals-youth-font": {
+      "id": "5147-the-rascals-youth-font",
+      "name": "The Rascals Youth Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5147_the_rascals_youth_font/The Rascals.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5147_the_rascals_youth_font/The Rascals.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5148-tropicalismo-tropical-font": {
+      "id": "5148-tropicalismo-tropical-font",
+      "name": "Tropicalismo Tropical Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5148_tropicalismo_tropical_font/Tropicalismo.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5148_tropicalismo_tropical_font/Tropicalismo.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "5149-hf-hunos-display-bold-font": {
+      "id": "5149-hf-hunos-display-bold-font",
+      "name": "Hf Hunos Display Bold Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "italic": [
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos OTF/Hf Hunos Italic Soft.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos OTF/Hf Hunos Italic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic Soft.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic Soft.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic Soft.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Italic.woff2",
+            "format": "woff2"
+          }
+        ],
+        "regular": [
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos OTF/Hf Hunos.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos OTF/Hf Hunos Soft.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Soft.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Soft.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos.woff",
+            "format": "woff"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos Soft.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "5149_hf_hunos_display_bold_font/Hf Hunos TTF WOFF WOFF2/Hf Hunos.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 16
+    },
+    "5225-new-kids-crew-graffiti-tag-font": {
+      "id": "5225-new-kids-crew-graffiti-tag-font",
+      "name": "New Kids Crew Graffiti Tag Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5225_new_kids_crew_graffiti_tag_font/NewkidsCrew.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5225_new_kids_crew_graffiti_tag_font/NewkidsCrew.ttf",
+            "format": "ttf"
+          }
+        ],
+        "italic": [
+          {
+            "path": "5225_new_kids_crew_graffiti_tag_font/NewkidsCrewOblique.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5225_new_kids_crew_graffiti_tag_font/NewkidsCrewOblique.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "5226-kaivalya-culture-font": {
+      "id": "5226-kaivalya-culture-font",
+      "name": "Kaivalya Culture Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "5226_kaivalya_culture_font/KAIVALYA.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5226_kaivalya_culture_font/IkiikoBonus.otf",
+            "format": "otf"
+          },
+          {
+            "path": "5226_kaivalya_culture_font/KAIVALYA.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "5226_kaivalya_culture_font/IkiikoBonus.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "av-galveria-\u2014-display-serif-font-": {
+      "id": "av-galveria-\u2014-display-serif-font-",
+      "name": "Av Galveria - Display Serif",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "AV Galveria \u2014 Display Serif Font /Files/AV Galveria.otf",
+            "format": "otf"
+          },
+          {
+            "path": "AV Galveria \u2014 Display Serif Font /Files/AV Galveria.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "AV Galveria \u2014 Display Serif Font /Files/AV Galveria.woff",
+            "format": "woff"
+          }
+        ]
+      },
+      "file_count": 3
+    },
+    "acrona-display-font": {
+      "id": "acrona-display-font",
+      "name": "Acrona Display",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Acrona Display Font/Files/Acrona.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Acrona Display Font/Files/Acrona.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acrona Display Font/Files/Acrona.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Acrona Display Font/Files/Acrona.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "acure---display-font": {
+      "id": "acure---display-font",
+      "name": "Acure - Display",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "light": [
+          {
+            "path": "Acure - Display Font/Files/OTF/Acure Thin.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Acure - Display Font/Files/TTF/Acure Thin.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/TTF/Acure Thin.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF/Acure Thin.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF2/Acure Thin.woff2",
+            "format": "woff2"
+          }
+        ],
+        "bold": [
+          {
+            "path": "Acure - Display Font/Files/OTF/Acure Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Acure - Display Font/Files/TTF/Acure Bold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/TTF/Acure Bold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF/Acure Bold.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF2/Acure Bold.woff2",
+            "format": "woff2"
+          }
+        ],
+        "regular": [
+          {
+            "path": "Acure - Display Font/Files/OTF/Acure.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Acure - Display Font/Files/TTF/Acure.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/TTF/Acure.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF/Acure.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Acure - Display Font/Files/Web-TT/WOFF2/Acure.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 15
+    },
+    "alerio-sans-serif": {
+      "id": "alerio-sans-serif",
+      "name": "Alerio Sans Serif",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "light": [
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-ExtraLight.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Thin.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Light.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Thin.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-ExtraLight.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Light.ttf",
+            "format": "ttf"
+          }
+        ],
+        "bold": [
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-ExtraBold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Black.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-SemiBold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Black.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Bold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-ExtraBold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-SemiBold.ttf",
+            "format": "ttf"
+          }
+        ],
+        "regular": [
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Regular.ttf",
+            "format": "ttf"
+          }
+        ],
+        "medium": [
+          {
+            "path": "Alerio Sans Serif/Files/OTF/Alerio-Medium.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Alerio Sans Serif/Files/TTF/Alerio-Medium.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 18
+    },
+    "delamot": {
+      "id": "delamot",
+      "name": "Delamot",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Delamot/Delamot.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Delamot/Delamot.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Delamot/Delamot.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Delamot/Delamot.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "elmariachi": {
+      "id": "elmariachi",
+      "name": "Elmariachi",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "ElMariachi/ElMariachi.otf",
+            "format": "otf"
+          },
+          {
+            "path": "ElMariachi/ElMariachi.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "felicidade": {
+      "id": "felicidade",
+      "name": "Felicidade",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Felicidade/FelicidadeType.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Felicidade/FelicidadeType.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "floriena-ligatures-sans": {
+      "id": "floriena-ligatures-sans",
+      "name": "Floriena Ligatures Sans",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Floriena Ligatures Sans/Files/Floriena Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Floriena Ligatures Sans/Files/Florien Regular.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "glorida-\u2014-sans-serif-family": {
+      "id": "glorida-\u2014-sans-serif-family",
+      "name": "Glorida - Sans Serif",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "bold-italic": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-SemiBoldItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-BoldItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-ExtraBoldItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-SemiBoldItalic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-ExtraBoldItalic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-BoldItalic.ttf",
+            "format": "ttf"
+          }
+        ],
+        "bold": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-ExtraBold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-SemiBold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-BlackItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Black.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-SemiBold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-ExtraBold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Bold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Black.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-BlackItalic.ttf",
+            "format": "ttf"
+          }
+        ],
+        "italic": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Italic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-ExtraLightItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-ThinItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-MediumItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-LightItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Italic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-ExtraLightItalic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-MediumItalic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-LightItalic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-ThinItalic.ttf",
+            "format": "ttf"
+          }
+        ],
+        "light": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Light.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-ExtraLight.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Thin.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Light.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Thin.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-ExtraLight.ttf",
+            "format": "ttf"
+          }
+        ],
+        "regular": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Regular.ttf",
+            "format": "ttf"
+          }
+        ],
+        "medium": [
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/OTF/Glorida-Medium.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Glorida \u2014 Sans Serif Family/Files/TTF/Glorida-Medium.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 36
+    },
+    "hf-portanic": {
+      "id": "hf-portanic",
+      "name": "Hf Portanic",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "HF Portanic/HF PORTANIC REGULAR/HF Portanic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC TEXTURE/HF Portanic - Texture.otf",
+            "format": "otf"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC REGULAR/HF Portanic.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC TEXTURE/HF Portanic - Texture.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC REGULAR/HF Portanic.woff",
+            "format": "woff"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC TEXTURE/HF Portanic - Texture.woff",
+            "format": "woff"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC REGULAR/HF Portanic.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "HF Portanic/HF PORTANIC TEXTURE/HF Portanic - Texture.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 8
+    },
+    "hiluna-\u2014-clean-sans-serif": {
+      "id": "hiluna-\u2014-clean-sans-serif",
+      "name": "Hiluna - Clean Sans Serif",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Hiluna \u2014 Clean Sans Serif/Files/Hiluna-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Hiluna \u2014 Clean Sans Serif/Files/Hiluna-Regular.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "marine-elmoure-sans-serif": {
+      "id": "marine-elmoure-sans-serif",
+      "name": "Marine Elmoure Sans Serif",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "bold": [
+          {
+            "path": "Marine Elmoure Sans Serif/Files/OTF/MarineElmoure-Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Marine Elmoure Sans Serif/Files/TTF/MarineElmoure-Bold.ttf",
+            "format": "ttf"
+          }
+        ],
+        "bold-italic": [
+          {
+            "path": "Marine Elmoure Sans Serif/Files/OTF/MarineElmoure-BoldItalic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Marine Elmoure Sans Serif/Files/TTF/MarineElmoure-BoldItalic.ttf",
+            "format": "ttf"
+          }
+        ],
+        "italic": [
+          {
+            "path": "Marine Elmoure Sans Serif/Files/OTF/MarineElmoure-Italic.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Marine Elmoure Sans Serif/Files/TTF/MarineElmoure-Italic.ttf",
+            "format": "ttf"
+          }
+        ],
+        "regular": [
+          {
+            "path": "Marine Elmoure Sans Serif/Files/OTF/MarineElmoure-Regular.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Marine Elmoure Sans Serif/Files/TTF/MarineElmoure-Regular.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 8
+    },
+    "maxmillion": {
+      "id": "maxmillion",
+      "name": "Maxmillion",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Maxmillion/Maxmillion.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Maxmillion/Maxmillion.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "newaves": {
+      "id": "newaves",
+      "name": "Newaves",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Newaves/Newaves.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Newaves/NewavesSignature.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Newaves/NewavesSignature.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Newaves/Newaves.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 4
+    },
+    "pink-zebra-quirky-four-font-family": {
+      "id": "pink-zebra-quirky-four-font-family",
+      "name": "Pink Zebra Quirky Four-Font",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/OTF/Zebra-Outline.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/OTF/Zebra-Stripe.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/OTF/Zebra-Script.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/TTF/Zebra-Outline.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/TTF/Zebra-Script.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/TTF/Zebra-Stripe.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Stripe.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Script.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Outline.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Script.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Stripe.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Outline.woff2",
+            "format": "woff2"
+          }
+        ],
+        "bold": [
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/OTF/Zebra-Bold.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/TTF/Zebra-Bold.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Bold.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Pink Zebra Quirky Four-Font Family/Files/WOFF/Zebra-Bold.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 16
+    },
+    "qitella-modern-stylist-font": {
+      "id": "qitella-modern-stylist-font",
+      "name": "Qitella Modern Stylist",
+      "category": "sans",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Qitella Modern Stylist Font/Files/Qitella.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Qitella Modern Stylist Font/Files/Qitella.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "silvercrush": {
+      "id": "silvercrush",
+      "name": "Silvercrush",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Silvercrush/Silvercrush.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Silvercrush/Silvercrush.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "southernclan": {
+      "id": "southernclan",
+      "name": "Southernclan",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "SouthernClan/SouthernClan.otf",
+            "format": "otf"
+          },
+          {
+            "path": "SouthernClan/SouthernClan.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "timeless-tourist": {
+      "id": "timeless-tourist",
+      "name": "Timeless Tourist",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Timeless Tourist/Timeless Tourist.otf",
+            "format": "otf"
+          }
+        ]
+      },
+      "file_count": 1
+    },
+    "tjoekilkajoe": {
+      "id": "tjoekilkajoe",
+      "name": "Tjoekilkajoe",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "TjoekilKajoe/TjoekilKajoe.otf",
+            "format": "otf"
+          },
+          {
+            "path": "TjoekilKajoe/TjoekilKajoe.ttf",
+            "format": "ttf"
+          }
+        ]
+      },
+      "file_count": 2
+    },
+    "vintage-brunch-retro-font-duo": {
+      "id": "vintage-brunch-retro-font-duo",
+      "name": "Vintage Brunch Retro",
+      "category": "display",
+      "source": "designer",
+      "styles": {
+        "regular": [
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/OTF/VintageBrunch.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/OTF/VintageBrunch-Script.otf",
+            "format": "otf"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/TTF/VintageBrunchRegular.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/TTF/VintageBrunchScript.ttf",
+            "format": "ttf"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/WOFF/VintageBrunchScript.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/WOFF/VintageBrunchRegular.woff",
+            "format": "woff"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/WOFF/VintageBrunchRegular.woff2",
+            "format": "woff2"
+          },
+          {
+            "path": "Vintage Brunch Retro Font Duo/Files/WOFF/VintageBrunchScript.woff2",
+            "format": "woff2"
+          }
+        ]
+      },
+      "file_count": 8
+    }
+  },
+  "total": 48,
+  "source": "interactive-slide-sorcery frontend"
+}

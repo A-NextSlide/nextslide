@@ -1,0 +1,12 @@
+{
+  "total_fonts": 699,
+  "extracted_count": 701,
+  "actually_missing": 0,
+  "intentionally_skipped": [
+    "249-marseille-and-amsterdam-font-duo-free-download",
+    "2479-flower-bouquet-svg-font",
+    "2505-bright-calligraphy-psd-typeface"
+  ],
+  "effective_completion_rate": "100.7%",
+  "missing_fonts": []
+}

@@ -1,0 +1,335 @@
+@import './styles/chart.css';
+@import './styles/dragging.css';
+@import './styles/presentation.css';
+@import './styles/decorative-animations.css';
+
+/* App.css */
+#root {
+  /* Remove width constraints to allow full-width layouts */
+  width: 100%;
+  min-height: 100vh;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Text block styling */
+.text-block-content {
+  word-break: break-word !important;
+  white-space: pre-wrap !important;
+  overflow: visible !important;
+  line-height: inherit;
+  transform: none !important;
+}
+
+/* Make editing mode maintain dimensions and styling */
+.text-block-editing {
+  caret-color: black !important;
+  outline: none !important;
+  min-height: 100% !important;
+  min-width: 100% !important;
+  -webkit-text-size-adjust: none !important;
+  text-size-adjust: none !important;
+  zoom: 100% !important;
+  font-size: inherit;
+  position: relative !important;
+  z-index: 100 !important; /* Ensure text is above all other elements */
+}
+
+/* Make selection visible */
+.text-block-editing::selection {
+  background: rgba(0, 120, 215, 0.3) !important;
+}
+
+/* Text editing component mode */
+.text-editing-active {
+  cursor: text !important;
+  outline: 2px solid #4299e1 !important; /* Blue outline to show it's in edit mode */
+}
+
+.text-editing-active .text-block-content {
+  cursor: text !important;
+  min-height: 100% !important;
+  position: relative !important;
+  z-index: 100 !important;
+}
+
+.text-edit-container {
+  position: relative;
+  z-index: 100;
+  cursor: text !important;
+}
+
+/* Force consistent styling for content inside the text block */
+.text-block-content > * {
+  font-size: inherit;
+  line-height: inherit;
+  font-family: inherit;
+}
+
+/* Thumbnail container styling */
+.thumbnail-slide-container {
+  /* Let CSS transforms scale everything equally */
+  transform-origin: top left !important;
+}
+
+/* No special styling for thumbnails - render everything the same */
+
+/* Adjust container for scaled text to prevent overflow */
+.thumbnail-slide-container .component-container[data-component-id],
+.thumbnail-slide-container .component-container {
+  overflow: visible !important;
+  transform-style: preserve-3d !important;
+}
+
+/* Ensure text container has enough space for the larger text */
+.thumbnail-slide-container .component-container {
+  width: auto !important;
+  height: auto !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+}
+
+/* Shape creation styles - enhanced crosshair cursor with stronger selectors */
+.creating-shape-cursor,
+.creating-shape-cursor *,
+.creating-shape-cursor *:hover,
+.creating-shape-cursor .component-container,
+.creating-shape-cursor .component-wrapper {
+  cursor: crosshair !important;
+}
+
+body.creating-shape #slide-display-container,
+body.creating-shape #slide-display-container *,
+body.creating-shape #slide-display-container *:hover,
+body.creating-shape #slide-display-container .component-container,
+body.creating-shape #slide-display-container .component-wrapper {
+  cursor: crosshair !important;
+}
+
+/* Force cursor on the slide display container itself */
+#slide-display-container.creating-shape-cursor {
+  cursor: crosshair !important;
+}
+
+/* Ensure all elements inside get the crosshair too */
+#slide-display-container.creating-shape-cursor *,
+#slide-display-container.creating-shape-cursor *:hover {
+  cursor: crosshair !important;
+}
+
+/* Force crosshair cursor during shape creation mode */
+body.creating-shape {
+  cursor: crosshair !important;
+}
+
+/* Ensure all slide elements get crosshair cursor */
+body.creating-shape #slide-container,
+body.creating-shape .slide-viewport,
+body.creating-shape .slide-display,
+body.creating-shape .component-container,
+body.creating-shape .component-wrapper {
+  cursor: crosshair !important;
+}
+
+/* Disable component interactions during shape creation */
+body.creating-shape .component-wrapper,
+body.creating-shape .component-container,
+body.creating-shape [data-component-id],
+.creating-shape-cursor .component-wrapper,
+.creating-shape-cursor .component-container,
+.creating-shape-cursor [data-component-id] {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+/* Ensure the overlay captures all events */
+#shape-creation-overlay,
+#line-creation-overlay {
+  cursor: crosshair !important;
+  user-select: none !important;
+}
+
+/* Visual indicator during shape creation */
+body.creating-shape #slide-display-container::after,
+.creating-shape-cursor::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 9997;
+  border: 2px dashed rgba(0, 123, 255, 0.3);
+  border-radius: 4px;
+}
+
+@keyframes pulse-outline {
+  0% { outline-color: rgba(66, 153, 225, 0.5); }
+  50% { outline-color: rgba(66, 153, 225, 1); }
+  100% { outline-color: rgba(66, 153, 225, 0.5); }
+}
+
+/* Style for shape drag feedback */
+#shape-drag-feedback {
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  box-sizing: border-box !important;
+}
+
+#shape-preview {
+  z-index: 1001 !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure selection crosshair shows in edit mode */
+.editing-mode.slide-container {
+  cursor: crosshair !important;
+}
+
+/* Make sure background doesn't block cursor */
+.editing-mode .slide-background {
+  pointer-events: auto;
+  cursor: inherit;
+}
+
+/* Ensure components in edit mode allow proper cursor */
+.editing-mode .component-wrapper {
+  cursor: inherit;
+}
+
+/* Force crosshair on all slide elements in edit mode */
+.editing-mode,
+.editing-mode * {
+  cursor: crosshair !important;
+}
+
+/* Allow move cursor on draggable elements */
+.editing-mode .component-wrapper[data-is-dragging="false"] {
+  cursor: move !important;
+}
+
+/* Multi-selection box should show move cursor */
+.editing-mode [style*="cursor: move"] {
+  cursor: move !important;
+}
+
+/* Prevent text selection in editing mode */
+.editing-mode {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection only in text editing components */
+.editing-mode .text-editing-active,
+.editing-mode [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* Allow background components to be selected in edit mode */
+.editing-mode .component-type-Background {
+  /* pointer-events are now enabled to allow selection */
+  cursor: crosshair !important;
+}
+
+/* Ensure background element still shows crosshair */
+.editing-mode .slide-background {
+  cursor: crosshair !important;
+}
+
+/* Custom Component Styles */
+.custom-component-container {
+  overflow: hidden;
+  position: relative;
+}
+
+.custom-component-container > div {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Prevent custom component content from overflowing during initialization */
+.custom-component-container * {
+  max-width: 100% !important;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* Agentic chat select mode highlighting */
+body.agent-select-mode [data-component-id] {
+  cursor: crosshair !important;
+}
+[data-component-id] { position: relative; }
+[data-component-id][data-agent-hover="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  outline: 2px dashed rgba(34,197,94,0.8);
+  outline-offset: 2px;
+  pointer-events: none;
+  z-index: 9999;
+}
+[data-component-id][data-agent-selected="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  outline: 2px solid rgba(34,197,94,1);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.25);
+  outline-offset: 2px;
+  pointer-events: none;
+  z-index: 10000;
+}
+
+/* Ensure selection visuals don't get stuck due to ancestor overflow */
+.slide-container [data-component-id] { position: relative; }
+
+/* Prevent white flash when switching modes: keep slide visible and avoid opacity transitions */
+.slide-container {
+  background: transparent !important;
+}
+.slide-container .slide-background {
+  transition: none !important;
+}
+.slide-container * {
+  /* Don't allow global opacity transitions on mode toggle that cause fade-out */
+  transition-property: transform !important;
+}

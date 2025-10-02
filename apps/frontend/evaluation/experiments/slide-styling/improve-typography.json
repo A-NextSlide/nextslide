@@ -1,0 +1,99 @@
+{
+  "id": "improve-typography",
+  "description": "Improve typography and text hierarchy",
+  "currentSlideId": "slide-1",
+  "prompt": "The typography on this slide lacks proper hierarchy and looks unprofessional. Improve the typography by selecting appropriate font sizes, weights, and families that create a clear visual hierarchy. Make the content easy to scan and read.",
+  "slides": [
+    {
+      "id": "slide-1",
+      "title": "Typography Issues",
+      "components": [
+        {
+          "id": "background-1",
+          "type": "Background",
+          "props": {
+            "position": { "x": 0, "y": 0 },
+            "width": 1920,
+            "height": 1080,
+            "color": "#ffffff"
+          }
+        },
+        {
+          "id": "header-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 80 },
+            "width": 1000,
+            "height": 60,
+            "texts": [{ "text": "Annual Marketing Strategy", "style": {} }],
+            "fontSize": 32,
+            "fontFamily": "Courier New",
+            "fontWeight": "normal",
+            "textAlign": "center",
+            "textColor": "#000000"
+          }
+        },
+        {
+          "id": "subheader-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 150 },
+            "width": 900,
+            "height": 50,
+            "texts": [{ "text": "Key Initiatives for Fiscal Year 2023", "style": {} }],
+            "fontSize": 28,
+            "fontFamily": "Times New Roman",
+            "fontWeight": "bold",
+            "textAlign": "center",
+            "textColor": "#333333"
+          }
+        },
+        {
+          "id": "section-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 250 },
+            "width": 800,
+            "height": 60,
+            "texts": [{ "text": "Digital Campaign Focus Areas", "style": {} }],
+            "fontSize": 30,
+            "fontFamily": "Arial",
+            "fontWeight": "bold",
+            "textAlign": "left",
+            "textColor": "#000000"
+          }
+        },
+        {
+          "id": "content-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 350 },
+            "width": 800,
+            "height": 300,
+            "texts": [{ "text": "• Increase social media engagement by 35%\n• Launch redesigned website with improved conversion paths\n• Implement marketing automation for lead nurturing\n• Expand content marketing with focus on video\n• Optimize paid search campaigns for higher ROI", "style": {} }],
+            "fontSize": 24,
+            "fontFamily": "Comic Sans MS",
+            "fontWeight": "normal",
+            "textAlign": "left",
+            "textColor": "#666666"
+          }
+        },
+        {
+          "id": "footer-1",
+          "type": "TiptapTextBlock",
+          "props": {
+            "position": { "x": 760, "y": 680 },
+            "width": 800,
+            "height": 40,
+            "texts": [{ "text": "CONFIDENTIAL - INTERNAL USE ONLY", "style": {} }],
+            "fontSize": 14,
+            "fontFamily": "Impact",
+            "fontWeight": "normal",
+            "textAlign": "center",
+            "textColor": "#999999"
+          }
+        }
+      ]
+    }
+  ]
+} 

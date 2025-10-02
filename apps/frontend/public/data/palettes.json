@@ -1,0 +1,67 @@
+[
+  {
+    "id": "p_001",
+    "palette": ["#F8F9FA", "#DEE2E6", "#6C757D", "#343A40", "#212529"],
+    "score": 0.85,
+    "metadata": {
+      "num_colors": 5,
+      "temperature": 1.0,
+      "adjacency": [[0,-1,-1,-1,-1],[-1,0,-1,-1,-1],[-1,-1,0,-1,-1],[-1,-1,-1,0,-1],[-1,-1,-1,-1,0]],
+      "locked_colors": ["#000000"],
+      "source": "huemint_transformer"
+    },
+    "tags": ["dark", "monochromatic", "minimalist", "corporate"]
+  },
+  {
+    "id": "p_002",
+    "palette": ["#E3F2FD", "#BBDEFB", "#42A5F5", "#1E88E5", "#0D47A1"],
+    "score": 0.92,
+    "metadata": {
+      "num_colors": 5,
+      "temperature": 1.2,
+      "adjacency": [[0,-1,-1,-1,-1],[-1,0,-1,-1,-1],[-1,-1,0,-1,-1],[-1,-1,-1,0,-1],[-1,-1,-1,-1,0]],
+      "locked_colors": [],
+      "source": "huemint_transformer"
+    },
+    "tags": ["light", "cool", "tech", "modern", "gradient-friendly"]
+  },
+   {
+    "id": "p_003",
+    "palette": ["#FFF8E1", "#FFE0B2", "#FFD54F", "#FFB300", "#E65100"],
+    "score": 0.78,
+    "metadata": {
+      "num_colors": 5,
+      "temperature": 0.8,
+      "adjacency": [[0,-1,-1,-1,-1],[-1,0,-1,-1,-1],[-1,-1,0,-1,-1],[-1,-1,-1,0,-1],[-1,-1,-1,-1,0]],
+      "locked_colors": [],
+      "source": "huemint_transformer"
+    },
+    "tags": ["light", "warm", "vibrant", "playful", "analogous"]
+  },
+  {
+    "id": "p_004",
+    "palette": ["#F1F8E9", "#DCEDC8", "#AED581", "#7CB342", "#33691E"],
+    "score": 0.88,
+    "metadata": {
+      "num_colors": 5,
+      "temperature": 1.0,
+      "adjacency": [[0,-1,-1,-1,-1],[-1,0,-1,-1,-1],[-1,-1,0,-1,-1],[-1,-1,-1,0,-1],[-1,-1,-1,-1,0]],
+      "locked_colors": ["#FFFFFF"],
+      "source": "huemint_transformer"
+    },
+    "tags": ["light", "cool", "nature", "gradient-friendly"]
+  },
+  {
+    "id": "p_005",
+    "palette": ["#F3E5F5", "#E1BEE7", "#BA68C8", "#8E24AA", "#4A148C"],
+    "score": 0.90,
+    "metadata": {
+      "num_colors": 5,
+      "temperature": 1.1,
+      "adjacency": [[0,-1,-1,-1,-1],[-1,0,-1,-1,-1],[-1,-1,0,-1,-1],[-1,-1,-1,0,-1],[-1,-1,-1,-1,0]],
+      "locked_colors": [],
+      "source": "huemint_transformer"
+    },
+    "tags": ["cool", "vibrant", "modern", "monochromatic"]
+  }
+] 

@@ -1,0 +1,595 @@
+/* src/styles/TiptapStyles.css */
+
+/* Basic ProseMirror editor styling (adjust if needed) */
+.tiptap-editor-wrapper {
+  /* Removed contain: layout paint as it may affect measurements when wrapped in SelectionBoundingBox */
+  /* contain: layout paint; */
+}
+.ProseMirror {
+  height: 100%;
+  width: 100%;
+  overflow-y: hidden; /* Prevent implicit scroll padding from affecting layout */
+  outline: none;
+  word-wrap: break-word;
+  white-space: pre-wrap; /* Important for preserving whitespace/newlines */
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0; /* the above doesn't seem to work in Edge */
+  padding: 0; /* Ensure no implicit padding */
+  margin: 0;  /* Ensure no implicit margin */
+}
+
+.ProseMirror pre {
+  white-space: pre-wrap;
+}
+
+.ProseMirror li {
+  position: relative; /* Needed for custom markers potentially */
+}
+
+/* Reset default browser margins for paragraphs and lists within the editor */
+.ProseMirror p,
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 0;
+  padding: 0;
+}
+
+/* You might have more specific styles for ul, ol, li here */
+/* Example: Remove default list markers if handled by extensions/CSS */
+/* .ProseMirror ul {
+  list-style-type: none;
+} */
+
+/* Ensure list items have appropriate block display */
+.ProseMirror li {
+    display: list-item;
+}
+
+/* Add any other global Tiptap styles you want to isolate here */
+
+/* Tiptap List Styling */
+.ProseMirror ul {
+  list-style-type: disc;
+  list-style-position: outside;
+  padding-left: var(--tiptap-list-indent, 0);
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  padding-left: var(--tiptap-list-indent, 0);
+  margin-top: 0;
+  margin-bottom: 0;
+}
+/* Override dynamic font styles via CSS variables */
+.tiptap-editor-wrapper .tiptap-editor-content p,
+.tiptap-editor-wrapper .tiptap-editor-content li,
+.tiptap-editor-wrapper .tiptap-editor-content h1,
+.tiptap-editor-wrapper .tiptap-editor-content h2,
+.tiptap-editor-wrapper .tiptap-editor-content h3 {
+  font-size: var(--tiptap-font-size) !important;
+  font-family: var(--tiptap-font-family) !important;
+  font-weight: var(--tiptap-font-weight) !important;
+  line-height: var(--tiptap-line-height) !important;
+  letter-spacing: var(--tiptap-letter-spacing) !important;
+  color: var(--tiptap-text-color) !important;
+}
+
+/* Handle inline font sizes in spans - these should scale with the component */
+.tiptap-editor-wrapper .tiptap-editor-content span[style*="font-size"] {
+  font-size: var(--tiptap-font-size) !important;
+}
+
+/* Prevent text flash during initial render by hiding text until scale is calculated */
+.tiptap-editor-wrapper {
+  transition: opacity 0.1s ease-in-out;
+}
+
+/* Ensure text content respects the base font size variable */
+.tiptap-editor-wrapper .tiptap-editor-content {
+  font-size: var(--tiptap-font-size) !important;
+  padding: var(--tiptap-padding, 0) !important; /* Mirror component prop padding via CSS var */
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Heading sizes */
+.tiptap-editor-wrapper .tiptap-editor-content h1 {
+  font-size: calc(var(--tiptap-font-size) * 1.8) !important;
+  margin: 0;
+  font-weight: bold !important;
+}
+
+.tiptap-editor-wrapper .tiptap-editor-content h2 {
+  font-size: calc(var(--tiptap-font-size) * 1.5) !important;
+  margin: 0;
+  font-weight: bold !important;
+}
+
+.tiptap-editor-wrapper .tiptap-editor-content h3 {
+  font-size: calc(var(--tiptap-font-size) * 1.2) !important;
+  margin: 0;
+  font-weight: bold !important;
+}
+
+/* Link styles */
+.tiptap-editor-wrapper .tiptap-editor-content a.tiptap-link {
+  color: #0066cc !important; 
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Highlight styles */
+.tiptap-editor-wrapper .tiptap-editor-content mark {
+  background-color: #ffff00;
+  padding: 0 0.125em;
+}
+
+/* Subscript and Superscript */
+.tiptap-editor-wrapper .tiptap-editor-content sub {
+  vertical-align: sub;
+  font-size: smaller;
+}
+
+.tiptap-editor-wrapper .tiptap-editor-content sup {
+  /* Reduce default superscript lift to avoid overlapping previous line */
+  vertical-align: 0.2em;
+  font-size: 0.75em;
+}
+
+/* Common styles for list items */
+.ProseMirror li {
+  padding-left: 0; /* No extra indent beyond list padding */
+  margin: 0;       /* No implicit spacing between list items */
+  color: inherit;  /* Ensure list item text inherits color */
+}
+
+/* Paragraphs within list items should have no extra margin */
+.ProseMirror li > p {
+  margin: 0;
+  color: inherit;
+}
+
+/* Style the actual bullet/number marker */
+.ProseMirror li::marker {
+  color: currentColor; /* Use the li's text color for the marker */
+}
+
+/* Text gradient support */
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror p,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror h1,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror h2,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror h3,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror li {
+  background-image: var(--tiptap-text-gradient) !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+  /* Remove width restrictions to allow text to flow naturally */
+}
+
+/* Apply gradient to inline elements */
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror span,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror strong,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror em,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror u,
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror s {
+  background-image: inherit !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+}
+
+/* For block-level alignment, we need to handle the parent containers */
+.tiptap-editor-wrapper[data-text-gradient="true"] .ProseMirror {
+  /* Don't apply gradient to the container itself */
+  background: none !important;
+  color: inherit !important;
+}
+
+/* Table Cell Editor Styles */
+.table-cell-editor {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+}
+
+.table-cell-editor .ProseMirror {
+  height: 100%;
+  width: 100%;
+  min-height: 32px;
+  outline: none;
+  overflow: hidden;
+}
+
+.table-cell-editor .ProseMirror p {
+  margin: 0;
+  padding: 0;
+  min-height: 1.2em;
+}
+
+.table-cell-editor .ProseMirror:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+/* Table hover effects - DISABLED */
+.table-component td:hover {
+  /* No hover effect */
+}
+
+/* Context menu button hover */
+.table-context-menu button:hover {
+  background-color: #f3f4f6;
+  transition: background-color 0.15s ease;
+}
+
+/* Drag handle styles */
+.table-drag-handle {
+  cursor: move;
+  user-select: none;
+}
+
+.table-drag-handle:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Column/Row being dragged */
+.table-dragging {
+  opacity: 0.5;
+}
+
+/* Drop target highlight */
+.table-drop-target {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+/* Enhanced Table Styles for Tiptap Table Extension */
+.tiptap-table-container .ProseMirror {
+  outline: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Prevent auto-focus and cursor jumping */
+.tiptap-table-editor {
+  user-select: text;
+}
+
+.tiptap-table-editor:focus-within {
+  outline: none;
+}
+
+/* Improve cell selection and cursor behavior */
+.tiptap-table-container table td:focus,
+.tiptap-table-container table th:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+/* Table styling with CSS variables */
+.table-renderer {
+  font-family: var(--table-font-family, Inter);
+  font-size: var(--table-font-size, 14px);
+}
+
+.tiptap-table-container table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: auto;
+  min-width: min-content;
+  margin: 0;
+  overflow: hidden;
+  position: relative;
+  border-radius: var(--table-border-radius, 8px);
+  box-shadow: var(--table-box-shadow);
+  table-layout: auto;
+}
+
+.tiptap-table-container table td,
+.tiptap-table-container table th {
+  min-width: min-content;
+  width: auto;
+  border: var(--table-border-width, 1px) solid var(--table-border-color, #e1e5e9);
+  position: relative;
+  vertical-align: top;
+  box-sizing: border-box;
+  padding: var(--table-cell-padding, 4px);
+  height: var(--table-row-height, 32px);
+  white-space: nowrap;
+  text-align: var(--table-text-align, left);
+}
+
+/* Allow wrapping for cells with lots of content */
+.tiptap-table-container table td.wrap,
+.tiptap-table-container table th.wrap {
+  white-space: normal;
+}
+
+/* Force paragraphs in cells to fill the height */
+.tiptap-table-container table td p,
+.tiptap-table-container table th p {
+  margin: 0;
+  min-height: calc(var(--table-row-height, 32px) - (2 * var(--table-cell-padding, 4px)) - 2px);
+  display: flex;
+  align-items: center;
+}
+
+.tiptap-table-container table th {
+  font-weight: 600;
+  text-align: var(--table-text-align, left);
+  background-color: var(--table-header-bg, #f8fafc);
+  color: var(--table-header-color, #1f2937);
+}
+
+.tiptap-table-container table td {
+  background-color: var(--table-cell-bg, #ffffff);
+  color: var(--table-text-color, #374151);
+}
+
+/* Striped rows - use pseudo-element to avoid transparency */
+.table-renderer.striped-rows table tbody tr:nth-child(even) td {
+  position: relative;
+}
+
+.table-renderer.striped-rows table tbody tr:nth-child(even) td::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.02);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Remove ALL hover effects to prevent transparency */
+.table-renderer table tbody tr:hover td,
+.table-renderer.hover-effect table tbody tr:hover td,
+.tiptap-table-container table tbody tr:hover td,
+.tiptap-table-container table td:hover,
+.tiptap-table-container table th:hover {
+  /* Force no changes on hover */
+  opacity: 1 !important;
+  background-color: var(--table-cell-bg, #ffffff) !important;
+  filter: none !important;
+  transition: none !important;
+}
+
+/* Ensure headers maintain their color on hover */
+.table-renderer table tbody tr:hover th,
+.table-renderer.hover-effect table tbody tr:hover th,
+.tiptap-table-container table tbody tr:hover th {
+  background-color: var(--table-header-bg, #f8fafc) !important;
+}
+
+/* Rich text formatting in cells */
+.tiptap-table-container table td strong,
+.tiptap-table-container table th strong {
+  font-weight: 700;
+}
+
+.tiptap-table-container table td em,
+.tiptap-table-container table th em {
+  font-style: italic;
+}
+
+.tiptap-table-container table td u,
+.tiptap-table-container table th u {
+  text-decoration: underline;
+}
+
+.tiptap-table-container table td s,
+.tiptap-table-container table th s {
+  text-decoration: line-through;
+}
+
+.tiptap-table-container table td mark,
+.tiptap-table-container table th mark {
+  background-color: #fef3c7;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* Column resize handle */
+.tiptap-table-container .resize-cursor {
+  cursor: col-resize;
+}
+
+.tiptap-table-container .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: transparent;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.tiptap-table-container .column-resize-handle:hover {
+  background-color: #3b82f6;
+}
+
+/* Active column resizing */
+.tiptap-table-container .resize-cursor .column-resize-handle {
+  background-color: #3b82f6;
+}
+
+/* Context menu styling */
+.table-context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 160px;
+}
+
+.table-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  color: #374151;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.table-context-menu button:hover {
+  background-color: #f3f4f6;
+}
+
+.table-context-menu .separator {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 4px 0;
+}
+
+/* Selected cells */
+.tiptap-table-container .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(59, 130, 246, 0.1);
+  pointer-events: none;
+}
+
+/* Table node selection */
+.tiptap-table-container .tableWrapper {
+  position: relative;
+  overflow-x: auto;
+}
+
+.tiptap-table-container .selectedTable {
+  position: relative;
+}
+
+.tiptap-table-container .selectedTable:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid #3b82f6;
+  pointer-events: none;
+  border-radius: 8px;
+}
+
+/* Improved focus styles */
+.tiptap-table-container .ProseMirror-focused table {
+  border-color: #3b82f6;
+}
+
+/* Cell content styling */
+.tiptap-table-container table p {
+  margin: 0;
+  padding: 0;
+}
+
+/* Hover effects - removed (handled by the !important rules above) */
+
+/* Improved border styling */
+.tiptap-table-container table tr:first-child th {
+  border-top: 1px solid #e1e5e9;
+}
+
+.tiptap-table-container table tr:first-child td {
+  border-top: 1px solid #e1e5e9;
+}
+
+.tiptap-table-container table th:first-child,
+.tiptap-table-container table td:first-child {
+  border-left: 1px solid #e1e5e9;
+}
+
+.tiptap-table-container table th:last-child,
+.tiptap-table-container table td:last-child {
+  border-right: 1px solid #e1e5e9;
+}
+
+.tiptap-table-container table tr:last-child th,
+.tiptap-table-container table tr:last-child td {
+  border-bottom: 1px solid #e1e5e9;
+}
+
+/* Table controls positioning */
+.tiptap-table-container .table-controls {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  background: white;
+  padding: 4px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid #e1e5e9;
+  z-index: 10;
+}
+
+/* Responsive table */
+@media (max-width: 768px) {
+  .tiptap-table-container {
+    overflow-x: auto;
+  }
+  
+  .tiptap-table-container table {
+    min-width: 500px;
+  }
+}
+
+/* Custom scrollbar for table container */
+.tiptap-table-container::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.tiptap-table-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.tiptap-table-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.tiptap-table-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Typography improvements */
+.tiptap-table-container table {
+  font-feature-settings: "kern" 1, "liga" 1;
+  text-rendering: optimizeLegibility;
+}
+
+/* Print styles */
+@media print {
+  .tiptap-table-container .table-controls {
+    display: none;
+  }
+  
+  .tiptap-table-container table {
+    border-collapse: collapse;
+  }
+}

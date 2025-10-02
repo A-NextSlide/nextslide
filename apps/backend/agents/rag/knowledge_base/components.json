@@ -1,0 +1,279 @@
+{
+  "TiptapTextBlock": {
+    "description": "Primary text component - USE MULTIPLE BLOCKS for data hierarchy!",
+    "data_display_technique": "Split stats into 2-3 blocks: huge number (200-300pt) + label (72-96pt) + context (48pt)",
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "texts"
+    ],
+    "critical_rules": {
+      "padding": "Must always be 0 (numeric, not string)",
+      "texts": "Array of text objects. Each item may include 'text', 'fontSize', and a 'style' object.",
+      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor"],
+      "height": "Calculate as fontSize \u00d7 1.2 for single line"
+    },
+    "best_practices": [
+      "Group related text in one component",
+      "NEVER use backgroundColor unless absolutely necessary",
+      "Combine multiple styles in texts array",
+      "Use for tables with small fonts (8pt+)"
+    ],
+    "common_patterns": {
+      "title_subtitle": {
+        "texts": [
+          {
+            "text": "Main Title",
+            "fontSize": 96
+          },
+          {
+            "text": "Subtitle",
+            "fontSize": 48
+          }
+        ]
+      },
+      "transparent_text": {
+        "description": "DEFAULT - No backgroundColor property",
+        "borderRadius": "0px",
+        "padding": 0
+      }
+    },
+    "examples": {
+      "metric_split": {
+        "texts": [
+          {"text": "340", "fontSize": 240, "style": {"bold": true, "textColor": "{accent_1}"}},
+          {"text": "%", "fontSize": 120, "style": {"bold": true}},
+          {"text": "growth rate", "fontSize": 36, "style": {"textColor": "{primary_text}", "backgroundColor": "#00000000"}}
+        ]
+      },
+      "inline_citation": {
+        "texts": [
+          {"text": "Key fact ", "fontSize": 40},
+          {"text": "72", "fontSize": 88, "style": {"bold": true, "textColor": "{accent_1}"}},
+          {"text": "%", "fontSize": 56},
+          {"text": " adoption", "fontSize": 40},
+          {"text": " [1]", "fontSize": 32, "style": {"superscript": true, "textColor": "{primary_text}", "backgroundColor": "#00000000"}}
+        ]
+      }
+    }
+  },
+  "Chart": {
+    "description": "Data visualization component",
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "chartType",
+      "data"
+    ],
+    "positioning_rules": {
+      "always": "Left or right half, never center",
+      "left": {
+        "x": 80,
+        "width": 880
+      },
+      "right": {
+        "x": 960,
+        "width": 880
+      },
+      "height": "600-800px optimal"
+    },
+    "theme_detection": {
+      "light_backgrounds": [
+        "#FFFFFF",
+        "#F8F9FA",
+        "#FAFAFA"
+      ],
+      "dark_backgrounds": [
+        "#000000",
+        "#1A1A1A",
+        "#121212"
+      ],
+      "set_theme": "Based on Background component color"
+    },
+    "legend_rules": {
+      "bar": false,
+      "column": false,
+      "pie": false,
+      "line": "Only if multiple series",
+      "default": false
+    }
+  },
+  "CustomComponent": {
+    "description": "POWERFUL component for creating infographics, data visualizations, and interactive elements",
+    "when_to_use": {
+      "statistics": "Use animated_progress_rings or kpi_cards for metrics",
+      "comparisons": "Use comparison_bars or feature_toggle for before/after",
+      "timelines": "Use interactive_timeline for roadmaps and journeys",
+      "processes": "Use decision_tree for flows and frameworks",
+      "engagement": "Use quiz_component or interactive_poll for audience interaction",
+      "calculations": "Use interactive_slider for ROI/budget scenarios",
+      "countdowns": "Use countdown_timer for launches and deadlines",
+      "visual_interest": "Use morphing_blob or floating_icons for modern aesthetics"
+    },
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "render",
+      "props"
+    ],
+    "critical_rules": {
+      "render": "Must be a single ESCAPED STRING with \\n for newlines; escape quotes/backslashes; NEVER use backticks or ${} template literals; For literal text children in React.createElement use double quotes (\"...\"); other string literals may use single quotes",
+      "syntax": "Use React.createElement, NEVER JSX; no imports/exports/require",
+      "signature": "function render({ props, state, updateState, id, isThumbnail }) { ... }",
+      "root_sizing": "Root element style MUST include width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexWrap: 'wrap', position: 'relative'",
+      "state_updates": "Do not call updateState during render; only in handlers/timeouts",
+      "length": "Prefer 10-15 lines; keep simple",
+      "helpers": "No helper functions",
+      "completion": "MUST end with complete balanced braces",
+      "escaping": "Use \\n for newlines, \\\" for quotes inside strings; use string concatenation instead of template literals; For text children prefer double quotes to avoid apostrophe issues"
+    },
+    "fit_and_responsiveness": {
+      "container": "Include overflowWrap: 'anywhere', wordBreak: 'break-word', textOverflow: 'ellipsis', whiteSpace: 'normal'; alignItems/Content/Justify 'flex-start'",
+      "size_math": "availableWidth = props.width - padding*2; availableHeight = props.height - padding*2",
+      "text": "Clamp font sizes based on availableWidth and text length",
+      "grids": "totalWidth = itemWidth * cols + gap * (cols - 1) <= availableWidth; wrap rows if needed",
+      "thumbnails": "Throttle heavy animations when isThumbnail is true"
+    },
+    "content_triggers": {
+      "metrics_keywords": ["growth", "increase", "performance", "kpi", "roi", "metrics", "revenue", "profit", "sales"],
+      "comparison_keywords": ["vs", "before", "after", "comparison", "difference", "versus", "improvement"],
+      "timeline_keywords": ["roadmap", "timeline", "phases", "journey", "stages", "progress"],
+      "engagement_keywords": ["quiz", "poll", "vote", "feedback", "opinion", "survey"],
+      "process_keywords": ["decision", "flow", "framework", "steps", "choice", "workflow"],
+      "data_keywords": ["statistics", "data", "numbers", "percentage", "dollars", "metrics", "analytics"]
+    },
+    "data_visualization_priority": {
+      "single_metric": "Use hero_metric_showcase or hero_stat_display for maximum impact",
+      "multiple_metrics": "Use multi_stat_dashboard or kpi_cards with size hierarchy", 
+      "comparisons": "Use stat_comparison_split or comparison_bars",
+      "percentages": "Use animated_progress_rings or gauge_chart",
+      "trends": "Combine small line chart with HUGE current value display"
+    },
+    "recommended_components": [
+      "kpi_cards - for dashboards and metrics",
+      "animated_progress_rings - for performance indicators",
+      "comparison_bars - for before/after visualizations",
+      "interactive_timeline - for project roadmaps",
+      "quiz_component - for knowledge checks",
+      "interactive_poll - for audience engagement",
+      "feature_toggle - for plan comparisons",
+      "decision_tree - for process flows",
+      "countdown_timer - for urgency",
+      "interactive_slider - for calculations"
+    ],
+    "avoid": [
+      "Plain text (use TiptapTextBlock instead)",
+      "Static layouts without interactivity",
+      "Overly complex logic that could break",
+      "Unescaped newlines (always use \\n)"
+    ]
+  },
+  "Image": {
+    "description": "Image display component",
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "src"
+    ],
+    "src_rule": "ALWAYS use 'placeholder', never URLs",
+    "minimum_sizes": {
+      "hero": "1600\u00d7900",
+      "feature": "800\u00d7600",
+      "card": "400\u00d7500",
+      "thumbnail": "200\u00d7200"
+    },
+    "object_fit_options": {
+      "cover": "Default - crops to fill",
+      "contain": "Shows entire image",
+      "fill": "Stretches to fit"
+    }
+  },
+  "Background": {
+    "description": "Slide background - first component (95% should use gradient)",
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "backgroundType"
+    ],
+    "CRITICAL_FORMAT": "NEVER use gradientStartColor, gradientEndColor, gradientDirection - use gradient object",
+    "background_types": {
+      "gradient": {
+        "when_to_use": "DEFAULT CHOICE - 95% of slides should use gradients for visual appeal and professionalism",
+        "MANDATORY_STRUCTURE": "Must have 'gradient' object with 'type', 'angle', and 'stops' array",
+        "example": {
+          "type": "Background",
+          "props": {
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "width": 1920,
+            "height": 1080,
+            "backgroundType": "gradient",
+            "gradient": {
+              "type": "linear",
+              "angle": 135,
+              "stops": [
+                {
+                  "color": "#011830",
+                  "position": 0
+                },
+                {
+                  "color": "#003151",
+                  "position": 100
+                }
+              ]
+            }
+          }
+        },
+        "WRONG_FORMAT": {
+          "NEVER_USE": {
+            "backgroundType": "gradient",
+            "gradientStartColor": "#011830",
+            "gradientEndColor": "#003151",
+            "gradientDirection": 135
+          },
+          "WHY": "This is LEGACY format and will be REJECTED"
+        },
+        "patterns": [
+          "Diagonal (135°) for dynamism - MOST COMMON",
+          "Vertical (0°/180°) for executive elegance",
+          "Horizontal (90°/270°) for calm flow",
+          "Radial for spotlight focus",
+          "Multi-stop (3 colors) for creative impact"
+        ],
+        "recommended_combinations": [
+          "primary_dark → primary_mid (professional)",
+          "primary_dark → primary_light (sophisticated)",
+          "accent_color → primary_mid (creative)",
+          "primary_dark → accent_color (bold)",
+          "primary_mid → light_accent (subtle)"
+        ]
+      },
+      "color": {
+        "when_to_use": "RARE - Only 5% of slides when specific minimalist design is required",
+        "example": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "width": 1920,
+          "height": 1080,
+          "backgroundType": "color",
+          "backgroundColor": "#1E3A5F"
+        },
+        "best_for": [
+          "Specific minimalist requirements",
+          "When explicitly requested",
+          "Rare cases where gradient would interfere"
+        ]
+      }
+    },
+    "design_guidance": "ALWAYS default to gradients - they add depth, sophistication and visual appeal. Only use solid colors when absolutely necessary."
+  }
+}

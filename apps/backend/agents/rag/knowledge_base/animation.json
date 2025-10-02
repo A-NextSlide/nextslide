@@ -1,0 +1,72 @@
+{
+  "principles": {
+    "timing": {
+      "instant": "0-100ms - immediate feedback",
+      "fast": "200-300ms - UI transitions",
+      "normal": "400-500ms - content entrance",
+      "slow": "600-1000ms - dramatic effect",
+      "very_slow": "1000-2000ms - complex sequences"
+    },
+    "easing": {
+      "linear": "Constant speed - mechanical",
+      "ease_in": "Slow start - anticipation",
+      "ease_out": "Slow end - natural stop",
+      "ease_in_out": "S-curve - smooth",
+      "spring": "Bounce - playful",
+      "custom_bezier": "Brand-specific curves"
+    },
+    "properties": {
+      "transform": "Position, scale, rotate - GPU accelerated",
+      "opacity": "Fade effects - smooth",
+      "filter": "Blur, brightness - expensive",
+      "path": "SVG animations - complex"
+    }
+  },
+  "choreography": {
+    "sequential": {
+      "description": "One after another",
+      "delay_between": "50-200ms",
+      "use_for": "List reveals, steps"
+    },
+    "parallel": {
+      "description": "All together",
+      "synchronization": "Same duration",
+      "use_for": "Related elements"
+    },
+    "staggered": {
+      "description": "Overlapping cascade",
+      "overlap": "30-70%",
+      "creates": "Smooth flow"
+    }
+  },
+  "purpose_driven": {
+    "attention": {
+      "pulse": "Subtle size change",
+      "shake": "Horizontal movement",
+      "bounce": "Vertical movement"
+    },
+    "transition": {
+      "crossfade": "Scene changes",
+      "slide": "Linear progression",
+      "zoom": "Detail focus"
+    },
+    "feedback": {
+      "success": "Green checkmark draw",
+      "error": "Red shake",
+      "loading": "Spinner or progress"
+    }
+  },
+  "performance": {
+    "optimize": [
+      "Use transform over position",
+      "Animate opacity carefully",
+      "Avoid animating layout properties",
+      "Use will-change sparingly"
+    ],
+    "test": [
+      "On slower devices",
+      "With multiple animations",
+      "During transitions"
+    ]
+  }
+}
