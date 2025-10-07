@@ -6,7 +6,7 @@ services:
     repo: https://github.com/A-NextSlide/nextslide
     branch: main
     rootDirectory: apps/frontend
-    buildCommand: npm install --production=false && npm run build
+    buildCommand: rm -rf node_modules package-lock.json && npm install --production=false && npm run build
     staticPublishPath: ./dist
     headers:
       - path: /*
