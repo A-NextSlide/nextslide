@@ -67,6 +67,16 @@ class ComponentValidator:
                 # Special handling for text components - standardize and enrich formatting
                 if comp_type in ['TiptapTextBlock', 'TextBlock', 'Title']:
                     component = self._clean_text_component(component)
+                    # Normalize fontFamily casing to match schema enums (e.g., 'OPEN SANS' -> 'Open Sans')
+                    try:
+                        p = component.get('props') or {}
+                        fam = p.get('fontFamily')
+                        if isinstance(fam, str) and fam.strip():
+                            normalized = ' '.join(w.capitalize() for w in fam.split())
+                            p['fontFamily'] = normalized
+                            component['props'] = p
+                    except Exception:
+                        pass
                     component = self._promote_plain_text_to_rich_tiptap(component)
                     # Apply intelligent font sizing
                     component = self._apply_intelligent_font_sizing(component)
@@ -111,121 +121,8 @@ class ComponentValidator:
         return validated
 
     def _normalize_non_overlapping_layout(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Adjust positions minimally to eliminate overlaps among foreground components.
-        - Ignore Background components
-        - Maintain ≥40px gap for text-text; ≥60px gap when either is Chart/Image/CustomComponent
-        - Snap to a 24px vertical rhythm and 20px gutter horizontally based on a 12-col grid
-        """
-        if not isinstance(components, list) or len(components) <= 1:
-            return components
-        try:
-            # Work on a shallow copy of component dicts to avoid side effects
-            comps: List[Dict[str, Any]] = [dict(c) for c in components]
-            # Helper to read geometry
-            def geom(c: Dict[str, Any]):
-                p = c.get('props', {}) or {}
-                pos = p.get('position', {}) or {}
-                cx = int(pos.get('x', 0) or 0)
-                cy = int(pos.get('y', 0) or 0)
-                w = int(p.get('width', 0) or 0)
-                h = int(p.get('height', 0) or 0)
-                # Convert to top-left for overlap math
-                x = int(cx - (w / 2))
-                y = int(cy - (h / 2))
-                return (
-                    c.get('type'),
-                    x,
-                    y,
-                    w,
-                    h
-                )
-            # Detect deck logo components (should overlay and not affect spacing)
-            def is_logo_component(c: Dict[str, Any]) -> bool:
-                try:
-                    if c.get('type') != 'Image':
-                        return False
-                    p = c.get('props', {}) or {}
-                    alt_text = str(p.get('alt') or '').strip().lower()
-                    metadata_kind = str(((p.get('metadata') or {}).get('kind')) or '').strip().lower()
-                    return alt_text == 'logo' or metadata_kind == 'logo'
-                except Exception:
-                    return False
-            def set_pos(c: Dict[str, Any], x: int, y: int):
-                p = c.setdefault('props', {})
-                pos = p.setdefault('position', {})
-                pos['x'] = int(x)
-                pos['y'] = int(y)
-                p['position'] = pos
-                c['props'] = p
-
-            # Sort by current y asc (top to bottom) for stable shifts
-            order = sorted(range(len(comps)), key=lambda i: geom(comps[i])[2])
-            GRID_Y_STEP = 24
-            MIN_GAP_TEXT = 40
-            MIN_GAP_HEAVY = 60  # charts/images/custom
-            CANVAS_W, CANVAS_H = 1920, 1080
-            EDGE_TEXT = 80
-            EDGE_OTHER = 60
-
-            def min_gap(t1: str, t2: str) -> int:
-                heavy = {'Chart', 'Image', 'CustomComponent'}
-                return MIN_GAP_HEAVY if (t1 in heavy or t2 in heavy) else MIN_GAP_TEXT
-
-            # Clamp edges safety
-            for i in order:
-                t, x, y, w, h = geom(comps[i])
-                # Skip background and logo components (logos are allowed to sit closer to edges)
-                if t == 'Background' or is_logo_component(comps[i]):
-                    continue
-                left_edge = EDGE_TEXT if t in ('TextBlock', 'TiptapTextBlock', 'Title', 'Heading') else EDGE_OTHER
-                top_edge = EDGE_TEXT if t in ('TextBlock', 'TiptapTextBlock', 'Title', 'Heading') else EDGE_OTHER
-                # Clamp top-left within safe bounds, then convert back to center for set_pos
-                nx_tl = max(left_edge, min(x, CANVAS_W - EDGE_OTHER - max(0, w)))
-                max_top_allowed = max(top_edge, CANVAS_H - h - EDGE_OTHER)
-                ny_tl = max(top_edge, min(y, max_top_allowed))
-                if nx_tl != x or ny_tl != y:
-                    set_pos(comps[i], int(nx_tl + w / 2), int(ny_tl + h / 2))
-
-            # Resolve overlaps by pushing later items downwards
-            for idx_a in range(len(order)):
-                i = order[idx_a]
-                t1, x1, y1, w1, h1 = geom(comps[i])
-                # Ignore background and logo components as overlap sources
-                if t1 == 'Background' or is_logo_component(comps[i]) or w1 <= 0 or h1 <= 0:
-                    continue
-                for idx_b in range(idx_a + 1, len(order)):
-                    j = order[idx_b]
-                    t2, x2, y2, w2, h2 = geom(comps[j])
-                    # Ignore background and logo components as overlap targets
-                    if t2 == 'Background' or is_logo_component(comps[j]) or w2 <= 0 or h2 <= 0:
-                        continue
-                    # Check overlap (AABB)
-                    overlap_x = min(x1 + w1, x2 + w2) - max(x1, x2)
-                    overlap_y = min(y1 + h1, y2 + h2) - max(y1, y2)
-                    if overlap_x > 0 and overlap_y > 0:
-                        gap = min_gap(t1, t2)
-                        # Move the lower component down just enough to clear
-                        if y2 >= y1:
-                            new_y2_top = y1 + h1 + gap
-                            # snap to GRID_Y_STEP
-                            if new_y2_top % GRID_Y_STEP != 0:
-                                new_y2_top += (GRID_Y_STEP - (new_y2_top % GRID_Y_STEP))
-                            # Clamp to keep bottom within canvas
-                            new_y2_top = min(new_y2_top, max(EDGE_OTHER, CANVAS_H - h2 - EDGE_OTHER))
-                            set_pos(comps[j], int(x2 + w2 / 2), int(new_y2_top + h2 / 2))
-                            # Update baseline for cascading checks
-                            t2, x2, y2, w2, h2 = geom(comps[j])
-                        else:
-                            new_y1_top = y2 + h2 + gap
-                            if new_y1_top % GRID_Y_STEP != 0:
-                                new_y1_top += (GRID_Y_STEP - (new_y1_top % GRID_Y_STEP))
-                            new_y1_top = min(new_y1_top, max(EDGE_OTHER, CANVAS_H - h1 - EDGE_OTHER))
-                            set_pos(comps[i], int(x1 + w1 / 2), int(new_y1_top + h1 / 2))
-                            t1, x1, y1, w1, h1 = geom(comps[i])
-
-            return comps
-        except Exception:
-            return components
+        """Overlap enforcement removed - AI model handles positioning directly."""
+        return components
     
     def _clean_text_component(self, component: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize text components to satisfy typed schema while keeping visual intent.

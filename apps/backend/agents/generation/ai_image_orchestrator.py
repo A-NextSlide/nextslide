@@ -371,46 +371,6 @@ class AIImageOrchestrator:
             pass
         return None
 
-    def _try_nudge_image_box(self, image_index: int, components: List[Dict[str, Any]]) -> bool:
-        """Attempt to reposition or slightly shrink the image box to avoid overlap.
-        Returns True if box was adjusted to a safe placement.
-        """
-        try:
-            img = components[image_index]
-            if img.get('type') != 'Image':
-                return False
-            props = img.setdefault('props', {})
-            pos = props.setdefault('position', {})
-            x = int(pos.get('x', 0) or 0)
-            y = int(pos.get('y', 0) or 0)
-            w = int(props.get('width', 0) or 0)
-            h = int(props.get('height', 0) or 0)
-            # Candidate positions (left/center/right with margins)
-            candidates = [
-                (80, y),
-                (1920 - w - 80, y),
-                (160, y),
-                (1920 - w - 160, y),
-                (960 - max(0, w // 2), y)
-            ]
-            for nx, ny in candidates:
-                pos['x'] = max(0, min(1920 - max(1, w), nx))
-                pos['y'] = max(0, min(1080 - max(1, h), ny))
-                if self._is_safe_placement(image_index, components):
-                    return True
-            # Try shrinking a bit and test again
-            for _ in range(2):
-                w = int(w * 0.9)
-                h = int(h * 0.9)
-                props['width'] = max(80, w)
-                props['height'] = max(80, h)
-                for nx, ny in candidates:
-                    pos['x'] = max(0, min(1920 - max(1, w), nx))
-                    pos['y'] = max(0, min(1080 - max(1, h), ny))
-                    if self._is_safe_placement(image_index, components):
-                        return True
-            return False
-        except Exception:
-            return False
+    # _try_nudge_image_box removed - AI model handles image positioning directly
 
 

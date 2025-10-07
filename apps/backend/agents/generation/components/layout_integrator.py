@@ -151,124 +151,18 @@ class LayoutIntegrator:
     def post_process_generated_components(self, 
                                         components: List[Dict[str, Any]],
                                         enhanced_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Post-process generated components to ensure no overlaps"""
-        
-        if not components or not enhanced_data.get('anti_overlap_applied'):
-            return components
-        
-        try:
-            # Apply overlap prevention
-            processed_components = self._fix_component_overlaps(components)
-            
-            # Validate against layout zones if available
-            layout_zones = enhanced_data.get('layout_zones', {})
-            if layout_zones:
-                processed_components = self._validate_against_zones(processed_components, layout_zones)
-            
-            logger.info(f"✅ Post-processed {len(components)} components")
-            return processed_components
-            
-        except Exception as e:
-            logger.error(f"Component post-processing failed: {e}")
-            return components
+        """Post-processing removed - AI model handles positioning directly"""
+        return components
     
     def _fix_component_overlaps(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Fix overlapping components by adjusting positions"""
-        
-        if not components:
-            return components
-        
-        # Sort by center Y position
-        sorted_components = sorted(
-            components,
-            key=lambda c: c.get('props', {}).get('position', {}).get('y', 0)
-        )
-        
-        adjusted_components = []
-        min_gap = 40  # Minimum gap between components
-        
-        for i, component in enumerate(sorted_components):
-            props = component.get('props', {})
-            position = props.get('position', {})
-            
-            # Use top-left semantics for this pass
-            x, y = position.get('x', 0), position.get('y', 0)
-            width, height = props.get('width', 100), props.get('height', 50)
-            
-            # Check for overlaps with previous components
-            for prev_comp in adjusted_components:
-                prev_props = prev_comp.get('props', {})
-                prev_pos = prev_props.get('position', {})
-                prev_x, prev_y = prev_pos.get('x', 0), prev_pos.get('y', 0)
-                prev_width = prev_props.get('width', 100)
-                prev_height = prev_props.get('height', 50)
-                
-                # Check for overlap
-                if (x < prev_x + prev_width and x + width > prev_x and
-                    y < prev_y + prev_height and y + height > prev_y):
-                    
-                    # Adjust Y position to avoid overlap
-                    # Move down using top-left semantics
-                    new_y = prev_y + prev_height + min_gap
-                    position['y'] = int(new_y)
-                    logger.debug(f"Fixed overlap: moved component from y={y} to y={new_y}")
-                    break
-            
-            adjusted_components.append(component)
-        
-        return adjusted_components
+        """Overlap fixing removed - AI model handles positioning directly"""
+        return components
     
     def _validate_against_zones(self, 
                               components: List[Dict[str, Any]],
                               layout_zones: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Validate components against layout zones"""
-        
-        validated_components = []
-        
-        for component in components:
-            props = component.get('props', {})
-            position = props.get('position', {})
-            
-            x, y = position.get('x', 0), position.get('y', 0)
-            width, height = props.get('width', 100), props.get('height', 50)
-            
-            # Check if component fits in any zone
-            fits_in_zone = False
-            
-            for zone_name, zone_data in layout_zones.items():
-                zone_bounds = zone_data.get('bounds', {})
-                zone_x = zone_bounds.get('x', 0)
-                zone_y = zone_bounds.get('y', 0)
-                zone_width = zone_bounds.get('width', 1920)
-                zone_height = zone_bounds.get('height', 1080)
-                
-                # Check if component fits in this zone (with some tolerance)
-                # Using top-left bounds directly
-                comp_left = x
-                comp_top = y
-                comp_right = x + width
-                comp_bottom = y + height
-                if (comp_left >= zone_x - 50 and comp_top >= zone_y - 50 and
-                    comp_right <= zone_x + zone_width + 50 and
-                    comp_bottom <= zone_y + zone_height + 50):
-                    fits_in_zone = True
-                    break
-            
-            # If component doesn't fit in any zone, adjust to fit in slide
-            if not fits_in_zone:
-                # Ensure component fits within slide boundaries
-                # Clamp top-left into slide bounds
-                CANVAS_W, CANVAS_H = 1920, 1080
-                if x + width > CANVAS_W:
-                    position['x'] = int(max(0, CANVAS_W - width))
-                if y + height > CANVAS_H:
-                    position['y'] = int(max(0, CANVAS_H - height))
-                
-                logger.debug(f"Adjusted component to fit in slide boundaries")
-            
-            validated_components.append(component)
-        
-        return validated_components
+        """Zone validation removed - AI model handles positioning directly"""
+        return components
     
     def generate_layout_summary(self, enhanced_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a summary of the applied layout"""
