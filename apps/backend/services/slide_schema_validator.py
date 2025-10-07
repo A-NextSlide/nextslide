@@ -107,7 +107,13 @@ class SlideSchemaValidator:
         
         # Calculate proper height based on fontSize
         if 'texts' in props and props['texts']:
-            max_font_size = max((text.get('fontSize', self.default_font_size) for text in props['texts'] if isinstance(text, dict)), default=self.default_font_size)
+            # None-safe max font size from segments, fallback to default
+            try:
+                max_font_size = max(( (text.get('fontSize', self.default_font_size) or self.default_font_size)
+                                      for text in props['texts'] if isinstance(text, dict)),
+                                     default=self.default_font_size)
+            except Exception:
+                max_font_size = self.default_font_size
             expected_height = int(max_font_size * 1.2)
             if 'height' not in props or props['height'] < expected_height:
                 props['height'] = expected_height

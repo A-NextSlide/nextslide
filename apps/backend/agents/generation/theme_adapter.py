@@ -228,7 +228,11 @@ class ThemeAdapter:
                 # Ensure text color for segments
                 texts = props.get('texts') or []
                 if isinstance(texts, list) and texts:
-                    max_size = max((t.get('fontSize', 0) for t in texts), default=0)
+                    # None-safe aggregation of max font size
+                    try:
+                        max_size = max((t.get('fontSize', 0) or 0 for t in texts), default=(props.get('fontSize') or 0) or 0)
+                    except Exception:
+                        max_size = (props.get('fontSize') or 0) or 0
                     # Determine local background behind this text block
                     text_rect = _rect(props)
                     text_z = props.get('zIndex', 1) if isinstance(props.get('zIndex'), int) else 1

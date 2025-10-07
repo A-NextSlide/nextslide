@@ -12,6 +12,7 @@ import { TiptapTextBlockDefinition } from './tiptap-text-block';
 import { LinesDefinition } from './lines';
 import { GroupDefinition } from './group';
 import { IconDefinition } from './icon';
+import { ReactBitsDefinition } from './reactbits';
 
 // Export all component definitions
 export { ChartDefinition } from './chart';
@@ -25,6 +26,7 @@ export { TiptapTextBlockDefinition } from './tiptap-text-block';
 export { LinesDefinition } from './lines';
 export { GroupDefinition } from './group';
 export { IconDefinition } from './icon';
+export { ReactBitsDefinition } from './reactbits';
 
 // Register all components with the registry
 export function registerComponents() {
@@ -45,6 +47,7 @@ export function registerComponents() {
   registry.register({ ...(ShapeDefinition as any), type: 'ShapeWithText', name: 'Shape With Text' } as any);
   registry.register(GroupDefinition);
   registry.register(IconDefinition);
+  registry.register(ReactBitsDefinition);
 }
 
 // Auto-register components when this module is imported

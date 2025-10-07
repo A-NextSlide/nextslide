@@ -43,6 +43,7 @@ import ShapeSettingsEditor from './settings/ShapeSettingsEditor';
 import CustomComponentSettingsEditor from './settings/CustomComponentSettingsEditor';
 import ImageSettingsEditor from './settings/ImageSettingsEditor';
 import IconSettingsEditor from './settings/IconSettingsEditor';
+import { ReactBitsSettingsEditor } from './reactbits/ReactBitsSettingsEditor';
 
 // Types for component properties and the editor itself
 interface ComponentSettingsEditorProps {
@@ -509,6 +510,16 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
               onUpdate={updateComponentProps}
               handlePropChange={handlePropChange}
               saveComponentToHistory={saveComponentToHistory}
+            />
+          );
+        }
+        return null;
+      case 'ReactBits':
+        if (component) {
+          return (
+            <ReactBitsSettingsEditor
+              component={component as any}
+              onChange={updateComponentProps}
             />
           );
         }

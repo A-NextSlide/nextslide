@@ -25,6 +25,7 @@ import {
 import { MediaHub, OnMediaSelect } from '@/components/media/MediaHub';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ThemePanel } from '@/components/theme';
+import { ReactBitsButton } from '@/components/reactbits/ReactBitsButton';
 
 // Table size selector component for the dropdown
 interface TableSizeSelectorProps {
@@ -1655,6 +1656,12 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
         {/* --- Add Media Hub (Paste here) --- */}
         <MediaHub onSelect={handleMediaSelect} />
         {/* --- End Add Media Hub --- */}
+
+        {/* Divider */}
+        <div className="h-6 w-px bg-border/50 mx-0.5"></div>
+
+        {/* ReactBits Dynamic Components */}
+        <ReactBitsButton onComponentAdded={onComponentSelected} />
 
       </TooltipProvider>
     </div>

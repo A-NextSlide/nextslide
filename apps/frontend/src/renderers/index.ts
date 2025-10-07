@@ -77,9 +77,10 @@ import './components/LinesRenderer';
 import './components/GroupRenderer';
 import './components/IconRenderer';
 import './components/WavyLinesRenderer';
+import './components/ReactBitsRenderer';
 
 // Auto-register chart renderers from the new charts system
-import '@/charts/renderers/BaseChartRenderer'; 
+import '@/charts/renderers/BaseChartRenderer';
 
 // Legacy exports for backward compatibility
 export * from './components';

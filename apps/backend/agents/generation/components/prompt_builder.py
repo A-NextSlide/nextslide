@@ -1227,6 +1227,23 @@ class SlidePromptBuilder:
         except Exception:
             pass
 
+        # Promote ReactBits for modern, animated, and visually engaging presentations
+        try:
+            topic_text_rb = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
+            # ReactBits triggers for text animations
+            text_animation_triggers = ['animate', 'animated', 'dynamic', 'modern', 'interactive', 'engaging', 'stunning']
+            # Background animation triggers
+            background_triggers = ['backdrop', 'background', 'atmosphere', 'ambience', 'visual effect']
+            # Title/hero slide indicators
+            is_title_slide = context.slide_index == 0 or any(k in topic_text_rb for k in ['introduction', 'welcome', 'title', 'cover'])
+
+            if 'ReactBits' not in predicted:
+                # Add ReactBits for title slides or slides with animation keywords
+                if is_title_slide or any(k in topic_text_rb for k in text_animation_triggers + background_triggers):
+                    predicted.append('ReactBits')
+        except Exception:
+            pass
+
         sections.append(f"\nCOMPONENTS TO USE: {', '.join(predicted)}")
         
         # Add specific Chart component instructions if predicted and not tabular
@@ -1254,6 +1271,77 @@ class SlidePromptBuilder:
             "EXAMPLE NON-OVERLAPPING LAYOUT:",
             "- Title at {x: 100, y: 50} with chart below starting after title height + gap",
             "- Text components placed beside or below chart with required gaps"
+            ])
+
+        # Add specific ReactBits component instructions if predicted
+        if "ReactBits" in predicted:
+            sections.extend([
+                "\n REACTBITS COMPONENT — ANIMATED MODERN COMPONENTS:",
+                "ReactBits provides 26+ animated components for stunning, modern presentations.",
+                "",
+                "REACTBITS STRUCTURE:",
+                '{"type": "ReactBits", "props": {"reactBitsId": "component-id", "position": {"x": 100, "y": 200}, "width": 800, "height": 400, ...component-specific-props}}',
+                "",
+                "AVAILABLE REACTBITS COMPONENTS:",
+                "",
+                "TEXT ANIMATIONS (9 components):",
+                "  - blur-text: Blur-to-sharp reveal effect. Props: text, delay, animateBy ('words'|'characters'), direction, className",
+                "  - count-up: Animated number counter. Props: to, from, duration, separator, className",
+                "  - glitch-text: Cyberpunk RGB split effect. Props: text, className",
+                "  - gradient-text: Animated rainbow gradient text. Props: text, colors (array of 3), speed, className",
+                "  - scrambled-text: Matrix-style decrypt animation. Props: text, speed, className",
+                "  - typewriter-text: Classic typing effect. Props: text, speed, showCursor, cursorColor, className",
+                "  - neon-text: Glowing neon effect. Props: text, glowColor, intensity, flicker, className",
+                "  - shiny-text: Shimmering highlight effect. Props: text, shimmerColor, speed, className",
+                "  - rotating-text: Rotates through phrases. Props: words (comma-separated), interval, className",
+                "",
+                "BACKGROUNDS (9 components) — use these sparingly, only for title/hero slides:",
+                "  - aurora: Northern lights gradient. Props: color1, color2, color3, speed, amplitude",
+                "  - particles: 3D floating particles. Props: particleCount, colors (array), speed, spread",
+                "  - waves: Smooth SVG wave animation. Props: waveColor, opacity, speed, amplitude",
+                "  - dots-pattern: Animated dot grid. Props: dotColor, dotSize, spacing, animate",
+                "  - gradient-mesh: Blurred mesh gradient. Props: color1, color2, color3, speed, blur",
+                "  - starfield: Twinkling stars. Props: starCount, starColor, speed, twinkle",
+                "  - beams: Animated light beams. Props: beamColor, beamCount, speed, opacity",
+                "  - ripple-grid: Grid with ripple effects. Props: gridColor, rippleColor, cellSize, speed",
+                "",
+                "INTERACTIVE COMPONENTS (5 components):",
+                "  - click-spark: Radial spark particles on click. Props: sparkColor, sparkSize, sparkCount, radius",
+                "  - blob-cursor: Smooth blob cursor trail. Props: fillColor, size",
+                "  - magic-bento: Interactive grid with spotlight. Props: enableSpotlight, enableStars, glowColor, particleCount",
+                "  - carousel: Image carousel with controls. Props: images (array of URLs), autoplay, delay, loop",
+                "  - spotlight-card: Card with spotlight on hover. Props: title, content, spotlightColor, width",
+                "  - magnet: Magnetic hover effect. Props: text, magnetStrength, className",
+                "  - dock: macOS-style dock. Props: iconCount, iconSize, magnification",
+                "",
+                "REACTBITS USAGE GUIDELINES:",
+                "1. WHEN TO USE:",
+                "   - Title/hero slides: Use TEXT ANIMATIONS for impactful titles (gradient-text, neon-text, glitch-text)",
+                "   - Title slides only: BACKGROUND animations (aurora, starfield, particles) for atmosphere",
+                "   - Interactive presentations: Use INTERACTIVE components (click-spark, blob-cursor, spotlight-card)",
+                "   - Modern aesthetics: When slide content mentions 'animated', 'dynamic', 'modern', 'engaging'",
+                "",
+                "2. BEST PRACTICES:",
+                "   - Text animations: Use on main titles or key phrases. Set width/height to fit text comfortably.",
+                "   - Background components: ONLY on title/hero slides. Position at x=0, y=0, width=1920, height=1080 for full coverage.",
+                "   - Interactive components: Perfect for engagement-focused slides. Size appropriately (400-800px typical).",
+                "   - Combine wisely: gradient-text on aurora background for stunning title slides.",
+                "",
+                "3. SIZING:",
+                "   - Text animations: width 400-1200px, height 80-300px depending on text length and font size",
+                "   - Backgrounds: Always full-screen (x=0, y=0, width=1920, height=1080)",
+                "   - Interactive: 300-800px typical, centered or positioned strategically",
+                "",
+                "4. EXAMPLES:",
+                '   Title with gradient animation: {"type":"ReactBits","props":{"reactBitsId":"gradient-text","position":{"x":200,"y":300},"width":1520,"height":200,"text":"Stunning Presentations","colors":["#6366f1","#a855f7","#ec4899"],"speed":3,"className":"text-8xl font-bold"}}',
+                '   Starfield background: {"type":"ReactBits","props":{"reactBitsId":"starfield","position":{"x":0,"y":0},"width":1920,"height":1080,"starCount":200,"starColor":"#ffffff","speed":0.5,"twinkle":true}}',
+                '   Typewriter subtitle: {"type":"ReactBits","props":{"reactBitsId":"typewriter-text","position":{"x":200,"y":500},"width":1000,"height":100,"text":"AI-powered slide generation for modern teams","speed":15,"showCursor":true,"cursorColor":"#3b82f6","className":"text-3xl"}}',
+                "",
+                "5. AVOID:",
+                "   - Don't use background animations on content-heavy slides (charts, text, data)",
+                "   - Don't overlap ReactBits text animations with regular TiptapTextBlock",
+                "   - Don't use too many animated components on one slide (max 2-3)",
+                "   - Don't use background components when Background component is already present"
             ])
 
         # If outline carries structured two-column comparison, surface it explicitly
