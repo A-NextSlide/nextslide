@@ -2,8 +2,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package files (package-lock.json is optional in monorepo)
+COPY package.json ./
+COPY package-lock.json* ./
 
 # Install only ws package which is needed for the server
 RUN npm install ws@8.18.1

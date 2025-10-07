@@ -2,11 +2,12 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package files (package-lock.json is optional in monorepo)
+COPY package.json ./
+COPY package-lock.json* ./
 
-# Install production dependencies
-RUN npm ci --only=production
+# Install production dependencies (use npm install if no lock file)
+RUN if [ -f package-lock.json ]; then npm ci --only=production; else npm install --only=production; fi
 
 # Copy the server code
 # Copy agent server (ESM JS)
