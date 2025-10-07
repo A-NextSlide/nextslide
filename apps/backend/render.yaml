@@ -2,6 +2,9 @@ services:
   - type: web
     name: slide-backend
     env: python
+    repo: https://github.com/A-NextSlide/nextslide
+    branch: main
+    rootDirectory: apps/backend
     region: oregon 
     plan: free
     buildCommand: "pip install -r requirements.txt"
