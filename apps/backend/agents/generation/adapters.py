@@ -5,6 +5,7 @@ Adapters to connect refactored components with the existing system.
 from typing import Dict, Any, List, Optional, AsyncIterator
 import asyncio
 import uuid
+import os
 from datetime import datetime
 
 import sentry_sdk
@@ -14,6 +15,7 @@ from agents.core import ISlideGenerator, IThemeManager, IPersistence, IRAGReposi
 from agents.domain.models import ThemeSpec, SlideGenerationContext, SlideStatus, DeckState, GenerationEvent, SlideGeneratedEvent
 from agents.application.event_bus import Events
 from agents.generation.slide_generator import SlideGeneratorV2
+from agents.generation.html_inspired_generator import HTMLInspiredSlideGenerator
 from agents.generation.components.ai_generator import AISlideGenerator
 from agents.generation.components.component_validator import ComponentValidator
 from agents.generation.orchestration.parallel_slide_orchestrator import ParallelSlideOrchestrator
@@ -37,14 +39,24 @@ class SlideGeneratorAdapter:
         self.ai_generator = AISlideGenerator()
         self.component_validator = ComponentValidator(registry)
         
-        # Create the new slide generator
-        self.generator = SlideGeneratorV2(
+        # Create the base slide generator
+        base_generator = SlideGeneratorV2(
             rag_repository=self.rag_repository,
             ai_generator=self.ai_generator,
             component_validator=self.component_validator,
             registry=registry,
             theme_system=theme_system
         )
+        
+        # Optionally wrap with HTML-inspired prompting (controlled by environment variable)
+        use_html_inspired = os.getenv('USE_HTML_INSPIRED', 'false').lower() == 'true'
+        
+        if use_html_inspired:
+            logger.info("🎨 HTML-inspired slide generation ENABLED")
+            self.generator = HTMLInspiredSlideGenerator(base_generator)
+        else:
+            logger.info("📝 Using standard slide generation")
+            self.generator = base_generator
         
         # Store for compatibility
         self.registry = registry
