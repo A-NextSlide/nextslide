@@ -123,7 +123,12 @@ ANALYZE THE CONTENT → CREATE PERFECT VISUALIZATION:
 - Multiple data points? CREATE CustomComponent custom infographic
 - Otherwise use ShapeWithText (cards) + TiptapTextBlock
 
-DESIGN: Think web → output JSON. Use ShapeWithText for text on shapes. CREATE beautiful CustomComponents for data/interactive content (follow patterns in system prompt). Overlap allowed. Go BIG (200-350pt). Include ALL schema fields. NO PLACEHOLDERS - create real visualizations!
+CRITICAL: Analyze this content and CREATE the perfect visualization!
+- Use ShapeWithText for text on shapes (auto-padding)
+- CREATE CustomComponent for any data/numbers/timeline/comparison (follow HOW-TO in system prompt)
+- NO "placeholder" text - create REAL, BEAUTIFUL, COMPLETE visualizations
+- Include ALL schema fields, proper padding, animations, professional styling
+- Think web design → output JSON. Overlap allowed. Go BIG (200-350pt).
 """
         
         return prompt

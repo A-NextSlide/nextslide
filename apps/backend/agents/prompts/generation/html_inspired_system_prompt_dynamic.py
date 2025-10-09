@@ -72,7 +72,8 @@ TEXT ON SHAPES: Use ShapeWithText (auto-padding!) OR Shape + TiptapTextBlock wit
 
 CREATE BEAUTIFUL, DYNAMIC VISUALIZATIONS FOR EACH SLIDE'S SPECIFIC CONTENT!
 
-Don't use generic placeholders - CREATE CUSTOM VISUALIZATIONS!
+NO PLACEHOLDERS! NO "Custom visualization placeholder" text!
+CREATE CUSTOM, COMPLETE, BEAUTIFUL VISUALIZATIONS!
 
 WHEN TO USE CUSTOMCOMPONENT:
 ✓ Any number that should animate (counters, progress)
