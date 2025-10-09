@@ -9,11 +9,8 @@ import logging
 from typing import Dict, Any, AsyncIterator
 from agents.core import ISlideGenerator
 from agents.domain.models import SlideGenerationContext
-from agents.prompts.generation.html_inspired_system_prompt_optimized import (
-    get_html_inspired_system_prompt_optimized
-)
-from agents.generation.customcomponent_library_beautiful import (
-    BEAUTIFUL_CUSTOMCOMPONENT_TEMPLATES
+from agents.prompts.generation.html_inspired_system_prompt_dynamic import (
+    get_html_inspired_system_prompt_dynamic
 )
 from agents.generation.design_pattern_examples import get_pattern_examples_text
 from setup_logging_optimized import get_logger
@@ -60,16 +57,16 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             # Get original prompts for reference
             original_system, original_user = await original_build_prompts(ctx, rag_context)
             
-            # Replace with OPTIMIZED HTML-inspired prompts
-            html_system = get_html_inspired_system_prompt_optimized()
+            # Use DYNAMIC HTML-inspired prompts (teaches HOW to create CustomComponents)
+            html_system = get_html_inspired_system_prompt_dynamic()
             
             # Build streamlined user prompt
-            html_user = self._build_html_inspired_user_prompt_optimized(
+            html_user = self._build_html_inspired_user_prompt_dynamic(
                 ctx,
                 rag_context
             )
             
-            logger.info(f"📝 HTML-inspired OPTIMIZED prompts (system: {len(html_system)} chars, user: {len(html_user)} chars)")
+            logger.info(f"📝 HTML-inspired DYNAMIC prompts (system: {len(html_system)} chars, user: {len(html_user)} chars)")
             
             return html_system, html_user
         
@@ -84,12 +81,12 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             # Restore original prompt builder
             self.base_generator._build_prompts = original_build_prompts
     
-    def _build_html_inspired_user_prompt_optimized(
+    def _build_html_inspired_user_prompt_dynamic(
         self,
         context: SlideGenerationContext,
         rag_context: Dict[str, Any]
     ) -> str:
-        """Optimized user prompt - 60% smaller, same quality"""
+        """Dynamic user prompt - encourages custom CustomComponent creation"""
         
         # Extract theme info
         theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else {}
@@ -98,12 +95,6 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             'secondary': theme_dict.get('secondary_color', '#8B5CF6'),
             'accent': theme_dict.get('accent_1', '#EC4899')
         }
-        
-        # Get Beautiful CustomComponent templates guidance
-        cc_templates = '\n'.join([
-            f"• {name.upper()}: {info['description']}"
-            for name, info in BEAUTIFUL_CUSTOMCOMPONENT_TEMPLATES.items()
-        ])
         
         # Extract component schemas from RAG context (keep this - it's essential)
         component_schemas = rag_context.get('component_schemas', 'Available: Background, Shape, ShapeWithText, TiptapTextBlock, Image, CustomComponent, Lines, Line, Icon, Group, Chart, Table, ReactBits')
@@ -123,12 +114,16 @@ Fonts: {theme_dict.get('heading_font', 'Inter')}, {theme_dict.get('body_font', '
 
 {guidance}
 
-BEAUTIFUL CUSTOMCOMPONENT TEMPLATES:
-{cc_templates}
-
 COMPONENTS: {component_schemas}
 
-DESIGN: Think web → output JSON. Use ShapeWithText for text on shapes (auto-padding!). CustomComponent for interactive viz. Overlap allowed. Go BIG (200-350pt). Include ALL schema fields.
+ANALYZE THE CONTENT → CREATE PERFECT VISUALIZATION:
+- Numbers/metrics? CREATE CustomComponent animated counter/dashboard
+- Timeline/process? CREATE CustomComponent custom timeline
+- Comparison? CREATE CustomComponent custom comparison viz
+- Multiple data points? CREATE CustomComponent custom infographic
+- Otherwise use ShapeWithText (cards) + TiptapTextBlock
+
+DESIGN: Think web → output JSON. Use ShapeWithText for text on shapes. CREATE beautiful CustomComponents for data/interactive content (follow patterns in system prompt). Overlap allowed. Go BIG (200-350pt). Include ALL schema fields. NO PLACEHOLDERS - create real visualizations!
 """
         
         return prompt
@@ -138,22 +133,22 @@ DESIGN: Think web → output JSON. Use ShapeWithText for text on shapes (auto-pa
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: Gradient bg + massive title (160-240pt) + tiny metadata bottom. Components: Background (gradient) + TiptapTextBlock (huge) + TiptapTextBlock (metadata) + Image (logo optional)"
+            return "TITLE: Gradient bg + massive title (160-240pt) + tiny metadata. Background (gradient) + TiptapTextBlock (huge) + TiptapTextBlock (metadata) + Image (logo optional)"
         
         elif 'stat' in slide_type:
-            return "STAT: CustomComponent (radial_progress, metric_dashboard or animated counter) 250-350pt center + small label. Background + CustomComponent + optional glass cards"
+            return "STAT: CREATE CustomComponent animated counter for the number! OR dashboard if multiple metrics. Make it BEAUTIFUL (gradients, animations, formatted numbers). 250-350pt."
         
         elif 'comparison' in slide_type:
-            return "COMPARISON: CustomComponent (comparison_bars) OR split 50/50 + Line divider + mirrored ShapeWithText cards"
+            return "COMPARISON: CREATE CustomComponent side-by-side comparison (animated bars/metrics growing from 0). OR split 50/50 + Line divider + ShapeWithText cards."
         
         elif 'process' in slide_type or 'timeline' in slide_type:
-            return "PROCESS: CustomComponent (timeline_roadmap) for animated timeline OR Lines + Shape (circles) + TiptapTextBlock labels"
+            return "PROCESS: CREATE CustomComponent interactive timeline (milestones, connecting lines, animations). OR Lines + Shape (circles) + TiptapTextBlock."
         
         elif 'data' in slide_type or 'chart' in slide_type:
-            return "DATA: CustomComponent (funnel_viz, radial_progress, or metric_dashboard) 60% width + ShapeWithText insight card 40%"
+            return "DATA: CREATE CustomComponent custom visualization for this specific data (dashboard, funnel, radial, bars - whatever fits!). 60% width + ShapeWithText insight 40%."
         
         else:
-            return "CONTENT: Glass cards (ShapeWithText) OR floating TiptapTextBlock + Image OR split screen. 2-3 elements max. Use CustomComponent for any interactive element."
+            return "CONTENT: ShapeWithText cards OR TiptapTextBlock + Image. If numbers/data → CREATE CustomComponent for it!"
     
     async def complete_generation(self, context: SlideGenerationContext) -> None:
         """Pass through to base generator"""
