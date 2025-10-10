@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { createComponent } from '@/utils/componentUtils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { registry } from '@/registry';
 import { CHART_TYPES } from '@/registry/library/chart-properties';
 import { SHAPE_TYPES } from '@/registry/components/shape';
@@ -86,6 +87,10 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
   // Use both hooks, but prefer ActiveSlideContext for operations
   const { isEditing } = useEditor();
   const { activeSlide, addComponent, updateComponent, removeComponent, activeComponents } = useActiveSlide();
+  
+  // Get current theme for applying colors to new shapes
+  const getWorkspaceTheme = useThemeStore(state => state.getWorkspaceTheme);
+  const currentTheme = getWorkspaceTheme();
   
   // State for shape and chart creation mode
   const [isCreatingShape, setIsCreatingShape] = useState(false);
@@ -1127,14 +1132,18 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     // Get default shape properties from registry
     const shapeDefaults = registry.getDefinition('Shape')?.defaultProps as Record<string, any> || {};
     
-    // Create the component with the exact specified dimensions
+    // Use theme colors for new shapes instead of hardcoded defaults
+    const themeFillColor = currentTheme?.accent1 || shapeDefaults.fill || "#4287f5ff";
+    const themeStrokeColor = currentTheme?.typography?.paragraph?.color || shapeDefaults.stroke || "#000000ff";
+    
+    // Create the component with the exact specified dimensions and theme colors
     const newComponent = createComponent('Shape', {
       shapeType: shapeType,
       position: { x: actualLeft, y: actualTop },
       width: actualWidth,
       height: actualHeight,
-      fill: shapeDefaults.fill ?? "#4287f5ff",
-      stroke: shapeDefaults.stroke ?? "#000000ff",
+      fill: themeFillColor,
+      stroke: themeStrokeColor,
       // Use registry default exactly; avoid forcing a non-zero stroke which causes visual jump
       strokeWidth: (shapeDefaults.strokeWidth as number) ?? 0,
     });

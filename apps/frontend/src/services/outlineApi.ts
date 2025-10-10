@@ -747,7 +747,8 @@ export class OutlineAPI {
   async createDeckFromOutline(
     outline: any,
     stylePreferences?: any,
-    onProgress?: (event: StreamingEvent) => void
+    onProgress?: (event: StreamingEvent) => void,
+    autoApplyImages?: boolean
   ): Promise<{ deck_id: string; deck_url?: string }> {
     // Generate a unique key for this request
     const requestKey = this.generateRequestKey('createDeckFromOutline', { outline, stylePreferences });
@@ -774,7 +775,7 @@ export class OutlineAPI {
         const request: CreateDeckFromOutlineRequest = {
           outline,
           style_preferences: stylePreferences,
-          async_images: true  // Enable async image selection flow
+          async_images: autoApplyImages !== undefined ? !autoApplyImages : true  // If autoApplyImages is true, async_images should be false (and vice versa)
         };
         
         // For now, use the streaming approach directly since EventSource endpoint doesn't exist yet

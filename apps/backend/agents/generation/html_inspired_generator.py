@@ -97,7 +97,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         }
         
         # Extract component schemas from RAG context (keep this - it's essential)
-        component_schemas = rag_context.get('component_schemas', 'Available: Background, Shape, ShapeWithText, TiptapTextBlock, Image, CustomComponent, Lines, Line, Icon, Group, Chart, Table, ReactBits')
+        component_schemas = rag_context.get('component_schemas', 'Available: Background, Line (dividers!), Lines (diagrams), Shape (use hasText=true for text on shapes!), TiptapTextBlock, Image, CustomComponent, ReactBits (animations!), Icon, Group, Chart, Table')
         
         # Get concise slide-type guidance
         slide_type = getattr(context.slide_outline, 'slide_type', 'content')
@@ -108,27 +108,81 @@ Title: {context.slide_outline.title}
 Content: {context.slide_outline.content}
 Type: {slide_type} | Slide {context.slide_index + 1}/{context.total_slides}
 
-THEME:
+🎨 THEME COLORS (USE THESE IN ALL COMPONENTS!):
 Primary: {theme_colors['primary']} | Secondary: {theme_colors['secondary']} | Accent: {theme_colors['accent']}
-Fonts: {theme_dict.get('heading_font', 'Inter')}, {theme_dict.get('body_font', 'Inter')}
+Fonts: {theme_dict.get('heading_font', 'Inter')} (headings), {theme_dict.get('body_font', 'Inter')} (body)
+
+USE THEME COLORS FOR:
+- Shape fills: {theme_colors['primary']}, {theme_colors['secondary']}, or {theme_colors['accent']}
+- Background gradients: Use theme colors as gradient stops
+- CustomComponent render: props.primaryColor, props.secondaryColor (AUTO-INJECTED)
+- Line stroke: {theme_colors['primary']} or {theme_colors['accent']}
+- Text: Use theme fonts
 
 {guidance}
 
 COMPONENTS: {component_schemas}
 
 ANALYZE THE CONTENT → CREATE PERFECT VISUALIZATION:
-- Numbers/metrics? CREATE CustomComponent animated counter/dashboard
-- Timeline/process? CREATE CustomComponent custom timeline
-- Comparison? CREATE CustomComponent custom comparison viz
-- Multiple data points? CREATE CustomComponent custom infographic
-- Otherwise use ShapeWithText (cards) + TiptapTextBlock
+- Numbers/stats? Use ReactBits count-up OR CustomComponent dashboard (use theme colors!)
+- Timeline/process? Use Lines + Shapes OR CustomComponent timeline
+- Comparison? Use Line divider + split layout OR CustomComponent comparison
+- Animated text? Use ReactBits (typewriter, gradient-text, etc.)
+- Simple divider? Use Line component (NOT thin Shape!)
+- Otherwise use Shape (hasText=true for cards) + TiptapTextBlock + Image (use images on most slides!)
 
-CRITICAL: Analyze this content and CREATE the perfect visualization!
-- Use ShapeWithText for text on shapes (auto-padding)
-- CREATE CustomComponent for any data/numbers/timeline/comparison (follow HOW-TO in system prompt)
-- NO "placeholder" text - create REAL, BEAUTIFUL, COMPLETE visualizations
-- Include ALL schema fields, proper padding, animations, professional styling
-- Think web design → output JSON. Overlap allowed. Go BIG (200-350pt).
+🚨 CRITICAL REQUIREMENTS:
+1. THEME COLORS IN RENDER FUNCTION: CustomComponent render MUST use theme color props!
+   - In render: const c1 = props.primaryColor; const c2 = props.secondaryColor; const tc = props.textColor; const ff = props.fontFamily;
+   - Use for ALL colors: background: c1, color: tc, font-family: ff
+   - NEVER hardcode #3B82F6, #8B5CF6!
+   - Theme colors AUTO-INJECTED (don't add to props, just USE in render)
+2. NO TEXT-ON-TEXT OVERLAPS:
+   - NEVER place TiptapTextBlock on top of Shape (hasText=true) - it already has text!
+   - NEVER place TiptapTextBlock on top of CustomComponent (if it contains text)
+   - Check positions (x, y, width, height) - text components must NOT overlap
+3. REAL DATA ONLY: Extract ALL content from slide outline as props (NO {{icon}} syntax!)
+4. SHAPE TEXT PADDING: For Shape with hasText=true, ALWAYS use textPadding=16 (default) or max 20. NEVER use 30 or higher! textPadding is INTERNAL spacing, not position offset!
+5. USE REACTBITS FIRST: count-up for numbers, typewriter-text for titles
+6. USE LINE: For dividers (NOT thin Shape!)
+
+Example CustomComponent using AUTO-INJECTED theme colors:
+{{
+  "type": "CustomComponent",
+  "props": {{
+    "position": {{"x": 400, "y": 300}}, "width": 1120, "height": 400,
+    "value1": "621", "label1": "Nobel Prizes", "value2": "124", "label2": "Years",
+    "render": "function render({{ props }}) {{ const v1 = props.value1 || ''; const l1 = props.label1 || ''; const v2 = props.value2 || ''; const l2 = props.label2 || ''; const c1 = props.primaryColor; const c2 = props.secondaryColor; const tc = props.textColor; const ff = props.fontFamily; return '<div style=\"width: 100%; height: 100%; padding: 24px; box-sizing: border-box; font-family: ' + ff + '; display: flex; gap: 40px;\"><div style=\"flex: 1; background: linear-gradient(135deg, ' + c1 + ', ' + c2 + '); border-radius: 24px; padding: 24px; text-align: center;\"><div style=\"font-size: 96px; font-weight: 800; color: ' + tc + ';\">' + v1 + '</div><div style=\"font-size: 28px; color: ' + tc + ';\">' + l1 + '</div></div><div style=\"flex: 1; background: linear-gradient(135deg, ' + c2 + ', ' + c1 + '); border-radius: 24px; padding: 24px; text-align: center;\"><div style=\"font-size: 96px; font-weight: 800; color: ' + tc + ';\">' + v2 + '</div><div style=\"font-size: 28px; color: ' + tc + ';\">' + l2 + '</div></div></div>'; }}"
+  }}
+}}
+
+Example Shape with text (CORRECT positioning):
+{{
+  "type": "Shape",
+  "props": {{
+    "position": {{"x": 100, "y": 200}},  // EXACT position - NO padding offset!
+    "width": 400, "height": 200,  // FULL dimensions - NO reduction for padding!
+    "shapeType": "rectangle",
+    "borderRadius": 16,
+    "fill": "#3B82F6",
+    "hasText": true,
+    "textPadding": 16,  // DEFAULT=16, max 20. NEVER use 30 or higher!
+    "fontSize": 24,
+    "alignment": "center",
+    "verticalAlignment": "middle",
+    "texts": [{{"text": "Key Insight", "style": {{}}}}]
+  }}
+}}
+
+CRITICAL: Theme colors (primaryColor, secondaryColor, textColor, fontFamily) are AUTO-INJECTED!
+You DON'T add them to props object. You MUST use them in render function!
+
+SHAPE POSITIONING RULES:
+- Shape position is EXACT bounds (x, y, width, height) - DO NOT add padding to these values!
+- Use textPadding property (16-20px) for internal text spacing
+- textPadding is INSIDE the shape, not added to position/dimensions!
+
+Think web design → output JSON. ReactBits first, then Line, then CustomComponent. Go BIG (200-350pt).
 """
         
         return prompt
@@ -138,22 +192,22 @@ CRITICAL: Analyze this content and CREATE the perfect visualization!
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: Gradient bg + massive title (160-240pt) + tiny metadata. Background (gradient) + TiptapTextBlock (huge) + TiptapTextBlock (metadata) + Image (logo optional)"
+            return "TITLE: Gradient bg + ReactBits typewriter-text OR massive TiptapTextBlock (160-240pt). Add Image (logo) if available."
         
         elif 'stat' in slide_type:
-            return "STAT: CREATE CustomComponent animated counter for the number! OR dashboard if multiple metrics. Make it BEAUTIFUL (gradients, animations, formatted numbers). 250-350pt."
+            return "STAT: ReactBits count-up OR CustomComponent dashboard (theme colors!). Add Image (large, 40-50% width) for visual impact!"
         
         elif 'comparison' in slide_type:
-            return "COMPARISON: CREATE CustomComponent side-by-side comparison (animated bars/metrics growing from 0). OR split 50/50 + Line divider + ShapeWithText cards."
+            return "COMPARISON: CustomComponent (theme colors!) OR split + Line divider + Shape (hasText=true) cards. Add Image (800px+) for context!"
         
         elif 'process' in slide_type or 'timeline' in slide_type:
-            return "PROCESS: CREATE CustomComponent interactive timeline (milestones, connecting lines, animations). OR Lines + Shape (circles) + TiptapTextBlock."
+            return "PROCESS: CustomComponent timeline OR Lines + Shapes + TiptapTextBlock. Add Image (diagram/illustration)!"
         
         elif 'data' in slide_type or 'chart' in slide_type:
-            return "DATA: CREATE CustomComponent custom visualization for this specific data (dashboard, funnel, radial, bars - whatever fits!). 60% width + ShapeWithText insight 40%."
+            return "DATA: CustomComponent (theme colors!) + Image (large, 40-50% width) for visual context!"
         
         else:
-            return "CONTENT: ShapeWithText cards OR TiptapTextBlock + Image. If numbers/data → CREATE CustomComponent for it!"
+            return "CONTENT: TiptapTextBlock + Image (LARGE, 50-60% of slide) + Shape (hasText=true) cards. USE IMAGES! Dividers → Line! Numbers → ReactBits count-up!"
     
     async def complete_generation(self, context: SlideGenerationContext) -> None:
         """Pass through to base generator"""

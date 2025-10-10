@@ -415,12 +415,15 @@ class ThemeAdapter:
                 ts['body'].setdefault('color', ts.get('textColor', text_color))
                 props['tableStyles'] = ts
 
-            # 8) CustomComponent: pass theme hints
+            # 8) CustomComponent: FORCE theme colors (override hardcoded values)
             elif ctype == 'CustomComponent':
-                props.setdefault('primaryColor', accent1)
-                props.setdefault('secondaryColor', accent2)
-                props.setdefault('textColor', text_color)
-                props.setdefault('fontFamily', hero_family)
+                # FORCE theme colors (not setdefault - we want consistency!)
+                props['primaryColor'] = accent1
+                props['secondaryColor'] = accent2
+                props['accentColor'] = accent1
+                props['textColor'] = text_color
+                props['fontFamily'] = hero_family
+                props['bodyFont'] = body_family
                 # New: seed alignment/emphasis defaults for big callouts matching page design
                 if 'alignment' not in props:
                     # Prefer left alignment when there is strong left text presence; default center otherwise

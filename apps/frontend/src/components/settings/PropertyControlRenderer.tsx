@@ -88,23 +88,29 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
   switch (controlType) {
     case 'input':
       return (
-        <Input 
-          value={currentValue ?? ''} 
-          onChange={e => onUpdate(propName, e.target.value, true)} 
-          onBlur={() => saveComponentToHistory(`Updated ${propName}`)}
-          className="w-full h-8 text-xs" 
-        />
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block">{label}</span>
+          <Input 
+            value={currentValue ?? ''} 
+            onChange={e => onUpdate(propName, e.target.value, true)} 
+            onBlur={() => saveComponentToHistory(`Updated ${propName}`)}
+            className="w-full h-8 text-xs" 
+          />
+        </div>
       );
 
     case 'textarea':
       return (
-        <Textarea 
-          value={currentValue ?? ''} 
-          onChange={e => onUpdate(propName, e.target.value, true)} 
-          onBlur={() => saveComponentToHistory(`Updated ${propName}`)}
-          className="w-full" 
-          rows={controlProps.rows || 3}
-        />
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block">{label}</span>
+          <Textarea 
+            value={currentValue ?? ''} 
+            onChange={e => onUpdate(propName, e.target.value, true)} 
+            onBlur={() => saveComponentToHistory(`Updated ${propName}`)}
+            className="w-full" 
+            rows={controlProps.rows || 3}
+          />
+        </div>
       );
 
     case 'slider': {
@@ -147,7 +153,11 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
       };
       
       return (
-        <div className="flex items-center h-8">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+            <span className="text-xs font-mono text-foreground min-w-[32px] text-right">{currentValue ?? min}</span>
+          </div>
           <Slider 
             min={min} 
             max={max} 
@@ -156,9 +166,8 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
             onValueChange={handleValueChange}
             onPointerDown={handleSlideStart}
             onPointerUp={handleSlideEnd}
-            className="flex-grow" 
+            className="w-full" 
           />
-          <span className="text-xs ml-2 w-6 text-right">{currentValue ?? min}</span>
         </div>
       );
     }
@@ -182,37 +191,43 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
       
     case 'grouped-dropdown': {
       return (
-        <GroupedDropdown
-          value={String(currentValue ?? '')}
-          options={(propName === 'fontFamily' && dynamicFontOptions) || controlProps.enumValues || schema.enum as string[] || []}
-          groups={(propName === 'fontFamily' && dynamicFontGroups) || controlProps.enumGroups}
-          onChange={value => {
-            // Save history before change
-            saveComponentToHistory(`Change ${label}`);
-            // Update with skipHistory=true for real-time update
-            onUpdate(propName, value, true);
-          }}
-          placeholder={`Select ${label}`}
-          label={label}
-        />
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block">{label}</span>
+          <GroupedDropdown
+            value={String(currentValue ?? '')}
+            options={(propName === 'fontFamily' && dynamicFontOptions) || controlProps.enumValues || schema.enum as string[] || []}
+            groups={(propName === 'fontFamily' && dynamicFontGroups) || controlProps.enumGroups}
+            onChange={value => {
+              // Save history before change
+              saveComponentToHistory(`Change ${label}`);
+              // Update with skipHistory=true for real-time update
+              onUpdate(propName, value, true);
+            }}
+            placeholder={`Select ${label}`}
+            label={label}
+          />
+        </div>
       );
     }
 
     case 'editable-dropdown': {
       return (
-        <EditableDropdown
-          value={currentValue ?? (schemaType === 'number' ? 0 : '')}
-          options={controlProps.enumValues || schema.enum as string[] || []}
-          onChange={value => {
-            saveComponentToHistory(`Change ${label}`);
-            // Update with skipHistory=true for real-time update
-            onUpdate(propName, value, true);
-          }}
-          placeholder={`Select or enter ${label}`}
-          type={schemaType as 'string' | 'number'}
-          propName={propName}
-          icon={icon}
-        />
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block">{label}</span>
+          <EditableDropdown
+            value={currentValue ?? (schemaType === 'number' ? 0 : '')}
+            options={controlProps.enumValues || schema.enum as string[] || []}
+            onChange={value => {
+              saveComponentToHistory(`Change ${label}`);
+              // Update with skipHistory=true for real-time update
+              onUpdate(propName, value, true);
+            }}
+            placeholder={`Select or enter ${label}`}
+            type={schemaType as 'string' | 'number'}
+            propName={propName}
+            icon={icon}
+          />
+        </div>
       );
     }
 
@@ -256,38 +271,41 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
       }
 
       return (
-        <Select 
-          value={String(currentValue ?? '')} 
-          onValueChange={value => {
-            // Save history before change
-            saveComponentToHistory(`Change ${label}`);
-            // Convert value if necessary
-            let finalValue: any = value;
-            if (schemaType === 'number') {
-              const num = parseFloat(value);
-              if (!isNaN(num)) {
-                finalValue = num;
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide block">{label}</span>
+          <Select 
+            value={String(currentValue ?? '')} 
+            onValueChange={value => {
+              // Save history before change
+              saveComponentToHistory(`Change ${label}`);
+              // Convert value if necessary
+              let finalValue: any = value;
+              if (schemaType === 'number') {
+                const num = parseFloat(value);
+                if (!isNaN(num)) {
+                  finalValue = num;
+                }
               }
-            }
-            // Update with skipHistory=true for real-time update
-            onUpdate(propName, finalValue, true);
-          }}
-        >
-          <SelectTrigger className="w-full h-8 text-xs px-2">
-            <SelectValue placeholder="Select" />
-          </SelectTrigger>
-          <SelectContent>
-            {availableOptions.map(value => (
-              <SelectItem 
-                key={value} 
-                value={value} 
-                className="text-xs py-2"
-              >
-                {value}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              // Update with skipHistory=true for real-time update
+              onUpdate(propName, finalValue, true);
+            }}
+          >
+            <SelectTrigger className="w-full h-8 text-xs px-2">
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableOptions.map(value => (
+                <SelectItem 
+                  key={value} 
+                  value={value} 
+                  className="text-xs py-2"
+                >
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       );
     }
 
@@ -423,49 +441,52 @@ const PropertyControlRenderer: React.FC<PropertyControlRendererProps> = ({
       };
       
       return (
-        <Popover>
-          <PopoverTrigger asChild>
-            <div 
-              className="w-6 h-6 rounded-md border cursor-pointer" 
-              style={isStrokeColor ? {
-                // Show transparency pattern for stroke to visualize transparency
-                backgroundImage: getTransparencyPattern(),
-                backgroundSize: "8px 8px",
-                backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
-                backgroundColor: "#fff"
-              } : isFillColor ? {
-                // No transparency pattern for fill colors
-                backgroundColor: "#fff"
-              } : { 
-                backgroundImage: getTransparencyPattern(),
-                backgroundSize: "8px 8px",
-                backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
-                backgroundColor: "#fff"
-              }}
-              onClick={handleColorPickStart}
-            >
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+          <Popover>
+            <PopoverTrigger asChild>
               <div 
-                className="w-full h-full rounded-[0.3rem]" 
-                style={previewStyle} 
-              />
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="p-0" onClick={(e) => e.stopPropagation()} onPointerUp={flushThrottledUpdate} onMouseUp={flushThrottledUpdate} onTouchEnd={flushThrottledUpdate}>
-            <div onClick={(e) => e.stopPropagation()}>
-              <GradientPicker 
-                value={currentDisplayValue} 
-                onChange={handleChange}
-                onChangeComplete={() => {
-                  setIsPickingColor(false);
-                  // Ensure final value is flushed to store and history saved
-                  flushThrottledUpdate();
-                  saveComponentToHistory(`Updated ${propName}`);
+                className="w-7 h-7 rounded-md border-2 border-border hover:border-primary cursor-pointer transition-colors shadow-sm" 
+                style={isStrokeColor ? {
+                  // Show transparency pattern for stroke to visualize transparency
+                  backgroundImage: getTransparencyPattern(),
+                  backgroundSize: "8px 8px",
+                  backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+                  backgroundColor: "#fff"
+                } : isFillColor ? {
+                  // No transparency pattern for fill colors
+                  backgroundColor: "#fff"
+                } : { 
+                  backgroundImage: getTransparencyPattern(),
+                  backgroundSize: "8px 8px",
+                  backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+                  backgroundColor: "#fff"
                 }}
-                initialTab={initialTab}
-              />
-            </div>
-          </PopoverContent>
-        </Popover>
+                onClick={handleColorPickStart}
+              >
+                <div 
+                  className="w-full h-full rounded-[0.25rem]" 
+                  style={previewStyle} 
+                />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="p-0" onClick={(e) => e.stopPropagation()} onPointerUp={flushThrottledUpdate} onMouseUp={flushThrottledUpdate} onTouchEnd={flushThrottledUpdate}>
+              <div onClick={(e) => e.stopPropagation()}>
+                <GradientPicker 
+                  value={currentDisplayValue} 
+                  onChange={handleChange}
+                  onChangeComplete={() => {
+                    setIsPickingColor(false);
+                    // Ensure final value is flushed to store and history saved
+                    flushThrottledUpdate();
+                    saveComponentToHistory(`Updated ${propName}`);
+                  }}
+                  initialTab={initialTab}
+                />
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       );
     }
 

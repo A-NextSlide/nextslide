@@ -270,6 +270,14 @@ class SchemaExtractor:
         for prop_name, prop_schema in schema.get("properties", {}).items():
             minimal["properties"][prop_name] = self._extract_property(prop_schema)
         
+        # CRITICAL: Include defaultProps if present in the full component schema
+        # This ensures AI knows the correct default values (e.g., textPadding=16 for Shape)
+        full_component_schema = self.schemas.get(component_name, {})
+        if "defaultProps" in full_component_schema:
+            minimal["defaultProps"] = full_component_schema["defaultProps"]
+            if component_name == "Shape":
+                logger.info(f"Shape defaultProps included: textPadding={minimal['defaultProps'].get('textPadding', 'NOT SET')}")
+        
         if component_name == "Icon":
             logger.debug(f"Icon minimal schema: {minimal}")
         
@@ -454,8 +462,26 @@ class SchemaExtractor:
                 "width": 200,
                 "height": 200,
                 "shapeType": "rectangle",
-                "fill": "#000000",
-                "opacity": 0.1
+                "fill": "#3B82F6",
+                "borderRadius": 16,
+                "opacity": 1,
+                "hasText": False
+            }
+            # Add text example for Shape with text
+            # Note: When hasText=true, use textPadding=16 (default, max 20)
+            example["textExample"] = {
+                "position": {"x": 100, "y": 100},
+                "width": 400,
+                "height": 200,
+                "shapeType": "rectangle",
+                "fill": "#3B82F6",
+                "borderRadius": 16,
+                "hasText": True,
+                "textPadding": 16,  # CRITICAL: Default 16, max 20
+                "fontSize": 24,
+                "alignment": "center",
+                "verticalAlignment": "middle",
+                "texts": [{"text": "Example text", "style": {}}]
             }
         elif component_name == "Chart":
             example["props"] = {

@@ -78,30 +78,50 @@ class SerpAPIService:
         slide_type: str,
         style_preferences: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Build a concise, high-quality image search query from slide info.
+        """Build a specific, targeted image search query from slide content.
 
         Rules:
-        - Prioritize 2–4 meaningful keywords from the title
-        - Avoid vague or too-common words; drop numbers/dates
-        - Add gentle domain modifiers based on slide_type (but keep query broad)
+        - Prioritize proper nouns, specific entities, and concrete objects
+        - Extract the MAIN subject/topic, not generic descriptors
+        - Avoid generic modifiers like 'background', 'concept', 'teamwork'
+        - Focus on what the slide is ABOUT, not what type of slide it is
         - Never exceed ~60 chars
         """
         try:
             text = f"{title or ''} \n {content or ''}"
-            # Tokenize words, keep alphabetic tokens
-            words = re.findall(r"[A-Za-z][A-Za-z\-']+", text)
+            
+            # Extended stop words - more aggressive filtering
             stop_words = {
                 'the','a','an','and','or','but','in','on','at','to','for','of','with','by','is','are','was','were',
                 'been','being','have','has','had','do','does','did','will','would','could','should','may','might','must',
                 'can','this','that','these','those','it','as','from','about','into','through','during','before','after',
                 'above','below','between','under','over','please','make','apply','using','use','create','new','component',
                 'replace','original','request','slide','context','maintaining','appropriate','style','styled','effect','effects',
-                'section','chapter','overview','introduction','summary','agenda','goal','goals','objective','objectives'
+                'section','chapter','overview','introduction','summary','agenda','goal','goals','objective','objectives',
+                # Additional generic terms to filter out
+                'presentation','background','concept','image','photo','visual','design','layout','professional','business',
+                'corporate','modern','clean','simple','elegant','beautiful'
             }
-            # Filter to candidate keywords from title first
+            
+            # Tokenize words, prioritize capitalized words (proper nouns)
+            all_words = re.findall(r"[A-Z][A-Za-z\-']+|[a-z][a-z\-']+", text)
+            
+            # First pass: collect proper nouns (capitalized words not at sentence start)
+            proper_nouns = []
+            title_words_set = set((title or '').split())
+            for i, word in enumerate(all_words):
+                if word[0].isupper() and word.lower() not in stop_words:
+                    # Skip if it's likely a sentence start
+                    is_sentence_start = i == 0 or (i > 0 and all_words[i-1].endswith('.'))
+                    # But include if it's in the title (likely important)
+                    if not is_sentence_start or word in title_words_set:
+                        if len(word) >= 3:
+                            proper_nouns.append(word)
+            
+            # Second pass: collect meaningful common nouns from title
+            title_keywords = []
             title_words = re.findall(r"[A-Za-z][A-Za-z\-']+", title or '')
-            candidates: List[str] = []
-            for w in title_words + words:
+            for w in title_words:
                 wl = w.lower()
                 if wl in stop_words:
                     continue
@@ -109,38 +129,51 @@ class SerpAPIService:
                     continue
                 if len(wl) < 3:
                     continue
-                # Avoid overly generic single nouns
-                if wl in {'thing','stuff','image','photo','picture','graphic','visual','data','information'}:
+                # Skip overly generic terms
+                if wl in {'thing','stuff','image','photo','picture','graphic','visual','data','information','slide','deck'}:
                     continue
-                if wl not in candidates:
-                    candidates.append(wl)
-
-            # Keep first 3–4 meaningful tokens
-            base_tokens = candidates[:4] if len(candidates) >= 3 else candidates[:3]
-
-            # Type-based modifiers (broad, not too specific)
-            type_mod = ''
-            st = (slide_type or '').lower()
-            if st in {'title', 'closing', 'summary', 'transition', 'divider'}:
-                type_mod = 'background'
-            elif st in {'data', 'chart', 'keymetrics'}:
-                type_mod = 'analytics concept'
-            elif st in {'team', 'about'} or any(k in (title or '').lower() for k in ['team','about us','who we are']):
-                type_mod = 'office teamwork'
-            else:
-                type_mod = ''
-
-            query = ' '.join(base_tokens[:3])
-            if type_mod and type_mod not in query:
-                query = f"{query} {type_mod}".strip()
-
+                title_keywords.append(w)
+            
+            # Build query: prioritize proper nouns, then title keywords
+            candidates = []
+            
+            # Add proper nouns first (most specific)
+            for noun in proper_nouns[:2]:  # Max 2 proper nouns
+                if noun not in candidates:
+                    candidates.append(noun)
+            
+            # Add title keywords to fill out the query
+            for kw in title_keywords:
+                if len(candidates) >= 4:
+                    break
+                if kw not in candidates and kw.lower() not in [c.lower() for c in candidates]:
+                    candidates.append(kw)
+            
+            # If we have very few candidates, extract from content too
+            if len(candidates) < 2:
+                content_words = re.findall(r"[A-Za-z][A-Za-z\-']+", content or '')
+                for w in content_words:
+                    wl = w.lower()
+                    if wl in stop_words or len(wl) < 4:
+                        continue
+                    if wl not in [c.lower() for c in candidates]:
+                        candidates.append(w)
+                        if len(candidates) >= 3:
+                            break
+            
+            # Build final query from candidates (no generic modifiers)
+            query = ' '.join(candidates[:4])
+            
             # Clamp and clean
             query = query.strip()
             if len(query) > 60:
                 query = query[:60]
-            # Fallback if empty
+                
+            # Fallback if empty - use first few words of title
             if not query:
-                query = (title or 'presentation background')[:60]
+                fallback_words = [w for w in (title or '').split() if len(w) > 3][:3]
+                query = ' '.join(fallback_words) if fallback_words else 'abstract'
+                
             return query
         except Exception:
             # Fallback to very simple extraction
@@ -414,30 +447,10 @@ class SerpAPIService:
                                 if len(valid_images) >= num_images * 2:  # Stop at 2x requested
                                     break
             
-            # If still not enough, try a generic search based on slide type
-            if len(valid_images) < num_images // 2:  # Less than half of what we need
-                print(f"Very few results, trying generic search for slide type: {slide_type}")
-                generic_queries = {
-                    'title': 'presentation background',
-                    'closing': 'thank you slide',
-                    'data': 'data visualization',
-                    'content': 'business presentation'
-                }
-                
-                generic_query = generic_queries.get(slide_type, 'abstract background')
-                generic_results = await self.search_images(
-                    query=generic_query,
-                    per_page=num_images
-                )
-                generic_images = await ImageValidator.filter_valid_images(
-                    generic_results.get('photos', [])
-                )
-                
-                # Add generic images
-                existing_urls = {img.get('url') for img in valid_images}
-                for img in generic_images:
-                    if img.get('url') not in existing_urls:
-                        valid_images.append(img)
+            # If still not enough images, that's okay - better to have fewer specific images
+            # than generic stock photos that don't relate to the content
+            if len(valid_images) < num_images // 2:
+                print(f"Only found {len(valid_images)} images for '{search_query}' - better than generic stock photos")
             
             return valid_images[:num_images]
         

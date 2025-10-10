@@ -212,6 +212,7 @@ export const CustomComponentRenderer: React.FC<{
   isThumbnail?: boolean;
 }> = ({ component, baseStyles, containerRef, isThumbnail = false }) => {
   const renderCode = component.props.render as string;
+  
   // Merge all component props (including width, height, x, y) with the custom props
   const componentProps = {
     ...component.props,
@@ -239,7 +240,40 @@ export const CustomComponentRenderer: React.FC<{
     if (!renderCode) {
       return { compiledRender: null, compilationError: new Error('No render function provided') };
     }
-    // Allow providing a render function directly instead of a string
+    
+    // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
+    // 1. Check if it's raw HTML (starts with <tag or just contains HTML)
+    const trimmedCode = (renderCode as string).trim();
+    if (trimmedCode.startsWith('<') && trimmedCode.includes('>') && !trimmedCode.includes('function render')) {
+      // Check for template variables like {icon}, {category}, etc.
+      const hasTemplateVars = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/g.test(trimmedCode);
+      
+      if (hasTemplateVars) {
+        console.warn('[CustomComponent] Detected HTML with template variables - INVALID!', {
+          preview: trimmedCode.substring(0, 200),
+          variables: trimmedCode.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g)
+        });
+        return { 
+          compiledRender: null, 
+          compilationError: new Error('HTML contains template variables like {icon}, {category}. Must use function format with props instead.') 
+        };
+      }
+      
+      console.log('[CustomComponent] Detected raw HTML format, converting to React');
+      // Return a function that renders the HTML using dangerouslySetInnerHTML
+      const htmlRenderer = function({ props }: any) {
+        return React.createElement('div', {
+          style: {
+            width: '100%',
+            height: '100%'
+          },
+          dangerouslySetInnerHTML: { __html: renderCode as string }
+        });
+      };
+      return { compiledRender: htmlRenderer as Function, compilationError: null };
+    }
+    
+    // 2. Allow providing a render function directly instead of a string
     if (typeof renderCode === 'function') {
       const originalRender = renderCode as Function;
       const wrapped = function wrappedRender() {
@@ -658,6 +692,17 @@ export const CustomComponentRenderer: React.FC<{
           containerWidth,
           containerHeight
         });
+        
+        // Handle HTML string returns (from functions that return HTML)
+        if (typeof element === 'string' && element.trim().startsWith('<') && element.includes('>')) {
+          console.log('[CustomComponent] Detected HTML string return, rendering as HTML');
+          return (
+            <div 
+              style={{ width: '100%', height: '100%' }}
+              dangerouslySetInnerHTML={{ __html: element }} 
+            />
+          );
+        }
         
         // Validate the result. Allow React elements, arrays, strings, null.
         if (

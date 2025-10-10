@@ -86,9 +86,10 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const [containerScale, setContainerScale] = React.useState(() => getInitialSlideWidth() / NATIVE_WIDTH);
   const prevSlideWidthRef = useRef(currentSlideWidth);
   const updateScaleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasMeasuredRef = useRef(false); // Track if we've completed initial measurement
 
   useEffect(() => {
-    if (isThumbnail) return;
+    if (isThumbnail || isCurrentlyTextEditing) return;
     const updateScale = () => {
       if (updateScaleTimeoutRef.current) clearTimeout(updateScaleTimeoutRef.current);
       updateScaleTimeoutRef.current = setTimeout(() => {
@@ -102,10 +103,22 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
             isSelected,
             slideDisplayWidth,
             prevWidth: prevSlideWidthRef.current,
-            willUpdate: Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 1
+            hasMeasured: hasMeasuredRef.current,
+            willUpdate: Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 5
           });
 
-          if (Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 1) {
+          // On first measurement, set without threshold check
+          if (!hasMeasuredRef.current) {
+            hasMeasuredRef.current = true;
+            prevSlideWidthRef.current = slideDisplayWidth;
+            setCurrentSlideWidth(slideDisplayWidth);
+            setContainerScale(slideDisplayWidth / NATIVE_WIDTH);
+            return;
+          }
+
+          // Only update if difference is significant (>5px) to prevent cascading updates
+          // ALSO: Don't update on selection change (when isSelected changes from false to true)
+          if (Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 5) {
             prevSlideWidthRef.current = slideDisplayWidth;
             setCurrentSlideWidth(slideDisplayWidth);
             setContainerScale(slideDisplayWidth / NATIVE_WIDTH);
@@ -129,7 +142,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       window.removeEventListener('resize', updateScale);
       if (resizeObserver) resizeObserver.disconnect();
     };
-  }, [isThumbnail]);
+  }, [isThumbnail, isCurrentlyTextEditing]);
 
   // Font scale factor
   const fontScaleFactor = useMemo(() => {
@@ -139,6 +152,11 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     return currentSlideWidth / NATIVE_WIDTH;
   }, [isThumbnail, currentSlideWidth, isPresenting]);
 
+  // Store calculated font size in a ref to prevent unnecessary recalculations
+  const calculatedFontSizeRef = useRef<string | null>(null);
+  // Store the font size when NOT editing to use during edit mode
+  const nonEditingFontSizeRef = useRef<string | null>(null);
+  
   const getFontSize = useMemo(() => {
     // Always use props.fontSize if it exists (this is the source of truth)
     const nativeSize = props.fontSize || effectiveFontSize || 16;
@@ -151,6 +169,35 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     // For regular slides, apply scaling without rounding to prevent pixel jumps
     const calculatedSize = nativeSize * fontScaleFactor;
 
+    // CRITICAL: When entering edit mode, use the last known non-editing font size
+    // This prevents font size changes when transitioning to edit mode
+    if (isCurrentlyTextEditing && nonEditingFontSizeRef.current) {
+      console.log(`[TiptapTextBlock] Using non-editing font size during edit mode:`, {
+        componentId: component.id,
+        editModeSize: nonEditingFontSizeRef.current
+      });
+      return nonEditingFontSizeRef.current;
+    }
+
+    // If we already have a calculated size and the native size hasn't changed, use it
+    // This prevents recalculation when only scale factor changes slightly
+    if (calculatedFontSizeRef.current && Math.abs(parseFloat(calculatedFontSizeRef.current) - calculatedSize) < 1) {
+      console.log(`[TiptapTextBlock] Using cached font size:`, {
+        componentId: component.id,
+        cached: calculatedFontSizeRef.current,
+        newCalculation: calculatedSize
+      });
+      return calculatedFontSizeRef.current;
+    }
+
+    const result = `${calculatedSize}px`;
+    calculatedFontSizeRef.current = result;
+
+    // Store as non-editing size if we're not currently editing
+    if (!isCurrentlyTextEditing) {
+      nonEditingFontSizeRef.current = result;
+    }
+
     // Debug logging
     console.log(`[TiptapTextBlock] Font size calculation:`, {
       componentId: component.id,
@@ -162,10 +209,11 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       NATIVE_WIDTH,
       props_fontSize: props.fontSize,
       effectiveFontSize,
+      isEditing: isCurrentlyTextEditing
     });
 
-    return `${calculatedSize}px`;
-  }, [props.fontSize, effectiveFontSize, fontScaleFactor, isThumbnail, isSelected, component.id, currentSlideWidth]);
+    return result;
+  }, [props.fontSize, effectiveFontSize, fontScaleFactor, isThumbnail, component.id, currentSlideWidth, isCurrentlyTextEditing]);
 
   // Removed font optimization event listener
 

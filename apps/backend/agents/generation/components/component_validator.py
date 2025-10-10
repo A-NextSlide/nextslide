@@ -657,8 +657,8 @@ class ComponentValidator:
                 if isinstance(st, str) and st.strip():
                     logger.warning(f"Shape has invalid shapeType '{st}', coercing to 'rectangle'")
                 props['shapeType'] = 'rectangle'
-            # Visual defaults
-            props.setdefault('fill', '#00000000')  # transparent
+            # Visual defaults - DON'T default to transparent, let theme enforcement handle it
+            # props.setdefault('fill', '#00000000')  # REMOVED - prevents theme colors!
             # Gradient optional; leave if present
             props.setdefault('isAnimated', False)
             props.setdefault('animationSpeed', 1)
@@ -671,6 +671,16 @@ class ComponentValidator:
             props.setdefault('shadowOffsetX', 0)
             props.setdefault('shadowOffsetY', 0)
             props.setdefault('shadowSpread', 0)
+            
+            # CRITICAL: Enforce textPadding limit for shapes with text
+            if props.get('hasText') and 'textPadding' in props:
+                text_padding = props.get('textPadding', 16)
+                if isinstance(text_padding, (int, float)) and text_padding > 20:
+                    logger.warning(f"Shape has excessive textPadding={text_padding}, capping at 20")
+                    props['textPadding'] = 20
+                elif isinstance(text_padding, (int, float)) and text_padding < 6:
+                    logger.warning(f"Shape has too low textPadding={text_padding}, setting to 16")
+                    props['textPadding'] = 16
 
             component['props'] = props
         except Exception as e:

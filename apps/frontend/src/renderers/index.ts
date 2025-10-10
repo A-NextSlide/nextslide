@@ -66,7 +66,7 @@ export { TiptapTextBlockRenderer } from './components/TiptapTextBlockRenderer';
 // Initialize all renderers (this ensures the register calls are executed)
 // These imports ensure that each renderer registers itself
 import './components/BackgroundRenderer';
-import './components/ShapeRenderer';
+// REMOVED: import './components/ShapeRenderer'; // Duplicate - ShapeWithTextRenderer handles both Shape and ShapeWithText
 import './components/ShapeWithTextRenderer';
 import './components/TiptapTextBlockRenderer';
 import './components/ImageRenderer';

@@ -315,115 +315,13 @@ export const renderImage = (
   // Detect logo components early (used in styles below)
   const isLogoComponent = (props?.metadata?.kind === 'logo') || ((props?.alt || '').toLowerCase() === 'logo');
   
-  // --- Original frame and crop offset bookkeeping (used by effects and layout)
-  const currentPosition = (props.position || { x: 0, y: 0 }) as { x: number; y: number };
-  const hasOriginalFrame = !!props.cropOriginalFrame && typeof props.cropOriginalFrame?.width === 'number' && typeof props.cropOriginalFrame?.height === 'number';
-  const originalFrame = hasOriginalFrame ? (props.cropOriginalFrame as any) : null;
-  // Prefer a persisted crop offset if present so dragging the component doesn't shift the internal image
-  const storedCropOffsetX = originalFrame && typeof (originalFrame as any).cropOffsetX === 'number' ? (originalFrame as any).cropOffsetX : null;
-  const storedCropOffsetY = originalFrame && typeof (originalFrame as any).cropOffsetY === 'number' ? (originalFrame as any).cropOffsetY : null;
-  const dxFromOriginal = originalFrame ? (currentPosition.x - originalFrame.position.x) : 0;
-  const dyFromOriginal = originalFrame ? (currentPosition.y - originalFrame.position.y) : 0;
-  const effectiveCropOffsetX = storedCropOffsetX ?? dxFromOriginal;
-  const effectiveCropOffsetY = storedCropOffsetY ?? dyFromOriginal;
-  const shouldUseOriginalLayout = (!!props.cropResizesCanvas && !!originalFrame) || (isCroppingThis && !!originalFrame);
-
-  // One-time migration: persist crop offsets for previously cropped images lacking them
-  useEffect(() => {
-    try {
-      if (
-        originalFrame &&
-        props.cropResizesCanvas &&
-        (storedCropOffsetX === null || storedCropOffsetY === null)
-      ) {
-        const dx = dxFromOriginal;
-        const dy = dyFromOriginal;
-        const migrated = {
-          ...originalFrame,
-          cropOffsetX: dx,
-          cropOffsetY: dy,
-        } as any;
-        updateComponent(component.id, { props: { ...props, cropOriginalFrame: migrated } }, true);
-      }
-    } catch {}
-  // Deliberately depend on the identifiers to run when original frame is present and missing offsets
-  }, [component.id, !!originalFrame, props.cropResizesCanvas]);
-  
-  // Auto-convert imported cropRect into resized canvas to avoid stretch on load
-  useEffect(() => {
-    try {
-      const hasNumericSize = typeof width === 'number' && typeof height === 'number';
-      const hasCrop = !!(cropRect && ((cropRect.left || 0) + (cropRect.top || 0) + (cropRect.right || 0) + (cropRect.bottom || 0) > 0));
-      const notAlreadyResized = !props.cropResizesCanvas && !props.cropOriginalFrame;
-      const notActivelyCropping = !isCroppingThis;
-      if (hasNumericSize && hasCrop && notAlreadyResized && notActivelyCropping) {
-        const pos = props.position || { x: 0, y: 0 };
-        const startWidth = width as number;
-        const startHeight = height as number;
-        const ratioX = Math.max(0.01, 1 - (cropRect!.left || 0) - (cropRect!.right || 0));
-        const ratioY = Math.max(0.01, 1 - (cropRect!.top || 0) - (cropRect!.bottom || 0));
-        const newWidth = startWidth * ratioX;
-        const newHeight = startHeight * ratioY;
-        const newPosition = {
-          x: pos.x + startWidth * (cropRect!.left || 0),
-          y: pos.y + startHeight * (cropRect!.top || 0)
-        };
-        // Persist the original fit so we can align precisely after resizing
-        const naturalW = (imageRef.current && imageRef.current.naturalWidth) || startWidth;
-        const naturalH = (imageRef.current && imageRef.current.naturalHeight) || startHeight;
-        const computeFit = (
-          cw: number,
-          ch: number,
-          nw: number,
-          nh: number
-        ) => {
-          let drawW = cw;
-          let drawH = ch;
-          let offsetX = 0;
-          let offsetY = 0;
-          if (objectFit === 'contain') {
-            const s = Math.min(cw / nw, ch / nh);
-            drawW = nw * s;
-            drawH = nh * s;
-            offsetX = (cw - drawW) / 2;
-            offsetY = (ch - drawH) / 2;
-          } else if (objectFit === 'cover' || !objectFit) {
-            const s = Math.max(cw / nw, ch / nh);
-            drawW = nw * s;
-            drawH = nh * s;
-            offsetX = (cw - drawW) / 2;
-            offsetY = (ch - drawH) / 2;
-          } else if (objectFit === 'none') {
-            drawW = nw;
-            drawH = nh;
-          } else {
-            // 'fill' and others
-            drawW = cw;
-            drawH = ch;
-          }
-          return { drawW, drawH, offsetX, offsetY };
-        };
-        const originalFrame = { 
-          position: pos, 
-          width: startWidth, 
-          height: startHeight, 
-          fit: computeFit(startWidth, startHeight, naturalW, naturalH),
-          cropOffsetX: startWidth * (cropRect!.left || 0),
-          cropOffsetY: startHeight * (cropRect!.top || 0),
-        } as any;
-        // Commit resized canvas and clear cropRect to prevent transform-based stretching
-        updateComponent(component.id, { props: {
-          position: newPosition,
-          width: newWidth,
-          height: newHeight,
-          cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
-          cropOriginalFrame: originalFrame,
-          cropResizesCanvas: true,
-        } }, false);
-      }
-    } catch {}
-  // Deliberately depend on component.id and these props to run once per imported crop
-  }, [component.id, isCroppingThis, cropRect?.left, cropRect?.top, cropRect?.right, cropRect?.bottom, width, height]);
+  // Check if image has a crop applied
+  const hasCrop = cropRect && (
+    (cropRect.left || 0) > 0 || 
+    (cropRect.top || 0) > 0 || 
+    (cropRect.right || 0) > 0 || 
+    (cropRect.bottom || 0) > 0
+  );
 
 
   
@@ -492,20 +390,6 @@ export const renderImage = (
   
   // Border will be on the inner container, not outer
   // This ensures borders appear around the rounded corners
-  
-  // Handle image cropping if cropRect is defined (disabled while actively cropping to show full image)
-  if (cropRect && !isCroppingThis) {
-    // Use clip-path to crop the image without resizing
-    const clipLeft = cropRect.left * 100;
-    const clipTop = cropRect.top * 100;
-    const clipRight = cropRect.right * 100;
-    const clipBottom = cropRect.bottom * 100;
-    
-    // Create inset clip-path from the crop values
-    imageStyles.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
-  }
-  
-
   
   // Check if the image is generating
   const isGeneratingImage = src === 'generating://ai-image' || props.isGenerating;
@@ -828,18 +712,13 @@ export const renderImage = (
     }
   }
   
-  // --- Cropping presentation & persistence logic ---
-  // If we've resized the canvas to crop (or are actively cropping with an original frame),
-  // render the image at the original frame size, offset so the selected region stays fixed.
-  
-
-  if (shouldUseOriginalLayout && originalFrame) {
-    // Keep the image positioned relative to the original (pre-crop) frame using a persistent offset
-    (imageStyles as any).position = 'absolute';
-    (imageStyles as any).left = `${-effectiveCropOffsetX}px`;
-    (imageStyles as any).top = `${-effectiveCropOffsetY}px`;
-    (imageStyles as any).width = `${originalFrame.width}px`;
-    (imageStyles as any).height = `${originalFrame.height}px`;
+  // Apply crop using inset clip-path when not in crop mode
+  if (hasCrop && !isCroppingThis) {
+    const clipLeft = (cropRect?.left || 0) * 100;
+    const clipTop = (cropRect?.top || 0) * 100;
+    const clipRight = (cropRect?.right || 0) * 100;
+    const clipBottom = (cropRect?.bottom || 0) * 100;
+    imageStyles.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
   }
 
   // Ensure outer container has overflow visible for shadow
@@ -865,60 +744,10 @@ export const renderImage = (
         ref={containerRef} 
         style={containerStyles}
         data-image-type={clipShape || 'default'}
-        data-has-crop={cropRect ? 'true' : 'false'}
+        data-has-crop={hasCrop ? 'true' : 'false'}
         onDoubleClick={() => {
           // Enter crop mode on double-click
           if (!isCroppingThis) {
-            try {
-              // Persist the first full-frame we crop from, so subsequent crops can reveal full bounds
-              const hasFrame = !!props.cropOriginalFrame && typeof props.cropOriginalFrame?.width === 'number' && typeof props.cropOriginalFrame?.height === 'number';
-              const pos = props.position || { x: 0, y: 0 };
-              const startWidth = typeof width === 'number' ? width as number : 0;
-              const startHeight = typeof height === 'number' ? height as number : 0;
-              if (!hasFrame && startWidth > 0 && startHeight > 0) {
-                const naturalW = (imageRef.current && imageRef.current.naturalWidth) || startWidth;
-                const naturalH = (imageRef.current && imageRef.current.naturalHeight) || startHeight;
-                const computeFit = (
-                  cw: number,
-                  ch: number,
-                  nw: number,
-                  nh: number
-                ) => {
-                  let drawW = cw;
-                  let drawH = ch;
-                  let offsetX = 0;
-                  let offsetY = 0;
-                  if (objectFit === 'contain') {
-                    const s = Math.min(cw / nw, ch / nh);
-                    drawW = nw * s;
-                    drawH = nh * s;
-                    offsetX = (cw - drawW) / 2;
-                    offsetY = (ch - drawH) / 2;
-                  } else if (objectFit === 'cover' || !objectFit) {
-                    const s = Math.max(cw / nw, ch / nh);
-                    drawW = nw * s;
-                    drawH = nh * s;
-                    offsetX = (cw - drawW) / 2;
-                    offsetY = (ch - drawH) / 2;
-                  } else if (objectFit === 'none') {
-                    drawW = nw;
-                    drawH = nh;
-                  } else {
-                    // 'fill' and others
-                    drawW = cw;
-                    drawH = ch;
-                  }
-                  return { drawW, drawH, offsetX, offsetY };
-                };
-                const frame = {
-                  position: pos,
-                  width: startWidth,
-                  height: startHeight,
-                  fit: computeFit(startWidth, startHeight, naturalW, naturalH)
-                } as any;
-                updateComponent(component.id, { props: { ...props, cropOriginalFrame: frame } }, true);
-              }
-            } catch {}
             startImageCrop(component.id);
           }
         }}
@@ -1152,110 +981,45 @@ export const renderImage = (
           )}
         </div>
         </div>
-        {/* Small reset button when cropped and selected (not cropping) */}
-        {!isCroppingThis && isSelected && 
-          // Show reset if we have an active cropRect
-          (props.cropRect && (props.cropRect.left || props.cropRect.top || props.cropRect.right || props.cropRect.bottom))
-         ? (
+        
+        {/* Reset crop button when cropped and selected */}
+        {!isCroppingThis && isSelected && hasCrop && (
           <button
             onClick={(e) => {
               e.stopPropagation();
-              try {
-                // Simply reset the cropRect
                 updateComponent(component.id, { 
                   props: { 
                     ...props, 
-                    cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
-                    cropOriginalFrame: undefined,
-                    cropResizesCanvas: undefined
+                  cropRect: { left: 0, top: 0, right: 0, bottom: 0 }
                   } 
                 }, true);
-              } catch {}
             }}
             className="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white hover:bg-black/75"
             style={{ zIndex: 50 }}
             title="Reset crop"
-          >Reset</button>
-        ) : null}
-        {/* Interactive Crop Overlay */}
-        {isCroppingThis && (() => {
-          // Compute overlay frame relative to current container so we can show full original bounds
-          const hasFrame = !!originalFrame;
-          const overlayLeft = hasFrame ? -effectiveCropOffsetX : 0;
-          const overlayTop = hasFrame ? -effectiveCropOffsetY : 0;
-          const overlayWidth = hasFrame ? originalFrame.width : (typeof width === 'number' ? (width as number) : 0);
-          const overlayHeight = hasFrame ? originalFrame.height : (typeof height === 'number' ? (height as number) : 0);
-
-          // Initial crop matches the current component bounds within the original frame
-          const initLeft = hasFrame && overlayWidth > 0 ? effectiveCropOffsetX / overlayWidth : (props.cropRect?.left || 0);
-          const initTop = hasFrame && overlayHeight > 0 ? effectiveCropOffsetY / overlayHeight : (props.cropRect?.top || 0);
-          const initRight = hasFrame && overlayWidth > 0 ? 1 - initLeft - ((typeof width === 'number' ? (width as number) : 0) / overlayWidth) : (props.cropRect?.right || 0);
-          const initBottom = hasFrame && overlayHeight > 0 ? 1 - initTop - ((typeof height === 'number' ? (height as number) : 0) / overlayHeight) : (props.cropRect?.bottom || 0);
-
-          const initialRect = {
-            left: Math.max(0, Math.min(1, initLeft || 0)),
-            top: Math.max(0, Math.min(1, initTop || 0)),
-            right: Math.max(0, Math.min(1, initRight || 0)),
-            bottom: Math.max(0, Math.min(1, initBottom || 0)),
-          };
-
-          return (
+          >
+            Reset
+          </button>
+        )}
+        
+        {/* Crop Overlay */}
+        {isCroppingThis && (
             <CropOverlay
-              component={component}
-              initialCropRect={initialRect}
-              bounds={undefined}
-              containerRef={containerRef}
-              imageRef={imageRef}
-              overlayFrame={{ left: overlayLeft, top: overlayTop, width: overlayWidth, height: overlayHeight }}
-              onConfirm={(next) => {
-                try {
-                  // Determine the frame we are cropping against
-                  const baseFrame = originalFrame || {
-                    position: props.position || { x: 0, y: 0 },
-                    width: typeof width === 'number' ? (width as number) : 0,
-                    height: typeof height === 'number' ? (height as number) : 0,
-                  } as any;
-
-                  const newWidth = Math.max(1, baseFrame.width * (1 - next.left - next.right));
-                  const newHeight = Math.max(1, baseFrame.height * (1 - next.top - next.bottom));
-                  const newPosition = {
-                    x: baseFrame.position.x + baseFrame.width * next.left,
-                    y: baseFrame.position.y + baseFrame.height * next.top,
-                  };
-
-                  // Persist original frame so future crops can reveal full bounds, and store the crop offset
-                  const newCropOffsetX = baseFrame.width * next.left;
-                  const newCropOffsetY = baseFrame.height * next.top;
-                  const persistedOriginal = {
-                    ...(originalFrame ? originalFrame : baseFrame),
-                    cropOffsetX: newCropOffsetX,
-                    cropOffsetY: newCropOffsetY,
-                  } as any;
-
+            initialCropRect={cropRect || { left: 0, top: 0, right: 0, bottom: 0 }}
+            onConfirm={(newCropRect) => {
                   updateComponent(component.id, { 
                     props: { 
                       ...props,
-                      position: newPosition,
-                      width: newWidth,
-                      height: newHeight,
-                      // Clear runtime cropRect and mark that canvas is resized to crop
-                      cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
-                      cropOriginalFrame: persistedOriginal,
-                      cropResizesCanvas: true,
-                    } 
-                  }, false);
-                } catch (err) {
-                  console.error('Error applying crop:', err);
-                }
+                  cropRect: newCropRect
+                } 
+              }, true);
                 stopImageCrop();
               }}
               onCancel={() => {
-                // Don't persist any changes on cancel; just exit crop mode
                 stopImageCrop();
               }}
             />
-          );
-        })()}
+        )}
       </div>
     </>
   );
@@ -1273,220 +1037,183 @@ const ImageRendererWrapper: RendererFunction = (props) => {
 // Register the wrapped renderer
 registerRenderer('Image', ImageRendererWrapper); 
 
-// --- Inline Crop Overlay Component ---
+// --- Crop Overlay Component ---
 type CropRect = { left: number; top: number; right: number; bottom: number };
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 const CropOverlay: React.FC<{
-  component: ComponentInstance;
   initialCropRect: CropRect;
   onConfirm: (rect: CropRect) => void;
-  onCancel: (original: CropRect) => void;
-  bounds?: CropRect; // normalized allowed area inside container
-  containerRef?: React.RefObject<HTMLDivElement>;
-  imageRef?: React.RefObject<HTMLImageElement>;
-  overlayFrame?: { left: number; top: number; width: number; height: number };
-}> = ({ component, initialCropRect, onConfirm, onCancel, bounds, containerRef: extContainerRef, overlayFrame }) => {
-  const containerRef = extContainerRef || useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<CropRect>(initialCropRect);
-  const startRef = useRef<{ type: 'move' | 'handle'; handle?: string; startX: number; startY: number; startDraft: CropRect } | null>(null);
+  onCancel: () => void;
+}> = ({ initialCropRect, onConfirm, onCancel }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [crop, setCrop] = useState<CropRect>(initialCropRect);
+  const dragState = useRef<{
+    type: 'move' | 'resize';
+    handle?: 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+    startX: number;
+    startY: number;
+    startCrop: CropRect;
+  } | null>(null);
 
-  // Clamp a rect to bounds if provided
-  const clampToBounds = (r: CropRect): CropRect => {
-    if (!bounds) return r;
-    const minLeft = bounds.left || 0;
-    const minTop = bounds.top || 0;
-    const minRight = bounds.right || 0;
-    const minBottom = bounds.bottom || 0;
-    const maxWidth = 1 - minLeft - minRight;
-    const maxHeight = 1 - minTop - minBottom;
+  // Clamp value between 0 and 1
+  const clamp = (val: number) => Math.max(0, Math.min(1, val));
 
-    let left = Math.max(minLeft, r.left);
-    let top = Math.max(minTop, r.top);
-    let right = Math.max(minRight, r.right);
-    let bottom = Math.max(minBottom, r.bottom);
-
-    // Ensure size does not exceed bounds
-    const width = 1 - left - right;
-    const height = 1 - top - bottom;
-    if (width > maxWidth) {
-      // shrink symmetrically into bounds
-      const overflow = width - maxWidth;
-      left += overflow / 2;
-      right += overflow / 2;
-    }
-    if (height > maxHeight) {
-      const overflow = height - maxHeight;
-      top += overflow / 2;
-      bottom += overflow / 2;
-    }
-
-    // Ensure we still have a small positive area
-    const minSize = 0.01;
-    if (1 - left - right < minSize) {
-      right = 1 - left - minSize;
-    }
-    if (1 - top - bottom < minSize) {
-      bottom = 1 - top - minSize;
-    }
-
-    return { left: clamp01(left), top: clamp01(top), right: clamp01(right), bottom: clamp01(bottom) };
-  };
-
-  // Key handlers for Enter/Escape and click outside
+  // Handle keyboard shortcuts
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        onConfirm(clampToBounds(draft));
+        onConfirm(crop);
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        onCancel(initialCropRect);
+        onCancel();
       }
     };
-    
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        // Clicked outside the crop area, cancel cropping
-        onCancel(initialCropRect);
-      }
-    };
-    
-    document.addEventListener('keydown', handleKey);
-    // Add slight delay to avoid immediately canceling from the double-click event
-    const clickTimeout = setTimeout(() => {
-      document.addEventListener('click', handleClickOutside);
-    }, 100);
-    
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      document.removeEventListener('click', handleClickOutside);
-      clearTimeout(clickTimeout);
-    };
-  }, [draft, onConfirm, onCancel, initialCropRect]);
 
-  // Mouse interactions
-  const beginDrag = (e: React.MouseEvent, type: 'move' | 'handle', handle?: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    startRef.current = { type, handle, startX: e.clientX, startY: e.clientY, startDraft: { ...draft } };
-    document.addEventListener('mousemove', onDrag);
-    document.addEventListener('mouseup', endDrag);
-  };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [crop, onConfirm, onCancel]);
 
-  const onDrag = (e: MouseEvent) => {
-    const ctx = startRef.current;
-    const el = containerRef.current;
-    if (!ctx || !el) return;
-    const rect = el.getBoundingClientRect();
-    const dx = (e.clientX - ctx.startX) / rect.width;
-    const dy = (e.clientY - ctx.startY) / rect.height;
-    let next = { ...ctx.startDraft };
+  // Handle mouse move
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!dragState.current || !overlayRef.current) return;
 
-    if (ctx.type === 'move') {
-      // Move the crop box by adjusting all edges inversely
-      const width = 1 - next.left - next.right;
-      const height = 1 - next.top - next.bottom;
-      let nx = clamp01(next.left + dx);
-      let ny = clamp01(next.top + dy);
+    const rect = overlayRef.current.getBoundingClientRect();
+    const dx = (e.clientX - dragState.current.startX) / rect.width;
+    const dy = (e.clientY - dragState.current.startY) / rect.height;
+    const startCrop = dragState.current.startCrop;
+
+    let newCrop = { ...startCrop };
+
+    if (dragState.current.type === 'move') {
+      // Move the entire crop region
+      const cropWidth = 1 - startCrop.left - startCrop.right;
+      const cropHeight = 1 - startCrop.top - startCrop.bottom;
+      
+      let newLeft = clamp(startCrop.left + dx);
+      let newTop = clamp(startCrop.top + dy);
+      
       // Keep within bounds
-      nx = Math.min(nx, 1 - width);
-      ny = Math.min(ny, 1 - height);
-      next.left = nx;
-      next.top = ny;
-      next.right = clamp01(1 - next.left - width);
-      next.bottom = clamp01(1 - next.top - height);
-    } else if (ctx.type === 'handle') {
-      switch (ctx.handle) {
-        case 'n':
-          next.top = clamp01(ctx.startDraft.top + dy);
-          next.top = Math.min(next.top, 1 - ctx.startDraft.bottom - 0.02);
-          break;
-        case 's':
-          next.bottom = clamp01(ctx.startDraft.bottom - dy);
-          next.bottom = Math.min(next.bottom, 1 - ctx.startDraft.top - 0.02);
-          break;
-        case 'w':
-          next.left = clamp01(ctx.startDraft.left + dx);
-          next.left = Math.min(next.left, 1 - ctx.startDraft.right - 0.02);
-          break;
-        case 'e':
-          next.right = clamp01(ctx.startDraft.right - dx);
-          next.right = Math.min(next.right, 1 - ctx.startDraft.left - 0.02);
-          break;
-        case 'nw':
-          next.top = clamp01(ctx.startDraft.top + dy);
-          next.left = clamp01(ctx.startDraft.left + dx);
-          next.top = Math.min(next.top, 1 - ctx.startDraft.bottom - 0.02);
-          next.left = Math.min(next.left, 1 - ctx.startDraft.right - 0.02);
-          break;
-        case 'ne':
-          next.top = clamp01(ctx.startDraft.top + dy);
-          next.right = clamp01(ctx.startDraft.right - dx);
-          next.top = Math.min(next.top, 1 - ctx.startDraft.bottom - 0.02);
-          next.right = Math.min(next.right, 1 - ctx.startDraft.left - 0.02);
-          break;
-        case 'se':
-          next.bottom = clamp01(ctx.startDraft.bottom - dy);
-          next.right = clamp01(ctx.startDraft.right - dx);
-          next.bottom = Math.min(next.bottom, 1 - ctx.startDraft.top - 0.02);
-          next.right = Math.min(next.right, 1 - ctx.startDraft.left - 0.02);
-          break;
-        case 'sw':
-          next.bottom = clamp01(ctx.startDraft.bottom - dy);
-          next.left = clamp01(ctx.startDraft.left + dx);
-          next.bottom = Math.min(next.bottom, 1 - ctx.startDraft.top - 0.02);
-          next.left = Math.min(next.left, 1 - ctx.startDraft.right - 0.02);
-          break;
+      if (newLeft + cropWidth > 1) newLeft = 1 - cropWidth;
+      if (newTop + cropHeight > 1) newTop = 1 - cropHeight;
+      
+      newCrop.left = newLeft;
+      newCrop.top = newTop;
+      newCrop.right = 1 - newLeft - cropWidth;
+      newCrop.bottom = 1 - newTop - cropHeight;
+    } else {
+      // Resize from a handle
+      const handle = dragState.current.handle!;
+      const minSize = 0.05; // Minimum 5% size
+
+      if (handle.includes('n')) {
+        newCrop.top = clamp(startCrop.top + dy);
+        // Ensure minimum size
+        if (1 - newCrop.top - startCrop.bottom < minSize) {
+          newCrop.top = 1 - startCrop.bottom - minSize;
+        }
+      }
+      if (handle.includes('s')) {
+        newCrop.bottom = clamp(startCrop.bottom - dy);
+        if (1 - startCrop.top - newCrop.bottom < minSize) {
+          newCrop.bottom = 1 - startCrop.top - minSize;
+        }
+      }
+      if (handle.includes('w')) {
+        newCrop.left = clamp(startCrop.left + dx);
+        if (1 - newCrop.left - startCrop.right < minSize) {
+          newCrop.left = 1 - startCrop.right - minSize;
+        }
+      }
+      if (handle.includes('e')) {
+        newCrop.right = clamp(startCrop.right - dx);
+        if (1 - startCrop.left - newCrop.right < minSize) {
+          newCrop.right = 1 - startCrop.left - minSize;
+        }
       }
     }
-    setDraft(clampToBounds(next));
+
+    setCrop(newCrop);
   };
 
-  const endDrag = () => {
-    document.removeEventListener('mousemove', onDrag);
-    document.removeEventListener('mouseup', endDrag);
-    startRef.current = null;
+  // Handle mouse up
+  const handleMouseUp = () => {
+    dragState.current = null;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
   };
 
-  const x = `${draft.left * 100}%`;
-  const y = `${draft.top * 100}%`;
-  const w = `${(1 - draft.left - draft.right) * 100}%`;
-  const h = `${(1 - draft.top - draft.bottom) * 100}%`;
+  // Start dragging
+  const startDrag = (e: React.MouseEvent, type: 'move' | 'resize', handle?: 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    dragState.current = {
+      type,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startCrop: { ...crop }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Calculate positions
+  const left = crop.left * 100;
+  const top = crop.top * 100;
+  const width = (1 - crop.left - crop.right) * 100;
+  const height = (1 - crop.top - crop.bottom) * 100;
 
   return (
     <div
-      ref={containerRef}
-      className="absolute pointer-events-auto"
-      style={overlayFrame ? { left: overlayFrame.left, top: overlayFrame.top, width: overlayFrame.width, height: overlayFrame.height, zIndex: 100 } : { left: 0, top: 0, right: 0, bottom: 0, zIndex: 100 }}
+      ref={overlayRef}
+      className="absolute inset-0 z-50"
+      style={{ pointerEvents: 'auto' }}
     >
-      {/* Clear crop area using box-shadow to dim outside */}
-      <div 
-        className="absolute bg-transparent"
-        style={{ left: x, top: y, width: w, height: h, boxShadow: '0 0 0 9999px rgba(0,0,0,0.45), 0 0 0 1px #fff', cursor: 'move' }}
-        onMouseDown={(e) => beginDrag(e, 'move')}
+      {/* Dark overlay with hole for crop area */}
+      <div
+        className="absolute"
+        style={{
+          left: `${left}%`,
+          top: `${top}%`,
+          width: `${width}%`,
+          height: `${height}%`,
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+          border: '2px solid white',
+          cursor: 'move'
+        }}
+        onMouseDown={(e) => startDrag(e, 'move')}
       />
-      {/* Handles */}
+
+      {/* Corner and edge handles */}
       {[
-        { k: 'nw', cx: draft.left, cy: draft.top, cursor: 'nwse-resize' },
-        { k: 'n',  cx: draft.left + (1 - draft.left - draft.right)/2, cy: draft.top, cursor: 'ns-resize' },
-        { k: 'ne', cx: 1 - draft.right, cy: draft.top, cursor: 'nesw-resize' },
-        { k: 'e',  cx: 1 - draft.right, cy: draft.top + (1 - draft.top - draft.bottom)/2, cursor: 'ew-resize' },
-        { k: 'se', cx: 1 - draft.right, cy: 1 - draft.bottom, cursor: 'nwse-resize' },
-        { k: 's',  cx: draft.left + (1 - draft.left - draft.right)/2, cy: 1 - draft.bottom, cursor: 'ns-resize' },
-        { k: 'sw', cx: draft.left, cy: 1 - draft.bottom, cursor: 'nesw-resize' },
-        { k: 'w',  cx: draft.left, cy: draft.top + (1 - draft.top - draft.bottom)/2, cursor: 'ew-resize' },
-      ].map(({ k, cx, cy, cursor }) => (
+        { pos: 'nw', cursor: 'nwse-resize', left: crop.left, top: crop.top },
+        { pos: 'n', cursor: 'ns-resize', left: crop.left + (1 - crop.left - crop.right) / 2, top: crop.top },
+        { pos: 'ne', cursor: 'nesw-resize', left: 1 - crop.right, top: crop.top },
+        { pos: 'e', cursor: 'ew-resize', left: 1 - crop.right, top: crop.top + (1 - crop.top - crop.bottom) / 2 },
+        { pos: 'se', cursor: 'nwse-resize', left: 1 - crop.right, top: 1 - crop.bottom },
+        { pos: 's', cursor: 'ns-resize', left: crop.left + (1 - crop.left - crop.right) / 2, top: 1 - crop.bottom },
+        { pos: 'sw', cursor: 'nesw-resize', left: crop.left, top: 1 - crop.bottom },
+        { pos: 'w', cursor: 'ew-resize', left: crop.left, top: crop.top + (1 - crop.top - crop.bottom) / 2 },
+      ].map(({ pos, cursor, left, top }) => (
         <div
-          key={k}
-          className="absolute w-3 h-3 bg-white border border-black/70"
-          style={{ left: `${cx * 100}%`, top: `${cy * 100}%`, transform: 'translate(-50%, -50%)', cursor }}
-          onMouseDown={(e) => beginDrag(e, 'handle', k)}
+          key={pos}
+          className="absolute w-3 h-3 bg-white border-2 border-black rounded-sm"
+          style={{
+            left: `${left * 100}%`,
+            top: `${top * 100}%`,
+            transform: 'translate(-50%, -50%)',
+            cursor
+          }}
+          onMouseDown={(e) => startDrag(e, 'resize', pos as any)}
         />
       ))}
-      {/* Controls hint */}
-      <div className="absolute bottom-2 right-2 text-[11px] text-white/90 bg-black/50 px-2 py-1 rounded">
-        Enter to apply • Esc to cancel
+
+      {/* Instructions */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/75 text-white text-xs px-3 py-2 rounded">
+        Press <kbd className="px-1.5 py-0.5 bg-white/20 rounded">Enter</kbd> to apply or <kbd className="px-1.5 py-0.5 bg-white/20 rounded">Esc</kbd> to cancel
       </div>
     </div>
   );

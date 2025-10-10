@@ -434,41 +434,48 @@ class AISlideGenerator:
             self._sanitize_custom_component(component)
 
     def _sanitize_custom_component(self, component: Dict[str, Any]) -> None:
+        """Sanitize CustomComponent - DISABLED per user request to allow AI-generated code through."""
         props = component.setdefault("props", {})
         render = props.get("render")
         if not isinstance(render, str) or not render.strip():
             return
 
-        violations: List[str] = []
-        if "React.useState" in render or "useState(" in render:
-            violations.append("hooks")
-        if re.search(r"<\s*[A-Za-z]", render):
-            violations.append("jsx")
-        if "function render" not in render:
-            violations.append("signature")
-
-        quiz_data = self._extract_quiz_data(render)
-        if quiz_data:
-            inner_props = props.setdefault("props", {})
-            if quiz_data.get("questions"):
-                inner_props.setdefault("questions", quiz_data["questions"])
-            if quiz_data.get("title"):
-                inner_props.setdefault("title", quiz_data["title"])
-            if quiz_data.get("scoreLabel"):
-                inner_props.setdefault("scoreLabel", quiz_data["scoreLabel"])
-            for color_key, color_value in quiz_data.get("colors", {}).items():
-                inner_props.setdefault(color_key, color_value)
-            violations.append("quiz")
-
-        if not violations:
-            props["render"] = self._force_double_quotes(render)
-            return
-
-        if quiz_data:
-            props["render"] = self._build_static_quiz_render()
-            return
-
-        props["render"] = self._build_safe_placeholder_render()
+        # SANITIZATION DISABLED - Just normalize quotes and pass through
+        # The AI should be generating correct React.createElement code
+        props["render"] = self._force_double_quotes(render)
+        return
+        
+        # OLD SANITIZATION CODE (DISABLED):
+        # violations: List[str] = []
+        # if "React.useState" in render or "useState(" in render:
+        #     violations.append("hooks")
+        # if re.search(r"<\s*[A-Za-z]", render):
+        #     violations.append("jsx")
+        # if "function render" not in render:
+        #     violations.append("signature")
+        #
+        # quiz_data = self._extract_quiz_data(render)
+        # if quiz_data:
+        #     inner_props = props.setdefault("props", {})
+        #     if quiz_data.get("questions"):
+        #         inner_props.setdefault("questions", quiz_data["questions"])
+        #     if quiz_data.get("title"):
+        #         inner_props.setdefault("title", quiz_data["title"])
+        #     if quiz_data.get("scoreLabel"):
+        #         inner_props.setdefault("scoreLabel", quiz_data["scoreLabel"])
+        #     for color_key, color_value in quiz_data.get("colors", {}).items():
+        #         inner_props.setdefault(color_key, color_value)
+        #     violations.append("quiz")
+        #
+        # if not violations:
+        #     props["render"] = self._force_double_quotes(render)
+        #     return
+        #
+        # if quiz_data:
+        #     props["render"] = self._build_static_quiz_render()
+        #     return
+        #
+        # props["render"] = self._build_safe_placeholder_render()
 
     def _force_double_quotes(self, render: str) -> str:
         def _replace(match: re.Match) -> str:

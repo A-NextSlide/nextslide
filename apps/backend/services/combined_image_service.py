@@ -186,7 +186,7 @@ class CombinedImageService:
             deck_id: Optional deck ID for tracking used images
             
         Returns:
-            Selected diverse images
+            Selected diverse images (NEVER reuses images)
         """
         if not images:
             return []
@@ -194,62 +194,64 @@ class CombinedImageService:
         # Get set of already used images for this deck
         used_urls = self._used_images_per_deck.get(deck_id, set()) if deck_id else set()
         
-        # Filter out already used images
+        # Filter out already used images - STRICT MODE: never reuse
         available_images = []
         for img in images:
             img_url = img.get('url', img.get('original', ''))
             if img_url and img_url not in used_urls:
                 available_images.append(img)
         
-        # If we filtered out too many, include some used ones but at the end
-        if len(available_images) < num_images and len(images) > len(available_images):
-            # Add back some used images as last resort
-            for img in images:
-                if img not in available_images:
-                    available_images.append(img)
-                if len(available_images) >= num_images * 2:  # Get extra for selection variety
-                    break
+        # Log if we're running low on unique images
+        if len(available_images) < num_images:
+            logger.warning(
+                f"Only {len(available_images)} unique images available (requested {num_images}). "
+                f"Better to have fewer unique images than reusing the same ones."
+            )
         
+        # Select from available images only (no reuse fallback)
         if len(available_images) <= num_images:
             selected = available_images
         else:
-            # Strategy: Mix top results with some from middle and end
+            # Strategy: Mix top results with some variety from the rest
             selected = []
             total = len(available_images)
             
-            # Always include some top results (they're most relevant)
+            # Include top results (most relevant) - but not too many
             top_count = min(num_images // 2, 3)
             selected.extend(available_images[:top_count])
             
-            # Add some from the middle
-            if total > 10:
+            # Add variety from middle section
+            if total > 10 and len(selected) < num_images:
                 middle_start = total // 3
                 middle_end = 2 * total // 3
                 middle_images = available_images[middle_start:middle_end]
                 if middle_images:
-                    # Randomly select from middle section
                     middle_count = min(len(middle_images), (num_images - len(selected)) // 2)
                     selected.extend(random.sample(middle_images, middle_count))
             
-            # Fill remaining slots with random selections from the rest
+            # Fill remaining slots with random selections
             remaining_needed = num_images - len(selected)
             if remaining_needed > 0:
-                # Exclude already selected images
                 unused_images = [img for img in available_images if img not in selected]
                 if unused_images:
                     additional = min(len(unused_images), remaining_needed)
                     selected.extend(random.sample(unused_images, additional))
             
-            # Shuffle the selected images to mix relevance levels
+            # Shuffle to mix relevance levels
             random.shuffle(selected)
             selected = selected[:num_images]
         
-        # Track used images
+        # Track used images for this deck
         if deck_id:
             for img in selected:
                 img_url = img.get('url', img.get('original', ''))
                 if img_url:
                     self._used_images_per_deck.setdefault(deck_id, set()).add(img_url)
+            
+            logger.info(
+                f"Selected {len(selected)} diverse images. "
+                f"Total unique images used in deck: {len(self._used_images_per_deck.get(deck_id, set()))}"
+            )
         
         return selected
     

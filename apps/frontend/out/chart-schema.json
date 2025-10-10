@@ -1,0 +1,1032 @@
+{
+  "_ui_type": "UIObject",
+  "title": "Chart",
+  "metadata": {
+    "control": "none",
+    "controlProps": {}
+  },
+  "type": "object",
+  "properties": {
+    "position": {
+      "_ui_type": "UIObject",
+      "title": "Position",
+      "description": "Position on the slide (x, y coordinates)",
+      "metadata": {
+        "control": "none",
+        "controlProps": {}
+      },
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "X",
+          "description": "X position on the slide",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        },
+        "y": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "Y",
+          "description": "Y position on the slide",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ]
+    },
+    "width": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1920,
+      "_ui_type": "UIProperty",
+      "title": "Width",
+      "description": "Width in pixels",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 1,
+          "max": 1920,
+          "step": 1
+        }
+      }
+    },
+    "height": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1080,
+      "_ui_type": "UIProperty",
+      "title": "Height",
+      "description": "Height in pixels",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 1,
+          "max": 1080,
+          "step": 1
+        }
+      }
+    },
+    "opacity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "_ui_type": "UIProperty",
+      "title": "Opacity",
+      "description": "Transparency level (0-1)",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 1,
+          "step": 0.01
+        }
+      }
+    },
+    "rotation": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 360,
+      "_ui_type": "UIProperty",
+      "title": "Rotation",
+      "description": "Rotation angle in degrees",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 360,
+          "step": 1
+        }
+      }
+    },
+    "zIndex": {
+      "type": "number",
+      "_ui_type": "UIProperty",
+      "title": "Z-Index",
+      "description": "Stacking order (higher appears in front)",
+      "metadata": {
+        "control": "input",
+        "controlProps": {}
+      }
+    },
+    "textColor": {
+      "description": "Color of the text with alpha channel support",
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Text Color",
+      "metadata": {
+        "control": "colorpicker",
+        "controlProps": {
+          "defaultValue": "#000000ff"
+        }
+      }
+    },
+    "chartType": {
+      "anyOf": [
+        {
+          "const": "bar",
+          "type": "string"
+        },
+        {
+          "const": "column",
+          "type": "string"
+        },
+        {
+          "const": "pie",
+          "type": "string"
+        },
+        {
+          "const": "line",
+          "type": "string"
+        },
+        {
+          "const": "area",
+          "type": "string"
+        },
+        {
+          "const": "spline",
+          "type": "string"
+        },
+        {
+          "const": "areaspline",
+          "type": "string"
+        },
+        {
+          "const": "scatter",
+          "type": "string"
+        },
+        {
+          "const": "bubble",
+          "type": "string"
+        },
+        {
+          "const": "radar",
+          "type": "string"
+        },
+        {
+          "const": "waterfall",
+          "type": "string"
+        },
+        {
+          "const": "gauge",
+          "type": "string"
+        },
+        {
+          "const": "boxplot",
+          "type": "string"
+        },
+        {
+          "const": "errorbar",
+          "type": "string"
+        },
+        {
+          "const": "funnel",
+          "type": "string"
+        },
+        {
+          "const": "pyramid",
+          "type": "string"
+        },
+        {
+          "const": "treemap",
+          "type": "string"
+        },
+        {
+          "const": "sunburst",
+          "type": "string"
+        },
+        {
+          "const": "heatmap",
+          "type": "string"
+        },
+        {
+          "const": "sankey",
+          "type": "string"
+        },
+        {
+          "const": "dependencywheel",
+          "type": "string"
+        },
+        {
+          "const": "networkgraph",
+          "type": "string"
+        },
+        {
+          "const": "packedbubble",
+          "type": "string"
+        },
+        {
+          "const": "streamgraph",
+          "type": "string"
+        },
+        {
+          "const": "wordcloud",
+          "type": "string"
+        }
+      ],
+      "_ui_type": "UIEnum",
+      "title": "Chart Type",
+      "description": "Type of chart to display",
+      "metadata": {
+        "control": "dropdown",
+        "controlProps": {
+          "enumValues": [
+            "bar",
+            "column",
+            "pie",
+            "line",
+            "area",
+            "spline",
+            "areaspline",
+            "scatter",
+            "bubble",
+            "radar",
+            "waterfall",
+            "gauge",
+            "boxplot",
+            "errorbar",
+            "funnel",
+            "pyramid",
+            "treemap",
+            "sunburst",
+            "heatmap",
+            "sankey",
+            "dependencywheel",
+            "networkgraph",
+            "packedbubble",
+            "streamgraph",
+            "wordcloud"
+          ]
+        }
+      }
+    },
+    "data": {
+      "_ui_type": "UIArray",
+      "title": "Chart Data",
+      "description": "Data points for the chart",
+      "metadata": {
+        "control": "custom",
+        "controlProps": {}
+      },
+      "type": "array",
+      "items": {
+        "_ui_type": "UIObject",
+        "title": "ChartDataPoint",
+        "metadata": {
+          "control": "none",
+          "controlProps": {}
+        },
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "_ui_type": "UIProperty",
+            "title": "Label",
+            "description": "Data point label",
+            "metadata": {
+              "control": "input",
+              "controlProps": {}
+            }
+          },
+          "value": {
+            "type": "number",
+            "_ui_type": "UIProperty",
+            "title": "Value",
+            "description": "Numeric value for this data point",
+            "metadata": {
+              "control": "input",
+              "controlProps": {}
+            }
+          },
+          "color": {
+            "description": "Color for this data point",
+            "type": "string",
+            "_ui_type": "UIProperty",
+            "title": "Color",
+            "metadata": {
+              "control": "colorpicker",
+              "controlProps": {
+                "defaultValue": "#000000ff"
+              }
+            }
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "color"
+        ]
+      }
+    },
+    "colors": {
+      "_ui_type": "UIArray",
+      "title": "Color Palette",
+      "description": "Colors to use for the chart elements",
+      "metadata": {
+        "control": "custom",
+        "controlProps": {}
+      },
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "backgroundColor": {
+      "description": "Background color with alpha channel support",
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Background Color",
+      "metadata": {
+        "control": "colorpicker",
+        "controlProps": {
+          "defaultValue": "#00000000"
+        }
+      }
+    },
+    "animate": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Enable Animation",
+      "description": "Enable or disable animations",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {}
+      }
+    },
+    "motionConfig": {
+      "anyOf": [
+        {
+          "const": "default",
+          "type": "string"
+        },
+        {
+          "const": "gentle",
+          "type": "string"
+        },
+        {
+          "const": "wobbly",
+          "type": "string"
+        },
+        {
+          "const": "stiff",
+          "type": "string"
+        },
+        {
+          "const": "slow",
+          "type": "string"
+        },
+        {
+          "const": "responsive",
+          "type": "string"
+        }
+      ],
+      "_ui_type": "UIEnum",
+      "title": "Animation Style",
+      "description": "Animation style preset for the chart",
+      "metadata": {
+        "control": "dropdown",
+        "controlProps": {
+          "showWhen": {
+            "chartType": [
+              "bar"
+            ]
+          },
+          "enumValues": [
+            "default",
+            "gentle",
+            "wobbly",
+            "stiff",
+            "slow",
+            "responsive"
+          ]
+        }
+      }
+    },
+    "theme": {
+      "anyOf": [
+        {
+          "const": "light",
+          "type": "string"
+        },
+        {
+          "const": "dark",
+          "type": "string"
+        }
+      ],
+      "_ui_type": "UIEnum",
+      "title": "Chart Theme",
+      "description": "Color theme for the chart",
+      "metadata": {
+        "control": "dropdown",
+        "controlProps": {
+          "enumValues": [
+            "light",
+            "dark"
+          ]
+        }
+      }
+    },
+    "showLegend": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Legend",
+      "description": "Display a legend for the chart data",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {}
+      }
+    },
+    "enableAxisTicks": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Axis",
+      "description": "Display ticks on the axes",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": [
+              "bar",
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "enableGrid": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Grid",
+      "description": "Show grid lines on the chart",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": [
+              "bar",
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "showAxisLegends": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Axis Titles",
+      "description": "Display titles for the axes",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": [
+              "bar",
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "verticalAnimation": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Switch to vertical",
+      "description": "Animate bars vertically instead of horizontally",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": "bar"
+          }
+        }
+      }
+    },
+    "borderRadius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "_ui_type": "UIProperty",
+      "title": "Border Radius (Bar)",
+      "description": "Radius of the bar corners",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 20,
+          "showWhen": {
+            "chartType": "bar"
+          }
+        }
+      }
+    },
+    "innerRadius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.9,
+      "_ui_type": "UIProperty",
+      "title": "Inner Radius (Pie)",
+      "description": "Inner radius for donut charts",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 0.9,
+          "step": 0.05,
+          "showWhen": {
+            "chartType": "pie"
+          }
+        }
+      }
+    },
+    "padAngle": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3,
+      "_ui_type": "UIProperty",
+      "title": "Pad Angle (Pie)",
+      "description": "Padding between pie slices",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 3,
+          "step": 0.1,
+          "showWhen": {
+            "chartType": "pie"
+          }
+        }
+      }
+    },
+    "cornerRadius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "_ui_type": "UIProperty",
+      "title": "Corner Radius",
+      "description": "Radius of slice corners",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 20,
+          "showWhen": {
+            "chartType": "pie"
+          }
+        }
+      }
+    },
+    "enableArcLinkLabels": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Labels",
+      "description": "Display outer labels with connecting lines",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": "pie"
+          }
+        }
+      }
+    },
+    "enableLabel": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Labels",
+      "description": "Display value labels",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {}
+      }
+    },
+    "borderWidth": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "_ui_type": "UIProperty",
+      "title": "Border Width",
+      "description": "Border thickness in pixels",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 20,
+          "step": 1
+        }
+      }
+    },
+    "borderColor": {
+      "description": "Border color with alpha channel support",
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Stroke Color",
+      "metadata": {
+        "control": "colorpicker",
+        "controlProps": {
+          "defaultValue": "#000000ff"
+        }
+      }
+    },
+    "startYAtZero": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Start Y at Zero",
+      "description": "Force Y axis to start at zero",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": "line"
+          }
+        }
+      }
+    },
+    "smoothCurve": {
+      "type": "boolean",
+      "_ui_type": "UIProperty",
+      "title": "Smooth Lines",
+      "description": "Use curved lines instead of straight lines",
+      "metadata": {
+        "control": "checkbox",
+        "controlProps": {
+          "showWhen": {
+            "chartType": "line"
+          }
+        }
+      }
+    },
+    "pointSize": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 20,
+      "_ui_type": "UIProperty",
+      "title": "Point Size",
+      "description": "Size of data points",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "showWhen": {
+            "chartType": [
+              "line",
+              "scatter"
+            ]
+          }
+        }
+      }
+    },
+    "pointBorderWidth": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "_ui_type": "UIProperty",
+      "title": "Point Border Width",
+      "description": "Width of point borders",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 0,
+          "max": 10,
+          "step": 1,
+          "showWhen": {
+            "chartType": [
+              "line",
+              "scatter"
+            ]
+          }
+        }
+      }
+    },
+    "lineWidth": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10,
+      "_ui_type": "UIProperty",
+      "title": "Line Width",
+      "description": "Width of lines connecting points",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "showWhen": {
+            "chartType": "line"
+          }
+        }
+      }
+    },
+    "margin": {
+      "_ui_type": "UIObject",
+      "title": "ChartMargin",
+      "description": "Space around the chart",
+      "metadata": {
+        "control": "none",
+        "controlProps": {}
+      },
+      "type": "object",
+      "properties": {
+        "top": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "Top",
+          "description": "Top margin",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        },
+        "right": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "Right",
+          "description": "Right margin",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        },
+        "bottom": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "Bottom",
+          "description": "Bottom margin",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        },
+        "left": {
+          "type": "number",
+          "_ui_type": "UIProperty",
+          "title": "Left",
+          "description": "Left margin",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {}
+          }
+        }
+      },
+      "required": [
+        "top",
+        "right",
+        "bottom",
+        "left"
+      ]
+    },
+    "axisBottom": {
+      "_ui_type": "UIObject",
+      "title": "AxisConfig",
+      "metadata": {
+        "control": "none",
+        "controlProps": {}
+      },
+      "type": "object",
+      "properties": {
+        "legend": {
+          "type": "string",
+          "_ui_type": "UIProperty",
+          "title": "Title",
+          "description": "Axis title text",
+          "metadata": {
+            "control": "input",
+            "controlProps": {}
+          }
+        },
+        "legendOffset": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "_ui_type": "UIProperty",
+          "title": "Title Offset",
+          "description": "Distance of the title from the axis",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {
+              "min": -100,
+              "max": 100
+            }
+          }
+        },
+        "tickRotation": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "_ui_type": "UIProperty",
+          "title": "Tick Label Rotation",
+          "description": "Rotation angle for axis tick labels (in degrees)",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {
+              "min": -90,
+              "max": 90,
+              "step": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "legend",
+        "legendOffset",
+        "tickRotation"
+      ]
+    },
+    "axisLeft": {
+      "_ui_type": "UIObject",
+      "title": "AxisConfig",
+      "metadata": {
+        "control": "none",
+        "controlProps": {}
+      },
+      "type": "object",
+      "properties": {
+        "legend": {
+          "type": "string",
+          "_ui_type": "UIProperty",
+          "title": "Title",
+          "description": "Axis title text",
+          "metadata": {
+            "control": "input",
+            "controlProps": {}
+          }
+        },
+        "legendOffset": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "_ui_type": "UIProperty",
+          "title": "Title Offset",
+          "description": "Distance of the title from the axis",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {
+              "min": -100,
+              "max": 100
+            }
+          }
+        },
+        "tickRotation": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "_ui_type": "UIProperty",
+          "title": "Tick Label Rotation",
+          "description": "Rotation angle for axis tick labels (in degrees)",
+          "metadata": {
+            "control": "slider",
+            "controlProps": {
+              "min": -90,
+              "max": 90,
+              "step": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "legend",
+        "legendOffset",
+        "tickRotation"
+      ]
+    },
+    "tickSpacing": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10,
+      "_ui_type": "UIProperty",
+      "title": "Tick Spacing",
+      "description": "Control spacing between axis ticks",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "showWhen": {
+            "chartType": [
+              "bar",
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "tickSpacingY": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10,
+      "_ui_type": "UIProperty",
+      "title": "Y Tick Spacing",
+      "description": "Control spacing between Y-axis ticks",
+      "metadata": {
+        "control": "slider",
+        "controlProps": {
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "showWhen": {
+            "chartType": [
+              "bar",
+              "line",
+              "scatter",
+              "bump",
+              "heatmap"
+            ]
+          }
+        }
+      }
+    },
+    "mediaSourceId": {
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Media Source ID",
+      "description": "ID of the original tagged media",
+      "metadata": {
+        "control": "input",
+        "controlProps": {}
+      }
+    },
+    "originalFilename": {
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Original Filename",
+      "description": "Original filename of the uploaded media",
+      "metadata": {
+        "control": "input",
+        "controlProps": {}
+      }
+    },
+    "aiInterpretation": {
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "AI Interpretation",
+      "description": "AI-generated description or analysis of the image content",
+      "metadata": {
+        "control": "textarea",
+        "controlProps": {}
+      }
+    },
+    "mediaSlideId": {
+      "type": "string",
+      "_ui_type": "UIProperty",
+      "title": "Associated Slide",
+      "description": "ID of the slide this media is associated with",
+      "metadata": {
+        "control": "input",
+        "controlProps": {}
+      }
+    }
+  },
+  "required": [
+    "position",
+    "width",
+    "height",
+    "opacity",
+    "rotation",
+    "zIndex",
+    "textColor",
+    "chartType",
+    "data",
+    "colors",
+    "backgroundColor",
+    "animate",
+    "motionConfig",
+    "theme",
+    "showLegend",
+    "enableAxisTicks",
+    "enableGrid",
+    "showAxisLegends",
+    "verticalAnimation",
+    "borderRadius",
+    "innerRadius",
+    "padAngle",
+    "cornerRadius",
+    "enableArcLinkLabels",
+    "enableLabel",
+    "borderWidth",
+    "borderColor",
+    "startYAtZero",
+    "smoothCurve",
+    "pointSize",
+    "pointBorderWidth",
+    "lineWidth",
+    "margin",
+    "axisBottom",
+    "axisLeft",
+    "tickSpacing",
+    "tickSpacingY",
+    "mediaSourceId",
+    "originalFilename",
+    "aiInterpretation",
+    "mediaSlideId"
+  ]
+}

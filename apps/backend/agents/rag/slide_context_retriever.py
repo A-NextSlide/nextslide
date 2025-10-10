@@ -247,16 +247,12 @@ class SlideContextRetriever:
         # Always need text
         components.append("TiptapTextBlock")
         
-        # Include Image when content or layout calls for it (not mandatory on every slide)
-        try:
-            layout = getattr(deck_outline, 'layout', '') or getattr(slide_outline, 'layout', '') or ''
-            content_lower = (slide_outline.content or '').lower()
-            title_lower = (slide_outline.title or '').lower()
-            if 'image' in layout.lower() or any(k in content_lower for k in ['image', 'photo', 'diagram', 'illustration']) or any(k in title_lower for k in ['image', 'photo', 'diagram', 'illustration']):
-                components.append("Image")
-                logger.info("  🖼️ Image component added based on layout/content cues")
-        except Exception:
-            pass
+        # ALWAYS include Image component (use on most slides for visual impact!)
+        # Skip only for very text-heavy slides or title slides
+        slide_type = getattr(slide_outline, 'slide_type', 'content').lower()
+        if slide_type not in ['title', 'cover', 'table_of_contents', 'thank_you']:
+            components.append("Image")
+            logger.info("  🖼️ Image component added (use images for beautiful slides!)")
         
         # 🚨 CRITICAL: Analyze content for CustomComponent triggers
         content_lower = slide_outline.content.lower()
@@ -318,17 +314,26 @@ class SlideContextRetriever:
             components.append("CustomComponent")
             logger.info(f"  🎨 CustomComponent included for: {', '.join(custom_component_reasons) if custom_component_reasons else 'statistics emphasis'}")
         
-        # Remove free-floating decorative shapes; only add Shape when acting as container/divider
+        # Remove free-floating decorative shapes; only add Shape when acting as container
         if characteristics["has_list"] or characteristics["has_comparison"]:
             components.append("Shape")
-            # Prefer modern Lines component for connectors/dividers
+            # ALWAYS include Line for dividers/separators - don't use thin Shape rectangles
+            components.append("Line")
+            # Include Lines for diagrams and connections
             components.append("Lines")
-            logger.info("  🔷 Shape added; Lines suggested for functional connectors/dividers")
+            logger.info("  🔷 Shape added for containers; Line+Lines added for dividers/connectors (DON'T use thin rectangles!)")
         
         # Icons only when paired with text (bullets/headers/process labels)
         if characteristics["has_list"] or "header" in slide_outline.title.lower():
             components.append("Icon")
             logger.info("  🎯 Icon component added for bullets/headers only (no decorative usage)")
+        
+        # ReactBits for interactive/animated pre-built components
+        # Add when content suggests animation/interaction
+        txt_lower = (slide_outline.content or "").lower() + " " + (slide_outline.title or "").lower()
+        if any(keyword in txt_lower for keyword in ["interactive", "animated", "engage", "explore", "click", "hover"]):
+            components.append("ReactBits")
+            logger.info("  ✨ ReactBits component added for interactive/animated elements")
         
         # 🚨 CRITICAL: Chart if has data - MUST BE INCLUDED
         if characteristics["has_chart"]:

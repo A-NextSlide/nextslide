@@ -205,24 +205,24 @@ export const ShapeDefinition: ComponentDefinition<typeof ShapeSchema> = {
     borderRadius: 0,
     // Shadow defaults
     shadow: false,
-    shadowBlur: 10,
+    shadowBlur: 6,  // Reduced from 10 to 6 for subtler shadows
     shadowColor: '#0000004D',
     shadowOffsetX: 0,
-    shadowOffsetY: 4,
+    shadowOffsetY: 3,  // Reduced from 4 to 3
     shadowSpread: 0,
     // Text defaults
     hasText: false,
     texts: null,
     fontFamily: 'Poppins',
-    fontSize: 36,
+    fontSize: 24,  // Reduced from 36 to 24 for better fit
     fontWeight: 'normal',
     fontStyle: 'normal',
     textColor: '#000000ff',
     letterSpacing: 0,
-    lineHeight: 1.5,
+    lineHeight: 1.4,  // Reduced from 1.5 for tighter spacing
     alignment: 'center',
     verticalAlignment: 'middle',
-    textPadding: 10,
+    textPadding: 16,  // Balanced padding for text inside shapes
     fontOptimized: false
   },
   category: 'basic'

@@ -1087,7 +1087,8 @@ export const useOutlineChat = ({
       const result = await outlineApi.createDeckFromOutline(
         outline,
         stylePreferences,
-        handleProgressUpdate
+        handleProgressUpdate,
+        autoSelectImages  // Pass through the auto-apply images flag
       );
       
 // console.log('[useOutlineChat] Deck created successfully:', result);

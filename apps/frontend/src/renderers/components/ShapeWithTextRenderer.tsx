@@ -32,6 +32,7 @@ import { ShapeProps } from '@/registry/components/shape';
 import { FontSize } from '@/extensions/FontSize';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
+import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 
 interface ShapeWithTextRendererProps extends RendererProps {
   component: ComponentInstance;
@@ -75,7 +76,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     textColor = '#000000ff',
     alignment = 'center',
     verticalAlignment = 'middle',
-    textPadding = 10
+    textPadding = 0
   } = props;
 
   // Use fontSize from props
@@ -161,154 +162,130 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   const actualWidth = props.width || 100;
   const actualHeight = props.height || 100;
   
-  // Calculate padding needed for shadows and strokes
-  let shadowPadding = 0;
-  if (shadow) {
-    // Account for blur, offset, and spread
-    const shadowLeft = Math.max(0, shadowBlur + shadowSpread - shadowOffsetX);
-    const shadowRight = Math.max(0, shadowBlur + shadowSpread + shadowOffsetX);
-    const shadowTop = Math.max(0, shadowBlur + shadowSpread - shadowOffsetY);
-    const shadowBottom = Math.max(0, shadowBlur + shadowSpread + shadowOffsetY);
-    
-    shadowPadding = Math.max(shadowLeft, shadowRight, shadowTop, shadowBottom);
-  }
+  // CRITICAL FIX: Do NOT expand viewBox for shadows!
+  // Shadows should extend beyond bounds using overflow: visible
+  // Expanding viewBox makes the shape appear smaller/cropped
   
-  // Do not add padding so shape bounds match wrapper exactly; rely on overflow: visible and enlarged filter region
-  const strokePadding = 0;
-  const padding = Math.max(strokePadding, shadowPadding);
-  const halfStroke = strokeWidth / 2;
-  
-  // Expand viewBox to accommodate stroke, shadow, and padding
-  const viewBoxWidth = actualWidth + (padding * 2);
-  const viewBoxHeight = actualHeight + (padding * 2);
+  // ViewBox matches actual dimensions exactly - NO padding
+  const viewBoxWidth = actualWidth;
+  const viewBoxHeight = actualHeight;
   const viewBox = `0 0 ${viewBoxWidth} ${viewBoxHeight}`;
   
-  // Shape dimensions account for padding but maintain requested size
+  // Shape fills the entire viewBox - NO offset needed
   const shapeWidth = actualWidth;
   const shapeHeight = actualHeight;
-  // Position shape with padding offset
-  const shapeX = padding;
-  const shapeY = padding;
+  const shapeX = 0;
+  const shapeY = 0;
 
-  // Define constants
-  const NATIVE_WIDTH = 1920;
-
-  // Get initial slide width from DOM to prevent flash
-  const getInitialSlideWidth = () => {
-    if (isThumbnail) return NATIVE_WIDTH;
-    const slideContainer = document.getElementById('slide-display-container');
-    if (slideContainer) {
-      const rect = slideContainer.getBoundingClientRect();
-      return rect.width || NATIVE_WIDTH;
-    }
-    return NATIVE_WIDTH;
-  };
-
-  // Track container dimensions for proper scaling
-  const [currentSlideWidth, setCurrentSlideWidth] = useState(() => getInitialSlideWidth());
-  const [containerScale, setContainerScale] = useState(() => getInitialSlideWidth() / NATIVE_WIDTH);
-  
-  // Refs to track previous values
-  const prevSlideWidthRef = useRef(currentSlideWidth);
-  const updateScaleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   // Check if we're in presentation mode
   const isPresenting = usePresentationStore(state => state.isPresenting);
 
-  // Scale calculation effect
-  useEffect(() => {
-    // Skip update logic for thumbnails
-    if (isThumbnail) return;
-    
-    const updateScale = () => {
-      // Clear any pending timeout
-      if (updateScaleTimeoutRef.current) {
-        clearTimeout(updateScaleTimeoutRef.current);
+  // Track the component's actual rendered width for accurate font scaling
+  // CRITICAL: Initialize with a calculated value based on slide dimensions to prevent initial flash
+  const getInitialRenderedWidth = () => {
+    if (!containerRef.current) {
+      // Calculate expected rendered width based on slide container
+      const slideContainer = document.querySelector('#slide-display-container') || document.querySelector('.slide-container');
+      if (slideContainer) {
+        const slideRect = slideContainer.getBoundingClientRect();
+        const slideWidth = slideRect.width || DEFAULT_SLIDE_WIDTH;
+        // Component width as percentage of slide width
+        return (actualWidth / DEFAULT_SLIDE_WIDTH) * slideWidth;
       }
+      return actualWidth;
+    }
+    return containerRef.current.getBoundingClientRect().width || actualWidth;
+  };
+  
+  const [componentRenderedWidth, setComponentRenderedWidth] = useState<number>(getInitialRenderedWidth);
+  const componentRenderedWidthRef = useRef<number>(componentRenderedWidth);
+  
+  // Measure component's actual rendered size - but only update when actually different
+  useEffect(() => {
+    // Skip measurement entirely for thumbnails or when text editing
+    if (isThumbnail || isCurrentlyTextEditing) return;
+    
+    if (!containerRef.current) return;
+    
+    // Do ONE immediate measurement synchronously to get the real size
+    const initialRect = containerRef.current.getBoundingClientRect();
+    if (initialRect.width > 0) {
+      componentRenderedWidthRef.current = initialRect.width;
+      setComponentRenderedWidth(initialRect.width);
+    }
+    
+    // Then set up observer for future changes (only during actual resizing)
+    const updateRenderedWidth = () => {
+      if (!containerRef.current) return;
       
-      // Debounce the update
-      updateScaleTimeoutRef.current = setTimeout(() => {
-        const slideContainer = document.getElementById('slide-display-container');
-        if (slideContainer) {
-          const slideRect = slideContainer.getBoundingClientRect();
-          const slideDisplayWidth = slideRect.width;
-          
-          // Only update if the width actually changed
-          if (Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 1) {
-            prevSlideWidthRef.current = slideDisplayWidth;
-            setCurrentSlideWidth(slideDisplayWidth);
-            // Default slide width is 1920px, calculate scale factor
-            const newScale = slideDisplayWidth / NATIVE_WIDTH;
-            setContainerScale(newScale);
-          }
-        }
-      }, 50); // Debounce by 50ms
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = rect.width;
+      
+      // Only update if difference is significant (>10px) to avoid micro-adjustments
+      if (newWidth > 0 && Math.abs(newWidth - componentRenderedWidthRef.current) > 10) {
+        componentRenderedWidthRef.current = newWidth;
+        setComponentRenderedWidth(newWidth);
+      }
     };
     
-    // Initial calculation
-    updateScale();
-    
-    // Listen for resize events
-    window.addEventListener('resize', updateScale);
-    
-    // Use ResizeObserver if available for more accurate tracking
-    let resizeObserver: ResizeObserver | null = null;
-    const slideContainer = document.getElementById('slide-display-container');
-    if (slideContainer && 'ResizeObserver' in window) {
-      resizeObserver = new ResizeObserver(updateScale);
-      resizeObserver.observe(slideContainer);
-    }
-    
-    // Also update when edit mode changes (slide size changes)
-    const editModeObserver = new MutationObserver(updateScale);
-    if (slideContainer) {
-      editModeObserver.observe(slideContainer, { 
-        attributes: true, 
-        attributeFilter: ['style', 'class'] 
-      });
-    }
+    // Use ResizeObserver only for actual resize events
+    const resizeObserver = new ResizeObserver(updateRenderedWidth);
+    resizeObserver.observe(containerRef.current);
     
     return () => {
-      if (updateScaleTimeoutRef.current) {
-        clearTimeout(updateScaleTimeoutRef.current);
-      }
-      window.removeEventListener('resize', updateScale);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-      editModeObserver.disconnect();
+      resizeObserver.disconnect();
     };
-  }, [isThumbnail]);
+  }, [isThumbnail, isCurrentlyTextEditing]); // Minimal dependencies to avoid re-running
 
-  // Font size calculation - improved to match TiptapTextBlockRenderer
+  // Font size calculation - scale based on component's actual rendered size
+  // STABLE - only recalculates when fontSize prop or rendered width changes significantly
   const fontScaleFactor = useMemo(() => {
-    // When in presentation mode, don't apply additional scaling
-    if (isPresenting) return 1;
-    // Thumbnails are already scaled by outer slide transform; avoid double-scaling fonts
-    if (isThumbnail) return 1;
-    return currentSlideWidth / NATIVE_WIDTH;
-  }, [isThumbnail, currentSlideWidth, isPresenting]);
+    // Thumbnails are already scaled by outer slide transform; keep fonts at native size
+    // The entire slide (including fonts) will be CSS-scaled together
+    if (isThumbnail) {
+      return 1;
+    }
+    
+    // For regular slides, calculate scale based on component's actual rendered size vs specified size
+    // This accounts for the percentage-based sizing in ComponentRenderer
+    const specifiedWidth = actualWidth || 600;
+    const scaleFactor = componentRenderedWidth / specifiedWidth;
+    
+    return scaleFactor;
+  }, [isThumbnail, actualWidth, componentRenderedWidth]);
 
+  // Store the stable font size - changes only when fontSize prop or scale factor changes
+  const stableFontSizeRef = useRef<string | null>(null);
+  
   const getFontSize = useMemo(() => {
     // Always use props.fontSize if it exists (this is the source of truth)
     const nativeSize = props.fontSize || effectiveFontSize || 16;
+    
+    // Apply scaling for non-thumbnail views
+    const finalSize = nativeSize * fontScaleFactor;
 
-    // For thumbnails, apply thumbnail scaling
-    if (isThumbnail) {
-      return `${nativeSize * fontScaleFactor}px`;
+    // If we already have a stable size and it's very close (within 0.5px), use it
+    // This prevents micro-adjustments while still allowing real changes
+    if (stableFontSizeRef.current) {
+      const currentSize = parseFloat(stableFontSizeRef.current);
+      if (Math.abs(currentSize - finalSize) < 0.5) {
+        return stableFontSizeRef.current;
+      }
     }
 
-    // For regular slides, apply scaling without rounding to prevent pixel jumps
-    return `${nativeSize * fontScaleFactor}px`;
-  }, [props.fontSize, effectiveFontSize, isThumbnail, fontScaleFactor]);
+    const result = `${finalSize}px`;
+    stableFontSizeRef.current = result;
+
+    return result;
+  }, [props.fontSize, effectiveFontSize, fontScaleFactor]);
   
   // Removed font optimization listener
 
-  // Letter spacing calculation
+  // Letter spacing calculation - scale for non-thumbnails
   const getLetterSpacing = useMemo(() => {
     if (isThumbnail) {
-      // Apply thumbnail scaling to letter spacing
-      return letterSpacing ? `${letterSpacing * fontScaleFactor}px` : '0px';
+      // Thumbnails don't need scaling (CSS transform handles it)
+      return letterSpacing ? `${letterSpacing}px` : '0px';
     }
     
     // For non-thumbnail views, scale the letter spacing
@@ -365,47 +342,43 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         HTMLAttributes: {
           class: 'text-blue-600 underline cursor-pointer',
         },
+      }),
+      // Include these even in thumbnails for proper rendering
+      Heading.configure({
+        levels: [1, 2, 3],
+        HTMLAttributes: {
+          style: 'margin: 0; padding: 0;'
+        }
+      }),
+      BulletList.configure({
+        HTMLAttributes: {
+          style: 'margin: 0; padding-left: 1.5em;'
+        }
+      }),
+      OrderedList.configure({
+        HTMLAttributes: {
+          style: 'margin: 0; padding-left: 1.5em;'
+        }
+      }),
+      ListItem.configure({
+        HTMLAttributes: {
+          style: 'margin: 0;'
+        }
       })
     ];
 
-    if (!isThumbnail) {
-      baseExtensions.push(
-        Heading.configure({
-          levels: [1, 2, 3],
-          HTMLAttributes: {
-            style: 'margin: 0; padding: 0;'
-          }
-        }),
-        BulletList.configure({
-          HTMLAttributes: {
-            style: 'margin: 0; padding-left: 1.5em;'
-          }
-        }),
-        OrderedList.configure({
-          HTMLAttributes: {
-            style: 'margin: 0; padding-left: 1.5em;'
-          }
-        }),
-        ListItem.configure({
-          HTMLAttributes: {
-            style: 'margin: 0;'
-          }
-        })
-      );
-    }
-
     return baseExtensions;
-  }, [alignment, isThumbnail]);
+  }, [alignment]);
 
   // Track if we're updating to prevent loops
   const isUpdatingRef = useRef(false);
 
-  // Editor configuration
+  // Editor configuration - start with editable false, update via setEditable to prevent recreation
   const getEditorConfig = useMemo(() => ({
     extensions: getExtensions(),
     content: initialContent,
-    editable: isCurrentlyTextEditing,
-    immediatelyRender: false,
+    editable: false,  // Always start false, managed via editor.setEditable() to prevent recreation
+    immediatelyRender: isThumbnail,  // Render immediately for thumbnails to prevent blank state
     editorProps: {
       attributes: {
         class: 'focus:outline-none w-full h-full tiptap-editor-content',
@@ -493,7 +466,6 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   }), [
     getExtensions,
     initialContent,
-    isCurrentlyTextEditing,
     alignment,
     verticalAlignment,
     component.id,
@@ -929,42 +901,41 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     height: '100%'
   };
 
-  // Calculate text padding based on context
+  // Calculate text padding - scale for non-thumbnails
   const getTextPadding = useMemo(() => {
+    const basePadding = textPadding || 16; // Default to 16px if not set
+    
     if (isThumbnail) {
-      // For thumbnails, scale the padding to match text scaling
-      return `${textPadding * fontScaleFactor}px`;
+      // Thumbnails don't need scaling (CSS transform handles it)
+      return `${basePadding}px`;
     }
-    // For regular slides, scale the padding
-    return `${textPadding * fontScaleFactor}px`;
+    
+    // For non-thumbnail views, scale the padding to match font scaling
+    const scaledPadding = basePadding * fontScaleFactor;
+    return `${scaledPadding}px`;
   }, [textPadding, isThumbnail, fontScaleFactor]);
 
-  // Text wrapper styles
+  // Text wrapper styles - keep stable across edit/non-edit states to prevent size jumps
   const textWrapperStyle: React.CSSProperties = {
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
-    bottom: 0,
-    padding: getTextPadding,
+    width: '100%',
+    height: '100%',
+    padding: getTextPadding,  // Apply padding HERE on wrapper
     boxSizing: 'border-box',
     overflow: 'hidden', // Keep text within shape bounds
-    overflowY: 'auto', // Allow scrolling for overflow text
     pointerEvents: isCurrentlyTextEditing ? 'auto' : (hasText ? 'auto' : 'none'),
+    wordWrap: 'break-word',
+    overflowWrap: 'break-word',
+    whiteSpace: 'normal',
     '--tiptap-font-size': getFontSize,
     '--tiptap-font-family': getFontFamilyWithFallback(fontFamily || 'Arial'),
     '--tiptap-font-weight': fontWeight,
-    '--tiptap-line-height': lineHeight || 1.5,
+    '--tiptap-line-height': lineHeight || 1.3,  // Changed default from 1.5 to 1.3 for tighter spacing
     '--tiptap-letter-spacing': getLetterSpacing,
     '--tiptap-text-color': textColor,
-    '--tiptap-padding': getTextPadding,
-    // Add visual feedback for text hover
-    ...(isHoveringText && !isCurrentlyTextEditing && {
-      backgroundColor: 'rgba(59, 130, 246, 0.05)', // Very light blue overlay
-      borderRadius: '4px',
-      outline: '1px dashed rgba(59, 130, 246, 0.5)',
-      outlineOffset: '-2px'
-    })
+    // Removed hover visual feedback that was causing layout shifts
   } as React.CSSProperties;
 
   return (
@@ -989,7 +960,8 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
           top: 0,
           left: 0,
           zIndex: 0,
-          overflow: 'visible'
+          overflow: 'visible',  // CRITICAL: Allows shadows to extend beyond bounds
+          pointerEvents: 'none'  // Prevent SVG from blocking text interactions
         }}
       >
         {(hasGradient || shadow) && (

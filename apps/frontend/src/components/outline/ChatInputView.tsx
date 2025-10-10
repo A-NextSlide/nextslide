@@ -1136,6 +1136,31 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
 
               {/* Removed research outline box */}
 
+              {/* Auto Apply Images Toggle - Under Style Input */}
+              {interactionStage === 'collectingStyleVibe' && (
+                <div className="mt-3 ml-2 animate-in fade-in slide-in-from-bottom-1 duration-300 fill-mode-forwards">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={autoSelectImages}
+                      onCheckedChange={(checked) => {
+                        if (setAutoSelectImages) {
+                          setAutoSelectImages(checked);
+                        }
+                      }}
+                      aria-label="Toggle auto-apply images"
+                    />
+                    <div className="flex flex-col">
+                      <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 cursor-pointer" htmlFor="auto-images-toggle">
+                        Auto Apply Images
+                      </Label>
+                      <p className="text-[10px] text-muted-foreground">
+                        {autoSelectImages ? "Images will be automatically applied" : "You'll select images manually after generation"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Compact Custom Style trigger */}
               {interactionStage === 'collectingStyleVibe' && (
                 <div className="mt-2 w-full animate-in fade-in slide-in-from-bottom-1 duration-300 fill-mode-forwards">

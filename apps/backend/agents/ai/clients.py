@@ -602,7 +602,12 @@ def invoke(
     CACHE_DELIM = "\n<<<CACHE_BREAKPOINT>>>\n"
     cache_static_id = None
     if ENABLE_ANTHROPIC_PROMPT_CACHING and isinstance(model, str) and model.startswith("claude"):
-        if deck_uuid:
+        # DISABLE CACHING FOR THEME GENERATION - we want variety!
+        if theme_generation:
+            logger.info(f"[CLAUDE CACHE] DISABLED for theme generation (want variety)")
+            # Don't create cache_static_id - this disables caching
+            cache_static_id = None
+        elif deck_uuid:
             cache_static_id = f"deck:{deck_uuid}"
         else:
             try:
@@ -612,12 +617,15 @@ def invoke(
                 ).hexdigest()
             except Exception:
                 cache_static_id = "deck:unknown"
-        logger.info(f"[CLAUDE CACHE] using cache id {cache_static_id}")
+        
+        if cache_static_id:
+            logger.info(f"[CLAUDE CACHE] using cache id {cache_static_id}")
 
     try:
         for _msg in filtered_messages:
             if _msg.get("role") == "user" and isinstance(_msg.get("content"), str) and CACHE_DELIM in _msg["content"]:
-                if model.startswith("claude") and ENABLE_ANTHROPIC_PROMPT_CACHING:
+                # Only use cache_control if caching is enabled and we have a cache_static_id
+                if model.startswith("claude") and ENABLE_ANTHROPIC_PROMPT_CACHING and cache_static_id:
                     pre, post = _msg["content"].split(CACHE_DELIM, 1)
                     cache_control = {"type": "ephemeral"}
                     _msg["content"] = [
@@ -684,7 +692,8 @@ def invoke(
                     # Handle system message for Anthropic (support prompt caching)
                     anthropic_kwargs = invoke_kwargs.copy()
                     if system_content:
-                        if ENABLE_ANTHROPIC_PROMPT_CACHING and model.startswith("claude"):
+                        # Only use cache_control if we have a cache_static_id (not disabled)
+                        if ENABLE_ANTHROPIC_PROMPT_CACHING and model.startswith("claude") and cache_static_id:
                             # Use content blocks with cache_control to enable prompt caching for the system prefix
                             sys_cache = {"type": "ephemeral"}
                             anthropic_kwargs['system'] = [
@@ -832,7 +841,8 @@ def invoke(
                     # For Claude models with instructor wrapper, add system parameter
                     if system_content and model.startswith("claude"):
                         claude_kwargs = invoke_kwargs.copy()
-                        if ENABLE_ANTHROPIC_PROMPT_CACHING:
+                        # Only use cache_control if we have a cache_static_id (not disabled)
+                        if ENABLE_ANTHROPIC_PROMPT_CACHING and cache_static_id:
                             sys_cache = {"type": "ephemeral"}
                             claude_kwargs['system'] = [
                                 {"type": "text", "text": system_content, "cache_control": sys_cache}

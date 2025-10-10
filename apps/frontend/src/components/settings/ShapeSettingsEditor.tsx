@@ -542,34 +542,31 @@ const ShapeSettingsEditor: React.FC<ShapeSettingsEditorProps> = ({
         <Separator />
         
         {/* Fill and Stroke */}
-        <div>
-          <Label className="text-xs font-medium mb-2">Fill & Stroke</Label>
-          <div className="space-y-2">
-            <PropertyControlRenderer
-              propName="fill"
-              schema={shapeSchema.fill}
-              currentValue={props.fill || '#4287f5ff'}
-              onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
-              saveComponentToHistory={saveToHistory}
-              componentProps={props}
-            />
-            <PropertyControlRenderer
-              propName="stroke"
-              schema={shapeSchema.stroke}
-              currentValue={props.stroke || '#000000ff'}
-              onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
-              saveComponentToHistory={saveToHistory}
-              componentProps={props}
-            />
-            <PropertyControlRenderer
-              propName="strokeWidth"
-              schema={shapeSchema.strokeWidth}
-              currentValue={props.strokeWidth || 0}
-              onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
-              saveComponentToHistory={saveToHistory}
-              componentProps={props}
-            />
-          </div>
+        <div className="space-y-3">
+          <PropertyControlRenderer
+            propName="fill"
+            schema={shapeSchema.fill}
+            currentValue={props.fill || '#4287f5ff'}
+            onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
+            saveComponentToHistory={saveToHistory}
+            componentProps={props}
+          />
+          <PropertyControlRenderer
+            propName="stroke"
+            schema={shapeSchema.stroke}
+            currentValue={props.stroke || '#000000ff'}
+            onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
+            saveComponentToHistory={saveToHistory}
+            componentProps={props}
+          />
+          <PropertyControlRenderer
+            propName="strokeWidth"
+            schema={shapeSchema.strokeWidth}
+            currentValue={props.strokeWidth || 0}
+            onUpdate={(propName, value, skip) => handleUpdate(propName, value, skip)}
+            saveComponentToHistory={saveToHistory}
+            componentProps={props}
+          />
         </div>
 
         {/* Border Radius (for rectangles) */}
@@ -586,51 +583,48 @@ const ShapeSettingsEditor: React.FC<ShapeSettingsEditorProps> = ({
         )}
 
         {/* Shadow */}
-        <div>
-          <Label className="text-xs font-medium mb-2">Shadow</Label>
-          <div className="space-y-2">
-            <PropertyControlRenderer
-              propName="shadow"
-              schema={shapeSchema.shadow}
-              currentValue={props.shadow || false}
-              onUpdate={(propName, value) => handleUpdate(propName, value)}
-              saveComponentToHistory={saveToHistory}
-            />
-            {props.shadow && (
-              <>
+        <div className="space-y-3">
+          <PropertyControlRenderer
+            propName="shadow"
+            schema={shapeSchema.shadow}
+            currentValue={props.shadow || false}
+            onUpdate={(propName, value) => handleUpdate(propName, value)}
+            saveComponentToHistory={saveToHistory}
+          />
+          {props.shadow && (
+            <>
+              <PropertyControlRenderer
+                propName="shadowColor"
+                schema={shapeSchema.shadowColor}
+                currentValue={props.shadowColor || '#0000004D'}
+                onUpdate={(propName, value) => handleUpdate(propName, value)}
+                saveComponentToHistory={saveToHistory}
+              />
+              <div className="grid grid-cols-2 gap-2">
                 <PropertyControlRenderer
-                  propName="shadowColor"
-                  schema={shapeSchema.shadowColor}
-                  currentValue={props.shadowColor || '#0000004D'}
+                  propName="shadowOffsetX"
+                  schema={shapeSchema.shadowOffsetX}
+                  currentValue={props.shadowOffsetX || 0}
                   onUpdate={(propName, value) => handleUpdate(propName, value)}
                   saveComponentToHistory={saveToHistory}
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <PropertyControlRenderer
-                    propName="shadowOffsetX"
-                    schema={shapeSchema.shadowOffsetX}
-                    currentValue={props.shadowOffsetX || 0}
-                    onUpdate={(propName, value) => handleUpdate(propName, value)}
-                    saveComponentToHistory={saveToHistory}
+                <PropertyControlRenderer
+                  propName="shadowOffsetY"
+                  schema={shapeSchema.shadowOffsetY}
+                  currentValue={props.shadowOffsetY || 4}
+                  onUpdate={(propName, value) => handleUpdate(propName, value)}
+                  saveComponentToHistory={saveToHistory}
                   />
-                  <PropertyControlRenderer
-                    propName="shadowOffsetY"
-                    schema={shapeSchema.shadowOffsetY}
-                    currentValue={props.shadowOffsetY || 4}
-                    onUpdate={(propName, value) => handleUpdate(propName, value)}
-                    saveComponentToHistory={saveToHistory}
-                    />
-                  </div>
-                <PropertyControlRenderer
-                  propName="shadowBlur"
-                  schema={shapeSchema.shadowBlur}
-                  currentValue={props.shadowBlur || 10}
-                  onUpdate={(propName, value) => handleUpdate(propName, value)}
-                  saveComponentToHistory={saveToHistory}
-                />
-              </>
-            )}
-          </div>
+                </div>
+              <PropertyControlRenderer
+                propName="shadowBlur"
+                schema={shapeSchema.shadowBlur}
+                currentValue={props.shadowBlur || 10}
+                onUpdate={(propName, value) => handleUpdate(propName, value)}
+                saveComponentToHistory={saveToHistory}
+              />
+            </>
+          )}
         </div>
       </div>
     );
@@ -652,32 +646,29 @@ const ShapeSettingsEditor: React.FC<ShapeSettingsEditorProps> = ({
         <Separator />
         
         {/* Font Settings */}
-        <div>
-          <Label className="text-xs font-medium mb-2">Default Font Settings</Label>
-          <div className="space-y-2">
+        <div className="space-y-3">
+          <PropertyControlRenderer
+            propName="fontFamily"
+            schema={shapeSchema.fontFamily}
+            currentValue={props.fontFamily || 'Poppins'}
+            onUpdate={(propName, value) => handleUpdate(propName, value)}
+            saveComponentToHistory={saveToHistory}
+          />
+          <div className="grid grid-cols-2 gap-2">
             <PropertyControlRenderer
-              propName="fontFamily"
-              schema={shapeSchema.fontFamily}
-              currentValue={props.fontFamily || 'Poppins'}
+              propName="fontSize"
+              schema={shapeSchema.fontSize}
+              currentValue={props.fontSize || 16}
               onUpdate={(propName, value) => handleUpdate(propName, value)}
               saveComponentToHistory={saveToHistory}
             />
-            <div className="grid grid-cols-2 gap-2">
-              <PropertyControlRenderer
-                propName="fontSize"
-                schema={shapeSchema.fontSize}
-                currentValue={props.fontSize || 16}
-                onUpdate={(propName, value) => handleUpdate(propName, value)}
-                saveComponentToHistory={saveToHistory}
-              />
-              <PropertyControlRenderer
-                propName="fontWeight"
-                schema={shapeSchema.fontWeight}
-                currentValue={props.fontWeight || 'normal'}
-                onUpdate={(propName, value) => handleUpdate(propName, value)}
-                saveComponentToHistory={saveToHistory}
-              />
-            </div>
+            <PropertyControlRenderer
+              propName="fontWeight"
+              schema={shapeSchema.fontWeight}
+              currentValue={props.fontWeight || 'normal'}
+              onUpdate={(propName, value) => handleUpdate(propName, value)}
+              saveComponentToHistory={saveToHistory}
+            />
           </div>
       </div>
 
@@ -693,57 +684,49 @@ const ShapeSettingsEditor: React.FC<ShapeSettingsEditorProps> = ({
         </div>
         
         {/* Typography */}
-        <div>
-          <Label className="text-xs font-medium mb-2">Typography</Label>
-          <div className="grid grid-cols-2 gap-2">
-            <PropertyControlRenderer
-              propName="letterSpacing"
-              schema={shapeSchema.letterSpacing}
-              currentValue={props.letterSpacing || 0}
-              onUpdate={(propName, value) => handleUpdate(propName, value)}
-              saveComponentToHistory={saveToHistory}
-            />
-            <PropertyControlRenderer
-              propName="lineHeight"
-              schema={shapeSchema.lineHeight}
-              currentValue={props.lineHeight || 1.5}
-              onUpdate={(propName, value) => handleUpdate(propName, value)}
-              saveComponentToHistory={saveToHistory}
-            />
-          </div>
-          </div>
-          
-        {/* Alignment */}
-        <div>
-          <Label className="text-xs font-medium mb-2">Alignment</Label>
-          <div className="grid grid-cols-2 gap-2">
-            <PropertyControlRenderer
-              propName="alignment"
-              schema={shapeSchema.alignment}
-              currentValue={props.alignment || 'center'}
-              onUpdate={(propName, value) => handleUpdate(propName, value)}
-              saveComponentToHistory={saveToHistory}
-            />
-            <PropertyControlRenderer
-              propName="verticalAlignment"
-              schema={shapeSchema.verticalAlignment}
-              currentValue={props.verticalAlignment || 'middle'}
-              onUpdate={(propName, value) => handleUpdate(propName, value)}
-              saveComponentToHistory={saveToHistory}
-            />
-              </div>
-            </div>
-        
-        {/* Text Padding */}
-        <div>
+        <div className="grid grid-cols-2 gap-2">
           <PropertyControlRenderer
-            propName="textPadding"
-            schema={shapeSchema.textPadding}
-            currentValue={props.textPadding || 10}
+            propName="letterSpacing"
+            schema={shapeSchema.letterSpacing}
+            currentValue={props.letterSpacing || 0}
+            onUpdate={(propName, value) => handleUpdate(propName, value)}
+            saveComponentToHistory={saveToHistory}
+          />
+          <PropertyControlRenderer
+            propName="lineHeight"
+            schema={shapeSchema.lineHeight}
+            currentValue={props.lineHeight || 1.5}
             onUpdate={(propName, value) => handleUpdate(propName, value)}
             saveComponentToHistory={saveToHistory}
           />
         </div>
+          
+        {/* Alignment */}
+        <div className="grid grid-cols-2 gap-2">
+          <PropertyControlRenderer
+            propName="alignment"
+            schema={shapeSchema.alignment}
+            currentValue={props.alignment || 'center'}
+            onUpdate={(propName, value) => handleUpdate(propName, value)}
+            saveComponentToHistory={saveToHistory}
+          />
+          <PropertyControlRenderer
+            propName="verticalAlignment"
+            schema={shapeSchema.verticalAlignment}
+            currentValue={props.verticalAlignment || 'middle'}
+            onUpdate={(propName, value) => handleUpdate(propName, value)}
+            saveComponentToHistory={saveToHistory}
+          />
+        </div>
+        
+        {/* Text Padding */}
+        <PropertyControlRenderer
+          propName="textPadding"
+          schema={shapeSchema.textPadding}
+          currentValue={props.textPadding || 16}
+          onUpdate={(propName, value) => handleUpdate(propName, value)}
+          saveComponentToHistory={saveToHistory}
+        />
     </div>
   );
   };

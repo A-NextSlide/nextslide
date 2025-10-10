@@ -10,8 +10,53 @@ import { ComponentInstance } from '../types/components';
 export function isTextOverflowing(element: HTMLElement): boolean {
   if (!element) return false;
   
-  return element.scrollHeight > element.clientHeight || 
-         element.scrollWidth > element.clientWidth;
+  // Get computed styles to extract padding information
+  const computedStyle = window.getComputedStyle(element);
+  const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+  const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+  const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+  const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+  
+  // Total vertical and horizontal padding
+  const verticalPadding = paddingTop + paddingBottom;
+  const horizontalPadding = paddingLeft + paddingRight;
+  
+  // Base tolerance for rounding errors and font rendering variations
+  const baseTolerance = 5;
+  
+  // Add padding-aware tolerance - account for the padding being applied
+  // This prevents false positives when padding takes up significant space
+  const verticalTolerance = baseTolerance + Math.min(verticalPadding * 0.1, 10);
+  const horizontalTolerance = baseTolerance + Math.min(horizontalPadding * 0.1, 10);
+  
+  const isOverflowing = element.scrollHeight > (element.clientHeight + verticalTolerance) || 
+                       element.scrollWidth > (element.clientWidth + horizontalTolerance);
+  
+  if (isOverflowing) {
+    console.log('[isTextOverflowing] Detected overflow:', {
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      verticalDifference: element.scrollHeight - element.clientHeight,
+      horizontalDifference: element.scrollWidth - element.clientWidth,
+      padding: {
+        top: paddingTop,
+        bottom: paddingBottom,
+        left: paddingLeft,
+        right: paddingRight,
+        vertical: verticalPadding,
+        horizontal: horizontalPadding
+      },
+      tolerance: {
+        vertical: verticalTolerance,
+        horizontal: horizontalTolerance
+      },
+      lineHeight: computedStyle.lineHeight
+    });
+  }
+  
+  return isOverflowing;
 }
 
 /**
@@ -30,8 +75,14 @@ export function calculateOptimalFontSize(
   let high = Math.min(maxFontSize, currentFontSize);
   let optimal = currentFontSize;
   
-  // Store original font size
+  // Store original font size and padding info
   const originalFontSize = element.style.fontSize;
+  const computedStyle = window.getComputedStyle(element);
+  const paddingTotal = 
+    (parseFloat(computedStyle.paddingTop) || 0) +
+    (parseFloat(computedStyle.paddingBottom) || 0) +
+    (parseFloat(computedStyle.paddingLeft) || 0) +
+    (parseFloat(computedStyle.paddingRight) || 0);
   
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
@@ -52,7 +103,27 @@ export function calculateOptimalFontSize(
   // Restore original font size
   element.style.fontSize = originalFontSize;
   
-  return optimal;
+  // Reduce optimal size by a smaller percentage when there's significant padding
+  // This prevents over-aggressive shrinking when padding is already providing spacing
+  // Use even more conservative factors to maintain readability
+  let paddingFactor = 0.95; // Default 5% reduction
+  if (paddingTotal > 30) {
+    paddingFactor = 0.98; // Only 2% reduction with lots of padding
+  } else if (paddingTotal > 20) {
+    paddingFactor = 0.97; // 3% reduction with moderate padding
+  }
+  const safeOptimal = Math.floor(optimal * paddingFactor);
+  
+  console.log('[calculateOptimalFontSize] Result:', {
+    currentFontSize,
+    calculatedOptimal: optimal,
+    safeOptimal,
+    reduction: optimal - safeOptimal,
+    paddingTotal,
+    paddingFactor
+  });
+  
+  return Math.max(minFontSize, safeOptimal);
 }
 
 /**

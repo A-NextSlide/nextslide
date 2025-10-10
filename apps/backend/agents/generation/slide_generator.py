@@ -2384,11 +2384,27 @@ class SlideGeneratorV2(ISlideGenerator):
                 return
             colors = theme_dict.get('color_palette', {}) or {}
             typography = theme_dict.get('typography', {}) or {}
-            primary_bg = colors.get('primary_background', '#0A0E27')
-            secondary_bg = colors.get('secondary_background', '#1A1F3A')
-            primary_text = colors.get('primary_text', '#FFFFFF')
-            accent_1 = colors.get('accent_1', '#00F0FF')
-            accent_2 = colors.get('accent_2', '#FF5722')
+            
+            # Extract theme colors - try multiple keys for flexibility
+            primary_bg = (colors.get('primary_background') or 
+                         colors.get('backgrounds', [None])[0] if isinstance(colors.get('backgrounds'), list) else None or
+                         '#0A0E27')
+            secondary_bg = (colors.get('secondary_background') or 
+                           colors.get('backgrounds', [None, None])[1] if isinstance(colors.get('backgrounds'), list) and len(colors.get('backgrounds', [])) > 1 else None or
+                           '#1A1F3A')
+            primary_text = (colors.get('primary_text') or 
+                           colors.get('text_colors', {}).get('primary') if isinstance(colors.get('text_colors'), dict) else None or
+                           '#FFFFFF')
+            accent_1 = (colors.get('accent_1') or 
+                       colors.get('accents', [None])[0] if isinstance(colors.get('accents'), list) else None or
+                       colors.get('colors', [None])[0] if isinstance(colors.get('colors'), list) else None or
+                       '#00F0FF')
+            accent_2 = (colors.get('accent_2') or 
+                       colors.get('accents', [None, None])[1] if isinstance(colors.get('accents'), list) and len(colors.get('accents', [])) > 1 else None or
+                       colors.get('colors', [None, None])[1] if isinstance(colors.get('colors'), list) and len(colors.get('colors', [])) > 1 else None or
+                       '#FF5722')
+            
+            logger.info(f"[THEME ENFORCEMENT] Using colors: primary_bg={primary_bg}, accent_1={accent_1}, accent_2={accent_2}, text={primary_text}")
             # If a generic database palette is attached, prefer its accents/text for enforcement
             try:
                 palette = slide_data.get('palette') if isinstance(slide_data, dict) else None
@@ -2484,13 +2500,17 @@ class SlideGeneratorV2(ISlideGenerator):
                     
                     component['props'] = props
 
-                # 2) CustomComponent: inject theme props when missing
+                # 2) CustomComponent: FORCE inject theme props (override any AI-generated values)
                 elif ctype == 'CustomComponent':
-                    props.setdefault('primaryColor', accent_1)
-                    props.setdefault('secondaryColor', accent_2)
-                    props.setdefault('textColor', primary_text)
-                    props.setdefault('fontFamily', hero_font)
+                    # FORCE theme colors (not setdefault - override hardcoded values!)
+                    props['primaryColor'] = accent_1
+                    props['secondaryColor'] = accent_2
+                    props['accentColor'] = accent_1  # Alias for consistency
+                    props['textColor'] = primary_text
+                    props['fontFamily'] = hero_font
+                    props['bodyFont'] = body_font
                     component['props'] = props
+                    logger.debug(f"[THEME] Forced theme colors into CustomComponent: primary={accent_1}, secondary={accent_2}")
 
                 # 3) Icon: coerce off-palette colors to accent_1
                 elif ctype == 'Icon':
@@ -2499,10 +2519,11 @@ class SlideGeneratorV2(ISlideGenerator):
                         props['color'] = accent_1
                         component['props'] = props
 
-                # 4) Shape: coerce gradient/fill to theme accents
-                elif ctype == 'Shape':
+                # 4) Shape: FORCE theme colors on fills and gradients
+                elif ctype == 'Shape' or ctype == 'ShapeWithText':
                     grad = props.get('gradient')
                     if isinstance(grad, dict):
+                        # FORCE theme colors into gradient
                         gtype = grad.get('type', 'linear')
                         angle = grad.get('angle', 90)
                         props['gradient'] = {
@@ -2515,10 +2536,10 @@ class SlideGeneratorV2(ISlideGenerator):
                         }
                         component['props'] = props
                     else:
-                        fill = props.get('fill')
-                        if not isinstance(fill, str) or fill not in allowed_fill_colors:
-                            props['fill'] = accent_1
-                            component['props'] = props
+                        # FORCE theme color as fill (don't just check if valid)
+                        props['fill'] = accent_1
+                        component['props'] = props
+                        logger.debug(f"[THEME] Forced fill color {accent_1} into Shape")
         except Exception as e:
             logger.warning(f"[THEME ENFORCEMENT] Skipped due to error: {e}")
         
@@ -3237,40 +3258,114 @@ class SlideGeneratorV2(ISlideGenerator):
             logger.warning("[IMAGE REPLACEMENT] No placeholder images found to replace")
             return
 
-        # Apply images to image components
+        # Track used image URLs to prevent reuse within a slide
+        used_urls_this_slide = set()
+        used_image_indices = set()  # Track which images we've used
+        
+        # Apply images to image components with smart matching
         for i, img_comp in enumerate(image_components):
-            if i < len(available_images):
-                media = available_images[i]
+            # Check if component has a specific searchQuery
+            component_search_query = img_comp.get('props', {}).get('searchQuery', '').strip().lower()
+            
+            media = None
+            
+            # Strategy 1: If component has searchQuery, try to find a matching image
+            if component_search_query:
+                logger.info(f"[IMAGE REPLACEMENT] Component {i+1} has searchQuery: '{component_search_query}'")
                 
-                # Use url field (not previewUrl) based on the format from _format_images_for_streaming
-                image_url = media.get('url', '')
+                # Try to match with images that have similar topic/searchQuery
+                best_match_score = 0
+                best_match = None
+                best_match_idx = None
                 
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"[IMAGE REPLACEMENT] Processing component {i+1}:")
-                    logger.debug(f"  - Image ID: {media.get('id')}")
-                    logger.debug(f"  - URL length: {len(image_url)}")
-                    logger.debug(f"  - URL prefix: {image_url[:50] if image_url else 'empty'}")
-                    logger.debug(f"  - Photographer: {media.get('photographer')}")
+                for idx, candidate in enumerate(available_images):
+                    if idx in used_image_indices:
+                        continue
+                        
+                    candidate_url = candidate.get('url', '')
+                    if candidate_url in used_urls_this_slide:
+                        continue
+                    
+                    # Check if image metadata contains matching terms
+                    image_topic = (candidate.get('topic', '') or '').strip().lower()
+                    image_search_query = (candidate.get('searchQuery', '') or '').strip().lower()
+                    
+                    # Calculate match score
+                    score = 0
+                    comp_words = set(component_search_query.split())
+                    
+                    if image_topic:
+                        topic_words = set(image_topic.split())
+                        overlap = len(comp_words & topic_words)
+                        score += overlap * 2  # Topic matches weighted higher
+                    
+                    if image_search_query:
+                        search_words = set(image_search_query.split())
+                        overlap = len(comp_words & search_words)
+                        score += overlap
+                    
+                    if score > best_match_score:
+                        best_match_score = score
+                        best_match = candidate
+                        best_match_idx = idx
                 
-                # If it's a valid URL, use it
-                if image_url and (image_url.startswith('data:') or image_url.startswith('http')):
-                    img_comp['props']['src'] = image_url
-                    logger.info(f"[IMAGE REPLACEMENT] ✓ Successfully replaced placeholder with image")
-                else:
-                    # Fallback to placeholder if URL is invalid
-                    img_comp['props']['src'] = 'placeholder'
-                    logger.warning(f"[IMAGE REPLACEMENT] ✗ Invalid URL for image, keeping placeholder")
+                if best_match and best_match_score > 0:
+                    media = best_match
+                    used_image_indices.add(best_match_idx)
+                    logger.info(f"[IMAGE REPLACEMENT] ✓ Matched component '{component_search_query}' with image (score: {best_match_score})")
+            
+            # Strategy 2: If no match found or no searchQuery, use sequential assignment
+            if not media:
+                for idx, candidate in enumerate(available_images):
+                    if idx in used_image_indices:
+                        continue
+                    candidate_url = candidate.get('url', '')
+                    if candidate_url not in used_urls_this_slide:
+                        media = candidate
+                        used_image_indices.add(idx)
+                        break
                 
-                img_comp['props']['alt'] = media.get('alt', '')
-                
-                # Add metadata for tracking
-                img_comp['props']['metadata'] = {
-                    'imageId': media.get('id'),
-                    'photographer': media.get('photographer'),
-                    'ai_generated': media.get('ai_generated', False)
-                }
-                
-                logger.debug(f"[IMAGE REPLACEMENT] Completed processing for image {i+1}")
+                if media and component_search_query:
+                    logger.info(f"[IMAGE REPLACEMENT] No perfect match for '{component_search_query}', using sequential assignment")
+            
+            if not media:
+                logger.warning(f"[IMAGE REPLACEMENT] No unique images left for component {i+1}")
+                continue
+            
+            # Use url field (not previewUrl) based on the format from _format_images_for_streaming
+            image_url = media.get('url', '')
+            
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"[IMAGE REPLACEMENT] Processing component {i+1}:")
+                logger.debug(f"  - Image ID: {media.get('id')}")
+                logger.debug(f"  - URL length: {len(image_url)}")
+                logger.debug(f"  - URL prefix: {image_url[:50] if image_url else 'empty'}")
+                logger.debug(f"  - Photographer: {media.get('photographer')}")
+            
+            # If it's a valid URL, use it
+            if image_url and (image_url.startswith('data:') or image_url.startswith('http')):
+                img_comp['props']['src'] = image_url
+                used_urls_this_slide.add(image_url)  # Track as used
+                logger.info(f"[IMAGE REPLACEMENT] ✓ Successfully replaced placeholder with image (unique)")
+            else:
+                # Fallback to placeholder if URL is invalid
+                img_comp['props']['src'] = 'placeholder'
+                logger.warning(f"[IMAGE REPLACEMENT] ✗ Invalid URL for image, keeping placeholder")
+            
+            img_comp['props']['alt'] = media.get('alt', '')
+            
+            # Add metadata for tracking including the component's original searchQuery
+            img_comp['props']['metadata'] = {
+                'imageId': media.get('id'),
+                'photographer': media.get('photographer'),
+                'ai_generated': media.get('ai_generated', False),
+                'searchQuery': component_search_query or media.get('searchQuery', ''),
+                'topic': media.get('topic', '')
+            }
+            
+            logger.debug(f"[IMAGE REPLACEMENT] Completed processing for image {i+1}")
+        
+        logger.info(f"[IMAGE REPLACEMENT] Used {len(used_urls_this_slide)} unique images on this slide")
         
         # Log if we have more images than components
         if len(available_images) > len(image_components):
