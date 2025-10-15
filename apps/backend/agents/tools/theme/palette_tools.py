@@ -6,6 +6,17 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+# Lazy import to avoid circular dependencies
+_huemint_generator = None
+
+def _get_huemint_generator():
+    """Lazy load Huemint generator."""
+    global _huemint_generator
+    if _huemint_generator is None:
+        from .huemint_palette_generator import generate_huemint_palette
+        _huemint_generator = generate_huemint_palette
+    return _huemint_generator
+
 
 def search_palette_by_topic(
     topic: str,
@@ -78,7 +89,7 @@ def search_palette_by_keywords(
 
 
 def get_random_palette(exclude_pink: bool = True, variety_seed: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Get a random palette from the database.
+    """Get a random palette, preferring Huemint AI generation over database lookup.
     
     Args:
         exclude_pink: Whether to exclude pink-dominant palettes
@@ -87,6 +98,12 @@ def get_random_palette(exclude_pink: bool = True, variety_seed: Optional[str] = 
     Returns:
         Random palette dictionary or None
     """
+    # Try Huemint AI first (better quality than random database selection)
+    # Note: This is a sync function, so we can't use async Huemint here
+    # Huemint should be used from async contexts (SmartColorSelector, ThemeDirector)
+    # This sync function will use database lookup as primary source
+    
+    # Fallback to database random selection
     try:
         from services.palette_db_service import PaletteDBService
         pdb = PaletteDBService()

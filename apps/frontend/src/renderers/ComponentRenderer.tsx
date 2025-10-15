@@ -296,6 +296,7 @@ export const ComponentRenderer: React.FC<Props> = ({
         isEditing,
         isResizing,
         isDragging,
+        isThumbnail,
         containerRef,
         styles: componentContentStyle,
         slideId: activeSlideId,

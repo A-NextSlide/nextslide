@@ -89,29 +89,45 @@ class RegistryFonts:
 
     @classmethod
     def _load_pixelbuddha_fonts(cls) -> Optional[List[str]]:
-        """Load PixelBuddha font names from the JSON file."""
+        """
+        Load PixelBuddha font names from the JSON file.
+        PERFORMANCE: Only loads curated subset for frontend registry.
+        Backend EnhancedFontService still has access to curated set for hero text.
+        """
         try:
+            # Import curated list
+            from services.curated_pixelbuddha_fonts import get_curated_font_ids
+            
+            # Get only curated font IDs
+            curated_ids = set(get_curated_font_ids())
+            
             font_list_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'fonts', 'pixelbuddha', 'font_list_simple.json')
             if os.path.exists(font_list_path):
                 with open(font_list_path, 'r') as f:
                     fonts_data = json.load(f)
-                    # Extract clean font names
+                    # Extract clean font names - only curated ones
                     font_names = []
                     for font in fonts_data:
+                        font_id = font.get('id', '')
                         name = font.get('name', '')
+                        
+                        # PERFORMANCE: Only include curated fonts
+                        if font_id not in curated_ids:
+                            continue
+                        
                         # Clean up the name - remove description after em dash
                         if '—' in name:
                             name = name.split('—')[0].strip()
                         if name:
                             font_names.append(name)
-                    return font_names[:100]  # Limit to first 100 for performance
+                    return font_names  # Returns ~80 curated fonts instead of 701
         except Exception as e:
             pass
         return None
     
     @classmethod
     def _merge_designer_fonts(cls, groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
-        """Ensure 'Designer' group includes all curated fonts and merge 'Designer Local' if present. Also load PixelBuddha fonts."""
+        """Ensure 'Designer' group includes all curated fonts and merge 'Designer Local' if present. Load curated PixelBuddha fonts (80 instead of 701 for performance)."""
         fallback_designer = [
             "Baloo 2", "Eudoxus Sans", "Gloock", "Prata", "Staatliches",
             "AV Galveria — Display Serif Font", "Acrona Display Font", "Acure - Display Font", "Alerio Sans Serif",

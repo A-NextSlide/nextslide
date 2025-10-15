@@ -64,7 +64,7 @@ async function listFonts(source?: FontSource, search?: string, limit = 10, offse
   if (search) params.set('search', search);
   if (limit) params.set('limit', String(limit));
   if (offset) params.set('offset', String(offset));
-  const url = `${base}/api/fonts/list?${params.toString()}`;
+  const url = `${base}/fonts/list?${params.toString()}`;  // BASE_URL already includes /api
   const res = await fetch(url, { credentials: 'omit' });
   if (!res.ok) return [];
   const data = await res.json();
@@ -74,7 +74,7 @@ async function listFonts(source?: FontSource, search?: string, limit = 10, offse
 
 async function getFontMeta(fontId: string): Promise<FontMeta | null> {
   const base = getApiBase();
-  const res = await fetch(`${base}/api/fonts/font/${encodeURIComponent(fontId)}`, { credentials: 'omit' });
+  const res = await fetch(`${base}/fonts/font/${encodeURIComponent(fontId)}`, { credentials: 'omit' });  // BASE_URL already includes /api
   if (!res.ok) return null;
   const meta = await res.json();
   return meta as FontMeta;
@@ -82,7 +82,7 @@ async function getFontMeta(fontId: string): Promise<FontMeta | null> {
 
 function buildSimpleFileUrl(fontId: string, styleKey: string): string {
   const base = getApiBase();
-  return `${base}/api/fonts/file/${encodeURIComponent(fontId)}?style=${encodeURIComponent(styleKey)}`;
+  return `${base}/fonts/file/${encodeURIComponent(fontId)}?style=${encodeURIComponent(styleKey)}`;  // BASE_URL already includes /api
 }
 
 async function loadWithFontFace(displayName: string, fileUrl: string, weight: string | number = '400', style: 'normal' | 'italic' = 'normal'): Promise<boolean> {
@@ -195,7 +195,7 @@ export const FontApiService = {
           const safeRemainder = remainder || pathOnly.split('/').pop() || pathOnly;
           directUrl = `/assets/fonts/pixelbuddha/downloads/extracted/${encodeURIComponent(meta.id)}/${encodePathSegments(safeRemainder)}`;
         } else {
-          directUrl = `${base}/api/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;
+          directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;  // BASE_URL already includes /api
         }
         try { injectPreload(directUrl, name, weightHint); } catch {}
         const ok = await loadWithFontFace(name, directUrl, weightHint, 'normal');

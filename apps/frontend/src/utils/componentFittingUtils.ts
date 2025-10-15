@@ -61,6 +61,7 @@ export function isTextOverflowing(element: HTMLElement): boolean {
 
 /**
  * Calculate optimal font size to fit text within bounds
+ * UPDATED: Only prevents overflow, doesn't over-shrink, rounds to whole numbers
  */
 export function calculateOptimalFontSize(
   element: HTMLElement,
@@ -68,29 +69,23 @@ export function calculateOptimalFontSize(
   maxFontSize: number = 72,
   currentFontSize: number = 16
 ): number {
-  if (!element) return currentFontSize;
-  
+  if (!element) return Math.round(currentFontSize);
+
   // Binary search for optimal font size
   let low = minFontSize;
   let high = Math.min(maxFontSize, currentFontSize);
   let optimal = currentFontSize;
-  
-  // Store original font size and padding info
+
+  // Store original font size
   const originalFontSize = element.style.fontSize;
-  const computedStyle = window.getComputedStyle(element);
-  const paddingTotal = 
-    (parseFloat(computedStyle.paddingTop) || 0) +
-    (parseFloat(computedStyle.paddingBottom) || 0) +
-    (parseFloat(computedStyle.paddingLeft) || 0) +
-    (parseFloat(computedStyle.paddingRight) || 0);
-  
+
   while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
+    const mid = Math.round((low + high) / 2); // Round to whole number
     element.style.fontSize = `${mid}px`;
-    
+
     // Force layout recalculation
     element.offsetHeight;
-    
+
     if (isTextOverflowing(element)) {
       high = mid - 1;
       optimal = mid - 1;
@@ -99,31 +94,23 @@ export function calculateOptimalFontSize(
       optimal = mid;
     }
   }
-  
+
   // Restore original font size
   element.style.fontSize = originalFontSize;
-  
-  // Reduce optimal size by a smaller percentage when there's significant padding
-  // This prevents over-aggressive shrinking when padding is already providing spacing
-  // Use even more conservative factors to maintain readability
-  let paddingFactor = 0.95; // Default 5% reduction
-  if (paddingTotal > 30) {
-    paddingFactor = 0.98; // Only 2% reduction with lots of padding
-  } else if (paddingTotal > 20) {
-    paddingFactor = 0.97; // 3% reduction with moderate padding
-  }
-  const safeOptimal = Math.floor(optimal * paddingFactor);
-  
+
+  // CRITICAL FIX: Don't apply additional padding factor reduction
+  // The binary search already found the optimal size that fits
+  // Only round to whole number for consistency
+  const finalOptimal = Math.round(optimal);
+
   console.log('[calculateOptimalFontSize] Result:', {
     currentFontSize,
     calculatedOptimal: optimal,
-    safeOptimal,
-    reduction: optimal - safeOptimal,
-    paddingTotal,
-    paddingFactor
+    finalOptimal,
+    reduction: currentFontSize - finalOptimal
   });
-  
-  return Math.max(minFontSize, safeOptimal);
+
+  return Math.max(minFontSize, finalOptimal);
 }
 
 /**

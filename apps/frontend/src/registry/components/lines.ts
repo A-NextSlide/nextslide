@@ -164,6 +164,33 @@ export const LinesSchema = UIObject(
 export type LinesProps = TypeFromSchema<typeof LinesSchema>;
 
 /**
+ * Normalize Lines props to ensure valid startPoint and endPoint
+ */
+export function normalizeLinesProps(props: Partial<LinesProps>): Partial<LinesProps> {
+  const normalized = { ...props };
+  
+  // Ensure startPoint has valid coordinates
+  if (!normalized.startPoint || typeof normalized.startPoint !== 'object') {
+    normalized.startPoint = { x: 100, y: 200 };
+  } else {
+    // Ensure x and y exist
+    if (typeof normalized.startPoint.x !== 'number') normalized.startPoint.x = 100;
+    if (typeof normalized.startPoint.y !== 'number') normalized.startPoint.y = 200;
+  }
+  
+  // Ensure endPoint has valid coordinates
+  if (!normalized.endPoint || typeof normalized.endPoint !== 'object') {
+    normalized.endPoint = { x: 300, y: 200 };
+  } else {
+    // Ensure x and y exist
+    if (typeof normalized.endPoint.x !== 'number') normalized.endPoint.x = 300;
+    if (typeof normalized.endPoint.y !== 'number') normalized.endPoint.y = 200;
+  }
+  
+  return normalized;
+}
+
+/**
  * Lines component definition
  */
 export const LinesDefinition: ComponentDefinition<typeof LinesSchema> = {
@@ -183,5 +210,7 @@ export const LinesDefinition: ComponentDefinition<typeof LinesSchema> = {
     rotation: 0,
     zIndex: 1
   },
-  category: 'basic'
+  category: 'basic',
+  // Normalize props before component creation
+  normalizeProps: normalizeLinesProps
 }; 

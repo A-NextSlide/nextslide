@@ -48,14 +48,14 @@ class SlideGeneratorAdapter:
             theme_system=theme_system
         )
         
-        # Optionally wrap with HTML-inspired prompting (controlled by environment variable)
-        use_html_inspired = os.getenv('USE_HTML_INSPIRED', 'false').lower() == 'true'
+        # Wrap with HTML-inspired prompting (enabled by default, can disable with env var)
+        use_html_inspired = os.getenv('USE_HTML_INSPIRED', 'true').lower() == 'true'
         
         if use_html_inspired:
-            logger.info("🎨 HTML-inspired slide generation ENABLED")
+            logger.info("🎨 HTML-inspired slide generation ENABLED (optimized prompts + caching)")
             self.generator = HTMLInspiredSlideGenerator(base_generator)
         else:
-            logger.info("📝 Using standard slide generation")
+            logger.info("📝 Using legacy RAG slide generation")
             self.generator = base_generator
         
         # Store for compatibility
@@ -635,15 +635,38 @@ class SimpleDeckComposer(IDeckComposer):
                     if brand_colors:
                         logger.info(f"[DECK COMPOSER] ✅ CREATING THEME FROM BRAND DATA (preventing duplication)")
                         
+                        # Enhance minimal brand colors if needed (< 4 colors)
+                        final_brand_colors = brand_colors
+                        if len(brand_colors) < 4:
+                            logger.info(f"[DECK COMPOSER] Brand has only {len(brand_colors)} colors, enhancing with Huemint AI")
+                            try:
+                                from agents.tools.theme import enhance_minimal_brand_colors
+                                
+                                # We're in an async function, so we can await directly
+                                enhanced = await enhance_minimal_brand_colors(
+                                    brand_colors=brand_colors,
+                                    brand_name=vibe_context or "Brand",
+                                    min_colors=5
+                                )
+                                
+                                if enhanced['enhanced']:
+                                    final_brand_colors = enhanced['colors']
+                                    logger.info(f"[DECK COMPOSER] ✅ Enhanced brand colors: {len(brand_colors)} → {len(final_brand_colors)}")
+                                    logger.info(f"[DECK COMPOSER] Original: {enhanced['brand_colors']}, AI-generated: {enhanced['generated_colors']}")
+                                else:
+                                    logger.info(f"[DECK COMPOSER] Brand has sufficient colors, no enhancement needed")
+                            except Exception as e:
+                                logger.warning(f"[DECK COMPOSER] Brand color enhancement failed: {e}, using original colors")
+                        
                         # Create theme from brand data using EXACT format as working theme API
                         theme_dict = {
                             "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
                             "color_palette": {
                                 "primary_background": "#FFFFFF",
                                 "primary_text": "#1F2937",
-                                "accent_1": brand_colors[0] if len(brand_colors) > 0 else "#FF4301",
-                                "accent_2": brand_colors[1] if len(brand_colors) > 1 else (brand_colors[0] if len(brand_colors) > 0 else "#F59E0B"),
-                                "colors": brand_colors[:6],  # Limit to 6 colors for frontend
+                                "accent_1": final_brand_colors[0] if len(final_brand_colors) > 0 else "#FF4301",
+                                "accent_2": final_brand_colors[1] if len(final_brand_colors) > 1 else (final_brand_colors[0] if len(final_brand_colors) > 0 else "#F59E0B"),
+                                "colors": final_brand_colors[:6],  # Use enhanced colors
                                 "metadata": {
                                     "logo_url": logo_url
                                 } if logo_url else {}
@@ -660,16 +683,18 @@ class SimpleDeckComposer(IDeckComposer):
                         
                         theme = ThemeSpec.from_dict(theme_dict)
                         
-                        # Create palette matching working theme API format
+                        # Create palette matching working theme API format (use enhanced colors)
                         palette = {
-                            "colors": brand_colors,
+                            "colors": final_brand_colors,  # Use enhanced colors
                             "fonts": [brand_fonts] if brand_fonts else [],
                             "logo_url": logo_url
                         }
                         
                         logger.info(f"[DECK COMPOSER] ✅ Successfully reconstructed theme from stylePreferences!")
                         logger.info(f"[DECK COMPOSER] Theme: {theme.theme_name}")
-                        logger.info(f"[DECK COMPOSER] Colors: {brand_colors}")
+                        logger.info(f"[DECK COMPOSER] Colors: {final_brand_colors}")
+                        if len(final_brand_colors) > len(brand_colors):
+                            logger.info(f"[DECK COMPOSER] 🎨 Enhanced from {len(brand_colors)} to {len(final_brand_colors)} colors")
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No usable brand data in stylePreferences - style_prefs: {style_prefs is not None}, brand_colors: {brand_colors}")
                         

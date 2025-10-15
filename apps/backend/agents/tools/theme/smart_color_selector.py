@@ -11,6 +11,8 @@ from .palette_tools import (
     get_random_palette,
     filter_out_pink_colors
 )
+from .huemint_palette_generator import generate_huemint_palette
+from .brand_color_enhancer import enhance_minimal_brand_colors
 from agents.research.tools import WebSearcher
 
 logger = get_logger(__name__)
@@ -154,12 +156,42 @@ class SmartColorSelector:
         result = await self.brand_searcher.search_brand_colors(brand_name, brand_url)
         
         if result['colors']:
+            # Check if brand has minimal colors (< 4) and enhance if needed
+            if len(result['colors']) < 4:
+                logger.info(f"Brand {brand_name} has only {len(result['colors'])} colors, enhancing with AI")
+                enhanced = await enhance_minimal_brand_colors(
+                    brand_colors=result['colors'],
+                    brand_name=brand_name,
+                    min_colors=5
+                )
+                if enhanced['enhanced']:
+                    logger.info(f"Enhanced {brand_name} colors: {enhanced['brand_colors']} + AI colors")
+                    # Merge the enhanced result with original metadata
+                    result['colors'] = enhanced['colors']
+                    result['brand_colors'] = enhanced['brand_colors']
+                    result['generated_colors'] = enhanced.get('generated_colors', [])
+                    result['source'] = 'brand_enhanced_with_ai'
+            
             return self._format_color_result(result, f"{brand_name} brand colors")
         
         # If no colors found, try web scraping
         if brand_url or brand_name:
             scrape_result = await self.web_scraper.scrape_brand_website(brand_name, brand_url)
             if scrape_result.get('colors'):
+                # Check if scraped colors are minimal and enhance
+                if len(scrape_result['colors']) < 4:
+                    logger.info(f"Scraped {brand_name} has only {len(scrape_result['colors'])} colors, enhancing")
+                    enhanced = await enhance_minimal_brand_colors(
+                        brand_colors=scrape_result['colors'],
+                        brand_name=brand_name,
+                        min_colors=5
+                    )
+                    if enhanced['enhanced']:
+                        scrape_result['colors'] = enhanced['colors']
+                        scrape_result['brand_colors'] = enhanced['brand_colors']
+                        scrape_result['generated_colors'] = enhanced.get('generated_colors', [])
+                        scrape_result['source'] = 'brand_scraped_enhanced'
+                
                 return self._format_color_result(scrape_result, f"{brand_name} (scraped)")
         
         # Try searching for brand guidelines
@@ -219,8 +251,33 @@ class SmartColorSelector:
         style_preferences: Optional[Dict[str, Any]] = None,
         variety_seed: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get colors based on the topic."""
-        # Try topic-based search
+        """Get colors based on the topic.
+        
+        Now uses Huemint AI for better palette generation when no specific
+        brand/entity is detected, falling back to database search only if needed.
+        """
+        # First, try Huemint AI palette generation (better than database search)
+        try:
+            logger.info("Using Huemint AI to generate palette")
+            huemint_palette = await generate_huemint_palette(
+                num_colors=3,
+                variety_seed=variety_seed
+            )
+            
+            if huemint_palette and huemint_palette.get('colors'):
+                # Filter out pink if not wanted
+                if style_preferences and not self._check_wants_pink(str(style_preferences)):
+                    colors = huemint_palette.get('colors', [])
+                    filtered_colors = filter_out_pink_colors(colors)
+                    if filtered_colors:
+                        huemint_palette['colors'] = filtered_colors
+                
+                logger.info(f"Generated Huemint palette with {len(huemint_palette['colors'])} colors")
+                return self._format_color_result(huemint_palette, "huemint_ai")
+        except Exception as e:
+            logger.warning(f"Huemint palette generation failed, falling back to database: {e}")
+        
+        # Fallback to topic-based database search
         results = search_palette_by_topic(title, style_preferences, limit=5)
         
         if results:
@@ -239,8 +296,8 @@ class SmartColorSelector:
                     selected = results[0]
                 return self._format_color_result(selected, "topic match")
         
-        # Fallback to random palette
-        random_palette = get_random_palette(exclude_pink=True)
+        # Fallback to random palette from database
+        random_palette = get_random_palette(exclude_pink=True, variety_seed=variety_seed)
         if random_palette:
             return self._format_color_result(random_palette, "random selection")
         

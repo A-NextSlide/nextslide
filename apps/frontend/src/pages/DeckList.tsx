@@ -836,37 +836,123 @@ const DeckList: React.FC = () => {
       // Attach current workspace theme into outline so backend can skip theme creation
       const outlineDeckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id);
       const wsTheme = useThemeStore.getState().getWorkspaceTheme?.();
-      const mapThemeToBackend = (t: any) => {
-        if (!t) return undefined;
-        const bg = t.page?.backgroundColor || '#ffffff';
-        const accent1 = t.accent1 || '#FF4301';
-        const accent2 = t.accent2 || accent1;
-        const headingFamily = t.typography?.heading?.fontFamily || 'Inter';
-        const paragraphFamily = t.typography?.paragraph?.fontFamily || 'Inter';
-        const textColor = t.typography?.paragraph?.color || '#1f2937';
-        return {
-          theme_name: t.name || 'Custom Theme',
+
+      // CRITICAL FIX: Use outlineDeckTheme directly which already has the full color palette
+      // The wsTheme only has accent1/accent2, but outlineDeckTheme has the complete colors array
+      let finalTheme: any = null;
+
+      if (outlineDeckTheme && outlineDeckTheme.color_palette) {
+        // outlineDeckTheme is already in backend format with full color palette - use it directly!
+        finalTheme = outlineDeckTheme;
+
+        // Update the workspace theme colors if they changed (to keep UI in sync)
+        if (wsTheme) {
+          const accent1 = wsTheme.accent1 || outlineDeckTheme.color_palette.accent_1;
+          const accent2 = wsTheme.accent2 || outlineDeckTheme.color_palette.accent_2;
+
+          // CRITICAL: Ensure accent_1 and accent_2 are at the FRONT of the colors array
+          // This tells the AI these are the PRIMARY brand colors to use
+          const existingColors = Array.isArray(outlineDeckTheme.color_palette.colors)
+            ? outlineDeckTheme.color_palette.colors
+            : [];
+
+          // Remove accent_1 and accent_2 from wherever they are in the array
+          const otherColors = existingColors.filter((c: string) => {
+            const cl = String(c || '').toLowerCase();
+            return cl !== String(accent1 || '').toLowerCase() &&
+                   cl !== String(accent2 || '').toLowerCase();
+          });
+
+          // Put accent_1 and accent_2 at the FRONT, then add the rest
+          const reorderedColors = [accent1, accent2, ...otherColors].filter(Boolean);
+
+          finalTheme = {
+            ...outlineDeckTheme,
+            color_palette: {
+              ...outlineDeckTheme.color_palette,
+              primary_background: wsTheme.page?.backgroundColor || outlineDeckTheme.color_palette.primary_background,
+              primary_text: wsTheme.typography?.paragraph?.color || outlineDeckTheme.color_palette.primary_text,
+              accent_1: accent1,
+              accent_2: accent2,
+              // Put accent colors at the FRONT of the array so AI uses them as primary colors
+              colors: reorderedColors
+            },
+            typography: {
+              ...outlineDeckTheme.typography,
+              hero_title: {
+                ...(outlineDeckTheme.typography?.hero_title || {}),
+                family: wsTheme.typography?.heading?.fontFamily || outlineDeckTheme.typography?.hero_title?.family || 'Inter'
+              },
+              body_text: {
+                ...(outlineDeckTheme.typography?.body_text || {}),
+                family: wsTheme.typography?.paragraph?.fontFamily || outlineDeckTheme.typography?.body_text?.family || 'Inter'
+              }
+            }
+          };
+        } else {
+          // Even without wsTheme updates, ensure accents are at the front
+          const accent1 = outlineDeckTheme.color_palette.accent_1;
+          const accent2 = outlineDeckTheme.color_palette.accent_2;
+          const existingColors = Array.isArray(outlineDeckTheme.color_palette.colors)
+            ? outlineDeckTheme.color_palette.colors
+            : [];
+
+          const otherColors = existingColors.filter((c: string) => {
+            const cl = String(c || '').toLowerCase();
+            return cl !== String(accent1 || '').toLowerCase() &&
+                   cl !== String(accent2 || '').toLowerCase();
+          });
+
+          const reorderedColors = [accent1, accent2, ...otherColors].filter(Boolean);
+
+          finalTheme = {
+            ...outlineDeckTheme,
+            color_palette: {
+              ...outlineDeckTheme.color_palette,
+              colors: reorderedColors
+            }
+          };
+        }
+
+        // Ensure logo is passed along if available
+        const logoUrl = (currentOutline as any)?.stylePreferences?.logoUrl ||
+                       outlineDeckTheme?.logo?.url ||
+                       outlineDeckTheme?.logo_info?.url ||
+                       outlineDeckTheme?.brandInfo?.logoUrl;
+        if (logoUrl && !finalTheme.logo) {
+          finalTheme.logo = { url: logoUrl };
+        }
+      } else if (wsTheme) {
+        // Fallback: map from workspace theme (this should rarely happen now)
+        const bg = wsTheme.page?.backgroundColor || '#ffffff';
+        const accent1 = wsTheme.accent1 || '#FF4301';
+        const accent2 = wsTheme.accent2 || accent1;
+        const headingFamily = wsTheme.typography?.heading?.fontFamily || 'Inter';
+        const paragraphFamily = wsTheme.typography?.paragraph?.fontFamily || 'Inter';
+        const textColor = wsTheme.typography?.paragraph?.color || '#1f2937';
+
+        finalTheme = {
+          theme_name: wsTheme.name || 'Custom Theme',
           color_palette: {
             primary_background: bg,
             accent_1: accent1,
             accent_2: accent2,
             primary_text: textColor,
-            colors: [accent1, accent2]
+            colors: [accent1, accent2] // Limited fallback
           },
           typography: {
             hero_title: { family: headingFamily },
             body_text: { family: paragraphFamily }
           },
           visual_style: {}
-        } as any;
-      };
+        };
+      }
 
       const outlineWithTheme: any = {
         ...currentOutline,
         notes: {
           ...(currentOutline as any).notes,
-          // Always pass the latest UI theme so generation matches what user sees; fallback to outlineDeckTheme
-          ...(wsTheme ? { theme: mapThemeToBackend(wsTheme) } : (outlineDeckTheme ? { theme: outlineDeckTheme } : {}))
+          ...(finalTheme ? { theme: finalTheme } : {})
         }
       };
 

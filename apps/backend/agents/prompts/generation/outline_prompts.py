@@ -223,13 +223,303 @@ STAT DENSITY & NARRATIVE RULES:
 - Favor vignettes, testimonials, examples, and checklists over numeric lists.
 - Use numbers sparingly to underscore the narrative, not replace it.
 
-CRITICAL: PRESENTATIONS MUST BE PUNCHY BUT SUBSTANTIVE!
-- Target 80-120 words per slide (not too sparse, not too dense)
-- Use impactful bullet points (8-15 words each) with specifics
+CRITICAL: PRESENTATIONS MUST BE COMPREHENSIVE AND SUBSTANTIVE!
+- **NO WORD LIMITS** - Be as comprehensive as needed for thorough analysis
+- Use impactful bullet points with extensive specifics and data
 - Use charts SELECTIVELY: only when quantitative data exists AND forms a valid comparable series
-- NO PARAGRAPHS - use structured bullet points
+- NO PARAGRAPHS - use structured bullet points with multiple levels
 - Include specific metrics, percentages, and data points for charts
 - Every slide with numbers/percentages/comparisons should produce chart data in the outline ONLY if the numbers form a valid comparable series (same x-category type, same y units). Otherwise, keep them as STAT text in the outline
+- **DETAILED MODE**: Write as much as needed for investment-grade depth (typically 200-400+ words per slide)
+- **STANDARD MODE (PRESENTATION)**: 30-60 words per slide (minimal, punchy - like Canva/Apple slides)
+- **QUICK MODE (PRESENTATION)**: 15-40 words per slide (ultra-minimal - absolute essentials)
+
+🎨 DESIGN & LAYOUT CONSIDERATIONS (CRITICAL):
+When creating slide content, consider the ENTIRE SLIDE DESIGN and text structure:
+
+TEXT HIERARCHY & STRUCTURE:
+- **Title**: Main slide heading (40-80pt) - keep it punchy (3-8 words)
+- **Subtitle/Kicker**: Optional supporting line under title (20-30pt) - provides context
+- **Body Text**: Main content (24-36pt) - use bullets, NOT paragraphs
+- **Caption/Label**: Small descriptive text (16-22pt) - for chart labels, sources, footnotes
+
+TEXT PLACEMENT & COMPONENTS:
+- **Above Charts**: Use a short title (in the main slide title) and optional subtitle to introduce what the chart shows
+- **Below Charts**: Add a caption for sources/dates (e.g., "Source: McKinsey Report 2024")
+- **Inside Shapes/Callouts**: For key metrics or highlights - MUST specify this is a callout text
+- **Standalone Text Blocks**: For main content, split into logical sections with bullets
+
+PARAGRAPH VS. BULLETS DECISION:
+- ✅ BULLETS: Use for most content slides (lists, features, steps, benefits, key points)
+- ✅ BULLETS: Use for comparisons, pros/cons, specifications
+- ❌ PARAGRAPHS: NEVER use paragraphs in slides - break into bullets instead
+- ✅ SHORT PHRASES: For stat slides, quotes, callouts - single impactful line
+
+TEXT LENGTH GUIDELINES:
+- **Titles**: 3-8 words (max 60 characters)
+- **Bullets**: 10-25 words each for DETAILED mode; 6-10 words for STANDARD presentation; 3-6 words for QUICK presentation
+- **Total per slide**:
+  - DETAILED MODE: 200-400+ words (NO UPPER LIMIT - be comprehensive!)
+  - STANDARD MODE (PRESENTATION): 30-60 words (minimal, punchy)
+  - QUICK MODE (PRESENTATION): 15-40 words (ultra-minimal)
+  - Stat/Quote slides: 5-20 words
+- **Chart labels**: 2-5 words per label
+
+COMPONENT-SPECIFIC TEXT STRUCTURE:
+When specifying content, indicate the intended component/presentation:
+- "TITLE: [text]" - Main slide title
+- "SUBTITLE: [text]" - Supporting kicker text
+- "BULLET: [text]" - Regular bullet point
+- "CALLOUT: [text]" - Text that should be in a highlighted box/shape
+- "CHART TITLE: [text]" - Text above a chart
+- "CHART LABEL: [text]" - Axis or data labels
+- "CAPTION: [text]" - Small text below chart/image (source, date)
+- "QUOTE: [text]" - Large quote text
+- "STAT: [text]" - Large statistic display
+
+🎯 CONTENT STRUCTURE FOR PROPER RENDERING:
+Structure slide content with HIERARCHY and FORMATTING for beautiful tiptap display:
+
+1. **USE SECTION HEADERS** (prefix with ##):
+   ## Key Investments
+   • Strong market confidence with co-investor attraction
+   • Legendary portfolio: Apple, Google, WhatsApp, Zoom
+
+2. **USE SUB-BULLETS** (indent with 2 spaces for hierarchy):
+   • Legendary portfolio with billion-dollar exits
+     • Apple: $1.2B exit (invested 2012)
+     • Google: $850M exit (invested 2009)
+     • WhatsApp: acquired by Facebook for $19B
+     • Zoom: IPO valuation $16B in 2019
+
+3. **USE BOLD FOR EMPHASIS** (wrap in **text**):
+   • Strong market confidence with **co-investor attraction**
+   • **Leading AI security investments** in 2025 (Irregular partnership)
+
+4. **USE INLINE FORMATTING**:
+   • Strategic focus on **transformative technology** aligned with **$89.4B global AI startup investments**
+
+5. **STRUCTURE EXAMPLE** (how content should look):
+   ```
+   ## Portfolio Highlights
+   • Legendary portfolio with **4 billion-dollar exits** since 2009
+     • **Apple**: $1.2B exit (invested 2012, 340% ROI)
+     • **Google**: $850M exit (invested 2009, 280% ROI)
+     • **WhatsApp**: Acquired by Facebook for **$19B** (2014)
+     • **Zoom**: IPO valuation **$16B** in 2019
+   
+   ## 2025 Investment Focus
+   • **Leading AI security investments** in partnership with Irregular
+     • Cybersecurity AI: $127M across 8 startups
+     • Threat detection: 47% faster anomaly identification
+   • Strategic alignment with **$89.4B global AI startup market**
+     • Enterprise AI: 68% of portfolio ($2.3B invested)
+     • Consumer AI: 32% of portfolio ($1.1B invested)
+   ```
+
+CRITICAL: Always structure content with:
+- Section headers (##) to break up information
+- Sub-bullets (2-space indent) for hierarchical data
+- **Bold** for key numbers, companies, and important terms
+- Proper grouping of related information
+
+🎯 CRITICAL MODE DIFFERENTIATION - COMPLETELY DIFFERENT PRESENTATION STYLES:
+
+📊 **FOR DETAILED MODE (COMPREHENSIVE ANALYSIS WITH RESEARCH):**
+Current detail level is: {detail_level}
+
+WHEN detail_level == "detailed":
+CREATE COMPREHENSIVE, RESEARCH-BACKED ANALYSIS PRESENTATIONS:
+
+**🔬 RESEARCH MODE (AUTO-ENABLED IN DETAILED MODE):**
+- Detailed mode AUTOMATICALLY includes deep research and citations
+- Use web research findings to support claims with data
+- Include specific sources, studies, and expert insights
+- Ground every major claim in verifiable research
+- Cite statistics, trends, and projections from authoritative sources
+
+**CONTENT DEPTH (COMPREHENSIVE - NO SHORTCUTS!):**
+- **300-600 words per slide** - Be thorough and exhaustive in analysis
+- Use comprehensive bullet points (25-45 words each with full context and data)
+- Include section headers (##) with multi-level sub-bullets (3-5 levels deep)
+- Deep context: Background → Analysis → Implications → Forward outlook
+- Explain WHY and HOW in detail, not just WHAT
+- Multiple data points, statistics, percentages on EVERY content slide
+- Extreme specificity: Company names, exact numbers, dates, research findings, calculations, trends
+- Include competitive analysis, market dynamics, growth projections
+- For each claim: Provide evidence, context, and supporting data
+
+**CHART INTENSITY (70-85% OF CONTENT SLIDES MUST HAVE RICH CHARTS):**
+- Use charts when data exists and adds clarity
+- ✅ **MULTIPLE CHARTS PER SLIDE SUPPORTED** - Use 2-3 charts on data-heavy slides!
+- Push for complex visualizations:
+  * **Waterfall charts**: Revenue bridges, cost breakdowns, value creation
+  * **Multi-series line/area**: Compare 3-5 trends simultaneously with 15-20+ data points
+  * **Radar charts**: Competitive analysis across 6-8 dimensions
+  * **Heatmaps**: Regional performance, product-market matrices
+  * **Sankey diagrams**: Customer journey flows, resource allocation
+  * **Treemaps**: Portfolio composition, market segmentation
+  * **Bubble charts**: 3-dimensional comparisons (size, x, y axes)
+- Include 10-20+ data points for time series (not just 4-5)
+- Multi-series comparisons showing different segments/products/regions
+
+**MULTIPLE CHARTS PER SLIDE (DETAILED MODE):**
+- For comprehensive analysis slides, use 2-3 complementary charts
+- Example: "Market Analysis" slide could have:
+  1. Market size trend (multi-series line chart)
+  2. Competitive positioning (radar chart)
+  3. Regional breakdown (heatmap)
+- Each chart tells a different aspect of the same story
+- Limit to 3 charts max per slide to avoid overcrowding
+
+**📈 RICH DATA REQUIREMENTS (DETAILED MODE ONLY):**
+When creating charts in detailed mode, use RICH, COMPREHENSIVE DATA:
+
+**For Time-Series Charts (Line, Area, Spline):**
+- **12-30+ data points** showing historical trends
+- Include 3-5 years of historical data when available
+- Add forward-looking projections (next 2-3 periods)
+- Multiple series comparing different segments/regions/products
+- Example: "Revenue Growth 2019-2026" with 8 historical + 3 projected points per region
+
+**For Comparison Charts (Bar, Column, Radar):**
+- **8-15 categories** for comprehensive comparisons
+- Multi-dimensional analysis (3-5 metrics per category)
+- Include both absolute values and growth rates
+- Show year-over-year or period-over-period changes
+- Example: "Regional Performance: 10 Regions × 5 KPIs"
+
+**For Distribution Charts (Pie, Treemap, Sunburst):**
+- **8-12 segments** for detailed breakdown
+- Show hierarchical relationships (parent-child categories)
+- Include percentage AND absolute values
+- Example: "Revenue Mix: 3 Divisions → 12 Product Lines"
+
+**For Process/Flow Charts (Waterfall, Sankey):**
+- **8-15 steps/stages** in the flow
+- Show quantified impact at each stage
+- Include conversion rates and drop-off points
+- Example: "Sales Funnel: 12 Touchpoints from Lead to Customer"
+
+**RESEARCH-BACKED DATA (when research is enabled):**
+- Use actual market data, industry benchmarks, competitor metrics
+- Include specific company names, exact figures, dates
+- Reference growth rates, market share, revenue numbers from research
+- Add context: "According to McKinsey 2024 report..."
+
+**INVESTMENT BANKING CHART EXAMPLES:**
+"Revenue Waterfall 2024: $450M → $520M"
+- Starting Revenue: $450M
+- New Customer Acquisition: +$85M
+- Expansion Revenue: +$42M
+- Churn: -$35M
+- Price Optimization: +$18M
+- Ending Revenue: $520M
+
+"Regional Market Share Heatmap: 8 Regions × 5 Product Lines"
+"Competitive Positioning Radar: 5 Players × 8 Key Metrics"
+"Customer Acquisition Sankey: Channels → Segments → Conversion"
+"Portfolio Performance Treemap: 12 Investments by Size & Returns"
+"Market Growth Projection: 2019-2026 (8 historical + 3 forecast quarters)"
+
+**SLIDE STRUCTURE:**
+- Granular breakdowns: Split complex topics into 2-3 slides
+  Example: "Market Analysis" → "Market Size & Growth" + "Competitive Landscape" + "Regional Breakdown"
+- Rich metadata: Subtitles, sources, date ranges, citations
+- Comparison slides with side-by-side analysis
+- Break down EVERY major concept into constituent parts
+
+---
+
+🎯 **FOR PRESENTATION MODE (HERO CONTENT & VISUAL IMPACT):**
+
+WHEN detail_level == "standard" or "quick":
+CREATE DYNAMIC, VISUALLY-DRIVEN PRESENTATIONS WITH HERO CONTENT:
+
+**🎨 HERO CONTENT PHILOSOPHY:**
+- Focus on VISUAL IMPACT with clear narrative storytelling
+- HERO STATEMENT/HEADLINE + supporting descriptive text
+- Every slide should tell a clear story with hierarchy
+- Use whitespace strategically - don't overcrowd
+- Professional presentation style - NOT ultra-minimal
+
+**CONTENT STYLE (HERO + SUPPORTING TEXT - PROFESSIONAL STORYTELLING):**
+- **STANDARD**: NO HARD LIMITS - model decides appropriate amount based on content
+  * Start with bold hero statement/headline (key message)
+  * Follow with supporting descriptive text that elaborates
+  * Use bullets OR paragraphs depending on content type
+  * Think: "What would make someone lean forward?"
+  * Example structure: "Hero: Almost 30 years of experience in HR industry" → Supporting: "I have seen companies succeed and fail due to how they approached workplace diversity."
+- **QUICK**: 15-40 words per slide (absolute essentials, ultra-minimal)
+- Hero content means: IMPACT + CLARITY, NOT minimal
+- Tell a story - don't just list facts
+- Supporting text should add context and meaning
+- **NO research mode** - use knowledge base and user input only
+
+**HERO SLIDE MIX (CREATE VISUAL RHYTHM & PACING):**
+- Alternate content slides with HERO SLIDES for dynamic pacing
+- Use 30-40% hero slides in presentations (stat, quote, divider types)
+- **Stat slides**: ONE big number + 5-10 words context (no bullets)
+  Example: "$2.5M" / "saved annually"
+- **Quote slides**: Powerful quote (max 24 words) + attribution (no other content)
+  Example: "Innovation distinguishes between a leader and a follower." - Steve Jobs
+- **Divider slides**: Section title + optional 3-5 word tagline (minimal text)
+  Example: "Our Solution" / "Transforming the Industry"
+- **Visual flow**: Title (hero) → Content → Stat (hero) → Content → Quote (hero) → Divider (hero) → Content
+
+**CHART USAGE (SELECTIVE & SIMPLE - 20-30% OF SLIDES):**
+- Charts ONLY when they significantly add clarity
+- Prefer simple, high-impact visualizations:
+  * Bar/column for comparisons (4-8 categories max)
+  * Line for single trend (6-10 points max)
+  * Pie for distribution (4-6 segments max)
+- **NO complex charts** (avoid waterfall, sankey, heatmaps, radar)
+- **NO multi-series charts** unless absolutely essential
+- Each chart must tell ONE clear, simple story
+- Favor clean design over data density
+
+**📊 SIMPLE DATA REQUIREMENTS (PRESENTATION MODE):**
+When creating charts in presentation mode, use SIMPLE, FOCUSED DATA:
+
+**For All Chart Types in Presentation Mode:**
+- **4-6 data points maximum** - keep it clean and readable
+- Single series only (no multi-series comparisons)
+- Focus on the key insight, not comprehensive data
+- Round numbers for easy comprehension ($50M not $49.7M)
+- Clear, simple labels (no technical jargon)
+
+**Simple Data Examples:**
+- **Bar chart**: "Top 5 Markets" (5 regions with revenue)
+- **Line chart**: "Growth Trend" (6-8 quarterly points, single metric)
+- **Pie chart**: "Market Share" (4-5 competitors maximum)
+- **Column chart**: "Year Comparison" (3-5 years, single metric)
+
+**What NOT to Do in Presentation Mode:**
+- ❌ NO 15+ data points (overwhelming)
+- ❌ NO multi-dimensional comparisons
+- ❌ NO projections or forecasts (save for detailed mode)
+- ❌ NO complex hierarchies or nested data
+- ❌ NO heatmaps, treemaps, sankey diagrams
+- ❌ NO radar charts with 8+ dimensions
+
+**Focus**: ONE clear story per chart with minimal data points
+
+**PRESENTATION RHYTHM:**
+Example 12-slide flow:
+1. Title (hero)
+2. Agenda  
+3. Stat slide (hero) - "$5.2B Market"
+4. Content - Problem context
+5. Content - Key challenges
+6. Divider (hero) - "Our Solution"
+7. Content - Solution overview
+8. Chart slide - Impact metrics
+9. Quote (hero) - Customer testimonial  
+10. Content - Implementation
+11. Content - Next steps
+12. Conclusion
+
+Remember: {detail_level} mode determines the ENTIRE presentation style!
 
 CHART USAGE GUARDRAILS:
 - For PERSONAL/CREATIVE and GENERAL/HOW-TO topics (e.g., recipes, crafts, hobbies): do NOT include charts or statistics unless explicitly requested by the user
@@ -244,15 +534,16 @@ STORY-FIRST TOPICS (apply to training, nonprofit/fundraising, personal, how‑to
 - Replace long stat sequences with: short vignette, concrete example, and actionable takeaway
 
 IMPORTANT STRUCTURAL ELEMENTS TO INCLUDE:
-- Title slides: Hero title with supporting elements (not just a big title)
-  - Include: optional kicker/subtitle, presenter name, organization/company, date
-  - Optional: small logo, optional short quote/tagline, optional thin divider line
-  - Layout: centered or left-aligned hero; allow dynamic divider line above/below metadata
-  - For narrative/biographical/historical topics: Prefer a HERO IMAGE background on the title slide over charts
-- Quote slides: Powerful quotes or testimonials (1-2 sentences max)
-- Stat slides: Single impactful statistic or metric
+- **Title slides: CLEAN HERO SLIDES WITH MINIMAL CONTENT (20-30 words max)**
+  - Required: Hero title (3-8 words) + optional subtitle (8-12 words) + metadata (name/company/date)
+  - FORBIDDEN: NO kickers, NO quotes, NO taglines, NO bullet points, NO body text
+  - Layout: Centered hero design with clean typography
+  - CRITICAL: Title slides are for visual impact, not content delivery
+  - For narrative/biographical/historical topics: Use HERO IMAGE background
+- Quote slides: Powerful quotes or testimonials (1-2 sentences max, under 24 words)
+- Stat slides: Single impactful statistic or metric (under 10 words)
 - Progress indicators: Visual progress through sections
-- Divider slides: Section transitions with minimal text
+- Divider slides: Section transitions with minimal text (title + optional 3-5 word tagline)
 - Call-to-action slides: Clear next steps
 
 IMPORTANT: CREATE A PROPER FLOW WITH MORE SLIDES:
@@ -304,49 +595,93 @@ THEME & HERO IMAGE GUIDANCE:
 - Historical/biographical topics: use large hero imagery for title and section dividers; minimize charts unless prompted
 - Business/data topics: keep small decks text-forward; introduce charts only with real, comparable metrics
 
-PRESENTATION STRUCTURE (adapt based on slide count):
+🎯 INTELLIGENT FLOW STRUCTURES (USE AS INSPIRATION, NOT RIGID TEMPLATES):
 
-BUSINESS/CORPORATE (15-20 slides recommended) - USE WHEN: Company presentations, business proposals, investor meetings
-1. Title Slide - Company/Topic name (Hero title + metadata; can include kicker/logo)
-2. [QUOTE SLIDE] - Opening hook or vision statement
-3. Agenda - "What We'll Cover" (brief overview)
-4. [DIVIDER] - "The Challenge"
-5. Market Context - Current landscape
-6. [STAT SLIDE] - "$X Billion Market"
-7. The Problem - Pain points (3 max)
-8. [QUOTE SLIDE] - Customer testimonial about the problem
-9. [STAT SLIDE] - "87% of companies struggle with..."
-10. [DIVIDER] - "Our Solution"
-11. Solution Overview - High-level approach
-12. How It Works - Step 1
-13. How It Works - Step 2  
-14. How It Works - Step 3
-15. [STAT SLIDE] - Key benefit metric
-16. Case Study - Client success
-17. [STAT SLIDE] - ROI achieved
-18. Implementation Timeline
-19. [DIVIDER] - "Next Steps"
-20. Call to Action
-21. Thank You/Contact
+Let the content and context guide your structure. These are EXAMPLES to spark ideas:
 
-PITCH DECK (12-15 slides, adapt if specific count given) - USE WHEN: Seeking investment, startup presentations
-1. Title - Company Name (minimal: logo + tagline)
+**INVESTMENT ANALYSIS (12-18 slides) - FOR: Financial reviews, market analysis, detailed business analysis**
+*Use in DETAILED MODE for maximum depth*
+1. Title - Bold, data-driven title
+2. Executive Summary - Key findings at a glance
+3. Market Overview - Size, growth, trends (with multi-series line charts)
+4. [STAT SLIDE] - "$X.XB Market Growing at X% CAGR"
+5. Competitive Landscape - Market share breakdown (heatmap or treemap)
+6. Comparative Analysis - Player benchmarking (radar chart comparing 5-8 metrics)
+7. [TRANSITION] - "Market ✓ | >> Deep Dive | Projections"
+8. Revenue Analysis - Waterfall showing drivers
+9. Cost Structure - Breakdown by category (treemap)
+10. Profitability Metrics - Margin trends over time (multi-series area chart)
+11. Regional Performance - Geographic heatmap
+12. Risk Factors - Quantified risks with probability/impact
+13. Growth Projections - Multiple scenarios (multi-line with confidence intervals)
+14. Strategic Recommendations - Data-backed next steps
+15. [DIVIDER] - "Appendix"
+16-18. Supporting Data Tables
+
+**BUSINESS PITCH (PRESENTATION MODE - 10-15 slides) - FOR: Sales, partnerships, business development**
+*Use PRESENTATION MODE for dynamic pacing*
+1. Title - Compelling, outcome-focused
+2. [STAT SLIDE] - Market opportunity in one number
+3. The Problem - Pain points (3 bullets, punchy)
+4. [QUOTE] - Customer expressing pain
+5. [DIVIDER] - "Our Solution"  
+6. Solution Overview - How it works (visual, minimal text)
+7. Key Benefits - 3-4 major advantages
+8. Proof Points - Chart showing impact metrics
+9. [QUOTE] - Customer success testimonial
+10. Why Now - Market timing, urgency
+11. [DIVIDER] - "Let's Partner"
+12. Next Steps - Clear CTA
+13. Thank You/Contact
+
+**PITCH DECK (INVESTOR MODE - 12-15 slides) - FOR: Fundraising, investor presentations**
+*Balance PRESENTATION MODE pacing with DETAILED MODE data*
+1. Title - Company name + one-line value prop
 2. [STAT SLIDE] - The Problem in Numbers
-3. Problem Deep Dive
-4. [QUOTE SLIDE] - Customer Testimonial
-5. Our Solution
-6. Product Demo - Key Features (visual)
-7. [STAT SLIDE] - Market Size ($X Billion)
-8. Business Model - How We Make Money
-9. Go-to-Market Strategy
-10. [STAT SLIDE] - Traction (users/revenue/growth)
-11. Competition/Our Advantage
-12. Team (REQUIRED - photos + brief bios)
-13. [STAT SLIDE] - Financial Projections
-14. The Ask - Investment & Use of Funds
-15. Thank You/Contact
+3. Problem Deep Dive - Market failure, customer pain
+4. Solution - Your innovation (visual demo)
+5. Why Now - Market trends converging  
+6. [STAT SLIDE] - "$XB TAM / $XB SAM"
+7. Market Size & Opportunity - Breakdown with charts
+8. Business Model - Revenue streams (sankey or waterfall)
+9. Traction - Growth metrics (hockey stick chart)
+10. Go-to-Market - Customer acquisition strategy
+11. Competition - Positioning (radar or matrix)
+12. Team - Key people with track record
+13. Financials - 3-year projections (multiple charts)
+14. The Ask - Amount, use of funds, milestones
+15. Closing - Vision statement
 
-EDUCATIONAL/ACADEMIC (12-16 slides recommended) - USE WHEN: Teaching, school projects, research presentations
+**🤖 AI DECISION-MAKING FRAMEWORK:**
+
+Analyze the user's prompt and choose the BEST structure:
+
+1. **Detect the presentation type:**
+   - Contains "investment", "financial analysis", "market analysis", "due diligence" → INVESTMENT ANALYSIS
+   - Contains "pitch", "fundraising", "investor", "seeking capital" → PITCH DECK  
+   - Contains "sales", "partnership", "business development" → BUSINESS PITCH
+   - Contains "analysis", "report", "findings" + business context → INVESTMENT ANALYSIS (detailed mode)
+   - Educational/academic indicators → EDUCATIONAL (below)
+   - Personal/hobby indicators → Informal, story-driven structure
+
+2. **Match detail_level to structure:**
+   - DETAILED mode + business topic → Use INVESTMENT ANALYSIS approach (deep, data-rich)
+   - STANDARD mode + business topic → Use BUSINESS PITCH approach (dynamic, punchy)
+   - QUICK mode → Minimal slides, direct content
+
+3. **Don't follow templates rigidly:**
+   - Use these as INSPIRATION
+   - Adapt slide count to user's request
+   - Let content dictate specific flow
+   - Mix and match elements as needed
+
+4. **Create natural narrative flow:**
+   - Every slide should set up the next
+   - Build tension before revealing solutions
+   - Use strategic hero slides for pacing (presentation mode)
+   - In detailed mode, group related analysis together
+
+**EDUCATIONAL/ACADEMIC (12-16 slides recommended) - USE WHEN: Teaching, school projects, research presentations
 1. Title Slide (Hero title + optional kicker + metadata)
 2. [QUOTE SLIDE] - Thought-provoking opening
 3. Learning Objectives - 3 key outcomes
@@ -419,12 +754,12 @@ SECURITY TRAINING (6–12 slides recommended) - USE WHEN: Employee awareness/tra
 (Stats optional: max 1 metric to frame urgency; avoid multiple numeric bullets)
 
 SLIDE TYPE RULES:
-- "title": First slide only - include hero title plus supporting metadata (kicker/subtitle optional; presenter, organization, date; optional logo/quote)
+- "title": CLEAN HERO SLIDE - hero title (3-8 words) + optional subtitle (8-12 words) + metadata only (20-30 words total MAX)
 - "agenda": Slides showing outline/roadmap
 - "transition": Progress checkpoints with >> markers ONLY (e.g., "Problem ✓ | >> Solution | Next Steps")
-- "divider": Section breaks with minimal text
-- "stat": Single statistic or metric slides (one big number)
-- "quote": Quote or testimonial slides (1-2 sentences)
+- "divider": Section breaks with minimal text (title + optional 3-5 word tagline)
+- "stat": Single statistic or metric slides (one big number + 2-5 word context, under 10 words total)
+- "quote": Quote or testimonial slides (1-2 sentences, under 24 words)
 - "team": Team/About Us slides
 - "content": Main content slides including ALL solution, problem, market, analysis, strategy slides
 - "conclusion": Thank you/final slides
@@ -465,14 +800,51 @@ PROGRESSION INDICATORS:
 
 Style: {style_context if style_context else 'Professional and engaging'}
 
-CRITICAL - TITLE GENERATION:
-First, analyze the prompt and generate a clear, professional presentation title:
-- For educational topics: Use format like "Photosynthesis: A Comprehensive Guide" or "Understanding [Topic]"
-- For business: "[Company Name]: [Value Proposition]" or "[Product] Platform"
-- For informational: "[Topic]: [Angle/Focus]"
-- Keep it concise (1-8 words) but descriptive
-- Make it engaging and professional
-- Extract the core topic from long descriptions
+CRITICAL - TITLE GENERATION (CREATE MEMORABLE, ENGAGING TITLES):
+Analyze the prompt and generate a COMPELLING, PROFESSIONAL presentation title:
+
+🎯 **TITLE FORMULAS BY CONTEXT:**
+
+**Business/Corporate:**
+- "[Company]: [Bold Value Proposition]" → "Acme: Transforming Digital Commerce"
+- "[Result/Impact] with [Product]" → "10x Revenue Growth with DataFlow"
+- "[Action Verb] + [Industry] + [Outcome]" → "Revolutionizing Healthcare Delivery"
+- Use: Power words (Transform, Accelerate, Unlock, Drive, Elevate)
+
+**Tech/Startup:**
+- "[Platform Name]: [What It Enables]" → "CloudScale: Infrastructure Made Simple"
+- "The Future of [Industry]" → "The Future of Remote Collaboration"
+- "[Problem Solved] + Platform" → "Real-Time Analytics Platform"
+
+**Educational/Academic:**
+- "[Topic]: [Approach/Angle]" → "Quantum Physics: A Visual Journey"
+- "Understanding [Complex Concept]" → "Understanding Neural Networks"
+- "[Topic] Explained" → "Blockchain Explained"
+- "The Science of [Topic]" → "The Science of Persuasion"
+
+**Personal/Creative:**
+- "[Passion Project Name]" → "My Urban Garden Journey"
+- "Exploring [Topic]" → "Exploring Japanese Tea Ceremony"
+- "[Activity]: [Angle]" → "Hiking: Finding Peace in Nature"
+
+**Data/Analytics:**
+- "[Metric] Story" → "The 2024 Growth Story"
+- "[Company] Insights: Q[X] 2024" → "Revenue Insights: Q4 2024"
+- "[Topic] Analysis" → "Market Trends Analysis"
+
+**How-To/Guides:**
+- "Mastering [Skill]" → "Mastering Sourdough Baking"
+- "A Guide to [Topic]" → "A Guide to Sustainable Living"
+- "[Number] Ways to [Outcome]" → "5 Ways to Boost Productivity"
+
+✨ **TITLE QUALITY GUIDELINES:**
+- Keep it 2-6 words (punchy) or up to 8 words (descriptive)
+- Use ACTIVE, POWERFUL verbs (Unlock, Drive, Transform, Master, Build)
+- Make it SPECIFIC, not generic ("AI Platform" → "AI-Powered Customer Intelligence")
+- Include the VALUE or OUTCOME when possible
+- Avoid: "Introduction to...", "Welcome to...", "Overview of..."
+- Use colons to create structure: "[Main]: [Supporting]"
+- Test: Can someone understand the topic in 2 seconds? Make it MEMORABLE!
 
 Output a JSON object with:
 - title: The overall presentation title (GENERATE THIS FIRST - make it clear and professional)
@@ -552,15 +924,48 @@ OUTPUT:
 """
 
         # Otherwise, create a dynamic title even for small decks
-        return f"""Create a title slide for: {presentation_title}
+        return f"""Create a MINIMAL, HERO title slide for: {presentation_title}
 
-TITLE REQUIREMENTS (DYNAMIC, NOT MINIMAL):
-- Use separate lines (no bullets): optional Kicker, HERO Title, optional Subtitle, optional Divider "—", Metadata row
-- Metadata row format: "[Your Name] — [Organization/Company] — [Date]"
-- Optional short quote last if appropriate
-- Keep it elegant and readable; do not trim provided details
+🎯 CRITICAL: TITLE SLIDES MUST BE CLEAN HERO SLIDES - MINIMAL CONTENT ONLY!
 
-Do not add body paragraphs or lists. Focus on title hierarchy and metadata only."""
+**REQUIRED STRUCTURE (MAXIMUM ~30 WORDS TOTAL):**
+
+1. **HERO TITLE** (3-8 words) - THE MAIN EVENT
+   Use: {presentation_title}
+   This is the primary focus - large, bold, centered
+
+2. **Optional Subtitle** (ONLY if absolutely necessary, max 8-12 words)
+   Adds context or value proposition
+   Example: "AI-Powered Solutions for Modern Teams"
+
+3. **Metadata Row** (Simple presenter info)
+   Format: "[Name] — [Company] — [Date]"
+   Example: "Sarah Chen — TechVentures — Jan 2025"
+   Keep it simple and unobtrusive
+
+**STRICT WORD COUNT LIMITS:**
+- Total slide content: 20-30 words MAXIMUM (including all elements)
+- Title: 3-8 words
+- Subtitle: 8-12 words (optional - skip if not adding clear value)
+- Metadata: Name, company, date only (no extra text)
+- NO kickers, NO quotes, NO taglines, NO extra elements
+
+**WHAT IS ABSOLUTELY FORBIDDEN:**
+- ❌ NO body paragraphs or explanatory text
+- ❌ NO bullet points or lists
+- ❌ NO lengthy descriptions or context
+- ❌ NO quotes or inspirational sayings (save for quote slides)
+- ❌ NO divider lines or decorative elements
+- ❌ NO "Welcome to" or "Introduction to" phrases
+- ❌ NO objectives, agendas, or overview text
+- ❌ Total content MUST NOT exceed 30 words
+
+**PRESENTATION MODE vs DETAILED MODE:**
+- **PRESENTATION MODE**: Title + optional short subtitle + metadata (20-25 words total)
+- **DETAILED MODE**: Title + subtitle + metadata (25-30 words total)
+- Both modes: HERO CONTENT ONLY - clean, impactful, minimal
+
+Generate a CLEAN hero title slide that makes people lean forward!"""
 
     elif slide_type == "stat":
         return f"""Create a statistic slide for: {formatted_slide_title}
@@ -612,6 +1017,36 @@ Keep it clean and simple. This marks a transition."""
     
     # Regular content slides
     base_topic = f"Topic: {user_prompt}\nPresentation: {presentation_title}\nSlide: {formatted_slide_title}"
+    
+    # ✅ RESEARCH-BACKED CONTENT EMPHASIS
+    research_emphasis = """
+
+🔬 RESEARCH-BACKED CONTENT REQUIREMENTS:
+YOU MUST INCLUDE SPECIFIC, VERIFIABLE FACTS:
+- **Specific numbers, dates, and amounts** (e.g., "$510K investment", "founded in 2005", "$2.5B return")
+- **Named individuals with titles** (e.g., "Josh Kopelman, Managing Partner", "Howard Morgan, Co-founder")
+- **Company names and acquisitions** (e.g., "Uber", "Roblox IPO $45B", "Looker acquired for $2.6B")
+- **Concrete milestones and events** (e.g., "raised Fund X $500M in 2024", "10 Year Project released in 2015")
+- **Market data and metrics** (e.g., "500+ companies funded", "14 unicorns", "ROI of 5,000x")
+
+❌ NEVER USE VAGUE STATEMENTS:
+- "significant returns" → USE: "$2.5B return on $510K investment (5,000x)"
+- "early investor in tech companies" → USE: "First investor in Uber (2010), Roblox, Square"
+- "successful exits" → USE: "Looker $2.6B (Google 2019), Flatiron $1.9B (Roche 2018)"
+- "founded by venture capitalists" → USE: "Founded 2005 by Josh Kopelman (Half.com founder) and Howard Morgan"
+- "raised a large fund" → USE: "Raised Fund X targeting $500M in 2024"
+
+✅ EXAMPLES OF EXCELLENT RESEARCH-BACKED CONTENT:
+• **Founded in 2005** by Josh Kopelman (Half.com founder) and Howard Morgan to fill gap between angel and Series A
+• **$510K Uber investment** in 2010 seed round became **$2.5B return** (nearly 5,000x)
+• **500+ portfolio companies** including unicorns: Uber, Roblox ($45B+ IPO 2021), Square, Notion
+• **Major exits:** Looker $2.6B (Google 2019), Flatiron Health $1.9B (Roche 2018), Roblox IPO
+• **Fund X raised $500M** in 2024, bringing total AUM to over $2 billion
+• **Josh Kopelman consistently ranked** on Forbes Midas List for top VCs
+
+BE SPECIFIC. BE FACTUAL. BE COMPREHENSIVE."""
+    
+    base_topic += research_emphasis
     
     # Get presentation context from the context parameter
     presentation_context = context.get('presentation_context', 'business') if context else 'business'
@@ -1117,12 +1552,12 @@ Create compelling content for this SOLUTION slide.{continuation_guidance}
 THIS IS A CRITICAL SLIDE - Make it impactful and detailed!
 
 REQUIREMENTS:
-- Write 80-120 words - SUBSTANTIVE BUT PUNCHY!
-- Use 5-7 bullet points (8-12 words each)
-- Include KEY benefits with specific metrics
+- Write 150-250 words - COMPREHENSIVE AND DETAILED!
+- Use 6-10 bullet points (15-25 words each with sub-bullets)
+- Include KEY benefits with specific metrics and comprehensive context
 - Support with large, impactful charts and CustomComponents
-- Include metrics or data points that demonstrate effectiveness
-- IMPORTANT: Format with proper line breaks between bullet points
+- Include extensive metrics, data points, and research that demonstrate effectiveness
+- IMPORTANT: Format with proper line breaks between bullet points and use multi-level structure
 
 SOLUTION SLIDE STRUCTURE:
 • Core Technology/Approach
@@ -1156,17 +1591,34 @@ EXAMPLE FORMAT:
 Remember: This slide should make investors/audience excited about your solution!
 Include data for charts if you mention specific metrics or comparisons."""
         
-        # Adjust word count based on content importance
-        if is_detailed_content:
-            # Important slides need substance but still punchy
-            word_range = (100, 150)
-            bullet_guidance = "5-7 KEY POINTS with impactful data"
-            style_guidance = "substantive but punchy"
+        # Get detail_level from context
+        detail_level = context.get('detail_level', 'standard') if context else 'standard'
+        
+        # CRITICAL: Dramatically adjust based on detail_level
+        if detail_level == 'detailed':
+            # INVESTMENT BANKING MODE - Deep, comprehensive, data-rich (NO LIMITS)
+            word_range = None  # ✅ TRULY UNLIMITED - model decides based on content depth needed
+            bullet_guidance = "8-12+ comprehensive bullets with 3-4 levels of sub-bullets, extensive data, and full context"
+            style_guidance = "investment banking-grade depth with section headers - BE EXHAUSTIVELY THOROUGH"
+            chart_push = "STRONGLY encourage charts when data exists - aim for 60-80% of content slides having charts"
+        elif is_detailed_content:
+            # Important slides in standard mode
+            word_range = None  # No hard limit - let model decide based on content
+            bullet_guidance = "6-8 KEY POINTS with supporting data and context"
+            style_guidance = "substantive with comprehensive details"
+            chart_push = "Include charts when they add clarity"
+        elif detail_level == 'quick':
+            # QUICK MODE - Ultra-minimal presentation slides (like Canva/Apple)
+            word_range = (15, 40)
+            bullet_guidance = "3-4 ultra-short bullets (3-6 words each)"
+            style_guidance = "ultra-minimal, essential points only - let visuals do the talking"
+            chart_push = "Charts only when essential - prefer hero slides for variety"
         else:
-            # Regular content slides - balanced approach
-            word_range = (80, 120)
-            bullet_guidance = "4-6 punchy bullet points"
-            style_guidance = "concise and impactful"
+            # STANDARD MODE - Hero content with supporting text (like reference images)
+            word_range = None  # ✅ NO HARD LIMITS - model decides appropriate amount
+            bullet_guidance = "Hero statement/headline followed by supporting descriptive text - tell a story with clarity"
+            style_guidance = "impactful hero content with supporting context - professional storytelling, NOT minimal"
+            chart_push = "Include charts when they enhance understanding - balanced approach"
         
         # Special guidance when real data is available
         data_guidance = ""
@@ -1233,15 +1685,72 @@ When generating chart data, you MUST:
 
 3. **Vary Chart Types Across Presentation**:
    - Check previously used charts in context
-   - Popular charts (use frequently): bar, column, pie, line, area
-   - Unique charts (use sparingly - MAX 1 per presentation): sankey, treemap, radar, waterfall
+   - **Common charts** (use freely): bar, column, pie, line, area, spline, areaspline
+   - **Advanced charts** (use when appropriate): waterfall, radar, bubble, heatmap, treemap
+   - **Complex charts** (use sparingly - MAX 1-2 per presentation): sankey, dependencywheel, networkgraph, sunburst, packedbubble
    - NEVER use funnel charts - use bar/column for process data instead
 
-4. **Match Chart Type to Data**:
-   - Pie/Donut: For percentages/distributions (max 8 segments)
-   - Bar/Column: For comparisons between categories or process stages
-   - Line/Area: For trends over time (min 5 data points)
-   - Waterfall: For showing cumulative changes or process flows
+4. **Match Chart Type to Data - FULL HIGHCHARTS CAPABILITIES:**
+
+**COMPARISON & RANKING:**
+   - **Bar/Column**: Simple comparisons (6-12 categories)
+     Example: "Revenue by Product Line Q4 2024"
+   - **Radar/Spider**: Multi-dimensional comparisons (5-8 metrics across 3-5 entities)
+     Example: "Competitive Analysis: 5 Players × 8 Performance Metrics"
+   - **Bubble**: 3-dimensional comparisons (x-axis, y-axis, bubble size)
+     Example: "Market Positioning: Revenue vs Growth Rate (bubble = market share)"
+
+**TRENDS & TIME SERIES:**
+   - **Line/Spline**: Single or multi-series trends (12-20+ points)
+     Example: "Revenue Growth 2020-2024: Actual vs Projected"
+   - **Area/Areaspline**: Cumulative trends or multiple series
+     Example: "Market Share Evolution: 5 Players Over 3 Years"
+   - **Streamgraph**: Flow and proportions over time
+     Example: "Product Mix Evolution 2020-2024"
+
+**PARTS OF WHOLE & COMPOSITION:**
+   - **Pie/Donut**: Simple distribution (4-8 segments, must sum to 100%)
+     Example: "Revenue by Region Q4 2024"
+   - **Treemap**: Hierarchical composition with size comparison
+     Example: "Portfolio Breakdown: $2.5B by Sector → Company → Investment Size"
+   - **Sunburst**: Multi-level hierarchical relationships
+     Example: "Organization Structure: Division → Department → Team"
+
+**FLOW & PROCESS:**
+   - **Waterfall**: Sequential changes showing cumulative effect
+     Example: "Revenue Bridge 2024: $450M → $520M (show all drivers)"
+   - **Sankey**: Flow between stages/categories
+     Example: "Customer Journey: 100K Leads → Qualified → Closed → Retained"
+   - **Dependencywheel**: Circular flow relationships
+     Example: "Trade Flows: Exports/Imports Between 8 Countries"
+
+**DISTRIBUTION & PATTERNS:**
+   - **Heatmap**: 2D intensity mapping
+     Example: "Sales Performance: 12 Regions × 8 Products (color = revenue)"
+   - **Boxplot**: Statistical distribution
+     Example: "Salary Distribution by Department (quartiles, outliers)"
+   - **Scatter**: Correlation and clustering
+     Example: "Customer Segmentation: Lifetime Value vs Engagement Score"
+
+**HIERARCHICAL & NETWORK:**
+   - **Networkgraph**: Relationships and connections
+     Example: "Partnership Network: Companies and Joint Ventures"
+   - **Packedbubble**: Grouped categories with size
+     Example: "Tech Stack by Category: Frontend, Backend, Infrastructure"
+
+**DETAILED MODE CHART PREFERENCES:**
+   - Multi-series line/area with 15-20+ points
+   - Waterfalls showing detailed breakdowns
+   - Radar charts for competitive benchmarking
+   - Heatmaps for regional/product matrices
+   - Sankey for complex flows
+   - Multiple charts per slide when appropriate
+
+**PRESENTATION MODE CHART PREFERENCES:**
+   - Simple bar/column (6-8 categories max)
+   - Single-series line (8-12 points)
+   - Clean pie charts (4-6 segments)
+   - One chart per slide, clear story
 
 5. **Data Point Requirements**:
    - Include 10–20+ data points when appropriate (avoid under-populated charts)
@@ -1306,36 +1815,106 @@ If any check fails, set requires_chart=false and provide only content.
 
         return f"""{base_topic}
 
-Create {'detailed' if is_detailed_content else 'SIMPLE'} content for this slide.{continuation_guidance}{data_guidance}
+🎯 CURRENT MODE: {detail_level.upper()}
+Create content following {detail_level.upper()} mode guidelines.{continuation_guidance}{data_guidance}
 
-CONTENT GUIDANCE:
+{'='*80}
+📊 DETAILED MODE ACTIVATED - INVESTMENT BANKING QUALITY REQUIRED:
+{'='*80 if detail_level == 'detailed' else ''}
+
+{'''
+YOU ARE CREATING AN INVESTMENT BANKING-GRADE ANALYSIS SLIDE.
+
+CONTENT REQUIREMENTS (NO UPPER LIMIT - BE COMPREHENSIVE!):
+- Write 250-500+ words (EXTREMELY DENSE, information-rich, comprehensive)
+- Use section headers (##) to organize information into logical sections
+- Create multi-level bullets with 2-4 space indents for deep sub-bullets (3-4 levels)
+- Each main bullet: 20-40 words with extensive specific data, context, and analysis
+- Include metrics, percentages, calculations, and numbers throughout EVERY bullet
+- Explain WHY and HOW, not just WHAT - provide complete reasoning and implications
+- Include background, analysis, evidence, implications, and forward-looking insights
+
+STRUCTURE FORMAT:
+## Section Title 1
+• Main point with comprehensive context and specific data
+  • Sub-point with supporting evidence or breakdown
+  • Sub-point with additional detail or metric
+• Another main point with specific numbers and context
+  • Sub-bullet explaining the implication
+  • Sub-bullet with comparison or benchmark
+
+## Section Title 2
+• Detailed analysis point with data
+  • Supporting breakdown
+  • Additional context
+
+CHART REQUIREMENT:
+- STRONGLY PREFER including a chart when data exists
+- Use complex visualizations: waterfall, multi-series line, radar, heatmap, sankey, treemap
+- Include 10-20+ data points for time series
+- Multi-series comparisons when appropriate
+- Examples: "Revenue Waterfall", "5-Player Competitive Radar", "Regional Heatmap"
+
+INVESTMENT BANKING STYLE - BE OBSESSIVELY SPECIFIC:
+- **Always cite specific companies with full context**: "Uber (2010 seed, $510K → $2.5B exit)"
+- **Include precise numbers, not ranges**: "$2.5 billion" not "significant returns"
+- **Name key individuals with credentials**: "Josh Kopelman (Half.com founder, Forbes Midas List)"
+- **Specify exact dates and timeframes**: "March 2021 IPO" not "recent IPO"
+- **Show calculations**: "5,000x return ($2.5B / $510K initial investment)"
+- **Include year-over-year data**: "Revenue $450M (2023) → $520M (2024), +15.6% growth"
+- **Add source citations**: "(Source: First Round 10 Year Project, 2015)"
+- **Use bold for ALL key metrics, company names, and people**: **$2.5B**, **Uber**, **Josh Kopelman**
+- **Provide comprehensive data**: Portfolio of **500+ companies**, **14 unicorns**, **$2B+ AUM**
+
+FORBIDDEN VAGUE PHRASES IN DETAILED MODE:
+❌ "several successful exits" → ✅ "Looker $2.6B (Google 2019), Flatiron $1.9B (Roche 2018), Roblox $45B+ IPO (March 2021)"
+❌ "founded by entrepreneurs" → ✅ "Founded 2005 by Josh Kopelman (Half.com founder) and Howard Morgan (Renaissance Technologies)"
+❌ "strong portfolio performance" → ✅ "500+ portfolio cos, 14 unicorns including Uber ($2.5B return), Roblox ($45B IPO)"
+❌ "recent fund raise" → ✅ "Fund X: $500M raised in 2024, total AUM now exceeds $2 billion"
+''' if detail_level == 'detailed' else '''
+🎯 PRESENTATION MODE - HERO CONTENT + SUPPORTING TEXT (PROFESSIONAL STORYTELLING):
+
+CONTENT REQUIREMENTS:
+- **STANDARD MODE**: NO HARD LIMITS - model decides appropriate amount
+  * Start with HERO STATEMENT/HEADLINE (bold, clear key message)
+  * Add SUPPORTING DESCRIPTIVE TEXT (elaborates, provides context)
+  * Use bullets OR paragraphs - whatever tells the story best
+  * Think hierarchy: What's the main point? What supports it?
+  * Example: "Hero: I have almost 30 years of experience in the HR industry." + "Supporting: I have seen companies succeed and fail due to how they approached workplace diversity."
+- **QUICK MODE**: Write 15-40 words total (ultra-minimal, essentials only)
+- Hero content = IMPACTFUL + CLEAR narrative, NOT ultra-minimal
+- Professional storytelling approach - make people lean forward
+- Supporting text adds meaning and context
+
+CHART USAGE:
+- Charts when they enhance understanding (balanced approach)
+- Simple, effective visualizations: bar, line, pie, area
+- Each chart supports the narrative
+
+HERO SLIDE VARIETY:
+- Mix content slides with stat/quote/divider hero slides
+- Create visual rhythm and pacing
+- Professional presentation flow
+'''}
+
+GENERAL GUIDANCE:
 - Context: {presentation_context.upper()} presentation
-- Content Style: {'Detailed and comprehensive' if is_detailed_content else 'SIMPLE AND CONCISE'}
+- Style: {style_guidance}
 - Visual Emphasis: {guidance['visual_emphasis']}
 
-REQUIREMENTS:
-- Write {word_range[0]}-{word_range[1]} words - PUNCHY BUT SUBSTANTIVE!
-- Use bullet points (8-15 words each) with specific details
-- Include {bullet_guidance}
-- Every word must add value - include metrics and specifics when relevant
-- Include charts ONLY when they improve clarity and data form a comparable series
-- Avoid charts for narrative/overview slides unless explicitly warranted
-- For PERSONAL/CREATIVE and GENERAL/HOW-TO topics: DO NOT include stats or charts unless explicitly requested; keep tone fun, engaging, and based only on the user's request
-- For TRAINING/NONPROFIT/FUNDRAISING: Lead with a short scenario or story; support with at most one key metric
-- IMPORTANT: Format with proper line breaks between bullet points
- - HEIGHT-AWARE BULLETS: Each bullet should be a single line. If a bullet would wrap into multiple lines within a small text area, either reduce line breaks by making it more concise, or split into additional bullets. Multi-line bullets are discouraged unless height is increased appropriately in the layout.
+CORE REQUIREMENTS:
+- Content Length: {f"{word_range[0]}-{word_range[1]} words" if word_range else "Model decides based on content needs - NO hard limits, use appropriate amount"}
+- Bullets: {bullet_guidance}
+- Charts: {chart_push}
 {f'- USE REAL DATA: Reference the actual extracted data provided above!' if has_extracted_data else ''}
-- FACTS AND METRICS MUST BE EITHER:
-  (a) FROM THE WEB SOURCES LISTED ABOVE (append a numeric [n] at end of the bullet referencing the source index), OR
-  (b) WELL-KNOWN BACKGROUND KNOWLEDGE (avoid speculative claims). Use at most one [n] per bullet; if uncertain, omit.
-- DO NOT reference images in the content text (no "[Image 1: filename]" or image descriptions)
-- Images will be added separately through the design system
-- CRITICAL: Avoid long paragraphs - use short, punchy statements
-- Each bullet point should be scannable and impactful
-- Focus on KEY insights, not exhaustive details
-- EXTRACT KEY NUMBERS: If content has stats, pull them out for visual emphasis
-- NEVER bury important data in paragraphs - highlight it separately
-- Think VISUAL: How can this data be displayed beautifully, not just written?
+- For PERSONAL/CREATIVE and GENERAL/HOW-TO: NO stats/charts unless explicitly requested
+- For TRAINING/NONPROFIT: Lead with story; minimal metrics
+- FACTS AND METRICS: Either from web sources [n] OR well-known background
+- NO image references in content text
+- Format with proper line breaks between bullets
+- Each bullet should be scannable and impactful
+- EXTRACT KEY NUMBERS for visual emphasis
+- Think VISUAL: How can data be displayed beautifully?
 
 COMPARISON FORMAT (applies when the title includes "vs", "versus", "comparison", or "compare"):
 - Create PAIRED bullets: alternate Side A then Side B with parallel phrasing

@@ -18,7 +18,10 @@
       "Group related text in one component",
       "NEVER use backgroundColor unless absolutely necessary",
       "Combine multiple styles in texts array",
-      "Use for tables with small fonts (8pt+)"
+      "Use for tables with small fonts (8pt+)",
+      "CRITICAL: For bullet points, create SEPARATE TiptapTextBlock components (one per bullet), stacked vertically 60-80px apart",
+      "USE RICH FORMATTING: Always split text into multiple segments to apply bold, highlight, and accent colors to key words/numbers",
+      "EMPHASIZE KEY DATA: Use bold + accent color for numbers/metrics, add highlight with backgroundColor for maximum impact"
     ],
     "common_patterns": {
       "title_subtitle": {
@@ -54,6 +57,24 @@
           {"text": "%", "fontSize": 56},
           {"text": " adoption", "fontSize": 40},
           {"text": " [1]", "fontSize": 32, "style": {"superscript": true, "textColor": "{primary_text}", "backgroundColor": "#00000000"}}
+        ]
+      },
+      "rich_formatting_example": {
+        "description": "USE RICH TEXT FORMATTING - bold, highlight, and accent colors for impact",
+        "texts": [
+          {"text": "Revenue grew ", "fontSize": 32, "style": {"textColor": "{primary_text}", "bold": false}},
+          {"text": "340%", "fontSize": 32, "style": {"bold": true, "textColor": "{accent_1}", "highlight": true, "backgroundColor": "{accent_1}20"}},
+          {"text": " in ", "fontSize": 32, "style": {"textColor": "{primary_text}", "bold": false}},
+          {"text": "Q1", "fontSize": 32, "style": {"bold": true, "textColor": "{secondary_color}"}}
+        ]
+      },
+      "bullet_with_emphasis": {
+        "description": "Bullet point with key numbers/words emphasized",
+        "texts": [
+          {"text": "• Featured in ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
+          {"text": "2,000+", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}", "highlight": true, "backgroundColor": "{accent_1}20"}},
+          {"text": " newspapers by ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
+          {"text": "early 1980s", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}"}}
         ]
       }
     }
@@ -120,22 +141,23 @@
       "props"
     ],
     "critical_rules": {
-      "render": "Must be a single ESCAPED STRING with \\n for newlines; escape quotes/backslashes; NEVER use backticks or ${} template literals; For literal text children in React.createElement use double quotes (\"...\"); other string literals may use single quotes",
-      "syntax": "Use React.createElement, NEVER JSX; no imports/exports/require",
-      "signature": "function render({ props, state, updateState, id, isThumbnail }) { ... }",
-      "root_sizing": "Root element style MUST include width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexWrap: 'wrap', position: 'relative'",
+      "mandatory_format": "🚨 MUST use React.createElement ONLY - NO HTML strings! This avoids ALL quote and escaping issues",
+      "signature": "function render({ props, state, updateState, id, isThumbnail }) { - Clean signature, NO code inside destructuring!",
+      "variable_extraction": "Extract ALL props ONCE at top: var c1 = props.primaryColor; var tc = props.textColor; NEVER redeclare variables!",
+      "style_format": "Use JavaScript style objects with camelCase: { fontSize: '96px', fontWeight: '800', backgroundColor: '#FFF' }",
+      "root_sizing": "Root element style MUST include: { width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }",
+      "children": "For multiple elements, build children array and pass to parent: React.createElement('div', {style}, children)",
+      "no_jsx": "Use React.createElement(type, props, children) - NEVER use JSX syntax",
+      "theme_props": "ALWAYS use props.primaryColor, props.secondaryColor, props.textColor, props.fontFamily",
       "state_updates": "Do not call updateState during render; only in handlers/timeouts",
-      "length": "Prefer 10-15 lines; keep simple",
-      "helpers": "No helper functions",
-      "completion": "MUST end with complete balanced braces",
-      "escaping": "Use \\n for newlines, \\\" for quotes inside strings; use string concatenation instead of template literals; For text children prefer double quotes to avoid apostrophe issues"
+      "completion": "MUST end with complete balanced braces"
     },
     "fit_and_responsiveness": {
-      "container": "Include overflowWrap: 'anywhere', wordBreak: 'break-word', textOverflow: 'ellipsis', whiteSpace: 'normal'; alignItems/Content/Justify 'flex-start'",
-      "size_math": "availableWidth = props.width - padding*2; availableHeight = props.height - padding*2",
-      "text": "Clamp font sizes based on availableWidth and text length",
-      "grids": "totalWidth = itemWidth * cols + gap * (cols - 1) <= availableWidth; wrap rows if needed",
-      "thumbnails": "Throttle heavy animations when isThumbnail is true"
+      "container": "Style object should include: { overflowWrap: 'anywhere', wordBreak: 'break-word', overflow: 'hidden' }",
+      "text": "Use fontSize in pixels based on content length - longer text needs smaller fontSize",
+      "grids": "Calculate grid: totalWidth = itemWidth * cols + gap * (cols - 1); ensure it fits within width",
+      "thumbnails": "Skip heavy animations when isThumbnail is true",
+      "padding": "Declare padding ONCE: var padding = 24; (DO NOT redeclare later!)"
     },
     "content_triggers": {
       "metrics_keywords": ["growth", "increase", "performance", "kpi", "roi", "metrics", "revenue", "profit", "sales"],
@@ -190,6 +212,73 @@
       "cover": "Default - crops to fill",
       "contain": "Shows entire image",
       "fill": "Stretches to fit"
+    }
+  },
+  "Lines": {
+    "description": "Multi-line component for diagrams, connections, and dividers - USES COORDINATES, NOT POSITION/WIDTH!",
+    "required_props": [
+      "startPoint",
+      "endPoint"
+    ],
+    "critical_rules": {
+      "coordinates": "Lines use startPoint {x, y} and endPoint {x, y} - NOT position/width/height!",
+      "startPoint": "Object with x and y coordinates: {x: 100, y: 200}",
+      "endPoint": "Object with x and y coordinates: {x: 300, y: 400}",
+      "connectionType": "'straight', 'elbow', 'curved' - how line connects points",
+      "stroke": "Line color - use theme colors",
+      "strokeWidth": "Line thickness in pixels (2-6 typical)",
+      "endShape": "'arrow', 'circle', 'square', 'none' - shape at end of line",
+      "startShape": "'arrow', 'circle', 'square', 'none' - shape at start of line"
+    },
+    "best_practices": [
+      "Use for dividers BELOW headers (horizontal lines)",
+      "Use for connecting related components (arrows)",
+      "Use for timelines and process flows",
+      "DO NOT use position/width/height - Lines don't work that way!",
+      "For horizontal divider: startPoint {x: 80, y: 200}, endPoint {x: 1840, y: 200}",
+      "For vertical divider: startPoint {x: 960, y: 100}, endPoint {x: 960, y: 980}",
+      "For arrows: set endShape: 'arrow' and connectionType: 'straight' or 'curved'"
+    ],
+    "examples": {
+      "horizontal_divider": {
+        "description": "Horizontal line below header",
+        "type": "Lines",
+        "props": {
+          "startPoint": {"x": 80, "y": 180},
+          "endPoint": {"x": 1840, "y": 180},
+          "connectionType": "straight",
+          "stroke": "#E5E7EB",
+          "strokeWidth": 2,
+          "startShape": "none",
+          "endShape": "none"
+        }
+      },
+      "vertical_divider": {
+        "description": "Vertical line splitting content",
+        "type": "Lines",
+        "props": {
+          "startPoint": {"x": 960, "y": 200},
+          "endPoint": {"x": 960, "y": 880},
+          "connectionType": "straight",
+          "stroke": "#D1D5DB",
+          "strokeWidth": 2,
+          "startShape": "none",
+          "endShape": "none"
+        }
+      },
+      "connector_arrow": {
+        "description": "Arrow connecting two components",
+        "type": "Lines",
+        "props": {
+          "startPoint": {"x": 400, "y": 300},
+          "endPoint": {"x": 800, "y": 500},
+          "connectionType": "elbow",
+          "stroke": "#3B82F6",
+          "strokeWidth": 3,
+          "startShape": "none",
+          "endShape": "arrow"
+        }
+      }
     }
   },
   "Background": {

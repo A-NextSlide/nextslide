@@ -62,13 +62,17 @@ class OutlineGenerator:
         logger.info(f"Starting outline generation: slides={options.slide_count}, detail={options.detail_level}")
         
         # Fast-path: Perplexity single-pass outline generation (optional)
+        # Only use Perplexity for DETAILED mode - presentation modes (standard/quick) should NOT do research
         try:
-            use_pplx = (USE_PERPLEXITY_FOR_OUTLINE or 
-                        (options.model and isinstance(options.model, str) and options.model.startswith("perplexity-")))
-            logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, options.model={options.model}, use_pplx={use_pplx}")
+            use_pplx = (
+                (USE_PERPLEXITY_FOR_OUTLINE or
+                 (options.model and isinstance(options.model, str) and options.model.startswith("perplexity-")))
+                and options.detail_level == 'detailed'  # ✅ ONLY use Perplexity for detailed mode!
+            )
+            logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_pplx={use_pplx}")
         except Exception as e:
             logger.warning(f"[DEBUG] Exception in Perplexity check: {e}")
-            use_pplx = USE_PERPLEXITY_FOR_OUTLINE
+            use_pplx = USE_PERPLEXITY_FOR_OUTLINE and options.detail_level == 'detailed'
         if use_pplx:
             try:
                 if progress_callback:
@@ -130,7 +134,7 @@ class OutlineGenerator:
                 except Exception:
                     allowed_domains = []
 
-                agent = OutlineResearchAgent(per_query_results=4)
+                agent = OutlineResearchAgent(per_query_results=8)  # ✅ DOUBLED research depth for comprehensive insights
                 async for ev in agent.run(options.prompt, options.style_context, seed_urls=seed_urls, allowed_domains=allowed_domains or None):
                     if ev.get("type") == "research_complete":
                         research_findings = ev.get("findings", []) or []
@@ -1206,9 +1210,10 @@ class OutlineGenerator:
         from agents.ai.clients import get_client, get_max_tokens_for_model
         client, model_name = get_client(model)
         
-        # Get model's max token capability
+        # Get model's max token capability - NO LIMITS for comprehensive analysis
         model_max_tokens = get_max_tokens_for_model(model)
-        slide_max_tokens = min(int(model_max_tokens * 0.25), 8000)
+        # Allow MUCH larger responses for comprehensive, research-backed content
+        slide_max_tokens = min(int(model_max_tokens * 0.5), 16000)  # ✅ DOUBLED from 8000 to 16000
         
         logger.info(f"Streaming slide generation (parallel) with {model}")
         
@@ -1730,6 +1735,7 @@ class OutlineGenerator:
             "slide_type": slide.slide_type,
             "deepResearch": slide.deepResearch,
             "extractedData": slide.extractedData,
+            "manualCharts": getattr(slide, 'manualCharts', None),  # ✅ Support multiple charts
             "citationsFooter": getattr(slide, 'citationsFooter', None),
             "citations": getattr(slide, 'citations', []),
             "footnotes": getattr(slide, 'footnotes', []),  # Add footnotes for numbered citations
@@ -1956,7 +1962,32 @@ Requirements:
                 logger.info(f"[PARALLEL] Starting slide {idx+1}: {slide_title} at {time.time()}")
                 
                 # Generate individual slide content with Perplexity (with citations)
-                if slide_type == "quote":
+                if slide_type == "title":
+                    slide_prompt = f"""Create a MINIMAL TITLE SLIDE for a presentation.
+
+Presentation: {presentation_title}
+Slide {idx+1} Title: {slide_title}
+Context: {options.prompt}
+
+CRITICAL: This is a TITLE SLIDE - NOT a content slide!
+Output ONLY the following (15-25 words MAXIMUM):
+1) Main title (if different from "{slide_title}", otherwise skip)
+2) OPTIONAL: One short subtitle line (5-8 words max)
+3) OPTIONAL: Presenter info placeholder "[Your Name]" if appropriate
+
+FORBIDDEN:
+- NO bullet points
+- NO body paragraphs
+- NO detailed content
+- NO multiple sections
+- NO slide content from other slides
+
+Example output:
+{slide_title}
+A comprehensive journey through innovation
+
+This is a TITLE SLIDE ONLY - keep it minimal and clean!"""
+                elif slide_type == "quote":
                     slide_prompt = f"""Create a QUOTE slide for a presentation.
 
 Presentation: {presentation_title}
@@ -1988,23 +2019,73 @@ No bullets, no paragraphs, no extra commentary."""
                         bullet_guidance = "2–4"
                         if (options.visual_density or '').lower() == 'minimal':
                             bullet_guidance = "1–3"
-                    slide_prompt = f"""Create detailed content for this slide in a presentation:
+                    # ✅ USE COMPREHENSIVE, RESEARCH-BACKED PROMPTS FOR DETAILED CONTENT
+                    detail_mode = options.detail_level or 'standard'
+                    
+                    if detail_mode == 'detailed':
+                        # INVESTMENT BANKING-GRADE COMPREHENSIVE CONTENT
+                        slide_prompt = f"""Create COMPREHENSIVE, INVESTMENT-GRADE content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {options.prompt}
 
-Provide {bullet_guidance} bullet points of engaging, detailed content for this slide. Make it informative and appropriate for the audience.
+🔬 RESEARCH-BACKED CONTENT REQUIREMENTS:
+YOU MUST INCLUDE SPECIFIC, VERIFIABLE FACTS:
+- **Specific numbers, dates, and amounts** (e.g., "$510K investment", "founded in 2005", "$2.5B return")
+- **Named individuals with titles** (e.g., "Josh Kopelman, Managing Partner", "Howard Morgan, Co-founder")
+- **Company names and acquisitions** (e.g., "Uber", "Roblox IPO $45B", "Looker acquired for $2.6B")
+- **Concrete milestones and events** (e.g., "raised Fund X $500M in 2024", "10 Year Project released in 2015")
+- **Market data and metrics** (e.g., "500+ companies funded", "14 unicorns", "ROI of 5,000x")
 
-STRICT OUTPUT FORMAT (MANDATORY):
-- Return ONLY slide-ready bullet points.
-- Each bullet MUST start with '• ' (bullet + space).
-- One sentence per bullet (≤ 12–14 words). No multi-sentence bullets.
-- No paragraphs, no introductions, no headings, no extra commentary.
+CONTENT REQUIREMENTS (NO UPPER LIMIT - BE COMPREHENSIVE!):
+- Write 250-500+ words (EXTREMELY DENSE, information-rich, comprehensive)
+- Use section headers (##) to organize information into logical sections
+- Create multi-level bullets with 2-4 space indents for deep sub-bullets (3-4 levels)
+- Each main bullet: 20-40 words with extensive specific data, context, and analysis
+- Include metrics, percentages, calculations, and numbers throughout EVERY bullet
+- Explain WHY and HOW, not just WHAT - provide complete reasoning and implications
+- Include background, analysis, evidence, implications, and forward-looking insights
 
-IMPORTANT: Include relevant facts with citations. Use current information and cite your sources with [1], [2], etc., at the end of the relevant bullet."""
+FORMAT:
+## Section Header
+• Main comprehensive point with full context and specific data
+  • Sub-point with supporting evidence or detailed breakdown
+  • Additional sub-point with metrics and analysis
+• Another main point with extensive specific numbers and context
+  • Sub-bullet explaining implications and reasoning
+  • Sub-bullet with comparison, benchmark, or calculation
 
-                logger.info(f"[PARALLEL] Making Perplexity API call for slide {idx+1}")
+CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research."""
+                    else:
+                        # STANDARD MODE - Still comprehensive but more focused
+                        slide_prompt = f"""Create DETAILED, RESEARCH-BACKED content for this slide:
+
+Presentation: {presentation_title}
+Slide {idx+1}: {slide_title}
+Context: {options.prompt}
+
+RESEARCH-BACKED REQUIREMENTS:
+- Include SPECIFIC facts: numbers, dates, names, amounts
+- Cite sources with [1], [2], etc.
+- Use real data and verifiable information
+- No vague statements - be specific and concrete
+
+CONTENT REQUIREMENTS:
+- Write 150-250 words (substantive and informative)
+- Use 6-10 comprehensive bullet points
+- Include section headers (##) if organizing multiple topics
+- Each bullet: 15-25 words with specific data and context
+- Use sub-bullets (2-space indent) for supporting details
+
+FORMAT:
+• Main point with specific data and full context
+  • Supporting detail with metrics or evidence
+• Another point with concrete facts and numbers
+
+CITE ALL FACTS with [1], [2], [3] etc."""
+
+                logger.info(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
                 
                 # Use asyncio to run the synchronous API call in a thread executor
                 loop = asyncio.get_event_loop()
@@ -2014,7 +2095,7 @@ IMPORTANT: Include relevant facts with citations. Use current information and ci
                         model=model_name,
                         messages=[{"role": "user", "content": slide_prompt}],
                         temperature=0.3,
-                        max_tokens=500,
+                        max_tokens=4000,  # ✅ INCREASED from 500 to 4000 for comprehensive content
                         extra_body={"return_citations": True, "search_recency_filter": "month", "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"], "num_search_results": 10}
                     )
                 )
@@ -2513,8 +2594,10 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "SLIDE MODE: You are producing a slide deck. Write slide headlines and bullet microcopy; no paragraphs, no meta commentary, no prefaces. "
                 "CITATION POLICY: Do NOT use YouTube (youtube.com, youtu.be) as a source; prefer reputable articles, reports, company sites, documentation."
             )
-            # Dynamic bullet limits for 'content' slides
-            if is_pitch:
+            # Dynamic bullet limits for 'content' slides - DETAILED MODE gets more bullets
+            if options.detail_level == 'detailed':
+                content_bullet_limits = "5–8 bullets (15-25 words each, data-rich with specific numbers, percentages, dates); include sub-bullets for breakdowns and supporting details."
+            elif is_pitch:
                 content_bullet_limits = "2–4 bullets (≤ 12–14 words each); prefer one chart/stat when possible."
                 if density == 'minimal':
                     content_bullet_limits = "1–3 bullets (≤ 12–14 words); prefer a single stat or chart."
@@ -2532,7 +2615,10 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 f"Charts:\n{chart_rules}\n\n"
                 f"CALLOUT STRATEGY:\n{callout_rules}\n"
                 "PRESENTATION MODE (CRITICAL):\n"
-                "- This is for SLIDES. Output must be slide-ready headlines and bullets.\n"
+                "- This is for SLIDES. Output must be slide-ready headlines and STRUCTURED bullets.\n"
+                "- Use section headers (## Header) to organize content into logical groups.\n"
+                "- Use main bullets (•) and indented sub-bullets (  •) for hierarchy.\n"
+                "- Use **bold** formatting for emphasis on key data, numbers, and terms.\n"
                 "- No narrative paragraphs anywhere (including outside the JSON).\n"
                 "- No disclaimers, no meta talk, no prefaces.\n\n"
                 "- CITATIONS: Exclude YouTube sources. Do not cite youtube.com or youtu.be. Prefer reputable written sources.\n"
@@ -2543,9 +2629,42 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "- Do NOT add, remove, or reorder slides unless the user explicitly instructs you to.\n"
                 "- When a range like 'Slides 2–5' is given, apply the described structure consistently to each slide in that range.\n"
                 "- If general best‑practice rules conflict with explicit user instructions, PRIORITIZE the user's instructions.\n"
-                "- Output slide content as concise bullets (no paragraphs), each starting with the bullet marker '•'.\n"
-                "- Each bullet is ONE sentence (MAX two) and ≤ 12–14 words when possible.\n"
+                "- Output slide content as STRUCTURED bullets with proper hierarchy (no paragraphs).\n"
+                "- Use section headers (## Header Name) to organize content into logical groups.\n"
+                "- Use main bullets (•) for primary points and indented sub-bullets (  •) for supporting details.\n"
+                "- Use **bold** formatting for emphasis on key numbers, companies, and important terms.\n"
+                f"- {'DETAILED MODE: Structure content with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms.' if options.detail_level == 'detailed' else 'Each bullet is ONE sentence (MAX two) and ≤ 12–14 words when possible.'}\n"
                 "- FACT-FIRST: Prefer numbers, dates, names, and concrete outcomes over adjectives.\n\n"
+                "DETAIL LEVEL GUIDANCE (CRITICAL):\n"
+                f"- Current detail level: {options.detail_level}\n"
+            )
+            
+            # Add detail level specific guidance
+            if options.detail_level == 'detailed':
+                user += (
+                    "- DETAILED MODE - DATA-RICH PRESENTATION: Go DEEP with comprehensive information\n"
+                    "  • SLIDE COUNT: Generate 20-30% MORE slides than standard. Break down topics into granular slides\n"
+                    "  • BULLET LENGTH: 15-25 words per bullet with specific data, numbers, percentages\n"
+                    "  • BULLET COUNT: 5-8 bullets per content slide with sub-bullets for supporting details\n"
+                    "  • WORD COUNT: Target 150-250 words per content slide (very dense, information-rich)\n"
+                    "  • DATA REQUIREMENTS: Include MULTIPLE data points on EVERY slide. No slide lacks numbers!\n"
+                    "  • BREAKDOWNS: Split complex topics into 2-3 slides with granular details\n"
+                    "    - 'Market Overview' → 'Market Size & Growth', 'Market Segments', 'Regional Breakdown'\n"
+                    "    - 'Our Solution' → 'Solution Architecture', 'Key Features', 'Technical Specs'\n"
+                    "  • STRUCTURE: Use section headers (##) and multi-level bullets with 2-space indent\n"
+                    "  • CHART DENSITY: Include charts on 40-50% of content slides (5-8 data points each)\n"
+                    "  • METADATA: Add subtitles, captions with sources, date ranges on EVERY slide\n"
+                    "  • SPECIFICITY: Include numbers, dates, company names, study results. NO generic statements!\n"
+                    "  • DEPTH: Explain WHY (causes), HOW (mechanisms), WHAT (outcomes), WHO (stakeholders)\n"
+                    "  • EXAMPLES: Real company names, case studies, concrete scenarios\n"
+                    "  • COMPARISONS: Year-over-year, before/after, benchmarks, competitor data\n\n"
+                )
+            else:
+                user += (
+                    "- SIMPLE/STANDARD: Concise bullets (6-12 words). Essential points only. 60-100 words per slide.\n\n"
+                )
+            
+            user += (
                 "SLIDE TYPES & STRUCTURE RULES:\n"
                 "- Slide 1 MUST be a Title slide with hero title and brief metadata (subtitle/kicker, presenter, organization, date).\n"
                 "- Agenda: Include only for business/professional decks; for educational topics, prefer a 'Learning Objectives' slide instead.\n"
@@ -2568,7 +2687,7 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "2) STRUCTURE: Slide 1 is Title (hero + brief metadata). Title slide has ONLY metadata placeholders; no body bullets. For educational topics: include 'Learning Objectives' early; include 'Core Concepts/Overview', 'Fun Facts' or 'Key Facts', 'Activities', and 'Conclusion/Questions'. Team slide only if explicitly warranted.\n"
                 "3) CHART UNITS: Each chart uses ONE measurement unit; no mixed units. If mixed, omit the chart and summarize as text bullets.\n"
                 "4) CALLOUTS: Include at least one dedicated Quote slide and one dedicated Stat slide when strong facts/quotes exist; keep them short (≤ 24 words).\n"
-                "5) CONCISION: Content slides use 3–5 bullets; each bullet one sentence (≤ 12–14 words). Minimal slides (quote/stat/divider/transition) use 1 line.\n"
+                f"5) CONCISION: {'DETAILED MODE: Content slides use 5–8 bullets with sub-bullets; each bullet 15-25 words with data. Pack in information!' if options.detail_level == 'detailed' else 'Content slides use 3–5 bullets; each bullet one sentence (≤ 12–14 words).'} Minimal slides (quote/stat/divider/transition) use 1 line.\n"
                 "6) VALIDATION: If any checklist item fails, internally revise and regenerate the outline; repeat up to 2 times before responding. Return only the final JSON.\n\n"
                 "Return JSON object (STRICT JSON, no prose):\n"
                 "{\n"

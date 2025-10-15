@@ -80,12 +80,18 @@ export class ComponentOptimizationService {
    */
   private async optimizeTextComponent(component: ComponentInstance): Promise<any> {
     const props = { ...component.props };
-    
-    // IMPORTANT: Only optimize if explicitly requested OR if component has never been optimized
-    // This prevents optimization from running on every selection/click
-    if (props.fontOptimized) {
-      // Already optimized, skip unless there's a significant size change
-      // We rely on the component's own resize logic to handle scale changes
+
+    // CRITICAL FIX: Backend already handles all font sizing with adaptive sizer
+    // Frontend optimization is disabled to prevent resize-on-click and double-optimization
+    // If metadata.fontSizingApplied exists, backend already calculated the optimal size
+    if (props.fontOptimized || props.metadata?.fontSizingApplied) {
+      // Already optimized by backend, skip frontend optimization entirely
+      return props;
+    }
+
+    // ALSO skip if component has fontSize - this means backend sized it
+    if (props.fontSize) {
+      // Backend already calculated size, don't override it
       return props;
     }
 

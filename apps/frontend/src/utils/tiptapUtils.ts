@@ -441,7 +441,7 @@ export function extractTextFromCustomDoc(doc: CustomDoc | null | undefined): str
     switch (node.type) {
       case 'paragraph':
         (node.content || []).forEach(traverse);
-        text += '\n'; // Add newline after paragraphs
+        // Don't add newlines - keep inline formatting intact
         break;
       case 'bulletList':
         (node.content || []).forEach(traverse);
@@ -450,9 +450,8 @@ export function extractTextFromCustomDoc(doc: CustomDoc | null | undefined): str
         (node.content || []).forEach(traverse);
         break;
       case 'listItem':
-        text += '- '; // Add bullet point prefix
         (node.content || []).forEach(traverse);
-        // Newline is handled by the paragraph inside
+        // Don't add extra formatting - preserve inline structure
         break;
       case 'text':
         text += node.text || '';

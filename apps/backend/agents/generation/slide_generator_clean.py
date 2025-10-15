@@ -220,6 +220,27 @@ Each component must have: id, type, and props."""
             slide_data['id'] = context.outline.id
             slide_data['slideIndex'] = context.index
             
+            # ✅ CRITICAL: Preserve extractedData from outline (charts)
+            if context.outline.extractedData:
+                slide_data['extractedData'] = (
+                    context.outline.extractedData.model_dump() 
+                    if hasattr(context.outline.extractedData, 'model_dump') 
+                    else context.outline.extractedData
+                )
+                logger.info(f"✅ [CHART PRESERVATION] Added extractedData to slide {context.index + 1}: {slide_data['extractedData'].get('chartType', 'unknown')} chart")
+            else:
+                logger.info(f"[CHART PRESERVATION] No extractedData in outline for slide {context.index + 1}")
+            
+            # ✅ CRITICAL: Preserve manualCharts array (multiple charts per slide)
+            if context.outline.manualCharts:
+                slide_data['manualCharts'] = [
+                    c.model_dump() if hasattr(c, 'model_dump') else c 
+                    for c in context.outline.manualCharts
+                ]
+                logger.info(f"✅ [CHART PRESERVATION] Added {len(slide_data['manualCharts'])} manual charts to slide {context.index + 1}")
+            else:
+                logger.info(f"[CHART PRESERVATION] No manualCharts in outline for slide {context.index + 1}")
+            
             # Add theme data to slide
             if context.theme:
                 theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else context.theme

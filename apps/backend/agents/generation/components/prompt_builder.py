@@ -68,18 +68,11 @@ class SlidePromptBuilder:
         # Add rich Tiptap formatting guidelines to avoid plain paragraphs
         self._add_rich_tiptap_formatting(sections, context)
         
-        # Add chart data if present (skip for market sizing slides where we prefer concentric rings)
-        # Only propose charts when clearly appropriate (business/data context with real quantitative signals)
+        # ✅ MANDATORY: Add chart when extractedData exists (skip market sizing - use concentric rings)
         if context.has_chart_data and not is_market:
-            try:
-                topic_text = f"{getattr(context.slide_outline, 'title', '')} {getattr(context.slide_outline, 'content', '')}".lower()
-                numeric_signal = bool(re.search(r"(\$\s?\d|\d{1,3}(,\d{3})+|\d+\s?%|%\s?\d+|\d+\s?(units|users|sales|m|k|b))", topic_text))
-                business_terms = ['arr', 'mrr', 'kpi', 'revenue', 'budget', 'forecast', 'metric', 'metrics', 'trend', 'yoy', 'mom', 'growth', 'market share', 'conversion', 'distribution', 'breakdown']
-                clearly_business = any(k in topic_text for k in business_terms)
-                if getattr(context, 'user_requested_charts', False) or (numeric_signal and clearly_business):
-                    self._add_chart_requirements(sections, context)
-            except Exception:
-                pass
+            # ALWAYS add chart requirements when data exists - no conditionals!
+            logger.info(f"[PROMPT BUILDER] ✅ Adding MANDATORY chart requirements for slide {context.slide_index + 1}")
+            self._add_chart_requirements(sections, context)
         
         # Add compressed RAG context
         self._add_rag_context(sections, compressed_rag, context)
@@ -826,25 +819,25 @@ class SlidePromptBuilder:
             "{ 'type': 'TiptapTextBlock', 'props': { 'position': {'x': 120,'y': 540}, 'width': 1680, 'height': 160, 'texts': [ { 'text': 'We achieved ', 'fontSize': 40, 'fontWeight': '400' }, { 'text': 'BREAKTHROUGH', 'fontSize': 88, 'fontWeight': '900' }, { 'text': ' results', 'fontSize': 40, 'fontWeight': '400' } ] } }",
             "",
             "PATTERN D – INLINE CITATION MARKERS (SUPERSCRIPT):",
-            "{ 'type': 'TiptapTextBlock', 'props': { 'position': {'x': 120,'y': 720}, 'width': 1680, 'height': 120, 'texts': [ { 'text': 'Renewables provided ', 'fontSize': 40, 'fontWeight': '400' }, { 'text': '48', 'fontSize': 96, 'fontWeight': '900' , 'style': {'textColor': '{accent_1}', 'bold': true} }, { 'text': '%', 'fontSize': 56, 'fontWeight': '800' }, { 'text': ' of EU electricity in 2023', 'fontSize': 40, 'fontWeight': '400' }, { 'text': ' [1]', 'fontSize': 32, 'fontWeight': '400', 'style': {'superscript': true, 'textColor': '{primary_text}', 'backgroundColor': '#00000000'} } ] } }",
+            f"{{ 'type': 'TiptapTextBlock', 'props': {{ 'position': {{'x': 120,'y': 720}}, 'width': 1680, 'height': 120, 'texts': [ {{ 'text': 'Renewables provided ', 'fontSize': 40, 'fontWeight': '400' }}, {{ 'text': '48', 'fontSize': 96, 'fontWeight': '900' , 'style': {{'textColor': '{primary_accent}', 'bold': true}} }}, {{ 'text': '%', 'fontSize': 56, 'fontWeight': '800' }}, {{ 'text': ' of EU electricity in 2023', 'fontSize': 40, 'fontWeight': '400' }}, {{ 'text': ' [1]', 'fontSize': 32, 'fontWeight': '400', 'style': {{'superscript': true, 'textColor': '{text_color}', 'backgroundColor': '#00000000'}} }} ] }} }}",
             "",
             "PATTERN E – ICON + LABEL (NO BULLET CHARACTERS IN TEXT):",
             "// Create an Icon component and a TiptapTextBlock label; ensure 16–20px gap and vertical centering",
-            "{ 'type': 'Icon', 'props': { 'position': {'x': 100, 'y': 860}, 'width': 28, 'height': 28, 'iconLibrary': 'lucide', 'iconName': 'check-circle', 'color': '{accent_1}' } }",
+            f"{{ 'type': 'Icon', 'props': {{ 'position': {{'x': 100, 'y': 860}}, 'width': 28, 'height': 28, 'iconLibrary': 'lucide', 'iconName': 'check-circle', 'color': '{primary_accent}' }} }}",
             "{ 'type': 'TiptapTextBlock', 'props': { 'position': {'x': 132, 'y': 852}, 'width': 1568, 'height': 44, 'alignment': 'left', 'verticalAlignment': 'middle', 'texts': [ { 'text': 'Verified with customer data', 'fontSize': 40, 'fontWeight': '600' } ] } }",
             "",
             "** KEYWORD EMPHASIS (REQUIRED):",
             "- In EVERY TiptapTextBlock, emphasize 1–3 KEY segments (numbers, percentages, currency, named entities)",
-            "- For each emphasized segment: set style.bold=true, style.textColor=accent_1, and increase fontSize ≥ 1.5× surrounding text",
-            "- Split numbers and units: number gets larger size + accent color; unit smaller (0.5–0.7×) next to it",
+            f"- For each emphasized segment: set style.bold=true, style.textColor='{primary_accent}', and increase fontSize ≥ 1.5× surrounding text",
+            f"- Split numbers and units: number gets larger size + accent color ({primary_accent}); unit smaller (0.5–0.7×) next to it",
             "- Keep surrounding context at lower opacity (0.7–0.85) to enhance contrast",
             "- Do NOT over-emphasize: keep emphasized characters ≤ 40% of the total text",
             "- CRITICAL: DO NOT include newline characters (\\n) in texts[].text segments - all segments should flow inline",
             "- Each texts[] array element is rendered inline with others; use separate TiptapTextBlocks for separate lines",
             "",
             "** COLOR USAGE:",
-            "- Emphasis words use accent_1/accent_2 colors.",
-            "- Context uses primary_text at 70–85% opacity.",
+            f"- Emphasis words use theme accent colors: {primary_accent} (primary) or {secondary_accent} (secondary)",
+            f"- Context uses {text_color} at 70–85% opacity",
             "- Never color full paragraphs; only emphasize key words/metrics.",
             "",
             "** CITATIONS & SOURCES:",
@@ -933,10 +926,12 @@ class SlidePromptBuilder:
         is_brand_palette = any(k in palette_source for k in ['brand', 'brandfetch'])
         is_brand_theme = any(k in theme_source for k in ['brand', 'brandfetch'])
         
-        # Prefer true database palettes only when source indicates DB AND theme is not brand-sourced
-        prefer_db = is_db_palette and not (is_brand_theme or is_brand_palette)
+        # ✅ ALWAYS prefer brand theme colors - NEVER use database palette when brand theme exists
+        # Database palettes should ONLY be used when NO brand theme is available
+        prefer_db = is_db_palette and not (is_brand_theme or is_brand_palette) and not theme_colors
+        
         if include_theme_palette and prefer_db and (palette.get('colors') and isinstance(palette.get('colors'), list)):
-            logger.info(f"[PROMPT BUILDER] 🎨 Using DATABASE palette: {palette.get('name')}")
+            logger.info(f"[PROMPT BUILDER] 🎨 Using DATABASE palette (no brand theme): {palette.get('name')}")
             logger.info(f"[PROMPT BUILDER] Database colors: {palette.get('colors')}")
             
             # Use database colors preferentially
@@ -1088,17 +1083,37 @@ class SlidePromptBuilder:
                 logger.info("[PROMPT BUILDER] Ignoring slide-specific color hints to preserve canonical theme")
 
         if include_theme_palette:
+            # ✅ Determine if this is a brand theme that must be preserved
+            is_brand_sourced = is_brand_theme or is_brand_palette
+            brand_emphasis = ""
+            if is_brand_sourced:
+                brand_emphasis = f"\n🚨 BRAND THEME - THESE COLORS ARE MANDATORY (from {theme_source or palette_source}):"
+            
             sections.extend([
-                f"\n COLOR PALETTE WITH PROPER CONTRAST:",
+                f"\n{'='*80}",
+                f"{brand_emphasis if is_brand_sourced else ' COLOR PALETTE WITH PROPER CONTRAST:'}",
                 f"BACKGROUND: {bg_color}",
-                f"PRIMARY ACCENT: {primary_accent}",
-                f"SECONDARY ACCENT: {secondary_accent}",
+                f"PRIMARY ACCENT (MANDATORY): {primary_accent}",
+                f"SECONDARY ACCENT (MANDATORY): {secondary_accent}",
                 f"TEXT ON BACKGROUND: {text_color} (contrast-checked)",
                 f"TEXT ON ACCENT 1: {text_on_accent1}",
                 f"TEXT ON ACCENT 2: {text_on_accent_2 if (text_on_accent_2:=text_on_accent2) else text_on_accent2}",
                 "",
-                "IMPORTANT: Prefer solid colored or gradient backgrounds from the palette over plain white unless the user explicitly requests white."
             ])
+            
+            if is_brand_sourced:
+                sections.extend([
+                    "⚠️ CRITICAL BRAND COLOR REQUIREMENTS:",
+                    f"- ALL shapes, icons, and accent elements MUST use: {primary_accent} or {secondary_accent}",
+                    f"- DO NOT use random colors or generic defaults",
+                    f"- These are BRAND COLORS scraped from the company website/logo",
+                    f"- Maintain brand integrity by using ONLY these accent colors",
+                    ""
+                ])
+            else:
+                sections.append("IMPORTANT: Prefer solid colored or gradient backgrounds from the palette over plain white unless the user explicitly requests white.")
+            
+            sections.append(f"{'='*80}")
 
             # Add design tokens and variable elements from theme (for consistent application across slides)
             design_tokens = {}
@@ -1165,24 +1180,65 @@ class SlidePromptBuilder:
     def _add_chart_requirements(self, sections: List[str], context: SlideGenerationContext):
         """Add chart requirements if data is present."""
         sections.extend([
-            f"\nCHART OPPORTUNITY (only if appropriate):",
-            "If this topic is BUSINESS/DATA or the user explicitly asked for charts, create a Chart component with this data:",
-            self._format_chart_data(context.slide_outline.extractedData),
-            "Use the EXACT data provided above. Do NOT invent values.",
-            "\n IMPORTANT CHART DATA RULES:",
-            "1. Use the EXACT numerical values from the slide content",
-            "2. Extract data points like 'Sales: $1.2M' or 'Growth: 45%' from the content",
-            "3. NEVER use generic placeholder data like 'Stage 1: 1000, Stage 2: 600'",
-            "4. If the content mentions specific percentages, revenues, or metrics - USE THEM",
-            "5. The chart should visualize the ACTUAL data mentioned in the slide content",
+            f"\n🚨 CHART COMPONENT REQUIRED - DATA PROVIDED:",
+            "=" * 80,
+            "YOU MUST CREATE A CHART COMPONENT WITH THE DATA BELOW!",
+            "This slide has chart data - YOU MUST include a Chart component in your response.",
             "",
-            "\n CREATIVE CHART VISUALIZATION:",
-            "- PREFER INNOVATIVE TYPES: treemap, sankey, sunburst, radar, waterfall, gauge",
-            "- STYLING: Use gradient fills from theme colors, add subtle 3D depth",
-            "- ANIMATIONS: Bars should grow, lines should draw, pies should rotate in",
-            "- HIGHLIGHT: Make key data points stand out with different colors",
-            "- ANNOTATIONS: Add callout labels for important values"
+            "📊 CHART DATA TO USE:",
+            self._format_chart_data(context.slide_outline.extractedData),
+            "",
+            "MANDATORY REQUIREMENTS:",
+            "1. MUST include a Chart component (type: 'Chart') in your components array",
+            "2. Use the EXACT chart type and data provided above",
+            "3. Do NOT modify the data - use it exactly as provided",
+            "4. Position the chart prominently on the slide (800-1200px wide, 600-900px tall)",
+            "5. Set showLegend: false for cleaner design",
+            "",
+            "CHART COLORS - USE THEME ACCENT COLORS:",
+            f"- Set props.colors to use theme accent colors: ['{primary_accent}', '{secondary_accent}', ...]",
+            f"- For multi-series charts, generate color variations from {primary_accent} and {secondary_accent}",
+            "- For shades, add opacity suffixes (e.g., '#FF430180' for 50% opacity)",
+            "- DO NOT use generic/hardcoded chart colors",
+            "",
+            "EXAMPLE CHART COMPONENT STRUCTURE:",
+            "{",
+            '  "type": "Chart",',
+            '  "props": {',
+            f'    "chartType": "{self._get_chart_type(context)}",',
+            '    "data": [...use exact data from above...],',
+            f'    "colors": ["{primary_accent}", "{secondary_accent}"],',
+            f'    "title": "{context.slide_outline.title}",',
+            '    "showLegend": false,',
+            '    "position": {"x": 100, "y": 300},',
+            '    "width": 1000,',
+            '    "height": 600',
+            '  }',
+            '}',
+            "",
+            "🎨 CHART VISUALIZATION REQUIREMENTS:",
+            "- SIZE: Make charts LARGE (minimum 800px wide × 600px tall)",
+            "- POSITION: Place chart where it dominates the slide (60-80% of space)",
+            "- STYLING: Use gradient fills from theme colors, add subtle depth",
+            "- ANIMATIONS: Enable enter animations (bars grow, lines draw, pies rotate)",
+            "- LABELS: Keep axis labels readable but not too large (12-16px)",
+            "- COLORS: Use theme accent colors for visual cohesion",
+            "",
+            "⚠️ CRITICAL: If you do NOT include a Chart component, the data will be wasted!",
+            "The outline generation already created this data - YOU MUST visualize it!",
+            "=" * 80
         ])
+    
+    def _get_chart_type(self, context: SlideGenerationContext) -> str:
+        """Extract chart type from extractedData."""
+        try:
+            if hasattr(context.slide_outline.extractedData, 'chartType'):
+                return context.slide_outline.extractedData.chartType
+            elif hasattr(context.slide_outline.extractedData, 'get'):
+                return context.slide_outline.extractedData.get('chartType', 'bar')
+            return 'bar'
+        except:
+            return 'bar'
     
     def _add_rag_context(self, sections: List[str], rag_context: Dict[str, Any], context: SlideGenerationContext):
         """Add relevant RAG context."""
@@ -1205,17 +1261,15 @@ class SlidePromptBuilder:
                     predicted.append('TiptapTextBlock')
         except Exception:
             pass
-        # If we have tabular data, ensure Table is listed; else ensure Chart when chart data exists
+        # ✅ MANDATORY: Ensure Chart/Table component is in predicted components when data exists
         if getattr(context, 'has_tabular_data', False):
             if 'Table' not in predicted:
                 predicted.append('Table')
+                logger.info(f"[PROMPT BUILDER] ✅ Added Table to predicted components (tabular data detected)")
         elif context.has_chart_data and 'Chart' not in predicted:
-            # Predict Chart only when there are clear quantitative signals AND business/data intent, or explicitly requested
-            topic_text = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
-            numeric_signal = bool(re.search(r"(\$\s?\d|\d{1,3}(,\d{3})+|\d+\s?%|%\s?\d+)", topic_text))
-            business_terms = ['arr', 'mrr', 'kpi', 'revenue', 'budget', 'forecast', 'metrics', 'trend', 'growth', 'market share']
-            if getattr(context, 'user_requested_charts', False) or (numeric_signal and any(k in topic_text for k in business_terms)):
-                predicted.append('Chart')
+            # ALWAYS add Chart when extractedData exists - no conditionals!
+            predicted.append('Chart')
+            logger.info(f"[PROMPT BUILDER] ✅ MANDATORY Chart component added to predicted list (extractedData exists)")
 
         # Promote CustomComponent for structured or creative visuals (processes, comparisons, timelines, hero stats)
         try:
@@ -1370,6 +1424,23 @@ class SlidePromptBuilder:
 
         # Add specific Table component instructions if predicted
         if "Table" in predicted:
+            # Use actual theme colors for the table example
+            table_example = {
+                "type": "Table",
+                "props": {
+                    "position": {"x": 160, "y": 220},
+                    "width": 1600,
+                    "height": 600,
+                    "data": [["Feature", "Basic", "Pro"], ["Storage", "10GB", "100GB"], ["Users", "5", "25"]],
+                    "tableStyles": {
+                        "headerBackgroundColor": primary_accent,
+                        "headerTextColor": text_on_accent1,
+                        "textColor": text_color,
+                        "cellPadding": 12
+                    }
+                }
+            }
+            import json
             sections.extend([
                 "\n TABLE COMPONENT REQUIREMENTS:",
                 "1. Use when data is naturally row/column (comparisons, specs, pricing, surveys).",
@@ -1384,8 +1455,14 @@ class SlidePromptBuilder:
                 "   - Comfortable cell padding (12–16px).",
                 "   - Limit density: max ~6 columns and ~10–12 rows per table; split if more.",
                 "6. Do NOT invent values. Use exact values from slide content/extracted data.",
+                "7. COLORS: Use theme colors for all table styling:",
+                f"   - headerBackgroundColor: {primary_accent} (primary accent)",
+                f"   - headerTextColor: {text_on_accent1} (text on accent)",
+                f"   - textColor: {text_color} (main text color)",
+                f"   - If you need variety, use {secondary_accent} for alternating or secondary headers",
+                "   - For shades/tints: lighten or darken accent colors by adjusting opacity or brightness",
                 "EXAMPLE:",
-                '{"type":"Table","props":{"position":{"x":160,"y":220},"width":1600,"height":600,"data":[["Feature","Basic","Pro"],["Storage","10GB","100GB"],["Users","5","25"]],"tableStyles":{"headerBackgroundColor":"{accent_1}","headerTextColor":"#FFFFFF","textColor":"{primary_text}","cellPadding":12}}}',
+                json.dumps(table_example),
             ])
         
         # Explicitly mention Icon if it's in the list
@@ -1404,6 +1481,7 @@ class SlidePromptBuilder:
                 "   - To force a side, set props.metadata.placement = 'left' | 'right' and forceAdjacency=true.",
                 "\n ICON COMPONENT: Use the native Icon component type for icons!",
                 "Icon props: iconLibrary (lucide/heroicons/feather/tabler), iconName, color, strokeWidth, filled",
+                f"ICON COLORS: ALWAYS use theme accent colors: color='{primary_accent}' or color='{secondary_accent}'",
                 "DO NOT use CustomComponent for icons - Icon is its own component type!"
             ])
 
@@ -1440,7 +1518,7 @@ class SlidePromptBuilder:
                 "  * endPoint.x = B.position.x, endPoint.y = B.position.y + (B.height / 2)",
                 "  * endShape: 'arrow' for direction; startShape: 'none'",
                 "- connectionType: 'straight' for simple links; 'elbow' to route around content; 'curved' for soft links.",
-                "- stroke: use theme accent colors; strokeWidth: 3–6 for visibility",
+                f"- stroke: ALWAYS use theme accent colors: '{primary_accent}' or '{secondary_accent}'; strokeWidth: 3–6 for visibility",
                 "- Only use Lines for showing relationships, flow, or connections - NOT for decoration",
             ])
 
@@ -1603,11 +1681,15 @@ class SlidePromptBuilder:
                 "- Timelines/flows: step chips with connectors, compact roadmaps using theme colors",
                 "- Decorative-but-functional: soft gradient blobs as subtle backdrops behind stats (no overlap)",
                 "",
-                "🎨 THEME PROPS (PASS AND USE):",
-                f"  - primaryColor: '{colors.get('accent_1', '#00F0FF')}', secondaryColor: '{colors.get('accent_2', '#FF5722')}',",
-                f"    backgroundColor: '{colors.get('primary_background', '#0A0E27')}', textColor: '{colors.get('primary_text', '#FFFFFF')}',",
-                f"    fontFamily: '{typography.get('hero_title', {}).get('family', 'Poppins')}'",
-                "- Use transparency suffixes (e.g., + '20') for subtle overlays",
+                "🎨 THEME PROPS (PASS AND USE — MANDATORY COLORS):",
+                f"  - primaryColor: '{primary_accent}' (BRAND PRIMARY)",
+                f"  - secondaryColor: '{secondary_accent}' (BRAND SECONDARY)",
+                f"  - backgroundColor: '{bg_color}'",
+                f"  - textColor: '{text_color}'",
+                f"  - fontFamily: '{typography.get('hero_title', {}).get('family', 'Poppins')}'",
+                "- ALWAYS pass these exact colors to your CustomComponent props",
+                "- For shades/tints: add transparency suffixes (e.g., primaryColor + '20' for 20% opacity)",
+                "- DO NOT use hardcoded generic colors like #00F0FF or #FF5722",
                 "- Ensure visual consistency with other slide components",
                 "",
                 "** IMPLEMENTATION RULES:",

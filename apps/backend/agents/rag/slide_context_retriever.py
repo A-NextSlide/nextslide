@@ -660,7 +660,7 @@ class SlideContextRetriever:
 
                 # Always include BESPOKE guidance to encourage variety
                 examples["CustomComponent_bespoke_guidance"] = {
-                    "guidance": "Generate a bespoke, theme-aware JavaScript render using React.createElement only. No libraries, no imports, no JSX. Use props.primaryColor, props.secondaryColor, props.textColor, props.fontFamily. Start with const padding = props.padding || 32; then derive availableWidth/availableHeight; ensure width/height 100% on root; flexDirection: 'column'; avoid overflow; and position a clear title section above content.",
+                    "guidance": "Generate a bespoke, theme-aware JavaScript render using React.createElement only. No libraries, no imports, no JSX. Extract props ONCE at top: var c1 = props.primaryColor; var tc = props.textColor; var ff = props.fontFamily; var padding = 24; NEVER redeclare variables! Use camelCase for CSS: fontSize, fontWeight, backgroundColor. Root style must include: { width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }",
                     "patterns": [
                         "Hero metric with gradient text and subtle shadow",
                         "Split comparison bars with before/after labels",

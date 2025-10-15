@@ -42,26 +42,26 @@ export interface ExtendedChatMessageProps extends ChatMessageProps {
 
 // Pool of suggestions; a random subset is shown on each load
 const ALL_SUGGESTIONS: string[] = [
-  'Use a 90s vibe',
-  'Change theme color to teal',
-  'Make font red',
-  'Make title bold',
-  'Increase font size',
-  'Decrease font size',
-  'Align title to center',
-  'Add a bar chart with sample sales data',
-  'Add a pie chart with sample data',
-  'Insert a table with Q1–Q4 growth',
-  'Add a line chart of revenue over time',
-  'Use a dark theme',
-  'Add a gradient background',
-  'Replace background with solid color',
-  'Insert company logo on this slide',
-  'Add a new slide',
-  'Duplicate current slide',
-  'Add bullets to this text',
-  'Convert paragraph to two columns',
-  'Add a closing summary slide',
+  'Use a retro 80s synthwave aesthetic',
+  'Make it look like a vintage movie poster',
+  'Add a psychedelic gradient background',
+  'Use a cyberpunk neon theme',
+  'Make the title glow with a neon effect',
+  'Add floating animation effects',
+  'Use a minimalist Japanese zen style',
+  'Add a pie chart showing pizza toppings preferences',
+  'Create a bar chart of coffee consumption by hour',
+  'Insert a line chart of mood throughout the week',
+  'Add a table comparing superheroes by power level',
+  'Use a dark moody cinematic theme',
+  'Add a galaxy space background',
+  'Make the background look like old paper',
+  'Add sparkle effects to the title',
+  'Insert a meme-worthy reaction image',
+  'Add dramatic spotlight effects',
+  'Make text pop with 3D shadows',
+  'Add a comic book style layout',
+  'Create a newspaper front page vibe',
 ];
 
 function sampleArray<T>(items: T[], count: number): T[] {
@@ -2403,13 +2403,42 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   {isThemePreviewOpen && (
                     <div className="mt-2 p-2 rounded-md glass-panel border border-[#929292]">
                       {themePreview?.palette && (() => {
-                        // Build swatches and exclude non-color meta like fonts and logo fields
-                        const all = toSwatches(themePreview.palette).slice(0, 48);
-                        const excludedKeys = new Set([
-                          'hero_title','body_text','typography','font','fonts','logo','logo_url','logo_url_light','logo_url_dark','brand_logo','brand_logo_url',
-                          'light_variant','dark_variant','url','brandInfo','logo_info','metadata'
-                        ].map(k => k.toLowerCase()));
-                        const swatches = all.filter(s => !excludedKeys.has(String(s.key || '').toLowerCase()));
+                        // Build clean swatch list: Background, Text, and brand colors (no duplicates)
+                        const palette = themePreview.palette;
+                        const swatches: Array<{ label: string; color: string }> = [];
+
+                        // Background color
+                        const bgColor = palette.primary_background || (Array.isArray(palette.backgrounds) ? palette.backgrounds[0] : null);
+                        if (bgColor) swatches.push({ label: 'Background', color: String(bgColor) });
+
+                        // Text color
+                        const textColor = palette.primary_text;
+                        if (textColor) swatches.push({ label: 'Text', color: String(textColor) });
+
+                        // Brand colors from the colors array (skip duplicates)
+                        const reservedSet = new Set([
+                          String(bgColor || '').toLowerCase(),
+                          String(textColor || '').toLowerCase()
+                        ].filter(Boolean));
+
+                        const brandColors: string[] = Array.isArray(palette.colors) ? palette.colors.map(String) : [];
+                        const seen = new Set<string>();
+                        let brandIdx = 0;
+
+                        for (let i = 0; i < brandColors.length && swatches.length < 14; i++) {
+                          const hex = String(brandColors[i] || '').toLowerCase();
+                          if (!hex) continue;
+                          if (reservedSet.has(hex)) continue; // Skip if it's background or text
+                          if (seen.has(hex)) continue; // Skip duplicates
+                          seen.add(hex);
+
+                          // Label first two as "Accent 1" and "Accent 2", rest as "Color 3", "Color 4", etc.
+                          const label = brandIdx === 0 ? 'Accent 1' : brandIdx === 1 ? 'Accent 2' : `Color ${brandIdx + 1}`;
+
+                          swatches.push({ label, color: brandColors[i] });
+                          brandIdx++;
+                        }
+
                         if (swatches.length === 0) return null;
                         return (
                           <div className="mb-2">
@@ -2417,12 +2446,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                             <div className="overflow-x-auto" style={{ WebkitMaskImage: 'none', maskImage: 'none' }}>
                               <div className="flex gap-2 min-w-max pr-2">
                                 {swatches.map((s, i) => {
-                                  const rawLabel = (s.key || '').trim() || s.color || `color_${i+1}`;
-                                  const label = humanizeLabel(rawLabel);
                                   return (
-                                    <div key={`${rawLabel}-${i}`} className="flex flex-col items-center w-10">
-                                      <div className="w-7 h-7 rounded border border-zinc-200 dark:border-neutral-700" style={{ background: s.color }} title={`${label}: ${s.color}`} />
-                                      <div className="text-[9px] mt-0.5 opacity-70 truncate max-w-[40px]" title={label}>{label}</div>
+                                    <div key={`${s.label}-${i}`} className="flex flex-col items-center w-10">
+                                      <div className="w-7 h-7 rounded border border-zinc-200 dark:border-neutral-700" style={{ background: s.color }} title={`${s.label}: ${s.color}`} />
+                                      <div className="text-[9px] mt-0.5 opacity-70 truncate max-w-[40px]" title={s.label}>{s.label}</div>
                                     </div>
                                   );
                                 })}

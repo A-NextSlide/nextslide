@@ -247,6 +247,11 @@ class ComponentValidator:
             # Only collapse multiple consecutive spaces (not newlines)
             import re
             cleaned_text = re.sub(r' {2,}', ' ', cleaned_text)
+            
+            # CRITICAL FIX: Strip leading/trailing newlines from individual segments
+            # to prevent unwanted line breaks when text is split for formatting.
+            # Intentional newlines should be in the actual text content, not at segment boundaries.
+            cleaned_text = cleaned_text.strip('\n')
 
             normalized_texts.append({
                 'text': cleaned_text,
@@ -283,12 +288,24 @@ class ComponentValidator:
             width = props.get('width') or 600
             height = props.get('height') or 200
 
-            # Get padding if specified, otherwise small default
-            padding_x = props.get('paddingX') or 10
-            padding_y = props.get('paddingY') or 5
+            # CRITICAL FIX: For shapes with text, use actual textPadding from props
+            # This ensures backend calculation matches frontend rendering
+            if comp_type == 'Shape' and props.get('hasText'):
+                # Shape uses textPadding (single value) for all sides
+                text_padding = props.get('textPadding', 16)
+                padding_x = text_padding
+                padding_y = text_padding
+                logger.debug(f"  📦 Shape textPadding: {text_padding}px")
+            else:
+                # Regular text components use paddingX/paddingY or generic padding
+                padding_x = props.get('paddingX') or props.get('padding', 10)
+                padding_y = props.get('paddingY') or props.get('padding', 5)
 
             # Determine role for optimization hints (not limits!)
             role = self._get_element_type(comp_type, props)
+
+            # Get letter spacing from props (default to 0)
+            letter_spacing = props.get('letterSpacing', 0)
 
             # Calculate optimal size using adaptive sizer
             sizing_result = self.font_sizer.size_with_role_hint(
@@ -298,7 +315,8 @@ class ComponentValidator:
                 font_family=props.get('fontFamily', 'Inter'),
                 role=role,
                 padding_x=padding_x,
-                padding_y=padding_y
+                padding_y=padding_y,
+                letter_spacing=letter_spacing
             )
 
             # Apply calculated size
@@ -308,8 +326,9 @@ class ComponentValidator:
             props['fontSizeMin'] = sizing_result['fontSize']
             props['fontSizeMax'] = sizing_result['fontSize']
 
-            # Standard line height based on font size
-            props['lineHeight'] = 1.2 if role == 'title' else 1.5
+            # CRITICAL FIX: Always use 1.2 line height to match what adaptive sizer uses for fitting
+            # This ensures frontend rendering matches backend calculations
+            props['lineHeight'] = 1.2
             props['letterSpacing'] = 0
 
             # Add detailed metadata for debugging
@@ -434,11 +453,131 @@ class ComponentValidator:
                     self._apply_intelligent_font_sizing(comp)
                     sized_count += 1
 
+            # CRITICAL: Normalize font sizes for text points at the same x position
+            components = self._normalize_font_sizes_by_x_position(components)
+
             logger.info(f"[FONT SIZING] ✅ Applied adaptive font sizing to {sized_count} text components")
             return components
 
         except Exception as e:
             logger.error(f"[FONT SIZING] Batch font sizing failed: {e}", exc_info=True)
+            return components
+
+    def _normalize_font_sizes_by_x_position(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure text components with similar positions and sizes have consistent font sizes.
+        Groups by both x position (alignment) and y proximity, then uses median size.
+        """
+        try:
+            # IMPROVED: Tighter tolerance for better grouping
+            X_TOLERANCE = 15  # Horizontal alignment tolerance
+            Y_TOLERANCE = 100  # Vertical proximity tolerance (for related elements)
+            SIZE_TOLERANCE = 0.15  # 15% size difference tolerance
+
+            text_components = []
+            for comp in components:
+                comp_type = comp.get('type', '')
+                props = comp.get('props', {})
+                position = props.get('position', {})
+
+                # Only process text components (exclude titles/headings)
+                is_text_comp = comp_type in ['TiptapTextBlock', 'TextBlock']
+                has_font_size = 'fontSize' in props
+
+                # Skip titles and headings - they should have different sizes
+                metadata = props.get('metadata', {})
+                role = metadata.get('role', '').lower()
+                is_title_or_heading = ('title' in role or 'heading' in role or
+                                       'header' in role or 'subtitle' in role or
+                                       comp_type in ['Title', 'Heading'])
+
+                if is_text_comp and has_font_size and not is_title_or_heading:
+                    x = position.get('x', 0)
+                    y = position.get('y', 0)
+                    text_components.append({
+                        'component': comp,
+                        'x': x,
+                        'y': y,
+                        'fontSize': props.get('fontSize', 16)
+                    })
+
+            if len(text_components) < 2:
+                return components
+
+            # Group by x position (same column) AND y proximity (nearby elements)
+            # CRITICAL FIX: Check proximity to ANY element in group, not just the first one
+            groups = {}
+            for item in text_components:
+                x, y = item['x'], item['y']
+                # Find existing group based on x alignment and y proximity
+                found_group = False
+                for group_key in list(groups.keys()):
+                    group_x = group_key[0]
+                    # Check if x-aligned with group
+                    if abs(x - group_x) > X_TOLERANCE:
+                        continue
+
+                    # Check if close to ANY element in this group
+                    for existing_item in groups[group_key]:
+                        existing_y = existing_item['y']
+                        if abs(y - existing_y) <= Y_TOLERANCE:
+                            groups[group_key].append(item)
+                            found_group = True
+                            break
+
+                    if found_group:
+                        break
+
+                if not found_group:
+                    groups[(x, y)] = [item]
+
+            # For each group with multiple components, use MEDIAN size (not max!)
+            # This prevents one outlier from making everything huge
+            normalized_count = 0
+            for group_key, group_items in groups.items():
+                if len(group_items) > 1:
+                    # Get all font sizes and calculate median
+                    sizes = sorted([item['fontSize'] for item in group_items])
+                    median_idx = len(sizes) // 2
+                    if len(sizes) % 2 == 0:
+                        # Even number: average of two middle values
+                        median_size = (sizes[median_idx - 1] + sizes[median_idx]) / 2
+                    else:
+                        # Odd number: middle value
+                        median_size = sizes[median_idx]
+
+                    # Round to whole number
+                    normalized_size = round(median_size)
+
+                    logger.debug(f"[FONT NORMALIZATION] Group at x={group_key[0]}, y={group_key[1]}: sizes={sizes}, median={normalized_size}")
+
+                    # Apply to all components in group
+                    for item in group_items:
+                        comp = item['component']
+                        props = comp.get('props', {})
+                        if props.get('fontSize') != normalized_size:
+                            props['fontSize'] = normalized_size
+                            props['fontSizeMin'] = normalized_size
+                            props['fontSizeMax'] = normalized_size
+
+                            # Also update text segments if they exist
+                            if 'texts' in props and isinstance(props['texts'], list):
+                                for text_segment in props['texts']:
+                                    if isinstance(text_segment, dict):
+                                        text_segment['fontSize'] = normalized_size
+
+                            normalized_count += 1
+                            logger.debug(
+                                f"[FONT NORMALIZATION] Normalized {comp.get('type')} at x={item['x']} "
+                                f"from {item['fontSize']}px to {normalized_size}px"
+                            )
+
+            if normalized_count > 0:
+                logger.info(f"[FONT NORMALIZATION] ✅ Normalized {normalized_count} text components for consistency")
+
+            return components
+
+        except Exception as e:
+            logger.warning(f"[FONT NORMALIZATION] Failed: {e}")
             return components
 
     def _promote_plain_text_to_rich_tiptap(self, component: Dict[str, Any]) -> Dict[str, Any]:
@@ -672,15 +811,31 @@ class ComponentValidator:
             props.setdefault('shadowOffsetY', 0)
             props.setdefault('shadowSpread', 0)
             
-            # CRITICAL: Enforce textPadding limit for shapes with text
-            if props.get('hasText') and 'textPadding' in props:
-                text_padding = props.get('textPadding', 16)
-                if isinstance(text_padding, (int, float)) and text_padding > 20:
-                    logger.warning(f"Shape has excessive textPadding={text_padding}, capping at 20")
-                    props['textPadding'] = 20
-                elif isinstance(text_padding, (int, float)) and text_padding < 6:
-                    logger.warning(f"Shape has too low textPadding={text_padding}, setting to 16")
-                    props['textPadding'] = 16
+            # CRITICAL: Enforce textPadding limits for shapes with text
+            # Scale padding based on box size - don't force large padding on small boxes!
+            if props.get('hasText'):
+                shape_width = props.get('width', 200)
+                shape_height = props.get('height', 200)
+                min_dimension = min(shape_width, shape_height)
+
+                # Calculate reasonable padding: 2-5% of smallest dimension, with limits
+                if 'textPadding' not in props:
+                    # Auto-calculate if not specified
+                    props['textPadding'] = max(8, min(20, int(min_dimension * 0.04)))
+                else:
+                    text_padding = props.get('textPadding', 16)
+                    if isinstance(text_padding, (int, float)):
+                        # Max padding: 10% of smallest dimension (prevents text from being crushed)
+                        max_padding = int(min_dimension * 0.1)
+                        # Min padding: 6px for readability
+                        min_padding = 6
+
+                        if text_padding > max_padding:
+                            logger.warning(f"Shape has excessive textPadding={text_padding}px (box {shape_width}x{shape_height}), capping at {max_padding}px")
+                            props['textPadding'] = max_padding
+                        elif text_padding < min_padding:
+                            logger.warning(f"Shape has too low textPadding={text_padding}px, setting to {min_padding}px")
+                            props['textPadding'] = min_padding
 
             component['props'] = props
         except Exception as e:
@@ -914,27 +1069,12 @@ class ComponentValidator:
         # Prefer explicit render; fall back to data (older format)
         render = props.get('render') or props.get('data') or ''
         
-        # CRITICAL: Ensure padding/available sizes declared inside function body
-        if render and 'const padding' not in render:
-            if 'function render' in render:
-                try:
-                    close_paren_idx = render.find(')')
-                    open_brace_idx = render.find('{', close_paren_idx if close_paren_idx != -1 else 0)
-                    if open_brace_idx != -1:
-                        insert_at = open_brace_idx + 1
-                        render = (
-                            render[:insert_at] +
-                            "\\n  const padding = props.padding || 32;" +
-                            "\\n  const availableWidth = (props.width || 1920) - padding * 2;" +
-                            "\\n  const availableHeight = (props.height || 1080) - padding * 2;" +
-                            render[insert_at:]
-                        )
-                        logger.info("[CustomComponent Fix] Injected padding and available sizes in function body")
-                except Exception:
-                    parts = render.split('{', 1)
-                    if len(parts) == 2:
-                        render = parts[0] + '{\\n  const padding = props.padding || 32;\\n' + parts[1]
-                        logger.info("[CustomComponent Fix] Fallback padding injection applied")
+        # DISABLED: Auto-injection of padding/availableWidth/availableHeight
+        # The AI should generate these itself based on the prompt
+        # Keeping this code commented out for reference
+        # has_padding = any(decl in render for decl in ['const padding', 'var padding', 'let padding'])
+        # if render and not has_padding:
+        #     ... injection code removed ...
         
         # Fix hardcoded padding values (e.g., "props.width - 80" should be "props.width - padding * 2")
         if render and 'props.width - ' in render:
@@ -1151,28 +1291,12 @@ class ComponentValidator:
                 # Harden availableWidth/availableHeight fallbacks if present in unsafe form
                 render = re.sub(r"props\\.width\s*-\s*padding\s*\*\s*2", "(props.width || 1920) - padding * 2", render)
                 render = re.sub(r"props\\.height\s*-\s*padding\s*\*\s*2", "(props.height || 1080) - padding * 2", render)
-                # Ensure padding/available sizes exist and inject common fallbacks (blur, r, c)
-                # Insert right after the function body opening brace
-                open_idx = render.find('{', render.find('function render'))
-                if open_idx != -1:
-                    injections: list[str] = []
-                    # Ensure padding and dimension fallbacks when missing entirely
-                    if 'const padding' not in render:
-                        injections.append(f"{nl}  const padding = props.padding || 32;")
-                    if 'const availableWidth' not in render:
-                        injections.append(f"{nl}  const availableWidth = (props.width || 1920) - padding * 2;")
-                    if 'const availableHeight' not in render:
-                        injections.append(f"{nl}  const availableHeight = (props.height || 1080) - padding * 2;")
-                    # Inject blur/r/c only if referenced and undeclared
-                    if 'stdDeviation: blur' in render and 'const blur' not in render:
-                        injections.append(f"{nl}  const blur = 110;")
-                    # r/c are often used together for stat arcs
-                    if ('r: r' in render or 'Math.PI * r' in render) and 'const r' not in render:
-                        injections.append(f"{nl}  const r = 280;")
-                    if 'strokeDasharray: c' in render and 'const c' not in render:
-                        injections.append(f"{nl}  const c = 2 * Math.PI * r;")
-                    if injections:
-                        render = render[:open_idx+1] + ''.join(injections) + nl + render[open_idx+1:]
+                # DISABLED: Auto-injection of padding, availableWidth, availableHeight, blur, r, c
+                # The AI should generate these itself based on the prompt
+                # open_idx = render.find('{', render.find('function render'))
+                # if open_idx != -1:
+                #     injections: list[str] = []
+                #     ... injection code removed ...
                 props['render'] = render
                 # Ensure legacy data field does not shadow render downstream
                 try:

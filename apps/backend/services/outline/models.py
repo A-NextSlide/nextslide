@@ -10,7 +10,7 @@ class OutlineOptions(BaseModel):
     """Options for outline generation"""
     prompt: str
     detail_level: str = "standard"  # quick, standard, detailed
-    enable_research: bool = False
+    enable_research: bool = True  # Will be auto-set based on detail_level
     style_context: Optional[str] = None
     font_preference: Optional[str] = None
     color_scheme: Optional[Any] = None
@@ -24,7 +24,7 @@ class OutlineOptions(BaseModel):
     slide_count: Optional[int] = Field(None, description="Specific number of slides requested (1-20)")
     # New: visual density preference to support information-dense decks
     visual_density: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
-    
+
     @validator('slide_count')
     def validate_slide_count(cls, v):
         if v is not None:
@@ -33,6 +33,17 @@ class OutlineOptions(BaseModel):
             elif v > 20:
                 return 20
         return v
+
+    @validator('enable_research', always=True)
+    def auto_set_research_based_on_detail_level(cls, v, values):
+        """Auto-enable research for detailed mode, disable for presentation modes"""
+        detail_level = values.get('detail_level', 'standard')
+        # Detailed mode = research enabled (comprehensive analysis)
+        # Presentation modes (standard/quick) = research disabled (hero content focus)
+        if detail_level == 'detailed':
+            return True
+        else:
+            return False
 
 
 class ChartData(BaseModel):
@@ -54,7 +65,9 @@ class SlideContent(BaseModel):
     images: List[Dict[str, Any]] = Field(default_factory=list)  # Images assigned to this slide
     # Additional fields for frontend compatibility
     deepResearch: bool = False
-    extractedData: Optional[Dict[str, Any]] = None  # For charts in frontend format
+    extractedData: Optional[Dict[str, Any]] = None  # For charts in frontend format (single chart - legacy)
+    # ✅ Support for multiple charts per slide
+    manualCharts: Optional[List[Dict[str, Any]]] = Field(None, description="Array of charts for this slide")
     taggedMedia: List[Dict[str, Any]] = Field(default_factory=list)  # Media files tagged to this slide
     citations: List[Dict[str, Any]] = Field(default_factory=list)  # Citations from research/Perplexity
     footnotes: List[Dict[str, Any]] = Field(default_factory=list)  # Numbered footnotes for citation panel

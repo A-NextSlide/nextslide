@@ -63,8 +63,8 @@ class ThemeDirector:
         # Step 2: Acquire colors based on analysis (parallelized where possible)
         color_result = await self._acquire_colors_fast(analysis, prompt, title, style_dict, opts.variety_seed)
         
-        # Step 3: Select fonts based on brand/topic (simplified)
-        font_result = await self._select_fonts_fast(analysis, color_result, title, opts.variety_seed)
+        # Step 3: Select fonts based on brand/topic using intelligent metadata-based selection
+        font_result = await self._select_fonts(analysis, color_result, title, opts.variety_seed)
         
         # Step 4: Generate final theme
         deck_theme = await self._compose_theme(color_result, font_result, analysis)
@@ -1563,16 +1563,9 @@ Ensure structural elements match the deck's maturity and intended use.'''
         title: str,
         variety_seed: str
     ) -> Dict[str, Any]:
-        """Select fonts based on brand/topic/style."""
+        """Select fonts based on brand/topic/style using intelligent metadata-based selection."""
+        from services.enhanced_font_service import EnhancedFontService
         from services.registry_fonts import RegistryFonts
-        
-        # Get available fonts
-        try:
-            from models.registry import ComponentRegistry
-            registry = ComponentRegistry()
-            available_fonts = RegistryFonts.get_available_fonts(registry)
-        except Exception:
-            available_fonts = RegistryFonts.get_all_fonts_list()
         
         # Check if we have brand fonts from scraping
         scraped_fonts = []
@@ -1586,7 +1579,8 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 "brand": analysis.get('brand_name'),
                 "entity": analysis.get('entity_name'),
                 "scraped_fonts": len(scraped_fonts) if color_result.get('metadata', {}).get('fonts') else 0,
-                "variety_seed": variety_seed[:8]
+                "variety_seed": variety_seed[:8],
+                "method": "enhanced_metadata"
             }
         )
         
@@ -1594,21 +1588,57 @@ Ensure structural elements match the deck's maturity and intended use.'''
         
         if scraped_fonts:
             # Match scraped fonts to available
+            try:
+                from models.registry import ComponentRegistry
+                registry = ComponentRegistry()
+                available_fonts = RegistryFonts.get_available_fonts(registry)
+            except Exception:
+                available_fonts = RegistryFonts.get_all_fonts_list()
             matched = self._match_fonts(scraped_fonts, available_fonts)
             if matched:
                 font_result = matched
         
         if not font_result:
-            # Select based on context with variety
-            font_result = self._select_contextual_fonts(
-                analysis, 
-                available_fonts,
-                variety_seed
-            )
+            # Use EnhancedFontService for intelligent metadata-based selection
+            try:
+                font_service = EnhancedFontService()
+                
+                # Extract context from analysis
+                vibe = analysis.get('vibe', 'professional')
+                keywords = []
+                if analysis.get('topic'):
+                    keywords.append(analysis['topic'])
+                if analysis.get('industry'):
+                    keywords.append(analysis['industry'])
+                    
+                audience = analysis.get('audience') or analysis.get('target_audience')
+                
+                # Get intelligent font pair with variety
+                font_pair = font_service.select_font_pair(
+                    deck_title=title,
+                    vibe=vibe,
+                    content_keywords=keywords,
+                    target_audience=audience,
+                    variety_seed=variety_seed
+                )
+                
+                font_result = {
+                    'hero': font_pair['hero'],
+                    'body': font_pair['body'],
+                    'source': font_pair.get('source', 'enhanced_metadata'),
+                    'hero_category': font_pair.get('hero_category'),
+                    'body_category': font_pair.get('body_category')
+                }
+            except Exception as e:
+                # Fallback to safe defaults
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"EnhancedFontService failed, using fallback: {e}")
+                font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",
-            [f"Hero: {font_result.get('hero', 'default')}, Body: {font_result.get('body', 'default')}"]
+            [f"Hero: {font_result.get('hero', 'default')}, Body: {font_result.get('body', 'default')} (source: {font_result.get('source', 'unknown')})"]
         )
         
         # Emit fonts selected event

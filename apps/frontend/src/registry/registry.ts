@@ -27,6 +27,9 @@ export interface ComponentDefinition<T extends TSchema = TSchema> {
   
   /** UI category for organization */
   category?: 'basic' | 'media' | 'data' | 'advanced' | 'layout';
+  
+  /** Optional normalizer function to clean/validate props before instance creation */
+  normalizeProps?: (props: Partial<TypeFromSchema<T>>) => Partial<TypeFromSchema<T>>;
 }
 
 /**
@@ -74,7 +77,12 @@ export function createComponentInstance<T extends TSchema>(
   });
     
   // Cast back to partial of schema type
-  const typedProps = props as Partial<TypeFromSchema<T>>;
+  let typedProps = props as Partial<TypeFromSchema<T>>;
+  
+  // Apply normalizer if defined (for components like Lines that need prop validation)
+  if (definition.normalizeProps) {
+    typedProps = definition.normalizeProps(typedProps);
+  }
   
   return {
     id,

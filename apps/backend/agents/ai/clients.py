@@ -386,6 +386,30 @@ def _separate_system_message(messages: List[Dict[str, str]], model: str):
     
     return system_content, filtered_messages
 
+def _format_system_for_caching(system_content: str, enable_caching: bool) -> any:
+    """
+    Format system message for Claude prompt caching.
+    
+    Args:
+        system_content: The system message text
+        enable_caching: Whether to enable caching for this system message
+    
+    Returns:
+        Either a string (no caching) or a list of content blocks with cache_control
+    """
+    if not enable_caching or not system_content:
+        return system_content
+    
+    # Format as content block with cache_control
+    # This caches the entire system message for reuse across slides
+    return [
+        {
+            "type": "text",
+            "text": system_content,
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+
 def invoke(
     client,
     model: str,
@@ -632,11 +656,12 @@ def invoke(
                         {"type": "text", "text": pre, "cache_control": cache_control},
                         {"type": "text", "text": post}
                     ]
+                    logger.info(f"[CLAUDE CACHE] Formatted user message with cache_control: pre={len(pre)} chars, post={len(post)} chars")
                 else:
                     # Remove delimiter for non-Claude providers to avoid extra tokens
                     _msg["content"] = _msg["content"].replace(CACHE_DELIM, "\n")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[CLAUDE CACHE] Error formatting cache blocks: {e}")
     
     # Start the trace
     with ls.trace(name="llm-invoke",
@@ -699,6 +724,7 @@ def invoke(
                             anthropic_kwargs['system'] = [
                                 {"type": "text", "text": system_content, "cache_control": sys_cache}
                             ]
+                            logger.info(f"[CLAUDE CACHE] Formatted system message with cache_control: {len(system_content)} chars")
                         else:
                             anthropic_kwargs['system'] = system_content
                     if ENABLE_ANTHROPIC_PROMPT_CACHING:
@@ -847,6 +873,7 @@ def invoke(
                             claude_kwargs['system'] = [
                                 {"type": "text", "text": system_content, "cache_control": sys_cache}
                             ]
+                            logger.info(f"[CLAUDE CACHE] Formatted Claude system with cache_control: {len(system_content)} chars")
                         else:
                             claude_kwargs['system'] = system_content
                         if ENABLE_ANTHROPIC_PROMPT_CACHING:

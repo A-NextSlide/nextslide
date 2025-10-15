@@ -15,7 +15,7 @@ interface IconRendererProps {
 export const IconRenderer: React.FC<IconRendererProps> = ({ component, isEditing, isSelected }) => {
   const {
     iconLibrary = 'lucide',
-    iconName = 'Star',
+    iconName = 'Circle',
     color = '#000000',
     strokeWidth = 2,
     filled = false,
@@ -89,10 +89,10 @@ export const IconRenderer: React.FC<IconRendererProps> = ({ component, isEditing
 
   const IconComponent = getIconComponent();
   const computedSize = Math.min(width, height) * 0.8;
-  
+
   if (!IconComponent) {
-    // Fallback to a star icon if the specified one isn't found
-    const FallbackIcon = LucideIcons.Star;
+    // Fallback to a circle icon if the specified one isn't found
+    const FallbackIcon = LucideIcons.Circle;
     return (
       <div
         style={{

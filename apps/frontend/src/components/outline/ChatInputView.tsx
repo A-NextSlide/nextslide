@@ -83,6 +83,7 @@ interface ChatInputViewProps {
   // New callbacks for multi-step input
   handleInitialIdeaSubmitted: () => void;
   handleStyleVibeSubmitted: () => void;
+  handleDetailLevelSelected: (level: 'quick' | 'standard' | 'detailed') => void;
   // New props for color/font selection
   selectedFont?: string | null;
   setSelectedFont: React.Dispatch<React.SetStateAction<string | null>>;
@@ -102,6 +103,8 @@ interface ChatInputViewProps {
   // Auto select images toggle
   autoSelectImages?: boolean;
   setAutoSelectImages?: React.Dispatch<React.SetStateAction<boolean>>;
+  // Detail level for presentation mode
+  detailLevel?: 'quick' | 'standard' | 'detailed';
   // Research removed
 }
 
@@ -134,6 +137,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // New callbacks
   handleInitialIdeaSubmitted,
   handleStyleVibeSubmitted,
+  handleDetailLevelSelected,
   // New props for color/font selection
   selectedFont,
   setSelectedFont,
@@ -152,6 +156,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // Auto select images
   autoSelectImages = false,
   setAutoSelectImages,
+  // Detail level
+  detailLevel = 'standard',
   // Research removed
 }) => {
   // State for animated sections
@@ -176,7 +182,9 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
   const [isTextPickerOpen, setIsTextPickerOpen] = useState(false);
   const [isAccentPickerOpen, setIsAccentPickerOpen] = useState(false);
-  
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  const [activeColorPopover, setActiveColorPopover] = useState<number | null>(null);
+
   // State for AI-generated palettes
   const [aiGeneratedPalettes, setAiGeneratedPalettes] = useState<ColorConfig[]>([]);
   const [isGeneratingAiThemes, setIsGeneratingAiThemes] = useState(false);
@@ -188,6 +196,9 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // Link popover state
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState('');
+  // Mode tooltip and dropdown state
+  const [isModeTooltipOpen, setIsModeTooltipOpen] = useState(false);
+  const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
 
   const normalizeUrl = (url: string) => {
     const trimmed = url.trim();
@@ -274,7 +285,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
     };
   }, []);
 
-  const DETAIL_LEVEL_PROMPT_MESSAGE = "Lastly, how detailed should this presentation be?";
+  // COMMENTED OUT: No longer showing detail level prompt since we have inline selector
+  // const DETAIL_LEVEL_PROMPT_MESSAGE = "Lastly, how detailed should this presentation be?";
   const STYLE_VIBE_PROMPT_TITLE = "Style preference?";
   const STYLE_VIBE_PROMPT_SUBTITLE = "(Optional - click next)";
 
@@ -328,15 +340,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
         textareaPlaceholder = "Example: For a new product launch: a sleek, innovative vibe, perhaps with a deep blue primary color.";
         break;
  
-      case 'typingMessage':
-        // Start typing animation
-        setCurrentSystemMessage(DETAIL_LEVEL_PROMPT_MESSAGE);
-        setTypedMessage(''); // Clear message to ensure animation restarts
-        break;
+      // COMMENTED OUT: Typing message stage no longer used since we removed detail level selection UI
+      // case 'typingMessage':
+      //   // Start typing animation
+      //   setCurrentSystemMessage(DETAIL_LEVEL_PROMPT_MESSAGE);
+      //   setTypedMessage(''); // Clear message to ensure animation restarts
+      //   break;
  
       case 'showOptions':
-        setCurrentSystemMessage(DETAIL_LEVEL_PROMPT_MESSAGE);
-        setTypedMessage(DETAIL_LEVEL_PROMPT_MESSAGE);
+        // Detail level is now selected via inline control, so we just start generation
         // Immediately show all buttons when we skip to showOptions
         setIsButton1Visible(true);
         setIsButton2Visible(true);
@@ -390,47 +402,48 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
     };
   }, [interactionStage]);
 
+  // COMMENTED OUT: Typing animation effect no longer needed since we skip typingMessage stage
   // Typing animation effect
-  useEffect(() => {
-    if (interactionStage === 'typingMessage' && currentSystemMessage) {
-      // Clear typed message to start fresh
-      setTypedMessage('');
-      
-      let currentIndex = 0;
-      let intervalId: NodeJS.Timeout | null = null;
-      
-      // Use interval instead of recursive calls
-      intervalId = setInterval(() => {
-        if (currentIndex <= currentSystemMessage.length) {
-          setTypedMessage(currentSystemMessage.slice(0, currentIndex));
-          currentIndex++;
-        } else {
-          // Clear interval and transition to showOptions
-          if (intervalId) {
-            clearInterval(intervalId);
-            intervalId = null;
-          }
-          
-          setTimeout(() => {
-            if (setInteractionStageRef.current) {
-              setInteractionStageRef.current('showOptions');
-            }
-          }, 200);
-        }
-      }, 35); // 35ms delay between characters
-      
-      return () => {
-        if (intervalId) {
-          clearInterval(intervalId);
-        }
-      };
-    }
-    
-    // Reset typed message when not in typing stage
-    return () => {
-      setTypedMessage('');
-    };
-  }, [interactionStage, currentSystemMessage]); // Removed setInteractionStage from dependencies
+  // useEffect(() => {
+  //   if (interactionStage === 'typingMessage' && currentSystemMessage) {
+  //     // Clear typed message to start fresh
+  //     setTypedMessage('');
+  //     
+  //     let currentIndex = 0;
+  //     let intervalId: NodeJS.Timeout | null = null;
+  //     
+  //     // Use interval instead of recursive calls
+  //     intervalId = setInterval(() => {
+  //       if (currentIndex <= currentSystemMessage.length) {
+  //         setTypedMessage(currentSystemMessage.slice(0, currentIndex));
+  //         currentIndex++;
+  //       } else {
+  //         // Clear interval and transition to showOptions
+  //         if (intervalId) {
+  //           clearInterval(intervalId);
+  //           intervalId = null;
+  //         }
+  //         
+  //         setTimeout(() => {
+  //           if (setInteractionStageRef.current) {
+  //             setInteractionStageRef.current('showOptions');
+  //           }
+  //         }, 200);
+  //       }
+  //     }, 35); // 35ms delay between characters
+  //     
+  //     return () => {
+  //       if (intervalId) {
+  //         clearInterval(intervalId);
+  //       }
+  //     };
+  //   }
+  //   
+  //   // Reset typed message when not in typing stage
+  //   return () => {
+  //     setTypedMessage('');
+  //   };
+  // }, [interactionStage, currentSystemMessage]); // Removed setInteractionStage from dependencies
 
   // Auto-start outline generation when reaching showOptions, using selected controls
   useEffect(() => {
@@ -1045,6 +1058,44 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                       </div>
                     </div>
 
+                    {/* Compact detail level inline */}
+                    <div className="flex items-center">
+                      <Tooltip open={isModeTooltipOpen && !isModeDropdownOpen} onOpenChange={setIsModeTooltipOpen}>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center h-7 rounded-full border border-[#383636]/30 dark:border-gray-600 px-1.5 bg-white/40 dark:bg-neutral-800/30 backdrop-blur-sm shadow-sm">
+                            <svg className="h-3.5 w-3.5 mr-1 text-[#383636]/80 dark:text-gray-300/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                            </svg>
+                            <span className="text-[10px] text-[#383636]/80 dark:text-gray-300/80 mr-0.5">Mode</span>
+                            <Select
+                              value={detailLevel}
+                              onValueChange={(value: 'quick' | 'standard' | 'detailed') => {
+                                handleDetailLevelSelected(value);
+                              }}
+                              open={isModeDropdownOpen}
+                              onOpenChange={setIsModeDropdownOpen}
+                            >
+                              <SelectTrigger className="w-[95px] h-6 text-[10px] border-0 bg-transparent shadow-none px-1 focus:ring-0 focus:outline-none" aria-label="Detail level">
+                                <SelectValue placeholder="Presentation" />
+                              </SelectTrigger>
+                              <SelectContent className="min-w-[180px]">
+                                <SelectItem value="standard">Presentation</SelectItem>
+                                <SelectItem value="detailed">Detailed Analysis</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="backdrop-blur-md bg-white/10 dark:bg-neutral-800/10 border border-[#383636]/30 max-w-[240px]">
+                          <div className="text-xs space-y-1">
+                            <p className="font-semibold">Presentation Mode:</p>
+                            <p className="text-[10px]">Concise, focused slides perfect for presenting</p>
+                            <p className="font-semibold mt-2">Detailed Analysis:</p>
+                            <p className="text-[10px]">Comprehensive slides with rich data, metrics, and deep context</p>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+
                     {/* Research toggle removed */}
 
                     <Tooltip>
@@ -1249,66 +1300,125 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
 
                         <Separator className="my-3" />
 
-                        {/* Custom Color Pickers (BG, Text, Accent) - RE-ADDED */}
+                        {/* Custom Color Pickers (BG, Text, Accent) - Updated design */}
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                            Customize Colors
+                            Theme Colors
                           </Label>
-                          <div className="flex space-x-2 pt-1">
+                          <div className="flex items-center gap-1 pt-1">
                             {/* Background Picker */}
-                            <div className="flex-1 space-y-1">
-                              <Label className="text-[10px] text-muted-foreground block text-center">BG</Label>
-                              <Popover open={isBgPickerOpen} onOpenChange={setIsBgPickerOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button variant="outline" className="w-full h-7 p-0 justify-center border">
-                                    <div className="h-full w-full rounded-sm" style={{ backgroundColor: displayBgColor }}/>
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-60" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
-                                  <GradientPicker
-                                    value={displayBgColor} // Use display color for picker value
-                                    onChange={(val) => handleCustomColorChange('background', typeof val === 'string' ? val : val.stops[0].color)}
-                                    forceMode="solid"
+                            <Popover open={isBgPickerOpen} onOpenChange={setIsBgPickerOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                                  title="Background Color"
+                                >
+                                  <div
+                                    className="h-full w-full rounded-sm"
+                                    style={{ backgroundColor: displayBgColor }}
                                   />
-                                </PopoverContent>
-                              </Popover>
-                            </div>
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
+                                <GradientPicker
+                                  value={displayBgColor}
+                                  onChange={(val) => handleCustomColorChange('background', typeof val === 'string' ? val : val.stops[0].color)}
+                                  forceMode="solid"
+                                  isBackgroundProp={true}
+                                />
+                              </PopoverContent>
+                            </Popover>
+
                             {/* Text Picker */}
-                            <div className="flex-1 space-y-1">
-                              <Label className="text-[10px] text-muted-foreground block text-center">Text</Label>
-                              <Popover open={isTextPickerOpen} onOpenChange={setIsTextPickerOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button variant="outline" className="w-full h-7 p-0 justify-center border">
-                                    <div className="h-full w-full rounded-sm" style={{ backgroundColor: displayTextColor }}/>
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-60" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
-                                  <GradientPicker
-                                    value={displayTextColor} // Use display color
-                                    onChange={(val) => handleCustomColorChange('text', typeof val === 'string' ? val : val.stops[0].color)}
-                                    forceMode="solid"
+                            <Popover open={isTextPickerOpen} onOpenChange={setIsTextPickerOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                                  title="Text Color"
+                                >
+                                  <div
+                                    className="h-full w-full rounded-sm"
+                                    style={{ backgroundColor: displayTextColor }}
                                   />
-                                </PopoverContent>
-                              </Popover>
-                            </div>
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
+                                <GradientPicker
+                                  value={displayTextColor}
+                                  onChange={(val) => handleCustomColorChange('text', typeof val === 'string' ? val : val.stops[0].color)}
+                                  forceMode="solid"
+                                />
+                              </PopoverContent>
+                            </Popover>
+
                             {/* Accent Picker */}
-                            <div className="flex-1 space-y-1">
-                              <Label className="text-[10px] text-muted-foreground block text-center">Accent</Label>
-                              <Popover open={isAccentPickerOpen} onOpenChange={setIsAccentPickerOpen}>
+                            <Popover open={isAccentPickerOpen} onOpenChange={setIsAccentPickerOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                                  title="Accent Color"
+                                >
+                                  <div
+                                    className="h-full w-full rounded-sm"
+                                    style={{ backgroundColor: displayAccent1Color }}
+                                  />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
+                                <GradientPicker
+                                  value={displayAccent1Color}
+                                  onChange={(val) => handleCustomColorChange('accent1', typeof val === 'string' ? val : val.stops[0].color)}
+                                  forceMode="solid"
+                                />
+                              </PopoverContent>
+                            </Popover>
+
+                            {/* Custom Colors */}
+                            {customColors.map((color, index) => (
+                              <Popover
+                                key={index}
+                                open={activeColorPopover === index}
+                                onOpenChange={(open) => setActiveColorPopover(open ? index : null)}
+                              >
                                 <PopoverTrigger asChild>
-                                  <Button variant="outline" className="w-full h-7 p-0 justify-center border">
-                                    <div className="h-full w-full rounded-sm" style={{ backgroundColor: displayAccent1Color }}/>
+                                  <Button
+                                    variant="outline"
+                                    className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                                    title={`Custom Color ${index + 1}`}
+                                  >
+                                    <div
+                                      className="h-full w-full rounded-sm"
+                                      style={{ backgroundColor: color }}
+                                    />
                                   </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-60" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
+                                <PopoverContent className="w-56" onInteractOutside={(e) => e.preventDefault()} sideOffset={5}>
                                   <GradientPicker
-                                    value={displayAccent1Color} // Use display color
-                                    onChange={(val) => handleCustomColorChange('accent1', typeof val === 'string' ? val : val.stops[0].color)}
+                                    value={color}
+                                    onChange={(val) => {
+                                      const newColors = [...customColors];
+                                      newColors[index] = typeof val === 'string' ? val : val.stops[0].color;
+                                      setCustomColors(newColors);
+                                    }}
                                     forceMode="solid"
                                   />
                                 </PopoverContent>
                               </Popover>
-                            </div>
+                            ))}
+
+                            {/* Add Color Button */}
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-12 w-12 rounded-md border-2 border-dashed hover:border-primary transition-colors"
+                              onClick={() => setCustomColors([...customColors, '#4287f5'])}
+                              title="Add Color"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
 
@@ -1643,15 +1753,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create an investor pitch deck for a seed-stage SaaS startup. Include problem, solution, product demo highlights, market size (TAM/SAM/SOM), business model, competitive landscape, traction metrics, go-to-market strategy, financial projections, team, and the fundraising ask. Use clean visuals and concise copy. Aim for 10–12 slides."
+                            "Create an engaging presentation about the solar system. Include an intro to space exploration, overview of the Sun, inner planets (Mercury, Venus, Earth, Mars) with key facts, outer planets (Jupiter, Saturn, Uranus, Neptune), dwarf planets and asteroids, moons worth knowing, fascinating space phenomena, timeline of space missions, and future of space exploration. Use stunning space visuals. 10–12 slides."
                           )
                         }
                       >
-                        Build an investor pitch deck
+                        Journey Through the Solar System
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">Problem, market, traction, GTM, team, ask</p>
+                      <p className="text-xs">Planets, moons, phenomena, missions</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1662,15 +1772,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a quarterly business review (QBR) for a B2B SaaS company. Include executive summary, revenue (ARR/MRR) trends, churn and expansion, pipeline and bookings, product updates, roadmap progress, top customers and case studies, support SLAs, risks with mitigations, and next-quarter OKRs. 8–12 slides with clear charts and tables."
+                            "Create a pitch deck for a fantasy movie trilogy. Include the magical world overview, main hero's journey, villain and their dark motivation, supporting cast of quirky characters, visual style and cinematography inspiration, epic battle sequences, plot arcs for all three films, merchandising opportunities, target audience demographics, and box office projections. Make it cinematic! 10–12 slides."
                           )
                         }
                       >
-                        Run a quarterly business review
+                        Epic Fantasy Film Trilogy Pitch
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">ARR/MRR, churn, pipeline, OKRs</p>
+                      <p className="text-xs">World, hero, villain, visual style, box office</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1681,15 +1791,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a go-to-market strategy for launching a new product. Include target audience and ICP, positioning and messaging pillars, pricing and packaging, channel mix, content plan, launch timeline, budget allocation, KPIs, experiment plan, and risks with mitigations. Include timelines and scorecards. 8–10 slides."
+                            "Create a vibrant cookbook presentation for street food from around the world. Include introduction to street food culture, Asia section (tacos, dumplings, satay), Europe section (crepes, currywurst, arancini), Americas section (hot dogs, arepas, elote), Africa & Middle East (shawarma, bunny chow, falafel), cooking tips and techniques, ingredient sourcing guide, and a final feast photo spread. Use mouth-watering food photography. 8–10 slides."
                           )
                         }
                       >
-                        Plan a go‑to‑market strategy
+                        Global Street Food Adventure
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">ICP, positioning, channels, KPIs, timeline</p>
+                      <p className="text-xs">Recipes, cultures, photos, cooking tips</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1700,15 +1810,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a project proposal and roadmap for an internal initiative. Include problem statement, objectives and success metrics, scope and out-of-scope, milestones and timeline, dependencies, resourcing plan, budget, risks and mitigations, communications plan, and next steps. 6–10 slides."
+                            "Create a presentation about the history and evolution of video games. Include the arcade golden age (Pac-Man, Space Invaders), console wars (Nintendo vs Sega), rise of 3D graphics, online multiplayer revolution, mobile gaming explosion, indie game renaissance, esports phenomenon, VR/AR gaming, gaming culture and communities, and the future of interactive entertainment. Include nostalgic visuals and timelines. 10–12 slides."
                           )
                         }
                       >
-                        Draft a project proposal
+                        The Evolution of Gaming
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">Goals, scope, milestones, risks, resources</p>
+                      <p className="text-xs">Arcade, consoles, online, esports, future</p>
                     </TooltipContent>
                   </Tooltip>
                 </div>

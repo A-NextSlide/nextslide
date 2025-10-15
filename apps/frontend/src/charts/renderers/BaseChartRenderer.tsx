@@ -156,10 +156,9 @@ const BaseChartRenderer: FC<ChartRendererProps> = ({
     [baseStyles]
   );
 
-  // handle thumbnail mode or explicit suppress flag (untyped)
-  const isThumb = chartProps.isThumbnail === true;
+  // handle explicit suppress flag (untyped)
   const suppressAll = (props as any)._suppressAllRenders === true;
-  if (isThumb || suppressAll) {
+  if (suppressAll) {
     // prefer any cached image (untyped)
     const cachedImage =
       (props as any)._cachedChartImage ||
@@ -229,6 +228,9 @@ const BaseChartRenderer: FC<ChartRendererProps> = ({
   
   // Calculate animate value - do NOT memoize to ensure it updates when flags change
   const currentShouldAnimate = (() => {
+    // Disable animations for thumbnails
+    if (chartProps.isThumbnail === true) return false;
+    
     // Respect explicit disable flags first
     if (props.animate === false || chartProps.animate === false) return false;
 

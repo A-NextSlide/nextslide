@@ -401,29 +401,63 @@ class ImageGenerationPromptBuilder:
 
     def _build_hero_prompt(self, title: str, content: str, educational: bool) -> str:
         theme_desc = self._theme_short()
+
+        # Extract theme colors for artistic direction
+        palette = (self.theme or {}).get("color_palette", {}) or {}
+        accent_1 = palette.get("accent_1", "vibrant")
+
         if educational:
             return (
-                f"Create a content-relevant, photorealistic editorial image that matches '{theme_desc}'. "
-                f"Keep composition simple and readable, no background replacement, no surreal elements. "
-                f"Natural lighting, realistic lens (35–85mm look), gentle depth, no embedded text or labels."
+                f"Create a HYPERREALISTIC, magazine-quality editorial photograph about '{title}'. "
+                f"Apple keynote aesthetic: cinematic composition, dramatic depth of field (f/1.4-2.8), "
+                f"professional color grading with {accent_1} accent tones. "
+                f"Studio lighting setup: key light + rim light for dimension. "
+                f"Ultra-high resolution, 8K quality, shot on Phase One XF IQ4 150MP or Hasselblad H6D-400c MS. "
+                f"Artistic elements: subtle film grain, rich blacks, luminous highlights. "
+                f"NO text, NO labels, NO watermarks. Clean, sophisticated, timeless."
             )
+
+        # Hero/artistic mode - full Apple launch quality
         return (
-            f"Create a photorealistic editorial image that supports the section for '{title}', matching '{theme_desc}'. "
-            f"Real-world setting or abstract-but-real materials (architecture, product, texture). No fantasy/surreal artifacts. "
-            f"Natural lighting, realistic lens (35–85mm), minimal color grading aligned to theme, no embedded text."
+            f"Create a STUNNING, HYPERREALISTIC artistic photograph for '{title}', designer magazine cover quality. "
+            f"Apple product launch aesthetic: dramatic lighting, cinematic composition, ethereal atmosphere. "
+            f"Visual effects: water-colored smoke tendrils in {accent_1} hues, light rays through mist, "
+            f"bokeh particles, lens flare (subtle, tasteful), volumetric lighting. "
+            f"Shot on medium format film (Hasselblad 907X CFV 100C or Phase One XF): shallow depth of field (f/1.2-2.0), "
+            f"rich color science, creamy bokeh, 16-bit color depth. "
+            f"Lighting: Rembrandt setup with colored gels, rim lighting for depth, fog/haze for atmosphere. "
+            f"Post-production: professional color grading (teal/orange or complementary to {accent_1}), "
+            f"crushed blacks, lifted shadows, film grain (Kodak Portra 400 emulation). "
+            f"Composition: rule of thirds, leading lines, negative space for text overlay zones. "
+            f"NO embedded text, NO logos, NO UI elements, NO cheesy stock photo vibes. "
+            f"Pure artistic perfection, gallery-worthy, timeless elegance."
         )
 
     def _build_supporting_prompt(self, title: str, content: str, educational: bool) -> str:
         theme_desc = self._theme_short()
+
+        # Extract theme colors
+        palette = (self.theme or {}).get("color_palette", {}) or {}
+        accent_1 = palette.get("accent_1", "vibrant")
+
         if educational:
             return (
-                f"Create a clean supporting visual matching '{theme_desc}', suitable for overlay. "
-                f"Think icon-like clarity, minimal shading, crisp edges. "
-                f"Subject tied to '{title}'."
+                f"Create a CRYSTAL CLEAR, high-definition supporting visual for '{title}'. "
+                f"Product photography quality: perfect lighting, sharp focus, professional backdrop. "
+                f"Studio setup: seamless white/neutral cyclorama, shadowless lighting, color accuracy. "
+                f"Shot on macro lens (100mm f/2.8) for crisp detail. Icon-like clarity, minimal shadows. "
+                f"NO text, NO labels, NO distractions. Pure subject focus."
             )
+
+        # Supporting with artistic touch but designed for transparency
         return (
-            f"Create a small, photorealistic supporting image matching '{theme_desc}', suitable for overlay inside its box. "
-            f"Subject tied to '{title}'. Simple, clean composition, neutral or shallow background, no dramatic effects, no embedded text."
+            f"Create a beautifully lit, HYPERREALISTIC supporting element for '{title}'. "
+            f"Premium product photography: dramatic rim lighting, subtle reflections, professional isolation. "
+            f"Artistic touches: gentle smoke wisps in {accent_1} tones, soft bokeh background (will be removed), "
+            f"golden hour color temperature, shallow depth of field (f/2.0). "
+            f"Shot on prime lens (85mm f/1.4 or 50mm f/1.2): creamy bokeh, edge sharpness. "
+            f"Composition: centered subject, breathing room, ready for transparency extraction. "
+            f"NO text, NO logos, NO embedded labels. Pristine, magazine-quality asset."
         )
 
     def _theme_short(self) -> str:

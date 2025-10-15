@@ -326,6 +326,18 @@ class ParallelSlideOrchestrator:
                 # Pass theme directly - now supports both ThemeDocument and ThemeSpec
                 theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
                 
+                # ✅ DEBUG: Log if extractedData exists on slide_outline
+                has_extracted = hasattr(slide_outline, 'extractedData') and slide_outline.extractedData is not None
+                has_manual_charts = hasattr(slide_outline, 'manualCharts') and slide_outline.manualCharts is not None
+                logger.info(f"[CHART DEBUG] Slide {slide_index + 1} '{slide_outline.title}' - extractedData: {has_extracted}, manualCharts: {has_manual_charts}")
+                if has_extracted:
+                    try:
+                        chart_type = slide_outline.extractedData.chartType if hasattr(slide_outline.extractedData, 'chartType') else slide_outline.extractedData.get('chartType', 'unknown')
+                        data_count = len(slide_outline.extractedData.data) if hasattr(slide_outline.extractedData, 'data') else len(slide_outline.extractedData.get('data', []))
+                        logger.info(f"[CHART DEBUG] Slide {slide_index + 1} extractedData: {chart_type} with {data_count} points")
+                    except Exception as e:
+                        logger.warning(f"[CHART DEBUG] Error accessing extractedData details: {e}")
+                
                 context = SlideGenerationContext(
                     slide_outline=slide_outline,
                     slide_index=slide_index,
@@ -346,6 +358,7 @@ class ParallelSlideOrchestrator:
                 )
                 
                 logger.info(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
+                logger.info(f"[SLIDE GENERATION] Context has_chart_data property: {context.has_chart_data}")
                 
                 # Immediately emit slide_started event
                 await event_queue.put({

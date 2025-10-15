@@ -92,14 +92,17 @@ async def get_font_list(
                 except Exception:
                     continue
             
-            # Create font info
+            # Get metadata for this font if available
+            metadata = font_service.font_metadata.get(font_id, {})
+            
+            # Create font info with metadata
             font_info = FontInfo(
                 id=font_id,
                 name=font_data.get('name', font_id),
                 category=font_data.get('category', 'unknown'),
                 source=font_data.get('source', 'unknown'),
-                tags=font_data.get('tags', []),
-                description=font_data.get('description', '')
+                tags=metadata.get('tags', font_data.get('tags', []))[:10],  # Limit to 10 tags
+                description=metadata.get('description', font_data.get('description', ''))[:200]  # Truncate long descriptions
             )
             
             # Add style/file info based on source

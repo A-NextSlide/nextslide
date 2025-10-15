@@ -180,104 +180,117 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   // Check if we're in presentation mode
   const isPresenting = usePresentationStore(state => state.isPresenting);
 
-  // Track the component's actual rendered width for accurate font scaling
-  // CRITICAL: Initialize with a calculated value based on slide dimensions to prevent initial flash
-  const getInitialRenderedWidth = () => {
-    if (!containerRef.current) {
-      // Calculate expected rendered width based on slide container
-      const slideContainer = document.querySelector('#slide-display-container') || document.querySelector('.slide-container');
-      if (slideContainer) {
-        const slideRect = slideContainer.getBoundingClientRect();
-        const slideWidth = slideRect.width || DEFAULT_SLIDE_WIDTH;
-        // Component width as percentage of slide width
-        return (actualWidth / DEFAULT_SLIDE_WIDTH) * slideWidth;
-      }
-      return actualWidth;
+  // Track the slide container's width for accurate font scaling
+  // Use slide container scale instead of component scale to avoid double-scaling
+  const [slideContainerWidth, setSlideContainerWidth] = useState<number>(() => {
+    if (isThumbnail) return DEFAULT_SLIDE_WIDTH;
+    const slideContainer = document.getElementById('slide-display-container');
+    if (slideContainer) {
+      return slideContainer.getBoundingClientRect().width || DEFAULT_SLIDE_WIDTH;
     }
-    return containerRef.current.getBoundingClientRect().width || actualWidth;
-  };
-  
-  const [componentRenderedWidth, setComponentRenderedWidth] = useState<number>(getInitialRenderedWidth);
-  const componentRenderedWidthRef = useRef<number>(componentRenderedWidth);
-  
-  // Measure component's actual rendered size - but only update when actually different
+    return DEFAULT_SLIDE_WIDTH;
+  });
+
+  const slideContainerWidthRef = useRef<number>(slideContainerWidth);
+
+  // Measure slide container's width for font scaling
   useEffect(() => {
-    // Skip measurement entirely for thumbnails or when text editing
-    if (isThumbnail || isCurrentlyTextEditing) return;
-    
-    if (!containerRef.current) return;
-    
-    // Do ONE immediate measurement synchronously to get the real size
-    const initialRect = containerRef.current.getBoundingClientRect();
-    if (initialRect.width > 0) {
-      componentRenderedWidthRef.current = initialRect.width;
-      setComponentRenderedWidth(initialRect.width);
-    }
-    
-    // Then set up observer for future changes (only during actual resizing)
-    const updateRenderedWidth = () => {
-      if (!containerRef.current) return;
-      
-      const rect = containerRef.current.getBoundingClientRect();
+    if (isThumbnail) return;
+
+    const updateSlideWidth = () => {
+      // Skip updates during text editing to prevent font size changes on click
+      if (isCurrentlyTextEditing) return;
+
+      const slideContainer = document.getElementById('slide-display-container');
+      if (!slideContainer) return;
+
+      const rect = slideContainer.getBoundingClientRect();
       const newWidth = rect.width;
-      
+
       // Only update if difference is significant (>10px) to avoid micro-adjustments
-      if (newWidth > 0 && Math.abs(newWidth - componentRenderedWidthRef.current) > 10) {
-        componentRenderedWidthRef.current = newWidth;
-        setComponentRenderedWidth(newWidth);
+      const widthDiff = Math.abs(newWidth - slideContainerWidthRef.current);
+
+      if (newWidth > 0 && widthDiff > 10) {
+        slideContainerWidthRef.current = newWidth;
+        setSlideContainerWidth(newWidth);
       }
     };
-    
-    // Use ResizeObserver only for actual resize events
-    const resizeObserver = new ResizeObserver(updateRenderedWidth);
-    resizeObserver.observe(containerRef.current);
-    
+
+    // Initial measurement
+    updateSlideWidth();
+
+    // Use ResizeObserver on slide container
+    const slideContainer = document.getElementById('slide-display-container');
+    if (!slideContainer) return;
+
+    const resizeObserver = new ResizeObserver(updateSlideWidth);
+    resizeObserver.observe(slideContainer);
+
+    // Also listen for window resize
+    window.addEventListener('resize', updateSlideWidth);
+
     return () => {
       resizeObserver.disconnect();
+      window.removeEventListener('resize', updateSlideWidth);
     };
-  }, [isThumbnail, isCurrentlyTextEditing]); // Minimal dependencies to avoid re-running
+  }, [isThumbnail]); // CRITICAL: Don't include isCurrentlyTextEditing in dependencies!
 
-  // Font size calculation - scale based on component's actual rendered size
-  // STABLE - only recalculates when fontSize prop or rendered width changes significantly
+  // Font size calculation - scale based on slide container scale, not component scale
+  // This prevents double-scaling since components are already sized as percentages
   const fontScaleFactor = useMemo(() => {
     // Thumbnails are already scaled by outer slide transform; keep fonts at native size
     // The entire slide (including fonts) will be CSS-scaled together
     if (isThumbnail) {
       return 1;
     }
-    
-    // For regular slides, calculate scale based on component's actual rendered size vs specified size
-    // This accounts for the percentage-based sizing in ComponentRenderer
-    const specifiedWidth = actualWidth || 600;
-    const scaleFactor = componentRenderedWidth / specifiedWidth;
-    
-    return scaleFactor;
-  }, [isThumbnail, actualWidth, componentRenderedWidth]);
 
-  // Store the stable font size - changes only when fontSize prop or scale factor changes
+    // For regular slides, calculate scale based on slide container vs native slide width
+    // This ensures fonts scale uniformly with the slide, not individually per component
+    const scaleFactor = slideContainerWidth / DEFAULT_SLIDE_WIDTH;
+
+    // Round to 4 decimal places to prevent micro-fluctuations
+    return Math.round(scaleFactor * 10000) / 10000;
+  }, [isThumbnail, slideContainerWidth]);
+
+  // CRITICAL FIX: Store the stable font size to prevent resize on click/selection
+  // We lock the font size based on props.fontSize and fontScaleFactor, only recalculate when they change
   const stableFontSizeRef = useRef<string | null>(null);
-  
+  const lastPropsSizeRef = useRef<number | null>(null);
+  const lastScaleFactorRef = useRef<number | null>(null);
+
   const getFontSize = useMemo(() => {
     // Always use props.fontSize if it exists (this is the source of truth)
-    const nativeSize = props.fontSize || effectiveFontSize || 16;
-    
-    // Apply scaling for non-thumbnail views
-    const finalSize = nativeSize * fontScaleFactor;
+    const nativeSize = Math.round(props.fontSize || effectiveFontSize || 16); // Round to whole number
 
-    // If we already have a stable size and it's very close (within 0.5px), use it
-    // This prevents micro-adjustments while still allowing real changes
-    if (stableFontSizeRef.current) {
-      const currentSize = parseFloat(stableFontSizeRef.current);
-      if (Math.abs(currentSize - finalSize) < 0.5) {
+    // For thumbnails, return scaled size
+    if (isThumbnail) {
+      return `${Math.round(nativeSize * fontScaleFactor)}px`;
+    }
+
+    // CRITICAL FIX: Use stable reference with threshold to prevent micro-adjustments
+    // Only recalculate if props.fontSize OR fontScaleFactor changed significantly
+    // This prevents resize-on-click and micro-fluctuations while still allowing proper scaling
+    if (stableFontSizeRef.current &&
+        lastPropsSizeRef.current === nativeSize) {
+      // Check if scale factor changed significantly (more than 0.5% difference)
+      const scaleFactorDiff = Math.abs(fontScaleFactor - (lastScaleFactorRef.current || 0));
+      const scaleFactorThreshold = 0.005; // 0.5% threshold
+
+      if (scaleFactorDiff < scaleFactorThreshold) {
         return stableFontSizeRef.current;
       }
     }
 
+    // Apply scaling and round to whole number (for all components)
+    const finalSize = Math.round(nativeSize * fontScaleFactor);
+
     const result = `${finalSize}px`;
     stableFontSizeRef.current = result;
+    lastPropsSizeRef.current = nativeSize;
+    lastScaleFactorRef.current = fontScaleFactor;
 
     return result;
-  }, [props.fontSize, effectiveFontSize, fontScaleFactor]);
+  }, [props.fontSize, fontScaleFactor, isThumbnail]); // Only essential dependencies to prevent unnecessary recalculations
   
   // Removed font optimization listener
 

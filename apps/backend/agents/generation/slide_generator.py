@@ -739,6 +739,34 @@ class SlideGeneratorV2(ISlideGenerator):
         logger.info(f"✅ Validated {len(validated_components)} components")
         slide_data['generated_at'] = datetime.now().isoformat()
         
+        # ✅ CRITICAL: Preserve extractedData from outline (charts)
+        logger.info(f"🔍 [CHART PRESERVATION CHECK] Slide {context.slide_index + 1} - Starting preservation check")
+        logger.info(f"🔍 [CHART PRESERVATION CHECK] slide_outline type: {type(context.slide_outline)}")
+        logger.info(f"🔍 [CHART PRESERVATION CHECK] hasattr extractedData: {hasattr(context.slide_outline, 'extractedData')}")
+        
+        if hasattr(context.slide_outline, 'extractedData') and context.slide_outline.extractedData:
+            logger.info(f"🔍 [CHART PRESERVATION CHECK] extractedData exists! Type: {type(context.slide_outline.extractedData)}")
+            slide_data['extractedData'] = (
+                context.slide_outline.extractedData.model_dump() 
+                if hasattr(context.slide_outline.extractedData, 'model_dump') 
+                else context.slide_outline.extractedData
+            )
+            logger.info(f"✅✅✅ [CHART PRESERVATION] Added extractedData to slide {context.slide_index + 1}: {slide_data['extractedData'].get('chartType', 'unknown')} chart")
+            logger.info(f"✅ [CHART PRESERVATION] Data has {len(slide_data['extractedData'].get('data', []))} points")
+        else:
+            logger.warning(f"⚠️⚠️⚠️ [CHART PRESERVATION] NO extractedData in outline for slide {context.slide_index + 1}")
+            logger.warning(f"⚠️ slide_outline attributes: {dir(context.slide_outline)}")
+        
+        # ✅ CRITICAL: Preserve manualCharts array (multiple charts per slide)
+        if hasattr(context.slide_outline, 'manualCharts') and context.slide_outline.manualCharts:
+            slide_data['manualCharts'] = [
+                c.model_dump() if hasattr(c, 'model_dump') else c 
+                for c in context.slide_outline.manualCharts
+            ]
+            logger.info(f"✅ [CHART PRESERVATION] Added {len(slide_data['manualCharts'])} manual charts to slide {context.slide_index + 1}")
+        else:
+            logger.info(f"[CHART PRESERVATION] No manualCharts in outline for slide {context.slide_index + 1}")
+        
         # Add theme data to slide
         if context.theme:
             theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else context.theme
@@ -1085,10 +1113,13 @@ class SlideGeneratorV2(ISlideGenerator):
                 if c.get('type') in ('TiptapTextBlock', 'TextBlock'):
                     texts = (c.get('props', {}) or {}).get('texts') or []
                     lines: List[str] = []
-                    for t in texts:
-                        val = str((t or {}).get('text') or '').strip()
-                        if val:
-                            lines.append(val)
+                    # Only iterate if texts is a list (not a tiptap document dict)
+                    if isinstance(texts, list):
+                        for t in texts:
+                            if isinstance(t, dict):
+                                val = str((t or {}).get('text') or '').strip()
+                                if val:
+                                    lines.append(val)
                     if len(lines) >= 3:
                         q = lines[0]
                         opts = lines[1:5]
@@ -2228,62 +2259,19 @@ class SlideGeneratorV2(ISlideGenerator):
 
         hero_font = normalize_font_name(hero_font)
         body_font = normalize_font_name(body_font)
-        # Colors from palette
+        
+        # ✅ FONT FALLBACK: Use similar font if requested font isn't available
+        hero_font = self._get_fallback_font_if_unavailable(hero_font, is_hero=True)
+        body_font = self._get_fallback_font_if_unavailable(body_font, is_hero=False)
+        
+        # ✅ PRESERVE theme colors - DO NOT override with database palette!
+        # Theme colors from outline/brandfetch should ALWAYS take priority
         primary_text = color_palette.get('primary_text', '#1A1A1A')
         accent_1 = color_palette.get('accent_1', '#0066CC')
         accent_2 = color_palette.get('accent_2', '#FF6B6B')
-        # If a generic database palette is attached to the slide, prefer its accents/text
-        try:
-            palette = slide_data.get('palette') if isinstance(slide_data, dict) else None
-            source = str((palette or {}).get('source', '')).lower() if isinstance(palette, dict) else ''
-            if palette and source in ('database', 'palette_db', 'topic match'):
-                pal_colors = palette.get('colors') or []
-                if isinstance(pal_colors, list) and pal_colors:
-                    def _rgb_tuple(hex_str: str):
-                        s = str(hex_str).lstrip('#')
-                        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
-                    def _colorfulness(hex_str: str) -> float:
-                        r, g, b = _rgb_tuple(hex_str)
-                        return max(abs(r-g), abs(g-b), abs(b-r)) / 255.0
-                    def _estimate_brightness(hex_color: str) -> float:
-                        try:
-                            h = hex_color.lstrip('#')
-                            r = int(h[0:2], 16) / 255.0
-                            g = int(h[2:4], 16) / 255.0
-                            b = int(h[4:6], 16) / 255.0
-                            return (0.299 * r + 0.587 * g + 0.114 * b)
-                        except Exception:
-                            return 0.5
-                    def _is_extreme_brightness(hex_str: str) -> bool:
-                        try:
-                            val = _estimate_brightness(hex_str)
-                            return val < 0.12 or val > 0.92
-                        except Exception:
-                            return False
-                    scored = [(
-                        _colorfulness(c),
-                        -abs(_estimate_brightness(c) - 0.5),
-                        c
-                    ) for c in pal_colors if isinstance(c, str) and not _is_extreme_brightness(c)]
-                    if not scored:
-                        scored = [(
-                            _colorfulness(c),
-                            -abs(_estimate_brightness(c) - 0.5),
-                            c
-                        ) for c in pal_colors if isinstance(c, str)]
-                    scored.sort(reverse=True)
-                    if scored:
-                        accent_1 = scored[0][2]
-                        accent_2 = scored[1][2] if len(scored) > 1 else scored[0][2]
-                # Prefer palette-provided readable text color
-                tc = palette.get('text_colors') or {}
-                if isinstance(tc, dict) and isinstance(tc.get('primary'), str):
-                    primary_text = tc['primary']
-        except Exception:
-            pass
         
-        # Log what fonts we're using
-        logger.info(f"[FONT ENFORCEMENT] Theme fonts - Hero: {hero_font}, Body: {body_font}")
+        logger.info(f"[FONT ENFORCEMENT] ✅ Using theme fonts: Hero={hero_font}, Body={body_font}")
+        logger.info(f"[FONT ENFORCEMENT] ✅ Using theme accents: accent_1={accent_1}, accent_2={accent_2}, primary_text={primary_text}")
         
         for component in slide_data.get('components', []):
             if component.get('type') in ('TiptapTextBlock', 'TextBlock', 'Title'):
@@ -2316,7 +2304,11 @@ class SlideGeneratorV2(ISlideGenerator):
                     # If any text is very large, tighten tracking
                     texts = props.get('texts', []) or []
                     try:
-                        max_size = max((t.get('fontSize', 0) or 0 for t in texts), default=(props.get('fontSize') or 0) or 0)
+                        # Only iterate if texts is a list (not a tiptap document dict)
+                        if isinstance(texts, list):
+                            max_size = max((t.get('fontSize', 0) or 0 for t in texts if isinstance(t, dict)), default=(props.get('fontSize') or 0) or 0)
+                        else:
+                            max_size = (props.get('fontSize') or 0) or 0
                     except Exception:
                         max_size = (props.get('fontSize') or 0) or 0
                     props['letterSpacing'] = -0.02 if (max_size and max_size >= 80) else -0.01
@@ -2351,13 +2343,15 @@ class SlideGeneratorV2(ISlideGenerator):
 
                 # Enforce palette colors on text segments if colors are missing or default black
                 texts = props.get('texts', []) or []
-                if texts:
+                if texts and isinstance(texts, list):
                     # Determine the biggest text segment as emphasis (None-safe)
                     try:
-                        max_size = max((t.get('fontSize', 0) or 0 for t in texts), default=(props.get('fontSize') or 0) or 0)
+                        max_size = max((t.get('fontSize', 0) or 0 for t in texts if isinstance(t, dict)), default=(props.get('fontSize') or 0) or 0)
                     except Exception:
                         max_size = (props.get('fontSize') or 0) or 0
                     for t in texts:
+                        if not isinstance(t, dict):
+                            continue
                         color = t.get('color')
                         # If missing color or plain black, assign from palette
                         if not color or str(color).lower() in ['#000', '#000000']:
@@ -2371,6 +2365,71 @@ class SlideGeneratorV2(ISlideGenerator):
                         style.setdefault('backgroundColor', '#00000000')
                         t['style'] = style
 
+    def _get_fallback_font_if_unavailable(self, font_name: str, is_hero: bool = False) -> str:
+        """
+        Check if font is available in registry, return similar font if not.
+        
+        Args:
+            font_name: Requested font family name
+            is_hero: True for display/heading fonts, False for body fonts
+            
+        Returns:
+            Available font name (original or fallback)
+        """
+        try:
+            from services.registry_fonts import RegistryFonts
+            from models.registry import ComponentRegistry
+            
+            # Get available fonts
+            registry = ComponentRegistry.get_instance()
+            available_fonts_dict = RegistryFonts.get_available_fonts(registry)
+            all_available = RegistryFonts.get_all_fonts_list(registry)
+            
+            # Check if requested font is available
+            font_normalized = str(font_name).lower().strip()
+            for available_font in all_available:
+                if str(available_font).lower().strip() == font_normalized:
+                    logger.info(f"[FONT FALLBACK] ✅ Font '{font_name}' is available")
+                    return font_name
+            
+            # Font not available - find similar fallback
+            logger.warning(f"[FONT FALLBACK] ⚠️ Font '{font_name}' not available, finding fallback...")
+            
+            # Fallback strategy based on font type
+            if is_hero:
+                # For hero fonts, prefer display or sans-serif fonts
+                categories_to_try = ['Display', 'Sans', 'Serif']
+            else:
+                # For body fonts, prefer sans-serif or serif
+                categories_to_try = ['Sans', 'Serif', 'Display']
+            
+            # Try to find a similar font from the same category
+            for category in categories_to_try:
+                category_fonts = available_fonts_dict.get(category, [])
+                if category_fonts:
+                    fallback = category_fonts[0]
+                    logger.info(f"[FONT FALLBACK] ✅ Using '{fallback}' ({category}) as fallback for '{font_name}'")
+                    return fallback
+            
+            # Last resort: use Inter
+            if 'Inter' in all_available:
+                logger.info(f"[FONT FALLBACK] Using 'Inter' as last resort fallback for '{font_name}'")
+                return 'Inter'
+            
+            # Absolute last resort: use first available font
+            if all_available:
+                fallback = all_available[0]
+                logger.info(f"[FONT FALLBACK] Using '{fallback}' as absolute fallback for '{font_name}'")
+                return fallback
+            
+            # If all else fails, return original and let frontend handle it
+            logger.warning(f"[FONT FALLBACK] No fallback found, using original '{font_name}'")
+            return font_name
+            
+        except Exception as e:
+            logger.warning(f"[FONT FALLBACK] Error finding fallback for '{font_name}': {e}")
+            return font_name
+    
     def _enforce_theme_consistency(self, slide_data: Dict[str, Any], theme: Any) -> None:
         """Enforce consistent use of the deck theme across key visual components.
         - Background: enforce solid backgroundColor from theme/palette
@@ -2404,57 +2463,9 @@ class SlideGeneratorV2(ISlideGenerator):
                        colors.get('colors', [None, None])[1] if isinstance(colors.get('colors'), list) and len(colors.get('colors', [])) > 1 else None or
                        '#FF5722')
             
-            logger.info(f"[THEME ENFORCEMENT] Using colors: primary_bg={primary_bg}, accent_1={accent_1}, accent_2={accent_2}, text={primary_text}")
-            # If a generic database palette is attached, prefer its accents/text for enforcement
-            try:
-                palette = slide_data.get('palette') if isinstance(slide_data, dict) else None
-                source = str((palette or {}).get('source', '')).lower() if isinstance(palette, dict) else ''
-                theme_source = str((((theme or {}).get('color_palette') or {}).get('source', ''))).lower() if isinstance(theme, dict) else ''
-                # Do not allow DB palettes to override brand-sourced themes
-                if palette and source in ('database', 'palette_db', 'topic match') and ('brand' not in theme_source and 'brandfetch' not in theme_source):
-                    pal_colors = palette.get('colors') or []
-                    if isinstance(pal_colors, list) and pal_colors:
-                        def _rgb_tuple(hex_str: str):
-                            s = str(hex_str).lstrip('#')
-                            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
-                        def _colorfulness(hex_str: str) -> float:
-                            r, g, b = _rgb_tuple(hex_str)
-                            return max(abs(r-g), abs(g-b), abs(b-r)) / 255.0
-                        def _estimate_brightness(hex_color: str) -> float:
-                            try:
-                                h = hex_color.lstrip('#')
-                                r = int(h[0:2], 16) / 255.0
-                                g = int(h[2:4], 16) / 255.0
-                                b = int(h[4:6], 16) / 255.0
-                                return (0.299 * r + 0.587 * g + 0.114 * b)
-                            except Exception:
-                                return 0.5
-                        def _is_extreme_brightness(hex_str: str) -> bool:
-                            try:
-                                val = _estimate_brightness(hex_str)
-                                return val < 0.12 or val > 0.92
-                            except Exception:
-                                return False
-                        scored = [(
-                            _colorfulness(c),
-                            -abs(_estimate_brightness(c) - 0.5),
-                            c
-                        ) for c in pal_colors if isinstance(c, str) and not _is_extreme_brightness(c)]
-                        if not scored:
-                            scored = [(
-                                _colorfulness(c),
-                                -abs(_estimate_brightness(c) - 0.5),
-                                c
-                            ) for c in pal_colors if isinstance(c, str)]
-                        scored.sort(reverse=True)
-                        if scored:
-                            accent_1 = scored[0][2]
-                            accent_2 = scored[1][2] if len(scored) > 1 else scored[0][2]
-                    tc = palette.get('text_colors') or {}
-                    if isinstance(tc, dict) and isinstance(tc.get('primary'), str):
-                        primary_text = tc['primary']
-            except Exception:
-                pass
+            # ✅ PRESERVE brand theme colors - DO NOT override with database palette!
+            logger.info(f"[THEME ENFORCEMENT] ✅ Preserving brand colors: primary_bg={primary_bg}, accent_1={accent_1}, accent_2={accent_2}, text={primary_text}")
+            
             hero_font = (typography.get('hero_title', {}) or {}).get('family', 'Montserrat')
 
             # Allowable color sets for quick validation

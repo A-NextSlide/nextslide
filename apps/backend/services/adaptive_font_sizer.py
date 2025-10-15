@@ -43,6 +43,7 @@ class AdaptiveFontSizer:
         font_family: str,
         padding_x: float = 0,
         padding_y: float = 0,
+        letter_spacing: float = 0,
         max_iterations: int = 20,
         precision: float = 0.5
     ) -> SizingResult:
@@ -128,7 +129,7 @@ class AdaptiveFontSizer:
 
             # Test if this size fits
             fits, lines, width_used, height_used = self._test_size(
-                text, test_size, font_family, available_width, available_height
+                text, test_size, font_family, available_width, available_height, letter_spacing
             )
 
             logger.debug(f"  Iteration {iterations}: size={test_size:.1f}, fits={fits}, lines={lines}, space_used={width_used:.0f}x{height_used:.0f}")
@@ -145,7 +146,7 @@ class AdaptiveFontSizer:
         # Final validation at optimal size
         if best_fit is None:
             fits, lines, width_used, height_used = self._test_size(
-                text, optimal_size, font_family, available_width, available_height
+                text, optimal_size, font_family, available_width, available_height, letter_spacing
             )
             best_fit = (lines, width_used, height_used)
         else:
@@ -177,7 +178,8 @@ class AdaptiveFontSizer:
         font_size: float,
         font_family: str,
         max_width: float,
-        max_height: float
+        max_height: float,
+        letter_spacing: float = 0
     ) -> Tuple[bool, int, float, float]:
         """
         Test if text at given size fits in container.
@@ -195,8 +197,23 @@ class AdaptiveFontSizer:
         if text_width is None:
             text_width = len(text) * font_size * 0.6  # Rough estimate
 
-        # Calculate line height
-        line_height = font_size * (metrics.line_height_ratio if metrics and metrics.line_height_ratio else 1.2)
+        # CRITICAL: Account for letter spacing in total width
+        # Letter spacing adds extra space between each character
+        # Positive spacing increases width, negative spacing decreases it
+        if letter_spacing != 0:
+            char_count = len(text)
+            # Letter spacing affects width directly:
+            # - Positive letter_spacing: text wider, needs smaller font
+            # - Negative letter_spacing: text tighter, can use larger font
+            spacing_adjustment = (char_count - 1) * letter_spacing
+            old_width = text_width
+            text_width = max(0, text_width + spacing_adjustment)
+            logger.debug(f"  Letter spacing {letter_spacing}px: width {old_width:.1f}px → {text_width:.1f}px (adjustment: {spacing_adjustment:.1f}px)")
+
+        # CRITICAL FIX: Use tighter line height for fitting (1.2 instead of metric's 1.5)
+        # The metric line_height_ratio (1.5) is for comfortable reading, but for fitting
+        # we can use tighter spacing (1.2) which still looks good and fits more content
+        line_height = font_size * 1.2  # Always use 1.2 for fitting calculations
 
         # Check if it fits in one line
         if text_width <= max_width:
@@ -223,7 +240,8 @@ class AdaptiveFontSizer:
         font_family: str,
         role: Optional[str] = None,
         padding_x: float = 0,
-        padding_y: float = 0
+        padding_y: float = 0,
+        letter_spacing: float = 0
     ) -> Dict[str, Any]:
         """
         Size text with optional role hint for better initial bounds.
@@ -248,7 +266,8 @@ class AdaptiveFontSizer:
             container_height=container_height,
             font_family=font_family,
             padding_x=padding_x,
-            padding_y=padding_y
+            padding_y=padding_y,
+            letter_spacing=letter_spacing
         )
 
         # Apply role-based adjustments if needed

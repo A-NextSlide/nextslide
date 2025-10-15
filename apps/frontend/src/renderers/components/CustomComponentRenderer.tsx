@@ -364,7 +364,24 @@ export const CustomComponentRenderer: React.FC<{
     // Remove brittle spread-conditional normalization (it could corrupt user code). Kept intentionally no-op.
 
     // Normalize the render function signature to a canonical form to avoid malformed params.
-    // Accept trailing parameters after the destructured object (e.g., ", instanceId").
+    // 1. Handle function render(context) pattern - convert to destructured format
+    try {
+      // Check if it's the context pattern with var props = context.props extraction
+      if (/function\s+render\s*\(\s*context\s*\)/.test(unescapedCode)) {
+        // Remove the context parameter and var props extraction line
+        unescapedCode = unescapedCode.replace(
+          /function\s+render\s*\(\s*context\s*\)/,
+          'function render({ props, state, updateState, id, isThumbnail })'
+        );
+        // Remove the var props = context.props; line if it exists
+        unescapedCode = unescapedCode.replace(
+          /\s*(var|let|const)\s+props\s*=\s*context\.props\s*;/g,
+          ''
+        );
+      }
+    } catch (_) { /* noop */ }
+
+    // 2. Accept trailing parameters after the destructured object (e.g., ", instanceId").
     try {
       unescapedCode = unescapedCode.replace(
         /function\s+render\s*\(\{[\s\S]*?\}\s*(?:,[^)]*)?\)/,

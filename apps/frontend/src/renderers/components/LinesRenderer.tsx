@@ -421,6 +421,11 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
 
   // Calculate actual start and end positions
   const actualStart = useMemo(() => {
+    // Guard against null/undefined startPoint
+    if (!startPoint) {
+      return { x: 100, y: 100 }; // Default fallback
+    }
+    
     if (startPoint.connection?.componentId && startPoint.connection?.side) {
       const connectionPoint = getConnectionPoint(
         startPoint.connection.componentId,
@@ -435,6 +440,11 @@ export const renderLines: RendererFunction = ({ component, containerRef, isSelec
   }, [startPoint, activeComponents, draggedComponents]);
 
   const actualEnd = useMemo(() => {
+    // Guard against null/undefined endPoint
+    if (!endPoint) {
+      return { x: 300, y: 300 }; // Default fallback
+    }
+    
     if (endPoint.connection?.componentId && endPoint.connection?.side) {
       const connectionPoint = getConnectionPoint(
         endPoint.connection.componentId,

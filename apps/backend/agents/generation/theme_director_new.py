@@ -350,16 +350,9 @@ class ThemeDirector:
         title: str,
         variety_seed: str
     ) -> Dict[str, Any]:
-        """Select fonts based on brand/topic/style."""
+        """Select fonts based on brand/topic/style using intelligent metadata-based selection."""
+        from services.enhanced_font_service import EnhancedFontService
         from services.registry_fonts import RegistryFonts
-        
-        # Get available fonts
-        try:
-            from models.registry import ComponentRegistry
-            registry = ComponentRegistry()
-            available_fonts = RegistryFonts.get_available_fonts(registry)
-        except Exception:
-            available_fonts = RegistryFonts.get_all_fonts_list()
         
         # Check if we have brand fonts from scraping
         scraped_fonts = []
@@ -373,7 +366,8 @@ class ThemeDirector:
                 "brand": analysis.get('brand_name'),
                 "entity": analysis.get('entity_name'),
                 "scraped_fonts": len(scraped_fonts),
-                "variety_seed": variety_seed[:8]
+                "variety_seed": variety_seed[:8],
+                "method": "enhanced_metadata"
             }
         )
         
@@ -381,17 +375,53 @@ class ThemeDirector:
         
         if scraped_fonts:
             # Match scraped fonts to available
+            try:
+                from models.registry import ComponentRegistry
+                registry = ComponentRegistry()
+                available_fonts = RegistryFonts.get_available_fonts(registry)
+            except Exception:
+                available_fonts = RegistryFonts.get_all_fonts_list()
             matched = self._match_fonts(scraped_fonts, available_fonts)
             if matched:
                 font_result = matched
         
         if not font_result:
-            # Select based on context with variety
-            font_result = self._select_contextual_fonts(
-                analysis, 
-                available_fonts,
-                variety_seed
-            )
+            # Use EnhancedFontService for intelligent metadata-based selection
+            try:
+                font_service = EnhancedFontService()
+                
+                # Extract context from analysis
+                vibe = analysis.get('vibe', 'professional')
+                keywords = []
+                if analysis.get('topic'):
+                    keywords.append(analysis['topic'])
+                if analysis.get('industry'):
+                    keywords.append(analysis['industry'])
+                    
+                audience = analysis.get('audience') or analysis.get('target_audience')
+                
+                # Get intelligent font pair with variety
+                font_pair = font_service.select_font_pair(
+                    deck_title=title,
+                    vibe=vibe,
+                    content_keywords=keywords,
+                    target_audience=audience,
+                    variety_seed=variety_seed
+                )
+                
+                font_result = {
+                    'hero': font_pair['hero'],
+                    'body': font_pair['body'],
+                    'source': font_pair.get('source', 'enhanced_metadata'),
+                    'hero_category': font_pair.get('hero_category'),
+                    'body_category': font_pair.get('body_category')
+                }
+            except Exception as e:
+                # Fallback to safe defaults
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"EnhancedFontService failed, using fallback: {e}")
+                font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",
@@ -438,21 +468,28 @@ class ThemeDirector:
         if not gradients:
             gradients = self._create_gradients(primary_bg, secondary_bg, accent_1, accent_2)
         
-        # Compute text colors if not provided
-        if not text_colors:
+        # Compute text colors if not provided (CRITICAL - we always need text colors!)
+        if not text_colors or not text_colors.get('primary'):
             text_colors = self._compute_text_colors(primary_bg, accent_1, accent_2)
+
+        # ENSURE text color is always defined and distinct from background
+        if not text_colors.get('primary'):
+            text_colors['primary'] = '#FFFFFF' if self._estimate_brightness(primary_bg) < 0.5 else '#1A1A1A'
         
         theme = {
             'color_palette': {
-                'primary_background': primary_bg,
-                'secondary_background': secondary_bg,
-                'accent_1': accent_1,
-                'accent_2': accent_2,
-                'colors': colors,
-                'backgrounds': backgrounds,
-                'accents': accents,
-                'text_colors': text_colors,
-                'gradients': gradients,
+                # PRIMARY COLORS (at least 3 required: background, text, accent)
+                'primary_background': primary_bg,      # Main background color
+                'secondary_background': secondary_bg,  # Alternate background
+                'accent_1': accent_1,                  # Primary accent/highlight
+                'accent_2': accent_2,                  # Secondary accent
+                # FULL PALETTE
+                'colors': colors,                      # All colors from source
+                'backgrounds': backgrounds,            # All background options
+                'accents': accents,                    # All accent options
+                'text_colors': text_colors,            # Text colors for readability (CRITICAL!)
+                'gradients': gradients,                # Gradient definitions
+                # METADATA
                 'source': color_result.get('source', 'generated'),
                 'palette_name': color_result.get('palette_name', 'Custom Palette'),
                 'metadata': color_result.get('metadata', {})

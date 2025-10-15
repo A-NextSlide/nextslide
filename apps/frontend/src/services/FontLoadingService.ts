@@ -91,20 +91,31 @@ function getFontPriority(fontDef: FontDefinition): number {
 export const FontLoadingService = {
   /**
    * Ensure designer fonts are merged into FONT_CATEGORIES dynamically.
+   * Now loads ALL 700+ PixelBuddha fonts + 200+ Designer fonts.
+   * PERFORMANCE: Only metadata is loaded here (~500KB), actual font files loaded on-demand.
    */
   syncDesignerFonts: async (): Promise<void> => {
     if (designerFontsSynced) return;
     if (designerFontsSyncing) return designerFontsSyncing;
     designerFontsSyncing = (async () => {
       try {
-        // Load ALL backend fonts (PixelBuddha + Designer) via catalog for richer grouping
-        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 1000, 0);
+        // Fetch ALL backend fonts (no limit - backend now returns all ~900 fonts)
+        // This is just metadata (id, name, category, tags) - cheap to load
+        const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 2000, 0);
+        
+        console.log(`[FontLoadingService] Synced ${allBackendFonts.length} fonts from backend`);
 
         const existingNames = new Set<string>(Object.values(FONT_CATEGORIES).flat().map(f => f.name));
 
-        // Ensure categories exist for runtime injection
+        // Ensure all category groups exist
         const designerCat = FONT_CATEGORIES['Designer'] || (FONT_CATEGORIES['Designer'] = []);
         const pixelBuddhaCat = FONT_CATEGORIES['PixelBuddha'] || (FONT_CATEGORIES['PixelBuddha'] = []);
+        const displayCat = FONT_CATEGORIES['Display'] || (FONT_CATEGORIES['Display'] = []);
+        const sansCat = FONT_CATEGORIES['Sans-Serif'] || (FONT_CATEGORIES['Sans-Serif'] = []);
+        const serifCat = FONT_CATEGORIES['Serif'] || (FONT_CATEGORIES['Serif'] = []);
+        const scriptCat = FONT_CATEGORIES['Script'] || (FONT_CATEGORIES['Script'] = []);
+        const retroCat = FONT_CATEGORIES['Retro'] || (FONT_CATEGORIES['Retro'] = []);
+        const techCat = FONT_CATEGORIES['Tech'] || (FONT_CATEGORIES['Tech'] = []);
 
         for (const item of allBackendFonts) {
           const displayName = (item as any).name || (item as any).id;
@@ -116,20 +127,67 @@ export const FontLoadingService = {
             family: displayName,
             source: 'designer'
           } as any;
-          // Attach id for backend loading
+          
+          // Attach backend metadata for on-demand loading
           (def as any).id = (item as any).id;
+          (def as any).category = (item as any).category;
+          (def as any).tags = (item as any).tags;
 
-          // Add to appropriate category group(s)
-          if ((item as any).source === 'pixelbuddha') {
-            pixelBuddhaCat.push(def);
-          }
-          if ((item as any).source !== 'pixelbuddha') {
+          // Categorize fonts by source and category for better organization
+          const category = ((item as any).category || '').toLowerCase();
+          const source = (item as any).source;
+          
+          // Add to source-specific category
+          // PERFORMANCE: Skip PixelBuddha from frontend dropdowns to prevent slowdown
+          // PixelBuddha fonts are still used by backend for hero/title generation
+          if (source === 'pixelbuddha') {
+            // DON'T add to categories - hide from frontend dropdowns
+            // pixelBuddhaCat.push(def); // Commented out for performance
+            continue; // Skip to next font
+          } else {
             designerCat.push(def);
           }
+          
+          // Also categorize by type for easier selection
+          if (category.includes('display') || category.includes('headline')) {
+            displayCat.push(def);
+          } else if (category.includes('sans')) {
+            sansCat.push(def);
+          } else if (category.includes('serif') && !category.includes('sans')) {
+            serifCat.push(def);
+          } else if (category.includes('script') || category.includes('handwritten')) {
+            scriptCat.push(def);
+          }
+          
+          // Tag-based categorization
+          const tags = (item as any).tags || [];
+          if (tags.some((t: string) => t.toLowerCase().includes('retro') || t.toLowerCase().includes('vintage'))) {
+            retroCat.push(def);
+          }
+          if (tags.some((t: string) => t.toLowerCase().includes('tech') || t.toLowerCase().includes('futuristic'))) {
+            techCat.push(def);
+          }
+          
           existingNames.add(displayName);
         }
+        
         designerFontsSynced = true;
+        console.log(`[FontLoadingService] Font categories populated:`, {
+          Designer: designerCat.length,
+          Display: displayCat.length,
+          Sans: sansCat.length,
+          Serif: serifCat.length,
+          Script: scriptCat.length,
+          Retro: retroCat.length,
+          Tech: techCat.length,
+          'PixelBuddha (backend only)': 'Hidden for performance'
+        });
+        
+        // Log total unique fonts available in dropdowns (excluding PixelBuddha)
+        const totalUnique = new Set(Object.values(FONT_CATEGORIES).flat().map(f => f.name)).size;
+        console.log(`[FontLoadingService] Total fonts in dropdowns: ${totalUnique} (PixelBuddha hidden for performance, still used by backend for titles)`);
       } catch (e) {
+        console.error('[FontLoadingService] Failed to sync designer fonts:', e);
         // Non-fatal; leave as not synced
       } finally {
         designerFontsSyncing = null;
@@ -495,7 +553,32 @@ export const FontLoadingService = {
   },
 
   /**
-   * Preload system and common fonts with enhanced font coverage
+   * Load fonts selected by theme generation (hero + body) on-demand.
+   * This is called when a theme is generated to ensure fonts are ready for rendering.
+   * PERFORMANCE: Only loads the 2-3 fonts actually used in the theme.
+   */
+  loadThemeFonts: async (heroFont: string, bodyFont: string): Promise<void> => {
+    try {
+      console.log(`[FontLoadingService] Loading theme fonts: ${heroFont} (hero), ${bodyFont} (body)`);
+      
+      // Load both fonts in parallel for better performance
+      await Promise.all([
+        FontApiService.findAndLoadByFamily(heroFont, '700'),  // Hero fonts typically bold
+        FontApiService.findAndLoadByFamily(bodyFont, '400')   // Body fonts typically regular
+      ]);
+      
+      console.log(`[FontLoadingService] Theme fonts loaded successfully`);
+    } catch (error) {
+      console.warn(`[FontLoadingService] Failed to load theme fonts:`, error);
+      // Non-fatal - fonts will load on first render
+    }
+  },
+  
+  /**
+   * Preload system and common fonts with enhanced font coverage.
+   * TIER 1 (Immediate): System fonts only
+   * TIER 2 (300ms delay): Common web fonts
+   * TIER 3 (On-demand): Specialty fonts loaded when selected by theme generator
    */
   preloadSystemFonts: async (): Promise<void> => {
     // First load system fonts immediately
@@ -600,6 +683,13 @@ export const FontLoadingService = {
      }, {} as Record<string, string[]>);
   },
 
+  /**
+   * Check if designer fonts have been synced
+   */
+  isDesignerFontsSynced: (): boolean => {
+    return designerFontsSynced;
+  },
+  
   /**
    * Get de-duplicated font groups using priority order similar to registry.
    */

@@ -73,11 +73,6 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     const slideContainer = document.getElementById('slide-display-container');
     if (slideContainer) {
       const rect = slideContainer.getBoundingClientRect();
-      console.log(`[TiptapTextBlock] getInitialSlideWidth:`, {
-        componentId: component.id,
-        containerWidth: rect.width,
-        slideContainer
-      });
       return rect.width || NATIVE_WIDTH;
     }
     return NATIVE_WIDTH;
@@ -89,23 +84,18 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const hasMeasuredRef = useRef(false); // Track if we've completed initial measurement
 
   useEffect(() => {
-    if (isThumbnail || isCurrentlyTextEditing) return;
+    if (isThumbnail) return;
+
     const updateScale = () => {
+      // Skip updates during text editing to prevent font size changes on click
+      if (isCurrentlyTextEditing) return;
+
       if (updateScaleTimeoutRef.current) clearTimeout(updateScaleTimeoutRef.current);
       updateScaleTimeoutRef.current = setTimeout(() => {
         const slideContainer = document.getElementById('slide-display-container');
         if (slideContainer) {
           const slideRect = slideContainer.getBoundingClientRect();
           const slideDisplayWidth = slideRect.width;
-
-          console.log(`[TiptapTextBlock] updateScale:`, {
-            componentId: component.id,
-            isSelected,
-            slideDisplayWidth,
-            prevWidth: prevSlideWidthRef.current,
-            hasMeasured: hasMeasuredRef.current,
-            willUpdate: Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 5
-          });
 
           // On first measurement, set without threshold check
           if (!hasMeasuredRef.current) {
@@ -117,7 +107,6 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
           }
 
           // Only update if difference is significant (>5px) to prevent cascading updates
-          // ALSO: Don't update on selection change (when isSelected changes from false to true)
           if (Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 5) {
             prevSlideWidthRef.current = slideDisplayWidth;
             setCurrentSlideWidth(slideDisplayWidth);
@@ -142,7 +131,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       window.removeEventListener('resize', updateScale);
       if (resizeObserver) resizeObserver.disconnect();
     };
-  }, [isThumbnail, isCurrentlyTextEditing]);
+  }, [isThumbnail]); // CRITICAL: Don't include isCurrentlyTextEditing in dependencies!
 
   // Font scale factor
   const fontScaleFactor = useMemo(() => {
@@ -152,68 +141,40 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     return currentSlideWidth / NATIVE_WIDTH;
   }, [isThumbnail, currentSlideWidth, isPresenting]);
 
-  // Store calculated font size in a ref to prevent unnecessary recalculations
-  const calculatedFontSizeRef = useRef<string | null>(null);
-  // Store the font size when NOT editing to use during edit mode
-  const nonEditingFontSizeRef = useRef<string | null>(null);
-  
+  // CRITICAL FIX: Store the stable font size to prevent resize on click/selection
+  // We lock the font size based on props.fontSize and fontScaleFactor, only recalculate when they change
+  const stableFontSizeRef = useRef<string | null>(null);
+  const lastPropsSizeRef = useRef<number | null>(null);
+  const lastScaleFactorRef = useRef<number | null>(null);
+
   const getFontSize = useMemo(() => {
     // Always use props.fontSize if it exists (this is the source of truth)
-    const nativeSize = props.fontSize || effectiveFontSize || 16;
+    const nativeSize = Math.round(props.fontSize || effectiveFontSize || 16); // Round to whole number
 
     // For thumbnails, apply thumbnail scaling
     if (isThumbnail) {
-      return `${nativeSize * fontScaleFactor}px`;
+      return `${Math.round(nativeSize * fontScaleFactor)}px`;
     }
 
-    // For regular slides, apply scaling without rounding to prevent pixel jumps
-    const calculatedSize = nativeSize * fontScaleFactor;
-
-    // CRITICAL: When entering edit mode, use the last known non-editing font size
-    // This prevents font size changes when transitioning to edit mode
-    if (isCurrentlyTextEditing && nonEditingFontSizeRef.current) {
-      console.log(`[TiptapTextBlock] Using non-editing font size during edit mode:`, {
-        componentId: component.id,
-        editModeSize: nonEditingFontSizeRef.current
-      });
-      return nonEditingFontSizeRef.current;
+    // CRITICAL FIX: Use stable reference to prevent recalculation on click/selection
+    // Only recalculate if props.fontSize OR fontScaleFactor actually changed
+    // This prevents resize-on-click while still allowing proper scaling
+    if (stableFontSizeRef.current &&
+        lastPropsSizeRef.current === nativeSize &&
+        lastScaleFactorRef.current === fontScaleFactor) {
+      return stableFontSizeRef.current;
     }
 
-    // If we already have a calculated size and the native size hasn't changed, use it
-    // This prevents recalculation when only scale factor changes slightly
-    if (calculatedFontSizeRef.current && Math.abs(parseFloat(calculatedFontSizeRef.current) - calculatedSize) < 1) {
-      console.log(`[TiptapTextBlock] Using cached font size:`, {
-        componentId: component.id,
-        cached: calculatedFontSizeRef.current,
-        newCalculation: calculatedSize
-      });
-      return calculatedFontSizeRef.current;
-    }
+    // Apply scaling and round to whole number (for all components)
+    const calculatedSize = Math.round(nativeSize * fontScaleFactor);
 
     const result = `${calculatedSize}px`;
-    calculatedFontSizeRef.current = result;
-
-    // Store as non-editing size if we're not currently editing
-    if (!isCurrentlyTextEditing) {
-      nonEditingFontSizeRef.current = result;
-    }
-
-    // Debug logging
-    console.log(`[TiptapTextBlock] Font size calculation:`, {
-      componentId: component.id,
-      isSelected,
-      nativeSize,
-      fontScaleFactor,
-      calculatedSize,
-      currentSlideWidth,
-      NATIVE_WIDTH,
-      props_fontSize: props.fontSize,
-      effectiveFontSize,
-      isEditing: isCurrentlyTextEditing
-    });
+    stableFontSizeRef.current = result;
+    lastPropsSizeRef.current = nativeSize;
+    lastScaleFactorRef.current = fontScaleFactor;
 
     return result;
-  }, [props.fontSize, effectiveFontSize, fontScaleFactor, isThumbnail, component.id, currentSlideWidth, isCurrentlyTextEditing]);
+  }, [props.fontSize, fontScaleFactor, isThumbnail]); // Only essential dependencies to prevent unnecessary recalculations
 
   // Removed font optimization event listener
 
@@ -410,18 +371,106 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     };
   }, [editor, isSelected, setActiveTiptapEditor]);
 
-  // Log CSS variable changes and DOM structure
+  // CRITICAL FIX: Force initial sizing calculation on mount
+  // This ensures proper sizing immediately without waiting for selection
   useEffect(() => {
-    console.log(`[TiptapTextBlock] CSS variables update:`, {
-      componentId: component.id,
-      isSelected,
-      getFontSize,
-      styles: styles,
-      containerRef: containerRef.current,
-      parentElement: containerRef.current?.parentElement,
-      parentClassName: containerRef.current?.parentElement?.className,
-    });
-  }, [getFontSize, isSelected, component.id, styles]);
+    if (editor && containerRef.current) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        const wrapper = containerRef.current as HTMLElement;
+        if (wrapper) {
+          // Set initial CSS variables
+          wrapper.style.setProperty('--tiptap-font-size', getFontSize);
+          wrapper.style.setProperty('--tiptap-font-family', getFontFamilyWithFallback(fontFamily || 'Arial'));
+          wrapper.style.setProperty('--tiptap-font-weight', String(fontWeight));
+          wrapper.style.setProperty('--tiptap-line-height', String(lineHeight || 1.5));
+          wrapper.style.setProperty('--tiptap-letter-spacing', getLetterSpacing);
+          wrapper.style.setProperty('--tiptap-text-color', textColor);
+        }
+        
+        // Apply to editor DOM
+        if (editor.view && editor.view.dom) {
+          const editorElement = editor.view.dom as HTMLElement;
+          editorElement.style.fontSize = getFontSize;
+          // Force layout recalculation
+          void editorElement.offsetHeight;
+          // Update editor state
+          try {
+            editor.view.dispatch(editor.state.tr);
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]); // Only run when editor is first created
+
+  // Force editor to update when font size or other CSS variables change
+  // Store previous values to avoid unnecessary updates
+  const prevStyleValuesRef = useRef<{
+    fontSize: string;
+    letterSpacing: string;
+    fontFamily: string;
+    fontWeight: string | number;
+    lineHeight: number;
+    textColor: string;
+  } | null>(null);
+
+  useEffect(() => {
+    // Check if values actually changed
+    const currentValues = {
+      fontSize: getFontSize,
+      letterSpacing: getLetterSpacing,
+      fontFamily,
+      fontWeight,
+      lineHeight,
+      textColor,
+    };
+
+    const hasChanged = !prevStyleValuesRef.current ||
+      prevStyleValuesRef.current.fontSize !== currentValues.fontSize ||
+      prevStyleValuesRef.current.letterSpacing !== currentValues.letterSpacing ||
+      prevStyleValuesRef.current.fontFamily !== currentValues.fontFamily ||
+      prevStyleValuesRef.current.fontWeight !== currentValues.fontWeight ||
+      prevStyleValuesRef.current.lineHeight !== currentValues.lineHeight ||
+      prevStyleValuesRef.current.textColor !== currentValues.textColor;
+
+    if (!hasChanged) return;
+
+    prevStyleValuesRef.current = currentValues;
+
+    // Update wrapper container CSS variables
+    if (containerRef.current) {
+      const wrapper = containerRef.current as HTMLElement;
+      wrapper.style.setProperty('--tiptap-font-size', getFontSize);
+      wrapper.style.setProperty('--tiptap-font-family', getFontFamilyWithFallback(fontFamily || 'Arial'));
+      wrapper.style.setProperty('--tiptap-font-weight', String(fontWeight));
+      wrapper.style.setProperty('--tiptap-line-height', String(lineHeight || 1.5));
+      wrapper.style.setProperty('--tiptap-letter-spacing', getLetterSpacing);
+      wrapper.style.setProperty('--tiptap-text-color', textColor);
+    }
+
+    // Update editor DOM and internal state
+    if (editor && editor.view && editor.view.dom) {
+      const editorElement = editor.view.dom as HTMLElement;
+      if (editorElement) {
+        // Apply font size directly to editor DOM
+        editorElement.style.fontSize = getFontSize;
+
+        // Force layout recalculation (triggers browser reflow)
+        void editorElement.offsetHeight;
+
+        // Force TipTap to update its internal state by dispatching an empty transaction
+        // This ensures the editor recognizes the style change and re-renders properly
+        try {
+          editor.view.dispatch(editor.state.tr);
+        } catch (e) {
+          // Ignore errors from dispatching transaction
+        }
+      }
+    }
+  }, [editor, getFontSize, getLetterSpacing, fontFamily, fontWeight, lineHeight, textColor]);
 
   const wrapperStyle: React.CSSProperties = {
     ...styles,

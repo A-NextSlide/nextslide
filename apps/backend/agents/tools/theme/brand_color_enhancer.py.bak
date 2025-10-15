@@ -1,0 +1,86 @@
+"""Enhance minimal brand colors with AI-generated complementary colors."""
+
+from typing import List, Dict, Any
+from .huemint_palette_generator import HuemintPaletteGenerator
+from setup_logging_optimized import get_logger
+
+logger = get_logger(__name__)
+
+
+async def enhance_minimal_brand_colors(
+    brand_colors: List[str],
+    brand_name: str,
+    min_colors: int = 5
+) -> Dict[str, Any]:
+    """Enhance minimal brand colors by generating complementary colors.
+    
+    When a brand has very few colors (< 4), this uses Huemint AI to generate
+    additional harmonious colors that complement the brand colors.
+    
+    Args:
+        brand_colors: List of brand hex colors
+        brand_name: Name of the brand
+        min_colors: Minimum number of colors desired (default 5)
+        
+    Returns:
+        Dict with enhanced color palette
+    """
+    if len(brand_colors) >= min_colors:
+        logger.info(f"Brand {brand_name} has enough colors ({len(brand_colors)}), no enhancement needed")
+        return {
+            'colors': brand_colors,
+            'source': 'brand_only',
+            'enhanced': False
+        }
+    
+    logger.info(f"Enhancing {brand_name} brand colors ({len(brand_colors)} → {min_colors} colors)")
+    
+    try:
+        generator = HuemintPaletteGenerator()
+        
+        # Lock the brand colors and let Huemint generate complementary ones
+        palette = await generator.generate_single_palette(
+            num_colors=min_colors,
+            temperature=1.0,  # Lower temperature for better harmony
+            locked_colors=brand_colors
+        )
+        
+        if palette and palette.get('colors'):
+            enhanced_colors = palette['colors']
+            
+            # Filter out Huemint placeholders first
+            valid_colors = [c for c in enhanced_colors if c and c != '-']
+            
+            # Ensure brand colors are at the front
+            final_colors = []
+            for bc in brand_colors:
+                if bc and bc != '-' and bc not in final_colors:
+                    final_colors.append(bc)
+            
+            # Add generated colors
+            for ec in valid_colors:
+                if ec not in final_colors:
+                    final_colors.append(ec)
+            
+            # Calculate generated colors (excluding original brand colors)
+            generated = [c for c in final_colors if c not in brand_colors]
+            
+            logger.info(f"Enhanced {brand_name}: {len(brand_colors)} brand + {len(generated)} AI = {len(final_colors)} total")
+            
+            return {
+                'colors': final_colors[:min_colors],
+                'brand_colors': brand_colors,  # Original brand colors only
+                'generated_colors': generated,
+                'source': 'brand_enhanced_with_ai',
+                'enhanced': True,
+                'confidence': 0.9
+            }
+        except Exception as e:
+        logger.error(f"Failed to enhance brand colors: {e}")
+    
+    # Fallback: just return the original brand colors
+    return {
+        'colors': brand_colors,
+        'source': 'brand_only',
+        'enhanced': False
+    }

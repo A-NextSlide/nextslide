@@ -11,7 +11,7 @@ export const IconSchema = Type.Intersect([
       Type.Literal('feather'),
       Type.Literal('tabler')
     ], { default: 'lucide' }),
-    iconName: Type.String({ default: 'Star' }),
+    iconName: Type.String({ default: 'Circle' }),
     color: Type.String({ default: '#000000' }),
     strokeWidth: Type.Number({ default: 2, minimum: 0.5, maximum: 4 }),
     filled: Type.Boolean({ default: false })
@@ -37,7 +37,7 @@ export const IconDefinition: ComponentDefinition<typeof IconSchema> = {
     zIndex: 1,
     // Icon-specific defaults
     iconLibrary: 'lucide',
-    iconName: 'Star',
+    iconName: 'Circle',
     color: '#000000',
     strokeWidth: 2,
     filled: false

@@ -81,6 +81,13 @@ class ExtractedDataItem(BaseModel):
     title: Optional[str] = Field(None, description="Title for the chart visualization.")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for chart configuration (e.g., legend settings).")
 
+class ManualChartItem(BaseModel):
+    """Represents a manually created or AI-generated chart on a slide"""
+    id: str = Field(description="Unique identifier for the chart.")
+    chartType: str = Field(description="Type of chart (e.g., 'bar', 'line', 'pie', 'waterfall', 'radar', 'heatmap').")
+    data: List[Dict[str, Any]] = Field(description="Chart data array.")
+    title: Optional[str] = Field(None, description="Title for the chart.")
+
 class SlideOutline(BaseModel):
     id: str = Field(description="Unique identifier for the slide.")
     title: str = Field(description="Title of the slide.")
@@ -88,6 +95,8 @@ class SlideOutline(BaseModel):
     deepResearch: Optional[bool] = Field(False, description="Flag indicating if deep research was enabled for this slide.")
     taggedMedia: Optional[List[TaggedMediaItem]] = Field(None, description="Media items tagged to this slide.")
     extractedData: Optional[ExtractedDataItem] = Field(None, description="Data extracted from files like CSV or Excel, potentially for chart generation.")
+    # ✅ Support for multiple charts per slide
+    manualCharts: Optional[List[ManualChartItem]] = Field(None, description="Array of charts for this slide. Supports multiple charts per slide.")
     # New: structured two-column comparison content for side-by-side layouts
     comparison: Optional[ComparisonBlock] = Field(
         default=None,

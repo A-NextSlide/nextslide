@@ -1633,18 +1633,18 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
           </DropdownMenuContent>
         </DropdownMenu>
         
-        {/* Table Component with Grid Selector (Revised Structure) */}
+        {/* Table Component with Grid Selector - Subtle/Less Prominent */}
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 rounded-md"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-md opacity-60 hover:opacity-100 transition-opacity"
                 >
-                  {/* Table icon SVG or component */}
-                  <svg /* ... simplified table icon ... */ className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 16 16">
+                  {/* Table icon SVG - smaller and more subtle */}
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 16 16">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M1.75 1.75h12.5v12.5H1.75zM1.75 7.75h12.5M7.75 1.75v12.5" />
                   </svg>
                 </Button>

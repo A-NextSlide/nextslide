@@ -256,6 +256,20 @@ class DeckPersistence:
             if slide_index < 0 or slide_index >= len(slides):
                 return False
             
+            # ✅ DEBUG: Log if extractedData/manualCharts are in slide_data before saving
+            has_extracted = 'extractedData' in slide_data and slide_data['extractedData'] is not None
+            has_manual = 'manualCharts' in slide_data and slide_data['manualCharts'] is not None
+            logger.info(f"🔍 [PERSISTENCE] Slide {slide_index + 1} before save - extractedData: {has_extracted}, manualCharts: {has_manual}")
+            if has_extracted:
+                try:
+                    chart_type = slide_data['extractedData'].get('chartType', 'unknown')
+                    data_len = len(slide_data['extractedData'].get('data', []))
+                    logger.info(f"🔍 [PERSISTENCE] extractedData: {chart_type} with {data_len} points")
+                except Exception as e:
+                    logger.warning(f"🔍 [PERSISTENCE] Error reading extractedData: {e}")
+            if has_manual:
+                logger.info(f"🔍 [PERSISTENCE] manualCharts: {len(slide_data['manualCharts'])} charts")
+            
             # Update the slide
             slides[slide_index] = slide_data
             # Debug: print first Background and a couple of text components

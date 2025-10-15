@@ -53,7 +53,8 @@ async def process_deck_outline(deck_outline: DeckOutline, registry: ComponentReg
             "title": slide_outline.title,
             "components": [],
             "status": "pending",
-            "extractedData": slide_outline.extractedData.model_dump() if slide_outline.extractedData else None
+            "extractedData": slide_outline.extractedData.model_dump() if slide_outline.extractedData else None,
+            "manualCharts": [c.model_dump() for c in slide_outline.manualCharts] if slide_outline.manualCharts else None  # ✅ Preserve multiple charts
         }
         initial_slides.append(placeholder_slide)
     

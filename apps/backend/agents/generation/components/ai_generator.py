@@ -127,7 +127,7 @@ class AISlideGenerator:
             
             # Short reminder only (system prompt holds canonical rules)
             messages[1]["content"] += (
-                "\n\nNote: For CustomComponent renders, define padding first (const padding = props.padding || 32), compute sizes from it, and use a single escaped render string with a vertical (column) root container."
+                "\n\nNote: For CustomComponent renders, use React.createElement. Extract props ONCE at top (var c1 = props.primaryColor; var padding = 24;). NEVER redeclare variables! Use camelCase CSS (fontSize, fontWeight)."
             )
         else:
             temperature = 0.7  # Normal temperature

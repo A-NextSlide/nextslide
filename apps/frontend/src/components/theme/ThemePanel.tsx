@@ -19,7 +19,7 @@ import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useDeckStore } from '@/stores/deckStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { SlideThumbnailService } from '@/services/SlideThumbnailService';
-import { Loader2, Undo2, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Undo2, Sparkles, Wand2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editorStore';
 import TemplateSketchLoader from './TemplateSketchLoader';
@@ -62,6 +62,8 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
   const [isBgPopoverOpen, setIsBgPopoverOpen] = useState(false);
   const [isTextPopoverOpen, setIsTextPopoverOpen] = useState(false);
   const [isAccentPopoverOpen, setIsAccentPopoverOpen] = useState(false);
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  const [activeColorPopover, setActiveColorPopover] = useState<number | null>(null);
   const previousWorkspaceThemeId = useRef(workspaceThemeId);
   const [dbPalettes, setDbPalettes] = useState<Array<{ id: string; name: string; colors: string[] }>>([]);
   const [recommendedFonts, setRecommendedFonts] = useState<{ hero?: string; body?: string } | null>(null);
@@ -427,6 +429,15 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
     setIsGenerating(true);
     setGeneratedThemes([]);
 
+    // Generate a variety seed for different results each time
+    const varietySeed = `${Date.now()}-${Math.random()}`;
+
+    // Hash the seed to get a deterministic but varied temperature (1.0-1.4)
+    const seedHash = Math.abs(varietySeed.split('').reduce((acc, char) => {
+      return acc + char.charCodeAt(0);
+    }, 0));
+    const temperature = 1.0 + (seedHash % 5) * 0.1;
+
     const lockedPalette = ["-", "-", "-"];
 
     const adjacencyMatrix = [
@@ -438,7 +449,7 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
     const json_data = {
       mode: "transformer",
       num_colors: 3,
-      temperature: "1.2",
+      temperature: temperature.toString(),
       num_results: 10,
       adjacency: adjacencyMatrix,
       palette: lockedPalette,
@@ -887,69 +898,122 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
 
           <Separator className="my-2" />
 
-          <div className="space-y-1">
-             <Label className="text-[11px] font-medium">Colors</Label>
-             <div className="flex space-x-1">
-                <div className="flex-1 space-y-1">
-                   <Label className="text-[10px] text-muted-foreground block text-center">Background</Label>
-                   <Popover open={isBgPopoverOpen} onOpenChange={setIsBgPopoverOpen}>
-                     <PopoverTrigger asChild>
-                       <Button variant="outline" className="w-full h-6 p-0 justify-center border">
-                         <div className="h-full w-full"
-                           style={{ backgroundColor: currentThemeEdit.page?.backgroundColor }}
-                         />
-                       </Button>
-                     </PopoverTrigger>
-                     <PopoverContent className="w-56">
-                       <GradientPicker
-                         value={currentThemeEdit.page?.backgroundColor || '#ffffff'}
-                         onChange={(val) => updateThemeValue('page.backgroundColor', typeof val === 'string' ? val : val.stops[0].color)}
-                         forceMode="solid"
-                         isBackgroundProp={true}
+          <div className="space-y-2">
+             <Label className="text-[11px] font-medium">Theme Colors</Label>
+             <div className="flex items-center gap-1">
+               {/* Background Color */}
+               <Popover open={isBgPopoverOpen} onOpenChange={setIsBgPopoverOpen}>
+                 <PopoverTrigger asChild>
+                   <Button
+                     variant="outline"
+                     className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                     title="Background Color"
+                   >
+                     <div
+                       className="h-full w-full rounded-sm"
+                       style={{ backgroundColor: currentThemeEdit.page?.backgroundColor }}
+                     />
+                   </Button>
+                 </PopoverTrigger>
+                 <PopoverContent className="w-56">
+                   <GradientPicker
+                     value={currentThemeEdit.page?.backgroundColor || '#ffffff'}
+                     onChange={(val) => updateThemeValue('page.backgroundColor', typeof val === 'string' ? val : val.stops[0].color)}
+                     forceMode="solid"
+                     isBackgroundProp={true}
+                   />
+                 </PopoverContent>
+               </Popover>
+
+               {/* Text Color */}
+               <Popover open={isTextPopoverOpen} onOpenChange={setIsTextPopoverOpen}>
+                 <PopoverTrigger asChild>
+                   <Button
+                     variant="outline"
+                     className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                     title="Text Color"
+                   >
+                     <div
+                       className="h-full w-full rounded-sm"
+                       style={{ backgroundColor: currentThemeEdit.typography?.paragraph?.color }}
+                     />
+                   </Button>
+                 </PopoverTrigger>
+                 <PopoverContent className="w-56">
+                   <GradientPicker
+                     value={currentThemeEdit.typography?.paragraph?.color || '#000000'}
+                     onChange={(val) => updateThemeValue('typography.paragraph.color', typeof val === 'string' ? val : val.stops[0].color)}
+                     forceMode="solid"
+                   />
+                 </PopoverContent>
+               </Popover>
+
+               {/* Accent Color */}
+               <Popover open={isAccentPopoverOpen} onOpenChange={setIsAccentPopoverOpen}>
+                 <PopoverTrigger asChild>
+                   <Button
+                     variant="outline"
+                     className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                     title="Accent Color"
+                   >
+                     <div
+                       className="h-full w-full rounded-sm"
+                       style={{ backgroundColor: currentThemeEdit.accent1 }}
+                     />
+                   </Button>
+                 </PopoverTrigger>
+                 <PopoverContent className="w-56">
+                   <GradientPicker
+                     value={currentThemeEdit.accent1 || '#4287f5'}
+                     onChange={(val) => updateThemeValue('accent1', typeof val === 'string' ? val : val.stops[0].color)}
+                     forceMode="solid"
+                   />
+                 </PopoverContent>
+               </Popover>
+
+               {/* Custom Colors */}
+               {customColors.map((color, index) => (
+                 <Popover
+                   key={index}
+                   open={activeColorPopover === index}
+                   onOpenChange={(open) => setActiveColorPopover(open ? index : null)}
+                 >
+                   <PopoverTrigger asChild>
+                     <Button
+                       variant="outline"
+                       className="h-12 w-12 p-0 rounded-md border-2 hover:border-primary transition-colors"
+                       title={`Custom Color ${index + 1}`}
+                     >
+                       <div
+                         className="h-full w-full rounded-sm"
+                         style={{ backgroundColor: color }}
                        />
-                     </PopoverContent>
-                   </Popover>
-                </div>
+                     </Button>
+                   </PopoverTrigger>
+                   <PopoverContent className="w-56">
+                     <GradientPicker
+                       value={color}
+                       onChange={(val) => {
+                         const newColors = [...customColors];
+                         newColors[index] = typeof val === 'string' ? val : val.stops[0].color;
+                         setCustomColors(newColors);
+                       }}
+                       forceMode="solid"
+                     />
+                   </PopoverContent>
+                 </Popover>
+               ))}
 
-                 <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] text-muted-foreground block text-center">Text</Label>
-                    <Popover open={isTextPopoverOpen} onOpenChange={setIsTextPopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full h-6 p-0 justify-center border">
-                          <div className="h-full w-full"
-                            style={{ backgroundColor: currentThemeEdit.typography?.paragraph?.color }}
-                          />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-56">
-                        <GradientPicker
-                          value={currentThemeEdit.typography?.paragraph?.color || '#000000'}
-                          onChange={(val) => updateThemeValue('typography.paragraph.color', typeof val === 'string' ? val : val.stops[0].color)}
-                          forceMode="solid"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                 </div>
-
-                 <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] text-muted-foreground block text-center">Accent</Label>
-                    <Popover open={isAccentPopoverOpen} onOpenChange={setIsAccentPopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full h-6 p-0 justify-center border">
-                           <div className="h-full w-full"
-                             style={{ backgroundColor: currentThemeEdit.accent1 }}
-                           />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-56">
-                        <GradientPicker
-                          value={currentThemeEdit.accent1 || '#4287f5'}
-                          onChange={(val) => updateThemeValue('accent1', typeof val === 'string' ? val : val.stops[0].color)}
-                          forceMode="solid"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                 </div>
+               {/* Add Color Button */}
+               <Button
+                 variant="outline"
+                 size="icon"
+                 className="h-12 w-12 rounded-md border-2 border-dashed hover:border-primary transition-colors"
+                 onClick={() => setCustomColors([...customColors, '#4287f5'])}
+                 title="Add Color"
+               >
+                 <Plus className="h-4 w-4" />
+               </Button>
              </div>
           </div>
           

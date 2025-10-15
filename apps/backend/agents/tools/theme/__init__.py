@@ -11,6 +11,11 @@ from .palette_tools import (
     filter_out_pink_colors,
     build_simple_gradients
 )
+from .huemint_palette_generator import (
+    HuemintPaletteGenerator,
+    generate_huemint_palette
+)
+from .brand_color_enhancer import enhance_minimal_brand_colors
 
 __all__ = [
     "BrandColorSearcher",
@@ -22,5 +27,8 @@ __all__ = [
     "search_palette_by_keywords",
     "get_random_palette",
     "filter_out_pink_colors",
-    "build_simple_gradients"
+    "build_simple_gradients",
+    "HuemintPaletteGenerator",
+    "generate_huemint_palette",
+    "enhance_minimal_brand_colors"
 ]

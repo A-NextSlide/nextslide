@@ -109,7 +109,8 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     slide.setdefault('title', f"Slide {i + 1}")
                     slide.setdefault('content', "")
                     slide.setdefault('uploadedMedia', None)
-                    slide.setdefault('extracted_data', None)
+                    slide.setdefault('extractedData', None)  # ✅ FIXED: Use camelCase to match frontend
+                    slide.setdefault('manualCharts', None)  # ✅ Support multiple charts per slide
                     slide.setdefault('speaker_notes', "")
                     slide.setdefault('media_items', [])
                 
@@ -308,7 +309,8 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     "title": so.title, 
                     "components": [], 
                     "status": SlideStatus.PENDING,
-                    "extractedData": so.extractedData.model_dump() if so.extractedData else None
+                    "extractedData": so.extractedData.model_dump() if so.extractedData else None,
+                    "manualCharts": [c.model_dump() for c in so.manualCharts] if so.manualCharts else None  # ✅ Preserve multiple charts
                 }
                 for so in deck_outline.slides
             ]

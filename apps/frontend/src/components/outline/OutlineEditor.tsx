@@ -639,8 +639,16 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   // Step 2: User submits style/vibe (and implicitly color/font chosen)
   const handleStyleVibeSubmitted = () => {
     setStyleVibeText(chatInput); // Save current textarea as styleVibeText
-    setChatInput('');            // Clear textarea for the next step (detail prompt)
-    setInteractionStage('showOptions'); // Skip typing animation and show options immediately
+    setChatInput('');            // Clear textarea for next step
+    // Skip typing message since we removed the detail level selection UI
+    setInteractionStage('showOptions'); // Go directly to showOptions to start generation
+  };
+  
+  // Step 3: User selects detail level (simple or detailed)
+  const handleDetailLevelSelected = (level: 'quick' | 'standard' | 'detailed') => {
+    // Store the selected detail level (we'll use it when generating)
+    // This is now just a state update - doesn't trigger any stage transitions
+    setDetailLevel(level);
   };
 
   // Back Navigation Handlers
@@ -1024,6 +1032,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   handleInitiateOutline={handleInitiateOutline}
                   handleInitialIdeaSubmitted={handleInitialIdeaSubmitted}
                   handleStyleVibeSubmitted={handleStyleVibeSubmitted}
+                  handleDetailLevelSelected={handleDetailLevelSelected}
                   selectedFont={selectedFont}
                   setSelectedFont={setSelectedFont}
                   colorConfig={colorConfig}
@@ -1037,6 +1046,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   onCreateTestOutline={handleCreateTestOutline}
                   autoSelectImages={autoSelectImages}
                   setAutoSelectImages={setAutoSelectImages}
+                  detailLevel={detailLevel}
                   enableResearch={enableResearch}
                   setEnableResearch={setEnableResearch}
                   researchEvents={researchEvents}

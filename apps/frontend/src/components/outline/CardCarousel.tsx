@@ -2,13 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Microscope, Trash2, ChevronLeft, ChevronRight, Plus, Table, BarChart3, X, GripVertical, ImageIcon } from 'lucide-react';
-import { SlideOutline, DeckOutline } from '@/types/SlideTypes';
+import { SlideOutline, DeckOutline, ManualChart } from '@/types/SlideTypes';
 import OutlineRichTextEditor from './OutlineRichTextEditor';
 import ChartDataTable from './ChartDataTable';
 import SlideChartViewer from './SlideChartViewer';
 import TaggedMediaViewer from './TaggedMediaViewer';
 import MiniGameWidget from '@/components/common/MiniGameWidget';
 import CitationsPanel from './CitationsPanel';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { CHART_TYPES } from '@/registry/library/chart-properties';
+import { v4 as uuidv4 } from 'uuid';
 
 interface CardCarouselProps {
   slides: SlideOutline[];
@@ -80,6 +83,9 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
   // Track slides that have been rendered for fade-in animation
   const [renderedSlideIds, setRenderedSlideIds] = useState<Set<string>>(new Set());
   const hasInitializedRef = useRef(false);
+  
+  // ✅ Multi-chart support state
+  const [activeChartIndex, setActiveChartIndex] = useState<{ [slideId: string]: number }>({});
   
   // Track new slides for fade-in animation
   useEffect(() => {
@@ -278,14 +284,23 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
     setCurrentX(0);
   };
 
-  const handleRemoveExtractedData = (targetSlideId: string) => {
-    // Remove extracted data (affects both table and chart views)
+  const handleRemoveExtractedData = (targetSlideId: string, chartIndex?: number) => {
+    // Remove extracted data or specific chart from manualCharts array
     if (setCurrentOutline) {
       setCurrentOutline(prev => {
         if (!prev) return prev;
-        const updatedSlides = prev.slides.map(s => 
-          s.id === targetSlideId ? { ...s, extractedData: undefined } : s
-        );
+        const updatedSlides = prev.slides.map(s => {
+          if (s.id !== targetSlideId) return s;
+          
+          // If chartIndex is provided and manualCharts exist, remove specific chart
+          if (chartIndex !== undefined && s.manualCharts && s.manualCharts.length > 0) {
+            const newCharts = s.manualCharts.filter((_, idx) => idx !== chartIndex);
+            return { ...s, manualCharts: newCharts.length > 0 ? newCharts : undefined };
+          }
+          
+          // Otherwise remove extractedData (legacy single chart)
+          return { ...s, extractedData: undefined };
+        });
         return { ...prev, slides: updatedSlides } as DeckOutline;
       });
     }
@@ -295,6 +310,55 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
       delete next[targetSlideId];
       return next;
     });
+  };
+  
+  // ✅ Add new chart to slide
+  const handleAddChart = (targetSlideId: string, chartType: string) => {
+    if (!setCurrentOutline) return;
+    
+    const chartConfig = CHART_TYPES[chartType];
+    const newChart: ManualChart = {
+      id: uuidv4(),
+      chartType,
+      title: chartConfig?.label || chartType,
+      data: generateDefaultChartData(chartType)
+    };
+    
+    setCurrentOutline(prev => {
+      if (!prev) return prev;
+      const updatedSlides = prev.slides.map(s => {
+        if (s.id !== targetSlideId) return s;
+        
+        const existingCharts = s.manualCharts || [];
+        return { ...s, manualCharts: [...existingCharts, newChart] };
+      });
+      return { ...prev, slides: updatedSlides } as DeckOutline;
+    });
+    
+    // Set active chart to the new one
+    setActiveTab(prev => ({ ...prev, [targetSlideId]: 'chart' }));
+    setActiveChartIndex(prev => ({ ...prev, [targetSlideId]: (prev[targetSlideId] || 0) + 1 }));
+  };
+  
+  // Helper to generate default chart data
+  const generateDefaultChartData = (chartType: string): any[] => {
+    // Series charts need different format
+    if (['line', 'spline', 'area', 'areaspline'].includes(chartType)) {
+      return [
+        { x: 'Jan', y: 30 },
+        { x: 'Feb', y: 45 },
+        { x: 'Mar', y: 35 },
+        { x: 'Apr', y: 50 },
+        { x: 'May', y: 42 }
+      ];
+    }
+    
+    // Default bar/pie/column format
+    return [
+      { name: 'Category A', value: 30 },
+      { name: 'Category B', value: 45 },
+      { name: 'Category C', value: 25 }
+    ];
   };
 
   useEffect(() => {
@@ -579,13 +643,69 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                        onMouseDown={(e) => e.stopPropagation()}>
                     {/* Sticky note tabs for charts/tables/media */}
                     {(() => {
-                      // Debug logging for this specific slide
-                      const hasExtractedData = !!slide.extractedData;
+                      // Check if slide has actual chart data (not just empty extractedData)
+                      const hasExtractedData = !!(
+                        slide.extractedData && 
+                        slide.extractedData.data && 
+                        Array.isArray(slide.extractedData.data) && 
+                        slide.extractedData.data.length > 0
+                      );
+                      const hasManualCharts = !!(slide.manualCharts && slide.manualCharts.length > 0);
                       const hasTaggedMedia = slide.taggedMedia && slide.taggedMedia.length > 0;
                       
-                      if (!hasExtractedData && !hasTaggedMedia) {
-                        return null;
+                      // ✅ Always show tabs if there's ANY data OR ability to create charts
+                      // Show the tab bar even if empty to allow chart creation
+                      if (!hasExtractedData && !hasManualCharts && !hasTaggedMedia) {
+                        // Still show Add Chart button even if no charts exist yet
+                        return (
+                          <div className="absolute -right-1 top-20 flex flex-col gap-1 z-10">
+                            {/* Add Chart button - always available */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="px-3 py-2 rounded-l-md shadow-md transition-all duration-200 bg-green-100 text-green-700 border-l border-t border-b border-green-200 hover:translate-x-1"
+                                  title="Add Chart"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                                {Object.entries(CHART_TYPES).map(([key, config]) => (
+                                  <DropdownMenuItem 
+                                    key={key}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAddChart(slide.id, key);
+                                    }}
+                                  >
+                                    {config.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        );
                       }
+                      
+                      // ✅ Get all charts for this slide (from extractedData or manualCharts)
+                      const allCharts: any[] = [];
+                      if (slide.extractedData && hasExtractedData) {
+                        allCharts.push({ ...slide.extractedData, isExtracted: true, index: 0 });
+                      }
+                      if (slide.manualCharts && slide.manualCharts.length > 0) {
+                        slide.manualCharts.forEach((chart, idx) => {
+                          allCharts.push({ 
+                            ...chart, 
+                            chartType: chart.chartType,
+                            isExtracted: false, 
+                            index: allCharts.length 
+                          });
+                        });
+                      }
+                      
+                      const currentChartIdx = activeChartIndex[slide.id] || 0;
+                      const totalCharts = allCharts.length;
                       
                       return (
                         <div className="absolute -right-1 top-20 flex flex-col gap-1 z-10">
@@ -602,42 +722,65 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                             <X className="h-4 w-4" />
                           </button>
                         )}
-                        {slide.extractedData && (
+                        
+                        {/* Chart tabs - show multiple if they exist (combined chart + table view) */}
+                        {allCharts.length > 0 && (
                           <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTab(prev => ({ ...prev, [slide.id]: activeTab[slide.id] === 'table' ? 'content' : 'table' }));
-                              }}
-                              className={cn(
-                                "px-3 py-2 rounded-l-md shadow-md transition-all duration-200",
-                                "border-l border-t border-b",
-                                activeTab[slide.id] === 'table' 
-                                  ? "bg-blue-500 text-white border-blue-600 translate-x-0" 
-                                  : "bg-blue-100 text-blue-700 border-blue-200 hover:translate-x-1"
-                              )}
-                              title="View/Edit Table"
-                            >
-                              <Table className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTab(prev => ({ ...prev, [slide.id]: activeTab[slide.id] === 'chart' ? 'content' : 'chart' }));
-                              }}
-                              className={cn(
-                                "px-3 py-2 rounded-l-md shadow-md transition-all duration-200",
-                                "border-l border-t border-b",
-                                activeTab[slide.id] === 'chart' 
-                                  ? "bg-purple-500 text-white border-purple-600 translate-x-0" 
-                                  : "bg-purple-100 text-purple-700 border-purple-200 hover:translate-x-1"
-                              )}
-                              title="View Chart"
-                            >
-                              <BarChart3 className="h-4 w-4" />
-                            </button>
+                            {allCharts.map((chart, idx) => (
+                              <div key={idx} className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTab(prev => ({ ...prev, [slide.id]: idx === currentChartIdx && activeTab[slide.id] === 'chart' ? 'content' : 'chart' }));
+                                    setActiveChartIndex(prev => ({ ...prev, [slide.id]: idx }));
+                                  }}
+                                  className={cn(
+                                    "px-3 py-2 rounded-l-md shadow-md transition-all duration-200",
+                                    "border-l border-t border-b relative",
+                                    activeTab[slide.id] === 'chart' && currentChartIdx === idx
+                                      ? "bg-purple-500 text-white border-purple-600 translate-x-0" 
+                                      : "bg-purple-100 text-purple-700 border-purple-200 hover:translate-x-1"
+                                  )}
+                                  title={`Chart ${idx + 1}: ${chart.title || chart.chartType || 'Chart'} (shows chart + data table)`}
+                                >
+                                  <BarChart3 className="h-4 w-4" />
+                                  {allCharts.length > 1 && (
+                                    <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">
+                                      {idx + 1}
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+                            ))}
                           </>
                         )}
+                        
+                        {/* Add Chart button */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-3 py-2 rounded-l-md shadow-md transition-all duration-200 bg-green-100 text-green-700 border-l border-t border-b border-green-200 hover:translate-x-1"
+                              title="Add Chart"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+                            {Object.entries(CHART_TYPES).map(([key, config]) => (
+                              <DropdownMenuItem 
+                                key={key}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddChart(slide.id, key);
+                                }}
+                              >
+                                {config.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        
                         {slide.taggedMedia && slide.taggedMedia.length > 0 && (
                           <button
                             onClick={(e) => {
@@ -718,44 +861,125 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                     ) : (
                       <>
                         {/* Render based on active tab */}
-                        {activeTab[slide.id] === 'table' && slide.extractedData ? (
-                          // Table view/edit mode with ChartDataTable component
-                          <div className="h-full relative overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600 scrollbar-track-transparent">
-                            {/* Tiny delete text (affects both chart and table) */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRemoveExtractedData(slide.id); }}
-                              className="absolute top-2 right-2 z-10 text-[10px] leading-none text-zinc-400 hover:text-zinc-600 focus:outline-none"
-                              aria-label="Delete chart"
-                              title="Delete chart"
-                            >
-                              delete chart
-                            </button>
-                            {setCurrentOutline ? (
-                              <ChartDataTable 
-                                slide={slide} 
-                                setCurrentOutline={setCurrentOutline} 
-                              />
-                            ) : (
-                              <p className="text-xs text-zinc-400 dark:text-zinc-500 italic p-4">
-                                Table editing not available
-                              </p>
-                            )}
-                          </div>
-                        ) : activeTab[slide.id] === 'chart' && slide.extractedData ? (
-                          // Chart view mode with actual Highcharts rendering
-                          <div className="h-full relative overflow-hidden">
-                            {/* Tiny delete text (affects both chart and table) */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRemoveExtractedData(slide.id); }}
-                              className="absolute top-2 right-2 z-10 text-[10px] leading-none text-zinc-400 hover:text-zinc-600 focus:outline-none"
-                              aria-label="Delete chart"
-                              title="Delete chart"
-                            >
-                              delete chart
-                            </button>
-                            <SlideChartViewer extractedData={slide.extractedData} />
-                          </div>
-                        ) : activeTab[slide.id] === 'media' && slide.taggedMedia && slide.taggedMedia.length > 0 ? (
+                        {(() => {
+                          // ✅ Get all charts for current slide
+                          const allCharts: any[] = [];
+                          if (slide.extractedData && slide.extractedData.data && Array.isArray(slide.extractedData.data) && slide.extractedData.data.length > 0) {
+                            allCharts.push({ ...slide.extractedData, isExtracted: true, chartIndex: 0 });
+                          }
+                          if (slide.manualCharts && slide.manualCharts.length > 0) {
+                            slide.manualCharts.forEach((chart, idx) => {
+                              allCharts.push({ 
+                                ...chart, 
+                                chartType: chart.chartType,
+                                data: chart.data,
+                                title: chart.title,
+                                isExtracted: false, 
+                                chartIndex: allCharts.length 
+                              });
+                            });
+                          }
+                          
+                          const currentChartIdx = activeChartIndex[slide.id] || 0;
+                          const activeChart = allCharts[currentChartIdx];
+                          
+                          if (activeTab[slide.id] === 'chart' && activeChart) {
+                            // Chart view with visualization AND editable table below
+                            return (
+                              <div className="h-full relative overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600 scrollbar-track-transparent">
+                                {/* Chart navigation and delete */}
+                                <div className="absolute top-2 right-2 z-10 flex items-center gap-2 bg-white/90 dark:bg-zinc-900/90 px-2 py-1 rounded">
+                                  {allCharts.length > 1 && (
+                                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                      Chart {currentChartIdx + 1} of {allCharts.length}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      if (activeChart.isExtracted) {
+                                        handleRemoveExtractedData(slide.id);
+                                      } else {
+                                        // Remove from manualCharts
+                                        const manualIdx = currentChartIdx - (slide.extractedData && slide.extractedData.data && slide.extractedData.data.length > 0 ? 1 : 0);
+                                        handleRemoveExtractedData(slide.id, manualIdx);
+                                        // Switch to previous chart or content
+                                        if (allCharts.length > 1) {
+                                          setActiveChartIndex(prev => ({ ...prev, [slide.id]: Math.max(0, currentChartIdx - 1) }));
+                                        } else {
+                                          setActiveTab(prev => ({ ...prev, [slide.id]: 'content' }));
+                                        }
+                                      }
+                                    }}
+                                    className="text-[10px] leading-none text-zinc-400 hover:text-red-600 focus:outline-none"
+                                    aria-label="Delete chart"
+                                    title="Delete this chart"
+                                  >
+                                    delete chart
+                                  </button>
+                                </div>
+                                
+                                {/* Chart Visualization (top half) */}
+                                <div className="h-[240px] border-b border-zinc-200 dark:border-zinc-700">
+                                  <SlideChartViewer extractedData={activeChart} />
+                                </div>
+                                
+                                {/* Data Table Editor (bottom half) */}
+                                <div className="pt-3 px-2">
+                                  <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                                    Edit Chart Data:
+                                  </div>
+                                  {setCurrentOutline ? (
+                                    <ChartDataTable 
+                                      slide={slide} 
+                                      setCurrentOutline={setCurrentOutline}
+                                      extractedData={activeChart}
+                                      onChangeExtractedData={(newData) => {
+                                        // Update the active chart's data
+                                        if (activeChart.isExtracted) {
+                                          // Update extractedData
+                                          setCurrentOutline(prev => {
+                                            if (!prev) return prev;
+                                            const updatedSlides = prev.slides.map(s => 
+                                              s.id === slide.id ? { ...s, extractedData: newData } : s
+                                            );
+                                            return { ...prev, slides: updatedSlides } as DeckOutline;
+                                          });
+                                        } else {
+                                          // Update manualCharts array
+                                          const manualIdx = currentChartIdx - (slide.extractedData && slide.extractedData.data && slide.extractedData.data.length > 0 ? 1 : 0);
+                                          setCurrentOutline(prev => {
+                                            if (!prev) return prev;
+                                            const updatedSlides = prev.slides.map(s => {
+                                              if (s.id !== slide.id) return s;
+                                              const updatedCharts = [...(s.manualCharts || [])];
+                                              updatedCharts[manualIdx] = { 
+                                                ...updatedCharts[manualIdx],
+                                                data: newData.data,
+                                                chartType: newData.chartType,
+                                                title: newData.title
+                                              };
+                                              return { ...s, manualCharts: updatedCharts };
+                                            });
+                                            return { ...prev, slides: updatedSlides } as DeckOutline;
+                                          });
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <p className="text-xs text-zinc-400 dark:text-zinc-500 italic p-2">
+                                      Table editing not available
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          return null;
+                        })()}
+                        
+                        {activeTab[slide.id] === 'media' && slide.taggedMedia && slide.taggedMedia.length > 0 ? (
                           // Media view with AI analysis
                           <div className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600 scrollbar-track-transparent">
                             <TaggedMediaViewer taggedMedia={slide.taggedMedia} />
