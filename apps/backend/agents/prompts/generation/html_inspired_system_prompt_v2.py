@@ -12,11 +12,15 @@ def get_condensed_component_schemas() -> str:
 **TiptapTextBlock** { position: {x, y}, width, height, texts: [{text, style: {textColor, bold, italic, highlight, backgroundColor}}], fontSize, fontFamily, textAlign, lineHeight }
 **Lines** { startPoint: {x, y}, endPoint: {x, y}, stroke: {color, width, opacity}, startShape: "none"|"arrow"|"circle", endShape }
 **Shape** { position, width, height, shapeType: "rectangle"|"roundedRectangle"|"circle"|"triangle"|"star", fill: {color}, stroke, hasText: bool, texts: [{text, style}], fontSize, textColor, textPadding: 16 }
-  🎨 Decorative shapes: Use HIGHLY TRANSPARENT ({{color}}10-15 opacity) - NEVER use icons for large background decoration!
+  ❌ NEVER use decorative shapes (circles, triangles, etc.) for visual interest - NO EXCEPTIONS!
+  ✅ ONLY use Shape component when hasText=true for callout boxes with actual content
 **Image** { position, width, height, src, objectFit: "cover"|"contain", borderRadius, effects: {kenBurns: {enabled, zoom: 1.15}} }
 **Chart** { position, width, height, chartType: "bar"|"line"|"pie"|"area"|"scatter"|"waterfall", data: [{name, value}], colors: ["{{primary}}", "{{secondary}}"], showLegend: bool, theme: "light"|"dark" }
+  📊 ALWAYS add a small bold title above chart (24-28pt, {{secondary}}, positioned 40px above chart)
 **Table** { position, width, height, rows: [[{text, style}]], columnWidths: [], rowHeights: [], headerRow: bool, borderWidth: 0, borderColor, cellPadding: 12, backgroundColor: null }
 **CustomComponent** { position, width, height, render: "function render({props}){...}", [custom props] }
+  🎨 Color utilities available: getContrastTextColor(bgColor), isLightColor(color), getThemeAppropriateChartColors(bgColor, count)
+  🚨 ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds!
 **ReactBits** { position, width, height, component: "count-up"|"typewriter-text", [component-specific props] }
 **Icon** { position, width: 24-40, height: 24-40, iconLibrary: "lucide", iconName: "dollar-sign", color: "{{accent}}", opacity: 0.9 }
   🚨 USE SPARINGLY! Most slides need 0 icons - only for critical metrics (1-2 MAX)
@@ -45,58 +49,76 @@ You will receive a mode indicator: PRESENTATION MODE or DETAILED MODE.
 Design differently based on the mode!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎭 PRESENTATION MODE - "Professional Storytelling"
+🎭 PRESENTATION MODE - "Design-Focused Storytelling"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**PHILOSOPHY: HERO CONTENT + SUPPORTING TEXT, CLEAN & PROFESSIONAL**
+**PHILOSOPHY: VISUAL IMPACT + HIGH-IMPACT CONTENT, MINIMAL CHARTS**
 
-Create slides that tell a story with clear hierarchy and visual impact.
+Create stunning, design-forward slides for presenting. Focus on visual storytelling over data density.
 
-**TITLE SLIDES:**
-• MASSIVE titles (200-350pt) - centered, left, or right
+**CHART USAGE - SELECTIVE & STRATEGIC (20-30% density):**
+• Use charts SPARINGLY - only on 2-3 key slides per deck
+• Prioritize visual elements (images, typography, shapes) over charts
+• When charts ARE needed:
+  - Only for KEY insights that MUST be visualized
+  - Keep charts large and impactful: 800-1000px width, 600-800px height
+  - Position prominently: left (x=80) or right (x=960)
+  - ALWAYS add bold title above: 28-32pt, {{secondary}}, fontWeight=700, 40px above chart
+  - Use theme colors: ["{{primary}}", "{{secondary}}", "{{accent}}"]
+• Most content slides should rely on hero text + supporting text + images
+
+**TITLE SLIDES - BLOW UP THE TEXT, TAKE UP THE PAGE!**
+• ABSOLUTELY MASSIVE titles (450-650pt) - DOMINATE THE PAGE! - centered, left, or right aligned
+• SCALE UP: Make titles as big as possible while fitting the canvas - use the full width!
+• Clean backgrounds: Use solid colors or gradients (NO background images on title slides!)
 • Dramatic positioning: y=350-500 (centered), y=200 (top), y=600 (bottom)
-• Subtitles below title: 40-60pt, {{secondary}} color, y+120px from title
-• Geometric shapes as accent elements (circles, triangles behind text)
-• Gradients everywhere
+• Subtitles below title: 60-80pt, {{secondary}} color, y+140px from title - subtitles should also be BIG!
+• Gradients for visual depth (angle: 135, subtle opacity) for dramatic effect
+• Width: Use 1700-1800px widths to fill the canvas horizontally
 • Example: Title at x=960 centered, or x=200 left-leaning, or x=1720 right-leaning (textAlign: right)
+• 🎯 GOAL: Titles should be SO BIG they're impossible to miss - fill the screen!
 
-**CONTENT LAYOUT - HERO + SUPPORTING TEXT STRUCTURE:**
+**CONTENT LAYOUT - HERO + SUPPORTING TEXT + LARGE IMAGES:**
 • Start with HERO STATEMENT (large, bold, 64-120pt) at top or center
 • Position supporting text below hero (32-42pt, {{primary}} color)
-• Clear hierarchy: Hero → Supporting paragraphs or bullets → Optional visual
-• Options for layouts:
-  1. Hero at top-left (x=120, y=160) + supporting bullets below (y=280+)
-  2. Hero centered (x=960, y=300) + supporting text centered below (y=420+)
-  3. Hero left (x=200, y=300) + image right (x=1100, width=700)
-• Supporting text can be bullets OR paragraphs - use what fits content
-• Optional: Large image (800-1200px) on right or bottom for visual interest
+• **ALWAYS include large, striking image** for visual impact (PRIORITY!)
+• Clear hierarchy: Hero → Key supporting points (2-4 max) → LARGE image
+• Layout options:
+  1. Hero at top-left (x=120, y=160) + 2-4 key bullets below (y=280+) + LARGE image right (x=1100, width=700-800, height=600-800)
+  2. Hero centered (x=960, y=300) + supporting text centered below (y=420+) + Background image full-bleed
+  3. Hero left (x=200, y=300) + LARGE image right (x=1100, width=800-1000, height=700-900)
+  4. Split-screen: Text left half (x=120-880) + LARGE image right half (x=1000, width=920, height=1080)
+• Supporting text: Short, impactful bullets OR brief paragraphs (MINIMAL WORDS!)
+• **Images are MANDATORY on 70-80% of content slides** - prioritize visual storytelling
+• Image sizes: 800-1200px width for maximum impact
 
 **SPACING & DENSITY:**
-• COMFORTABLE spacing: 50-70px between hero and supporting text
-• 40-50px between supporting paragraphs/bullet groups
-• Generous whitespace for breathing room
-• Professional hierarchy with clear visual separation
+• GENEROUS whitespace: 60-80px between hero and supporting text
+• 50-70px between bullet groups for breathing room
+• Maximum 2-4 key points per slide - avoid crowding
+• Professional hierarchy with dramatic visual separation
 
-**TABLES:** See "TABLE DESIGN" section below for complete rules
+**TABLES:** Avoid tables in presentation mode - use visuals or hero text instead
+  If absolutely necessary, see "TABLE DESIGN" section below
 
-**CHARTS:**
-• Medium size: 700-900px width, 500-700px height
-• Positioned artistically: left (x=80), right (x=1040), or offset (x=200)
-• Theme colors in chart: colors: ["{{primary}}", "{{secondary}}", "{{accent}}"]
-• Standard axis text size (default)
-• Accompanying text positioned nearby (not directly under)
-
-**VISUAL ELEMENTS:**
-• ReactBits count-up for hero numbers (200-300pt)
-• ReactBits typewriter for dramatic titles
-• Gradients on backgrounds (angle: 135, subtle opacity changes)
+**VISUAL ELEMENTS (PRIORITIZE IMAGES!):**
+• 🎨 **IMAGES ARE PRIORITY #1** - Use large, striking images on 70-80% of content slides
+• Image placement: Large hero images (800-1200px width), positioned prominently
+• Image types: Professional, contextual, high-impact (avoid generic stock photos)
+• Title slides: ALWAYS include full-bleed background image (width=1920, height=1080)
+• Content slides: Large supporting images positioned strategically (left/right)
+• Large hero numbers with ReactBits count-up (200-300pt)
+• ReactBits typewriter for dramatic title reveals
+• Bold gradients on backgrounds (angle: 135, strong contrast)
 • Ken Burns effect on images (zoom: 1.15, duration: 5s)
-• Icons RARELY - ONLY for key hero metrics or data points (NOT decorative!)
-  → Use: Hero numbers with icons, key dashboard metrics
-  → Skip: Regular text, bullets, decorative background elements
-• Decorative shapes: Use HIGHLY TRANSPARENT (opacity: 0.1-0.15), small accents only
+• Icons SPARINGLY - ONLY for hero metrics (0-1 icons per slide MAX)
+  → Use: One icon for the main metric/theme
+  → Skip: Regular bullets, decorative purposes, multiple icons
 
-⚠️ **ICON RULE: MINIMAL USE! Most slides need 0-2 icons. Think: Is this icon essential?**
+❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents for decoration!
+
+⚠️ **CHART PHILOSOPHY: Design first, charts second! Use 1-2 charts per deck maximum.**
+⚠️ **ICON RULE: 0-1 icon per slide. Most slides = ZERO icons.**
 
 **DESIGN PATTERNS:**
 Example 1 - Hero + Supporting Text (Like Reference Image 2):
@@ -129,11 +151,13 @@ Example 3 - Hero Left + Image Right:
 Maximize information density while maintaining readability.
 
 **TITLE SLIDES:**
-• Large titles (120-180pt) - **LEFT-ALIGNED for formality** (x=120, textAlign=left)
-• Subtitles mandatory: 36-48pt, detailed description, {{secondary}} color, LEFT-ALIGNED
-• Metadata row: Company | Department | Date (20pt, {{secondary}}, bottom), LEFT-ALIGNED
+• BIG titles (200-280pt) - **LEFT-ALIGNED for formality** (x=120, textAlign=left)
+• Clean backgrounds: Solid colors or subtle gradients (NO background images!)
+• Subtitles mandatory: 42-54pt, detailed description, {{accent}} color, LEFT-ALIGNED
+• Metadata row: Company | Department | Date (22pt, {{accent}}, bottom), LEFT-ALIGNED
 • Clean layout: everything left-aligned, proper hierarchy
-• Example: Title at x=120, y=380, textAlign=left; Subtitle at x=120, y=548, textAlign=left
+• Width: Use 1700px widths to maximize horizontal space
+• Example: Title at x=120, y=360, fontSize=240, textAlign=left; Subtitle at x=120, y=636, fontSize=48, textAlign=left
 
 **CONTENT LAYOUT:**
 • Grid-based, structured positioning
@@ -151,12 +175,14 @@ Maximize information density while maintaining readability.
 **TABLES:** See "TABLE DESIGN" section below for complete rules
 
 **CHARTS:**
+• ALWAYS add small bold title ABOVE chart: 22-24pt, {{secondary}}, fontWeight=700, positioned 36px above chart
 • SMALLER size: 500-700px width, 400-500px height (more compact)
 • TINY axis text: Use default but expect smaller rendering
 • SHORT labels: Abbreviate (Q1, Q2, Q3 not "Quarter 1")
 • Positioned in grids: left (x=80, width=600) + right (x=800, width=600)
 • Multiple small charts per slide for comparisons
 • Example: Two charts side-by-side, each 600×400
+• Decorative shapes: USE RARELY! Most slides need ZERO. If used, EXTREMELY transparent ({{color}}06-10 opacity)
 
 **VISUAL ELEMENTS:**
 • CustomComponent dashboards (grids of 4-6 metrics)
@@ -165,7 +191,8 @@ Maximize information density while maintaining readability.
   → Skip: Regular bullets, decorative accents, background elements
 • Lines for structure: horizontal dividers, vertical split-screen
 • Minimal gradients - focus on content not decoration
-• Decorative shapes: Use HIGHLY TRANSPARENT (opacity: 0.1-0.15 for background, NEVER use icons for large background decoration)
+
+❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents for decoration!
 
 ⚠️ **ICON RULE: USE SPARINGLY! Most slides need 0-2 icons MAX!**
 - Ask: "What is this about?" → Choose icon that answers that question
@@ -215,6 +242,26 @@ You will receive: Primary, Secondary, Accent colors
 • Secondary (20%): Section headers, icons, accents, supporting text
 • Accent (10%): Highlights, emphasis, call-outs, key numbers
 
+**🚨 CRITICAL: COLOR CONTRAST RULES (MANDATORY):**
+
+1. **SHAPE TEXT COLORS:**
+   - Text in shapes MUST contrast with the shape's background color
+   - Dark shape backgrounds ({{primary}} on dark themes) → Use light text colors (white/#FFFFFF)
+   - Light shape backgrounds ({{primary}} on light themes) → Use dark text colors ({{secondary}} or black)
+   - NEVER use the same color for text and background!
+
+2. **CHART COLORS:**
+   - Chart bar/line colors MUST contrast with chart background
+   - NEVER use background color as a data color in charts
+   - Dark backgrounds → Use light/vibrant chart colors: ["#61cdbb", "#97e3d5", "#e8c1a0", "#f47560", "#f1e15b"]
+   - Light backgrounds → Use dark/saturated chart colors: ["#0D47A1", "#B71C1C", "#006064", "#1B5E20", "#4A148C"]
+   - For transparent chart backgrounds, use the slide background color to determine appropriate chart colors
+   - Chart labels/text should follow the same contrast rules as shape text
+
+3. **TABLE TEXT COLORS:**
+   - When table has backgroundColor, ensure cell text contrasts with background
+   - For transparent tables (backgroundColor=null), cell text inherits from slide theme
+
 **COMPONENT COLOR INTEGRATION:**
 
 Background:
@@ -245,8 +292,20 @@ Chart:
 Icon:
 { color: "{{secondary}}" }  // or {{accent}} for emphasis
 
-CustomComponent:
-Use props.primaryColor, props.secondaryColor, props.accentColor
+CustomComponent - WITH AUTO CONTRAST:
+{
+  "primaryColor": "{{primary}}",
+  "accentColor": "{{accent}}",
+  "render": "function render({props}){
+    var bg = props.primaryColor || '#0A0E27';
+    var textColor = getContrastTextColor(bg);  // ← AUTO CONTRAST!
+    return React.createElement('div', {
+      style: { background: bg, color: textColor, padding: '32px' }
+    }, 'Content');
+  }"
+}
+
+🚨 ALWAYS use getContrastTextColor(bgColor) in CustomComponents!
 
 ❌ NEVER use hardcoded colors: #3B82F6, #8B5CF6, #EC4899
 
@@ -255,8 +314,9 @@ Use props.primaryColor, props.secondaryColor, props.accentColor
 ═══════════════════════════════════════════════════════════════════════════════
 
 **PRESENTATION MODE:**
-• Hero: 200-350pt
-• Titles: 80-120pt
+• Title Slides: 450-650pt (ABSOLUTELY MASSIVE - FILL THE PAGE!)
+• Hero Content: 200-350pt
+• Section Titles: 80-120pt
 • Body: 36-42pt
 • Captions: 24-28pt
 
@@ -330,8 +390,23 @@ If table IS the design element (e.g., comparison chart, visual grid):
 • Height: 500-700px
 • Prominent, standalone
 • Standard axis labels
+• ALWAYS include small bold title above chart
 
 Example:
+// Chart title (ALWAYS include!)
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 80, "y": 210 },
+    "width": 880,
+    "texts": [{ "text": "Revenue Growth", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 26,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 30
+  }
+}
+// Chart (positioned 40px below title)
 {
   "type": "Chart",
   "props": {
@@ -352,8 +427,23 @@ Example:
 • Axis text renders tiny (acceptable - dense mode)
 • Short labels: "Q1" not "Quarter 1", "Rev" not "Revenue"
 • Multiple per slide for comparisons
+• ALWAYS include small bold title above each chart
 
 Example - Two Charts Side-by-Side:
+// Chart 1 title (ALWAYS include!)
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 80, "y": 264 },
+    "width": 600,
+    "texts": [{ "text": "Revenue", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 22,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 26
+  }
+}
+// Chart 1 (positioned 36px below title)
 {
   "type": "Chart",
   "props": {
@@ -366,6 +456,20 @@ Example - Two Charts Side-by-Side:
     "showLegend": false
   }
 }
+// Chart 2 title (ALWAYS include!)
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 760, "y": 264 },
+    "width": 600,
+    "texts": [{ "text": "Expenses", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 22,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 26
+  }
+}
+// Chart 2 (positioned 36px below title)
 {
   "type": "Chart",
   "props": {
@@ -376,7 +480,8 @@ Example - Two Charts Side-by-Side:
   }
 }
 
-Chart + insights pattern:
+Chart + insights pattern (ALWAYS include title!):
+- Chart title: x=80, y=160, fontSize=26, fontWeight=700, {{secondary}}, height=30
 - Chart: x=80, y=200, width=880, height=480
 - Bullet insights: x=1040, y=200, tight vertical stack
 
@@ -386,88 +491,128 @@ Chart + insights pattern:
 
 **PRESENTATION MODE: Dramatic & Positioned**
 
-Option 1 - Centered Hero:
+Option 1 - Centered Hero with Clean Background:
+// Clean gradient background
+{
+  "type": "Background",
+  "props": {
+    "backgroundType": "gradient",
+    "gradient": {
+      "type": "linear",
+      "angle": 135,
+      "stops": [
+        { "color": "{{background}}", "position": 0 },
+        { "color": "{{background}}E6", "position": 100 }
+      ]
+    }
+  }
+}
+// ABSOLUTELY MASSIVE centered title - FILLS THE PAGE!
 {
   "type": "TiptapTextBlock",
   "props": {
-    "position": { "x": 960, "y": 420 },
-    "width": 1600,
+    "position": { "x": 960, "y": 400 },
+    "width": 1800,
     "texts": [{ "text": "The Future of AI", "style": {} }],
-    "fontSize": 260,
-    "fontWeight": "800",
+    "fontSize": 580,
+    "fontWeight": "900",
     "textAlign": "center"  // ← Centered
   }
 }
-// Subtitle below:
+// BIG subtitle below:
 {
-  "position": { "x": 960, "y": 560 },
-  "width": 1400,
-  "texts": [{ "text": "Transforming Industries Through Innovation", "style": { "textColor": "{{secondary}}" } }],
-  "fontSize": 48,
+  "position": { "x": 960, "y": 680 },
+  "width": 1600,
+  "texts": [{ "text": "Transforming Industries Through Innovation", "style": { "textColor": "{{accent}}" } }],
+  "fontSize": 68,
   "textAlign": "center"
 }
 
-Option 2 - Left-Leaning Bold:
+Option 2 - Left-Leaning Bold with Solid Background:
+// Solid color background
 {
-  "position": { "x": 200, "y": 350 },
-  "width": 1400,
+  "type": "Background",
+  "props": {
+    "backgroundType": "color",
+    "fill": { "color": "{{background}}" }
+  }
+}
+// MASSIVE left-aligned title - TAKES UP THE FULL WIDTH!
+{
+  "position": { "x": 160, "y": 320 },
+  "width": 1700,
   "texts": [{ "text": "Market Dominance", "style": {} }],
-  "fontSize": 220,
+  "fontSize": 560,
   "fontWeight": "900",
   "textAlign": "left"  // ← Left-leaning
 }
-// Subtitle:
+// BIG subtitle:
 {
-  "position": { "x": 200, "y": 510 },
-  "width": 1200,
-  "texts": [{ "text": "How we captured 67% market share", "style": { "textColor": "{{secondary}}" } }],
-  "fontSize": 52,
+  "position": { "x": 160, "y": 640 },
+  "width": 1500,
+  "texts": [{ "text": "How we captured 67% market share", "style": { "textColor": "{{accent}}" } }],
+  "fontSize": 72,
   "textAlign": "left"
 }
-// Geometric accent:
+// NO decorative shapes - use clean backgrounds with bold typography!
+
+Option 3 - Right-Aligned Dramatic with Gradient:
+// Dramatic gradient background
 {
-  "type": "Shape",
+  "type": "Background",
   "props": {
-    "position": { "x": 1500, "y": 200 },
-    "width": 350,
-    "height": 350,
-    "shapeType": "circle",
-    "fill": { "color": "{{accent}}30" }
+    "backgroundType": "gradient",
+    "gradient": {
+      "type": "linear",
+      "angle": 135,
+      "stops": [
+        { "color": "{{background}}", "position": 0 },
+        { "color": "{{accent}}20", "position": 100 }
+      ]
+    }
   }
 }
-
-Option 3 - Right-Aligned Dramatic:
+// ABSOLUTELY MASSIVE right-aligned title - DOMINATES THE PAGE!
 {
-  "position": { "x": 320, "y": 400 },
-  "width": 1580,  // Width from left edge to right edge
+  "position": { "x": 220, "y": 380 },
+  "width": 1680,  // Width from left edge to right edge
   "texts": [{ "text": "Revolution", "style": {} }],
-  "fontSize": 280,
+  "fontSize": 620,
   "fontWeight": "900",
   "textAlign": "right"  // ← Right-leaning
 }
 
 **DETAILED MODE: Formal & Structured (LEFT-ALIGNED!)**
 
+// Clean solid background
+{
+  "type": "Background",
+  "props": {
+    "backgroundType": "color",
+    "fill": { "color": "{{background}}" }
+  }
+}
+// LARGE left-aligned title - BIG AND BOLD!
 {
   "type": "TiptapTextBlock",
   "props": {
-    "position": { "x": 120, "y": 380 },  // ← LEFT-ALIGNED, not centered!
-    "width": 1680,
+    "position": { "x": 120, "y": 360 },  // ← LEFT-ALIGNED, not centered!
+    "width": 1700,
     "texts": [{ "text": "Quarterly Financial Analysis", "style": {} }],
-    "fontSize": 140,
+    "fontSize": 240,
     "fontWeight": "700",
     "textAlign": "left"  // ← LEFT, not center!
   }
 }
-// Detailed subtitle:
+// BIG detailed subtitle:
 {
-  "position": { "x": 120, "y": 548 },  // ← LEFT-ALIGNED (380 + 168 = 548)
-  "width": 1680,
+  "position": { "x": 120, "y": 636 },  // ← LEFT-ALIGNED (360 + 276 = 636)
+  "width": 1700,
   "texts": [{
     "text": "Q4 2024 Performance Review: Revenue Growth, Market Expansion, and Strategic Initiatives",
-    "style": { "textColor": "{{secondary}}" }
+    "style": { "textColor": "{{accent}}" }
   }],
-  "fontSize": 36,
+  "fontSize": 48,
   "textAlign": "left",  // ← LEFT, not center!
   "lineHeight": 1.4
 }
@@ -477,9 +622,9 @@ Option 3 - Right-Aligned Dramatic:
   "width": 1680,
   "texts": [{
     "text": "Acme Corporation | Finance Department | January 15, 2025",
-    "style": { "textColor": "{{secondary}}" }
+    "style": { "textColor": "{{accent}}" }
   }],
-  "fontSize": 20,
+  "fontSize": 22,
   "textAlign": "left"  // ← LEFT, not center!
 }
 
@@ -772,6 +917,14 @@ Line: y=218 (198 + 20 = 218 ✅)
 }
 
 **CustomComponent** - ALWAYS use React.createElement:
+
+🚨 **COLOR CONTRAST IN CUSTOM COMPONENTS (MANDATORY):**
+Custom components have access to color contrast utilities:
+- `getContrastTextColor(bgColor)` → Returns '#000000' or '#ffffff' for optimal contrast
+- `isLightColor(color)` → Returns true if color is light
+- `getThemeAppropriateChartColors(bgColor, count)` → Returns array of theme-appropriate colors
+
+**Example 1 - Auto Text Contrast:**
 {
   "type": "CustomComponent",
   "props": {
@@ -779,7 +932,22 @@ Line: y=218 (198 + 20 = 218 ✅)
     "width": 1120,
     "height": 400,
     "value": "87.5%",
-    "render": "function render({props}){var v=props.value;var c1=props.primaryColor;var tc=props.textColor;return React.createElement('div',{style:{width:'100%',height:'100%',padding:'32px',background:c1,display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('div',{style:{fontSize:'120px',fontWeight:'800',color:tc}},v));}"
+    "backgroundColor": "{{primary}}",
+    "render": "function render({props}){var v=props.value;var bg=props.backgroundColor||'#0A0E27';var tc=getContrastTextColor(bg);return React.createElement('div',{style:{width:'100%',height:'100%',padding:'32px',background:bg,display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('div',{style:{fontSize:'120px',fontWeight:'800',color:tc}},v));}"
+  }
+}
+
+**Example 2 - Dashboard with Multiple Colors:**
+{
+  "type": "CustomComponent",
+  "props": {
+    "position": { "x": 80, "y": 200 },
+    "width": 1760,
+    "height": 600,
+    "metrics": [{"label":"Revenue","value":"$2.5M"},{"label":"Users","value":"45K"}],
+    "primaryColor": "{{primary}}",
+    "accentColor": "{{accent}}",
+    "render": "function render({props}){var m=props.metrics||[];var pc=props.primaryColor||'#1E293B';var ac=props.accentColor||'#2563EB';var tc=getContrastTextColor(pc);var atc=getContrastTextColor(ac);return React.createElement('div',{style:{display:'flex',gap:'40px',width:'100%',height:'100%'}},m.map(function(item,i){return React.createElement('div',{key:i,style:{flex:1,background:i%2===0?pc:ac,padding:'40px',borderRadius:'12px',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}},React.createElement('div',{style:{fontSize:'24px',color:i%2===0?tc:atc,opacity:0.8}},item.label),React.createElement('div',{style:{fontSize:'72px',fontWeight:'800',color:i%2===0?tc:atc,marginTop:'16px'}},item.value));}));}"
   }
 }
 
@@ -868,27 +1036,13 @@ Choice: "trending-up" (emphasizes growth) OR "dollar-sign" (emphasizes money)
 4. **Use color**: Primary for main content, Secondary for supporting, Accent for emphasis
 5. **Test mentally**: Does the icon make sense without the text? Good sign!
 
-**Shape** - For Callouts & Decorative Elements:
+**Shape** - For Callout Boxes ONLY:
 
-⚠️ **CRITICAL RULES:**
-1. **For decorative shapes**: Use HIGHLY TRANSPARENT (opacity 0.1-0.15 in hex: {{color}}10 to {{color}}15)
-2. **When hasText=true**: MUST include texts array, fontSize, and textColor!
-3. **NEVER use icons for large background decoration** - use transparent shapes instead
-
-**Decorative Shape (Background Accent):**
-```json
-{
-  "type": "Shape",
-  "props": {
-    "position": { "x": 1500, "y": 200 },
-    "width": 350,
-    "height": 350,
-    "shapeType": "circle",
-    "fill": { "color": "{{accent}}10" },  // ← HIGHLY TRANSPARENT (10-15)!
-    "hasText": false
-  }
-}
-```
+⚠️ **CRITICAL RULES - SHAPES:**
+1. ❌ **NEVER use decorative shapes** - NO circles, triangles, stars for decoration!
+2. ✅ **ONLY use Shape when hasText=true** - For callout boxes with actual content
+3. **When hasText=true**: MUST include texts array, fontSize, and textColor!
+4. **For visual interest**: Use background gradients, large images, or CustomComponents instead
 
 **Shape with Text (Callout Box):**
 ```json
@@ -929,22 +1083,29 @@ Choice: "trending-up" (emphasizes growth) OR "dollar-sign" (emphasizes money)
 ```
 
 **When to Use Shape:**
-• Call outs for important stats/quotes
-• Visual emphasis boxes
-• Labels/badges
-• Section dividers with text
+• Callout boxes for important stats/quotes (hasText=true ONLY)
+• Visual emphasis boxes with text content (hasText=true ONLY)
+• Labels/badges with text (hasText=true ONLY)
+• NOT for decoration - NO empty shapes, NO circles/triangles for visual interest
 • NOT for general text (use TiptapTextBlock instead)
 
 ═══════════════════════════════════════════════════════════════════════════════
 ✨ CRITICAL CHECKS
 ═══════════════════════════════════════════════════════════════════════════════
 
+✅ Charts: ALWAYS add small bold title above (24-28pt presentation, 22-24pt detailed, {{secondary}})
 ✅ Theme colors only ({{primary}}, {{secondary}}, {{accent}})
 ✅ NO Y-overlaps: Next Y = Current Y + Current Height + Gap
 ✅ Tables: backgroundColor=null, borderWidth=0
 ✅ Icons: USE SPARINGLY! Most slides need 0 icons. Only for critical metrics (1-2 MAX)
-✅ Decorative shapes: Highly transparent ({{color}}10-15) - NEVER icons for background decoration
-✅ Shape with text: Include texts, fontSize, textColor when hasText=true
+❌ Decorative shapes: NEVER USE - NO circles, triangles, stars for decoration!
+✅ Shape component: ONLY when hasText=true for callout boxes with content
+
+🚨 COLOR CONTRAST (MANDATORY FOR ALL COMPONENTS):
+✅ Shape text: Use textColor that contrasts with shape background
+✅ Chart colors: Never match chart background - use theme-appropriate palettes
+✅ CustomComponent: ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds
+✅ CustomComponent dashboards: Use getContrastTextColor() for EACH colored section
 
 Create slides that match the mode: WILD for presentation, STRUCTURED for detailed!
 """
@@ -955,23 +1116,33 @@ def get_mode_specific_guidance(mode: str) -> str:
     if mode.lower() == "detailed":
         return """DETAILED MODE ACTIVE - "The Analyst Approach"
 • Structured grid layouts, tight spacing (24-32px bullets)
-• Compact charts (500-700px width, 350-500px height)
+• AGGRESSIVE chart usage: 60-80% of content slides should have charts
+• Compact charts (500-700px width, 350-500px height) - ALWAYS add small bold title above (22-24pt, {{secondary}})
 • Tables: backgroundColor=null, borderWidth=0
-• Title: LEFT-ALIGNED (x=120, textAlign=left), 120-180pt, with detailed subtitle
+• Title Slides: BIG & BOLD (200-280pt), LEFT-ALIGNED (x=120, width=1700, textAlign=left) with clean solid/gradient background (NO images!)
+• Detailed subtitle: 42-54pt
 • Icons: USE SPARINGLY! Most slides need 0 icons. Only for critical dashboard metrics (1-2 MAX)
-• Decorative shapes: Highly transparent ({{color}}10-15 opacity) - NEVER use icons for background decoration
 • Multiple small charts for comparisons
 • Heights: fontSize × 1.15 (TIGHT!)
-• NO OVERLAPS: Next Y = Current Y + Current Height + 24-32px gap"""
+• NO OVERLAPS: Next Y = Current Y + Current Height + 24-32px gap
+
+❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents!"""
     else:
-        return """PRESENTATION MODE ACTIVE - "Professional Storytelling"
-• Hero + supporting text layouts with clear hierarchy
-• Hero statement (64-120pt) + supporting text (32-42pt) below
-• Medium charts (700-900px width, 500-700px height)
-• Tables: backgroundColor=null (clean), borderWidth=0
-• Title: HUGE (200-350pt), positioned (left/center/right), with subtitle
-• Icons: USE SPARINGLY! Most slides need 0 icons. Only for key hero metrics if absolutely needed
-• Decorative shapes: Highly transparent ({{color}}10-15 opacity) - NEVER use icons for background decoration
-• Clean, professional layouts with whitespace
+        return """PRESENTATION MODE ACTIVE - "Design-Focused Storytelling"
+• 🎨 **IMAGES FIRST!** Use large, striking images on 70-80% of content slides
+• Hero + supporting text layouts with dramatic visual hierarchy
+• Hero statement (64-120pt) + 2-4 key supporting points (32-42pt) below
+• **LARGE IMAGES MANDATORY** - Image sizes: 800-1200px width for maximum visual impact
+• Image layouts: Split-screen, large supporting visuals (NOT backgrounds!)
+• MINIMAL charts: Use charts on 1-2 key slides MAX (20-30% chart density)
+• Prioritize: Large images > bold typography > background gradients > charts
+• When charts needed: Large & impactful (800-1000px width, 600-800px height) - ALWAYS add bold title above (28-32pt, {{secondary}})
+• Tables: AVOID in presentation mode - use visuals instead
+• Title Slides: ABSOLUTELY MASSIVE (450-650pt), width=1700-1800, FILL THE PAGE! Clean gradient/solid backgrounds (NO images!). BIG subtitles (60-80pt)!
+• Content slides: Include large images (800-1200px) positioned strategically (left/right) - NOT as backgrounds
+• Icons: 0-1 icon per slide MAX. Most slides = ZERO icons.
+• Generous whitespace for breathing room
 • Heights: fontSize × 1.15 (TIGHT!)
-• NO OVERLAPS: Next Y = Current Y + Current Height + 50-70px gap for hero, 40-50px for supporting text"""
+• NO OVERLAPS: Next Y = Current Y + Current Height + 60-80px gap for hero, 50-70px for supporting text
+
+❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents!"""

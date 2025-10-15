@@ -17,10 +17,10 @@ from typing import Optional
 # Prefer stronger model for theme quality; fallback remains available via clients map
 THEME_STYLE_MODEL = "claude-sonnet-4-5"
 COMPOSER_MODEL = "claude-sonnet-4-5"
-VISUAL_LAYOUT_ANALYZER_MODEL = "claude-3-7-sonnet"
+VISUAL_LAYOUT_ANALYZER_MODEL = "claude-haiku-4-5"
 OUTLINE_PLANNING_MODEL = "perplexity-sonar"
 OUTLINE_CONTENT_MODEL = "perplexity-sonar"
-OUTLINE_RESEARCH_MODEL = "claude-sonnet-4-5"
+OUTLINE_RESEARCH_MODEL = "claude-haiku-4-5"
 OUTLINE_OPENAI_SEARCH_MODEL = "gpt-4o-mini"
 
 #==============================================================================
@@ -28,8 +28,12 @@ OUTLINE_OPENAI_SEARCH_MODEL = "gpt-4o-mini"
 #==============================================================================
 
 # Toggle to enable Perplexity for single-pass outline generation (no env dependency)
+# NOTE: Only used for DETAILED mode - presentation mode uses lighter model
 USE_PERPLEXITY_FOR_OUTLINE = True
-PERPLEXITY_OUTLINE_MODEL = 'perplexity-sonar-pro'
+PERPLEXITY_OUTLINE_MODEL = 'perplexity-sonar-pro'  # Pro model for detailed mode only
+
+# Lighter model for presentation mode (quick, visual-focused outlines)
+PRESENTATION_OUTLINE_MODEL = 'perplexity-sonar'  # Fast with minimal research for presentation mode
 
 # Toggle to prefer Perplexity for research/search (no env dependency)
 USE_PERPLEXITY_FOR_RESEARCH = True
@@ -46,16 +50,16 @@ PERPLEXITY_IMAGE_MODEL = 'perplexity-sonar'
 # DECK EDITING MODELS
 #==============================================================================
 
-ORCHESTRATOR_MODEL = "claude-3-7-sonnet"
-DECK_EDITOR_MODEL = "claude-3-7-sonnet"
-CONTEXT_BUILDER_MODEL = "claude-3-7-sonnet"
-SLIDE_STYLE_MODEL = "claude-3-7-sonnet"
+ORCHESTRATOR_MODEL = "claude-haiku-4-5"
+DECK_EDITOR_MODEL = "claude-haiku-4-5"
+CONTEXT_BUILDER_MODEL = "claude-haiku-4-5"
+SLIDE_STYLE_MODEL = "claude-haiku-4-5"
 
 #==============================================================================
 # SPECIALIZED MODELS
 #==============================================================================
 
-QUALITY_EVALUATOR_MODEL = "claude-3-7-sonnet"
+QUALITY_EVALUATOR_MODEL = "claude-haiku-4-5"
 FILE_ANALYSIS_MODEL = "gpt-4.1"
 OPENAI_IMAGE_MODEL = "gpt-image-1"
 GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-preview"

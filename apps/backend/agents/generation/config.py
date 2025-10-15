@@ -26,7 +26,7 @@ class AIConfig:
     """AI model configuration"""
     model: str = field(default_factory=lambda: os.getenv('AI_MODEL', 'gpt-4-0125-preview'))
     temperature: float = field(default_factory=lambda: float(os.getenv('AI_TEMPERATURE', '0.7')))
-    max_tokens: int = field(default_factory=lambda: int(os.getenv('AI_MAX_TOKENS', '4000')))
+    max_tokens: int = field(default_factory=lambda: int(os.getenv('AI_MAX_TOKENS', '16384')))
     timeout_seconds: int = field(default_factory=lambda: int(os.getenv('AI_TIMEOUT', '60')))
     max_retries: int = field(default_factory=lambda: int(os.getenv('AI_MAX_RETRIES', '3')))
     retry_delay: float = field(default_factory=lambda: float(os.getenv('AI_RETRY_DELAY', '1.0')))

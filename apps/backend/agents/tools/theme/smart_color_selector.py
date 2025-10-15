@@ -252,9 +252,15 @@ class SmartColorSelector:
         variety_seed: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get colors based on the topic.
-        
+
         Now uses Huemint AI for better palette generation when no specific
         brand/entity is detected, falling back to database search only if needed.
+
+        IMPORTANT: Uses the SAME logic as frontend ThemePanel dropdown:
+        - palette[0] = background
+        - palette[1] = text
+        - palette[2] = accent
+        No complex post-processing to avoid black/white slides!
         """
         # First, try Huemint AI palette generation (better than database search)
         try:
@@ -263,17 +269,29 @@ class SmartColorSelector:
                 num_colors=3,
                 variety_seed=variety_seed
             )
-            
+
             if huemint_palette and huemint_palette.get('colors'):
+                colors = huemint_palette.get('colors', [])
+
                 # Filter out pink if not wanted
                 if style_preferences and not self._check_wants_pink(str(style_preferences)):
-                    colors = huemint_palette.get('colors', [])
                     filtered_colors = filter_out_pink_colors(colors)
-                    if filtered_colors:
-                        huemint_palette['colors'] = filtered_colors
-                
-                logger.info(f"Generated Huemint palette with {len(huemint_palette['colors'])} colors")
-                return self._format_color_result(huemint_palette, "huemint_ai")
+                    if filtered_colors and len(filtered_colors) >= 3:
+                        colors = filtered_colors
+
+                # Use Huemint colors DIRECTLY like frontend dropdown does
+                # palette[0] = background, palette[1] = text, palette[2] = accent
+                logger.info(f"✅ Using Huemint palette directly: bg={colors[0]}, text={colors[1]}, accent={colors[2]}")
+
+                return {
+                    'colors': colors[:3],  # Only 3 colors like frontend
+                    'backgrounds': [colors[0]],  # palette[0] = background
+                    'accents': [colors[2]] if len(colors) > 2 else [colors[0]],  # palette[2] = accent
+                    'text_colors': {'primary': colors[1]} if len(colors) > 1 else {},  # palette[1] = text
+                    'source': 'huemint_ai',
+                    'confidence': 0.9,
+                    'palette_name': 'AI Generated Palette'
+                }
         except Exception as e:
             logger.warning(f"Huemint palette generation failed, falling back to database: {e}")
         
@@ -310,13 +328,26 @@ class SmartColorSelector:
         analysis: Dict[str, Any],
         preserve_brand_backgrounds: bool = False
     ) -> Dict[str, Any]:
-        """Post-process colors to ensure they meet requirements."""
-        
+        """Post-process colors to ensure they meet requirements.
+
+        IMPORTANT: If source is 'huemint_ai', use colors DIRECTLY without heavy processing
+        to match frontend dropdown logic and avoid black/white slides!
+        """
+
         if not result.get('colors'):
             return result
-        
+
+        # If Huemint AI colors, skip heavy post-processing (use them directly like frontend)
+        if result.get('source') == 'huemint_ai':
+            logger.info("🎨 Skipping post-processing for Huemint colors (using directly like dropdown)")
+            # Only ensure text colors exist
+            if not result.get('text_colors') or not result['text_colors'].get('primary'):
+                primary_bg = result.get('backgrounds', [result['colors'][0]])[0]
+                result['text_colors'] = self._calculate_text_colors(primary_bg, result['colors'])
+            return result
+
         colors = result['colors']
-        
+
         # Filter out pink if not wanted
         if not analysis['wants_pink']:
             colors = filter_out_pink_colors(colors)

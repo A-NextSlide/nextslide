@@ -20,7 +20,8 @@ from agents.ai.clients import get_client, invoke
 from agents.config import (
     OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL, 
     OUTLINE_RESEARCH_MODEL,
-    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL
+    USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
+    PRESENTATION_OUTLINE_MODEL
 )
 from agents.research import OutlineResearchAgent
 from agents import config as agents_config
@@ -61,18 +62,17 @@ class OutlineGenerator:
         
         logger.info(f"Starting outline generation: slides={options.slide_count}, detail={options.detail_level}")
         
-        # Fast-path: Perplexity single-pass outline generation (optional)
-        # Only use Perplexity for DETAILED mode - presentation modes (standard/quick) should NOT do research
+        # Fast-path: Perplexity/Claude single-pass outline generation (mode-optimized)
+        # Use different models based on detail level for optimized performance
         try:
             use_pplx = (
-                (USE_PERPLEXITY_FOR_OUTLINE or
-                 (options.model and isinstance(options.model, str) and options.model.startswith("perplexity-")))
-                and options.detail_level == 'detailed'  # ✅ ONLY use Perplexity for detailed mode!
+                USE_PERPLEXITY_FOR_OUTLINE or
+                (options.model and isinstance(options.model, str) and (options.model.startswith("perplexity-") or options.model.startswith("claude-")))
             )
-            logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_pplx={use_pplx}")
+            logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_fast_path={use_pplx}")
         except Exception as e:
-            logger.warning(f"[DEBUG] Exception in Perplexity check: {e}")
-            use_pplx = USE_PERPLEXITY_FOR_OUTLINE and options.detail_level == 'detailed'
+            logger.warning(f"[DEBUG] Exception in fast-path check: {e}")
+            use_pplx = USE_PERPLEXITY_FOR_OUTLINE
         if use_pplx:
             try:
                 if progress_callback:
@@ -87,9 +87,14 @@ class OutlineGenerator:
                             stage="complete", message="Outline generated via Perplexity", progress=100
                         ))
                     logger.info(f"Outline generation completed via Perplexity in {time.time() - start_time:.2f}s")
+                    logger.info(f"[OUTLINE] Fast-path SUCCESS - returning {len(pplx_result.slides)} slides directly")
                     return pplx_result
+                else:
+                    logger.warning("[OUTLINE] Fast-path returned None - falling back to standard flow")
             except Exception as e:
                 logger.warning(f"Perplexity fast-path failed, falling back to standard flow: {e}")
+                import traceback
+                logger.warning(f"Traceback: {traceback.format_exc()}")
         
         # Process uploaded files
         processed_files = await self._process_files(options, progress_callback)
@@ -1877,11 +1882,32 @@ Requirements:
 {pitch_outline_rules}"""
 
         try:
-            # Get quick outline structure
+            # Get quick outline structure - use mode-appropriate model
             from agents.ai.clients import get_client
-            client, model_name = get_client("perplexity-sonar", wrap_with_instructor=False)
+            outline_model = PRESENTATION_OUTLINE_MODEL if options.detail_level != 'detailed' else PERPLEXITY_OUTLINE_MODEL
+            logger.info(f"[STREAMING] Using {outline_model} for outline structure (detail_level={options.detail_level})")
+            client, model_name = get_client(outline_model, wrap_with_instructor=False)
             
             # Use asyncio to run the synchronous API call in a thread executor
+            # Mode-specific search parameters
+            if options.detail_level != 'detailed':
+                # Presentation mode: minimal search
+                search_params = {
+                    "return_citations": True,
+                    "search_recency_filter": "week",
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 5
+                }
+                logger.info("[STREAMING] Using minimal search for presentation mode (5 results, 1 week)")
+            else:
+                # Detailed mode: comprehensive search
+                search_params = {
+                    "return_citations": True,
+                    "search_recency_filter": "month",
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 10
+                }
+            
             loop = asyncio.get_event_loop()
             outline_response = await loop.run_in_executor(
                 None,  # Use default thread pool
@@ -1890,7 +1916,7 @@ Requirements:
                     messages=[{"role": "user", "content": outline_prompt}],
                     temperature=0.2,
                     max_tokens=1000,
-                    extra_body={"return_citations": True, "search_recency_filter": "month", "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"], "num_search_results": 10}
+                    extra_body=search_params
                 )
             )
             
@@ -2058,34 +2084,58 @@ FORMAT:
 
 CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research."""
                     else:
-                        # STANDARD MODE - Still comprehensive but more focused
-                        slide_prompt = f"""Create DETAILED, RESEARCH-BACKED content for this slide:
+                        # PRESENTATION MODE - Ultra-concise, visual-first
+                        slide_prompt = f"""Create ULTRA-CONCISE PRESENTATION content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {options.prompt}
 
-RESEARCH-BACKED REQUIREMENTS:
-- Include SPECIFIC facts: numbers, dates, names, amounts
-- Cite sources with [1], [2], etc.
-- Use real data and verifiable information
-- No vague statements - be specific and concrete
+🎨 PRESENTATION MODE - STRICT LIMITS (ENFORCE!):
+⚠️ COUNT YOUR BULLETS AND WORDS!
 
-CONTENT REQUIREMENTS:
-- Write 150-250 words (substantive and informative)
-- Use 6-10 comprehensive bullet points
-- Include section headers (##) if organizing multiple topics
-- Each bullet: 15-25 words with specific data and context
-- Use sub-bullets (2-space indent) for supporting details
+ABSOLUTE REQUIREMENTS:
+- MAX 3 bullets (preferred) or 4 bullets (only if critical)
+- MAX 10 words per bullet
+- MAX 50 total words for the entire slide
+- Include [IMAGE: specific visual description] tag
+- Each bullet = ONE stat/fact only
 
-FORMAT:
-• Main point with specific data and full context
-  • Supporting detail with metrics or evidence
-• Another point with concrete facts and numbers
+FORMAT (COPY THIS EXACTLY):
+• AI reduces errors by 42%
+• 85% patient satisfaction
+• $187B market by 2030
+[IMAGE: {slide_title.lower()}]
+
+FORBIDDEN:
+- NO paragraphs or long explanations
+- NO sub-bullets or nested structures
+- NO section headers
+- NO bullets longer than 10 words
+- NO more than 4 bullets total
 
 CITE ALL FACTS with [1], [2], [3] etc."""
 
                 logger.info(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
+                
+                # Mode-specific generation parameters
+                if detail_mode == 'detailed':
+                    max_tokens_for_slide = 4000  # Comprehensive content
+                    slide_search_params = {
+                        "return_citations": True,
+                        "search_recency_filter": "month",
+                        "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                        "num_search_results": 10
+                    }
+                else:
+                    max_tokens_for_slide = 800  # Concise presentation mode
+                    slide_search_params = {
+                        "return_citations": True,
+                        "search_recency_filter": "week",
+                        "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                        "num_search_results": 5
+                    }
+                    logger.info(f"[PRESENTATION] Slide {idx+1}: Using minimal tokens (800) and search (5 results, 1 week)")
                 
                 # Use asyncio to run the synchronous API call in a thread executor
                 loop = asyncio.get_event_loop()
@@ -2095,13 +2145,38 @@ CITE ALL FACTS with [1], [2], [3] etc."""
                         model=model_name,
                         messages=[{"role": "user", "content": slide_prompt}],
                         temperature=0.3,
-                        max_tokens=4000,  # ✅ INCREASED from 500 to 4000 for comprehensive content
-                        extra_body={"return_citations": True, "search_recency_filter": "month", "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"], "num_search_results": 10}
+                        max_tokens=max_tokens_for_slide,
+                        extra_body=slide_search_params
                     )
                 )
                 logger.info(f"[PARALLEL] Perplexity API call completed for slide {idx+1}")
                 
                 slide_content = slide_response.choices[0].message.content
+                
+                # PRESENTATION MODE: Enforce limits post-generation (streaming path)
+                if detail_mode != 'detailed':
+                    try:
+                        # Trim bullets to MAX 4 (apply to ALL slides except special types)
+                        if slide_type not in ['title', 'stat', 'quote', 'divider', 'transition']:
+                            bullets = [line for line in slide_content.split('\n') if line.strip().startswith('•')]
+                            if len(bullets) > 4:
+                                logger.warning(f"[PRESENTATION STREAM] Slide {idx+1} '{slide_title}' has {len(bullets)} bullets, trimming to 4")
+                                other_lines = [line for line in slide_content.split('\n') if not line.strip().startswith('•')]
+                                slide_content = '\n'.join(bullets[:4] + other_lines)
+                            
+                            # Add [IMAGE: ] tag if missing
+                            if '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
+                                image_desc = slide_title.lower().replace(':', '').replace('-', '').strip()
+                                slide_content += f"\n[IMAGE: {image_desc}]"
+                                logger.info(f"[PRESENTATION STREAM] Added image tag to slide {idx+1} '{slide_title}'")
+                        
+                        # For title slides, also add image
+                        elif slide_type == 'title' and '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
+                            slide_content += f"\n[IMAGE: {presentation_title.lower()}]"
+                            logger.info(f"[PRESENTATION STREAM] Added hero image tag to title slide")
+                            
+                    except Exception as e:
+                        logger.warning(f"[PRESENTATION STREAM] Failed to enforce limits for slide {idx+1}: {e}")
                 
                 # Extract citations from Perplexity response
                 citations = []
@@ -2419,12 +2494,28 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
     async def _generate_with_perplexity(self, options: OutlineOptions) -> Optional[OutlineResult]:
         """Single-pass outline generation using Perplexity Sonar that also embeds citations.
         Returns OutlineResult on success, or None to fall back.
+        
+        NOTE: For detailed mode, uses Perplexity Pro for deep research.
+        For presentation mode (standard/quick), uses lightweight Claude for fast, visual-focused outlines.
         """
         try:
-            # Use explicit Perplexity model if provided, else config default
-            model = getattr(options, 'planning_model', None) or getattr(options, 'model', None) or PERPLEXITY_OUTLINE_MODEL
-            if not isinstance(model, str) or not model.startswith('perplexity-'):
-                model = PERPLEXITY_OUTLINE_MODEL
+            # Choose model based on detail level
+            detail_level = options.detail_level or 'standard'
+            
+            if detail_level == 'detailed':
+                # Detailed mode: Use Perplexity Pro for comprehensive research
+                model = getattr(options, 'planning_model', None) or getattr(options, 'model', None) or PERPLEXITY_OUTLINE_MODEL
+                if not isinstance(model, str) or not model.startswith('perplexity-'):
+                    model = PERPLEXITY_OUTLINE_MODEL
+                logger.info(f"[OUTLINE] Using {model} for DETAILED mode (heavy research)")
+            else:
+                # Presentation mode (standard/quick): Use perplexity-sonar for fast, minimal research
+                model = PRESENTATION_OUTLINE_MODEL
+                logger.info(f"[OUTLINE] Using {model} for PRESENTATION mode (visual-focused, MINIMAL content)")
+                # Add search limits for presentation mode
+                if model.startswith('perplexity'):
+                    logger.info("[OUTLINE] Presentation mode will use minimal search (limited research depth)")
+            
             client, model_name = get_client(model)
             max_tokens = min(20000, get_max_tokens_for_model(model, 20000))
             # Slide count guardrails (default to fewer slides in auto mode)
@@ -2583,17 +2674,31 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "- Keep callouts minimal: 1–2 short lines; include citation/source when possible.\n"
             )
 
-            system = (
-                "You are a research-driven presentation outliner with comprehensive web knowledge. "
-                "MISSION: Generate fact-dense slides packed with specific researched data, statistics, and evidence. "
-                "Every bullet point must contain concrete facts from your research - numbers, percentages, company data, study results. "
-                "Avoid generic statements. Use your web research to provide current, specific, measurable information. "
-                "Return STRICT JSON only. Titles must be concise and concrete. "
-                "Include citations array per slide with url/title/source when available. "
-                "Conform to the JSON schema exactly. "
-                "SLIDE MODE: You are producing a slide deck. Write slide headlines and bullet microcopy; no paragraphs, no meta commentary, no prefaces. "
-                "CITATION POLICY: Do NOT use YouTube (youtube.com, youtu.be) as a source; prefer reputable articles, reports, company sites, documentation."
-            )
+            # Mode-specific system prompt
+            if options.detail_level == 'detailed':
+                system = (
+                    "You are a research-driven presentation outliner with comprehensive web knowledge. "
+                    "MISSION: Generate fact-dense slides packed with specific researched data, statistics, and evidence. "
+                    "Every bullet point must contain concrete facts from your research - numbers, percentages, company data, study results. "
+                    "Avoid generic statements. Use your web research to provide current, specific, measurable information. "
+                    "Return STRICT JSON only. Titles must be concise and concrete. "
+                    "Include citations array per slide with url/title/source when available. "
+                    "Conform to the JSON schema exactly. "
+                    "SLIDE MODE: You are producing a slide deck. Write slide headlines and bullet microcopy; no paragraphs, no meta commentary, no prefaces. "
+                    "CITATION POLICY: Do NOT use YouTube (youtube.com, youtu.be) as a source; prefer reputable articles, reports, company sites, documentation."
+                )
+            else:
+                system = (
+                    "You are a PRESENTATION MODE outliner. Create CONCISE, VISUAL-FIRST slide outlines. "
+                    "⚠️ CRITICAL RULES (NO EXCEPTIONS): "
+                    "1. MAX 3-4 bullets per content slide "
+                    "2. MAX 8-12 words per bullet "
+                    "3. Include [IMAGE: description] on 70% of content slides "
+                    "4. NO paragraphs, NO verbose explanations "
+                    "5. Return STRICT JSON only "
+                    "FOCUS: High-impact facts with numbers. Each bullet = ONE key point + ONE stat. "
+                    "CITATION POLICY: Do NOT use YouTube as a source."
+                )
             # Dynamic bullet limits for 'content' slides - DETAILED MODE gets more bullets
             if options.detail_level == 'detailed':
                 content_bullet_limits = "5–8 bullets (15-25 words each, data-rich with specific numbers, percentages, dates); include sub-bullets for breakdowns and supporting details."
@@ -2660,8 +2765,35 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     "  • COMPARISONS: Year-over-year, before/after, benchmarks, competitor data\n\n"
                 )
             else:
+                # PRESENTATION MODE (standard/quick): Visual-first, design-focused
                 user += (
-                    "- SIMPLE/STANDARD: Concise bullets (6-12 words). Essential points only. 60-100 words per slide.\n\n"
+                    "🎨 PRESENTATION MODE - ULTRA-CONCISE + IMAGES (ENFORCE STRICTLY):\n\n"
+                    "⚠️ ABSOLUTE RULES - COUNT YOUR BULLETS!\n"
+                    "  • MAX 3 bullets per content slide (count them: 1, 2, 3 STOP!)\n"
+                    "  • MAX 4 bullets ONLY if absolutely necessary\n"
+                    "  • MAX 10 words per bullet (count them!)\n"
+                    "  • Title slide: MAX 15 words\n\n"
+                    "🖼️ IMAGE TAGS - MANDATORY ON 70% OF SLIDES!\n"
+                    "  • Add [IMAGE: specific visual description] to content field\n"
+                    "  • Title slide: [IMAGE: hero visual for topic]\n"
+                    "  • Content slides: [IMAGE: contextual scene]\n"
+                    "  • Examples:\n"
+                    "    [IMAGE: healthcare AI robot scanning patient data]\n"
+                    "    [IMAGE: futuristic medical dashboard with charts]\n"
+                    "    [IMAGE: doctor using AI diagnostic tools]\n\n"
+                    "✅ PERFECT EXAMPLE (COPY THIS STYLE):\n"
+                    "Slide 2 - AI Benefits:\n"
+                    "{\n"
+                    "  \"title\": \"AI Benefits in Healthcare\",\n"
+                    "  \"content\": \"• AI reduces diagnostic errors by 42%\\n• 85% patient satisfaction rate\\n• $187B market by 2030\\n[IMAGE: doctor using AI diagnostic interface]\"\n"
+                    "}\n\n"
+                    "❌ BAD EXAMPLES (DON'T DO THIS!):\n"
+                    "• AI is revolutionizing healthcare by enhancing patient care (TOO LONG!)\n"
+                    "• Multiple long bullets with detailed explanations (TOO MANY WORDS!)\n"
+                    "• No [IMAGE: ] tags (MISSING IMAGES!)\n\n"
+                    "📊 CHARTS:\n"
+                    "  • MAX 1 chart for entire deck (optional)\n"
+                    "  • Only for most critical data\n\n"
                 )
             
             user += (
@@ -2695,13 +2827,15 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "  slides: Array<{\n"
                 "    title: string,\n"
                 "    type?: 'title'|'agenda'|'content'|'team'|'transition'|'divider'|'quote'|'stat'|'conclusion',\n"
-                "    content: string,   // slide-ready bullets, each on a new line with a bullet marker\n"
+                "    content: string,   // PRESENTATION MODE: 3-4 bullets + [IMAGE: description] tag\n"
+                "                       // Example: \"• AI reduces errors by 42%\\n• 85% satisfaction\\n• $187B by 2030\\n[IMAGE: doctor using AI interface]\"\n"
                 "    // OPTIONAL: if a short QUOTE or STAT is especially impactful, declare it here\n"
                 "    callouts?: { quotes?: string[], stats?: string[] },\n"
                 "    citations?: Array<{ title?: string, source?: string, url: string }>,\n"
                 "    chart?: { chartType: 'column'|'bar'|'line'|'pie', title: string, data: Array<{ name: string, value: number }> }\n"
                 "  }>\n"
                 "}\n"
+                "⚠️ PRESENTATION MODE REMINDER: Include [IMAGE: description] in content field for 70% of slides!\n"
                 "IMPACTFUL FACT CALLOUTS (use strategically):\n"
                 "- Identify the most shocking, surprising, or compelling facts from your research\n"
                 "- Extract standout statistics that would grab audience attention\n"
@@ -2712,7 +2846,31 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "- Distribution: Sprinkle across the deck, never back-to-back; prefer one early hook and one mid‑deck driver\n"
                 "- Each callout must be backed by your web research with specific sources\n\n"
             )
-            # Call raw text generation
+            # Call raw text generation with mode-specific parameters
+            invoke_params = {
+                "response_model": None,
+                "max_tokens": max_tokens,
+                "temperature": 0.2
+            }
+            
+            # For presentation mode with perplexity, limit search depth
+            if options.detail_level != 'detailed' and model_name.startswith('perplexity'):
+                invoke_params["extra_body"] = {
+                    "return_citations": True,
+                    "search_recency_filter": "week",  # Shorter recency for fresher but less content
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 5  # Fewer results for presentation mode
+                }
+                logger.info("[OUTLINE] Presentation mode: Using minimal search (5 results, 1 week recency)")
+            elif model_name.startswith('perplexity'):
+                # Detailed mode: comprehensive search
+                invoke_params["extra_body"] = {
+                    "return_citations": True,
+                    "search_recency_filter": "month",
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 10
+                }
+            
             text = invoke(
                 client,
                 model_name,
@@ -2720,9 +2878,7 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     {"role": "system", "content": system},
                     {"role": "user", "content": user}
                 ],
-                response_model=None,
-                max_tokens=max_tokens,
-                temperature=0.2
+                **invoke_params
             )
             # Parse JSON
             try:
@@ -2760,6 +2916,28 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 except Exception:
                     # Best effort; if anything fails, keep original
                     pass
+                
+                # PRESENTATION MODE: Enforce bullet limits and add image tags
+                slide_type = (s or {}).get('type') or 'content'
+                if options.detail_level != 'detailed':
+                    try:
+                        # Enforce bullet limits
+                        bullets = [line for line in s_content.split('\n') if line.strip().startswith('•')]
+                        if len(bullets) > 4 and slide_type not in ['title', 'stat', 'quote', 'divider', 'transition']:
+                            # Keep only first 4 bullets
+                            logger.warning(f"[PRESENTATION] Slide '{s_title}' has {len(bullets)} bullets, trimming to 4")
+                            other_lines = [line for line in s_content.split('\n') if not line.strip().startswith('•')]
+                            s_content = '\n'.join(bullets[:4] + other_lines)
+                        
+                        # Add [IMAGE: ] tag if missing for content slides
+                        if slide_type in ['content'] and '[IMAGE:' not in s_content and '[image:' not in s_content.lower():
+                            # Generate image description based on slide title
+                            image_desc = s_title.lower().replace(':', '').replace('-', '').strip()
+                            s_content += f"\n[IMAGE: {image_desc}]"
+                            logger.info(f"[PRESENTATION] Added image tag to slide '{s_title}'")
+                    except Exception as e:
+                        logger.warning(f"[PRESENTATION] Failed to enforce limits: {e}")
+                        pass
                 citations = (s or {}).get('citations') or []
                 # Optional callouts supplied by Perplexity (quotes/stats)
                 supplied_callouts = (s or {}).get('callouts') or {}

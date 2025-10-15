@@ -3,17 +3,18 @@ import { HighchartsChartFrame } from './HighchartsChartFrame';
 import { SSRHighcharts } from '../utils/highchartsSSR';
 import { BaseChartProps, ChartType, ChartDataPoint, ChartSeries } from '@/types/ChartTypes';
 import { transformChartData, getDefaultData } from '@/types/DataTransformers';
-import { 
-  convertBarPieData, 
-  convertSeriesData, 
-  convertHeatmapData, 
-  convertBumpData 
+import {
+  convertBarPieData,
+  convertSeriesData,
+  convertHeatmapData,
+  convertBumpData
 } from '../utils/highchartsUtils';
 import { RendererProps } from '@/renderers/index';
 import { getChartTypeDefaults } from '@/registry/utils';
 import Highcharts from 'highcharts';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { calculateDynamicTickSettings } from '@/charts/utils/ChartUtils';
+import { ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors, isLightColor } from '@/utils/colorUtils';
 
 /**
  * Get chart-type specific Highcharts options
@@ -27,10 +28,20 @@ function getChartSpecificOptions(
       rules: []
     }
   };
-  
-  // Get theme color for data labels
-  const theme = props.theme || 'light';
-  const dataLabelColor = theme === 'dark' ? '#e0e0e0' : '#333333';
+
+  // Get theme color for data labels based on background color
+  const backgroundColor = props.backgroundColor;
+  let dataLabelColor = '#333333'; // Default for light backgrounds
+
+  if (backgroundColor && backgroundColor !== 'transparent' && backgroundColor !== 'none') {
+    // Determine if background is dark or light
+    const isDark = !isLightColor(backgroundColor);
+    dataLabelColor = isDark ? '#e0e0e0' : '#333333';
+  } else {
+    // Fallback to theme prop if no background specified
+    const theme = props.theme || 'light';
+    dataLabelColor = theme === 'dark' ? '#e0e0e0' : '#333333';
+  }
 
   switch (chartType) {
     case 'bar':
@@ -1025,8 +1036,16 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
   // Get default props for the chart type
   const defaultProps = useMemo(() => {
     const typeDefaults = getChartTypeDefaults(chartType);
+    const backgroundColor = component.props.backgroundColor;
+
+    // Get theme-appropriate colors based on background
+    let defaultColors = typeDefaults.colors;
+    if (!defaultColors && backgroundColor) {
+      defaultColors = getThemeAppropriateChartColors(backgroundColor, 10);
+    }
+
     return {
-      colors: undefined,
+      colors: defaultColors,
       enableLabel: true,
       enableAxisTicks: true,
       enableGrid: true,
@@ -1036,7 +1055,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
       animate: animate !== undefined ? animate : true, // Use passed animate prop if available
       ...typeDefaults
     };
-  }, [chartType, component.props.theme]);
+  }, [chartType, component.props.theme, component.props.backgroundColor]);
 
   // Create a modified component with the animate prop override
   const modifiedComponent = useMemo(() => ({
@@ -1058,7 +1077,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
       {({ props, highchartsOptions, height, width, isReady }) => {
         const {
           data,
-          colors,
+          colors: rawColors,
           enableGrid,
           showLegend,
           tickSpacing,
@@ -1066,6 +1085,26 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           axisBottom,
           axisLeft,
         } = props;
+
+        // Ensure chart colors contrast with background
+        const backgroundColor = props.backgroundColor || highchartsOptions.chart?.backgroundColor as string;
+        const colors = useMemo(() => {
+          if (!rawColors || rawColors.length === 0) {
+            return getThemeAppropriateChartColors(backgroundColor, 10);
+          }
+
+          // Filter out colors that match the background
+          const filtered = ensureChartColorsContrastWithBackground(rawColors, backgroundColor);
+
+          // If filtering removed too many colors, supplement with theme-appropriate ones
+          if (filtered.length < rawColors.length) {
+            const needed = rawColors.length - filtered.length;
+            const supplements = getThemeAppropriateChartColors(backgroundColor, needed);
+            return [...filtered, ...supplements];
+          }
+
+          return filtered;
+        }, [rawColors, backgroundColor]);
         
         // Animate once on first ready render in view mode, or if parent requests animate
         const hasAnimatedInitialRef = React.useRef(false);
@@ -1187,11 +1226,13 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
         }, [transformedData, width, height, tickSpacing, tickSpacingY, axisBottom]);
 
         const labelFontSizePx = React.useMemo(() => {
-          // Scale label font size with container; clamp between 9 and 13px
-          const base = 12;
-          const s = Math.min(width / DEFAULT_SLIDE_WIDTH, height / DEFAULT_SLIDE_HEIGHT);
-          return Math.max(9, Math.min(13, Math.round(base * (s || 1))));
-        }, [width, height]);
+          // Small font size for axis labels that scales in presentation mode
+          const base = 9;
+          // Scale with container for presentation mode
+          const scaled = Math.round(base * containerScale);
+          // Allow scaling up in presentation mode, but maintain minimum
+          return Math.max(8, scaled);
+        }, [containerScale]);
 
         // Merge all options
         const chartOptions: Highcharts.Options = useMemo(() => {
@@ -1237,12 +1278,16 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
               labels: {
                 ...(highchartsOptions.xAxis as any)?.labels,
                 ...(chartSpecificOptions.xAxis as any)?.labels,
-                rotation: adaptiveTicks.tickRotation,
+                rotation: 0, // Flat labels (no slant)
+                y: Math.round(30 * containerScale), // Position down from axis base, scales with container
                 style: {
                   ...(highchartsOptions.xAxis as any)?.labels?.style,
                   ...(chartSpecificOptions.xAxis as any)?.labels?.style,
-                  fontSize: `${labelFontSizePx}px`
-                }
+                  fontSize: `${labelFontSizePx}px`,
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  width: `${Math.round(80 * containerScale)}px` // Max width scales with container
+                } as any
               },
               // Ensure title style is preserved from theme
               title: {
@@ -1265,12 +1310,16 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
               labels: {
                 ...(highchartsOptions.yAxis as any)?.labels,
                 ...(chartSpecificOptions.yAxis as any)?.labels,
-                rotation: (axisLeft as any)?.tickRotation ?? 0,
+                rotation: 0, // Flat labels
+                x: Math.round(-5 * containerScale), // Position closer to axis, scales with container
                 style: {
                   ...(highchartsOptions.yAxis as any)?.labels?.style,
                   ...(chartSpecificOptions.yAxis as any)?.labels?.style,
-                  fontSize: `${labelFontSizePx}px`
-                }
+                  fontSize: `${labelFontSizePx}px`,
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  width: `${Math.round(60 * containerScale)}px` // Max width scales with container
+                } as any
               },
               // Ensure title style is preserved from theme
               title: {
@@ -1400,12 +1449,25 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           containerScale,
           width,
           height,
-          props.enableArcLinkLabels
+          props.enableArcLinkLabels,
+          labelFontSizePx,
+          effectiveAnimate
         ]);
+
+        // Debug logging
+        if (import.meta.env.DEV) {
+          console.debug('[UnifiedChart] Render:', {
+            width,
+            height,
+            containerScale: Math.round(containerScale * 100) / 100,
+            labelFontSizePx,
+            key: `${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}-${Math.round(containerScale * 100)}`
+          });
+        }
 
         return (
           <SSRHighcharts
-            key={`${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}`}
+            key={`${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}-${Math.round(containerScale * 100)}`}
             options={chartOptions}
             width={width}
             height={height}

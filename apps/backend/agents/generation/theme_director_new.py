@@ -439,80 +439,119 @@ class ThemeDirector:
         font_result: Dict[str, Any],
         analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Compose final theme from colors and fonts."""
-        colors = color_result.get('colors', [])
-        backgrounds = color_result.get('backgrounds', [])
-        accents = color_result.get('accents', [])
-        text_colors = color_result.get('text_colors', {})
-        gradients = color_result.get('gradients', [])
-        
-        # Ensure we have valid backgrounds and accents
-        if not backgrounds:
-            backgrounds = self._infer_backgrounds(colors)
-        if not accents:
-            accents = self._infer_accents(colors)
-        
-        # Select primary/secondary from lists
-        primary_bg = backgrounds[0] if backgrounds else '#0A0E27'
-        secondary_bg = backgrounds[1] if len(backgrounds) > 1 else self._darken_color(primary_bg, 0.15)
-        accent_1 = accents[0] if accents else '#2563EB'
-        accent_2 = accents[1] if len(accents) > 1 else self._shift_hue(accent_1, 60)
-        
-        # Guard against background == accent
-        if primary_bg.lower() == accent_1.lower():
-            primary_bg = self._lighten_color(primary_bg, 0.1)
-        if secondary_bg.lower() == accent_1.lower():
-            secondary_bg = self._darken_color(secondary_bg, 0.1)
-        
-        # Generate gradients if not provided
-        if not gradients:
-            gradients = self._create_gradients(primary_bg, secondary_bg, accent_1, accent_2)
-        
-        # Compute text colors if not provided (CRITICAL - we always need text colors!)
-        if not text_colors or not text_colors.get('primary'):
-            text_colors = self._compute_text_colors(primary_bg, accent_1, accent_2)
+        """Compose final theme from colors and fonts.
 
-        # ENSURE text color is always defined and distinct from background
-        if not text_colors.get('primary'):
-            text_colors['primary'] = '#FFFFFF' if self._estimate_brightness(primary_bg) < 0.5 else '#1A1A1A'
-        
-        theme = {
-            'color_palette': {
-                # PRIMARY COLORS (at least 3 required: background, text, accent)
-                'primary_background': primary_bg,      # Main background color
-                'secondary_background': secondary_bg,  # Alternate background
-                'accent_1': accent_1,                  # Primary accent/highlight
-                'accent_2': accent_2,                  # Secondary accent
-                # FULL PALETTE
-                'colors': colors,                      # All colors from source
-                'backgrounds': backgrounds,            # All background options
-                'accents': accents,                    # All accent options
-                'text_colors': text_colors,            # Text colors for readability (CRITICAL!)
-                'gradients': gradients,                # Gradient definitions
-                # METADATA
-                'source': color_result.get('source', 'generated'),
-                'palette_name': color_result.get('palette_name', 'Custom Palette'),
-                'metadata': color_result.get('metadata', {})
-            },
-            'typography': {
-                'hero_title': {
-                    'family': font_result.get('hero', 'Montserrat'),
-                    'weight': '700',
-                    'size': '48px'
+        Uses EXACT same 3-color logic as frontend dropdown:
+        - colors[0] = background
+        - colors[1] = text
+        - colors[2] = accent
+        NO extra derived colors!
+        """
+        colors = color_result.get('colors', [])
+
+        # For Huemint colors, use them DIRECTLY (already formatted correctly)
+        if color_result.get('source') == 'huemint_ai':
+            logger.info(f"🎨 Using Huemint colors directly (3 colors): {colors}")
+
+            # Huemint colors are already: [background, text, accent]
+            primary_bg = colors[0] if len(colors) > 0 else '#0A0E27'
+            text_primary = colors[1] if len(colors) > 1 else '#FFFFFF'
+            accent_1 = colors[2] if len(colors) > 2 else '#2563EB'
+
+            theme = {
+                'color_palette': {
+                    # ONLY 3 COLORS like dropdown (no secondary/accent2!)
+                    'colors': [primary_bg, text_primary, accent_1],  # Exact 3 colors
+                    'backgrounds': [primary_bg],
+                    'accents': [accent_1],
+                    'text_colors': {'primary': text_primary},
+                    'gradients': [],
+                    'source': 'huemint_ai',
+                    'palette_name': 'AI Generated Palette',
+                    'metadata': color_result.get('metadata', {})
                 },
-                'body_text': {
-                    'family': font_result.get('body', 'Roboto'),
-                    'weight': '400',
-                    'size': '16px'
+                'typography': {
+                    'hero_title': {
+                        'family': font_result.get('hero', 'Montserrat'),
+                        'weight': '700',
+                        'size': '48px'
+                    },
+                    'body_text': {
+                        'family': font_result.get('body', 'Roboto'),
+                        'weight': '400',
+                        'size': '16px'
+                    },
+                    'font_source': font_result.get('source', 'contextual')
                 },
-                'font_source': font_result.get('source', 'contextual')
-            },
-            'visual_style': {
-                'background_style': 'gradient' if primary_bg not in ['#fff', '#ffffff'] else 'solid',
-                'style_keywords': analysis.get('style_keywords', [])
+                'visual_style': {
+                    'background_style': 'gradient' if primary_bg not in ['#fff', '#ffffff'] else 'solid',
+                    'style_keywords': analysis.get('style_keywords', [])
+                }
             }
-        }
-        
+        else:
+            # For brand/database colors, also use 3 colors (no extras!)
+            logger.info(f"🎨 Using {color_result.get('source')} colors (keeping to 3): {colors}")
+
+            # Get backgrounds and accents from color_result (already categorized)
+            backgrounds = color_result.get('backgrounds', [])
+            accents = color_result.get('accents', [])
+
+            # Ensure we have at least one background
+            if not backgrounds:
+                backgrounds = [colors[0]] if colors else ['#0A0E27']
+
+            primary_bg = backgrounds[0]
+
+            # Get text color (compute from background if not provided)
+            text_colors = color_result.get('text_colors', {})
+            if text_colors and text_colors.get('primary'):
+                text_primary = text_colors['primary']
+            else:
+                # Compute text color based on background brightness
+                text_primary = '#FFFFFF' if self._estimate_brightness(primary_bg) < 0.5 else '#1A1A1A'
+
+            # Get accent color
+            if accents:
+                accent_1 = accents[0]
+            elif len(colors) > 1:
+                accent_1 = colors[1]
+            else:
+                accent_1 = '#2563EB'  # Fallback
+
+            # ONLY 3 COLORS - same as Huemint
+            final_colors = [primary_bg, text_primary, accent_1]
+
+            theme = {
+                'color_palette': {
+                    # ONLY 3 COLORS like dropdown (no secondary/accent2!)
+                    'colors': final_colors,
+                    'backgrounds': [primary_bg],
+                    'accents': [accent_1],
+                    'text_colors': {'primary': text_primary},
+                    'gradients': [],
+                    'source': color_result.get('source', 'custom'),
+                    'palette_name': color_result.get('palette_name', 'Selected Palette'),
+                    'metadata': color_result.get('metadata', {})
+                },
+                'typography': {
+                    'hero_title': {
+                        'family': font_result.get('hero', 'Montserrat'),
+                        'weight': '700',
+                        'size': '48px'
+                    },
+                    'body_text': {
+                        'family': font_result.get('body', 'Roboto'),
+                        'weight': '400',
+                        'size': '16px'
+                    },
+                    'font_source': font_result.get('source', 'contextual')
+                },
+                'visual_style': {
+                    'background_style': 'gradient' if primary_bg not in ['#fff', '#ffffff'] else 'solid',
+                    'style_keywords': analysis.get('style_keywords', [])
+                }
+            }
+
         # Add brand/entity metadata
         if analysis['is_brand']:
             theme['metadata'] = {
@@ -523,7 +562,7 @@ class ThemeDirector:
             theme['metadata'] = {
                 'entity_name': analysis['entity_name']
             }
-        
+
         return theme
     
     async def _upload_brand_assets(

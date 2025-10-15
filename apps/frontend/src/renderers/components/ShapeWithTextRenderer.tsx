@@ -33,6 +33,7 @@ import { FontSize } from '@/extensions/FontSize';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
+import { getContrastTextColor } from '@/utils/colorUtils';
 
 interface ShapeWithTextRendererProps extends RendererProps {
   component: ComponentInstance;
@@ -57,6 +58,52 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   onUpdate,
 }) => {
   const props = component.props;
+
+  // Calculate automatic text color based on shape background for proper contrast
+  const getAutoTextColor = (): string => {
+    // Determine the background color of the shape
+    let bgColor: string | undefined;
+
+    // Check for gradient first
+    const hasGradient = props.gradient && typeof props.gradient === 'object' && props.gradient.type && props.gradient.stops;
+    if (hasGradient && props.gradient.stops && props.gradient.stops.length > 0) {
+      // Use the first gradient stop color as the base for contrast calculation
+      bgColor = props.gradient.stops[0].color;
+    } else {
+      // Use fill color
+      bgColor = (props as any).fill ?? (props as any).fillColor ?? (props as any).backgroundColor;
+    }
+
+    // If no background color or transparent, use black text as default
+    if (!bgColor || bgColor === 'none' || bgColor === 'transparent' || bgColor.toLowerCase() === '#00000000') {
+      return '#000000';
+    }
+
+    // Convert to hex if needed and get contrasting color
+    try {
+      // Handle rgba/rgb colors - extract hex equivalent
+      if (bgColor.startsWith('rgba') || bgColor.startsWith('rgb')) {
+        const match = bgColor.match(/\d+/g);
+        if (match && match.length >= 3) {
+          const r = parseInt(match[0]);
+          const g = parseInt(match[1]);
+          const b = parseInt(match[2]);
+          bgColor = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1, 7);
+        }
+      }
+
+      // Handle 8-digit hex (remove alpha)
+      if (bgColor.length === 9 && bgColor.startsWith('#')) {
+        bgColor = bgColor.substring(0, 7);
+      }
+
+      return getContrastTextColor(bgColor);
+    } catch (e) {
+      console.warn('Failed to calculate contrast color for background:', bgColor, e);
+      return '#000000';
+    }
+  };
+
   const {
     borderRadius = 0,
     shadow = false,
@@ -73,7 +120,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     fontWeight = 'normal',
     lineHeight = 1.5,
     letterSpacing = 0,
-    textColor = '#000000ff',
+    textColor = props.textColor || getAutoTextColor(), // Use explicit textColor if set, otherwise auto-calculate
     alignment = 'center',
     verticalAlignment = 'middle',
     textPadding = 0
@@ -777,7 +824,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     fill: fillValue,
     stroke: strokeWidth > 0 ? strokeColor : 'none',
     strokeWidth: strokeWidth > 0 ? strokeWidth : 0,
-    fillOpacity: 1,
+    // Don't set fillOpacity - let the color's alpha channel work naturally (e.g. #FF550006 = 2.4% opacity)
     strokeLinejoin: 'round' as const,
     strokeLinecap: 'round' as const,
     vectorEffect: 'non-scaling-stroke' as const,

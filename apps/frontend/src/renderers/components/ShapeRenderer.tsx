@@ -258,7 +258,7 @@ export const renderShape = (
     fill: fillValue,
     stroke: strokeWidth > 0 ? strokeColor : 'none',
     strokeWidth: strokeWidth > 0 ? strokeWidth : 0,
-    fillOpacity: 1,
+    // Don't set fillOpacity - let the color's alpha channel work naturally (e.g. #FF550006 = 2.4% opacity)
     strokeLinejoin: 'round' as const,
     strokeLinecap: 'round' as const,
     vectorEffect: 'non-scaling-stroke' as const,

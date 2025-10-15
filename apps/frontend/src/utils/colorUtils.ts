@@ -239,6 +239,163 @@ export const getContrastTextColor = (bgColor: string): string => {
 export const applyAlpha = (color: string, alpha: number): string => {
   const rgb = hexToRgb(color);
   if (!rgb) return `rgba(0, 0, 0, ${alpha})`;
-  
+
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+};
+
+/**
+ * Calculates the color distance between two colors
+ * @param color1 First hex color
+ * @param color2 Second hex color
+ * @returns Distance value (0-441, higher = more different)
+ */
+export const getColorDistance = (color1: string, color2: string): number => {
+  const rgb1 = hexToRgb(color1);
+  const rgb2 = hexToRgb(color2);
+
+  if (!rgb1 || !rgb2) return 0;
+
+  // Euclidean distance in RGB space
+  const rDiff = rgb1.r - rgb2.r;
+  const gDiff = rgb1.g - rgb2.g;
+  const bDiff = rgb1.b - rgb2.b;
+
+  return Math.sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+};
+
+/**
+ * Checks if two colors are similar (too close to distinguish)
+ * @param color1 First hex color
+ * @param color2 Second hex color
+ * @param threshold Distance threshold (default 50, lower = more strict)
+ * @returns True if colors are too similar
+ */
+export const areColorsSimilar = (color1: string, color2: string, threshold: number = 50): boolean => {
+  return getColorDistance(color1, color2) < threshold;
+};
+
+/**
+ * Filters chart colors to ensure they don't match the background
+ * @param colors Array of chart colors
+ * @param backgroundColor Background color to avoid
+ * @param minDistance Minimum color distance required (default 80)
+ * @returns Filtered array of colors that contrast with background
+ */
+export const ensureChartColorsContrastWithBackground = (
+  colors: string[],
+  backgroundColor?: string,
+  minDistance: number = 80
+): string[] => {
+  if (!backgroundColor || backgroundColor === 'transparent' || backgroundColor === 'none') {
+    return colors;
+  }
+
+  // Normalize background color to hex
+  let bgHex = backgroundColor;
+  if (backgroundColor.startsWith('rgba') || backgroundColor.startsWith('rgb')) {
+    const match = backgroundColor.match(/\d+/g);
+    if (match && match.length >= 3) {
+      const r = parseInt(match[0]);
+      const g = parseInt(match[1]);
+      const b = parseInt(match[2]);
+      bgHex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1, 7);
+    }
+  }
+
+  // Remove alpha channel if present
+  if (bgHex.length === 9 && bgHex.startsWith('#')) {
+    bgHex = bgHex.substring(0, 7);
+  }
+
+  // Filter out colors that are too similar to background
+  const filteredColors = colors.filter(color => {
+    let colorHex = color;
+
+    // Convert to hex if needed
+    if (color.startsWith('rgba') || color.startsWith('rgb')) {
+      const match = color.match(/\d+/g);
+      if (match && match.length >= 3) {
+        const r = parseInt(match[0]);
+        const g = parseInt(match[1]);
+        const b = parseInt(match[2]);
+        colorHex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1, 7);
+      }
+    }
+
+    // Remove alpha channel
+    if (colorHex.length === 9 && colorHex.startsWith('#')) {
+      colorHex = colorHex.substring(0, 7);
+    }
+
+    const distance = getColorDistance(colorHex, bgHex);
+    return distance >= minDistance;
+  });
+
+  // If all colors were filtered out, return adjusted versions
+  if (filteredColors.length === 0) {
+    const isDarkBg = !isLightColor(bgHex);
+    return colors.map((_, index) => {
+      // Use theme-appropriate fallback colors
+      const fallbackColors = isDarkBg
+        ? ['#61cdbb', '#97e3d5', '#e8c1a0', '#f47560', '#f1e15b', '#e8a838']
+        : ['#0D47A1', '#B71C1C', '#006064', '#1B5E20', '#4A148C', '#880E4F'];
+      return fallbackColors[index % fallbackColors.length];
+    });
+  }
+
+  return filteredColors;
+};
+
+/**
+ * Gets theme-appropriate colors based on background brightness
+ * @param backgroundColor Background color
+ * @param count Number of colors needed
+ * @returns Array of theme-appropriate colors
+ */
+export const getThemeAppropriateChartColors = (
+  backgroundColor?: string,
+  count: number = 10
+): string[] => {
+  if (!backgroundColor || backgroundColor === 'transparent' || backgroundColor === 'none') {
+    // Default to light theme colors
+    return [
+      '#61cdbb', '#97e3d5', '#e8c1a0', '#f47560', '#f1e15b',
+      '#e8a838', '#a7cee3', '#b2df8a', '#fb9a99', '#fdbf6f'
+    ].slice(0, count);
+  }
+
+  // Normalize to hex
+  let bgHex = backgroundColor;
+  if (backgroundColor.startsWith('rgba') || backgroundColor.startsWith('rgb')) {
+    const match = backgroundColor.match(/\d+/g);
+    if (match && match.length >= 3) {
+      const r = parseInt(match[0]);
+      const g = parseInt(match[1]);
+      const b = parseInt(match[2]);
+      bgHex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1, 7);
+    }
+  }
+
+  if (bgHex.length === 9 && bgHex.startsWith('#')) {
+    bgHex = bgHex.substring(0, 7);
+  }
+
+  const isDarkBg = !isLightColor(bgHex);
+
+  // Return appropriate palette based on background
+  if (isDarkBg) {
+    // Light/vibrant colors for dark backgrounds
+    return [
+      '#61cdbb', '#97e3d5', '#e8c1a0', '#f47560', '#f1e15b',
+      '#e8a838', '#a7cee3', '#b2df8a', '#fb9a99', '#fdbf6f',
+      '#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', '#BAE1FF'
+    ].slice(0, count);
+  } else {
+    // Dark/saturated colors for light backgrounds
+    return [
+      '#0D47A1', '#B71C1C', '#006064', '#1B5E20', '#4A148C',
+      '#880E4F', '#E65100', '#01579B', '#BF360C', '#004D40',
+      '#3366CC', '#DC3912', '#FF9900', '#109618', '#990099'
+    ].slice(0, count);
+  }
 };

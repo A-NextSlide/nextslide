@@ -20,7 +20,7 @@ class AISlideGenerator:
     
     def __init__(self, model: str = COMPOSER_MODEL):
         self.model = model
-        self.max_tokens_attempts = [8000, 6000, 4000, 2000]
+        self.max_tokens_attempts = [32000, 24000, 16000, 8000]
         self.generation_timeout = 180.0  # Increased from 90.0 to handle large prompts
     
     async def generate(
@@ -121,7 +121,7 @@ class AISlideGenerator:
         # Special settings for CustomComponent generation
         if needs_custom_component:
             temperature = 0.3  # Very low temperature for consistency
-            actual_max_tokens = min(max_tokens * 2, 8000)  # Increase limit
+            actual_max_tokens = min(max_tokens * 2, 32000)  # Increase limit
             logger.info(f"  CustomComponent detected - using temperature={temperature}, max_tokens={actual_max_tokens}")
             logger.info("  Adding extra guidance to prevent truncation")
             

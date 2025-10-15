@@ -5,6 +5,7 @@ import { DEFAULT_SLIDE_WIDTH } from '../../utils/deckUtils';
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { CustomComponentOptimizationService } from '@/services/CustomComponentOptimizationService';
+import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 
 // Escape raw newlines that appear inside single/double quoted string literals.
 // This prevents accidental split string literals (e.g., 'Calvin\nCycle' becoming two lines)
@@ -496,8 +497,8 @@ export const CustomComponentRenderer: React.FC<{
           throw err;
         }
       `;
-      const compiledFunc = new Function('React', funcBody);
-      const fn = compiledFunc(React);
+      const compiledFunc = new Function('React', 'getContrastTextColor', 'isLightColor', 'getColorDistance', 'ensureChartColorsContrastWithBackground', 'getThemeAppropriateChartColors', funcBody);
+      const fn = compiledFunc(React, getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors);
       return { compiledRender: fn, compilationError: null };
     } catch (err) {
       console.error('[CustomComponent] Compilation error:', err);

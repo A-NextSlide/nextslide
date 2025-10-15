@@ -49,14 +49,14 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
     def __init__(self, base_generator: ISlideGenerator):
         """
         Wrap an existing generator with HTML-inspired prompting.
-        
+
         Args:
             base_generator: The underlying generator (usually SlideGeneratorV2)
         """
         self.base_generator = base_generator
         self._component_schemas_cache = None  # Lazy load component schemas
         logger.info("✅ HTMLInspiredSlideGenerator initialized with Claude caching")
-    
+
     async def generate_slide(
         self,
         context: SlideGenerationContext
@@ -190,27 +190,24 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else {}
 
         # CRITICAL: Extract colors from color_palette nested structure
+        # ✨ USE EXACT SAME 3-COLOR LOGIC AS FRONTEND DROPDOWN! ✨
         color_palette = theme_dict.get('color_palette', {})
 
-        # Get background colors (for backgrounds)
-        primary_bg = color_palette.get('primary_background') or color_palette.get('backgrounds', ['#0A0E27'])[0] or '#0A0E27'
-        secondary_bg = color_palette.get('secondary_background') or color_palette.get('backgrounds', [None, '#1A1F3A'])[1] or '#1A1F3A'
+        # Get the 3 main colors array (like frontend: palette[0]=bg, palette[1]=text, palette[2]=accent)
+        colors_array = color_palette.get('colors', ['#0A0E27', '#FFFFFF', '#2563EB'])
 
-        # Get accent colors (for emphasis/highlights)
-        accent_1 = color_palette.get('accent_1') or color_palette.get('accents', ['#2563EB'])[0] or '#2563EB'
-        accent_2 = color_palette.get('accent_2') or color_palette.get('accents', [None, '#EC4899'])[1] or '#EC4899'
+        # Map exactly like frontend ThemePanel dropdown does (lines 505-519)
+        primary_bg = colors_array[0] if len(colors_array) > 0 else '#0A0E27'
+        text_primary = colors_array[1] if len(colors_array) > 1 else '#FFFFFF'
+        accent_1 = colors_array[2] if len(colors_array) > 2 else '#2563EB'
 
-        # Get text colors (for readability on backgrounds)
-        text_colors = color_palette.get('text_colors', {})
-        text_primary = text_colors.get('primary', '#FFFFFF')  # Default to white for dark backgrounds
+        logger.info(f"🎨 Using 3 colors from dropdown logic: bg={primary_bg}, text={text_primary}, accent={accent_1}")
 
-        # ENSURE we have at least 3 DISTINCT colors: background, text, accent
+        # ONLY 3 colors like dropdown (no secondary/accent2 to keep it simple and avoid black/white)
         theme_colors = {
-            'background': primary_bg,      # For backgrounds (70% usage)
-            'text': text_primary,          # For text content (must contrast with background)
-            'accent': accent_1,            # For emphasis/highlights (10-20% usage)
-            'secondary': secondary_bg,     # Secondary background option
-            'accent2': accent_2            # Secondary accent option
+            'background': primary_bg,      # palette[0] - For slide backgrounds
+            'text': text_primary,          # palette[1] - For ALL text
+            'accent': accent_1,            # palette[2] - For emphasis/highlights
         }
         
         slide_type = getattr(context.slide_outline, 'slide_type', 'content')
@@ -220,17 +217,37 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         # Uses the ENHANCED system prompt with theme colors, icons, spacing, etc.
         # ═══════════════════════════════════════════════════════════
 
-        # Determine mode based on visual_density or stylePreferences
-        # visual_density: "minimal"|"moderate"|"rich"|"data-heavy"
-        visual_density = getattr(context, 'visual_density', 'moderate')
-        style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+        # Determine mode based on detail_level from deck_outline.notes
+        # detail_level: "quick"|"standard"|"detailed"
+        detail_level = None
+        try:
+            # First check if detail_level is stored in deck_outline.notes
+            notes = getattr(context.deck_outline, 'notes', None)
+            if isinstance(notes, dict):
+                detail_level = notes.get('detail_level')
+        except Exception:
+            pass
 
-        # Mode detection logic:
-        # - "data-heavy" or "rich" → DETAILED MODE (structured, data-dense)
-        # - "minimal" or "moderate" → PRESENTATION MODE (wild, creative)
-        mode = "detailed" if visual_density in ["data-heavy", "rich"] else "presentation"
+        # If not in notes, check stylePreferences
+        if not detail_level:
+            try:
+                style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+                if style_prefs:
+                    detail_level = getattr(style_prefs, 'detailLevel', None)
+            except Exception:
+                pass
 
-        logger.info(f"🎨 [MODE DETECTION] visual_density={visual_density} → mode={mode.upper()}")
+        # If still not found, use visual_density as fallback
+        if not detail_level:
+            visual_density = getattr(context, 'visual_density', 'moderate')
+            detail_level = 'detailed' if visual_density in ["data-heavy", "rich"] else 'standard'
+
+        # Mode detection logic based on detail_level:
+        # - "detailed" → DETAILED MODE (comprehensive, data-rich, 60-80% charts)
+        # - "standard"|"quick" → PRESENTATION MODE (design-focused, <30% charts, high impact only)
+        mode = "detailed" if detail_level == "detailed" else "presentation"
+
+        logger.info(f"🎨 [MODE DETECTION] detail_level={detail_level} → mode={mode.upper()}")
 
         # Use V2 prompt (mode-specific design philosophy)
         v2_prompt = get_html_inspired_system_prompt_v2()
@@ -292,16 +309,43 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
 **SLIDE TYPE:** {slide_type}{chart_info}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎨 THEME COLORS (MANDATORY - USE THESE EXACT COLORS!)
+🎨 THEME COLORS - CONCRETE JSON EXAMPLES (COPY THESE EXACTLY!)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Background:  {theme_colors['background']}  ← For slide backgrounds, shapes (70% usage)
-Text:        {theme_colors['text']}        ← For ALL text content (must be readable!)
-Accent:      {theme_colors['accent']}      ← For emphasis, highlights, key numbers (20% usage)
-Secondary:   {theme_colors['secondary']}   ← For alternating backgrounds, sections
-Accent 2:    {theme_colors['accent2']}     ← For secondary highlights, variety
+YOUR 3 THEME COLORS:
+  Background: {theme_colors['background']}
+  Text:       {theme_colors['text']}
+  Accent:     {theme_colors['accent']}
 
-🚨 USE ALL 3+ COLORS! Don't use just 2! Mix background, text, and accent throughout slide.
+COMPONENT EXAMPLES - COPY THESE PROP VALUES EXACTLY:
+
+Background component:
+{{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color", "gradient": null}}}}
+
+TiptapTextBlock (ALL text):
+{{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "fontFamily": "Inter", ...}}}}
+
+Shape (decorative elements):
+{{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "shapeType": "circle", ...}}}}
+
+ShapeWithText (boxes with text):
+{{"type": "ShapeWithText", "props": {{"fill": "{theme_colors['accent']}", "textColor": "{theme_colors['text']}", ...}}}}
+
+Icon (if absolutely needed, 0-2 MAX):
+{{"type": "Icon", "props": {{"color": "{theme_colors['accent']}", "iconName": "trending-up", ...}}}}
+
+Line/Lines:
+{{"type": "Line", "props": {{"stroke": "{theme_colors['accent']}", ...}}}}
+
+🚨 ABSOLUTELY FORBIDDEN:
+❌ Background with textColor={theme_colors['text']} - WRONG!
+❌ TiptapTextBlock with textColor={theme_colors['background']} - WRONG!
+❌ Shape with fill={theme_colors['text']} - WRONG!
+
+✅ ONLY USE:
+- {theme_colors['background']} for: Background.backgroundColor
+- {theme_colors['text']} for: TiptapTextBlock.textColor, ShapeWithText.textColor
+- {theme_colors['accent']} for: Shape.fill, Icon.color, Line.stroke
 
 **Fonts:**
 • Heading: {theme_dict.get('typography', {}).get('hero_title', {}).get('family', 'Inter')}
@@ -314,14 +358,35 @@ Accent 2:    {theme_colors['accent2']}     ← For secondary highlights, variety
 {mode_guidance}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 CRITICAL REMINDERS FOR THIS SLIDE
+📋 CRITICAL VALIDATION CHECKLIST - VERIFY BEFORE OUTPUTTING!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✅ Tables: backgroundColor=null, borderWidth=0 (unless design-focused)
-✅ Theme colors: Use {theme_colors['background']}, {theme_colors['text']}, {theme_colors['accent']}, {theme_colors['secondary']}
+🔴 COLOR VALIDATION (CHECK EVERY COMPONENT):
+✅ Background: backgroundColor="{theme_colors['background']}" ← EXACTLY THIS VALUE
+✅ TiptapTextBlock: textColor="{theme_colors['text']}" ← EXACTLY THIS VALUE
+✅ Shape: fill="{theme_colors['accent']}" ← EXACTLY THIS VALUE
+✅ Icon: color="{theme_colors['accent']}" ← EXACTLY THIS VALUE
+✅ Line: stroke="{theme_colors['accent']}" ← EXACTLY THIS VALUE
+
+❌ COMMON MISTAKES TO AVOID:
+❌ Background with backgroundColor="{theme_colors['text']}" - FAILS VALIDATION!
+❌ Background with backgroundColor="{theme_colors['accent']}" - FAILS VALIDATION!
+❌ TiptapTextBlock with textColor="{theme_colors['background']}" - FAILS VALIDATION!
+❌ TiptapTextBlock with textColor="{theme_colors['accent']}" - FAILS VALIDATION!
+❌ Shape with fill="{theme_colors['text']}" - FAILS VALIDATION!
+❌ Using ANY color other than these 3 theme colors - FAILS VALIDATION!
+
+📊 CHART COLORS (if chart present):
+Generate palette from ACCENT color {theme_colors['accent']} by varying brightness:
+- Take accent color {theme_colors['accent']}
+- Create variations: darker → original → lighter
+- Apply to each data series/item
+- Chart background should be transparent or very light
+
+✅ Other Rules:
+✅ Tables: backgroundColor=null, borderWidth=0
 ✅ Lines: Always use startPoint/endPoint coordinates
 ✅ Heights: Use fontSize × 1.15 formula
-✅ TiptapTextBlock: Split into segments for multi-color formatting
 
 🎯 ICONS - USE SPARINGLY!
 🚨 MOST SLIDES NEED 0 ICONS - Only use for critical metrics/dashboards!
@@ -329,7 +394,17 @@ Accent 2:    {theme_colors['accent2']}     ← For secondary highlights, variety
 ✅ USE icons for: Key dashboard metrics (1-2 MAX), hero numbers with semantic meaning
 📚 When absolutely needed: 5000+ icons available (Lucide default) - Use kebab-case: "dollar-sign", "trending-up"
 
-Output valid JSON component array now:"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ EXAMPLE SLIDE WITH CORRECT COLORS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[
+  {{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color"}}}},
+  {{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "x": 100, "y": 100, "content": "Title"}}}},
+  {{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "x": 100, "y": 200, "width": 100, "height": 100}}}}
+]
+↑ THIS IS CORRECT - Background={theme_colors['background']}, Text={theme_colors['text']}, Shape={theme_colors['accent']}
+
+Output valid JSON component array now (using the 3 colors above EXACTLY):"""
         
         # Combine with cache delimiter for Claude caching
         full_prompt = cached_part + CACHE_DELIM + dynamic_part
@@ -346,7 +421,7 @@ Output valid JSON component array now:"""
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: Clean gradient bg + massive TiptapTextBlock (160-240pt, NO box). Add Image (logo) if available."
+            return "TITLE: ABSOLUTELY MASSIVE TiptapTextBlock (450-650pt, fontWeight=900, width=1700-1800) + clean gradient/solid Background (NO images!). BLOW UP THE TEXT - TAKE UP THE PAGE!"
         
         elif 'stat' in slide_type:
             return "STAT: ReactBits count-up OR CustomComponent dashboard (theme colors ONLY!). Clean layout, minimal boxes. Add Image for visual impact!"

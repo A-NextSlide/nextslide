@@ -130,7 +130,7 @@ def orchestrate(state: AgentState, event_cb=None):
     response = invoke(
         client=client,
         model=model,
-        max_tokens=2048,
+        max_tokens=16384,
         response_model=ToolsCalls,
         messages=[
             {

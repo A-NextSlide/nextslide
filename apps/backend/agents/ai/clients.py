@@ -90,6 +90,7 @@ MODELS = {
     "claude-3-7-sonnet": ("anthropic", "claude-3-7-sonnet-20250219"),
     "claude-3-5-sonnet": ("anthropic", "claude-3-5-sonnet-20241022"),
     "claude-3-5-haiku": ("anthropic", "claude-3-5-haiku-20241022"),
+    "claude-haiku-4-5": ("anthropic", "claude-haiku-4-5-20251001"),
     "deepseek-r1-distill-llama-70b": ("groq", "deepseek-r1-distill-llama-70b"),
     "mistral-saba-24b": ("groq", "mistral-saba-24b"),
     "llama3-8b-8192": ("groq", "llama3-8b-8192"),
@@ -150,7 +151,10 @@ MODEL_MAX_TOKENS = {
     # Claude 3.5 models
     "claude-3-5-sonnet-20241022": 8192,   # Claude Sonnet 3.5 supports 8k output
     "claude-3-5-haiku-20241022": 8192,    # Claude Haiku 3.5 supports 8k output
-    
+
+    # Claude 4.5 Haiku
+    "claude-haiku-4-5-20251001": 64000,    # Claude Haiku 4.5 supports 64k output
+
     # Claude 3 models
     "claude-3-opus-20240229": 4096,       # Claude Opus 3 supports 4k output
     

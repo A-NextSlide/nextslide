@@ -1,5 +1,5 @@
 """
-Unified Font Service - Combines PixelBuddha and Designer fonts
+Unified Font Service - Uses Designer fonts only (PixelBuddha disabled)
 Provides intelligent font recommendations for theme generation
 """
 
@@ -20,20 +20,19 @@ except Exception:
 
 class UnifiedFontService:
     """
-    Unified service that combines PixelBuddha and Designer fonts
-    for comprehensive font recommendations.
+    Unified font service using Designer fonts only.
+    PixelBuddha fonts have been disabled per user request.
     """
     
-    # Premium curated fonts for different contexts
+    # Premium curated fonts for different contexts (Designer fonts only - NO PixelBuddha)
     PREMIUM_FONTS = {
         'hero': {
             'professional': [
                 '5014-hyperion-sleek-modern-sans',  # Designer - clean modern sans
                 'alerio-sans-serif',  # Designer - versatile sans
                 'glorida-—-sans-serif-family',  # Designer - elegant sans family
-                'elastic-square-display-font',  # PixelBuddha
-                'gendra-modern-sans-serif',  # PixelBuddha
                 'marine-elmoure-sans-serif',  # Designer
+                'hiluna-—-clean-sans-serif',  # Designer
             ],
             'creative': [
                 'av-galveria-—-display-serif-font-',  # Designer - stylish serif
@@ -81,38 +80,15 @@ class UnifiedFontService:
     ]
     
     def __init__(self):
-        self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()
+        self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()  # Returns empty dict - disabled
         self.designer_fonts = self._load_designer_fonts()
         self.all_fonts = {**self.pixelbuddha_fonts, **self.designer_fonts}
-        logger.info(f"Loaded {len(self.pixelbuddha_fonts)} PixelBuddha fonts and {len(self.designer_fonts)} Designer fonts")
+        logger.info(f"Loaded {len(self.designer_fonts)} Designer fonts (PixelBuddha fonts disabled)")
     
     def _load_pixelbuddha_fonts(self) -> Dict:
-        """Load PixelBuddha font registry"""
-        registry_path = Path(__file__).parent.parent / 'assets' / 'fonts' / 'pixelbuddha' / 'font_registry.json'
-        
-        if registry_path.exists():
-            with open(registry_path, 'r') as f:
-                data = json.load(f)
-                # The PixelBuddha registry is directly font_id -> font_data
-                fonts = {}
-                # Check if it's wrapped in 'fonts' key or not
-                if isinstance(data, dict) and 'fonts' in data:
-                    font_data_dict = data['fonts']
-                else:
-                    font_data_dict = data
-                    
-                for font_id, font_data in font_data_dict.items():
-                    if isinstance(font_data, dict):
-                        font_data['source'] = 'pixelbuddha'
-                        # Ensure it has required fields
-                        if 'name' not in font_data:
-                            font_data['name'] = font_id.replace('-', ' ').title()
-                        if 'category' not in font_data:
-                            # Try to determine category from tags or name
-                            font_data['category'] = self._categorize_pixelbuddha_font(font_data)
-                        fonts[font_id] = font_data
-                return fonts
-        
+        """Load PixelBuddha font registry - DISABLED per user request"""
+        # PixelBuddha fonts are no longer used
+        logger.info("PixelBuddha fonts disabled - using only Designer fonts")
         return {}
     
     def _categorize_pixelbuddha_font(self, font_data: dict) -> str:
