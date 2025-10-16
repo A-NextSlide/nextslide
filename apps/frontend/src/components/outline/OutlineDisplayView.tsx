@@ -351,10 +351,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 console.groupEnd();
               } catch {}
 
-              if (shouldOverride) {
-                // Now themePayload has correct colors array!
-                setOutlineDeckTheme(currentOutline.id, themePayload);
-              }
+              // Always store the theme to ensure swatches appear
+              setOutlineDeckTheme(currentOutline.id, themePayload);
             } catch {}
             const typography = (themePayload?.typography || {}) as any;
 
@@ -406,14 +404,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 'page.backgroundColor (from colorsArray[0])': pageBg,
                 'typography.color (from colorsArray[1])': textColor,
                 'accent1 (from colorsArray[2])': accent1,
-                'Full theme': builtTheme
+                'Full theme': builtTheme,
+                'shouldOverride': shouldOverride
               });
               console.groupEnd();
             } catch {}
-            // Apply to workspace only (deck theme already corrected and stored above)
-            const themeId = addCustomTheme(builtTheme);
-            setWorkspaceTheme(themeId);
-            if (isRich || isThemeGenerated) {
+            // Apply to workspace only if we should override (deck theme already stored above)
+            if (shouldOverride) {
+              const themeId = addCustomTheme(builtTheme);
+              setWorkspaceTheme(themeId);
+            }
+            if ((shouldOverride && isRich) || isThemeGenerated) {
               setThemeReady(true);
             }
           } finally {
