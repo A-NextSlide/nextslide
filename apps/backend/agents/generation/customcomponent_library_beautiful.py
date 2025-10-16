@@ -1497,6 +1497,298 @@ BEAUTIFUL_CUSTOMCOMPONENT_TEMPLATES = {
         'template': get_step_by_step_reveal,
         'use_cases': ['tutorials', 'process explanation', 'guided learning', 'sequential content'],
         'props': ['items']
+    },
+    'spinning_wheel': {
+        'description': '🎡 Spinning wheel for random selection or prizes - FUN & INTERACTIVE',
+        'template': lambda tc: get_spinning_wheel_template(tc),
+        'use_cases': ['team activities', 'random selection', 'prize draws', 'decision making', 'gamification'],
+        'props': ['items', 'title']
+    },
+    'memory_game': {
+        'description': '🧠 Memory card matching game - FUN & ENGAGING',
+        'template': lambda tc: get_memory_game_template(tc),
+        'use_cases': ['engagement', 'team building', 'fun breaks', 'gamification', 'icebreakers'],
+        'props': ['pairs', 'title']
     }
 }
+
+
+# Import fun templates
+def get_spinning_wheel_template(theme_colors: dict) -> str:
+    """
+    Spinning wheel/roulette for random selection or engagement.
+    Fun for team activities, prize draws, or decision making.
+    """
+    primary = theme_colors.get('primary', '#3B82F6')
+    accent = theme_colors.get('accent', '#EC4899')
+    
+    return f"""function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
+  var items = props.items || ['Option 1', 'Option 2', 'Option 3', 'Option 4', 'Option 5', 'Option 6'];
+  var title = props.title || 'Spin the Wheel!';
+  
+  var rotation = state.rotation || 0;
+  var spinning = state.spinning || false;
+  var result = state.result || '';
+  var availableWidth = (props.width || containerWidth || 800);
+  var availableHeight = (props.height || containerHeight || 600);
+  
+  var spinWheel = function() {{
+    if (spinning) return;
+    
+    var spins = 5 + Math.floor(Math.random() * 3);
+    var extraDegrees = Math.floor(Math.random() * 360);
+    var targetRotation = rotation + (spins * 360) + extraDegrees;
+    var selectedIndex = Math.floor(((targetRotation % 360) / 360) * items.length);
+    
+    updateState({{
+      rotation: targetRotation,
+      spinning: true,
+      result: ''
+    }});
+    
+    setTimeout(function() {{
+      updateState({{
+        spinning: false,
+        result: items[selectedIndex]
+      }});
+    }}, 3000);
+  }};
+  
+  var colors = ['{primary}', '{accent}', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+  
+  return React.createElement('div', {{
+    style: {{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '40px',
+      fontFamily: 'Inter, sans-serif',
+      background: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)'
+    }}
+  }},
+    React.createElement('div', {{
+      style: {{
+        fontSize: '42px',
+        fontWeight: '900',
+        color: '{primary}',
+        marginBottom: '32px'
+      }}
+    }}, title),
+    React.createElement('div', {{
+      style: {{
+        position: 'relative',
+        width: '400px',
+        height: '400px'
+      }}
+    }},
+      React.createElement('svg', {{
+        style: {{
+          width: '100%',
+          height: '100%',
+          transform: 'rotate(' + rotation + 'deg)',
+          transition: spinning ? 'transform 3s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none'
+        }},
+        viewBox: '0 0 200 200'
+      }},
+        items.map(function(item, i) {{
+          var angle = (360 / items.length);
+          var startAngle = (i * angle - 90) * (Math.PI / 180);
+          var endAngle = ((i + 1) * angle - 90) * (Math.PI / 180);
+          
+          var x1 = 100 + 90 * Math.cos(startAngle);
+          var y1 = 100 + 90 * Math.sin(startAngle);
+          var x2 = 100 + 90 * Math.cos(endAngle);
+          var y2 = 100 + 90 * Math.sin(endAngle);
+          
+          var largeArc = angle > 180 ? 1 : 0;
+          var pathData = 'M 100,100 L ' + x1 + ',' + y1 + ' A 90,90 0 ' + largeArc + ',1 ' + x2 + ',' + y2 + ' Z';
+          
+          return React.createElement('path', {{
+            key: i,
+            d: pathData,
+            fill: colors[i % colors.length],
+            stroke: '#FFFFFF',
+            strokeWidth: '2'
+          }});
+        }})
+      ),
+      React.createElement('div', {{
+        style: {{
+          position: 'absolute',
+          top: '0',
+          left: '50%',
+          transform: 'translateX(-50%) translateY(-20px)',
+          width: '0',
+          height: '0',
+          borderLeft: '20px solid transparent',
+          borderRight: '20px solid transparent',
+          borderTop: '30px solid {accent}'
+        }}
+      }})
+    ),
+    React.createElement('button', {{
+      onClick: spinWheel,
+      disabled: spinning,
+      style: {{
+        marginTop: '32px',
+        padding: '16px 48px',
+        fontSize: '24px',
+        fontWeight: '700',
+        color: '#FFFFFF',
+        backgroundColor: spinning ? '#9CA3AF' : '{primary}',
+        border: 'none',
+        borderRadius: '16px',
+        cursor: spinning ? 'not-allowed' : 'pointer',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        transition: 'all 0.3s'
+      }}
+    }}, spinning ? 'Spinning...' : 'SPIN'),
+    result ? React.createElement('div', {{
+      style: {{
+        marginTop: '24px',
+        padding: '20px 40px',
+        fontSize: '32px',
+        fontWeight: '800',
+        color: '{accent}',
+        backgroundColor: '#FFFFFF',
+        borderRadius: '16px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+      }}
+    }}, '🎉 ' + result + ' 🎉') : null
+  );
+}}"""
+
+
+def get_memory_game_template(theme_colors: dict) -> str:
+    """
+    Memory card matching game for engagement and fun.
+    Great for training sessions and team activities.
+    """
+    primary = theme_colors.get('primary', '#3B82F6')
+    accent = theme_colors.get('accent', '#EC4899')
+    
+    return f"""function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
+  var pairs = props.pairs || ['💼', '📊', '💰', '📈', '🎯', '🚀'];
+  var title = props.title || 'Memory Match';
+  
+  var cards = state.cards || pairs.concat(pairs).sort(function() {{ return Math.random() - 0.5; }});
+  var flipped = state.flipped || [];
+  var matched = state.matched || [];
+  var moves = state.moves || 0;
+  var availableWidth = (props.width || containerWidth || 800);
+  var availableHeight = (props.height || containerHeight || 600);
+  
+  if (isThumbnail) {{
+    return React.createElement('div', {{
+      style: {{
+        width: '100%',
+        height: '100%',
+        background: 'linear-gradient(135deg, {primary}20 0%, {accent}15 100%)',
+        borderRadius: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '64px'
+      }}
+    }}, '🧠 🎮');
+  }}
+  
+  var handleCardClick = function(index) {{
+    if (flipped.length >= 2 || flipped.indexOf(index) !== -1 || matched.indexOf(index) !== -1) return;
+    
+    var newFlipped = flipped.concat([index]);
+    updateState({{ flipped: newFlipped }});
+    
+    if (newFlipped.length === 2) {{
+      var newMoves = moves + 1;
+      if (cards[newFlipped[0]] === cards[newFlipped[1]]) {{
+        updateState({{
+          matched: matched.concat(newFlipped),
+          flipped: [],
+          moves: newMoves
+        }});
+      }} else {{
+        setTimeout(function() {{
+          updateState({{ flipped: [], moves: newMoves }});
+        }}, 1000);
+      }}
+    }}
+  }};
+  
+  var cardSize = Math.min(120, availableWidth / 7);
+  var gap = 12;
+  
+  return React.createElement('div', {{
+    style: {{
+      width: '100%',
+      height: '100%',
+      padding: '32px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      fontFamily: 'Inter, sans-serif',
+      background: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)'
+    }}
+  }},
+    React.createElement('div', {{
+      style: {{
+        fontSize: '36px',
+        fontWeight: '900',
+        color: '{primary}',
+        marginBottom: '16px'
+      }}
+    }}, title),
+    React.createElement('div', {{
+      style: {{
+        fontSize: '20px',
+        fontWeight: '600',
+        color: '{accent}',
+        marginBottom: '24px'
+      }}
+    }}, 'Moves: ' + moves),
+    React.createElement('div', {{
+      style: {{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: gap + 'px',
+        maxWidth: '600px'
+      }}
+    }},
+      cards.map(function(card, index) {{
+        var isFlipped = flipped.indexOf(index) !== -1 || matched.indexOf(index) !== -1;
+        var isMatched = matched.indexOf(index) !== -1;
+        
+        return React.createElement('div', {{
+          key: index,
+          onClick: function() {{ handleCardClick(index); }},
+          style: {{
+            width: cardSize + 'px',
+            height: cardSize + 'px',
+            backgroundColor: isMatched ? '{accent}' : isFlipped ? '#FFFFFF' : '{primary}',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '48px',
+            cursor: (isFlipped || isMatched) ? 'default' : 'pointer',
+            transition: 'all 0.3s',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            opacity: isMatched ? 0.6 : 1
+          }}
+        }}, isFlipped ? card : '?');
+      }})
+    ),
+    matched.length === cards.length ? React.createElement('div', {{
+      style: {{
+        marginTop: '24px',
+        fontSize: '28px',
+        fontWeight: '700',
+        color: '{accent}'
+      }}
+    }}, '🎉 Completed in ' + moves + ' moves! 🎉') : null
+  );
+}}"""
 

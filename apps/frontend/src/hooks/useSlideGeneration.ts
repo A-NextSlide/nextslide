@@ -163,6 +163,17 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       case 'deck_complete':
       case 'composition_complete':
         return 'completed';
+      case 'slides_generation_complete':
+        // Check if all slides were successful
+        const data = event.data || event;
+        const completed = data.completed_slides ?? data.completedSlides;
+        const total = data.total_slides ?? data.totalSlides;
+        const failed = data.failed_slides ?? data.failedSlides ?? 0;
+        // If all slides done with no failures, mark as completed
+        if (completed === total && failed === 0) {
+          return 'completed';
+        }
+        return 'generating'; // Still in finalization
       case 'error':
       case 'slide_error':
         return 'error';

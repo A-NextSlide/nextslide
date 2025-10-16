@@ -15,6 +15,7 @@ import Highcharts from 'highcharts';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { calculateDynamicTickSettings } from '@/charts/utils/ChartUtils';
 import { ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors, isLightColor } from '@/utils/colorUtils';
+import { usePresentationStore } from '@/stores/presentationStore';
 
 /**
  * Get chart-type specific Highcharts options
@@ -1007,15 +1008,18 @@ interface UnifiedHighchartsRendererProps extends RendererProps {
 /**
  * Unified Highcharts Renderer - handles all chart types
  */
-const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({ 
-  component, 
-  containerRef, 
+const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
+  component,
+  containerRef,
   onUpdate,
   animate,
-  ...otherProps 
+  ...otherProps
 }) => {
   // Get chart type from props
   const chartType = (component.props.chartType as ChartType) || 'bar';
+
+  // Get presentation mode state
+  const isPresenting = usePresentationStore((state) => state.isPresenting);
   
   // For network graphs, track position changes to force recreation
   const [recreateKey, setRecreateKey] = React.useState(0);
@@ -1223,11 +1227,12 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
         const labelFontSizePx = React.useMemo(() => {
           // Small font size for axis labels that scales in presentation mode
           const base = 9;
-          // Scale with container for presentation mode
-          const scaled = Math.round(base * containerScale);
+          // Apply presentation mode scale factor (typically screen is 2-3x larger)
+          const presentationScaleFactor = isPresenting ? 2.5 : 1;
+          const scaled = Math.round(base * containerScale * presentationScaleFactor);
           // Allow scaling up in presentation mode, but maintain minimum
           return Math.max(8, scaled);
-        }, [containerScale]);
+        }, [containerScale, isPresenting]);
 
         // Merge all options
         const chartOptions: Highcharts.Options = useMemo(() => {
@@ -1451,7 +1456,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
 
         return (
           <SSRHighcharts
-            key={`${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}-${Math.round(containerScale * 100)}`}
+            key={`${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}-${Math.round(containerScale * 100)}-${isPresenting ? 'present' : 'edit'}`}
             options={chartOptions}
             width={width}
             height={height}

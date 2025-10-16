@@ -76,3 +76,4 @@ These are aggressive enough to prevent hangs while allowing for slow AI response
 ✅ **FIXED** - All HTTP clients now have proper timeouts configured
 ✅ **DEPLOYED** - Changes in `apps/backend/agents/ai/clients.py`
 
+

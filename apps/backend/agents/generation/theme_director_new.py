@@ -118,7 +118,10 @@ class ThemeDirector:
             'entity_name': None,
             'topic': None,
             'style_keywords': [],
-            'explicit_colors': []
+            'explicit_colors': [],
+            'audience': None,  # New: detected audience
+            'maturity': None,  # New: content maturity level
+            'vibe': 'professional'  # New: overall vibe
         }
         
         # Check for brand mentions
@@ -168,10 +171,48 @@ class ThemeDirector:
             analysis['topic'] = 'technology'
         elif 'team' in full_text or 'onboarding' in full_text or 'welcome' in full_text:
             analysis['topic'] = 'team'
-        
+
         # Extract style keywords
         style_words = ['modern', 'minimal', 'bold', 'playful', 'professional', 'elegant', 'fun', 'creative']
         analysis['style_keywords'] = [w for w in style_words if w in full_text]
+
+        # NEW: Detect audience and maturity level
+        audience_keywords = {
+            'kids': ['kids', 'children', 'kindergarten', 'elementary', 'preschool', 'toddler'],
+            'teens': ['teen', 'teenager', 'middle school', 'high school', 'youth', 'adolescent'],
+            'students': ['student', 'university', 'college', 'academic', 'class', 'course'],
+            'professionals': ['executive', 'board', 'management', 'corporate', 'investor', 'stakeholder'],
+            'general': ['audience', 'public', 'community', 'general']
+        }
+
+        for audience_type, keywords in audience_keywords.items():
+            if any(keyword in full_text for keyword in keywords):
+                analysis['audience'] = audience_type
+                break
+
+        # Determine maturity level
+        if analysis['audience'] in ['kids', 'teens']:
+            analysis['maturity'] = 'young'
+        elif analysis['audience'] in ['professionals']:
+            analysis['maturity'] = 'executive'
+        elif analysis['topic'] == 'business':
+            analysis['maturity'] = 'professional'
+        else:
+            analysis['maturity'] = 'general'
+
+        # Determine overall vibe
+        if 'playful' in analysis['style_keywords'] or 'fun' in analysis['style_keywords']:
+            analysis['vibe'] = 'playful'
+        elif 'elegant' in analysis['style_keywords'] or 'luxury' in full_text:
+            analysis['vibe'] = 'elegant'
+        elif 'creative' in analysis['style_keywords'] or 'artistic' in full_text:
+            analysis['vibe'] = 'creative'
+        elif 'modern' in analysis['style_keywords'] or 'minimal' in analysis['style_keywords']:
+            analysis['vibe'] = 'modern'
+        elif analysis['topic'] == 'business' or 'professional' in full_text:
+            analysis['vibe'] = 'professional'
+        else:
+            analysis['vibe'] = 'professional'
         
         # Check for explicit colors
         if style_dict and style_dict.get('colors'):
@@ -397,16 +438,19 @@ class ThemeDirector:
                     keywords.append(analysis['topic'])
                 if analysis.get('industry'):
                     keywords.append(analysis['industry'])
-                    
+                if analysis.get('maturity'):
+                    keywords.append(analysis['maturity'])
+
                 audience = analysis.get('audience') or analysis.get('target_audience')
-                
+
                 # Get intelligent font pair with variety
                 font_pair = font_service.select_font_pair(
                     deck_title=title,
                     vibe=vibe,
                     content_keywords=keywords,
                     target_audience=audience,
-                    variety_seed=variety_seed
+                    variety_seed=variety_seed,
+                    maturity=analysis.get('maturity')  # NEW: Pass maturity level
                 )
                 
                 font_result = {

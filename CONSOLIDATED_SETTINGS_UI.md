@@ -115,3 +115,4 @@ Potential additions to the consolidated settings bar:
 - Quick templates dropdown
 - Export format selector
 
+

@@ -253,26 +253,14 @@ When you have 1-3 points only (minimal content):
 • Card height: 500-600px for impact
 • Include padding: 48-64px internal padding
 
-**INTERACTIVE COMPONENTS FOR ENGAGEMENT & EDUCATION:**
+**🎮 INTERACTIVE & FUN COMPONENTS FOR ENGAGEMENT:**
 
-For educational/training content:
+**EDUCATIONAL & TRAINING:**
 • 🎓 **QUIZZES**: Use interactive_quiz template for knowledge checks
   - Include question, 4 options, correct answer index, explanation
-  - Automatically shows correct/incorrect feedback
+  - Automatically shows correct/incorrect feedback with animations
   - Perfect for: Training slides, educational content, knowledge assessment
   - Size: Full slide (x=80, y=120, width=1760, height=880)
-
-• 📊 **POLLS**: Use interactive_poll template for audience engagement
-  - Include question and 3-5 poll options
-  - Shows live voting results with animated bars
-  - Perfect for: Gathering opinions, engaging audience, interactive discussions
-  - Size: Full slide or large (x=80, y=120, width=1760, height=880)
-
-• 📋 **PROGRESS TRACKERS**: Use progress_tracker for project status
-  - Shows milestones with complete/active/pending states
-  - Animated progress visualization
-  - Perfect for: Roadmaps, project updates, phase tracking
-  - Size: Large horizontal (x=120, y=300, width=1680, height=400)
 
 • 📝 **STEP-BY-STEP**: Use step_by_step template for process explanations
   - Navigate through steps with prev/next buttons
@@ -280,13 +268,47 @@ For educational/training content:
   - Perfect for: Tutorials, how-to guides, process flows
   - Size: Full slide (x=80, y=120, width=1760, height=880)
 
+**AUDIENCE ENGAGEMENT:**
+• 📊 **POLLS**: Use interactive_poll template for audience engagement
+  - Include question and 3-5 poll options
+  - Shows live voting results with animated bars
+  - Perfect for: Gathering opinions, engaging audience, interactive discussions
+  - Size: Full slide or large (x=80, y=120, width=1760, height=880)
+
+• 🎡 **SPINNING WHEEL**: Use spinning_wheel for random selection - FUN!
+  - Interactive spinning wheel with smooth animations
+  - Perfect for: Team activities, prize draws, random selection, gamification
+  - Props: items=['Option 1', 'Option 2', ...], title='Spin to Win!'
+  - Size: Full slide (x=80, y=120, width=1760, height=880)
+
+• 🧠 **MEMORY GAME**: Use memory_game for team building - SUPER FUN!
+  - Card matching game with move counter
+  - Perfect for: Icebreakers, fun breaks, team building, gamification
+  - Props: pairs=['💼', '📊', '💰', '📈'], title='Memory Challenge'
+  - Size: Full slide (x=80, y=120, width=1760, height=880)
+
+**PROJECT & PROGRESS:**
+• 📋 **PROGRESS TRACKERS**: Use progress_tracker for project status
+  - Shows milestones with complete/active/pending states
+  - Animated progress visualization
+  - Perfect for: Roadmaps, project updates, phase tracking
+  - Size: Large horizontal (x=120, y=300, width=1680, height=400)
+
 ⚠️ **WHEN TO USE INTERACTIVE COMPONENTS:**
 - Educational content → interactive_quiz (knowledge checks)
 - Training sessions → interactive_quiz, step_by_step
-- Audience engagement → interactive_poll
+- Audience engagement → interactive_poll, spinning_wheel
 - Project updates → progress_tracker
 - Tutorial content → step_by_step
 - Feedback collection → interactive_poll
+- Team building / Fun breaks → memory_game, spinning_wheel
+- Icebreakers / Gamification → spinning_wheel, memory_game
+
+**🎨 QUICK REFERENCE - ALL CUSTOMCOMPONENT TEMPLATES:**
+The system has 14 pre-built templates - ALL generic, work with ANY data:
+• STATS: three_card_grid, hero_stat_card, two_card_comparison, metric_dashboard, radial_progress, funnel_viz, comparison_bars
+• TIMELINES: timeline_roadmap, progress_tracker
+• INTERACTIVE: interactive_quiz, interactive_poll, step_by_step, spinning_wheel, memory_game
 
 **CUSTOMCOMPONENT CARD TEMPLATE EXAMPLE:**
 ```javascript
@@ -1351,21 +1373,48 @@ Line: y=218 (198 + 20 = 218 ✅)
 
 🚨 **CRITICAL: CUSTOM COMPONENT CODING RULES (MANDATORY):**
 
-**1. FUNCTION SIGNATURE (ALWAYS USE THIS EXACT FORMAT):**
+**1. FUNCTION SIGNATURE (ALWAYS USE THIS EXACT FORMAT - CRITICAL!):**
 ```javascript
-function render({{ props, state, updateState, id, isThumbnail, containerWidth, containerHeight }}) {{
-  // Code here
+// ✅ CORRECT - Complete function declaration with all parameters
+function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
+  // Variable declarations go HERE, AFTER the opening brace
+  // NOT inside the function parameter list!
 }}
+
+// ❌ WRONG - NEVER put variable declarations in the parameter list!
+function render({{
+  var padding = 32;  // ❌ WRONG! Variables go INSIDE the function body!
+  props
+}}) {{}}
+
+// ❌ WRONG - NEVER put const/let/var statements in destructuring
+function render({{
+  const availableWidth = props.width - padding * 2;  // ❌ CATASTROPHICALLY WRONG!
+  const availableHeight = props.height - padding * 2;props
+}}) {{}}
+// ^ This will cause: SyntaxError: Unexpected token ')'
+
+// ❌ REAL ERROR EXAMPLE - THIS IS WHAT THE USER SAW:
+// "function render({{
+//   const availableWidth = props.width - padding * 2;
+//   const availableHeight = props.height - padding * 2;props}}){{"
+// ERROR: unexpected token ')' - BECAUSE VARIABLE DECLARATIONS ARE IN THE WRONG PLACE!
 ```
 
-**2. VARIABLE DECLARATION (DECLARE ONCE AT TOP):**
+**2. VARIABLE DECLARATION (DECLARE ONCE AT TOP, AFTER OPENING BRACE):**
 ```javascript
-// ✅ CORRECT - Declare all variables at the top using 'var'
-var value = props.value || 'defaultValue';
-var primaryColor = props.primaryColor || '#3B82F6';
-var availableWidth = (props.width || containerWidth || 800);
-var availableHeight = (props.height || containerHeight || 600);
-var textColor = getContrastTextColor(primaryColor);
+// ✅ CORRECT - Complete working example
+function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
+  var value = props.value || 'defaultValue';
+  var primaryColor = props.primaryColor || '#3B82F6';
+  var padding = props.padding || 32;
+  var availableWidth = (props.width || containerWidth || 800) - padding * 2;
+  var availableHeight = (props.height || containerHeight || 600) - padding * 2;
+  var textColor = getContrastTextColor(primaryColor);
+  
+  // Now use these variables in your render code
+  return React.createElement('div', {{style: {{...}}}});
+}}
 
 // ❌ WRONG - Never use const, let, or redeclare variables
 const value = props.value; // ❌ Don't use const

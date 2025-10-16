@@ -205,6 +205,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     }
   }, []);
 
+  // Track current font value from theme store for dropdown
+  const currentHeadingFont = workspaceTheme?.typography?.heading?.fontFamily || '';
+  const currentBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily || '';
+
   // Parallel theme load when outline appears (only once per outline ID)
   useEffect(() => {
     if (!currentOutline) return;
@@ -1658,7 +1662,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   {fontEditor.type === 'heading' ? 'Heading Font' : 'Body Font'}
                                 </div>
                                 <GroupedDropdown
-                                  value={String(useThemeStore.getState().getWorkspaceTheme().typography[fontEditor.type === 'heading' ? 'heading' : 'paragraph']?.fontFamily || '')}
+                                  value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
                                   options={ALL_FONT_NAMES}
                                   groups={fontGroups}
                                   onChange={(value) => {

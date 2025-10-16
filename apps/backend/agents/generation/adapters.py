@@ -1259,6 +1259,11 @@ class SimpleDeckComposer(IDeckComposer):
                         slide_index=current_slide - 1,
                         error=update.get('error')
                     )
+                elif update.get('type') == 'slides_generation_complete':
+                    # All slides are done - pass through and continue to finalization
+                    logger.info(f"✅ All slides generated: {update.get('completed_slides', 0)}/{update.get('total_slides', 0)}")
+                    yield update
+                    # Note: Loop will exit after this, continuing to deck finalization
                 else:
                     # Pass through other events
                     yield update
@@ -1295,20 +1300,27 @@ class SimpleDeckComposer(IDeckComposer):
                         image_update = self._image_update_queue.pop(0)
                         yield image_update
             
+            # === FINALIZATION PHASE ===
+            logger.info("🏁 [DECK COMPOSER] Starting finalization phase...")
+            
             # Theme is already ready at this point, no need to check again
 
             # Reconcile slides with latest persistence before final save
+            logger.info(f"🔄 [DECK COMPOSER] Reconciling slides from database...")
             try:
                 latest = await self.persistence.get_deck(deck_uuid)
                 if latest and isinstance(latest.get('slides'), list) and latest['slides']:
                     deck_state.slides = latest['slides']
-                    logger.info("[DECK COMPOSER] Reconciled slides from persistence before final save (%s slides)", len(deck_state.slides))
+                    logger.info(f"✅ [DECK COMPOSER] Reconciled {len(deck_state.slides)} slides from persistence")
             except Exception as _reconcile_err:
-                logger.warning("[DECK COMPOSER] Slide reconciliation skipped: %s", _reconcile_err)
+                logger.warning(f"⚠️ [DECK COMPOSER] Slide reconciliation skipped: {_reconcile_err}")
+            
             # Save final state
+            logger.info(f"💾 [DECK COMPOSER] Saving final deck state...")
             await self.persistence.save_deck(deck_state.to_dict())
             
             # Update final deck status
+            logger.info(f"✅ [DECK COMPOSER] Marking deck as completed...")
             deck_state.status = {
                 'state': 'completed',
                 'currentSlide': len(deck_state.slides),
@@ -1320,10 +1332,14 @@ class SimpleDeckComposer(IDeckComposer):
             
             # Save final deck state
             await self.persistence.save_deck(deck_state.to_dict())
-            logger.info(f"✅ Deck {deck_uuid} marked as completed in database")
+            logger.info(f"✅ [DECK COMPOSER] Deck {deck_uuid} marked as completed in database")
             
             # Complete - send single completion event
-            yield progress.complete(deck_uuid)
+            logger.info(f"📤 [DECK COMPOSER] Sending deck_complete event...")
+            completion_event = progress.complete(deck_uuid)
+            logger.info(f"📤 [DECK COMPOSER] Completion event: {completion_event}")
+            yield completion_event
+            logger.info(f"🎉 [DECK COMPOSER] Deck {deck_uuid} composition fully complete!")
             
         except Exception as e:
             logger.error(f"Error in deck composition: {e}")

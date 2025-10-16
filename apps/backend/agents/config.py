@@ -15,8 +15,8 @@ from typing import Optional
 #==============================================================================
 
 # Prefer stronger model for theme quality; fallback remains available via clients map
-THEME_STYLE_MODEL = "claude-sonnet-4-5"
-COMPOSER_MODEL = "claude-sonnet-4-5"
+THEME_STYLE_MODEL = "claude-haiku-4-5"
+COMPOSER_MODEL = "claude-haiku-4-5"
 VISUAL_LAYOUT_ANALYZER_MODEL = "claude-haiku-4-5"
 OUTLINE_PLANNING_MODEL = "perplexity-sonar"
 OUTLINE_CONTENT_MODEL = "perplexity-sonar"

@@ -182,10 +182,31 @@ export class GenerationStateManager {
         
       case 'deck_complete':
       case 'deck_completed':
+      case 'composition_complete':
         stage = 'generation_complete';
         isComplete = true;
         this.currentProgress = 100;
         message = message || 'Your presentation is ready!';
+        break;
+        
+      case 'slides_generation_complete':
+        // If all slides are generated, treat as near-complete (finalization phase)
+        stage = 'finalization';
+        this.currentProgress = Math.max(this.currentProgress, 95);
+        message = message || 'Finalizing presentation...';
+        
+        // If there are no failed slides and we have all slides, go to 100%
+        const completedSlides = data.completed_slides ?? data.completedSlides;
+        const totalSlides = data.total_slides ?? data.totalSlides;
+        const failedSlides = data.failed_slides ?? data.failedSlides ?? 0;
+        
+        if (completedSlides === totalSlides && failedSlides === 0) {
+          // Perfect completion - go straight to 100%
+          this.currentProgress = 100;
+          stage = 'generation_complete';
+          isComplete = true;
+          message = 'Your presentation is ready!';
+        }
         break;
         
       case 'error':
