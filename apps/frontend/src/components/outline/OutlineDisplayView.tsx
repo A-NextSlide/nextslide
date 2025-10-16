@@ -296,18 +296,20 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
             const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
             // Colors array should ONLY contain visual theme colors (bg + accents), NOT text color
-            const colorsArray = [pageBg, accent1];
+            // Use empty array to prevent extras from appearing - we set explicit fields instead
+            const colorsArray: string[] = [];
 
             // Fix the colors array in themePayload NOW
             if (themePayload?.color_palette) {
-              themePayload.color_palette.colors = colorsArray;
+              themePayload.color_palette.colors = colorsArray; // Empty array - we use explicit fields
               themePayload.color_palette.backgrounds = [pageBg];
               themePayload.color_palette.accents = [accent1];
-              // CRITICAL: Also set singular fields so swatches can read from them!
+              // CRITICAL: Set explicit singular fields so swatches can read from them!
               themePayload.color_palette.primary_background = pageBg;
               themePayload.color_palette.primary_text = textColor;
               themePayload.color_palette.accent_1 = accent1;
-              // Don't set accent_2 unless we actually have a second accent color
+              // Explicitly set accent_2 to undefined to prevent duplicate accent bars
+              themePayload.color_palette.accent_2 = undefined;
               // Also update text_colors for backwards compatibility
               if (!themePayload.color_palette.text_colors) {
                 themePayload.color_palette.text_colors = {};
@@ -415,12 +417,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               });
               console.groupEnd();
             } catch {}
-            // Apply to workspace only if we should override (deck theme already stored above)
-            if (shouldOverride) {
-              const themeId = addCustomTheme(builtTheme);
-              setWorkspaceTheme(themeId);
-            }
-            if ((shouldOverride && isRich) || isThemeGenerated) {
+            // Always apply workspace theme so preview matches swatches
+            const themeId = addCustomTheme(builtTheme);
+            setWorkspaceTheme(themeId);
+            
+            if (isRich || isThemeGenerated) {
               setThemeReady(true);
             }
           } finally {
