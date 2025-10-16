@@ -292,9 +292,23 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             // The backend's semantic assignment is in legacy fields (primary_background, accent_1, primary_text)
             // but the colors array might be in wrong order. Fix it NOW before any storage.
             const colors = (themePayload?.color_palette || {}) as any;
+            
+            // DEBUG: Log what backend sent
+            console.log('[THEME DEBUG] Backend color_palette:', {
+              primary_background: colors.primary_background,
+              primary_text: colors.primary_text,
+              accent_1: colors.accent_1,
+              backgrounds: colors.backgrounds,
+              accents: colors.accents,
+              text_colors: colors.text_colors
+            });
+            
             const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
             const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
             const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
+            
+            console.log('[THEME DEBUG] Extracted colors:', { pageBg, textColor, accent1 });
+            
             // Colors array should ONLY contain visual theme colors (bg + accents), NOT text color
             // Use empty array to prevent extras from appearing - we set explicit fields instead
             const colorsArray: string[] = [];
@@ -537,15 +551,28 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       // Do not show a placeholder palette: require a real color_palette
       if (!cp || typeof cp !== 'object') return [] as Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }>;
 
+      console.log('[SWATCHES DEBUG] Reading from deck theme:', {
+        primary_background: cp.primary_background,
+        primary_text: cp.primary_text,
+        accent_1: cp.accent_1,
+        backgrounds: cp.backgrounds,
+        accents: cp.accents,
+        text_colors: cp.text_colors
+      });
+
       const primaryBackground = (cp.primary_background || (Array.isArray(cp.backgrounds) ? cp.backgrounds[0] : undefined)) as string | undefined;
       const primaryText = (cp.primary_text || cp.text_colors?.primary) as string | undefined;
       const accent_1 = (cp.accent_1 || (Array.isArray(cp.accents) ? cp.accents[0] : undefined)) as string | undefined;
+
+      console.log('[SWATCHES DEBUG] Extracted for display:', { primaryBackground, primaryText, accent_1 });
 
       // Only show the 3 main theme colors: Background, Text, Accent
       const swatchList: Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }> = [];
       if (primaryBackground) swatchList.push({ role: 'background', label: 'Background', color: String(primaryBackground) });
       if (primaryText) swatchList.push({ role: 'text', label: 'Text', color: String(primaryText) });
       if (accent_1) swatchList.push({ role: 'accent1', label: 'Accent', color: String(accent_1) });
+
+      console.log('[SWATCHES DEBUG] Final swatchList:', swatchList);
 
       return swatchList;
     } catch {
