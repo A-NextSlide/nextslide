@@ -1549,13 +1549,22 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                           ) : (
                           <div ref={themePanelRef} className="h-full w-full grid grid-cols-2 relative">
                             {/* Left: Typography samples with logo controls pinned to bottom */}
-                            <div className="h-full p-4 flex flex-col gap-3 overflow-hidden">
-                              <div
-                                className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
-                                style={{ fontFamily: useThemeStore.getState().getWorkspaceTheme().typography.heading?.fontFamily || 'Inter', color: useThemeStore.getState().getWorkspaceTheme().typography.heading?.color || '#1f2937' }}
-                                onClick={(e) => openFontPanelAt(e, 'heading')}
-                              >
-                                Heading Sample
+                            <div 
+                              className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
+                              style={{ backgroundColor: useThemeStore.getState().getWorkspaceTheme().page?.backgroundColor || '#ffffff' }}
+                            >
+                              <div className="flex flex-col">
+                                <div
+                                  className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
+                                  style={{ 
+                                    fontFamily: useThemeStore.getState().getWorkspaceTheme().typography.heading?.fontFamily || 'Inter', 
+                                    color: useThemeStore.getState().getWorkspaceTheme().typography.heading?.color || '#1f2937',
+                                    borderBottom: `2px solid ${useThemeStore.getState().getWorkspaceTheme().accent1 || '#FF4301'}`
+                                  }}
+                                  onClick={(e) => openFontPanelAt(e, 'heading')}
+                                >
+                                  Heading Sample
+                                </div>
                               </div>
                               <div
                                 className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
