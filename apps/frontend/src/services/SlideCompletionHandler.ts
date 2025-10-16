@@ -20,8 +20,6 @@ export class SlideCompletionHandler {
     if (this.initialized) return;
     this.initialized = true;
 
-    console.log('[SlideCompletionHandler] Initializing slide completion handler');
-
     // Listen for slide completion events
     window.addEventListener('slide_completed', this.handleSlideCompleted.bind(this));
     window.addEventListener('slide_generated', this.handleSlideCompleted.bind(this));
@@ -39,29 +37,18 @@ export class SlideCompletionHandler {
     const customEvent = event as CustomEvent;
     const detail = customEvent.detail || {};
 
-    console.warn('[SlideCompletionHandler] 🎯 Slide completion event received:', {
-      type: event.type,
-      slideIndex: detail.slide_index,
-      slideId: detail.slide_id || detail.slideId,
-      hasSlideData: !!detail.slide,
-      components: detail.slide?.components?.length,
-      timestamp: new Date().toISOString()
-    });
-
     // Extract slide information
     const slideIndex = detail.slide_index ?? detail.slideIndex;
     const slideId = detail.slide_id || detail.slideId;
     const slideData = detail.slide;
 
     if (slideIndex === undefined && !slideId) {
-      console.warn('[SlideCompletionHandler] No slide index or ID in event');
       return;
     }
 
     // Get current deck data
     const deckData = useDeckStore.getState().deckData;
     if (!deckData || !deckData.slides) {
-      console.warn('[SlideCompletionHandler] No deck data available');
       return;
     }
 
@@ -81,30 +68,12 @@ export class SlideCompletionHandler {
     }
 
     if (!slide) {
-      console.warn('[SlideCompletionHandler] Could not find slide in deck data');
       return;
     }
 
-    console.warn('[SlideCompletionHandler] Found slide:', {
-      index: actualIndex,
-      id: slide.id,
-      currentStatus: slide.status,
-      componentsCount: slide.components?.length
-    });
-
     // Update the slide status to 'completed'
     if (slide.status !== 'completed') {
-      console.warn(`[SlideCompletionHandler] Updating slide ${actualIndex + 1} status to completed`);
-
       // Check if user is currently viewing this slide
-      const navContext = (window as any).__navigationContext;
-      const isViewingThisSlide = navContext?.currentSlideIndex === actualIndex;
-
-      // If user is viewing this slide and it has content, be extra careful
-      if (isViewingThisSlide && slide.components && slide.components.length > 0) {
-        console.log(`[SlideCompletionHandler] User is viewing slide ${actualIndex + 1}, using careful update`);
-      }
-
       try {
         await useDeckStore.getState().updateSlide(slide.id, {
           status: 'completed',
@@ -123,13 +92,9 @@ export class SlideCompletionHandler {
             store.updateDeckData({ slides }, { skipBackend: true });
           }
         } catch {}
-
-        console.log(`[SlideCompletionHandler] Successfully updated slide ${actualIndex + 1} status`);
       } catch (error) {
         console.error('[SlideCompletionHandler] Error updating slide status:', error);
       }
-    } else {
-      console.log(`[SlideCompletionHandler] Slide ${actualIndex + 1} already has status 'completed'`);
     }
   }
 

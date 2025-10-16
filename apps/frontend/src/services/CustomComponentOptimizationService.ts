@@ -313,7 +313,6 @@ export class CustomComponentOptimizationService {
     if (totalOptimized > 0 && !forceOptimization) {
       try {
         await useDeckStore.getState().saveDeck();
-        console.log(`[CustomComponentOptimization] Saved ${totalOptimized} optimizations`);
       } catch (error) {
         console.error('[CustomComponentOptimization] Failed to save deck:', error);
       }
@@ -390,12 +389,9 @@ export class CustomComponentOptimizationService {
       // Check if recently optimized
       const lastOptimized = recentOptimizedAt.get(slideId) || 0;
       if (Date.now() - lastOptimized < 30000) {
-        console.log(`[CustomComponentOptimization] Slide ${index + 1} was recently optimized, skipping`);
         return;
       }
-      
-      console.log(`[CustomComponentOptimization] Optimizing custom components on slide ${index + 1}`);
-      
+
       // Navigate to the slide
       const navigateEvent = new CustomEvent('slide:navigate:index', {
         detail: { index }
@@ -407,11 +403,10 @@ export class CustomComponentOptimizationService {
       
       // Optimize the slide
       const results = await this.optimizeSlide(index, slide);
-      
+
       if (results.length > 0) {
-        console.log(`[CustomComponentOptimization] Optimized ${results.length} components on slide ${index + 1}`);
         recentOptimizedAt.set(slideId, Date.now());
-        
+
         // Save the deck
         try {
           await useDeckStore.getState().saveDeck();
@@ -425,16 +420,13 @@ export class CustomComponentOptimizationService {
     const handleDeckComplete = async (event: Event) => {
       const custom = event as CustomEvent<any>;
       const details = custom.detail || {};
-      
-      console.log('[CustomComponentOptimization] Deck generation complete, checking for custom components');
-      
+
       const deckData = useDeckStore.getState().deckData;
       if (!deckData || !deckData.slides) return;
-      
+
       // Check if optimization is needed
       const needsOptimization = await this.checkIfOptimizationNeeded();
       if (!needsOptimization) {
-        console.log('[CustomComponentOptimization] No custom components found, skipping optimization');
         return;
       }
       
@@ -462,7 +454,5 @@ export class CustomComponentOptimizationService {
     window.addEventListener('slide_generated', handleSlideCompleted);
     window.addEventListener('deck_generation_complete', handleDeckComplete);
     window.addEventListener('deck_complete', handleDeckComplete);
-    
-    console.log('[CustomComponentOptimization] Auto-optimization setup complete');
   }
 }

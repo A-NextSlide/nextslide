@@ -113,18 +113,15 @@ export class AgentChatClient {
     this.ws = ws;
 
     ws.onopen = () => {
-      try { console.log('[AgentChatClient] WS open', { url }); } catch {}
       this.handlers.onOpen?.();
       this.markReady();
     };
     ws.onclose = (e) => {
-      try { console.log('[AgentChatClient] WS close', { code: e.code, reason: e.reason }); } catch {}
       this.handlers.onClose?.(e.code, e.reason);
       // Fallback to SSE if WS closes unexpectedly
       if (!this.es) this.openSSE();
     };
     ws.onerror = () => {
-      try { console.warn('[AgentChatClient] WS error'); } catch {}
       this.handlers.onEvent?.({ type: 'error', data: { code: 'WS_ERROR', message: 'WebSocket error' } });
       // Fallback to SSE if WS errors
       if (!this.es) this.openSSE();
@@ -133,7 +130,6 @@ export class AgentChatClient {
       try {
         const msg = JSON.parse(evt.data);
         if (msg && msg.type) {
-          try { console.log('[AgentChatClient] WS message', { type: msg.type }); } catch {}
           this.handlers.onEvent?.({ type: msg.type, data: msg.data });
         }
       } catch (e) {
@@ -151,7 +147,6 @@ export class AgentChatClient {
     try {
       const es = new EventSource(url);
       this.es = es;
-      try { console.log('[AgentChatClient] SSE open', { url }); } catch {}
       // Resolve readiness on SSE open as well
       es.onopen = () => {
         this.markReady();
@@ -161,7 +156,6 @@ export class AgentChatClient {
         try {
           const msg = JSON.parse(e.data);
           if (msg && msg.type) {
-            try { console.log('[AgentChatClient] SSE message', { type: msg.type }); } catch {}
             this.handlers.onEvent?.({ type: msg.type, data: msg.data });
           }
         } catch {}

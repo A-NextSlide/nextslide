@@ -450,12 +450,10 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
     if (interactionStage === 'showOptions') {
       (async () => {
         try {
-          let detail: 'quick' | 'standard' | 'detailed' = 'standard';
-          if (selectedSlidePreset === 'quick') detail = 'quick';
-          if (selectedSlidePreset === 'detailed') detail = 'detailed';
-          // 'medium' and 'auto' map to 'standard'
+          // USE THE MODE DROPDOWN VALUE (detailLevel) - not selectedSlidePreset!
+          console.log('🔴 [ChatInputView] Using detailLevel from Mode dropdown:', detailLevel);
           await handleInitiateOutline(
-            detail,
+            detailLevel,  // Use the actual dropdown value!
             selectedSlideCount !== null ? selectedSlideCount : undefined
           );
         } catch (error) {
@@ -1068,6 +1066,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                             <Select
                               value={detailLevel}
                               onValueChange={(value: 'quick' | 'standard' | 'detailed') => {
+                                console.log('🔴🔴🔴 DROPDOWN VALUE CHANGED TO:', value);
                                 handleDetailLevelSelected(value);
                               }}
                               open={isModeDropdownOpen}

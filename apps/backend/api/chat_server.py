@@ -452,6 +452,16 @@ async def api_openai_outline_stream_endpoint(request: OpenAIOutlineRequest, toke
     """
     Generate slide outline using OpenAI with real-time progress updates via Server-Sent Events
     """
+    # CRITICAL: Log IMMEDIATELY to see what frontend sent
+    print("="*80)
+    print(f"[ENDPOINT] ⚠️⚠️⚠️ STREAMING ENDPOINT CALLED")
+    print(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
+    print(f"[ENDPOINT] request.prompt = {request.prompt[:60]}")
+    print("="*80)
+    
+    logger.info(f"[ENDPOINT] ⚠️⚠️⚠️ RECEIVED REQUEST AT /api/openai/generate-outline-stream")
+    logger.info(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
+    logger.info(f"[ENDPOINT] request.model = {request.model}")
     logger.info(f"Outline generation started for model: {request.model}")
     
     # Extract user from token

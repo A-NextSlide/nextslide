@@ -832,8 +832,10 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 logger.info(f"Processing outline for authenticated user: {user_id}")
             
             # Debug log the incoming request
-            logger.info(f"[OUTLINE DEBUG] Received request with slideCount: {request.slideCount}")
+            logger.info(f"[OUTLINE DEBUG] ⚠️ RECEIVED REQUEST")
             logger.info(f"[OUTLINE DEBUG] Request detail level: {request.detailLevel}")
+            logger.info(f"[OUTLINE DEBUG] Request slideCount: {request.slideCount}")
+            logger.info(f"[OUTLINE DEBUG] Request prompt: {request.prompt[:100]}")
             logger.info(f"[OUTLINE DEBUG] colorPreference type: {type(request.colorPreference)}")
             logger.info(f"[OUTLINE DEBUG] colorPreference value: {request.colorPreference}")
             
@@ -896,6 +898,11 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 slide_count=inferred_slide_count,
                 visual_density=(request.visualDensity or None)
             )
+            
+            # CRITICAL DEBUG LOG
+            logger.info(f"[OUTLINE DEBUG] ⚠️ CREATED OutlineOptions")
+            logger.info(f"[OUTLINE DEBUG] options.detail_level = {options.detail_level}")
+            logger.info(f"[OUTLINE DEBUG] options.prompt = {options.prompt[:100]}")
             
             # Debug log the options being passed
             print(f"[OUTLINE OPTIONS] Created with:")

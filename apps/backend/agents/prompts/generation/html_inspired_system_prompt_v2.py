@@ -247,11 +247,46 @@ When you have 1-3 points only (minimal content):
   - Short labels (32-42pt)
   - Subtle shadows, rounded corners (16-24px borderRadius)
   - Animated hover effects
-• Layout cards horizontally: 
+• Layout cards horizontally:
   - 2 cards: x=120, x=1000 (800px wide each, 100px gap)
   - 3 cards: x=80, x=720, x=1360 (540px wide each, 60px gap)
 • Card height: 500-600px for impact
 • Include padding: 48-64px internal padding
+
+**INTERACTIVE COMPONENTS FOR ENGAGEMENT & EDUCATION:**
+
+For educational/training content:
+• 🎓 **QUIZZES**: Use interactive_quiz template for knowledge checks
+  - Include question, 4 options, correct answer index, explanation
+  - Automatically shows correct/incorrect feedback
+  - Perfect for: Training slides, educational content, knowledge assessment
+  - Size: Full slide (x=80, y=120, width=1760, height=880)
+
+• 📊 **POLLS**: Use interactive_poll template for audience engagement
+  - Include question and 3-5 poll options
+  - Shows live voting results with animated bars
+  - Perfect for: Gathering opinions, engaging audience, interactive discussions
+  - Size: Full slide or large (x=80, y=120, width=1760, height=880)
+
+• 📋 **PROGRESS TRACKERS**: Use progress_tracker for project status
+  - Shows milestones with complete/active/pending states
+  - Animated progress visualization
+  - Perfect for: Roadmaps, project updates, phase tracking
+  - Size: Large horizontal (x=120, y=300, width=1680, height=400)
+
+• 📝 **STEP-BY-STEP**: Use step_by_step template for process explanations
+  - Navigate through steps with prev/next buttons
+  - Large icons and clear descriptions
+  - Perfect for: Tutorials, how-to guides, process flows
+  - Size: Full slide (x=80, y=120, width=1760, height=880)
+
+⚠️ **WHEN TO USE INTERACTIVE COMPONENTS:**
+- Educational content → interactive_quiz (knowledge checks)
+- Training sessions → interactive_quiz, step_by_step
+- Audience engagement → interactive_poll
+- Project updates → progress_tracker
+- Tutorial content → step_by_step
+- Feedback collection → interactive_poll
 
 **CUSTOMCOMPONENT CARD TEMPLATE EXAMPLE:**
 ```javascript
@@ -1314,13 +1349,86 @@ Line: y=218 (198 + 20 = 218 ✅)
 
 **CustomComponent** - ALWAYS use React.createElement:
 
+🚨 **CRITICAL: CUSTOM COMPONENT CODING RULES (MANDATORY):**
+
+**1. FUNCTION SIGNATURE (ALWAYS USE THIS EXACT FORMAT):**
+```javascript
+function render({{ props, state, updateState, id, isThumbnail, containerWidth, containerHeight }}) {{
+  // Code here
+}}
+```
+
+**2. VARIABLE DECLARATION (DECLARE ONCE AT TOP):**
+```javascript
+// ✅ CORRECT - Declare all variables at the top using 'var'
+var value = props.value || 'defaultValue';
+var primaryColor = props.primaryColor || '#3B82F6';
+var availableWidth = (props.width || containerWidth || 800);
+var availableHeight = (props.height || containerHeight || 600);
+var textColor = getContrastTextColor(primaryColor);
+
+// ❌ WRONG - Never use const, let, or redeclare variables
+const value = props.value; // ❌ Don't use const
+let primaryColor; // ❌ Don't use let
+var value = props.value; // First declaration
+var value = newValue; // ❌ Don't redeclare! Update the value instead
+```
+
+**3. SIZING (ALWAYS USE AVAILABLE DIMENSIONS):**
+```javascript
+// ✅ CORRECT - Use container dimensions
+var availableWidth = (props.width || containerWidth || 800);
+var availableHeight = (props.height || containerHeight || 600);
+
+return React.createElement('div', {{
+  style: {{
+    width: '100%',  // Use 100% to fill container
+    height: '100%',
+    padding: '32px'
+  }}
+}});
+
+// ❌ WRONG - Don't reference undefined variables
+const padding = 32; // Then later...
+const availableWidth = props.width - padding * 2; // If padding not defined, ERROR!
+```
+
+**4. EVENT HANDLERS (DECLARE AS FUNCTIONS):**
+```javascript
+// ✅ CORRECT - Define handlers as functions
+var handleClick = function() {{
+  updateState({{ clicked: true }});
+}};
+
+return React.createElement('button', {{
+  onClick: handleClick
+}});
+
+// ✅ ALSO CORRECT - Inline functions
+return React.createElement('button', {{
+  onClick: function() {{ updateState({{ clicked: true }}); }}
+}});
+```
+
+**5. INTERACTIVE COMPONENTS (USE STATE & HANDLERS):**
+```javascript
+// For quizzes, polls, step-by-step content
+var selectedAnswer = state.selectedAnswer;
+var showResult = state.showResult || false;
+
+var handleOptionClick = function(index) {{
+  if (showResult) return;  // Prevent re-clicking
+  updateState({{ selectedAnswer: index, showResult: true }});
+}};
+```
+
 🚨 **COLOR CONTRAST IN CUSTOM COMPONENTS (MANDATORY):**
 Custom components have access to color contrast utilities:
 - `getContrastTextColor(bgColor)` → Returns '#000000' or '#ffffff' for optimal contrast
 - `isLightColor(color)` → Returns true if color is light
 - `getThemeAppropriateChartColors(bgColor, count)` → Returns array of theme-appropriate colors
 
-**Example 1 - Auto Text Contrast:**
+**Example 1 - Complete Custom Component with Proper Patterns:**
 {
   "type": "CustomComponent",
   "props": {
@@ -1329,7 +1437,22 @@ Custom components have access to color contrast utilities:
     "height": 400,
     "value": "87.5%",
     "backgroundColor": "{{primary}}",
-    "render": "function render({props}){var v=props.value;var bg=props.backgroundColor||'#0A0E27';var tc=getContrastTextColor(bg);return React.createElement('div',{style:{width:'100%',height:'100%',padding:'32px',background:bg,display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('div',{style:{fontSize:'120px',fontWeight:'800',color:tc}},v));}"
+    "render": "function render({props,state,updateState,id,isThumbnail,containerWidth,containerHeight}){var v=props.value;var bg=props.backgroundColor||'#0A0E27';var tc=getContrastTextColor(bg);var availableWidth=(props.width||containerWidth||800);var availableHeight=(props.height||containerHeight||600);return React.createElement('div',{style:{width:'100%',height:'100%',padding:'32px',background:bg,display:'flex',alignItems:'center',justifyContent:'center'}},React.createElement('div',{style:{fontSize:'120px',fontWeight:'800',color:tc}},v));}"
+  }
+}
+
+**Example 2 - Interactive Quiz Component:**
+{
+  "type": "CustomComponent",
+  "props": {
+    "position": { "x": 80, "y": 200 },
+    "width": 1760,
+    "height": 800,
+    "question": "What is the capital of France?",
+    "options": ["London", "Paris", "Berlin", "Madrid"],
+    "correctAnswer": 1,
+    "explanation": "Paris is the capital and largest city of France.",
+    "render": "function render({props,state,updateState,id,isThumbnail}){var question=props.question;var options=props.options||[];var correctAnswer=props.correctAnswer||0;var selectedAnswer=state.selectedAnswer;var showResult=state.showResult||false;var handleOptionClick=function(index){if(showResult)return;updateState({selectedAnswer:index,showResult:true});};return React.createElement('div',{style:{width:'100%',height:'100%',padding:'48px',background:'linear-gradient(135deg,#F8FAFC 0%,#EFF6FF 100%)',borderRadius:'24px',fontFamily:'Inter,sans-serif',display:'flex',flexDirection:'column'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'700',color:'{{primary}}',marginBottom:'32px'}},question),options.map(function(option,index){return React.createElement('div',{key:index,onClick:function(){handleOptionClick(index);},style:{padding:'20px 28px',marginBottom:'16px',borderRadius:'12px',cursor:showResult?'default':'pointer',fontSize:'20px',fontWeight:'600',border:'2px solid',backgroundColor:showResult&&index===correctAnswer?'#10B98130':'white',borderColor:showResult&&index===correctAnswer?'#10B981':'{{primary}}40',color:showResult&&index===correctAnswer?'#065F46':'{{primary}}'}},option);}));}"
   }
 }
 

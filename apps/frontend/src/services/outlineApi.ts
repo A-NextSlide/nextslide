@@ -1072,6 +1072,9 @@ export class OutlineAPI {
       );
       
       // Build request while omitting null/undefined/empty values to satisfy strict validators
+      console.warn('[outlineApi] ⚠️ Building request');
+      console.warn('[outlineApi] options.detailLevel:', options.detailLevel);
+      
       const request: any = {
         prompt: prompt && prompt.trim().length > 0 ? prompt : undefined,
         detailLevel: options.detailLevel || 'standard',
@@ -1079,6 +1082,9 @@ export class OutlineAPI {
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
         enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
       };
+      
+      console.warn('[outlineApi] request.detailLevel:', request.detailLevel);
+      console.warn('[outlineApi] Full request:', JSON.stringify(request, null, 2));
       if (filesData.length > 0) request.files = filesData;
       if (options.fontPreference != null && options.fontPreference !== '') request.fontPreference = options.fontPreference;
       if (options.colorPreference != null) request.colorPreference = options.colorPreference;

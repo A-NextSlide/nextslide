@@ -798,6 +798,10 @@ export const useOutlineChat = ({
           : ''
       ].filter(Boolean).join('\n\n');
 
+      console.warn('[useOutlineChat] ⚠️⚠️⚠️ SENDING TO API ⚠️⚠️⚠️');
+      console.warn('[useOutlineChat] detailLevel being sent:', actualDetailLevel);
+      console.warn('[useOutlineChat] Expected: "detailed" for Detailed Analysis, "standard" for Presentation');
+      
       const result = await outlineApi.generateOutlineStream(
         initialIdea,
         uploadedFiles,

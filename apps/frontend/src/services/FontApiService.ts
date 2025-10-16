@@ -126,12 +126,10 @@ export const FontApiService = {
 
     console.log(`[FontApiService] Searching for font: ${name}`);
 
-    // Search both sources
-    const [pb, designer] = await Promise.all([
-      listFonts('pixelbuddha', name, 8, 0),
-      listFonts('designer', name, 8, 0)
-    ]);
-    const candidates = [...designer, ...pb];
+    // DISABLED: PixelBuddha fonts disabled (using only Designer fonts)
+    // Search only designer fonts
+    const designer = await listFonts('designer', name, 8, 0);
+    const candidates = [...designer];
 
     if (!candidates.length) {
       console.warn(`[FontApiService] No fonts found matching: ${name}`);
@@ -152,16 +150,13 @@ export const FontApiService = {
 
     console.log(`[FontApiService] Selected font: ${chosen.name} (ID: ${chosen.id}, Source: ${(chosen as any).source})`);
 
-    // Try simple endpoint with a sequence of style keys likely to exist for non-PB only
-    const chosenSource = (chosen as any).source || '';
-    if (chosenSource !== 'pixelbuddha') {
-      const stylesToTry = pickStyleKey(weightHint);
-      for (const styleKey of stylesToTry) {
-        const url = buildSimpleFileUrl(chosen.id, styleKey);
-        try { injectPreload(url, name, weightHint); } catch {}
-        const ok = await loadWithFontFace(name, url, weightHint, 'normal');
-        if (ok) return true;
-      }
+    // Try simple endpoint with style keys (PixelBuddha disabled)
+    const stylesToTry = pickStyleKey(weightHint);
+    for (const styleKey of stylesToTry) {
+      const url = buildSimpleFileUrl(chosen.id, styleKey);
+      try { injectPreload(url, name, weightHint); } catch {}
+      const ok = await loadWithFontFace(name, url, weightHint, 'normal');
+      if (ok) return true;
     }
 
     // Fallback: query meta and try the best format via direct endpoints
@@ -196,40 +191,22 @@ export const FontApiService = {
 
       if (best) {
         const base = getApiBase();
-        const isPB = meta.source === 'pixelbuddha';
         const pathOnly = (best.path || best.url || best.filename || '').toString();
-        let directUrl: string;
-        if (isPB) {
-          // Build static asset URL using real on-disk layout under downloads/extracted
-          const parts = pathOnly.split('/');
-          const exIndex = parts.indexOf('extracted');
-          const idIndex = parts.indexOf(meta.id);
-          let remainder = '';
-          if (exIndex >= 0 && idIndex > exIndex) {
-            remainder = parts.slice(idIndex + 1).join('/');
-          } else if (idIndex >= 0) {
-            remainder = parts.slice(idIndex + 1).join('/');
-          } else {
-            remainder = pathOnly.split('/').pop() || '';
-          }
-          const safeRemainder = remainder || pathOnly.split('/').pop() || pathOnly;
-          directUrl = `/assets/fonts/pixelbuddha/downloads/extracted/${encodeURIComponent(meta.id)}/${encodePathSegments(safeRemainder)}`;
-        } else {
-          directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;  // BASE_URL already includes /api
-        }
+        // Only Designer fonts now (PixelBuddha disabled)
+        const directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;
+
+        console.log(`[FontApiService] Trying direct URL: ${directUrl}`);
         try { injectPreload(directUrl, name, weightHint); } catch {}
         const ok = await loadWithFontFace(name, directUrl, weightHint, 'normal');
         if (ok) return true;
       }
 
-      // Last attempt: simple regular again for non-PB only
-      if ((chosen as any).source !== 'pixelbuddha') {
-        const url = buildSimpleFileUrl(chosen.id, 'regular');
-        console.log(`[FontApiService] Last attempt with simple URL: ${url}`);
-        try { injectPreload(url, name, weightHint); } catch {}
-        const ok = await loadWithFontFace(name, url, weightHint, 'normal');
-        if (ok) return true;
-      }
+      // Last attempt: simple regular
+      const url = buildSimpleFileUrl(chosen.id, 'regular');
+      console.log(`[FontApiService] Last attempt with simple URL: ${url}`);
+      try { injectPreload(url, name, weightHint); } catch {}
+      const ok = await loadWithFontFace(name, url, weightHint, 'normal');
+      if (ok) return true;
     } catch (error) {
       console.error(`[FontApiService] Error in font loading fallback:`, error);
     }

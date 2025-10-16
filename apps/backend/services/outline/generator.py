@@ -1808,7 +1808,14 @@ class OutlineGenerator:
 
     async def _generate_slides_streaming_with_perplexity(self, options: OutlineOptions):
         """Generate slides one-by-one with Perplexity for true streaming"""
-        logger.info("[STREAMING] Starting true Perplexity streaming generation")
+        logger.info(f"[STREAMING] ⚠️⚠️⚠️ STARTING STREAMING GENERATION ⚠️⚠️⚠️")
+        logger.info(f"[STREAMING] detail_level = {options.detail_level}")
+        logger.info(f"[STREAMING] Expected: 'detailed' for detailed mode, 'standard' for presentation")
+        
+        if options.detail_level == 'detailed':
+            logger.info(f"[STREAMING] ✅ DETAILED MODE ACTIVE - will generate 250-500+ words per slide")
+        else:
+            logger.info(f"[STREAMING] ✅ PRESENTATION MODE ACTIVE - will generate MAX 50 words per slide")
         
         # First, generate a simple outline structure (titles + types) quickly
         slide_count = options.slide_count
@@ -1980,12 +1987,15 @@ Requirements:
         async def generate_single_slide(idx, slide_title, slide_type):
             """Generate a single slide - can run in parallel"""
             try:
+                # Define detail_mode at the start for use throughout this function
+                detail_mode = options.detail_level or 'standard'
+                
                 # Add staggered delay to create more natural streaming appearance
                 stagger_delay = idx * 0.5  # 500ms delay between starts
                 if stagger_delay > 0:
                     await asyncio.sleep(stagger_delay)
                 
-                logger.info(f"[PARALLEL] Starting slide {idx+1}: {slide_title} at {time.time()}")
+                logger.info(f"[PARALLEL] Starting slide {idx+1}: {slide_title} (type={slide_type}, mode={detail_mode}) at {time.time()}")
                 
                 # Generate individual slide content with Perplexity (with citations)
                 if slide_type == "title":
@@ -2039,16 +2049,19 @@ Output 2–3 lines only:
 
 No bullets, no paragraphs, no extra commentary."""
                 else:
+                    # detail_mode already defined at function start
+                    logger.info(f"[STREAMING] Generating content slide {idx+1} in {detail_mode} mode")
+                    
                     # Pitch-aware bullet limits
                     bullet_guidance = "3–5"  # default
                     if is_pitch:
                         bullet_guidance = "2–4"
                         if (options.visual_density or '').lower() == 'minimal':
                             bullet_guidance = "1–3"
-                    # ✅ USE COMPREHENSIVE, RESEARCH-BACKED PROMPTS FOR DETAILED CONTENT
-                    detail_mode = options.detail_level or 'standard'
                     
+                    # ✅ USE COMPREHENSIVE, RESEARCH-BACKED PROMPTS FOR DETAILED CONTENT
                     if detail_mode == 'detailed':
+                        logger.info(f"[STREAMING] Slide {idx+1}: Using DETAILED mode prompt (250-500+ words)")
                         # INVESTMENT BANKING-GRADE COMPREHENSIVE CONTENT
                         slide_prompt = f"""Create COMPREHENSIVE, INVESTMENT-GRADE content for this slide:
 
@@ -2085,6 +2098,7 @@ FORMAT:
 CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research."""
                     else:
                         # PRESENTATION MODE - Ultra-concise, visual-first
+                        logger.info(f"[STREAMING] Slide {idx+1}: Using PRESENTATION mode prompt (MAX 50 words, 3-4 bullets)")
                         slide_prompt = f"""Create ULTRA-CONCISE PRESENTATION content for this slide:
 
 Presentation: {presentation_title}

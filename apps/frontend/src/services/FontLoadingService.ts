@@ -103,8 +103,6 @@ export const FontLoadingService = {
         // Fetch ALL backend fonts (no limit - backend now returns all ~900 fonts)
         // This is just metadata (id, name, category, tags) - cheap to load
         const allBackendFonts = await FontApiService.listFonts(undefined, undefined, 2000, 0);
-        
-        console.log(`[FontLoadingService] Synced ${allBackendFonts.length} fonts from backend`);
 
         const existingNames = new Set<string>(Object.values(FONT_CATEGORIES).flat().map(f => f.name));
 
@@ -173,20 +171,6 @@ export const FontLoadingService = {
         }
         
         designerFontsSynced = true;
-        console.log(`[FontLoadingService] Font categories populated:`, {
-          Designer: designerCat.length,
-          Display: displayCat.length,
-          Sans: sansCat.length,
-          Serif: serifCat.length,
-          Script: scriptCat.length,
-          Retro: retroCat.length,
-          Tech: techCat.length,
-          'PixelBuddha (backend only)': 'Hidden for performance'
-        });
-        
-        // Log total unique fonts available in dropdowns (excluding PixelBuddha)
-        const totalUnique = new Set(Object.values(FONT_CATEGORIES).flat().map(f => f.name)).size;
-        console.log(`[FontLoadingService] Total fonts in dropdowns: ${totalUnique} (PixelBuddha hidden for performance, still used by backend for titles)`);
       } catch (e) {
         console.error('[FontLoadingService] Failed to sync designer fonts:', e);
         // Non-fatal; leave as not synced
@@ -216,29 +200,17 @@ export const FontLoadingService = {
       // This handles PixelBuddha and other backend fonts not in FONT_CATEGORIES
       const loadPromiseFallback = (async () => {
         try {
-          console.log(`[FontLoadingService] Font "${fontName}" not in registry, trying backend...`);
 
-          // First try PixelBuddhaFontService (most reliable for PB fonts)
-          const isPixelBuddha = await PixelBuddhaFontService.isPixelBuddhaFamily(fontName);
-          if (isPixelBuddha) {
-            console.log(`[FontLoadingService] Font "${fontName}" found in PixelBuddha registry`);
-            const loaded = await PixelBuddhaFontService.ensureFontLoaded(fontName, '400');
-            if (loaded) {
-              loadedFonts.add(fontName);
-              console.log(`[FontLoadingService] ✓ Loaded PixelBuddha font: ${fontName}`);
-              return;
-            }
-          }
+          // DISABLED: PixelBuddha fonts disabled (using only Designer + Google fonts)
+          // const isPixelBuddha = await PixelBuddhaFontService.isPixelBuddhaFamily(fontName);
+          // if (isPixelBuddha) { ... }
 
-          // Fallback to general FontApiService
+          // Try loading via FontApiService (Designer fonts only)
           const loaded = await FontApiService.findAndLoadByFamily(fontName, '400');
           if (loaded) {
             loadedFonts.add(fontName);
-            console.log(`[FontLoadingService] ✓ Loaded backend font: ${fontName}`);
             return;
           }
-
-          console.warn(`[FontLoadingService] ✗ Font not found in registry or backend: ${fontName}`);
         } catch (error) {
           console.error(`[FontLoadingService] ✗ Failed to load backend font ${fontName}:`, error);
         }
@@ -264,21 +236,7 @@ export const FontLoadingService = {
       try {
         const styleTag = getOrCreateDynamicStyleTag();
         let cssToInject = '';
-        // Special-case PixelBuddha: load via backend API by family name
-        try {
-          const pixelBuddhaGroup = FONT_CATEGORIES['PixelBuddha'] || [];
-          const isPixelBuddhaFont = pixelBuddhaGroup.some(f => f.name === fontName);
-          if (isPixelBuddhaFont) {
-            const ok = await FontApiService.findAndLoadByFamily(fontDef.family || fontName, fontDef.weight || '400');
-            if (ok) {
-              loadedFonts.add(fontName);
-              const loadTime = performance.now() - startTime;
-              fontPerformanceMetrics[fontName] = { loadTime, uses: (fontPerformanceMetrics[fontName]?.uses || 0) + 1 };
-              resolve();
-              return;
-            }
-          }
-        } catch {}
+        // DISABLED: PixelBuddha fonts disabled (using only Designer + Google fonts)
 
         // 5. Generate CSS based on source
         switch (fontDef.source) {
@@ -594,15 +552,11 @@ export const FontLoadingService = {
    */
   loadThemeFonts: async (heroFont: string, bodyFont: string): Promise<void> => {
     try {
-      console.log(`[FontLoadingService] Loading theme fonts: ${heroFont} (hero), ${bodyFont} (body)`);
-      
       // Load both fonts in parallel for better performance
       await Promise.all([
         FontApiService.findAndLoadByFamily(heroFont, '700'),  // Hero fonts typically bold
         FontApiService.findAndLoadByFamily(bodyFont, '400')   // Body fonts typically regular
       ]);
-      
-      console.log(`[FontLoadingService] Theme fonts loaded successfully`);
     } catch (error) {
       console.warn(`[FontLoadingService] Failed to load theme fonts:`, error);
       // Non-fatal - fonts will load on first render

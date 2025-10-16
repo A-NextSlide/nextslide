@@ -372,7 +372,7 @@ export const CustomComponentRenderer: React.FC<{
         // Remove the context parameter and var props extraction line
         unescapedCode = unescapedCode.replace(
           /function\s+render\s*\(\s*context\s*\)/,
-          'function render({ props, state, updateState, id, isThumbnail })'
+          'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight })'
         );
         // Remove the var props = context.props; line if it exists
         unescapedCode = unescapedCode.replace(
@@ -382,11 +382,11 @@ export const CustomComponentRenderer: React.FC<{
       }
     } catch (_) { /* noop */ }
 
-    // 2. Accept trailing parameters after the destructured object (e.g., ", instanceId").
+    // 2. Accept trailing parameters after the destructured object (e.g., ", instanceId", ", containerWidth, containerHeight").
     try {
       unescapedCode = unescapedCode.replace(
         /function\s+render\s*\(\{[\s\S]*?\}\s*(?:,[^)]*)?\)/,
-        'function render({ props, state, updateState, id, isThumbnail })'
+        'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight })'
       );
     } catch (_) { /* noop */ }
 

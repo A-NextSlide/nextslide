@@ -1148,12 +1148,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
         const effectiveAnimate = ((props as any).animate === false && !firstReadyAnimate && !oneShotAnimate)
           ? false
           : (Boolean((props as any).animate) || oneShotAnimate || firstReadyAnimate);
-        // Reduce log spam: only log first computation in dev
-        const loggedRef = React.useRef(false);
-        if (import.meta.env.DEV && !loggedRef.current) {
-          loggedRef.current = true;
-          console.debug('[UnifiedChart] effectiveAnimate', { id: component.id, isReady, firstReadyAnimate, oneShotAnimate, animateProp: (props as any).animate, effectiveAnimate });
-        }
+        // Animation setup complete - no logging needed
 
         // Compute scale relative to native slide size so fonts/margins scale consistently
         const containerScale = React.useMemo(() => {
@@ -1453,17 +1448,6 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           labelFontSizePx,
           effectiveAnimate
         ]);
-
-        // Debug logging
-        if (import.meta.env.DEV) {
-          console.debug('[UnifiedChart] Render:', {
-            width,
-            height,
-            containerScale: Math.round(containerScale * 100) / 100,
-            labelFontSizePx,
-            key: `${chartType}-${['networkgraph', 'dependencywheel', 'sankey'].includes(chartType) ? recreateKey : 0}-${Math.round(containerScale * 100)}`
-          });
-        }
 
         return (
           <SSRHighcharts

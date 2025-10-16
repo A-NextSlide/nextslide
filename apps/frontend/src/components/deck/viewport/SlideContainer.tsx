@@ -154,13 +154,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
         
         setSlidesInProgress(inProgress);
         setCompletedSlides(completed);
-        
-        // Log progress for debugging
-        console.log('[SlideContainer] Generation progress:', {
-          inProgress: Array.from(inProgress),
-          completed: Array.from(completed),
-          total: state.slides.length
-        });
       }
     };
     
@@ -216,18 +209,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       if (currentSlide && (slideId === currentSlide.id || !slideId)) {
         // Ensure crop mode is not active when opening the picker
         try { useEditorSettingsStore.getState().stopImageCrop(); } catch {}
-        // Log cache state when opening picker
-        console.log('[SlideContainer] Opening image picker for slide:', currentSlide.id);
-        const cachedImages = window.__slideImageCache?.[currentSlide.id];
-        if (cachedImages) {
-          console.log('[SlideContainer] Found cached images:', {
-            count: cachedImages.images?.length || 0,
-            topics: cachedImages.topics
-          });
-        } else {
-          console.log('[SlideContainer] No cached images found for slide');
-        }
-        
+
         // Open the image picker
         openImagePicker(currentSlide.id);
       }

@@ -646,9 +646,11 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   
   // Step 3: User selects detail level (simple or detailed)
   const handleDetailLevelSelected = (level: 'quick' | 'standard' | 'detailed') => {
+    console.warn('[OutlineEditor] ⚠️ handleDetailLevelSelected called with level:', level);
     // Store the selected detail level (we'll use it when generating)
     // This is now just a state update - doesn't trigger any stage transitions
     setDetailLevel(level);
+    console.warn('[OutlineEditor] ⚠️ setDetailLevel called, new value should be:', level);
   };
 
   // Back Navigation Handlers
@@ -820,6 +822,10 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
       // Use streaming process directly
       console.log('🚀 Using streaming outline generation API...');
       console.log('[OutlineEditor] uploadedFiles before handleChatSubmit:', uploadedFiles.length, uploadedFiles.map(f => f.name));
+      
+      console.warn('[OutlineEditor] ⚠️⚠️⚠️ ABOUT TO CALL handleChatSubmit');
+      console.warn('[OutlineEditor] detailLevel state value:', detailLevel);
+      console.warn('[OutlineEditor] Expected: "detailed" for Detailed Analysis, "standard" for Presentation');
       
       await handleChatSubmit({
         slideCount: slideCount !== undefined ? slideCount : null,

@@ -38,18 +38,20 @@ class EnhancedFontService:
     
     def __init__(self):
         self.font_metadata = self._load_font_metadata()
-        self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()
+        # DISABLED: PixelBuddha fonts disabled due to missing files on disk
+        # self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()
+        self.pixelbuddha_fonts = {}  # Empty - not using PixelBuddha fonts
         self.designer_fonts = self._load_designer_fonts()
         self.google_fonts = self._load_google_fonts()
-        self.all_fonts = {**self.pixelbuddha_fonts, **self.designer_fonts, **self.google_fonts}
-        
+        self.all_fonts = {**self.designer_fonts, **self.google_fonts}  # Only Designer + Google
+
         # Build tag index for fast lookup
         self.tag_index = self._build_tag_index()
         self.best_for_index = self._build_best_for_index()
-        
-        logger.info(f"Loaded {len(self.pixelbuddha_fonts)} curated PixelBuddha fonts (for hero/title only)")
+
+        logger.info(f"PixelBuddha fonts: DISABLED (only using Designer + Google fonts)")
         logger.info(f"Loaded {len(self.designer_fonts)} Designer fonts")
-        logger.info(f"Loaded {len(self.google_fonts)} Google fonts (for body text)")
+        logger.info(f"Loaded {len(self.google_fonts)} Google fonts")
         logger.info(f"Total fonts available: {len(self.all_fonts)}")
         logger.info(f"Loaded metadata for {len(self.font_metadata)} fonts")
         logger.info(f"Built index with {len(self.tag_index)} tags")
@@ -372,47 +374,47 @@ class EnhancedFontService:
     def _get_hero_fonts_with_scoring(self, context: Dict) -> List[Tuple[str, float]]:
         """
         Get hero fonts with intelligent scoring based on metadata.
-        Hero/title fonts CAN use PixelBuddha fonts - they're designed for display/headlines.
+        Uses Designer and Google fonts only (PixelBuddha disabled).
         Prioritize distinctive, eye-catching fonts that make titles pop.
         """
         scored_fonts = []
-        
+
         for font_id, font_data in self.all_fonts.items():
             score = self._score_font_for_context(font_id, context, for_body=False)
-            
-            # Boost PixelBuddha fonts for hero text - they're designed for display
-            if font_data.get('source') == 'pixelbuddha' and score > 0:
-                score *= 1.2  # 20% boost for decorative fonts in hero position
-            
+
+            # Boost Designer fonts for hero text - they're designed for display
+            if font_data.get('source') == 'designer' and score > 0:
+                score *= 1.15  # 15% boost for decorative designer fonts in hero position
+
             if score > 0:
                 scored_fonts.append((font_id, score))
-        
+
         # Sort by score descending
         scored_fonts.sort(key=lambda x: x[1], reverse=True)
-        
+
         return scored_fonts
     
     def _get_body_fonts_with_scoring(self, context: Dict) -> List[Tuple[str, float]]:
         """
         Get body fonts with intelligent scoring based on metadata.
-        IMPORTANT: Excludes PixelBuddha fonts for body text - they're only for titles/hero.
-        Body text should use clean, readable fonts (Google Fonts, System fonts, Designer fonts).
+        Uses clean, readable fonts (Google Fonts, Designer fonts).
+        PixelBuddha fonts are disabled entirely.
         """
         scored_fonts = []
-        
+
         for font_id, font_data in self.all_fonts.items():
-            # SKIP PixelBuddha fonts for body text - they're decorative/display fonts
-            # Only use them for hero/title text
-            if font_data.get('source') == 'pixelbuddha':
-                continue
-            
             score = self._score_font_for_context(font_id, context, for_body=True)
+
+            # Boost Google fonts for body text - they're optimized for readability
+            if font_data.get('source') == 'google' and score > 0:
+                score *= 1.1  # 10% boost for Google fonts in body text
+
             if score > 0:
                 scored_fonts.append((font_id, score))
-        
+
         # Sort by score descending
         scored_fonts.sort(key=lambda x: x[1], reverse=True)
-        
+
         return scored_fonts
     
     def _apply_variety_scoring(self, scored_fonts: List[Tuple[str, float]], is_hero: bool = True) -> List[str]:
