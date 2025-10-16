@@ -962,12 +962,22 @@ Ensure structural elements match the deck's maturity and intended use.'''
         if analysis.get('is_entity'):
             entity_colors = await self._get_entity_colors_from_ai(analysis['entity_name'])
             if entity_colors:
+                inferred_backgrounds = self._infer_backgrounds(entity_colors)[:2]
+                inferred_accents = self._infer_accents(entity_colors)[:2]
+                # CRITICAL: Use inferred colors, not raw AI array!
+                # Frontend expects: colors[0]=bg, colors[1]=text, colors[2]=accent
+                clean_colors = []
+                if inferred_backgrounds:
+                    clean_colors.append(inferred_backgrounds[0])
+                # We don't have text color yet, will be computed in _compose_theme
+                if inferred_accents:
+                    clean_colors.append(inferred_accents[0])
                 return {
-                    'colors': entity_colors[:8],
+                    'colors': clean_colors,  # Clean [bg, accent] instead of raw AI array
                     'source': 'ai_iconic_colors',
                     'palette_name': f"{analysis['entity_name']} Colors",
-                    'backgrounds': self._infer_backgrounds(entity_colors)[:2],
-                    'accents': self._infer_accents(entity_colors)[:2],
+                    'backgrounds': inferred_backgrounds,
+                    'accents': inferred_accents,
                     'metadata': {'entity': analysis['entity_name']}
                 }
         
