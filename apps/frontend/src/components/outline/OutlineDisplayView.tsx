@@ -535,32 +535,19 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       const deckTheme = outlineDeckTheme || {} as any;
       const cp = (deckTheme.color_palette || null) as any;
       // Do not show a placeholder palette: require a real color_palette
-      if (!cp || typeof cp !== 'object') return [] as Array<{ role: 'background' | 'accent1' | 'accent2' | 'extra'; label: string; color: string; realIndex?: number; extraIndex?: number }>;
+      if (!cp || typeof cp !== 'object') return [] as Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }>;
 
       const primaryBackground = (cp.primary_background || (Array.isArray(cp.backgrounds) ? cp.backgrounds[0] : undefined)) as string | undefined;
-      const primaryText = (cp.primary_text as string | undefined);
-      const accent_1 = (cp.accent_1 || (Array.isArray(cp.colors) ? cp.colors[0] : undefined)) as string | undefined;
-      const accent_2 = (cp.accent_2 || (Array.isArray(cp.colors) ? (cp.colors[1] || cp.colors[0]) : undefined)) as string | undefined;
+      const primaryText = (cp.primary_text || cp.text_colors?.primary) as string | undefined;
+      const accent_1 = (cp.accent_1 || (Array.isArray(cp.accents) ? cp.accents[0] : undefined)) as string | undefined;
 
-      const primaries: Array<{ role: 'background' | 'accent1' | 'accent2'; label: string; color: string }> = [];
-      if (primaryBackground) primaries.push({ role: 'background', label: 'Background', color: String(primaryBackground) });
-      if (accent_1) primaries.push({ role: 'accent1', label: 'Accent 1', color: String(accent_1) });
-      if (accent_2) primaries.push({ role: 'accent2', label: 'Accent 2', color: String(accent_2) });
+      // Only show the 3 main theme colors: Background, Text, Accent
+      const swatchList: Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }> = [];
+      if (primaryBackground) swatchList.push({ role: 'background', label: 'Background', color: String(primaryBackground) });
+      if (primaryText) swatchList.push({ role: 'text', label: 'Text', color: String(primaryText) });
+      if (accent_1) swatchList.push({ role: 'accent1', label: 'Accent', color: String(accent_1) });
 
-      const primarySet = new Set(primaries.map(p => String(p.color || '').toLowerCase()));
-      const extrasSrc: string[] = Array.isArray(cp.colors) ? cp.colors.map(String) : [];
-      const extras: Array<{ role: 'extra'; label: 'Extra'; color: string; realIndex: number; extraIndex: number }>= [];
-      const seen = new Set<string>();
-      let extraIdx = 0;
-      for (let i = 0; i < extrasSrc.length && extras.length < 12; i++) {
-        const hex = String(extrasSrc[i] || '').toLowerCase();
-        if (!hex) continue;
-        if (primarySet.has(hex)) continue;
-        if (seen.has(hex)) continue;
-        seen.add(hex);
-        extras.push({ role: 'extra', label: 'Extra', color: extrasSrc[i], realIndex: i, extraIndex: extraIdx++ });
-      }
-      return [...primaries, ...extras];
+      return swatchList;
     } catch {
       // No palette if anything fails
       return [] as any;
@@ -577,6 +564,27 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         const deckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || ({} as any);
         const cp = { ...(deckTheme.color_palette || {}) } as any;
         cp.primary_background = hex;
+        if (Array.isArray(cp.backgrounds)) cp.backgrounds[0] = hex;
+        useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
+      } catch {}
+      return;
+    }
+    if (sw.role === 'text') {
+      applyThemeUpdate((t) => ({ 
+        ...t, 
+        typography: { 
+          ...t.typography,
+          paragraph: { ...t.typography?.paragraph, color: hex },
+          heading: { ...t.typography?.heading, color: hex }
+        } 
+      }));
+      // Keep outline deck theme palette in sync so swatches update live
+      try {
+        const deckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || ({} as any);
+        const cp = { ...(deckTheme.color_palette || {}) } as any;
+        cp.primary_text = hex;
+        if (!cp.text_colors) cp.text_colors = {};
+        cp.text_colors.primary = hex;
         useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
       } catch {}
       return;
@@ -588,29 +596,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         const deckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || ({} as any);
         const cp = { ...(deckTheme.color_palette || {}) } as any;
         cp.accent_1 = hex;
+        if (Array.isArray(cp.accents)) cp.accents[0] = hex;
         useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
-      } catch {}
-      return;
-    }
-    if (sw.role === 'accent2') {
-      applyThemeUpdate((t) => ({ ...t, accent2: hex }));
-      // Keep outline deck theme palette in sync so swatches update live
-      try {
-        const deckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || ({} as any);
-        const cp = { ...(deckTheme.color_palette || {}) } as any;
-        cp.accent_2 = hex;
-        useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
-      } catch {}
-      return;
-    }
-    if (sw.role === 'extra') {
-      try {
-        const deckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || {} as any;
-        const cp = { ...(deckTheme.color_palette || {}) };
-        const colors = Array.isArray(cp.colors) ? [...cp.colors] : [];
-        const real = sw.realIndex as number;
-        if (real >= 0 && real < colors.length) colors[real] = hex;
-        useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: { ...cp, colors } });
       } catch {}
       return;
     }
