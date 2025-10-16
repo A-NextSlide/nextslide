@@ -313,7 +313,24 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               themePayload.color_palette.text_colors.primary = textColor;
             }
 
+            // Always store the theme to ensure swatches appear (do this FIRST before any logic)
+            setOutlineDeckTheme(currentOutline.id, themePayload);
+
+            // Helper to determine if color is neutral (needed for richness calculation)
+            const isNeutralHex = (hex?: string) => {
+              if (!hex || typeof hex !== 'string') return false;
+              const h = hex.trim().replace('#','');
+              if (h.length !== 6) return false;
+              const r = parseInt(h.slice(0,2), 16), g = parseInt(h.slice(2,4), 16), b = parseInt(h.slice(4,6), 16);
+              const sum = r + g + b;
+              if (sum >= 720) return true; // near-white
+              if (sum <= 60) return true;  // near-black
+              const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
+              return (maxc - minc) <= 8;   // grey
+            };
+
             // Decide whether to override existing deck theme: prefer richer or brand-sourced palettes
+            let shouldOverride = false;
             try {
               const existingTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || {} as any;
               const existingCP = (existingTheme?.color_palette || {}) as any;
@@ -333,7 +350,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               // - Prefer brand-sourced over non-brand
               // - Prefer richer (more non-neutral) palettes
               // - If richness ties, prefer larger colors length
-              let shouldOverride = false;
               if (!existingTheme || !existingCP || (!existingColors && newColors)) {
                 shouldOverride = true;
               } else if (newIsBrand && !existingIsBrand) {
@@ -350,9 +366,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 console.debug({ existingSource, newSource, existingColors, newColors, existingRich, newRich, shouldOverride });
                 console.groupEnd();
               } catch {}
-
-              // Always store the theme to ensure swatches appear
-              setOutlineDeckTheme(currentOutline.id, themePayload);
             } catch {}
             const typography = (themePayload?.typography || {}) as any;
 
@@ -371,17 +384,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const headingFamily = typography.hero_title?.family || 'Inter';
             const bodyFamily = typography.body_text?.family || 'Inter';
             // Determine richness of palette to avoid locking in minimal (2-color) previews
-            const isNeutralHex = (hex?: string) => {
-              if (!hex || typeof hex !== 'string') return false;
-              const h = hex.trim().replace('#','');
-              if (h.length !== 6) return false;
-              const r = parseInt(h.slice(0,2), 16), g = parseInt(h.slice(2,4), 16), b = parseInt(h.slice(4,6), 16);
-              const sum = r + g + b;
-              if (sum >= 720) return true; // near-white
-              if (sum <= 60) return true;  // near-black
-              const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
-              return (maxc - minc) <= 8;   // grey
-            };
+            // (isNeutralHex is defined above, before shouldOverride logic)
             // Only check the 3 main colors for richness (background, text, accent)
             const threeColors = [pageBg, textColor, accent1];
             const nonNeutralCount = threeColors.filter(c => !isNeutralHex(c)).length;
