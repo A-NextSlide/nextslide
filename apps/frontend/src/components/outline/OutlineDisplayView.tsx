@@ -295,7 +295,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
             const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
             const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
-            const colorsArray = [pageBg, textColor, accent1];
+            // Colors array should ONLY contain visual theme colors (bg + accents), NOT text color
+            const colorsArray = [pageBg, accent1];
 
             // Fix the colors array in themePayload NOW
             if (themePayload?.color_palette) {
@@ -306,6 +307,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               themePayload.color_palette.primary_background = pageBg;
               themePayload.color_palette.primary_text = textColor;
               themePayload.color_palette.accent_1 = accent1;
+              // Don't set accent_2 unless we actually have a second accent color
               // Also update text_colors for backwards compatibility
               if (!themePayload.color_palette.text_colors) {
                 themePayload.color_palette.text_colors = {};
@@ -378,17 +380,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               console.debug('  → pageBg (from backgrounds[0]):', pageBg);
               console.debug('  → textColor (from primary_text):', textColor);
               console.debug('  → accent1 (from accents[0]):', accent1);
-              console.debug('Rebuilt colorsArray in correct order:', colorsArray);
+              console.debug('Rebuilt colorsArray (bg + accent ONLY, no text):', colorsArray);
               console.groupEnd();
             } catch {}
             const headingFamily = typography.hero_title?.family || 'Inter';
             const bodyFamily = typography.body_text?.family || 'Inter';
             // Determine richness of palette to avoid locking in minimal (2-color) previews
             // (isNeutralHex is defined above, before shouldOverride logic)
-            // Only check the 3 main colors for richness (background, text, accent)
-            const threeColors = [pageBg, textColor, accent1];
-            const nonNeutralCount = threeColors.filter(c => !isNeutralHex(c)).length;
-            const isRich = nonNeutralCount >= 2; // At least 2 non-neutral colors
+            // Check the visual theme colors for richness (background + accent)
+            const themeColors = colorsArray; // [pageBg, accent1]
+            const nonNeutralCount = themeColors.filter(c => !isNeutralHex(c)).length;
+            const isRich = nonNeutralCount >= 1; // At least 1 non-neutral color
             const builtTheme = {
               name: themePayload?.theme_name || 'AI Theme',
               page: { backgroundColor: pageBg },
@@ -404,9 +406,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             try {
               console.groupCollapsed('[ColorDebug] Workspace theme built');
               console.debug('Theme being applied to workspace:', {
-                'page.backgroundColor (from colorsArray[0])': pageBg,
-                'typography.color (from colorsArray[1])': textColor,
-                'accent1 (from colorsArray[2])': accent1,
+                'page.backgroundColor': pageBg,
+                'typography.color': textColor,
+                'accent1': accent1,
+                'colorsArray (for swatches)': colorsArray,
                 'Full theme': builtTheme,
                 'shouldOverride': shouldOverride
               });
