@@ -147,13 +147,24 @@ async def stream_theme_from_outline(
                 logger.info(f"[THEME API] Vibe context: {vibe_context}")
                 
                 # Create theme from brand data matching frontend format
+                bg_color = background if background else "#FFFFFF"
+                text_color = text if text else "#1F2937"
+                accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
+
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
                     "color_palette": {
-                        "primary_background": background if background else "#FFFFFF",
-                        "primary_text": text if text else "#1F2937",
-                        "accent_1": brand_colors[0] if len(brand_colors) > 0 else "#FF4301",
-                        "accent_2": brand_colors[1] if len(brand_colors) > 1 else (brand_colors[0] if len(brand_colors) > 0 else "#F59E0B"),
+                        # Named fields (for slide generation)
+                        "primary_background": bg_color,
+                        "primary_text": text_color,
+                        "accent_1": accent_color,
+                        "accent_2": brand_colors[1] if len(brand_colors) > 1 else accent_color,
+                        # Array fields (for theme dropdown/swatches)
+                        "backgrounds": [bg_color],
+                        "accents": [accent_color],
+                        "text_colors": {
+                            "primary": text_color
+                        },
                         "colors": brand_colors[:6],  # Limit to 6 colors for frontend
                         "metadata": {
                             "logo_url": logo_url
@@ -456,13 +467,24 @@ async def theme_from_outline_json(
                 logger.info(f"[THEME JSON] Vibe context: {vibe_context}")
                 
                 # Create theme from brand data matching frontend format
+                bg_color = background if background else "#FFFFFF"
+                text_color = text if text else "#1F2937"
+                accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
+
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
                     "color_palette": {
-                        "primary_background": background if background else "#FFFFFF",
-                        "primary_text": text if text else "#1F2937",
-                        "accent_1": brand_colors[0] if len(brand_colors) > 0 else "#FF4301",
-                        "accent_2": brand_colors[1] if len(brand_colors) > 1 else (brand_colors[0] if len(brand_colors) > 0 else "#F59E0B"),
+                        # Named fields (for slide generation)
+                        "primary_background": bg_color,
+                        "primary_text": text_color,
+                        "accent_1": accent_color,
+                        "accent_2": brand_colors[1] if len(brand_colors) > 1 else accent_color,
+                        # Array fields (for theme dropdown/swatches)
+                        "backgrounds": [bg_color],
+                        "accents": [accent_color],
+                        "text_colors": {
+                            "primary": text_color
+                        },
                         "colors": brand_colors[:6],  # Limit to 6 colors for frontend
                         "metadata": {
                             "logo_url": logo_url

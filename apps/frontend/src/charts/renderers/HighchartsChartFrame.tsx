@@ -54,8 +54,28 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
     };
   }, [component, defaultProps, backgroundColor]);
 
-  // Update dimensions based on container
+  // Update dimensions based on container OR explicit props (for thumbnails)
   useEffect(() => {
+    // For thumbnails, use explicit width/height from props instead of measuring
+    // This avoids issues with CSS transform scaling
+    const isThumbnail = props.isThumbnail === true;
+    
+    if (isThumbnail && props.width && props.height) {
+      const explicitWidth = typeof props.width === 'number' ? props.width : 800;
+      const explicitHeight = typeof props.height === 'number' ? props.height : 600;
+      
+      setDimensions({
+        width: explicitWidth,
+        height: explicitHeight
+      });
+      
+      if (!hasMeasured.current) {
+        hasMeasured.current = true;
+        setIsReady(true);
+      }
+      return;
+    }
+    
     if (!containerRef?.current) return;
 
     const resizeObserver = new ResizeObserver(entries => {
@@ -85,11 +105,14 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
     return () => {
       resizeObserver.disconnect();
     };
-  }, [containerRef]);
+  }, [containerRef, props.isThumbnail, props.width, props.height]);
 
   // Fallback: if ResizeObserver hasn't measured shortly after mount, attempt a manual measure
   useEffect(() => {
+    // Skip fallback measurement for thumbnails (handled above)
+    if (props.isThumbnail === true) return;
     if (!containerRef?.current || hasMeasured.current) return;
+    
     const timer = setTimeout(() => {
       if (hasMeasured.current || !containerRef.current) return;
       const el = containerRef.current;
@@ -105,10 +128,13 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [containerRef]);
+  }, [containerRef, props.isThumbnail]);
 
   // Defensive: when a slide completes or generation finishes, re-measure and mark ready
   useEffect(() => {
+    // Skip remeasure for thumbnails (use explicit dimensions)
+    if (props.isThumbnail === true) return;
+    
     const remeasure = () => {
       if (!containerRef?.current) return;
       const el = containerRef.current;
@@ -129,7 +155,7 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
       window.removeEventListener('slide_completed', remeasure as EventListener);
       window.removeEventListener('deck_generation_complete', remeasure as EventListener);
     };
-  }, [containerRef]);
+  }, [containerRef, props.isThumbnail]);
 
   // Don't create highcharts options until we have dimensions
   const highchartsOptions = useMemo(() => {

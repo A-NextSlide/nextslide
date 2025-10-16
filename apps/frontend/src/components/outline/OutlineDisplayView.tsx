@@ -287,14 +287,38 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 console.groupEnd();
               } catch {}
             } catch {}
+
+            // CRITICAL: FIX THE COLORS ARRAY ORDER **BEFORE** STORING!
+            // The backend's semantic assignment is in legacy fields (primary_background, accent_1, primary_text)
+            // but the colors array might be in wrong order. Fix it NOW before any storage.
+            const colors = (themePayload?.color_palette || {}) as any;
+            const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
+            const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
+            const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
+            const colorsArray = [pageBg, textColor, accent1];
+
+            // Fix the colors array in themePayload NOW
+            if (themePayload?.color_palette) {
+              themePayload.color_palette.colors = colorsArray;
+              themePayload.color_palette.backgrounds = [pageBg];
+              themePayload.color_palette.accents = [accent1];
+              // CRITICAL: Also set singular fields so swatches can read from them!
+              themePayload.color_palette.primary_background = pageBg;
+              themePayload.color_palette.primary_text = textColor;
+              themePayload.color_palette.accent_1 = accent1;
+              // Also update text_colors for backwards compatibility
+              if (!themePayload.color_palette.text_colors) {
+                themePayload.color_palette.text_colors = {};
+              }
+              themePayload.color_palette.text_colors.primary = textColor;
+            }
+
             // Decide whether to override existing deck theme: prefer richer or brand-sourced palettes
             try {
               const existingTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id) || {} as any;
               const existingCP = (existingTheme?.color_palette || {}) as any;
               const existingColors: string[] = Array.isArray(existingCP.colors) ? (existingCP.colors as any[]).filter((x: any) => typeof x === 'string') : [];
-              const newColors: string[] = Array.isArray((themePayload?.color_palette || {}).colors)
-                ? ((themePayload.color_palette.colors as any[]).filter((x: any) => typeof x === 'string'))
-                : [];
+              const newColors: string[] = colorsArray; // Use corrected colors array
               const nn = (arr: string[]) => arr.filter(c => !isNeutralHex(c)).length;
               const existingRich = nn(existingColors);
               const newRich = nn(newColors);
@@ -328,17 +352,26 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               } catch {}
 
               if (shouldOverride) {
+                // Now themePayload has correct colors array!
                 setOutlineDeckTheme(currentOutline.id, themePayload);
               }
             } catch {}
-            const colors = (themePayload?.color_palette || {}) as any;
             const typography = (themePayload?.typography || {}) as any;
-            const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
+
+            // DEBUG: Log color extraction (colors, colorsArray already extracted above)
+            try {
+              console.groupCollapsed('[ColorDebug] Color extraction from backend');
+              console.debug('Raw color_palette:', colors);
+              console.debug('Original colors array (may be wrong order):', colors.colors);
+              console.debug('Using legacy fields for semantic correctness:');
+              console.debug('  → pageBg (from backgrounds[0]):', pageBg);
+              console.debug('  → textColor (from primary_text):', textColor);
+              console.debug('  → accent1 (from accents[0]):', accent1);
+              console.debug('Rebuilt colorsArray in correct order:', colorsArray);
+              console.groupEnd();
+            } catch {}
             const headingFamily = typography.hero_title?.family || 'Inter';
             const bodyFamily = typography.body_text?.family || 'Inter';
-            const textColor = colors.primary_text || '#1f2937';
-            const accent1 = colors.accent_1 || (colors.colors?.[0] || '#FF4301');
-            const accent2 = colors.accent_2 || (colors.colors?.[1] || accent1);
             // Determine richness of palette to avoid locking in minimal (2-color) previews
             const isNeutralHex = (hex?: string) => {
               if (!hex || typeof hex !== 'string') return false;
@@ -351,11 +384,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
               return (maxc - minc) <= 8;   // grey
             };
-            const cpColors: string[] = Array.isArray(colors.colors) ? (colors.colors as any[]).filter((x: any) => typeof x === 'string') : [];
-            const allCandidates = [accent1, accent2, ...cpColors];
-            const uniqueUpper = Array.from(new Set(allCandidates.filter(Boolean).map(c => String(c).toUpperCase())));
-            const nonNeutralCount = uniqueUpper.filter(c => !isNeutralHex(c)).length;
-            const isRich = nonNeutralCount >= 3;
+            // Only check the 3 main colors for richness (background, text, accent)
+            const threeColors = [pageBg, textColor, accent1];
+            const nonNeutralCount = threeColors.filter(c => !isNeutralHex(c)).length;
+            const isRich = nonNeutralCount >= 2; // At least 2 non-neutral colors
             const builtTheme = {
               name: themePayload?.theme_name || 'AI Theme',
               page: { backgroundColor: pageBg },
@@ -364,10 +396,21 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 heading: { fontFamily: headingFamily, color: textColor }
               },
               accent1,
-              accent2
+              accent2: accent1  // Use same as accent1 for backwards compatibility
             } as any;
-            // Apply to workspace only, without persisting per-outline custom theme locally
-            try { useThemeStore.getState().setOutlineDeckTheme?.(currentOutline.id, themePayload); } catch {}
+
+            // DEBUG: Log theme application
+            try {
+              console.groupCollapsed('[ColorDebug] Workspace theme built');
+              console.debug('Theme being applied to workspace:', {
+                'page.backgroundColor (from colorsArray[0])': pageBg,
+                'typography.color (from colorsArray[1])': textColor,
+                'accent1 (from colorsArray[2])': accent1,
+                'Full theme': builtTheme
+              });
+              console.groupEnd();
+            } catch {}
+            // Apply to workspace only (deck theme already corrected and stored above)
             const themeId = addCustomTheme(builtTheme);
             setWorkspaceTheme(themeId);
             if (isRich || isThemeGenerated) {

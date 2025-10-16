@@ -122,8 +122,12 @@
     }
   },
   "CustomComponent": {
-    "description": "POWERFUL component for creating infographics, data visualizations, and interactive elements",
+    "description": "POWERFUL component for creating infographics, data visualizations, and interactive elements - USE FREQUENTLY IN PRESENTATION MODE!",
     "when_to_use": {
+      "minimal_content": "PRESENTATION MODE: Use three_card_grid, two_card_comparison, or hero_stat_card for 1-3 points",
+      "single_stat": "Use hero_stat_card for ONE BIG NUMBER - dramatic and beautiful",
+      "two_three_stats": "Use three_card_grid for 2-3 metrics - perfect for presentation mode",
+      "before_after": "Use two_card_comparison for comparisons and transformations",
       "statistics": "Use animated_progress_rings or kpi_cards for metrics",
       "comparisons": "Use comparison_bars or feature_toggle for before/after",
       "timelines": "Use interactive_timeline for roadmaps and journeys",
@@ -132,6 +136,13 @@
       "calculations": "Use interactive_slider for ROI/budget scenarios",
       "countdowns": "Use countdown_timer for launches and deadlines",
       "visual_interest": "Use morphing_blob or floating_icons for modern aesthetics"
+    },
+    "presentation_mode_priority": {
+      "philosophy": "In PRESENTATION MODE, prefer CustomComponents over plain text - make it VISUAL!",
+      "card_layouts": "Use card-based components (three_card_grid, two_card_comparison, hero_stat_card) for 70% of content slides",
+      "minimal_content": "When you have 1-3 points, ALWAYS use a card component instead of bullet lists",
+      "visual_hierarchy": "Cards create better visual hierarchy than text blocks",
+      "engagement": "Animated cards are more engaging than static text"
     },
     "required_props": [
       "position",
@@ -175,6 +186,9 @@
       "trends": "Combine small line chart with HUGE current value display"
     },
     "recommended_components": [
+      "three_card_grid - BEST for 2-3 stats in presentation mode (horizontal cards with big numbers)",
+      "hero_stat_card - BEST for single metric showcase (one massive number in beautiful card)",
+      "two_card_comparison - BEST for before/after or comparison (dramatic side-by-side cards)",
       "kpi_cards - for dashboards and metrics",
       "animated_progress_rings - for performance indicators",
       "comparison_bars - for before/after visualizations",
@@ -184,7 +198,10 @@
       "feature_toggle - for plan comparisons",
       "decision_tree - for process flows",
       "countdown_timer - for urgency",
-      "interactive_slider - for calculations"
+      "interactive_slider - for calculations",
+      "metric_dashboard - for full-screen 4-6 metric grids",
+      "funnel_viz - for conversion funnels and pipelines",
+      "radial_progress - for multiple KPI tracking"
     ],
     "avoid": [
       "Plain text (use TiptapTextBlock instead)",

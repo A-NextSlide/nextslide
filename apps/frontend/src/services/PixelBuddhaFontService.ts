@@ -230,11 +230,24 @@ export const PixelBuddhaFontService = {
 
   ensureFontLoaded: async (family: string, weight = '400'): Promise<boolean> => {
     const key = normalizeFamilyKey(family);
-    if (!key) return false;
+    if (!key) {
+      console.warn(`[PixelBuddhaFontService] Invalid family name: ${family}`);
+      return false;
+    }
+
+    console.log(`[PixelBuddhaFontService] Loading font: ${family} (key: ${key})`);
     await loadManifestOnce();
+
     const stored = familyToBestUrl.get(key);
-    if (!stored) return false;
-    if (stored.trim() === '') return false; // known name but no url in simple list; fallback
+    if (!stored) {
+      console.warn(`[PixelBuddhaFontService] No URL found for font: ${family}`);
+      return false;
+    }
+    if (stored.trim() === '') {
+      console.warn(`[PixelBuddhaFontService] Empty URL for font: ${family}`);
+      return false; // known name but no url in simple list; fallback
+    }
+
     try {
       // Inject using sanitized single family so CSS matches theme family
       const displayFamily = sanitizeDisplayFamily(family);
@@ -243,10 +256,14 @@ export const PixelBuddhaFontService = {
       const clientUrl = stored.startsWith('/')
         ? (isDev ? stored : `${base}${stored}`)
         : stored;
+
+      console.log(`[PixelBuddhaFontService] Loading from URL: ${clientUrl}`);
       injectPreload(clientUrl, displayFamily, weight);
       injectFontFace(displayFamily, clientUrl, weight);
+      console.log(`[PixelBuddhaFontService] ✓ Successfully loaded: ${family}`);
       return true;
     } catch (e) {
+      console.error(`[PixelBuddhaFontService] ✗ Failed to load ${family}:`, e);
       return false;
     }
   }

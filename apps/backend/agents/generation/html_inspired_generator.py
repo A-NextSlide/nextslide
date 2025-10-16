@@ -190,24 +190,22 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else {}
 
         # CRITICAL: Extract colors from color_palette nested structure
-        # ✨ USE EXACT SAME 3-COLOR LOGIC AS FRONTEND DROPDOWN! ✨
+        # ✨ USE NAMED KEYS TO MATCH THEME API STRUCTURE! ✨
         color_palette = theme_dict.get('color_palette', {})
 
-        # Get the 3 main colors array (like frontend: palette[0]=bg, palette[1]=text, palette[2]=accent)
-        colors_array = color_palette.get('colors', ['#0A0E27', '#FFFFFF', '#2563EB'])
+        # READ FROM NAMED KEYS (these are what theme API creates in api_theme.py lines 152-156)
+        # DO NOT use colors array - it contains accents only, NOT background/text!
+        primary_bg = color_palette.get('primary_background', '#0A0E27')
+        text_primary = color_palette.get('primary_text', '#FFFFFF')
+        accent_1 = color_palette.get('accent_1', '#2563EB')
 
-        # Map exactly like frontend ThemePanel dropdown does (lines 505-519)
-        primary_bg = colors_array[0] if len(colors_array) > 0 else '#0A0E27'
-        text_primary = colors_array[1] if len(colors_array) > 1 else '#FFFFFF'
-        accent_1 = colors_array[2] if len(colors_array) > 2 else '#2563EB'
+        logger.info(f"🎨 Extracted theme colors from NAMED KEYS: bg={primary_bg}, text={text_primary}, accent={accent_1}")
 
-        logger.info(f"🎨 Using 3 colors from dropdown logic: bg={primary_bg}, text={text_primary}, accent={accent_1}")
-
-        # ONLY 3 colors like dropdown (no secondary/accent2 to keep it simple and avoid black/white)
+        # ONLY 3 colors to keep it simple and match outline → dropdown → generation
         theme_colors = {
-            'background': primary_bg,      # palette[0] - For slide backgrounds
-            'text': text_primary,          # palette[1] - For ALL text
-            'accent': accent_1,            # palette[2] - For emphasis/highlights
+            'background': primary_bg,      # primary_background - For slide backgrounds
+            'text': text_primary,          # primary_text - For ALL text
+            'accent': accent_1,            # accent_1 - For emphasis/highlights
         }
         
         slide_type = getattr(context.slide_outline, 'slide_type', 'content')
@@ -421,7 +419,7 @@ Output valid JSON component array now (using the 3 colors above EXACTLY):"""
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: ABSOLUTELY MASSIVE TiptapTextBlock (450-650pt, fontWeight=900, width=1700-1800) + clean gradient/solid Background (NO images!). BLOW UP THE TEXT - TAKE UP THE PAGE!"
+            return "TITLE: ABSOLUTELY MASSIVE TiptapTextBlock (450-650pt, fontWeight=900, width=1700-1800) + clean solid Background (NO images, NO gradients!). BLOW UP THE TEXT - TAKE UP THE PAGE!"
         
         elif 'stat' in slide_type:
             return "STAT: ReactBits count-up OR CustomComponent dashboard (theme colors ONLY!). Clean layout, minimal boxes. Add Image for visual impact!"

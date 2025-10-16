@@ -465,6 +465,10 @@ class ThemeDirector:
                     'backgrounds': [primary_bg],
                     'accents': [accent_1],
                     'text_colors': {'primary': text_primary},
+                    # CRITICAL: Also set singular fields for frontend compatibility
+                    'primary_background': primary_bg,
+                    'accent_1': accent_1,
+                    'primary_text': text_primary,
                     'gradients': [],
                     'source': 'huemint_ai',
                     'palette_name': 'AI Generated Palette',
@@ -484,7 +488,7 @@ class ThemeDirector:
                     'font_source': font_result.get('source', 'contextual')
                 },
                 'visual_style': {
-                    'background_style': 'gradient' if primary_bg not in ['#fff', '#ffffff'] else 'solid',
+                    'background_style': 'solid',  # ALWAYS solid like frontend dropdown (no gradients!)
                     'style_keywords': analysis.get('style_keywords', [])
                 }
             }
@@ -528,6 +532,10 @@ class ThemeDirector:
                     'backgrounds': [primary_bg],
                     'accents': [accent_1],
                     'text_colors': {'primary': text_primary},
+                    # CRITICAL: Also set singular fields for frontend compatibility
+                    'primary_background': primary_bg,
+                    'accent_1': accent_1,
+                    'primary_text': text_primary,
                     'gradients': [],
                     'source': color_result.get('source', 'custom'),
                     'palette_name': color_result.get('palette_name', 'Selected Palette'),
@@ -547,7 +555,7 @@ class ThemeDirector:
                     'font_source': font_result.get('source', 'contextual')
                 },
                 'visual_style': {
-                    'background_style': 'gradient' if primary_bg not in ['#fff', '#ffffff'] else 'solid',
+                    'background_style': 'solid',  # ALWAYS solid like frontend dropdown (no gradients!)
                     'style_keywords': analysis.get('style_keywords', [])
                 }
             }

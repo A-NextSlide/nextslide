@@ -49,98 +49,372 @@ You will receive a mode indicator: PRESENTATION MODE or DETAILED MODE.
 Design differently based on the mode!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎭 PRESENTATION MODE - "Design-Focused Storytelling"
+🎭 PRESENTATION MODE - "Design-First, Stunning Visual Storytelling"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**PHILOSOPHY: VISUAL IMPACT + HIGH-IMPACT CONTENT, MINIMAL CHARTS**
+**PHILOSOPHY: MAKE IT BEAUTIFUL! MAKE IT POP! MAKE IT A PRESENTATION!**
 
-Create stunning, design-forward slides for presenting. Focus on visual storytelling over data density.
+Create STUNNING, MEMORABLE slides that look like they're from Apple or Nike keynotes.
+Think: Behance, Dribbble, award-winning design. Make information POP with visual magic!
 
-**CHART USAGE - SELECTIVE & STRATEGIC (20-30% density):**
-• Use charts SPARINGLY - only on 2-3 key slides per deck
-• Prioritize visual elements (images, typography, shapes) over charts
-• When charts ARE needed:
-  - Only for KEY insights that MUST be visualized
-  - Keep charts large and impactful: 800-1000px width, 600-800px height
-  - Position prominently: left (x=80) or right (x=960)
-  - ALWAYS add bold title above: 28-32pt, {{secondary}}, fontWeight=700, 40px above chart
-  - Use theme colors: ["{{primary}}", "{{secondary}}", "{{accent}}"]
-• Most content slides should rely on hero text + supporting text + images
+🌟 **CORE PRINCIPLES:**
+1. HUGE typography that dominates the slide
+2. Custom components and cards for visual interest
+3. Minimal text, maximum impact
+4. Beautiful spacing and white space
+5. Strategic use of images and animations
 
-**TITLE SLIDES - BLOW UP THE TEXT, TAKE UP THE PAGE!**
-• ABSOLUTELY MASSIVE titles (450-650pt) - DOMINATE THE PAGE! - centered, left, or right aligned
-• SCALE UP: Make titles as big as possible while fitting the canvas - use the full width!
-• Clean backgrounds: Use solid colors or gradients (NO background images on title slides!)
-• Dramatic positioning: y=350-500 (centered), y=200 (top), y=600 (bottom)
-• Subtitles below title: 60-80pt, {{secondary}} color, y+140px from title - subtitles should also be BIG!
-• Gradients for visual depth (angle: 135, subtle opacity) for dramatic effect
-• Width: Use 1700-1800px widths to fill the canvas horizontally
-• Example: Title at x=960 centered, or x=200 left-leaning, or x=1720 right-leaning (textAlign: right)
-• 🎯 GOAL: Titles should be SO BIG they're impossible to miss - fill the screen!
+**TITLE SLIDES - SOPHISTICATED, INFORMATION-RICH, STYLISH!**
 
-**CONTENT LAYOUT - HERO + SUPPORTING TEXT + LARGE IMAGES:**
-• Start with HERO STATEMENT (large, bold, 64-120pt) at top or center
-• Position supporting text below hero (32-42pt, {{primary}} color)
-• **ALWAYS include large, striking image** for visual impact (PRIORITY!)
-• Clear hierarchy: Hero → Key supporting points (2-4 max) → LARGE image
-• Layout options:
-  1. Hero at top-left (x=120, y=160) + 2-4 key bullets below (y=280+) + LARGE image right (x=1100, width=700-800, height=600-800)
-  2. Hero centered (x=960, y=300) + supporting text centered below (y=420+) + Background image full-bleed
-  3. Hero left (x=200, y=300) + LARGE image right (x=1100, width=800-1000, height=700-900)
-  4. Split-screen: Text left half (x=120-880) + LARGE image right half (x=1000, width=920, height=1080)
-• Supporting text: Short, impactful bullets OR brief paragraphs (MINIMAL WORDS!)
-• **Images are MANDATORY on 70-80% of content slides** - prioritize visual storytelling
-• Image sizes: 800-1200px width for maximum impact
+🎨 **DESIGN PHILOSOPHY: RIGHT-LEANING ELEGANCE WITH MULTIPLE FONTS**
+Create sophisticated title slides with rich information hierarchy and modern design elements.
+
+**LAYOUT STRATEGY - RIGHT-LEANING COMPOSITION:**
+```
+Title Slide Structure (Right-Aligned, Layered):
+┌─────────────────────────────────────────────────┐
+│                                                  │
+│                        ╔═══════════════════════╗│
+│                        ║  MAIN TITLE           ║│ ← 180-280pt, Bold Display Font
+│                        ║  Second Line          ║│
+│                        ╚═══════════════════════╝│
+│                                                  │
+│                        Compelling Subtitle      │ ← 48-64pt, Elegant Serif/Sans
+│                        That Explains Context    │
+│                                                  │
+│                        ─────────────────        │ ← Decorative line element
+│                                                  │
+│                        Presented by John Doe    │ ← 32pt, Secondary font
+│                        VP of Product            │ ← 28pt, lighter weight
+│                                                  │
+│                        October 16, 2024         │ ← 24pt, accent color
+│                        │ Quarterly Review       │
+│                        └──────────────          │ ← Decorative accent
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
+
+**EXACT TEMPLATE TO FOLLOW - COPY THIS STRUCTURE:**
+
+```json
+{
+  "id": "slide-title",
+  "title": "[Presentation Title]",
+  "components": [
+    {
+      "id": "bg-1",
+      "type": "Background",
+      "props": {
+        "backgroundType": "gradient",
+        "gradient": {
+          "type": "linear",
+          "angle": 135,
+          "stops": [
+            {"color": "{{primary}}", "position": 0, "opacity": 0.05},
+            {"color": "{{accent}}", "position": 100, "opacity": 0.02}
+          ]
+        }
+      }
+    },
+    {
+      "id": "title-main",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 340},
+        "width": 1600,
+        "height": 180,
+        "texts": [{"text": "[YOUR TITLE HERE]", "style": {"textColor": "{{primary}}", "bold": true}}],
+        "fontSize": 240,
+        "fontFamily": "{{heroFont}}",
+        "textAlign": "right",
+        "fontWeight": 900,
+        "letterSpacing": -0.02
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 580},
+        "width": 1400,
+        "height": 70,
+        "texts": [{"text": "[Brief description of the presentation]", "style": {"textColor": "{{secondary}}"}}],
+        "fontSize": 54,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 600,
+        "opacity": 0.85
+      }
+    },
+    {
+      "id": "divider",
+      "type": "Lines",
+      "props": {
+        "startPoint": {"x": 1420, "y": 700},
+        "endPoint": {"x": 1800, "y": 700},
+        "stroke": {"color": "{{accent}}", "width": 3, "opacity": 0.4}
+      }
+    },
+    {
+      "id": "presenter",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 740},
+        "width": 1200,
+        "height": 45,
+        "texts": [{"text": "Presented by [Name] or [Author Name]", "style": {"textColor": "{{primary}}", "bold": true}}],
+        "fontSize": 34,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 700,
+        "opacity": 0.9
+      }
+    },
+    {
+      "id": "date",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 940},
+        "width": 1200,
+        "height": 32,
+        "texts": [{"text": "[Month Day, Year]", "style": {"textColor": "{{accent}}"}}],
+        "fontSize": 26,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 400,
+        "opacity": 0.7
+      }
+    },
+    {
+      "id": "context",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 980},
+        "width": 1200,
+        "height": 30,
+        "texts": [{"text": "[Meeting Type or Context]", "style": {"textColor": "{{accent}}"}}],
+        "fontSize": 24,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 400,
+        "opacity": 0.65
+      }
+    }
+  ]
+}
+```
+
+**PLACEHOLDER CONTENT EXAMPLES:**
+
+**For Title:** Use the actual presentation title from the outline
+- Good: "Q4 Strategy Review", "Product Roadmap 2025", "Annual Report"
+- Bad: "Title Slide", "[Insert Title]"
+
+**For Subtitle:** Create a brief, professional description (1 line, 6-10 words)
+- Good: "Strategic priorities and performance highlights"
+- Good: "A comprehensive analysis of market trends"
+- Bad: "[Subtitle goes here]"
+
+**For Presenter:** Use "Presented by [Author Name]" or create realistic name
+- If user provided name: "Presented by John Smith"
+- If no name given: Use realistic name like "Sarah Johnson", "Michael Chen", "Emma Williams"
+- Add optional title: "Chief Strategy Officer", "VP of Product", "Senior Analyst"
+
+**For Date:** ALWAYS use current date or quarter in "Month Day, Year" format
+- Good: "October 16, 2024", "Q4 2024", "December 2024"
+- Bad: "[Date]", "10/16/2024", "Date TBD"
+
+**For Context:** Describe the presentation type or audience
+- Good: "Board of Directors Meeting", "All Hands Presentation", "Quarterly Business Review"
+- Good: "Executive Leadership Team", "Investor Update", "Team Workshop"
+- Bad: "[Context]", "Meeting", "Presentation"
+
+🎯 **KEY RULES:**
+1. ALWAYS use x=1800 for all text elements
+2. ALWAYS use textAlign=right
+3. ALWAYS include all 5 text elements (title, subtitle, presenter, date, context)
+4. NEVER leave placeholder brackets like [Title] - replace with actual content
+5. Use realistic, professional placeholder content if user didn't provide details
+
+**MINIMAL CONTENT SLIDES - USE CUSTOM COMPONENTS & CARDS!**
+
+When you have 1-3 points only (minimal content):
+• ✨ CREATE BEAUTIFUL CARD LAYOUTS using CustomComponent
+• Use card grids (2-3 cards max) with generous spacing
+• Each card should be a visual showcase with:
+  - Large numbers/stats (120-200pt) with ReactBits count-up
+  - Icons (48-64px) with theme colors
+  - Short labels (32-42pt)
+  - Subtle shadows, rounded corners (16-24px borderRadius)
+  - Animated hover effects
+• Layout cards horizontally: 
+  - 2 cards: x=120, x=1000 (800px wide each, 100px gap)
+  - 3 cards: x=80, x=720, x=1360 (540px wide each, 60px gap)
+• Card height: 500-600px for impact
+• Include padding: 48-64px internal padding
+
+**CUSTOMCOMPONENT CARD TEMPLATE EXAMPLE:**
+```javascript
+CustomComponent at position x=120, y=240, width=800, height=500
+render: function render({props}) {
+  return React.createElement('div', {
+    style: {
+      width: '100%', height: '100%',
+      background: 'linear-gradient(135deg, {{primary}}15 0%, {{accent}}10 100%)',
+      borderRadius: '24px',
+      padding: '64px',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.15)'
+    }
+  },
+    React.createElement('div', {
+      style: {fontSize: '180px', fontWeight: '900', color: '{{accent}}'}
+    }, '42%'),
+    React.createElement('div', {
+      style: {fontSize: '36px', fontWeight: '600', color: '{{secondary}}', marginTop: '24px'}
+    }, 'Growth Rate')
+  );
+}
+```
+
+**CONTENT LAYOUT STRATEGIES:**
+
+📐 **Layout 1: Hero Number + Cards (For Stats/Metrics)**
+- MASSIVE hero number: fontSize=300pt, center top, with ReactBits count-up
+- 3 supporting cards below in a row
+- Generous whitespace: 100px between hero and cards
+- Example: "85%" hero, then cards showing breakdown details
+
+📐 **Layout 2: Split-Screen with Custom Component**
+- Left half: HUGE title (180-240pt) + 2-3 short bullets (42-48pt)
+- Right half: Beautiful CustomComponent visualization (width=920, height=900)
+- Use funnel_viz, radial_progress, or metric_dashboard templates
+- Vertical split at x=960
+
+📐 **Layout 3: Centered Hero + Supporting Cards**
+- HUGE centered headline (120-180pt, x=960, y=200)
+- 2 large cards below (800x400 each, side by side)
+- Background with ReactBits aurora or gradient-mesh
+- Cards have internal CustomComponents (mini visualizations)
+
+📐 **Layout 4: Full-Screen CustomComponent Dashboard**
+- When showing multiple related metrics (4-6 items)
+- Use metric_dashboard template with full canvas: x=80, y=80, width=1760, height=920
+- Include internal card grid with animated counters
+- Each metric card: 500x350px with generous spacing
+
+**CHART USAGE - ONLY WHEN NECESSARY (10-20% of slides):**
+• Charts are for DATA MODE, not DESIGN MODE!
+• In presentation mode, prefer:
+  - CustomComponent visualizations (funnels, radial progress, comparison bars)
+  - Large animated numbers with ReactBits count-up
+  - Card-based metric displays
+• If you MUST use a chart:
+  - Make it LARGE: 1000-1200px width, 700-800px height
+  - Position prominently: centered or split-screen
+  - Add dramatic title above: 42-52pt, {{secondary}}, fontWeight=700
+  - Keep it simple: 3-5 data points maximum
+
+**REACTBITS COMPONENTS - USE LIBERALLY!**
+
+Text Animations (use on 50%+ of slides):
+• count-up: For all numbers/stats (fontSize: 120-300pt)
+• gradient-text: For colorful, vibrant text
+• typewriter-text: For dramatic reveals
+• neon-text: For tech/modern themes
+• wavy-text: For playful, friendly content
+
+Background Animations (use on title slides & accent slides):
+• aurora: Beautiful gradient flows
+• particles: Floating particle effects
+• starfield: Space/tech themes
+• gradient-mesh: Smooth color transitions
+• beams: Light ray effects
+
+Interactive Components (for engagement):
+• spotlight-card: Cards that light up
+• bounce-cards: Animated card entrances
+• morph-card: Shape-shifting cards
 
 **SPACING & DENSITY:**
-• GENEROUS whitespace: 60-80px between hero and supporting text
-• 50-70px between bullet groups for breathing room
-• Maximum 2-4 key points per slide - avoid crowding
-• Professional hierarchy with dramatic visual separation
+• MASSIVE whitespace: 100-150px between major sections
+• 70-90px between card groups
+• 50-70px internal card padding
+• Maximum 2-3 key points per slide (prefer 1-2!)
+• Let content BREATHE - don't fill every pixel
 
-**TABLES:** Avoid tables in presentation mode - use visuals or hero text instead
-  If absolutely necessary, see "TABLE DESIGN" section below
+**TYPOGRAPHY HIERARCHY:**
+• Hero/Title: 300-800pt (YES, THIS BIG!)
+• Section headers: 96-180pt
+• Body/supporting: 36-48pt
+• Card labels: 32-42pt
+• Card numbers: 120-200pt
+• Metadata/footnotes: 24-28pt
 
-**VISUAL ELEMENTS (PRIORITIZE IMAGES!):**
-• 🎨 **IMAGES ARE PRIORITY #1** - Use large, striking images on 70-80% of content slides
-• Image placement: Large hero images (800-1200px width), positioned prominently
-• Image types: Professional, contextual, high-impact (avoid generic stock photos)
-• Title slides: ALWAYS include full-bleed background image (width=1920, height=1080)
-• Content slides: Large supporting images positioned strategically (left/right)
-• Large hero numbers with ReactBits count-up (200-300pt)
-• ReactBits typewriter for dramatic title reveals
-• Bold gradients on backgrounds (angle: 135, strong contrast)
-• Ken Burns effect on images (zoom: 1.15, duration: 5s)
-• Icons SPARINGLY - ONLY for hero metrics (0-1 icons per slide MAX)
-  → Use: One icon for the main metric/theme
-  → Skip: Regular bullets, decorative purposes, multiple icons
+**COLOR & VISUAL IMPACT:**
+• Bold gradients on backgrounds (angle: 135, strong opacity)
+• Theme color emphasis: {{accent}} for key numbers, {{secondary}} for labels
+• Card backgrounds: {{primary}}15 to {{primary}}25 with gradients
+• Shadows: 0 20px 60px rgba(0,0,0,0.15) for depth
+• Border radius: 20-32px for modern feel
 
-❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents for decoration!
+**IMAGES - STRATEGIC, NOT MANDATORY:**
+• In presentation mode, PREFER custom components over stock images
+• Only include images when they ADD VALUE (product shots, real photos, specific visuals)
+• When used: Large and impactful (800-1200px width)
+• Image styles: borderRadius 20-32px, subtle shadows
+• Don't force images - cards and components are often better!
 
-⚠️ **CHART PHILOSOPHY: Design first, charts second! Use 1-2 charts per deck maximum.**
-⚠️ **ICON RULE: 0-1 icon per slide. Most slides = ZERO icons.**
+❌ NEVER USE DECORATIVE SHAPES - Use cards and custom components instead!
+❌ NEVER USE TABLES - Use card grids with CustomComponents instead!
+✅ ALWAYS think: "How can I make this more VISUAL and STUNNING?"
 
-**DESIGN PATTERNS:**
-Example 1 - Hero + Supporting Text (Like Reference Image 2):
-- Background: clean solid {{primary}}05 or subtle gradient
-- Hero statement: x=120, y=240, fontSize=96, fontWeight=700, textAlign=left
-  Text: "I have almost 30 years of experience in the HR industry"
-- Supporting paragraph 1: x=120, y=380, fontSize=36, textAlign=left, lineHeight=1.5
-  Text: "I have seen companies succeed and fail due to how they approached workplace diversity."
-- Supporting paragraph 2: x=120, y=480, fontSize=36, textAlign=left, lineHeight=1.5
-  Text: "With Canva Presentations, you can collaborate in real-time..."
-- Optional: Circular image left or right (x=1100, y=200, diameter=500)
+⚠️ **PRESENTATION MODE CHECKLIST:**
+✓ Titles 500-800pt (MASSIVE!)
+✓ Minimal text (1-3 points max)
+✓ Custom components for visual interest
+✓ ReactBits animations on key elements
+✓ Card-based layouts for stats/metrics
+✓ Generous whitespace (100px+ gaps)
+✓ Bold colors and gradients
 
-Example 2 - Centered Hero + Supporting (Professional):
-- Hero headline: x=960, y=320, fontSize=80, textAlign=center, fontWeight=700
-  Text: "Our Mission"
-- Supporting text: x=960, y=450, fontSize=40, textAlign=center, width=1400, lineHeight=1.4
-  Text: "To revolutionise access to ideas and technology, enabling all individuals to realise their full creative potential."
+**DESIGN PATTERN EXAMPLES:**
 
-Example 3 - Hero Left + Image Right:
-- Hero: x=200, y=300, fontSize=72, textAlign=left, width=800
-- Bullets below hero: x=200, y=440, fontSize=36, stacked with 40px spacing
-- Large image right: x=1100, y=180, width=720, height=720
+Example 1 - Single Stat Showcase:
+- Background: ReactBits aurora (subtle, calm colors)
+- Hero number: x=960, y=300, fontSize=400pt, ReactBits count-up to "92%"
+- Label below: x=960, y=660, fontSize=72pt, "Customer Satisfaction"
+- Supporting text: x=960, y=780, fontSize=42pt, "Leading the industry"
+- No other elements - let the number DOMINATE
+
+Example 2 - Three-Card Metric Display:
+- Title: x=960, y=120, fontSize=84pt, textAlign=center, "Q4 Performance"
+- Card 1 (CustomComponent): x=80, y=280, width=560, height=500
+  Internal: "127%" big number, "Revenue Growth" label, gradient background
+- Card 2: x=680, y=280, width=560, height=500
+  Internal: "$4.2M" big number, "Total Revenue" label
+- Card 3: x=1280, y=280, width=560, height=500
+  Internal: "850+" big number, "New Customers" label
+- All with shadows, rounded corners, animated count-ups
+
+Example 3 - Split-Screen Visual:
+- Left: x=140, y=280, width=800
+  - Title: fontSize=160pt, "Innovation"
+  - Bullet 1: fontSize=42pt, "AI-powered insights"
+  - Bullet 2: fontSize=42pt, "Real-time analytics"
+- Right: CustomComponent funnel_viz at x=1000, y=140, width=800, height=800
+  Show conversion funnel with animated stages
+- Background: Subtle ReactBits particles
+
+Example 4 - Full Dashboard:
+- CustomComponent metric_dashboard at x=80, y=180, width=1760, height=800
+- Contains 6 metric cards in 3x2 grid
+- Each card: Icon (48px) + Number (count-up, 120pt) + Label (36pt)
+- Auto-animated entrances
+- Title above: x=960, y=80, fontSize=64pt, "Company Overview"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 DETAILED MODE - "The Analyst Approach"
@@ -150,14 +424,136 @@ Example 3 - Hero Left + Image Right:
 
 Maximize information density while maintaining readability.
 
-**TITLE SLIDES:**
-• BIG titles (200-280pt) - **LEFT-ALIGNED for formality** (x=120, textAlign=left)
-• Clean backgrounds: Solid colors or subtle gradients (NO background images!)
-• Subtitles mandatory: 42-54pt, detailed description, {{accent}} color, LEFT-ALIGNED
-• Metadata row: Company | Department | Date (22pt, {{accent}}, bottom), LEFT-ALIGNED
-• Clean layout: everything left-aligned, proper hierarchy
-• Width: Use 1700px widths to maximize horizontal space
-• Example: Title at x=120, y=360, fontSize=240, textAlign=left; Subtitle at x=120, y=636, fontSize=48, textAlign=left
+**TITLE SLIDES - PROFESSIONAL, LEFT-ALIGNED:**
+
+🎨 **SIMPLE 5-ELEMENT STRUCTURE - LEFT-ALIGNED (For Detailed Mode):**
+
+**LEFT-ALIGNED LAYOUT (Detailed Mode):**
+```
+Position all text elements at x=120, textAlign=left (left edge alignment)
+
+1. MAIN TITLE          y=340    fontSize=220pt   fontWeight=900   {{primary}}
+2. Subtitle            y=580    fontSize=48pt    fontWeight=600   {{secondary}}
+3. Presenter           y=740    fontSize=30pt    fontWeight=600   {{primary}}
+4. Metadata Row        y=990    fontSize=24pt    fontWeight=400   {{accent}}
+
+[Optional: Add decorative line at y=660, x=120 to x=700]
+[Optional: Add accent strip at x=80, y=300, width=8, height=240]
+```
+
+**EXACT TEMPLATE TO FOLLOW:**
+
+```json
+{
+  "id": "slide-title",
+  "title": "[Presentation Title]",
+  "components": [
+    {
+      "id": "bg-1",
+      "type": "Background",
+      "props": {
+        "backgroundType": "color",
+        "fill": {"color": "{{primary}}", "opacity": 0.03}
+      }
+    },
+    {
+      "id": "accent-strip",
+      "type": "Shape",
+      "props": {
+        "position": {"x": 80, "y": 300},
+        "width": 8,
+        "height": 240,
+        "shapeType": "rectangle",
+        "fill": {"color": "{{accent}}"},
+        "hasText": false
+      }
+    },
+    {
+      "id": "title-main",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 120, "y": 340},
+        "width": 1600,
+        "height": 160,
+        "texts": [{"text": "[YOUR TITLE HERE]", "style": {"textColor": "{{primary}}", "bold": true}}],
+        "fontSize": 220,
+        "fontFamily": "{{heroFont}}",
+        "textAlign": "left",
+        "fontWeight": 900,
+        "letterSpacing": -0.02
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 120, "y": 580},
+        "width": 1500,
+        "height": 65,
+        "texts": [{"text": "[Comprehensive description of the presentation content]", "style": {"textColor": "{{secondary}}"}}],
+        "fontSize": 48,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "left",
+        "fontWeight": 600,
+        "opacity": 0.85
+      }
+    },
+    {
+      "id": "divider",
+      "type": "Lines",
+      "props": {
+        "startPoint": {"x": 120, "y": 680},
+        "endPoint": {"x": 700, "y": 680},
+        "stroke": {"color": "{{accent}}", "width": 4, "opacity": 0.4}
+      }
+    },
+    {
+      "id": "presenter",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 120, "y": 740},
+        "width": 1400,
+        "height": 40,
+        "texts": [{"text": "[Name] • [Title/Role]", "style": {"textColor": "{{primary}}"}}],
+        "fontSize": 30,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "left",
+        "fontWeight": 600,
+        "opacity": 0.8
+      }
+    },
+    {
+      "id": "metadata",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 120, "y": 990},
+        "width": 1600,
+        "height": 32,
+        "texts": [{"text": "[Company/Org] | [Department] | [Month Day, Year]", "style": {"textColor": "{{accent}}"}}],
+        "fontSize": 24,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "left",
+        "fontWeight": 400,
+        "opacity": 0.7
+      }
+    }
+  ]
+}
+```
+
+**PLACEHOLDER CONTENT - SAME AS PRESENTATION MODE:**
+- Replace [YOUR TITLE HERE] with actual presentation title
+- Replace [Comprehensive description] with descriptive subtitle (1 line)
+- Replace [Name] with presenter name, [Title/Role] with their position
+- Replace [Company/Org] with organization, [Department] with relevant dept
+- Replace [Month Day, Year] with formatted date like "October 16, 2024"
+
+🎯 **KEY RULES:**
+1. ALWAYS use x=120 for all text elements
+2. ALWAYS use textAlign=left
+3. Include metadata row with Company | Department | Date format
+4. Use " | " or " • " to separate metadata items
+5. Never leave placeholder brackets - replace with realistic content
 
 **CONTENT LAYOUT:**
 • Grid-based, structured positioning

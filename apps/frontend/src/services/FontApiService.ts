@@ -87,11 +87,14 @@ function buildSimpleFileUrl(fontId: string, styleKey: string): string {
 
 async function loadWithFontFace(displayName: string, fileUrl: string, weight: string | number = '400', style: 'normal' | 'italic' = 'normal'): Promise<boolean> {
   try {
+    console.log(`[FontApiService] Loading font: ${displayName} from ${fileUrl}`);
     const face = new FontFace(displayName, `url(${fileUrl})`, { weight: String(weight), style });
     const loaded = await face.load();
     (document as any).fonts.add(loaded);
+    console.log(`[FontApiService] ✓ Successfully loaded: ${displayName}`);
     return true;
-  } catch {
+  } catch (error) {
+    console.error(`[FontApiService] ✗ Failed to load font ${displayName} from ${fileUrl}:`, error);
     return false;
   }
 }
@@ -116,7 +119,12 @@ export const FontApiService = {
 
   findAndLoadByFamily: async (family: string, weightHint: string | number = '400'): Promise<boolean> => {
     const name = normalizeFamily(family);
-    if (!name) return false;
+    if (!name) {
+      console.warn(`[FontApiService] Invalid font family name: ${family}`);
+      return false;
+    }
+
+    console.log(`[FontApiService] Searching for font: ${name}`);
 
     // Search both sources
     const [pb, designer] = await Promise.all([
@@ -124,13 +132,25 @@ export const FontApiService = {
       listFonts('designer', name, 8, 0)
     ]);
     const candidates = [...designer, ...pb];
-    if (!candidates.length) return false;
+
+    if (!candidates.length) {
+      console.warn(`[FontApiService] No fonts found matching: ${name}`);
+      return false;
+    }
+
+    console.log(`[FontApiService] Found ${candidates.length} candidates:`, candidates.map(c => c.name));
 
     // Pick best by exact name match (case-insensitive), else first
     const lower = name.toLowerCase();
     const exact = candidates.find(f => f.name?.toLowerCase() === lower);
     const chosen = exact || candidates[0];
-    if (!chosen?.id) return false;
+
+    if (!chosen?.id) {
+      console.warn(`[FontApiService] Chosen font has no ID:`, chosen);
+      return false;
+    }
+
+    console.log(`[FontApiService] Selected font: ${chosen.name} (ID: ${chosen.id}, Source: ${(chosen as any).source})`);
 
     // Try simple endpoint with a sequence of style keys likely to exist for non-PB only
     const chosenSource = (chosen as any).source || '';
@@ -205,12 +225,16 @@ export const FontApiService = {
       // Last attempt: simple regular again for non-PB only
       if ((chosen as any).source !== 'pixelbuddha') {
         const url = buildSimpleFileUrl(chosen.id, 'regular');
+        console.log(`[FontApiService] Last attempt with simple URL: ${url}`);
         try { injectPreload(url, name, weightHint); } catch {}
         const ok = await loadWithFontFace(name, url, weightHint, 'normal');
         if (ok) return true;
       }
-    } catch {}
+    } catch (error) {
+      console.error(`[FontApiService] Error in font loading fallback:`, error);
+    }
 
+    console.warn(`[FontApiService] All loading attempts failed for: ${name}`);
     return false;
   }
 };

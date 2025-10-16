@@ -3,7 +3,7 @@ Theme adapter to align backend theme structure with the frontend ThemePanel mapp
 and apply theme properties to generated slide components.
 
 This focuses on:
-- Producing a simplified, frontend-friendly theme object (page, typography, accents)
+- Producing a simplified, frontend-friendly 3-color theme (background, text, accent1)
 - Applying that theme to component props in a consistent way prior to persistence
 """
 
@@ -31,30 +31,38 @@ class ThemeAdapter:
     def build_frontend_theme(cls, theme: Any) -> Dict[str, Any]:
         """Build a minimal ThemePanel-like mapping used by the frontend.
 
-        Returns keys:
+        Returns keys (3-color theme matching dropdown):
         - page.backgroundColor
         - typography.paragraph.{fontFamily,color}
         - typography.heading.fontFamily
-        - accents.accent1, accents.accent2
+        - accent1 (flat, not nested - only 1 accent for 3-color theme)
         - metadata.paletteSource (if available)
         """
         td = cls._as_dict(theme)
         colors = td.get('color_palette', {}) or {}
         typography = td.get('typography', {}) or {}
 
-        primary_bg = (
-            colors.get('primary_background')
-            or colors.get('primary_bg')
-            or colors.get('background')
-            or '#FFFFFF'
-        )
-        primary_text = (
-            colors.get('primary_text')
-            or colors.get('text')
-            or '#1A1A1A'
-        )
-        accent_1 = colors.get('accent_1') or colors.get('primary') or '#2563EB'
-        accent_2 = colors.get('accent_2') or colors.get('secondary') or '#F59E0B'
+        # Extract ONLY 3 COLORS from color_palette.colors array (like dropdown!)
+        colors_array = colors.get('colors', [])
+        if len(colors_array) >= 3:
+            # Use exact 3-color mapping: [background, text, accent]
+            primary_bg = colors_array[0]
+            primary_text = colors_array[1]
+            accent_1 = colors_array[2]
+        else:
+            # Fallback to nested keys if colors array not present
+            primary_bg = (
+                colors.get('primary_background')
+                or colors.get('primary_bg')
+                or colors.get('background')
+                or '#FFFFFF'
+            )
+            primary_text = (
+                colors.get('primary_text')
+                or colors.get('text')
+                or '#1A1A1A'
+            )
+            accent_1 = colors.get('accent_1') or colors.get('primary') or '#2563EB'
 
         # Typography
         body = typography.get('body_text', {}) or typography.get('body', {}) or {}
@@ -65,6 +73,7 @@ class ThemeAdapter:
         # Detect palette source if we have it (used to disable gradients)
         palette_source = colors.get('source') or td.get('palette_source')
 
+        # ONLY 3 COLORS - flat structure like frontend dropdown (no accent2!)
         return {
             'page': {
                 'backgroundColor': primary_bg
@@ -78,10 +87,7 @@ class ThemeAdapter:
                     'fontFamily': hero_family
                 }
             },
-            'accents': {
-                'accent1': accent_1,
-                'accent2': accent_2
-            },
+            'accent1': accent_1,  # Flat structure, only 1 accent (3 colors total)
             'metadata': {
                 'paletteSource': palette_source or 'unknown'
             }
@@ -97,7 +103,7 @@ class ThemeAdapter:
         """Apply theme values to components in-place and return the list.
 
         Rules:
-        - Background: preserve gradients if present, otherwise use theme colors
+        - Background: FORCE solid color backgrounds (no gradients, like frontend dropdown)
         - TiptapTextBlock: set fontFamily and default text colors
         - Lines: default stroke to accent1 if missing
         - Icon: default color to accent1
@@ -114,8 +120,10 @@ class ThemeAdapter:
         body_family = paragraph_typo.get('fontFamily', 'Poppins')
         hero_family = heading_typo.get('fontFamily', 'Montserrat')
         text_color = paragraph_typo.get('color', '#1A1A1A')
-        accent1 = theme_panel.get('accents', {}).get('accent1', '#2563EB')
-        accent2 = theme_panel.get('accents', {}).get('accent2', '#F59E0B')
+        # Read from flat structure (3-color theme)
+        accent1 = theme_panel.get('accent1', '#2563EB')
+        # For backwards compatibility, use accent1 if accent2 not present
+        accent2 = theme_panel.get('accent2', accent1)
         palette_source = theme_panel.get('metadata', {}).get('paletteSource', 'unknown')
 
         # Derive a base readable text color against the page background
@@ -171,18 +179,21 @@ class ThemeAdapter:
             props = comp.setdefault('props', {})
 
             if ctype == 'Background':
-                # Ensure base props but preserve existing gradient if already set
+                # FORCE solid color (no gradients, matching frontend dropdown behavior)
                 props.setdefault('position', {'x': 0, 'y': 0})
                 props.setdefault('width', 1920)
                 props.setdefault('height', 1080)
-                existing_type = props.get('backgroundType')
-                if existing_type not in ('color', 'gradient'):
-                    # Default to color only when not already configured
-                    props['backgroundType'] = 'color'
-                    props['backgroundColor'] = page_bg if isinstance(page_bg, str) else '#FFFFFF'
-                elif existing_type == 'color':
-                    # Backfill color if missing
-                    props.setdefault('backgroundColor', page_bg if isinstance(page_bg, str) else '#FFFFFF')
+                # ALWAYS use solid color (like frontend ThemePanel.tsx lines 200-214)
+                props['backgroundType'] = 'color'
+                props['backgroundColor'] = page_bg if isinstance(page_bg, str) else '#FFFFFF'
+                props['gradient'] = None
+                # Clear any image/pattern backgrounds
+                if 'background' in props:
+                    props['background'] = ''
+                if 'backgroundImageUrl' in props:
+                    props['backgroundImageUrl'] = None
+                if 'patternType' in props:
+                    props['patternType'] = None
 
             if ctype == 'Shape':
                 fill = props.get('fill')
@@ -204,19 +215,24 @@ class ThemeAdapter:
 
             # 1) Backgrounds
             if ctype == 'Background':
-                # Backfill base props but do not clobber existing gradient settings
+                # FORCE solid color backgrounds (matching frontend dropdown, lines 200-214)
                 props.setdefault('position', {'x': 0, 'y': 0})
                 props.setdefault('width', 1920)
                 props.setdefault('height', 1080)
                 props.setdefault('opacity', 1)
                 props.setdefault('rotation', 0)
                 props.setdefault('zIndex', 0)
-                existing_type = props.get('backgroundType')
-                if existing_type not in ('color', 'gradient'):
-                    props['backgroundType'] = 'color'
-                    props['backgroundColor'] = page_bg if isinstance(page_bg, str) else '#FFFFFF'
-                elif existing_type == 'color':
-                    props.setdefault('backgroundColor', page_bg if isinstance(page_bg, str) else '#FFFFFF')
+                # ALWAYS solid color (no gradients!)
+                props['backgroundType'] = 'color'
+                props['backgroundColor'] = page_bg if isinstance(page_bg, str) else '#FFFFFF'
+                props['gradient'] = None
+                # Clear any image/pattern backgrounds
+                if 'background' in props:
+                    props['background'] = ''
+                if 'backgroundImageUrl' in props:
+                    props['backgroundImageUrl'] = None
+                if 'patternType' in props:
+                    props['patternType'] = None
 
             # 2) Tiptap text blocks
             elif ctype == 'TiptapTextBlock':

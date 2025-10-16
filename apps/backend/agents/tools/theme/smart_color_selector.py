@@ -271,17 +271,19 @@ class SmartColorSelector:
             )
 
             if huemint_palette and huemint_palette.get('colors'):
-                colors = huemint_palette.get('colors', [])
+                raw_colors = huemint_palette.get('colors', [])
 
                 # Filter out pink if not wanted
                 if style_preferences and not self._check_wants_pink(str(style_preferences)):
-                    filtered_colors = filter_out_pink_colors(colors)
+                    filtered_colors = filter_out_pink_colors(raw_colors)
                     if filtered_colors and len(filtered_colors) >= 3:
-                        colors = filtered_colors
+                        raw_colors = filtered_colors
 
-                # Use Huemint colors DIRECTLY like frontend dropdown does
-                # palette[0] = background, palette[1] = text, palette[2] = accent
-                logger.info(f"✅ Using Huemint palette directly: bg={colors[0]}, text={colors[1]}, accent={colors[2]}")
+                # IMPORTANT: Huemint returns colors in arbitrary order, NOT semantic order!
+                # We need to intelligently assign them to background, text, and accent roles
+                colors = self._assign_semantic_roles(raw_colors[:3])
+
+                logger.info(f"✅ Assigned Huemint colors semantically: bg={colors[0]}, text={colors[1]}, accent={colors[2]}")
 
                 return {
                     'colors': colors[:3],  # Only 3 colors like frontend
@@ -988,6 +990,65 @@ class SmartColorSelector:
         except Exception:
             return hex_color
     
+    def _assign_semantic_roles(self, colors: List[str]) -> List[str]:
+        """Intelligently assign 3 arbitrary colors to semantic roles: [background, text, accent].
+
+        Huemint returns colors in arbitrary order, so we need to analyze them and assign
+        the most appropriate color to each role based on their properties.
+        """
+        if len(colors) < 3:
+            # Pad with defaults if needed
+            while len(colors) < 3:
+                colors.append('#1f2937')
+
+        # Analyze each color
+        color_data = []
+        for color in colors[:3]:
+            brightness = self._calculate_brightness(color)
+            saturation = self._calculate_saturation(color)
+            color_data.append({
+                'color': color,
+                'brightness': brightness,
+                'saturation': saturation
+            })
+
+        # Sort by brightness (lightest first)
+        sorted_by_brightness = sorted(color_data, key=lambda x: x['brightness'], reverse=True)
+
+        # Background: Pick the lightest color (suitable for light themes)
+        # If all colors are dark, pick the darkest as background for dark theme
+        avg_brightness = sum(c['brightness'] for c in color_data) / len(color_data)
+
+        if avg_brightness < 0.4:
+            # Dark palette - use darkest as background
+            background = min(color_data, key=lambda x: x['brightness'])['color']
+        else:
+            # Light palette - use lightest as background
+            background = max(color_data, key=lambda x: x['brightness'])['color']
+
+        # Remove background from candidates
+        remaining = [c for c in color_data if c['color'] != background]
+
+        # Text: Pick the color with best contrast to background
+        # Sort by contrast with background
+        def contrast_score(color_dict):
+            return abs(self._calculate_brightness(color_dict['color']) - self._calculate_brightness(background))
+
+        text_candidates = sorted(remaining, key=contrast_score, reverse=True)
+        text = text_candidates[0]['color'] if text_candidates else colors[1]
+
+        # Accent: Pick the most saturated color from remaining
+        accent_candidates = [c for c in remaining if c['color'] != text]
+        if accent_candidates:
+            accent = max(accent_candidates, key=lambda x: x['saturation'])['color']
+        else:
+            accent = colors[2]
+
+        result = [background, text, accent]
+        logger.info(f"🎨 Semantic assignment: {colors} → bg={result[0]} (brightness={self._calculate_brightness(result[0]):.2f}), text={result[1]} (contrast={abs(self._calculate_brightness(result[0]) - self._calculate_brightness(result[1])):.2f}), accent={result[2]} (saturation={self._calculate_saturation(result[2]):.2f})")
+
+        return result
+
     def _extract_style_colors(self, style_preferences: Optional[Dict[str, Any]]) -> List[str]:
         """Extract color requests from style preferences."""
         if not style_preferences:

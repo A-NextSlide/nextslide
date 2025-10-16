@@ -33,28 +33,32 @@ class HuemintPaletteGenerator:
             List of palette dictionaries with 'colors' key
         """
         try:
-            # Use variety seed to vary temperature slightly for more diversity
+            # Use variety seed to vary temperature and adjacency for more diversity
             actual_temperature = temperature
+            seed_hash = 0
             if variety_seed:
-                # Hash seed to get deterministic but varied temperature (1.0-1.4)
+                # Hash seed to get deterministic but varied temperature (0.8-1.6 for more range)
                 seed_hash = abs(hash(variety_seed))
-                actual_temperature = 1.0 + (seed_hash % 5) * 0.1
+                actual_temperature = 0.8 + (seed_hash % 9) * 0.1  # 0.8, 0.9, 1.0, ..., 1.6
 
             # Prepare locked palette (use "-" for unlocked positions)
             palette = locked_colors or []
             while len(palette) < num_colors:
                 palette.append("-")
-            
+
             # Create adjacency matrix (how colors should relate to each other)
             # Higher values = more different, lower = more similar
+            # Vary the adjacency pattern based on seed for more variety
             adjacency = []
+            adj_offset = (seed_hash % 3) * 10  # Vary adjacency values: 0, 10, 20
             for i in range(num_colors):
                 for j in range(num_colors):
                     if i == j:
                         adjacency.append("0")
                     else:
-                        # Mix of similarity (50) and difference (60) for variety
-                        adjacency.append("60" if (i + j) % 2 == 0 else "50")
+                        # Vary the relationship between colors based on seed
+                        base_val = 50 + adj_offset
+                        adjacency.append(str(base_val + 10) if (i + j + seed_hash) % 2 == 0 else str(base_val))
             
             request_data = {
                 "mode": "transformer",
@@ -118,15 +122,27 @@ class HuemintPaletteGenerator:
         Returns:
             Single palette dictionary or None
         """
+        # Generate multiple palettes and pick one based on seed for variety
+        num_to_generate = 8 if variety_seed else 1
         palettes = await self.generate_palette(
             num_colors=num_colors,
             temperature=temperature,
-            num_results=1,
+            num_results=num_to_generate,
             locked_colors=locked_colors,
             variety_seed=variety_seed
         )
 
-        return palettes[0] if palettes else None
+        if not palettes:
+            return None
+
+        # Use variety_seed to pick different palette from results
+        if variety_seed and len(palettes) > 1:
+            seed_hash = abs(hash(variety_seed))
+            selected_index = seed_hash % len(palettes)
+            logger.info(f"Selected palette {selected_index + 1} of {len(palettes)} based on seed")
+            return palettes[selected_index]
+
+        return palettes[0]
     
     async def generate_with_brand_colors(
         self,

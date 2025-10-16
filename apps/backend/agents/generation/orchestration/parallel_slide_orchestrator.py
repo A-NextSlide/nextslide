@@ -195,6 +195,15 @@ class ParallelSlideOrchestrator:
                     elif event.get('type') == 'slide_error':
                         slide_idx = event.get('slide_index', -1)
                         slides_in_progress.discard(slide_idx)
+                        # Treat errored slides as "completed" for progress tracking purposes
+                        completed_slides += 1
+                        progress = self._calculate_progress(
+                            completed_slides, len(slides_in_progress), total_slides
+                        )
+                        event['progress'] = progress
+                        event['slides_completed'] = completed_slides
+                        event['slides_total'] = total_slides
+                        logger.warning(f"[PARALLEL] slide_error: slide {slide_idx+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
                     
                     yield event
                     
@@ -208,12 +217,38 @@ class ParallelSlideOrchestrator:
         event_processor = asyncio.create_task(process_events().__anext__())
         pending_tasks = set(tasks)
         
+        # Add a global timeout to prevent infinite hangs
+        max_wait_time = 600  # 10 minutes total for all slides
+        start_time = datetime.now()
+        
         while pending_tasks or not event_queue.empty():
-            # Wait for either an event or a task to complete
-            done, pending = await asyncio.wait(
-                {event_processor} | pending_tasks,
-                return_when=asyncio.FIRST_COMPLETED
-            )
+            # Check for global timeout
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed > max_wait_time:
+                logger.error(f"⚠️ Global timeout reached after {elapsed}s. Cancelling {len(pending_tasks)} pending tasks.")
+                for task in pending_tasks:
+                    if not task.done():
+                        task.cancel()
+                break
+            
+            # Wait for either an event or a task to complete (with short timeout)
+            try:
+                done, pending = await asyncio.wait(
+                    {event_processor} | pending_tasks,
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=5.0  # Add 5-second timeout to prevent infinite waits
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ Wait timeout - checking task status. Pending: {len(pending_tasks)}, Elapsed: {elapsed}s")
+                # Check if any tasks are stuck
+                stuck_tasks = [task for task in pending_tasks if not task.done()]
+                if stuck_tasks and elapsed > 360:  # After 6 minutes, be more aggressive
+                    logger.error(f"❌ Found {len(stuck_tasks)} stuck tasks after {elapsed}s. Cancelling them.")
+                    for task in stuck_tasks:
+                        task.cancel()
+                    pending_tasks = set()
+                    break
+                continue
             
             # Process completed tasks
             for task in done:
@@ -226,11 +261,16 @@ class ParallelSlideOrchestrator:
                         event_processor = asyncio.create_task(process_events().__anext__())
                     except StopAsyncIteration:
                         break
+                    except Exception as e:
+                        logger.error(f"Event processor error: {e}")
+                        break
                 else:
                     # Task completed, remove from pending
                     pending_tasks.discard(task)
                     try:
                         task.result()  # Check for exceptions
+                    except asyncio.CancelledError:
+                        logger.warning("Slide task was cancelled")
                     except Exception as e:
                         logger.error(f"Slide task failed: {e}")
                         await event_queue.put({
@@ -243,12 +283,26 @@ class ParallelSlideOrchestrator:
         if not event_processor.done():
             event_processor.cancel()
         
+        # Cancel any remaining pending tasks
+        for task in pending_tasks:
+            if not task.done():
+                logger.warning(f"Cancelling pending task that didn't complete")
+                task.cancel()
+        
         # Final completion event
+        # Count successful vs failed slides
+        successful_slides = sum(1 for s in deck_state.slides if s.get('status') == SlideStatus.COMPLETED.value)
+        failed_slides = sum(1 for s in deck_state.slides if s.get('status') == SlideStatus.ERROR.value)
+        
+        logger.info(f"[PARALLEL_ORCH] Generation complete: {successful_slides} successful, {failed_slides} failed, {total_slides} total")
+        
         yield {
             'type': 'slides_generation_complete',
             'total_slides': total_slides,
-            'completed_slides': completed_slides,
-            'message': f'Generated {completed_slides} slides'
+            'completed_slides': successful_slides,
+            'failed_slides': failed_slides,
+            'message': f'Generated {successful_slides} of {total_slides} slides' + (f' ({failed_slides} failed)' if failed_slides > 0 else ''),
+            'success': successful_slides > 0  # Consider success if at least one slide was generated
         }
     
     async def _generate_slide_with_streaming(
@@ -446,11 +500,25 @@ class ParallelSlideOrchestrator:
                 
             except asyncio.TimeoutError:
                 logger.error(f"❌ Slide {slide_index + 1} timed out after 300 seconds")
+                # Mark slide as errored but continue processing other slides
+                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
                     'error': 'Generation timed out after 300 seconds',
-                    'message': f'Slide {slide_index + 1} generation timed out'
+                    'message': f'Slide {slide_index + 1} generation timed out',
+                    'slide_title': slide_outline.title
+                })
+                
+            except asyncio.CancelledError:
+                logger.warning(f"⚠️ Slide {slide_index + 1} generation was cancelled")
+                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
+                await event_queue.put({
+                    'type': 'slide_error',
+                    'slide_index': slide_index,
+                    'error': 'Generation was cancelled',
+                    'message': f'Slide {slide_index + 1} generation was cancelled',
+                    'slide_title': slide_outline.title
                 })
                 
             except Exception as e:
@@ -465,12 +533,16 @@ class ParallelSlideOrchestrator:
                     error_message = str(e)
                     logger.error(f"Error generating slide {slide_index + 1}: {error_message}")
                 
+                # Mark slide as errored
+                deck_state.slides[slide_index]['status'] = SlideStatus.ERROR.value
+                
                 await event_queue.put({
                     'type': 'slide_error',
                     'slide_index': slide_index,
                     'error': error_message,
                     'message': f'Error generating slide {slide_index + 1}: {error_message}',
-                    'retryable': is_retryable(e)
+                    'retryable': is_retryable(e),
+                    'slide_title': slide_outline.title
                 })
                 
             finally:

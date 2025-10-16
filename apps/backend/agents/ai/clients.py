@@ -320,6 +320,23 @@ def get_client(model_name: str, api_key: str = None, base_url: str = None, wrap_
     elif "base_url" in client_config:
         client_kwargs["base_url"] = client_config["base_url"]
     
+    # Add HTTP timeout configuration to prevent hanging
+    # This is critical - without timeouts, the client can hang indefinitely
+    if client_type in ["openai", "anthropic", "groq", "samba", "deepseek", "perplexity"]:
+        try:
+            import httpx
+            # Set aggressive timeouts: 60s connect, 180s read (3 minutes for generation)
+            # Total timeout of 240s (4 minutes) to allow for retries
+            client_kwargs["timeout"] = httpx.Timeout(
+                connect=60.0,   # 60 seconds to establish connection
+                read=180.0,     # 3 minutes to read response (for long generations)
+                write=30.0,     # 30 seconds to send request
+                pool=10.0       # 10 seconds to get connection from pool
+            )
+            logger.info(f"[CLIENT INIT] Configuring {client_type} with httpx timeouts")
+        except Exception as e:
+            logger.warning(f"[CLIENT INIT] Failed to set httpx timeout for {client_type}: {e}")
+    
     # Enable Anthropic prompt caching beta headers on every client instance
     if client_type == "anthropic":
         headers = client_kwargs.get("default_headers", {}) or {}

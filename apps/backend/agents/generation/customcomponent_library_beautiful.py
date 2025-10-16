@@ -525,6 +525,318 @@ def get_metric_cards_dashboard(theme_colors: dict) -> str:
   );
 }}"""
 
+def get_three_card_stat_grid(theme_colors: dict) -> str:
+    """
+    Beautiful 3-card horizontal grid for presenting key metrics.
+    Perfect for minimal content slides with 2-3 stats.
+    """
+    primary = theme_colors.get('primary', '#3B82F6')
+    secondary = theme_colors.get('secondary', '#8B5CF6')
+    accent = theme_colors.get('accent', '#EC4899')
+    
+    return f"""function render({{ props, state, updateState, id, isThumbnail }}) {{
+  const cards = props.cards || [
+    {{ value: '42%', label: 'Growth Rate', color: '{accent}' }},
+    {{ value: '$4.2M', label: 'Revenue', color: '{secondary}' }},
+    {{ value: '850+', label: 'Customers', color: '{primary}' }}
+  ];
+  
+  const progress = state.progress || 0;
+  
+  React.useEffect(function() {{
+    if (isThumbnail || progress >= 1) return;
+    const interval = setInterval(function() {{
+      updateState(function(prev) {{
+        const next = (prev.progress || 0) + 0.015;
+        return {{ progress: next >= 1 ? 1 : next }};
+      }});
+    }}, 25);
+    return function() {{ clearInterval(interval); }};
+  }}, []);
+  
+  const scale = Math.min(progress * 1.2, 1);
+  
+  return React.createElement('div', {{
+    style: {{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '60px',
+      padding: '0 20px',
+      fontFamily: 'Inter, -apple-system, sans-serif'
+    }}
+  }},
+    cards.map(function(card, i) {{
+      const delay = i * 0.15;
+      const cardScale = Math.max(0, Math.min((progress - delay) * 2, 1));
+      
+      return React.createElement('div', {{
+        key: i,
+        style: {{
+          flex: 1,
+          height: '100%',
+          background: 'linear-gradient(135deg, ' + card.color + '15 0%, ' + card.color + '25 100%)',
+          borderRadius: '24px',
+          padding: '60px 40px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,' + (0.12 * cardScale) + ')',
+          transform: 'scale(' + (0.95 + 0.05 * cardScale) + ') translateY(' + (20 * (1 - cardScale)) + 'px)',
+          transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          opacity: cardScale
+        }}
+      }},
+        React.createElement('div', {{
+          style: {{
+            fontSize: '120px',
+            fontWeight: '900',
+            color: card.color,
+            marginBottom: '20px',
+            lineHeight: 1,
+            textAlign: 'center'
+          }}
+        }}, card.value),
+        React.createElement('div', {{
+          style: {{
+            fontSize: '28px',
+            fontWeight: '600',
+            color: '{primary}',
+            textAlign: 'center',
+            opacity: 0.85
+          }}
+        }}, card.label)
+      );
+    }})
+  );
+}}"""
+
+def get_two_card_comparison(theme_colors: dict) -> str:
+    """
+    Two large cards side-by-side for before/after or comparison.
+    Dramatic and visually stunning.
+    """
+    primary = theme_colors.get('primary', '#3B82F6')
+    accent = theme_colors.get('accent', '#EC4899')
+    
+    return f"""function render({{ props, state, updateState, id, isThumbnail }}) {{
+  const leftCard = props.leftCard || {{ value: 'Before', subtitle: '2023', detail: '$2.1M' }};
+  const rightCard = props.rightCard || {{ value: 'After', subtitle: '2024', detail: '$4.2M' }};
+  
+  const progress = state.progress || 0;
+  
+  React.useEffect(function() {{
+    if (isThumbnail || progress >= 1) return;
+    const interval = setInterval(function() {{
+      updateState(function(prev) {{
+        const next = (prev.progress || 0) + 0.02;
+        return {{ progress: next >= 1 ? 1 : next }};
+      }});
+    }}, 30);
+    return function() {{ clearInterval(interval); }};
+  }}, []);
+  
+  return React.createElement('div', {{
+    style: {{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'row',
+      gap: '80px',
+      padding: '40px',
+      fontFamily: 'Inter, -apple-system, sans-serif'
+    }}
+  }},
+    [leftCard, rightCard].map(function(card, i) {{
+      const isLeft = i === 0;
+      const cardColor = isLeft ? '{primary}' : '{accent}';
+      const delay = i * 0.2;
+      const scale = Math.max(0, Math.min((progress - delay) * 1.5, 1));
+      
+      return React.createElement('div', {{
+        key: i,
+        style: {{
+          flex: 1,
+          height: '100%',
+          background: 'linear-gradient(135deg, ' + cardColor + '18 0%, ' + cardColor + '08 100%)',
+          borderRadius: '32px',
+          padding: '80px 60px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          boxShadow: '0 30px 80px rgba(0,0,0,' + (0.15 * scale) + ')',
+          border: '2px solid ' + cardColor + '40',
+          transform: 'scale(' + (0.9 + 0.1 * scale) + ') translateY(' + (30 * (1 - scale)) + 'px)',
+          transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          opacity: scale,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      }},
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            top: '-50%',
+            right: '-20%',
+            width: '200%',
+            height: '200%',
+            background: 'radial-gradient(circle, ' + cardColor + '12 0%, transparent 70%)',
+            pointerEvents: 'none'
+          }}
+        }}),
+        React.createElement('div', {{
+          style: {{
+            fontSize: '52px',
+            fontWeight: '800',
+            color: cardColor,
+            marginBottom: '16px',
+            opacity: 0.6,
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+            textAlign: 'center'
+          }}
+        }}, card.value),
+        React.createElement('div', {{
+          style: {{
+            fontSize: '32px',
+            fontWeight: '600',
+            color: '{primary}',
+            marginBottom: '40px',
+            opacity: 0.7,
+            textAlign: 'center'
+          }}
+        }}, card.subtitle),
+        React.createElement('div', {{
+          style: {{
+            fontSize: '140px',
+            fontWeight: '900',
+            color: cardColor,
+            lineHeight: 1,
+            textAlign: 'center'
+          }}
+        }}, card.detail)
+      );
+    }})
+  );
+}}"""
+
+def get_hero_stat_card(theme_colors: dict) -> str:
+    """
+    Single massive hero stat in a beautiful card.
+    For slides with just ONE key metric to showcase.
+    """
+    accent = theme_colors.get('accent', '#EC4899')
+    primary = theme_colors.get('primary', '#3B82F6')
+    
+    return f"""function render({{ props, state, updateState, id, isThumbnail }}) {{
+  const value = props.value || '92%';
+  const label = props.label || 'Customer Satisfaction';
+  const subtitle = props.subtitle || 'Leading the industry';
+  
+  const progress = state.progress || 0;
+  
+  React.useEffect(function() {{
+    if (isThumbnail || progress >= 1) return;
+    const interval = setInterval(function() {{
+      updateState(function(prev) {{
+        const next = (prev.progress || 0) + 0.015;
+        return {{ progress: next >= 1 ? 1 : next }};
+      }});
+    }}, 25);
+    return function() {{ clearInterval(interval); }};
+  }}, []);
+  
+  const scale = Math.min(progress * 1.1, 1);
+  const rotate = (1 - progress) * 10;
+  
+  return React.createElement('div', {{
+    style: {{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '60px',
+      fontFamily: 'Inter, -apple-system, sans-serif'
+    }}
+  }},
+    React.createElement('div', {{
+      style: {{
+        width: '100%',
+        maxWidth: '900px',
+        height: '100%',
+        background: 'linear-gradient(135deg, {accent}20 0%, {accent}05 50%, {primary}15 100%)',
+        borderRadius: '40px',
+        padding: '100px 80px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        boxShadow: '0 40px 100px rgba(0,0,0,' + (0.2 * scale) + ')',
+        border: '3px solid {accent}30',
+        transform: 'scale(' + (0.85 + 0.15 * scale) + ') rotate(' + rotate + 'deg)',
+        transition: 'all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        opacity: scale,
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+    }},
+      React.createElement('div', {{
+        style: {{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '150%',
+          height: '150%',
+          background: 'radial-gradient(circle, {accent}15 0%, transparent 70%)',
+          pointerEvents: 'none',
+          animation: 'pulse 3s infinite'
+        }}
+      }}),
+      React.createElement('div', {{
+        style: {{
+          fontSize: '280px',
+          fontWeight: '900',
+          color: '{accent}',
+          lineHeight: 1,
+          marginBottom: '40px',
+          textAlign: 'center',
+          position: 'relative',
+          zIndex: 1
+        }}
+      }}, value),
+      React.createElement('div', {{
+        style: {{
+          fontSize: '56px',
+          fontWeight: '700',
+          color: '{primary}',
+          marginBottom: '24px',
+          textAlign: 'center',
+          position: 'relative',
+          zIndex: 1
+        }}
+      }}, label),
+      React.createElement('div', {{
+        style: {{
+          fontSize: '36px',
+          fontWeight: '500',
+          color: '{primary}',
+          opacity: 0.7,
+          textAlign: 'center',
+          position: 'relative',
+          zIndex: 1
+        }}
+      }}, subtitle)
+    )
+  );
+}}"""
+
 # Export all beautiful templates
 BEAUTIFUL_CUSTOMCOMPONENT_TEMPLATES = {
     'radial_progress': {
@@ -556,6 +868,24 @@ BEAUTIFUL_CUSTOMCOMPONENT_TEMPLATES = {
         'template': get_metric_cards_dashboard,
         'use_cases': ['dashboard', 'KPI overview', 'performance metrics'],
         'props': ['metrics']
+    },
+    'three_card_grid': {
+        'description': 'Beautiful 3-card horizontal grid for key metrics - PERFECT FOR PRESENTATION MODE',
+        'template': get_three_card_stat_grid,
+        'use_cases': ['minimal content slides', '2-3 key stats', 'presentation mode', 'visual impact'],
+        'props': ['cards']
+    },
+    'two_card_comparison': {
+        'description': 'Two large dramatic cards for before/after or comparison',
+        'template': get_two_card_comparison,
+        'use_cases': ['before/after', 'comparison', 'transformation', 'growth showcase'],
+        'props': ['leftCard', 'rightCard']
+    },
+    'hero_stat_card': {
+        'description': 'Single massive hero stat in a stunning card - PERFECT FOR ONE BIG NUMBER',
+        'template': get_hero_stat_card,
+        'use_cases': ['single metric', 'hero number', 'key stat', 'dramatic reveal'],
+        'props': ['value', 'label', 'subtitle']
     }
 }
 

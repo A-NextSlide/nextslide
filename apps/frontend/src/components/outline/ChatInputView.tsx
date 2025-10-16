@@ -1005,14 +1005,14 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                   )}
                 </div> {/* End Input Wrapper Div */}
 
-                {/* Upload, Link, and compact inline controls - positioned below bottom right */}
-                {interactionStage === 'initial' && (
-                  <div className="absolute -bottom-10 right-0 flex items-center gap-2">
-                    {/* Compact slide count inline - tooltip removed */}
-                    <div className="flex items-center">
-                      <div className="flex items-center h-7 rounded-full border border-[#383636]/30 dark:border-gray-600 px-1.5 bg-white/40 dark:bg-neutral-800/30 backdrop-blur-sm shadow-sm">
-                        <Presentation className="h-3.5 w-3.5 mr-1 text-[#383636]/80 dark:text-gray-300/80" />
-                        <span className="text-[10px] text-[#383636]/80 dark:text-gray-300/80 mr-0.5">Slides</span>
+                {/* Consolidated Settings - Positioned below both prompts */}
+                {(interactionStage === 'initial' || interactionStage === 'collectingStyleVibe') && (
+                  <div className="mt-3 ml-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Slide Count */}
+                      <div className="flex items-center h-6 rounded-md border border-[#383636]/20 dark:border-gray-600/50 px-2 bg-white/30 dark:bg-neutral-800/20 backdrop-blur-sm">
+                        <Presentation className="h-3 w-3 mr-1.5 text-[#383636]/70 dark:text-gray-300/70" />
+                        <span className="text-[9px] text-[#383636]/70 dark:text-gray-300/70 mr-1">Slides</span>
                         <Select
                           value={
                             selectedSlideCount !== null
@@ -1039,7 +1039,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                             }
                           }}
                         >
-                          <SelectTrigger className="w-16 h-6 text-[10px] border-0 bg-transparent shadow-none px-1 focus:ring-0 focus:outline-none" aria-label="Slide count">
+                          <SelectTrigger className="w-14 h-5 text-[9px] border-0 bg-transparent shadow-none px-1 focus:ring-0 focus:outline-none" aria-label="Slide count">
                             <SelectValue placeholder="Auto" />
                           </SelectTrigger>
                           <SelectContent className="min-w-[140px]">
@@ -1056,17 +1056,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
 
-                    {/* Compact detail level inline */}
-                    <div className="flex items-center">
+                      {/* Mode / Detail Level */}
                       <Tooltip open={isModeTooltipOpen && !isModeDropdownOpen} onOpenChange={setIsModeTooltipOpen}>
                         <TooltipTrigger asChild>
-                          <div className="flex items-center h-7 rounded-full border border-[#383636]/30 dark:border-gray-600 px-1.5 bg-white/40 dark:bg-neutral-800/30 backdrop-blur-sm shadow-sm">
-                            <svg className="h-3.5 w-3.5 mr-1 text-[#383636]/80 dark:text-gray-300/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="flex items-center h-6 rounded-md border border-[#383636]/20 dark:border-gray-600/50 px-2 bg-white/30 dark:bg-neutral-800/20 backdrop-blur-sm">
+                            <svg className="h-3 w-3 mr-1.5 text-[#383636]/70 dark:text-gray-300/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
                             </svg>
-                            <span className="text-[10px] text-[#383636]/80 dark:text-gray-300/80 mr-0.5">Mode</span>
+                            <span className="text-[9px] text-[#383636]/70 dark:text-gray-300/70 mr-1">Mode</span>
                             <Select
                               value={detailLevel}
                               onValueChange={(value: 'quick' | 'standard' | 'detailed') => {
@@ -1075,7 +1073,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                               open={isModeDropdownOpen}
                               onOpenChange={setIsModeDropdownOpen}
                             >
-                              <SelectTrigger className="w-[95px] h-6 text-[10px] border-0 bg-transparent shadow-none px-1 focus:ring-0 focus:outline-none" aria-label="Detail level">
+                              <SelectTrigger className="w-20 h-5 text-[9px] border-0 bg-transparent shadow-none px-1 focus:ring-0 focus:outline-none" aria-label="Detail level">
                                 <SelectValue placeholder="Presentation" />
                               </SelectTrigger>
                               <SelectContent className="min-w-[180px]">
@@ -1094,78 +1092,100 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                           </div>
                         </TooltipContent>
                       </Tooltip>
-                    </div>
 
-                    {/* Research toggle removed */}
+                      {/* Auto Apply Images Toggle */}
+                      <div className="flex items-center h-6 rounded-md border border-[#383636]/20 dark:border-gray-600/50 px-2 bg-white/30 dark:bg-neutral-800/20 backdrop-blur-sm gap-1.5">
+                        <ImageIcon className="h-3 w-3 text-[#383636]/70 dark:text-gray-300/70" />
+                        <span className="text-[9px] text-[#383636]/70 dark:text-gray-300/70">Auto Images</span>
+                        <Switch
+                          checked={autoSelectImages}
+                          onCheckedChange={(checked) => {
+                            if (setAutoSelectImages) {
+                              setAutoSelectImages(checked);
+                            }
+                          }}
+                          className="scale-75"
+                          aria-label="Toggle auto-apply images"
+                        />
+                      </div>
 
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={handleUploadClick} 
-                          className="h-6 w-6 rounded-full text-[#383636] dark:text-gray-300 hover:text-[#383636] dark:hover:text-gray-100 hover:bg-[#383636]/10 dark:hover:bg-gray-100/10"
-                        >
-                          <Upload className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="backdrop-blur-md bg-white/10 dark:bg-neutral-800/10 border border-[#383636]/30">
-                        <p className="text-xs">Upload brand assets, existing slides, or reference materials</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    
-                    <div className="h-4 w-px bg-[#383636]/30 dark:bg-gray-300/30"></div>
-                    
-                    <Popover open={isLinkPopoverOpen} onOpenChange={setIsLinkPopoverOpen}>
+                      {/* Spacer to push icons to the right */}
+                      <div className="flex-1"></div>
+
+                      {/* Upload Button */}
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <PopoverTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6 rounded-full text-[#383636] dark:text-gray-300 hover:text-[#383636] dark:hover:text-gray-100 hover:bg-[#383636]/10 dark:hover:bg-gray-100/10"
-                            >
-                              <Link className="h-3.5 w-3.5" />
-                            </Button>
-                          </PopoverTrigger>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={handleUploadClick} 
+                            className="h-6 w-6 rounded-md text-[#383636]/70 dark:text-gray-300/70 hover:text-[#383636] dark:hover:text-gray-100 hover:bg-[#383636]/5 dark:hover:bg-gray-100/5"
+                          >
+                            <Upload className="h-3 w-3" />
+                          </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="backdrop-blur-md bg-white/10 dark:bg-neutral-800/10 border border-[#383636]/30">
-                          <p className="text-xs">Reference websites, articles, or online resources</p>
+                          <p className="text-xs">Upload brand assets, existing slides, or reference materials</p>
                         </TooltipContent>
                       </Tooltip>
-                      <PopoverContent className="w-80" sideOffset={6} onCloseAutoFocus={(e) => e.preventDefault()}>
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Reference links</div>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="https://example.com/article"
-                              value={linkDraft}
-                              onChange={(e) => setLinkDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleAddReferenceLink();
-                                }
-                              }}
-                              className="h-8"
-                            />
-                            <Button size="sm" className="h-8" onClick={handleAddReferenceLink}>Add</Button>
-                          </div>
-                          {Array.isArray(referenceLinks) && referenceLinks.length > 0 && (
-                            <div className="max-h-40 overflow-auto space-y-1">
-                              {referenceLinks.map((u, idx) => (
-                                <div key={`${u}-${idx}`} className="flex items-center justify-between text-xs bg-zinc-100/60 dark:bg-white/5 border border-zinc-200 dark:border-zinc-700/50 rounded px-2 py-1">
-                                  <span className="truncate mr-2" title={u}>{u}</span>
-                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleRemoveReferenceLink(u)}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              ))}
+
+                      {/* Reference Links */}
+                      <Popover open={isLinkPopoverOpen} onOpenChange={setIsLinkPopoverOpen}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <PopoverTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-6 w-6 rounded-md text-[#383636]/70 dark:text-gray-300/70 hover:text-[#383636] dark:hover:text-gray-100 hover:bg-[#383636]/5 dark:hover:bg-gray-100/5 relative"
+                              >
+                                <Link className="h-3 w-3" />
+                                {Array.isArray(referenceLinks) && referenceLinks.length > 0 && (
+                                  <span className="absolute -top-0.5 -right-0.5 text-[7px] bg-orange-500 text-white rounded-full min-w-[12px] h-3 flex items-center justify-center px-1">
+                                    {referenceLinks.length}
+                                  </span>
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="backdrop-blur-md bg-white/10 dark:bg-neutral-800/10 border border-[#383636]/30">
+                            <p className="text-xs">Reference websites, articles, or online resources</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <PopoverContent className="w-80" sideOffset={6} onCloseAutoFocus={(e) => e.preventDefault()}>
+                          <div className="space-y-2">
+                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Reference links</div>
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="https://example.com/article"
+                                value={linkDraft}
+                                onChange={(e) => setLinkDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleAddReferenceLink();
+                                  }
+                                }}
+                                className="h-8"
+                              />
+                              <Button size="sm" className="h-8" onClick={handleAddReferenceLink}>Add</Button>
                             </div>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                            {Array.isArray(referenceLinks) && referenceLinks.length > 0 && (
+                              <div className="max-h-40 overflow-auto space-y-1">
+                                {referenceLinks.map((u, idx) => (
+                                  <div key={`${u}-${idx}`} className="flex items-center justify-between text-xs bg-zinc-100/60 dark:bg-white/5 border border-zinc-200 dark:border-zinc-700/50 rounded px-2 py-1">
+                                    <span className="truncate mr-2" title={u}>{u}</span>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleRemoveReferenceLink(u)}>
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </div>
                 )}
 
@@ -1183,34 +1203,9 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                 )}
               </div> {/* End Relative Input Section Div */}
 
-              {/* Structured controls removed in favor of compact inline controls above */}
+              {/* Structured controls removed in favor of consolidated settings below */}
 
               {/* Removed research outline box */}
-
-              {/* Auto Apply Images Toggle - Under Style Input */}
-              {interactionStage === 'collectingStyleVibe' && (
-                <div className="mt-3 ml-2 animate-in fade-in slide-in-from-bottom-1 duration-300 fill-mode-forwards">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={autoSelectImages}
-                      onCheckedChange={(checked) => {
-                        if (setAutoSelectImages) {
-                          setAutoSelectImages(checked);
-                        }
-                      }}
-                      aria-label="Toggle auto-apply images"
-                    />
-                    <div className="flex flex-col">
-                      <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300 cursor-pointer" htmlFor="auto-images-toggle">
-                        Auto Apply Images
-                      </Label>
-                      <p className="text-[10px] text-muted-foreground">
-                        {autoSelectImages ? "Images will be automatically applied" : "You'll select images manually after generation"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Compact Custom Style trigger */}
               {interactionStage === 'collectingStyleVibe' && (

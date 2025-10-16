@@ -197,6 +197,73 @@ export function getFontDebugInfo(fontName: string): {
 } 
 
 /**
+ * Get an appropriate fallback font for a given font name
+ * This is used when a font is not available in the frontend registry
+ */
+export function getFontFallback(fontName: string, category?: string): string {
+  // If font is in our registry, return it as-is
+  if (findFontDefinition(fontName)) {
+    return fontName;
+  }
+
+  // Determine appropriate fallback based on category or font name characteristics
+  const name = fontName.toLowerCase();
+
+  // Script/handwriting fonts -> Script fallback
+  if (name.includes('script') || name.includes('handwritten') || category === 'script') {
+    return 'Caveat'; // Popular script font
+  }
+
+  // Display/decorative fonts -> Bold fallback
+  if (name.includes('display') || name.includes('decorative') || category === 'display') {
+    return 'Bebas Neue'; // Popular display font
+  }
+
+  // Serif fonts -> Serif fallback
+  if (name.includes('serif') && !name.includes('sans')) {
+    return 'Playfair Display'; // Popular serif font
+  }
+
+  // Monospace fonts -> Monospace fallback
+  if (name.includes('mono') || name.includes('code') || category === 'monospace') {
+    return 'Roboto Mono'; // Popular monospace font
+  }
+
+  // Default: Use Poppins (the app default)
+  return 'Poppins';
+}
+
+/**
+ * Validate and fix fonts in deck data
+ * This ensures all fonts used in content are available or have fallbacks
+ */
+export function validateAndFixDeckFonts(deckData: any): { fixed: boolean; changes: string[] } {
+  const changes: string[] = [];
+  let fixed = false;
+
+  if (!deckData || !deckData.slides) return { fixed, changes };
+
+  deckData.slides.forEach((slide: any, slideIndex: number) => {
+    if (slide.components) {
+      slide.components.forEach((component: any, compIndex: number) => {
+        // Check for fontFamily in component props
+        if (component.props?.fontFamily) {
+          const original = component.props.fontFamily;
+          const fallback = getFontFallback(original);
+          if (fallback !== original) {
+            component.props.fontFamily = fallback;
+            changes.push(`Slide ${slideIndex + 1}, Component ${compIndex + 1}: "${original}" → "${fallback}"`);
+            fixed = true;
+          }
+        }
+      });
+    }
+  });
+
+  return { fixed, changes };
+}
+
+/**
  * Extract all unique font families used in a deck
  */
 export function extractDeckFonts(deckData: any): string[] {

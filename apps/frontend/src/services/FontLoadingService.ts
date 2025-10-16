@@ -1,6 +1,7 @@
 import { FONT_CATEGORIES, FontDefinition, COMMON_FONTS } from '../registry/library/fonts';
 import { designerFontsApi, chooseBestFile } from './designerFontsApi';
 import { FontApiService } from './FontApiService';
+import { PixelBuddhaFontService } from './PixelBuddhaFontService';
 
 // Track loaded fonts (using font name as key)
 const loadedFonts = new Set<string>();
@@ -211,7 +212,41 @@ export const FontLoadingService = {
     // 2. Find Font Definition
     const fontDef = findFontDefinition(fontName);
     if (!fontDef) {
-      return Promise.resolve(); // Don't block if definition is missing
+      // Font not in frontend registry - try loading from backend as fallback
+      // This handles PixelBuddha and other backend fonts not in FONT_CATEGORIES
+      const loadPromiseFallback = (async () => {
+        try {
+          console.log(`[FontLoadingService] Font "${fontName}" not in registry, trying backend...`);
+
+          // First try PixelBuddhaFontService (most reliable for PB fonts)
+          const isPixelBuddha = await PixelBuddhaFontService.isPixelBuddhaFamily(fontName);
+          if (isPixelBuddha) {
+            console.log(`[FontLoadingService] Font "${fontName}" found in PixelBuddha registry`);
+            const loaded = await PixelBuddhaFontService.ensureFontLoaded(fontName, '400');
+            if (loaded) {
+              loadedFonts.add(fontName);
+              console.log(`[FontLoadingService] ✓ Loaded PixelBuddha font: ${fontName}`);
+              return;
+            }
+          }
+
+          // Fallback to general FontApiService
+          const loaded = await FontApiService.findAndLoadByFamily(fontName, '400');
+          if (loaded) {
+            loadedFonts.add(fontName);
+            console.log(`[FontLoadingService] ✓ Loaded backend font: ${fontName}`);
+            return;
+          }
+
+          console.warn(`[FontLoadingService] ✗ Font not found in registry or backend: ${fontName}`);
+        } catch (error) {
+          console.error(`[FontLoadingService] ✗ Failed to load backend font ${fontName}:`, error);
+        }
+      })();
+
+      loadingFonts.set(fontName, loadPromiseFallback);
+      loadPromiseFallback.finally(() => loadingFonts.delete(fontName));
+      return loadPromiseFallback;
     }
 
     // 3. Handle System fonts
