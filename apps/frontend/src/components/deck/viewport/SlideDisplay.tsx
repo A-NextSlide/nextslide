@@ -237,7 +237,8 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   };
   
   // Keep a stable width to prevent layout jumps; scale is handled by parent when entering edit mode
-  const slideWidth = (isGenerating || isNewDeck) ? 900 : 950;
+  // Use consistent 950px width for all states to prevent sizing discrepancies
+  const slideWidth = 950;
   const slideHeight = slideWidth * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);
   
   // Early return if no slides
@@ -287,8 +288,10 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             id="slide-display-container"
             className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
             data-slide-id={placeholderSlides[0]?.id || 'unknown'}
-            data-slide-width={DEFAULT_SLIDE_WIDTH}
-            data-slide-height={DEFAULT_SLIDE_HEIGHT}
+            data-slide-width={slideWidth}
+            data-slide-height={slideHeight}
+            data-native-width={DEFAULT_SLIDE_WIDTH}
+            data-native-height={DEFAULT_SLIDE_HEIGHT}
             style={{
               width: `${slideWidth}px`,
               height: `${slideHeight}px`,
@@ -334,8 +337,10 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             id="slide-display-container"
             className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
             data-slide-id="placeholder-0"
-            data-slide-width={DEFAULT_SLIDE_WIDTH}
-            data-slide-height={DEFAULT_SLIDE_HEIGHT}
+            data-slide-width={slideWidth}
+            data-slide-height={slideHeight}
+            data-native-width={DEFAULT_SLIDE_WIDTH}
+            data-native-height={DEFAULT_SLIDE_HEIGHT}
             style={{
               width: `${slideWidth}px`,
               height: `${slideHeight}px`,
@@ -414,8 +419,10 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
           id="slide-display-container"
           className={`slide-container relative rounded-sm overflow-hidden flex-shrink-0 border border-border ${isEditing ? 'editing-mode' : ''}`}
           data-slide-id={slides[currentSlideIndex]?.id || 'unknown'}
-          data-slide-width={DEFAULT_SLIDE_WIDTH}
-          data-slide-height={DEFAULT_SLIDE_HEIGHT}
+          data-slide-width={slideWidth}
+          data-slide-height={slideHeight}
+          data-native-width={DEFAULT_SLIDE_WIDTH}
+          data-native-height={DEFAULT_SLIDE_HEIGHT}
           data-selection-container="true"
           style={{
             width: `${slideWidth}px`,

@@ -117,6 +117,21 @@ export const ComponentRenderer: React.FC<Props> = ({
   const croppingComponentId = useEditorSettingsStore(state => state.croppingComponentId);
   const isCroppingThis = isCroppingImage && croppingComponentId === componentId && componentType === 'Image';
 
+  // Ensure text-edit mode doesn't stick when switching selection between text components
+  useEffect(() => {
+    if (!isSelected) return;
+    try {
+      const settings = useEditorSettingsStore.getState();
+      if (!settings.isTextEditing) return;
+      const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
+      const activeId = activeEditor?.view?.dom?.getAttribute?.('data-component-id');
+      if (activeId && activeId !== componentId) {
+        try { activeEditor.commands?.blur?.(); } catch {}
+        settings.setTextEditing(false);
+      }
+    } catch {}
+  }, [isSelected, componentId]);
+
   // --- Interaction Hooks ---
 
   // Local snap guides state for sharing guides between resize and drag hooks

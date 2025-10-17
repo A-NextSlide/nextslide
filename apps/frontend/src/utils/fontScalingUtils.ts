@@ -89,9 +89,27 @@ export function calculateFontScaleFactor(): number {
   }
   
   // If no special markers found, calculate based on container width
-  const renderedWidth = containerEl.offsetWidth;
+  // Check if we're in edit mode by looking for the 0.92 transform
+  parent = containerEl.parentElement;
+  let isInEditMode = false;
+  maxLevels = 5;
   
-  // Use direct measurement if none of the above strategies worked
+  while (parent && maxLevels > 0) {
+    const transform = window.getComputedStyle(parent).transform;
+    if (transform && transform !== 'none' && transform.includes('0.92')) {
+      isInEditMode = true;
+      break;
+    }
+    parent = parent.parentElement;
+    maxLevels--;
+  }
+  
+  // If in edit mode, use DOM width; otherwise use visual width
+  const renderedWidth = isInEditMode 
+    ? (containerEl.offsetWidth || containerEl.clientWidth)
+    : containerEl.getBoundingClientRect().width;
+  
+  // Backend generates fonts for 1920x1080 slides
   return renderedWidth / DEFAULT_SLIDE_WIDTH;
 }
 

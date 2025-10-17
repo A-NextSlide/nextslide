@@ -309,10 +309,21 @@ class SlideContextRetriever:
                ['features', 'benefits', 'highlights', 'showcase', 'portfolio', 'capabilities']):
             custom_component_reasons.append("feature showcase (floating_3d_cards)")
         
-        # Include CustomComponent only when there is a strong visual/data reason
+        # Include CustomComponent when there is a strong visual/data reason
         if custom_component_reasons or characteristics["has_statistics"]:
             components.append("CustomComponent")
             logger.info(f"  🎨 CustomComponent included for: {', '.join(custom_component_reasons) if custom_component_reasons else 'statistics emphasis'}")
+
+        # Prefer CustomComponent more often on minimal-content and title/closing slides for visual impact
+        try:
+            if characteristics.get("is_minimal"):
+                components.append("CustomComponent")
+                logger.info("  ✨ CustomComponent added for minimal content (visual, centered, large)")
+            if characteristics.get("is_title_slide") or characteristics.get("is_closing_slide"):
+                components.append("CustomComponent")
+                logger.info("  ✨ CustomComponent added for title/closing slide (hero visual)")
+        except Exception:
+            pass
         
         # Remove free-floating decorative shapes; only add Shape when acting as container
         if characteristics["has_list"] or characteristics["has_comparison"]:

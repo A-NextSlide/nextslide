@@ -1275,24 +1275,11 @@ class SlidePromptBuilder:
             predicted.append('Chart')
             logger.info(f"[PROMPT BUILDER] ✅ MANDATORY Chart component added to predicted list (extractedData exists)")
 
-        # Promote Table for competitive analysis, feature comparisons, pricing, and specs
-        try:
-            topic_text_table = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
-            table_triggers = ['competitive', 'competition', 'competitor', 'feature comparison', 'features', 'pricing', 'price', 'plan', 'plans', 'specification', 'specs', ' vs ', ' versus ', 'compare', 'comparison matrix']
-            # Check for structured comparison patterns (e.g., "Feature: Basic | Pro | Enterprise")
-            has_structured_data = bool(re.search(r'[\|:].*[\|:]', context.slide_outline.content or ''))
-            if 'Table' not in predicted and (any(k in topic_text_table for k in table_triggers) or has_structured_data):
-                predicted.append('Table')
-                logger.info(f"[PROMPT BUILDER] ✅ Added Table for competitive/feature comparison (trigger detected)")
-        except Exception:
-            pass
-
-        # Promote CustomComponent for structured or creative visuals (processes, timelines, visual comparisons, hero stats)
-        # Note: Removed simple 'comparison', ' vs ', ' versus ' from cc_triggers as those are better suited for Tables
+        # Promote CustomComponent for structured or creative visuals (processes, comparisons, timelines, hero stats)
         try:
             topic_text_cc = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
-            cc_triggers = ['process', 'step', 'steps', 'timeline', 'roadmap', 'flow', 'journey', 'pillars', 'principles', 'framework', 'strategy', 'highlight', 'hero', 'kpi', 'metric', 'before and after', 'transformation']
-            has_numbers_not_chart = bool(re.search(r"\b\d+\b", topic_text_cc)) and 'Chart' not in predicted and 'Table' not in predicted
+            cc_triggers = ['process', 'step', 'steps', 'timeline', 'roadmap', 'flow', 'comparison', ' vs ', ' versus ', 'pillars', 'principles', 'framework', 'strategy', 'highlight', 'hero', 'kpi', 'metric']
+            has_numbers_not_chart = bool(re.search(r"\b\d+\b", topic_text_cc)) and 'Chart' not in predicted
             if 'CustomComponent' not in predicted and (any(k in topic_text_cc for k in cc_triggers) or has_numbers_not_chart):
                 predicted.append('CustomComponent')
         except Exception:
@@ -1708,6 +1695,11 @@ class SlidePromptBuilder:
                 "- Match the presentation's visual style and flow",
                 "- Use gradients that complement the slide background",
                 "- Apply theme colors creatively (gradients, glows, shadows)",
+                "- SVG-first visuals: Prefer rendering with <svg> and a viewBox (e.g., '0 0 100 100') for crisp scaling",
+                "- Center composition: Root container uses flex center or SVG centering; occupy 70–95% of allotted box",
+                "- Large sizes: hero numbers 180–300pt; labels ≥ 24–32pt; ring/bar strokes ≥ 4",
+                "- Root style MUST include width/height 100%, overflow: 'hidden', boxSizing: 'border-box'",
+                "- Ensure readable contrast; for text on colored regions call getContrastTextColor(bg)",
                 "- Ensure visual hierarchy aligns with slide content",
                 "- Add subtle animations or effects that enhance, not distract",
                 "",

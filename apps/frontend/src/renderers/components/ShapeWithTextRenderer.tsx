@@ -204,6 +204,12 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   const setActiveTiptapEditor = useEditorStore((state) => state.setActiveTiptapEditor);
 
   const isCurrentlyTextEditing = isTextEditingGlobal && isSelected && hasText;
+  
+  // CRITICAL: Lock slideId at mount to prevent cross-slide writes after navigation
+  const slideIdRef = useRef(slideId);
+  useEffect(() => {
+    slideIdRef.current = slideId;
+  }, [slideId]);
 
   // Use the actual dimensions from props - don't modify them
   const actualWidth = props.width || 100;
@@ -231,9 +237,31 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   // Use slide container scale instead of component scale to avoid double-scaling
   const [slideContainerWidth, setSlideContainerWidth] = useState<number>(() => {
     if (isThumbnail) return DEFAULT_SLIDE_WIDTH;
-    const slideContainer = document.getElementById('slide-display-container');
+    const slideContainer = document.getElementById('slide-display-container') as HTMLElement | null;
     if (slideContainer) {
-      return slideContainer.getBoundingClientRect().width || DEFAULT_SLIDE_WIDTH;
+      // Check if we're in edit mode
+      let parent = slideContainer.parentElement;
+      let isInEditMode = false;
+      let maxLevels = 5;
+      
+      while (parent && maxLevels > 0) {
+        const transform = window.getComputedStyle(parent).transform;
+        if (transform && transform !== 'none' && transform.includes('0.92')) {
+          isInEditMode = true;
+          break;
+        }
+        parent = parent.parentElement;
+        maxLevels--;
+      }
+      
+      // If in edit mode, use DOM dimensions; otherwise use visual dimensions
+      if (isInEditMode) {
+        const w = slideContainer.offsetWidth || slideContainer.clientWidth || 0;
+        if (w > 0) return w;
+      } else {
+        const rect = slideContainer.getBoundingClientRect();
+        if (rect.width > 0) return rect.width;
+      }
     }
     return DEFAULT_SLIDE_WIDTH;
   });
@@ -248,11 +276,32 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
       // Skip updates during text editing to prevent font size changes on click
       if (isCurrentlyTextEditing) return;
 
-      const slideContainer = document.getElementById('slide-display-container');
+      const slideContainer = document.getElementById('slide-display-container') as HTMLElement | null;
       if (!slideContainer) return;
 
-      const rect = slideContainer.getBoundingClientRect();
-      const newWidth = rect.width;
+      // Check if we're in edit mode by looking for the transformed parent
+      let parent = slideContainer.parentElement;
+      let isInEditMode = false;
+      let maxLevels = 5;
+      
+      while (parent && maxLevels > 0) {
+        const transform = window.getComputedStyle(parent).transform;
+        if (transform && transform !== 'none' && transform.includes('0.92')) {
+          isInEditMode = true;
+          break;
+        }
+        parent = parent.parentElement;
+        maxLevels--;
+      }
+      
+      // If in edit mode, use DOM width; otherwise use visual width
+      let newWidth: number;
+      if (isInEditMode) {
+        newWidth = slideContainer.offsetWidth || slideContainer.clientWidth || 0;
+      } else {
+        const rect = slideContainer.getBoundingClientRect();
+        newWidth = rect.width || 0;
+      }
 
       // Only update if difference is significant (>10px) to avoid micro-adjustments
       const widthDiff = Math.abs(newWidth - slideContainerWidthRef.current);
@@ -292,7 +341,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     }
 
     // For regular slides, calculate scale based on slide container vs native slide width
-    // This ensures fonts scale uniformly with the slide, not individually per component
+    // Backend generates fonts for 1920x1080 slides, so we scale from that
     const scaleFactor = slideContainerWidth / DEFAULT_SLIDE_WIDTH;
 
     // Round to 4 decimal places to prevent micro-fluctuations
@@ -478,8 +527,8 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         
         // Deep comparison of the content - only update if actually changed
         if (JSON.stringify(newDocs) !== JSON.stringify(currentTexts)) {
-          // Update only texts to avoid overwriting optimized font props
-          updateComponent(component.id, { props: { texts: newDocs } }, true);
+          // Use locked slideId ref to prevent cross-slide writes
+          updateComponent(component.id, { props: { texts: newDocs } }, true, slideIdRef.current);
         }
       } finally {
         // Reset the flag after a short delay to allow the update to complete
@@ -505,12 +554,13 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
       try {
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
-        // Update only texts to avoid overwriting optimized font props
-        updateComponent(component.id, { props: { texts: docs } }, true);
+        // Use locked slideId ref to prevent writing to wrong slide
+        const targetSlide = slideIdRef.current;
+        updateComponent(component.id, { props: { texts: docs } }, true, targetSlide);
         
-        if (slideId) {
+        if (targetSlide) {
           import('@/stores/historyStore').then(({ useHistoryStore }) => {
-            useHistoryStore.getState().endTransientOperation(component.id, slideId);
+            useHistoryStore.getState().endTransientOperation(component.id, targetSlide);
           });
         }
         

@@ -537,6 +537,17 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   // Cursor tracking is now handled by the cursor components
   
   const handleComponentSelect = (component: ComponentInstance) => {
+    // If we're currently in text editing mode and selecting a different component,
+    // exit text editing to avoid sticky editor state carrying into the next selection
+    try {
+      const settingsStore = useEditorSettingsStore.getState();
+      if (settingsStore.isTextEditing && component.id !== selectedComponentId) {
+        // Attempt to blur the active editor (if any) before leaving edit mode
+        try { useEditorStore.getState().activeTiptapEditor?.commands?.blur?.(); } catch {}
+        settingsStore.setTextEditing(false);
+      }
+    } catch {}
+
     // Component selected
     setSelectedComponentId(component.id);
     
@@ -570,6 +581,39 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   const handleSaveAndExit = () => {
     setIsEditing(false);
   };
+
+  // Deselect components and exit text editing when changing slides
+  React.useEffect(() => {
+    // Clear local selection
+    setSelectedComponentId(null);
+
+    // Clear global multi-selection
+    try { useEditorStore.getState().clearSelection(); } catch {}
+
+    // Exit text editing and blur active editor if present
+    // Add a small delay to allow any pending text saves to complete
+    const timeoutId = setTimeout(() => {
+      try {
+        const settings = useEditorSettingsStore.getState();
+        if (settings.isTextEditing) {
+          // First blur the editor (this will trigger save in TiptapTextBlockRenderer)
+          try { 
+            const editor = useEditorStore.getState().activeTiptapEditor;
+            if (editor && !editor.isDestroyed) {
+              editor.commands.blur();
+            }
+          } catch {}
+          
+          // Then clear the text editing state after a small delay
+          setTimeout(() => {
+            settings.setTextEditing(false);
+          }, 50);
+        }
+      } catch {}
+    }, 10);
+    
+    return () => clearTimeout(timeoutId);
+  }, [currentSlideIndex]);
 
   // Setup event listeners for slide navigation
   React.useEffect(() => {

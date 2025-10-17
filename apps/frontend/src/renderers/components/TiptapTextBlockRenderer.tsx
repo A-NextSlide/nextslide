@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -24,7 +24,6 @@ import { transformMyFormatToTiptap, transformTiptapToMyFormat, CustomDoc } from 
 import { useEditorStore } from '../../stores/editorStore';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
-import { usePresentationStore } from '@/stores/presentationStore';
 import { FontSize } from '@/extensions/FontSize';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
 import '../../styles/TiptapStyles.css';
@@ -55,146 +54,153 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     padding = 0,
   } = props as any;
 
-  // Use fontSize from props
-  const effectiveFontSize = props.fontSize || fontSize;
-
   const { updateComponent } = useActiveSlide();
   const isTextEditingGlobal = useEditorSettingsStore(state => state.isTextEditing);
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);
   const setActiveTiptapEditor = useEditorStore((state) => state.setActiveTiptapEditor);
-  const textContainerRef = useRef<HTMLDivElement>(null);
   const isCurrentlyTextEditing = isTextEditingGlobal && isSelected;
 
-  // Slide size scale awareness
-  const NATIVE_WIDTH = 1920;
-  const isPresenting = usePresentationStore(state => state.isPresenting);
-  const getInitialSlideWidth = () => {
+  // =================================================================
+  // IDENTITY TRACKING - Prevent cross-component/slide writes
+  // =================================================================
+  // These refs are locked at initialization and NEVER updated
+  const lockedComponentId = useRef(component.id);
+  const lockedSlideId = useRef(slideId);
+  const isUpdatingRef = useRef(false);
+  const isUnmountingRef = useRef(false);
+
+  // Use a key that changes when component/slide changes to force complete remount
+  const instanceKey = `${component.id}_${slideId}`;
+
+  // =================================================================
+  // FONT SCALING - Scale fonts based on actual display size
+  // =================================================================
+  // IMPORTANT: Backend generates font sizes for 1920x1080 slides
+  // We need to scale from that to the actual rendered width (950px)
+  const NATIVE_WIDTH = 1920; // Width at which fonts are designed by backend
+  const DEFAULT_SLIDE_DISPLAY_WIDTH = 950; // Default rendered width
+
+  const [slideWidth, setSlideWidth] = React.useState(() => {
     if (isThumbnail) return NATIVE_WIDTH;
-    const slideContainer = document.getElementById('slide-display-container');
-    if (slideContainer) {
-      const rect = slideContainer.getBoundingClientRect();
-      return rect.width || NATIVE_WIDTH;
+    
+    // Try to get the actual container width immediately
+    const container = document.getElementById('slide-display-container');
+    if (container) {
+      // Check if we're in edit mode
+      let parent = container.parentElement;
+      let isInEditMode = false;
+      let maxLevels = 5;
+      
+      while (parent && maxLevels > 0) {
+        const transform = window.getComputedStyle(parent).transform;
+        if (transform && transform !== 'none' && transform.includes('0.92')) {
+          isInEditMode = true;
+          break;
+        }
+        parent = parent.parentElement;
+        maxLevels--;
+      }
+      
+      // If in edit mode, use DOM width; otherwise use visual width
+      if (isInEditMode) {
+        const domWidth = container.offsetWidth || container.clientWidth;
+        if (domWidth > 0) return domWidth;
+      } else {
+        const width = container.getBoundingClientRect().width;
+        if (width > 0) return width;
+      }
     }
-    return NATIVE_WIDTH;
-  };
-  const [currentSlideWidth, setCurrentSlideWidth] = React.useState(() => getInitialSlideWidth());
-  const [containerScale, setContainerScale] = React.useState(() => getInitialSlideWidth() / NATIVE_WIDTH);
-  const prevSlideWidthRef = useRef(currentSlideWidth);
-  const updateScaleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const hasMeasuredRef = useRef(false); // Track if we've completed initial measurement
+    
+    return DEFAULT_SLIDE_DISPLAY_WIDTH;
+  });
 
   useEffect(() => {
     if (isThumbnail) return;
 
-    const updateScale = () => {
-      // Skip updates during text editing to prevent font size changes on click
-      if (isCurrentlyTextEditing) return;
+    let resizeObserver: ResizeObserver | null = null;
+    let mounted = true;
 
-      if (updateScaleTimeoutRef.current) clearTimeout(updateScaleTimeoutRef.current);
-      updateScaleTimeoutRef.current = setTimeout(() => {
-        const slideContainer = document.getElementById('slide-display-container');
-        if (slideContainer) {
-          const slideRect = slideContainer.getBoundingClientRect();
-          const slideDisplayWidth = slideRect.width;
-
-          // On first measurement, set without threshold check
-          if (!hasMeasuredRef.current) {
-            hasMeasuredRef.current = true;
-            prevSlideWidthRef.current = slideDisplayWidth;
-            setCurrentSlideWidth(slideDisplayWidth);
-            setContainerScale(slideDisplayWidth / NATIVE_WIDTH);
-            return;
+    const updateWidth = () => {
+      if (!mounted) return;
+      
+      const container = document.getElementById('slide-display-container');
+      if (container) {
+        // Use getBoundingClientRect to get the visual size (accounts for transforms)
+        const rect = container.getBoundingClientRect();
+        if (rect.width > 0) {
+          // Check if we're in edit mode by looking for the transformed parent
+          let parent = container.parentElement;
+          let isInEditMode = false;
+          let maxLevels = 5;
+          
+          while (parent && maxLevels > 0) {
+            const transform = window.getComputedStyle(parent).transform;
+            if (transform && transform !== 'none' && transform.includes('0.92')) {
+              isInEditMode = true;
+              break;
+            }
+            parent = parent.parentElement;
+            maxLevels--;
           }
-
-          // Only update if difference is significant (>5px) to prevent cascading updates
-          if (Math.abs(slideDisplayWidth - prevSlideWidthRef.current) > 5) {
-            prevSlideWidthRef.current = slideDisplayWidth;
-            setCurrentSlideWidth(slideDisplayWidth);
-            setContainerScale(slideDisplayWidth / NATIVE_WIDTH);
+          
+          // If in edit mode, we need to use the actual DOM width, not the visual width
+          // because fonts should be sized for the full container, not the scaled view
+          if (isInEditMode) {
+            const domWidth = container.offsetWidth || container.clientWidth;
+            if (domWidth > 0) {
+              setSlideWidth(domWidth);
+            }
+          } else {
+            setSlideWidth(rect.width);
           }
         }
-      }, 50);
+      }
     };
 
-    updateScale();
-    window.addEventListener('resize', updateScale);
+    // Initial measurement after a short delay to ensure mount
+    const timeoutId = setTimeout(updateWidth, 50);
 
-    let resizeObserver: ResizeObserver | null = null;
-    const slideContainer = document.getElementById('slide-display-container');
-    if (slideContainer && 'ResizeObserver' in window) {
-      resizeObserver = new ResizeObserver(updateScale);
-      resizeObserver.observe(slideContainer);
+    // Set up ResizeObserver for better tracking
+    const container = document.getElementById('slide-display-container');
+    if (container && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!mounted) return;
+        // Use the update function which handles edit mode detection
+        updateWidth();
+      });
+      resizeObserver.observe(container);
     }
+
+    // Also listen for window resize as fallback
+    window.addEventListener('resize', updateWidth);
 
     return () => {
-      if (updateScaleTimeoutRef.current) clearTimeout(updateScaleTimeoutRef.current);
-      window.removeEventListener('resize', updateScale);
-      if (resizeObserver) resizeObserver.disconnect();
+      mounted = false;
+      clearTimeout(timeoutId);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      window.removeEventListener('resize', updateWidth);
     };
-  }, [isThumbnail]); // CRITICAL: Don't include isCurrentlyTextEditing in dependencies!
+  }, [isThumbnail]);
 
-  // Font scale factor
-  const fontScaleFactor = useMemo(() => {
-    if (isPresenting) return 1;
-    // Thumbnails are already scaled by outer slide transform; avoid double-scaling fonts
-    if (isThumbnail) return 1;
-    return currentSlideWidth / NATIVE_WIDTH;
-  }, [isThumbnail, currentSlideWidth, isPresenting]);
+  // Scale factor converts from backend's 1920px design to actual display width
+  const scaleFactor = isThumbnail ? 1 : slideWidth / NATIVE_WIDTH;
+  const finalFontSize = Math.round((props.fontSize || fontSize) * scaleFactor);
+  const finalLetterSpacing = Math.round(letterSpacing * scaleFactor);
 
-  // CRITICAL FIX: Store the stable font size to prevent resize on click/selection
-  // We lock the font size based on props.fontSize and fontScaleFactor, only recalculate when they change
-  const stableFontSizeRef = useRef<string | null>(null);
-  const lastPropsSizeRef = useRef<number | null>(null);
-  const lastScaleFactorRef = useRef<number | null>(null);
-
-  const getFontSize = useMemo(() => {
-    // Always use props.fontSize if it exists (this is the source of truth)
-    const nativeSize = Math.round(props.fontSize || effectiveFontSize || 16); // Round to whole number
-
-    // For thumbnails, apply thumbnail scaling
-    if (isThumbnail) {
-      return `${Math.round(nativeSize * fontScaleFactor)}px`;
-    }
-
-    // CRITICAL FIX: Use stable reference to prevent recalculation on click/selection
-    // Only recalculate if props.fontSize OR fontScaleFactor actually changed
-    // This prevents resize-on-click while still allowing proper scaling
-    if (stableFontSizeRef.current &&
-        lastPropsSizeRef.current === nativeSize &&
-        lastScaleFactorRef.current === fontScaleFactor) {
-      return stableFontSizeRef.current;
-    }
-
-    // Apply scaling and round to whole number (for all components)
-    const calculatedSize = Math.round(nativeSize * fontScaleFactor);
-
-    const result = `${calculatedSize}px`;
-    stableFontSizeRef.current = result;
-    lastPropsSizeRef.current = nativeSize;
-    lastScaleFactorRef.current = fontScaleFactor;
-
-    return result;
-  }, [props.fontSize, fontScaleFactor, isThumbnail]); // Only essential dependencies to prevent unnecessary recalculations
-
-  // Removed font optimization event listener
-
-  const getLetterSpacing = useMemo(() => {
-    return letterSpacing ? `${letterSpacing * fontScaleFactor}px` : '0px';
-  }, [letterSpacing, fontScaleFactor]);
-
+  // =================================================================
+  // TIPTAP EDITOR CONFIGURATION
+  // =================================================================
   const initialContent = useMemo(() => {
     if (!texts) {
-      return {
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [] }]
-      } as any;
+      return { type: 'doc', content: [{ type: 'paragraph', content: [] }] } as any;
     }
-
     return transformMyFormatToTiptap(texts);
   }, [texts]);
 
-  const getExtensions = useCallback(() => {
-    const baseExtensions = [
+  const extensions = useMemo(() => {
+    const exts = [
       Document.extend({ content: 'block+' }),
       Paragraph.configure({ HTMLAttributes: { style: 'margin: 0; padding: 0;' } }),
       Text,
@@ -221,21 +227,17 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     ];
 
     if (!isThumbnail) {
-      baseExtensions.push(
-        Heading.configure({
-          levels: [1, 2, 3],
-          HTMLAttributes: { style: 'margin: 0; padding: 0;' }
-        }),
-      );
+      exts.push(Heading.configure({
+        levels: [1, 2, 3],
+        HTMLAttributes: { style: 'margin: 0; padding: 0;' }
+      }));
     }
 
-    return baseExtensions;
+    return exts;
   }, [alignment, isThumbnail]);
 
-  const isUpdatingRef = useRef(false);
-
-  const getEditorConfig = useMemo(() => ({
-    extensions: getExtensions(),
+  const editorConfig = useMemo(() => ({
+    extensions,
     content: initialContent,
     editable: isCurrentlyTextEditing,
     immediatelyRender: false,
@@ -260,47 +262,91 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       editor.commands.setTextAlign(alignment);
     },
     onUpdate: ({ editor }) => {
-      if (!editor || editor.isDestroyed || isUpdatingRef.current) return;
+      if (!editor || editor.isDestroyed || isUpdatingRef.current || isUnmountingRef.current) return;
+      
+      // Validate we're still on the correct slide
+      if (lockedSlideId.current !== slideId) {
+        console.warn('[TiptapTextBlock] Preventing update - slide mismatch', {
+          locked: lockedSlideId.current,
+          current: slideId
+        });
+        return;
+      }
+
       isUpdatingRef.current = true;
       try {
         const json = editor.getJSON();
         const newDocs: CustomDoc = transformTiptapToMyFormat(json);
-        const currentTexts = props.texts;
-        if (JSON.stringify(newDocs) !== JSON.stringify(currentTexts)) {
-          updateComponent(component.id, { props: { texts: newDocs } }, true);
+        if (JSON.stringify(newDocs) !== JSON.stringify(props.texts)) {
+          updateComponent(lockedComponentId.current, { props: { texts: newDocs } }, true);
         }
       } finally {
         setTimeout(() => { isUpdatingRef.current = false; }, 100);
       }
     },
     onFocus: () => {
-      if (slideId) {
+      if (lockedSlideId.current) {
         import('@/stores/historyStore').then(({ useHistoryStore }) => {
-          useHistoryStore.getState().startTransientOperation(component.id, slideId);
+          useHistoryStore.getState().startTransientOperation(
+            lockedComponentId.current,
+            lockedSlideId.current
+          );
         });
       }
     },
     onBlur: ({ editor }) => {
-      if (!editor || editor.isDestroyed || isUpdatingRef.current) return;
+      if (!editor || editor.isDestroyed || isUpdatingRef.current || isUnmountingRef.current) return;
+      
+      // Validate we're still on the correct slide
+      if (lockedSlideId.current !== slideId) {
+        console.warn('[TiptapTextBlock] Preventing blur save - slide mismatch', {
+          locked: lockedSlideId.current,
+          current: slideId
+        });
+        // Still exit text editing mode
+        if (isCurrentlyTextEditing) {
+          setTextEditingGlobal(false);
+        }
+        return;
+      }
+
       isUpdatingRef.current = true;
       try {
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
-        updateComponent(component.id, { props: { texts: docs } }, true);
-        if (slideId) {
+        
+        // Double-check we're not unmounting before saving
+        if (!isUnmountingRef.current && lockedSlideId.current === slideId) {
+          updateComponent(lockedComponentId.current, { props: { texts: docs } }, true);
+        }
+
+        if (lockedSlideId.current) {
           import('@/stores/historyStore').then(({ useHistoryStore }) => {
-            useHistoryStore.getState().endTransientOperation(component.id, slideId);
+            useHistoryStore.getState().endTransientOperation(
+              lockedComponentId.current,
+              lockedSlideId.current
+            );
           });
         }
+
         if (isCurrentlyTextEditing) {
-          setTimeout(() => setTextEditingGlobal(false), 0);
+          // Use microtask to ensure this runs after any pending updates
+          queueMicrotask(() => {
+            if (!isUnmountingRef.current) {
+              setTextEditingGlobal(false);
+            }
+          });
         }
       } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 100);
+        setTimeout(() => { 
+          if (!isUnmountingRef.current) {
+            isUpdatingRef.current = false;
+          }
+        }, 100);
       }
     },
   }), [
-    getExtensions,
+    extensions,
     initialContent,
     isCurrentlyTextEditing,
     alignment,
@@ -313,52 +359,74 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     slideId,
   ]);
 
-  const editor = useEditor(getEditorConfig);
+  // Recreate editor when component or slide changes
+  const editor = useEditor(editorConfig, [component.id, slideId]);
 
-  // Sync when texts prop changes
+  // =================================================================
+  // LIFECYCLE MANAGEMENT
+  // =================================================================
+
+  // Track unmounting to prevent saves during cleanup
   useEffect(() => {
-    if (editor && !isCurrentlyTextEditing && !isUpdatingRef.current) {
-      const currentContent = editor.getJSON();
-      const currentTexts = transformTiptapToMyFormat(currentContent);
-
-      if (JSON.stringify(texts) !== JSON.stringify(currentTexts)) {
-        const newContent = transformMyFormatToTiptap(texts || {
-          type: 'doc',
-          content: [{ type: 'paragraph', content: [] }]
-        });
-        editor.commands.setContent(newContent, false);
+    return () => {
+      isUnmountingRef.current = true;
+      
+      // If we have an active editor, blur it immediately without saving
+      if (editor && !editor.isDestroyed) {
+        try {
+          editor.commands.blur();
+        } catch (e) {
+          console.warn('[TiptapTextBlock] Error blurring editor on unmount:', e);
+        }
       }
+    };
+  }, [editor]);
+
+  // Sync text content when props change
+  useEffect(() => {
+    if (!editor || isCurrentlyTextEditing || isUpdatingRef.current) return;
+
+    const currentContent = editor.getJSON();
+    const currentTexts = transformTiptapToMyFormat(currentContent);
+
+    if (JSON.stringify(texts) !== JSON.stringify(currentTexts)) {
+      const newContent = transformMyFormatToTiptap(texts || {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [] }]
+      });
+      editor.commands.setContent(newContent, false);
     }
   }, [editor, texts, isCurrentlyTextEditing]);
 
-  // Keep editable state in sync
+  // Manage editor editable state
   useEffect(() => {
-    if (editor) {
-      const currentlyEditable = editor.isEditable;
-      if (currentlyEditable !== isCurrentlyTextEditing) {
-        editor.setEditable(isCurrentlyTextEditing);
-      }
-      if (isCurrentlyTextEditing && !editor.isFocused) {
-        setTimeout(() => editor.commands.focus('end'), 50);
-      }
-      if (editor.view && editor.view.dom) {
-        editor.view.dom.setAttribute('data-component-id', component.id);
-      }
+    if (!editor) return;
+
+    if (editor.isEditable !== isCurrentlyTextEditing) {
+      editor.setEditable(isCurrentlyTextEditing);
+    }
+
+    if (isCurrentlyTextEditing && !editor.isFocused) {
+      setTimeout(() => editor.commands.focus('end'), 50);
+    }
+
+    if (editor.view?.dom) {
+      editor.view.dom.setAttribute('data-component-id', component.id);
     }
   }, [editor, isCurrentlyTextEditing, component.id]);
 
-  // Update alignment on prop changes
+  // Update alignment
   useEffect(() => {
-    if (editor) {
-      const editorElement = editor.view.dom as HTMLElement;
-      if (editorElement) {
-        editorElement.style.textAlign = alignment;
-      }
-      editor.commands.setTextAlign(alignment);
+    if (!editor) return;
+
+    const editorElement = editor.view?.dom as HTMLElement;
+    if (editorElement) {
+      editorElement.style.textAlign = alignment;
     }
+    editor.commands.setTextAlign(alignment);
   }, [editor, alignment]);
 
-  // Manage active editor ref in store
+  // Manage active editor in store
   useEffect(() => {
     if (isSelected && editor) {
       setActiveTiptapEditor(editor);
@@ -371,129 +439,32 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     };
   }, [editor, isSelected, setActiveTiptapEditor]);
 
-  // CRITICAL FIX: Force initial sizing calculation on mount
-  // This ensures proper sizing immediately without waiting for selection
-  useEffect(() => {
-    if (editor && containerRef.current) {
-      // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => {
-        const wrapper = containerRef.current as HTMLElement;
-        if (wrapper) {
-          // Set initial CSS variables
-          wrapper.style.setProperty('--tiptap-font-size', getFontSize);
-          wrapper.style.setProperty('--tiptap-font-family', getFontFamilyWithFallback(fontFamily || 'Arial'));
-          wrapper.style.setProperty('--tiptap-font-weight', String(fontWeight));
-          wrapper.style.setProperty('--tiptap-line-height', String(lineHeight || 1.5));
-          wrapper.style.setProperty('--tiptap-letter-spacing', getLetterSpacing);
-          wrapper.style.setProperty('--tiptap-text-color', textColor);
-        }
-        
-        // Apply to editor DOM
-        if (editor.view && editor.view.dom) {
-          const editorElement = editor.view.dom as HTMLElement;
-          editorElement.style.fontSize = getFontSize;
-          // Force layout recalculation
-          void editorElement.offsetHeight;
-          // Update editor state
-          try {
-            editor.view.dispatch(editor.state.tr);
-          } catch (e) {
-            // Ignore errors
-          }
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor]); // Only run when editor is first created
-
-  // Force editor to update when font size or other CSS variables change
-  // Store previous values to avoid unnecessary updates
-  const prevStyleValuesRef = useRef<{
-    fontSize: string;
-    letterSpacing: string;
-    fontFamily: string;
-    fontWeight: string | number;
-    lineHeight: number;
-    textColor: string;
-  } | null>(null);
-
-  useEffect(() => {
-    // Check if values actually changed
-    const currentValues = {
-      fontSize: getFontSize,
-      letterSpacing: getLetterSpacing,
-      fontFamily,
-      fontWeight,
-      lineHeight,
-      textColor,
-    };
-
-    const hasChanged = !prevStyleValuesRef.current ||
-      prevStyleValuesRef.current.fontSize !== currentValues.fontSize ||
-      prevStyleValuesRef.current.letterSpacing !== currentValues.letterSpacing ||
-      prevStyleValuesRef.current.fontFamily !== currentValues.fontFamily ||
-      prevStyleValuesRef.current.fontWeight !== currentValues.fontWeight ||
-      prevStyleValuesRef.current.lineHeight !== currentValues.lineHeight ||
-      prevStyleValuesRef.current.textColor !== currentValues.textColor;
-
-    if (!hasChanged) return;
-
-    prevStyleValuesRef.current = currentValues;
-
-    // Update wrapper container CSS variables
-    if (containerRef.current) {
-      const wrapper = containerRef.current as HTMLElement;
-      wrapper.style.setProperty('--tiptap-font-size', getFontSize);
-      wrapper.style.setProperty('--tiptap-font-family', getFontFamilyWithFallback(fontFamily || 'Arial'));
-      wrapper.style.setProperty('--tiptap-font-weight', String(fontWeight));
-      wrapper.style.setProperty('--tiptap-line-height', String(lineHeight || 1.5));
-      wrapper.style.setProperty('--tiptap-letter-spacing', getLetterSpacing);
-      wrapper.style.setProperty('--tiptap-text-color', textColor);
-    }
-
-    // Update editor DOM and internal state
-    if (editor && editor.view && editor.view.dom) {
-      const editorElement = editor.view.dom as HTMLElement;
-      if (editorElement) {
-        // Apply font size directly to editor DOM
-        editorElement.style.fontSize = getFontSize;
-
-        // Force layout recalculation (triggers browser reflow)
-        void editorElement.offsetHeight;
-
-        // Force TipTap to update its internal state by dispatching an empty transaction
-        // This ensures the editor recognizes the style change and re-renders properly
-        try {
-          editor.view.dispatch(editor.state.tr);
-        } catch (e) {
-          // Ignore errors from dispatching transaction
-        }
-      }
-    }
-  }, [editor, getFontSize, getLetterSpacing, fontFamily, fontWeight, lineHeight, textColor]);
+  // =================================================================
+  // RENDER
+  // =================================================================
 
   const wrapperStyle: React.CSSProperties = {
     ...styles,
     position: styles?.position || 'relative',
     overflow: 'hidden',
-    '--tiptap-font-size': getFontSize,
-    '--tiptap-font-family': getFontFamilyWithFallback(fontFamily || 'Arial'),
-    '--tiptap-font-weight': fontWeight,
-    '--tiptap-line-height': lineHeight || 1.5,
-    '--tiptap-letter-spacing': getLetterSpacing,
-    '--tiptap-text-color': textColor,
-    '--tiptap-padding': typeof padding === 'number' ? `${padding}px` : String(padding),
-  } as React.CSSProperties as any;
+    fontSize: `${finalFontSize}px`,
+    fontFamily: getFontFamilyWithFallback(fontFamily || 'Arial'),
+    fontWeight: fontWeight,
+    lineHeight: lineHeight || 1.5,
+    letterSpacing: `${finalLetterSpacing}px`,
+    color: textColor,
+    padding: typeof padding === 'number' ? `${padding}px` : String(padding),
+  } as React.CSSProperties;
 
   return (
     <div
+      key={instanceKey}
       ref={containerRef}
       style={wrapperStyle}
       data-component-id={component.id}
       data-component-type="TiptapTextBlock"
     >
       <div
-        ref={textContainerRef}
         className="tiptap-editor-wrapper"
         style={{ width: '100%', height: '100%' }}
         onDoubleClick={(e) => {

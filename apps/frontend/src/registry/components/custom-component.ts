@@ -36,77 +36,65 @@ export const CustomComponentDefinition: ComponentDefinition<typeof CustomCompone
   schema: CustomComponentSchema,
   defaultProps: {
     ...baseComponentDefaults,
-    render: `function render({ props, state, updateState, isThumbnail }) {
-  // Define editable properties with defaults
-  const text = props.text || "Hello from custom component!";
-  const fontSize = props.fontSize || 24;
-  const color = props.color || "#4287f5";
-  const backgroundColor = props.backgroundColor || "#f0f0f0";
-  const padding = props.padding || 20;
-  const borderRadius = props.borderRadius || 8;
-  const isAnimated = props.isAnimated || false;
-  const animationSpeed = props.animationSpeed || 1000; // ms
-  const theme = props.theme || "light"; // Options: light, dark, colorful
-  
-  // Component state
-  const count = state.count || 0;
-  
-  // Disable animations in thumbnail mode
-  const shouldAnimate = isAnimated && !isThumbnail;
-  
-  // Build transition string after all variables are defined
-  const transitionValue = shouldAnimate ? ('all ' + animationSpeed + 'ms ease-in-out') : 'none';
-  
-  // Styles based on properties
-  const containerStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
+    render: `function render({ props, state, updateState, isThumbnail, containerWidth, containerHeight }) {
+  // Theme-aware, centered, SVG-rich default component
+  var value = props.value || '92%';
+  var label = props.label || 'Customer Satisfaction';
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#8B5CF6';
+  var textColor = props.textColor || '#111827';
+  var padding = props.padding || 24;
+  var width = (props.width || containerWidth || 800);
+  var height = (props.height || containerHeight || 500);
+
+  // Root container centered layout with subtle gradient background
+  var rootStyle = {
     width: '100%',
     height: '100%',
-    padding: padding + 'px',
-    backgroundColor: theme === 'dark' ? '#1a1a1a' : theme === 'colorful' ? backgroundColor : '#ffffff',
-    borderRadius: borderRadius + 'px',
-    transition: transitionValue,
-    boxShadow: theme === 'dark' ? '0 4px 6px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)'
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    borderRadius: '24px',
+    background: 'linear-gradient(135deg, ' + primaryColor + '10 0%, ' + secondaryColor + '10 100%)',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.08)'
   };
-  
-  const textStyle = {
-    fontSize: fontSize + 'px',
-    color: theme === 'dark' ? '#ffffff' : color,
-    fontWeight: 'bold',
-    marginBottom: '10px',
-    textAlign: 'center'
-  };
-  
-  const buttonStyle = {
-    padding: '8px 16px',
-    fontSize: '14px',
-    backgroundColor: color,
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    transition: 'opacity 0.2s'
-  };
-  
-  return React.createElement('div', { style: containerStyle },
-    React.createElement('h2', { style: textStyle }, text),
-    React.createElement('p', { style: { color: theme === 'dark' ? '#ccc' : '#666' } }, 
-      'Count: ' + count
-    ),
-    React.createElement('button', {
-      style: buttonStyle,
-      onClick: () => updateState({ count: count + 1 }),
-      onMouseEnter: (e) => e.target.style.opacity = '0.8',
-      onMouseLeave: (e) => e.target.style.opacity = '1'
-    }, 'Click Me!')
+
+  return React.createElement('div', { style: rootStyle },
+    React.createElement('svg', {
+      viewBox: '0 0 100 100',
+      preserveAspectRatio: 'xMidYMid meet',
+      style: { width: '90%', height: '90%' }
+    },
+      React.createElement('defs', null,
+        React.createElement('radialGradient', { id: 'g1', cx: '50%', cy: '50%', r: '60%' },
+          React.createElement('stop', { offset: '0%', stopColor: primaryColor, stopOpacity: 0.18 }),
+          React.createElement('stop', { offset: '100%', stopColor: secondaryColor, stopOpacity: 0 })
+        )
+      ),
+      React.createElement('circle', { cx: 50, cy: 50, r: 40, fill: 'url(#g1)' }),
+      React.createElement('text', {
+        x: 50,
+        y: 46,
+        textAnchor: 'middle',
+        dominantBaseline: 'central',
+        fill: primaryColor,
+        style: { fontSize: '28px', fontWeight: '900' }
+      }, value),
+      React.createElement('text', {
+        x: 50,
+        y: 70,
+        textAnchor: 'middle',
+        fill: textColor,
+        style: { fontSize: '7px', fontWeight: '600', opacity: 0.85 }
+      }, label)
+    )
   );
 }`,
     props: {},
-    width: 400,
-    height: 200
+    width: 800,
+    height: 500
   },
   category: 'advanced'
 }; 

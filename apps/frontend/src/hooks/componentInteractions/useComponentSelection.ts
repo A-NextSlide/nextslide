@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore'; // Restore import
 import { useEditorStore } from '@/stores/editorStore';
+import { useActiveSlide } from '@/context/ActiveSlideContext';
 
 interface UseComponentSelectionProps {
   componentId: string;
@@ -30,6 +31,7 @@ export function useComponentSelection({
   containerRef, // Restore usage
   didJustDrag, // Receive the ref
 }: UseComponentSelectionProps): UseComponentSelectionReturn {
+  const { slideId: activeSlideId } = useActiveSlide();
   // Restore global text editing state access
   const isTextEditingGlobal = useEditorSettingsStore(state => state.isTextEditing);
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);
@@ -47,9 +49,22 @@ export function useComponentSelection({
       return;
     }
 
+    // If a different component was in text-edit mode, blur and exit to avoid sticky editor content
+    try {
+      const editorStoreInst = useEditorStore.getState();
+      const activeEditor: any = editorStoreInst.activeTiptapEditor;
+      if (isTextEditingGlobal && activeEditor && activeEditor.view && activeEditor.view.dom) {
+        const currentEditingId = (activeEditor.view.dom as HTMLElement).getAttribute('data-component-id');
+        if (currentEditingId && currentEditingId !== componentId) {
+          try { activeEditor.commands?.blur?.(); } catch {}
+          setTextEditingGlobal(false);
+        }
+      }
+    } catch {}
+
     // Check if component is already selected in multi-selection
     const editorStore = useEditorStore.getState();
-    const components = editorStore.getDraftComponents(Object.keys(editorStore.draftComponents)[0] || '');
+    const components = activeSlideId ? editorStore.getDraftComponents(activeSlideId) : [];
     const component = components.find(c => c.id === componentId);
     
     // Check if this component is part of a group
@@ -87,6 +102,9 @@ export function useComponentSelection({
     isEditing,
     onSelect,
     didJustDrag, // Add ref to dependency array
+    isTextEditingGlobal,
+    setTextEditingGlobal,
+    activeSlideId
   ]);
 
   // Double click handler - triggers text editing mode for compatible components or group edit mode
@@ -106,7 +124,7 @@ export function useComponentSelection({
     e.stopPropagation(); // Prevent other actions only when in edit mode
     
     const editorStore = useEditorStore.getState();
-    const components = editorStore.getDraftComponents(Object.keys(editorStore.draftComponents)[0] || '');
+    const components = activeSlideId ? editorStore.getDraftComponents(activeSlideId) : [];
     const component = components.find(c => c.id === componentId);
     
     // Check if this component is part of a group
@@ -135,7 +153,8 @@ export function useComponentSelection({
     componentId, 
     isSelected, 
     onSelect, 
-    setTextEditingGlobal
+    setTextEditingGlobal,
+    activeSlideId
   ]); // Updated dependencies
 
   return {

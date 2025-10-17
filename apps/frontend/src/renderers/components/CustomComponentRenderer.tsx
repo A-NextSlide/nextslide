@@ -534,7 +534,29 @@ export const CustomComponentRenderer: React.FC<{
   const scaleFactor = useMemo(() => {
     if (isThumbnail || isPresenting) return 1;
     const container = document.getElementById('slide-display-container');
-    const width = container?.offsetWidth || 900;
+    if (!container) return 950 / DEFAULT_SLIDE_WIDTH;
+    
+    // Check if we're in edit mode
+    let parent = container.parentElement;
+    let isInEditMode = false;
+    let maxLevels = 5;
+    
+    while (parent && maxLevels > 0) {
+      const transform = window.getComputedStyle(parent).transform;
+      if (transform && transform !== 'none' && transform.includes('0.92')) {
+        isInEditMode = true;
+        break;
+      }
+      parent = parent.parentElement;
+      maxLevels--;
+    }
+    
+    // If in edit mode, use DOM width; otherwise use visual width
+    const width = isInEditMode 
+      ? (container.offsetWidth || container.clientWidth || 950)
+      : (container.getBoundingClientRect().width || 950);
+    
+    // Backend generates fonts for 1920x1080 slides
     return width / DEFAULT_SLIDE_WIDTH;
   }, [isThumbnail, isPresenting]);
   
@@ -606,13 +628,13 @@ export const CustomComponentRenderer: React.FC<{
     };
   }, [computeFit]);
 
-  // Listen for resize start/end events to hide during interactive resizing
+  // Listen for resize start/end events to recompute fit on resize end
   useEffect(() => {
     const onResizeStart = (e: Event) => {
       const anyEvent = e as any;
       if (anyEvent?.detail?.componentId === component.id) {
         setIsResizingNow(true);
-        setIsFitReady(false);
+        // Don't hide content during resize - keep it visible
       }
     };
     const onResizeEnd = (e: Event) => {
@@ -915,7 +937,7 @@ export const CustomComponentRenderer: React.FC<{
                       transform: `scale(${fit.scale})`,
                       transformOrigin: 'top left',
                       boxSizing: 'border-box',
-                      visibility: (isFitReady && !isResizingNow) ? 'visible' : 'hidden'
+                      visibility: isFitReady ? 'visible' : 'hidden'
                     }}
                   >
                     {content}
@@ -933,7 +955,7 @@ export const CustomComponentRenderer: React.FC<{
                     transform: `scale(${fit.scale})`,
                     transformOrigin: 'top left',
                     boxSizing: 'border-box',
-                    visibility: (isFitReady && !isResizingNow) ? 'visible' : 'hidden'
+                    visibility: isFitReady ? 'visible' : 'hidden'
                   }}
                 >
                   {content}
@@ -964,7 +986,7 @@ export const CustomComponentRenderer: React.FC<{
                     transform: `scale(${fit.scale})`,
                     transformOrigin: 'top left',
                     boxSizing: 'border-box',
-                    visibility: (isFitReady && !isResizingNow) ? 'visible' : 'hidden'
+                    visibility: isFitReady ? 'visible' : 'hidden'
                   }}
                 >
                   {content}
@@ -982,7 +1004,7 @@ export const CustomComponentRenderer: React.FC<{
                   transform: `scale(${fit.scale})`,
                   transformOrigin: 'top left',
                   boxSizing: 'border-box',
-                  visibility: (isFitReady && !isResizingNow) ? 'visible' : 'hidden'
+                  visibility: isFitReady ? 'visible' : 'hidden'
                 }}
               >
                 {content}
