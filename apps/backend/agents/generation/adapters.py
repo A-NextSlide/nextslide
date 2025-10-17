@@ -345,7 +345,7 @@ class SimpleDeckComposer(IDeckComposer):
             deck_terms = [w.strip('.,!?:;-') for w in deck_words if w.lower() not in stopwords and not w.lower().endswith('ing')][:1]
             query_parts.extend(deck_terms)
 
-        # Combine into ultra-concise query (max 3 words - reduced from 4)
+        # Combine into ultra-concise query (max 3 words)
         search_query = ' '.join(query_parts[:3])
 
         # Remove any remaining common words that slipped through
@@ -358,6 +358,21 @@ class SimpleDeckComposer(IDeckComposer):
             search_query = f"{deck_title} {slide_title}"[:50]  # Limit to 50 chars
 
         return search_query.strip()
+
+    def _should_prefer_diagram(self, slide: SlideOutline) -> bool:
+        """Heuristic: decide if this slide benefits from a 'diagram' search hint."""
+        try:
+            title = (slide.title or '').lower()
+            content = (slide.content or '').lower()
+            keywords = [
+                'process','workflow','pipeline','architecture','lifecycle','framework',
+                'overview','system design','timeline','steps',' vs ', ' versus ',
+                'comparison','anatomy','diagram','model','layers','stack','roadmap'
+            ]
+            haystack = f"{title} {content}"
+            return any(k in haystack for k in keywords)
+        except Exception:
+            return False
         
     async def compose_deck(
         self,
@@ -1213,49 +1228,27 @@ class SimpleDeckComposer(IDeckComposer):
                     # Collect all images for all slides before proceeding
                     all_images = {}
 
-                    # Use AI-generated search terms if available, otherwise fall back to per-slide generation
-                    use_ai_search_terms = search_terms and len(search_terms) > 0
-
-                    if use_ai_search_terms:
-                        print(f"\n🎨 USING AI-GENERATED SEARCH TERMS: {search_terms}")
-                        logger.info(f"🎨 Using {len(search_terms)} AI-generated search terms from theme prompting")
-
-                        # Create a mapping of search term to slide
-                        # Distribute search terms across slides intelligently
-                        search_term_index = 0
-
                     for slide_idx, slide in enumerate(deck_outline.slides):
                         print(f"\n🔍 Searching images for slide {slide_idx + 1}/{len(deck_outline.slides)}: {slide.title}")
                         logger.info(f"🔍 Searching images for slide {slide_idx + 1}: {slide.title}")
 
-                        # Generate search query - use AI terms if available, otherwise generate from content
-                        if use_ai_search_terms:
-                            # Use AI search terms intelligently:
-                            # 1. Try to match term to slide content
-                            # 2. Otherwise rotate through terms
-                            # 3. Combine general term with slide-specific keywords for better results
+                        # Always generate a per-slide smart query (≤3 words)
+                        search_query = self._generate_smart_search_query(slide, deck_outline)
+                        
+                        # If slide looks diagram-friendly, ensure 'diagram' is included (trim to ≤3 words)
+                        try:
+                            if self._should_prefer_diagram(slide):
+                                parts = [p for p in search_query.split() if p]
+                                if 'diagram' not in parts:
+                                    parts = (parts[:2] + ['diagram']) if len(parts) >= 2 else (parts + ['diagram'])
+                                # Keep to max 3 tokens
+                                parts = parts[:3]
+                                search_query = ' '.join(parts)
+                        except Exception:
+                            pass
 
-                            base_term = search_terms[search_term_index % len(search_terms)]
-                            search_term_index += 1
-
-                            # Enhance with slide-specific context if needed
-                            slide_keywords = self._generate_smart_search_query(slide, deck_outline)
-
-                            # Combine AI term with slide keywords for best results
-                            if slide_keywords and len(slide_keywords) > 3:
-                                # Use AI term as primary, enhance with 1-2 slide keywords
-                                slide_words = slide_keywords.split()[:2]
-                                search_query = f"{base_term} {' '.join(slide_words)}"
-                            else:
-                                search_query = base_term
-
-                            print(f"   🎨 AI Search Term: '{base_term}' + Slide Context → '{search_query}'")
-                            logger.info(f"🎨 AI-enhanced search query: '{search_query}' (base: '{base_term}')")
-                        else:
-                            # Fallback: Generate smart query from slide content
-                            search_query = self._generate_smart_search_query(slide, deck_outline)
-                            print(f"   Generated query: '{search_query}'")
-                            logger.info(f"🔍 Fallback smart search query: '{search_query}'")
+                        print(f"   Generated query: '{search_query}'")
+                        logger.info(f"🔍 Smart per-slide search query: '{search_query}'")
 
                         images = await image_service.search_images(search_query, max_images=6)
 

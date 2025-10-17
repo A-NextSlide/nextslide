@@ -150,8 +150,11 @@ export class SlideGenerationService {
     return {
       deck_id: deckId,
       outline,
-      // Default to auto-apply (synchronous) when unspecified
-      async_images: (window as any)?.__slideGenerationPreferences?.autoSelectImages === true ? false : false
+      // Map toggle: ON (autoSelectImages=true) => async_images=false (auto-apply). Default false when unspecified.
+      async_images: ((): boolean => {
+        const pref = (window as any)?.__slideGenerationPreferences?.autoSelectImages;
+        return pref !== undefined ? !pref : false;
+      })()
     };
   }
 
