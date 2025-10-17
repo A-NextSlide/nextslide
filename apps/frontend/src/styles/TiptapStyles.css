@@ -328,27 +328,28 @@
   border-collapse: separate;
   border-spacing: 0;
   width: auto;
-  min-width: min-content;
+  min-width: 100%; /* Tables should fill their container */
   margin: 0;
   overflow: hidden;
   position: relative;
-  border-radius: var(--table-border-radius, 8px);
+  border-radius: 0; /* NO rounded corners for clean, professional look */
   box-shadow: var(--table-box-shadow);
-  table-layout: auto;
+  table-layout: fixed; /* Fixed layout for consistent column widths */
 }
 
 .tiptap-table-container table td,
 .tiptap-table-container table th {
-  min-width: min-content;
+  min-width: var(--table-cell-min-width, 150px); /* Wider minimum for presentations */
   width: auto;
-  border: var(--table-border-width, 1px) solid var(--table-border-color, #e1e5e9);
+  border: var(--table-border-width, 2px) solid var(--table-border-color, #d1d5db);
   position: relative;
-  vertical-align: top;
+  vertical-align: middle; /* Center content vertically */
   box-sizing: border-box;
-  padding: var(--table-cell-padding, 4px);
-  height: var(--table-row-height, 32px);
-  white-space: nowrap;
+  padding: var(--table-cell-padding, 16px); /* More generous padding */
+  height: var(--table-row-height, 56px); /* Taller rows */
+  white-space: normal; /* Allow text wrapping */
   text-align: var(--table-text-align, left);
+  line-height: 1.4; /* Better line spacing */
 }
 
 /* Allow wrapping for cells with lots of content */
@@ -367,10 +368,14 @@
 }
 
 .tiptap-table-container table th {
-  font-weight: 600;
+  font-weight: 700; /* Bolder headers for infographic style */
   text-align: var(--table-text-align, left);
-  background-color: var(--table-header-bg, #f8fafc);
-  color: var(--table-header-color, #1f2937);
+  background-color: var(--table-header-bg, #1f2937); /* Dark header by default */
+  color: var(--table-header-color, #ffffff); /* White text */
+  text-transform: uppercase; /* Uppercase headers for professional look */
+  letter-spacing: 0.05em; /* Slight letter spacing */
+  font-size: calc(var(--table-font-size, 18px) * 0.9); /* Slightly smaller than body */
+  border-bottom-width: calc(var(--table-border-width, 2px) * 1.5); /* Thicker bottom border */
 }
 
 .tiptap-table-container table td {
@@ -378,21 +383,13 @@
   color: var(--table-text-color, #374151);
 }
 
-/* Striped rows - use pseudo-element to avoid transparency */
+/* Striped rows - use stronger contrast for better readability */
 .table-renderer.striped-rows table tbody tr:nth-child(even) td {
-  position: relative;
+  background-color: rgba(0, 0, 0, 0.03) !important; /* Slightly darker for visibility */
 }
 
-.table-renderer.striped-rows table tbody tr:nth-child(even) td::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.02);
-  pointer-events: none;
-  z-index: -1;
+.table-renderer.striped-rows table tbody tr:nth-child(odd) td {
+  background-color: var(--table-cell-bg, #ffffff) !important;
 }
 
 /* Remove ALL hover effects to prevent transparency */

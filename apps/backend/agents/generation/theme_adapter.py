@@ -412,23 +412,38 @@ class ThemeAdapter:
                 except Exception:
                     props.setdefault('theme', 'light')
 
-            # 7) Tables
+            # 7) Tables - Apply theme colors following infographic best practices
             elif ctype == 'Table':
                 ts = props.get('tableStyles')
                 if not isinstance(ts, dict):
                     ts = {}
-                # Ensure frontend-consumed flat style keys with sensible defaults
-                ts.setdefault('headerBackgroundColor', accent1)
-                ts.setdefault('headerTextColor', '#FFFFFF')
-                ts.setdefault('textColor', text_color)
-                # Tighter default table cell padding to avoid excessive whitespace on slides
-                ts.setdefault('cellPadding', 8)
-                # Keep nested keys for forward-compat renderers that support them
+
+                # FORCE theme colors (override any defaults for consistency)
+                ts['headerBackgroundColor'] = accent1  # Use accent color for headers
+                ts['headerTextColor'] = '#FFFFFF'  # White text on accent background
+                ts['cellBackgroundColor'] = '#FFFFFF'  # White cell background
+                ts['textColor'] = text_color  # Theme text color
+                ts['borderColor'] = _normalize_hex(accent1) + '40' if isinstance(accent1, str) else '#d1d5db'  # Subtle border with accent tint
+
+                # Presentation-optimized sizing
+                ts.setdefault('fontSize', 18)  # Larger for presentations
+                ts.setdefault('cellPadding', 16)  # Generous padding
+                ts.setdefault('rowHeight', 56)  # Tall rows for readability
+                ts.setdefault('borderWidth', 2)  # Thicker borders
+                ts.setdefault('borderRadius', 0)  # No rounded corners - clean look
+                ts.setdefault('stripedRows', True)  # Alternating rows
+                ts.setdefault('hoverEffect', False)  # No hover for presentations
+
+                # Font family from theme
+                ts.setdefault('fontFamily', body_family)
+
+                # Keep nested keys for forward-compat renderers
                 ts.setdefault('header', {})
                 ts.setdefault('body', {})
-                ts['header'].setdefault('backgroundColor', ts.get('headerBackgroundColor', accent1))
-                ts['header'].setdefault('color', ts.get('headerTextColor', '#FFFFFF'))
-                ts['body'].setdefault('color', ts.get('textColor', text_color))
+                ts['header']['backgroundColor'] = ts.get('headerBackgroundColor', accent1)
+                ts['header']['color'] = ts.get('headerTextColor', '#FFFFFF')
+                ts['body']['color'] = ts.get('textColor', text_color)
+
                 props['tableStyles'] = ts
 
             # 8) CustomComponent: FORCE theme colors (override hardcoded values)

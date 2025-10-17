@@ -62,25 +62,26 @@ export const renderTable: RendererFunction = (props) => {
     headers = [],
     showHeader = true,
     tableStyles = {},
+    columnWidths = [],
   } = componentProps;
 
-  // Enhanced default styles for better appearance
+  // Enhanced default styles for presentations - following infographic best practices
   const defaultTableStyles = {
     fontFamily: "Inter, system-ui, sans-serif",
-    fontSize: 12,
-    borderColor: "#e1e5e9",
-    borderWidth: 1,
-    cellPadding: 4,
-    rowHeight: 32,
-    headerBackgroundColor: "#f8fafc",
-    headerTextColor: "#1f2937",
+    fontSize: 18, // Larger for presentations
+    borderColor: "#d1d5db", // Slightly darker border for visibility
+    borderWidth: 2, // Thicker borders for clarity
+    cellPadding: 16, // More generous padding
+    rowHeight: 56, // Taller rows for readability
+    headerBackgroundColor: "#1f2937", // Dark header (will be overridden by theme)
+    headerTextColor: "#ffffff", // White text on dark header
     cellBackgroundColor: "#ffffff",
-    textColor: "#374151",
+    textColor: "#1f2937", // Darker text for better contrast
     alignment: "left",
-    borderRadius: 8,
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
-    stripedRows: false,
-    hoverEffect: true,
+    borderRadius: 0, // No rounded corners - clean, professional look
+    boxShadow: "0 2px 8px 0 rgba(0, 0, 0, 0.15)", // Stronger shadow for depth
+    stripedRows: true, // Alternating rows for easier reading
+    hoverEffect: false, // No hover effects for presentations
   };
 
   // Merge with custom styles
@@ -152,33 +153,28 @@ export const renderTable: RendererFunction = (props) => {
   // Convert data to HTML table format for Tiptap
   const generateTableHTML = useMemo(() => {
     if (!data || data.length === 0) {
-      // Default table with content
+      // Minimal placeholder - encourages users to add their own data
       return `
         <table>
           ${showHeader ? `
           <thead>
             <tr>
-              <th>Item</th>
-              <th>Value</th>
-              <th>Change</th>
+              <th>Column 1</th>
+              <th>Column 2</th>
+              <th>Column 3</th>
             </tr>
           </thead>
           ` : ''}
           <tbody>
             <tr>
-              <td>Monthly Revenue</td>
-              <td>$125,000</td>
-              <td>+12.5%</td>
+              <td>Data 1</td>
+              <td>Data 2</td>
+              <td>Data 3</td>
             </tr>
             <tr>
-              <td>Active Users</td>
-              <td>8,420</td>
-              <td>+5.2%</td>
-            </tr>
-            <tr>
-              <td>Growth Rate</td>
-              <td>23.5%</td>
-              <td>+2.1%</td>
+              <td>Data 4</td>
+              <td>Data 5</td>
+              <td>Data 6</td>
             </tr>
           </tbody>
         </table>
@@ -199,10 +195,11 @@ export const renderTable: RendererFunction = (props) => {
         : (Array.isArray(firstRow) && firstRow.length > 0
           ? firstRow.map((_: any, index: number) => `Column ${index + 1}`)
           : ['Column 1', 'Column 2', 'Column 3']);
-      
+
       html += '<thead><tr>';
-      tableHeaders.forEach(header => {
-        html += `<th>${header || ''}</th>`;
+      tableHeaders.forEach((header, index) => {
+        const width = Array.isArray(columnWidths) && columnWidths[index] ? ` style="width: ${columnWidths[index]}px"` : '';
+        html += `<th${width}>${header || ''}</th>`;
       });
       html += '</tr></thead>';
     }
@@ -212,16 +209,17 @@ export const renderTable: RendererFunction = (props) => {
     rows.forEach((row: any) => {
       html += '<tr>';
       const cells = Array.isArray(row) ? row : [row];
-      cells.forEach((cell: any) => {
+      cells.forEach((cell: any, index: number) => {
         const value = (cell === null || typeof cell === 'undefined') ? '' : String(cell);
-        html += `<td>${value}</td>`;
+        const width = Array.isArray(columnWidths) && columnWidths[index] ? ` style="width: ${columnWidths[index]}px"` : '';
+        html += `<td${width}>${value}</td>`;
       });
       html += '</tr>';
     });
     html += '</tbody></table>';
-    
+
     return html;
-  }, [data, headers, showHeader]);
+  }, [data, headers, showHeader, columnWidths]);
 
   // Tiptap editor configuration with rich text support
   const editor = useEditor({
@@ -256,7 +254,7 @@ export const renderTable: RendererFunction = (props) => {
       Table.configure({
         resizable: true,
         handleWidth: 5,
-        cellMinWidth: 100,
+        cellMinWidth: 150, // Wider minimum for better readability
         lastColumnResizable: true,
         allowTableNodeSelection: false,
       }),
@@ -538,6 +536,45 @@ export const renderTable: RendererFunction = (props) => {
     }
   }, [editor, containerRef, component.props.height, effectivePixelScale]);
 
+  // Watch for column resize changes and save them
+  useEffect(() => {
+    if (!editor || !containerRef.current) return;
+
+    const tableElement = containerRef.current.querySelector('table');
+    if (!tableElement) return;
+
+    let resizeTimeout: NodeJS.Timeout;
+
+    // Observer to detect when column widths change (from Tiptap resize)
+    const observer = new MutationObserver((mutations) => {
+      const hasStyleChange = mutations.some(mutation =>
+        mutation.type === 'attributes' &&
+        mutation.attributeName === 'style' &&
+        (mutation.target as HTMLElement).matches('th, td')
+      );
+
+      if (hasStyleChange) {
+        // Debounce the capture to avoid too many updates during resize
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          captureColumnWidths();
+        }, 500);
+      }
+    });
+
+    // Observe the table for style changes on cells
+    observer.observe(tableElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+      subtree: true
+    });
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimeout);
+    };
+  }, [editor, containerRef]);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -608,6 +645,41 @@ export const renderTable: RendererFunction = (props) => {
       updateComponent(component.id, updates);
     } catch (error) {
       console.warn('Failed to update table component:', error);
+    }
+  };
+
+  // Function to capture column widths from the table
+  const captureColumnWidths = () => {
+    if (!editor || editor.isDestroyed) return;
+
+    const table = editor.view.dom.querySelector('table') as HTMLTableElement;
+    if (!table) return;
+
+    // Get widths from the first row (header or first data row)
+    const firstRow = table.querySelector('thead tr') || table.querySelector('tbody tr');
+    if (!firstRow) return;
+
+    const cells = firstRow.querySelectorAll('th, td');
+    const widths: number[] = [];
+
+    cells.forEach((cell: any) => {
+      // Get the actual rendered width
+      const width = cell.offsetWidth;
+      widths.push(width);
+    });
+
+    // Only update if widths have actually changed
+    const currentWidths = Array.isArray(componentProps.columnWidths) ? componentProps.columnWidths : [];
+    const widthsChanged = widths.length !== currentWidths.length ||
+      widths.some((w, i) => Math.abs(w - (currentWidths[i] || 0)) > 2); // 2px tolerance
+
+    if (widthsChanged && widths.length > 0) {
+      safeUpdateComponent({
+        props: {
+          ...componentProps,
+          columnWidths: widths
+        }
+      });
     }
   };
 
@@ -895,7 +967,7 @@ export const renderTable: RendererFunction = (props) => {
     '--table-border-radius': `${borderRadius * effectivePixelScale}px`,
     '--table-box-shadow': boxShadow,
     '--table-text-align': alignment,
-    '--table-cell-min-width': `${Math.max(60, Math.round(100 * effectivePixelScale))}px`,
+    '--table-cell-min-width': `${Math.max(120, Math.round(150 * effectivePixelScale))}px`, // Wider columns
   } as React.CSSProperties;
 
   // Handle context menu
@@ -1083,7 +1155,7 @@ export const renderTable: RendererFunction = (props) => {
       <style>{`
         .tiptap-table-editor table {
           width: 100% !important;
-          table-layout: auto !important;
+          table-layout: ${Array.isArray(columnWidths) && columnWidths.length > 0 ? 'fixed' : 'auto'} !important;
         }
         
         .tiptap-table-editor th,

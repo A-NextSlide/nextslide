@@ -632,7 +632,11 @@ class SlidePromptBuilder:
                 # Check for chart data
                 if "CHART DATA:" in content:
                     sections.append(f"\n📈 CHART DATA AVAILABLE")
-                    sections.append("If appropriate, visualize with a Chart. Otherwise prefer a concise Table, a CustomComponent metric row, or structured text bullets.")
+                    sections.append("Choose the best visualization:")
+                    sections.append("- For TRENDS over time, DISTRIBUTIONS, or PROPORTIONS → Use Chart")
+                    sections.append("- For COMPARISONS (competitors, features, specs, pricing) → Use Table")
+                    sections.append("- For simple METRICS (1-4 numbers) → Use CustomComponent metric row")
+                    sections.append("- For LISTS or HIERARCHIES → Use structured text bullets")
                     sections.append("When using a chart, use the exact chart type and data format specified in the extracted data")
                     extracted_data_found = True
         
@@ -1271,11 +1275,24 @@ class SlidePromptBuilder:
             predicted.append('Chart')
             logger.info(f"[PROMPT BUILDER] ✅ MANDATORY Chart component added to predicted list (extractedData exists)")
 
-        # Promote CustomComponent for structured or creative visuals (processes, comparisons, timelines, hero stats)
+        # Promote Table for competitive analysis, feature comparisons, pricing, and specs
+        try:
+            topic_text_table = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
+            table_triggers = ['competitive', 'competition', 'competitor', 'feature comparison', 'features', 'pricing', 'price', 'plan', 'plans', 'specification', 'specs', ' vs ', ' versus ', 'compare', 'comparison matrix']
+            # Check for structured comparison patterns (e.g., "Feature: Basic | Pro | Enterprise")
+            has_structured_data = bool(re.search(r'[\|:].*[\|:]', context.slide_outline.content or ''))
+            if 'Table' not in predicted and (any(k in topic_text_table for k in table_triggers) or has_structured_data):
+                predicted.append('Table')
+                logger.info(f"[PROMPT BUILDER] ✅ Added Table for competitive/feature comparison (trigger detected)")
+        except Exception:
+            pass
+
+        # Promote CustomComponent for structured or creative visuals (processes, timelines, visual comparisons, hero stats)
+        # Note: Removed simple 'comparison', ' vs ', ' versus ' from cc_triggers as those are better suited for Tables
         try:
             topic_text_cc = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
-            cc_triggers = ['process', 'step', 'steps', 'timeline', 'roadmap', 'flow', 'comparison', ' vs ', ' versus ', 'pillars', 'principles', 'framework', 'strategy', 'highlight', 'hero', 'kpi', 'metric']
-            has_numbers_not_chart = bool(re.search(r"\b\d+\b", topic_text_cc)) and 'Chart' not in predicted
+            cc_triggers = ['process', 'step', 'steps', 'timeline', 'roadmap', 'flow', 'journey', 'pillars', 'principles', 'framework', 'strategy', 'highlight', 'hero', 'kpi', 'metric', 'before and after', 'transformation']
+            has_numbers_not_chart = bool(re.search(r"\b\d+\b", topic_text_cc)) and 'Chart' not in predicted and 'Table' not in predicted
             if 'CustomComponent' not in predicted and (any(k in topic_text_cc for k in cc_triggers) or has_numbers_not_chart):
                 predicted.append('CustomComponent')
         except Exception:
@@ -1456,16 +1473,27 @@ class SlidePromptBuilder:
             import json
             sections.extend([
                 "\n TABLE COMPONENT REQUIREMENTS:",
-                "1. Use when data is naturally row/column (comparisons, specs, pricing, surveys).",
+                "1. WHEN TO USE TABLES (prioritize for these scenarios):",
+                "   - Competitive analysis: compare products, services, companies side-by-side",
+                "   - Feature comparisons: product tiers, plan differences, capabilities matrix",
+                "   - Pricing tables: plan costs, feature availability by tier",
+                "   - Specifications: technical details, product specs, requirements",
+                "   - Survey results: structured data with categories and values",
+                "   - Any content with 'vs', 'versus', 'compare', 'competitor', 'pricing', 'features', 'plans'",
                 "2. Headers: derive from keys when present; otherwise infer concise, short labels.",
+                "   - For competitive analysis: first column is feature/metric, other columns are competitors/products",
+                "   - Example: ['Feature', 'Us', 'Competitor A', 'Competitor B']",
                 "3. Data: populate props.data as a 2D array of rows (strings/numbers).",
+                "   - Extract ALL relevant comparison points from the slide content",
+                "   - Don't be minimal - include all features, specs, or metrics mentioned",
                 "4. Sizing: width 1400–1680, height 520–760; align with 12-column grid.",
+                "   - For dense competitive tables: prefer wider (1600+) to accommodate multiple columns",
                 "5. Styling (clean, professional):",
                 "   - NO rounded corners on the table or cells (square edges).",
                 "   - Strong header contrast (bold, high-contrast background and text).",
                 "   - Minimal rules/lines: avoid heavy gridlines; prefer header bottom border and subtle row dividers only.",
                 "   - Numeric columns right-aligned; text columns left-aligned.",
-                "   - Comfortable cell padding (12–16px).",
+                "   - Comfortable cell padding (12–16px) for readability.",
                 "   - Limit density: max ~6 columns and ~10–12 rows per table; split if more.",
                 "6. Do NOT invent values. Use exact values from slide content/extracted data.",
                 "7. COLORS: Use theme colors for all table styling:",
@@ -1474,6 +1502,11 @@ class SlidePromptBuilder:
                 f"   - textColor: {text_color} (main text color)",
                 f"   - If you need variety, use {secondary_accent} for alternating or secondary headers",
                 "   - For shades/tints: lighten or darken accent colors by adjusting opacity or brightness",
+                "8. COMPETITIVE ANALYSIS BEST PRACTICES:",
+                "   - Highlight YOUR product/service in one column (usually second column after feature names)",
+                "   - Use checkmarks (✓/✗) for boolean features, actual values for metrics",
+                "   - Order features strategically: start with differentiators where you excel",
+                "   - Keep feature names concise but descriptive (e.g., '24/7 Support', 'API Access')",
                 "EXAMPLE:",
                 json.dumps(table_example),
             ])
@@ -1678,21 +1711,45 @@ class SlidePromptBuilder:
                 "- Ensure visual hierarchy aligns with slide content",
                 "- Add subtle animations or effects that enhance, not distract",
                 "",
-                "📐 COMPOSITION & LAYOUT:",
-                "- Consider the entire slide composition",
-                "- Complement other components visually",
-                "- Use appropriate layout patterns:",
+                "📐 COMPOSITION & LAYOUT - USE AVAILABLE SPACE:",
+                "CRITICAL: CustomComponents must USE their full width and height props!",
+                "- availableWidth and availableHeight are calculated from props.width/height",
+                "- DO NOT bunch content in the middle - spread it across the available space",
+                "- For horizontal layouts (timelines, comparisons): Use position: 'absolute' with percentages",
+                "- For vertical layouts: Use flexbox with proper spacing",
+                "",
+                "Layout patterns:",
+                "  * TIMELINES (horizontal): Use absolute positioning, spread items across 0% to 100% of availableWidth",
+                "    Example: [{x: 10%}, {x: 50%}, {x: 90%}] - NOT all bunched at 50%",
+                "  * COMPARISONS (side-by-side): Use 45% width for each side with 10% gap",
+                "  * METRICS GRID: Calculate positions using width/columns and height/rows",
+                "  * PROGRESS BARS: Use 80-90% of availableWidth, not just 200px",
+                "",
+                "Consider the entire slide composition:",
                 "  * Side-by-side: Text (40%) + Visualization (60%)",
                 "  * Top-bottom: Key message above, supporting viz below",
                 "  * Full-slide: Component fills space with integrated text",
                 "  * Asymmetric: Hero visualization (70%) + supporting content (30%)",
                 "",
-                "🎯 VARIETY (RUN WILD WITHIN BOUNDS):",
-                "- Hero metrics: animated counters, gradient-filled big numerals, progress arcs",
-                "- Comparative visuals: split bars, scale indicators, dual-ring gauges",
-                "- Layout enhancers: grid cards with icons, tag clouds (bounded), donut/waffle-like visuals",
-                "- Timelines/flows: step chips with connectors, compact roadmaps using theme colors",
-                "- Decorative-but-functional: soft gradient blobs as subtle backdrops behind stats (no overlap)",
+                "🎯 VARIETY - BUILD THESE AS CUSTOM CODE (NOT TEMPLATES):",
+                "When content suggests these patterns, BUILD them from scratch using React.createElement:",
+                "",
+                "- METRICS (when you see numbers/KPIs): Build animated counters, progress rings, stat cards with gradients",
+                "  Example: 'kpi_cards' means BUILD a grid of metric cards with proper spacing",
+                "",
+                "- TIMELINES (when you see dates/milestones): Build horizontal timeline with points spread across width",
+                "  Example: 'interactive_timeline' means BUILD timeline points at proper x positions (10%, 50%, 90%)",
+                "",
+                "- COMPARISONS (before/after, vs): Build split-screen bars or dual gauges side-by-side",
+                "  Example: 'comparison_bars' means BUILD two bars at 30% and 70% positions",
+                "",
+                "- INTERACTIVE (quiz/poll): Build interactive options with hover states",
+                "  Example: 'quiz_component' means BUILD question + answer buttons in a grid",
+                "",
+                "- PROGRESS (goals/targets): Build progress arcs, filling containers, growth indicators",
+                "  Example: 'animated_progress_rings' means BUILD circular SVG progress with proper spacing",
+                "",
+                "Remember: These are PATTERNS to build, not template names! Write the code from scratch!",
                 "",
                 "🎨 THEME PROPS (PASS AND USE — MANDATORY COLORS):",
                 f"  - primaryColor: '{primary_accent}' (BRAND PRIMARY)",
@@ -1784,7 +1841,42 @@ class SlidePromptBuilder:
                 "- Extract real metrics from the outline (percentages, currency, counts) and set props.value accordingly.",
                 "- Set props.previous if a prior value is mentioned, and props.max/props.target if a goal is stated.",
                 "- Include props.outline as an array of 2-6 short keywords from the slide content for chips.",
-                "- Never use generic placeholders like 'Value' or 'Label'."
+                "- Never use generic placeholders like 'Value' or 'Label'.",
+                "",
+                "** TIMELINE COMPONENT PATTERN (Horizontal):",
+                "For timeline components, use absolute positioning to spread points across the full width:",
+                "```javascript",
+                "function render({ props }) {",
+                "  var padding = props.padding || 40;",
+                "  var availableWidth = props.width - padding * 2;",
+                "  var primaryColor = props.primaryColor || '#00D4FF';",
+                "  var textColor = props.textColor || '#FFFFFF';",
+                "  var timelinePoints = props.points || [{year: '2020', label: 'Start', x: 0.15}, {year: '2023', label: 'Now', x: 0.85}];",
+                "",
+                "  return React.createElement('div', {",
+                "    style: { width: '100%', height: '100%', position: 'relative', padding: padding + 'px' }",
+                "  }, [",
+                "    // Horizontal line",
+                "    React.createElement('div', {",
+                "      key: 'line',",
+                "      style: { position: 'absolute', top: '50%', left: padding + 'px', right: padding + 'px', height: '4px', background: primaryColor, opacity: 0.3, transform: 'translateY(-2px)' }",
+                "    }),",
+                "    // Timeline points - USE x position to spread across width",
+                "    ...timelinePoints.map(function(pt, i) {",
+                "      var xPos = padding + (pt.x * availableWidth); // Calculate pixel position from percentage",
+                "      return React.createElement('div', {",
+                "        key: i,",
+                "        style: { position: 'absolute', left: xPos + 'px', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center' }",
+                "      }, [",
+                "        React.createElement('div', { key: 'dot', style: { width: '32px', height: '32px', borderRadius: '50%', background: primaryColor, marginBottom: '16px' } }),",
+                "        React.createElement('div', { key: 'year', style: { fontSize: '18px', fontWeight: '700', color: textColor, marginBottom: '8px' } }, pt.year),",
+                "        React.createElement('div', { key: 'label', style: { fontSize: '14px', color: textColor, opacity: 0.7, textAlign: 'center', minWidth: '120px' } }, pt.label)",
+                "      ]);",
+                "    })",
+                "  ]);",
+                "}",
+                "```",
+                "KEY: Use pt.x as a percentage (0.0 to 1.0) and multiply by availableWidth to get pixel position!"
             ])
         
         # Component schemas

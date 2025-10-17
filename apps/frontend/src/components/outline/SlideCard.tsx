@@ -15,6 +15,7 @@ import {
 import { transformChartData } from '@/types/DataTransformers';
 import ChartDataTable from './ChartDataTable';
 import SlideChartViewer from './SlideChartViewer';
+import TableDataEditor from './TableDataEditor';
 // Use the same rich text editor for consistent view/edit rendering
 import OutlineRichTextEditor from './OutlineRichTextEditor';
 import ImagePlaceholder from '@/components/common/ImagePlaceholder';
@@ -662,6 +663,7 @@ const SlideCard: React.FC<SlideCardProps> = ({
       </div>
       {slide.extractedData && <ChartDataTable slide={slide} setCurrentOutline={setCurrentOutline} />}
       {slide.extractedData && <SlideChartViewer extractedData={slide.extractedData} />}
+      {slide.tableData && <TableDataEditor slide={slide} setCurrentOutline={setCurrentOutline} />}
       {/* Citations Panel (grouped, editable hint). Uses extractedData.metadata.citations if present */}
       {combinedCitations && combinedCitations.length > 0 && (
         <CitationsPanel 

@@ -329,11 +329,29 @@ class SlideContextRetriever:
             logger.info("  🎯 Icon component added for bullets/headers only (no decorative usage)")
         
         # ReactBits for interactive/animated pre-built components
-        # Add when content suggests animation/interaction
+        # EXPANDED USAGE: Add ReactBits more frequently for visual impact
         txt_lower = (slide_outline.content or "").lower() + " " + (slide_outline.title or "").lower()
-        if any(keyword in txt_lower for keyword in ["interactive", "animated", "engage", "explore", "click", "hover"]):
+
+        # Title slides should almost always have ReactBits for visual impact
+        if characteristics["is_title_slide"] or characteristics["is_closing_slide"]:
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits component added for interactive/animated elements")
+            logger.info("  ✨ ReactBits added for title/closing slide visual impact")
+        # Modern/tech/future themes benefit from ReactBits
+        elif any(keyword in txt_lower for keyword in ["modern", "future", "innovation", "digital", "tech", "transform", "disruption"]):
+            components.append("ReactBits")
+            logger.info("  ✨ ReactBits added for modern/tech theme")
+        # Interactive content keywords
+        elif any(keyword in txt_lower for keyword in ["interactive", "animated", "engage", "explore", "click", "hover", "dynamic"]):
+            components.append("ReactBits")
+            logger.info("  ✨ ReactBits added for interactive/animated elements")
+        # Visual emphasis keywords
+        elif any(keyword in txt_lower for keyword in ["stunning", "beautiful", "eye-catching", "impressive", "showcase", "highlight"]):
+            components.append("ReactBits")
+            logger.info("  ✨ ReactBits added for visual emphasis")
+        # Otherwise, add ReactBits to ~30% of content slides for variety
+        elif not characteristics["has_chart"] and slide_index % 3 == 0:
+            components.append("ReactBits")
+            logger.info("  ✨ ReactBits added for visual variety (every 3rd slide)")
         
         # 🚨 CRITICAL: Chart if has data - MUST BE INCLUDED
         if characteristics["has_chart"]:

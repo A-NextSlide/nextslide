@@ -169,7 +169,13 @@ export const TableSchema = UIObject(
   tableStyles: TableStylesSchema,
   
   cellStyles: UIArray("Cell Styles", TableCellStyleSchema, 'Array of style overrides for specific cells'),
-  
+
+  columnWidths: Type.Optional(UIArray('Column Widths', Type.Number(), 'Array of column widths in pixels', {
+    control: 'custom',
+    label: 'Column Widths',
+    description: 'Stored widths for each column'
+  })),
+
   enableSorting: Type.Optional(UIProperty(Type.Boolean(), {
     control: 'checkbox',
     label: 'Enable Sorting',
@@ -204,29 +210,30 @@ export const TableDefinition: ComponentDefinition<typeof TableSchema> = {
   defaultProps: {
     ...baseComponentDefaults,
     data: [
-      ["Cell 1,1", "Cell 1,2", "Cell 1,3"],
-      ["Cell 2,1", "Cell 2,2", "Cell 2,3"],
-      ["Cell 3,1", "Cell 3,2", "Cell 3,3"]
+      ["Data 1", "Data 2", "Data 3"],
+      ["Data 4", "Data 5", "Data 6"]
     ],
     headers: ["Column 1", "Column 2", "Column 3"],
     showHeader: true,
     tableStyles: {
       fontFamily: "Inter",
-      fontSize: 14,
-      borderColor: "#e2e8f0",
-      borderWidth: 1,
-      cellPadding: 10,
-      headerBackgroundColor: "#f8fafc",
-      headerTextColor: "#334155",
+      fontSize: 18, // Larger for presentations
+      borderColor: "#d1d5db", // Visible borders
+      borderWidth: 2, // Thicker borders for clarity
+      cellPadding: 16, // Generous padding
+      headerBackgroundColor: "#1f2937", // Dark header (theme will override)
+      headerTextColor: "#ffffff", // White text on dark header
       cellBackgroundColor: "#ffffff",
-      textColor: "#334155",
+      textColor: "#1f2937", // Darker text for contrast
       alignment: "left",
       alternatingRowColor: true,
-      hoverEffect: true
+      hoverEffect: false, // No hover for presentations
+      stripedRows: true, // Enable striped rows by default
+      borderRadius: 0 // No rounded corners - clean, professional
     },
     cellStyles: [],
-    width: 800,
-    height: 400,
+    width: 900, // Wider default for better visibility
+    height: 450, // Taller default to accommodate larger text
     enableSorting: false,
     enableFiltering: false,
     resizableColumns: false
