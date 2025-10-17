@@ -143,3 +143,4 @@ class DeckComposeRequest(BaseModel):
     deck_id: str = Field(description="UUID of the deck to compose")
     outline: DeckOutline = Field(description="The deck outline with slide information")
     force_restart: bool = Field(default=False, description="Force restart even if generation is in progress")
+    async_images: bool = Field(default=False, description="If False, images are auto-applied; if True, placeholders are used")

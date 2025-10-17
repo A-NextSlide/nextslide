@@ -118,7 +118,15 @@ class SlideGeneratorV2(ISlideGenerator):
             }
             await self.event_bus.emit(Events.SLIDE_SUBSTEP, substep_event)
             yield substep_event
-            
+
+            # Debug: Log what AI generated BEFORE post-processing
+            image_components_count = sum(1 for c in slide_data.get('components', []) if c.get('type') == 'Image')
+            placeholder_count = sum(1 for c in slide_data.get('components', []) if c.get('type') == 'Image' and c.get('props', {}).get('src') in ['placeholder', ''])
+            print(f"\n🤖 [AI OUTPUT] Slide {context.slide_index + 1} - AI generated {len(slide_data.get('components', []))} components")
+            print(f"   - Image components: {image_components_count}, with placeholder src: {placeholder_count}")
+            logger.info(f"[AI OUTPUT] Slide {context.slide_index + 1} - AI generated {len(slide_data.get('components', []))} components")
+            logger.info(f"[AI OUTPUT]   - Image components: {image_components_count}, with placeholder src: {placeholder_count}")
+
             slide_data = await self._post_process_slide(slide_data, context)
             
             # Calculate timing
@@ -672,7 +680,37 @@ class SlideGeneratorV2(ISlideGenerator):
         # Model-only: skip title slide enhancements
 
         # Handle images - either apply tagged media or attach available images for frontend selection
-        # Model-only: skip image replacements/attachments; keep placeholders
+        # Apply tagged media when auto-apply is ON (async_images=False)
+        print(f"\n🔍 [IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
+        print(f"   - async_images: {context.async_images} (False=auto-apply ON)")
+        print(f"   - tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
+        print(f"   - available_images count: {len(context.available_images) if context.available_images else 0}")
+        logger.info(f"[IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
+        logger.info(f"   - async_images: {context.async_images} (False=auto-apply ON)")
+        logger.info(f"   - tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
+        logger.info(f"   - available_images count: {len(context.available_images) if context.available_images else 0}")
+
+        if context.tagged_media and not context.async_images:
+            print(f"\n✅ [IMAGE FLOW 4/4] APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
+            for idx, media in enumerate(context.tagged_media):
+                print(f"   - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
+            logger.info(f"[IMAGE FLOW 4/4] ✅ APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
+            for idx, media in enumerate(context.tagged_media):
+                logger.info(f"   - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
+            self._apply_tagged_media_to_images(slide_data, context.tagged_media)
+        elif context.available_images and context.async_images:
+            print(f"\n📌 [IMAGE FLOW 4/4] Placeholder mode - attaching {len(context.available_images)} available images for selection")
+            logger.info(f"[IMAGE FLOW 4/4] Placeholder mode - attaching {len(context.available_images)} available images for selection")
+            self._apply_available_images_to_placeholders(slide_data, context.available_images)
+        else:
+            print(f"\n❌ [IMAGE FLOW 4/4] NO IMAGE REPLACEMENT:")
+            print(f"   - async_images={context.async_images}")
+            print(f"   - tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
+            print(f"   - available_images={len(context.available_images) if context.available_images else 0}")
+            logger.info(f"[IMAGE FLOW 4/4] ❌ NO IMAGE REPLACEMENT:")
+            logger.info(f"   - async_images={context.async_images}")
+            logger.info(f"   - tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
+            logger.info(f"   - available_images={len(context.available_images) if context.available_images else 0}")
 
         # Construct slide_info from context for logo injection
         slide_info = {
@@ -3160,9 +3198,18 @@ class SlideGeneratorV2(ISlideGenerator):
 
     def _apply_tagged_media_to_images(self, slide_data: Dict[str, Any], tagged_media: List[Dict[str, Any]]):
         """Replace placeholder images with actual tagged media URLs."""
-        logger.info(f"[IMAGE REPLACEMENT] Starting image replacement process")
+        print(f"\n🔧 [IMAGE REPLACEMENT] ========== Starting image replacement process ==========")
+        print(f"   Tagged media count: {len(tagged_media)}")
+        print(f"   Total components in slide: {len(slide_data.get('components', []))}")
+        logger.info(f"[IMAGE REPLACEMENT] ========== Starting image replacement process ==========")
         logger.info(f"[IMAGE REPLACEMENT] Tagged media count: {len(tagged_media)}")
-        
+        logger.info(f"[IMAGE REPLACEMENT] Total components in slide: {len(slide_data.get('components', []))}")
+
+        # Debug: show all components
+        for idx, comp in enumerate(slide_data.get('components', []) or []):
+            print(f"   Component {idx + 1}: type={comp.get('type')}, src={comp.get('props', {}).get('src', 'N/A')}")
+            logger.info(f"[IMAGE REPLACEMENT]   Component {idx + 1}: type={comp.get('type')}, src={comp.get('props', {}).get('src', 'N/A')}")
+
         image_components = []
         for comp in slide_data.get('components', []) or []:
             if comp.get('type') != 'Image':
@@ -3173,16 +3220,20 @@ class SlideGeneratorV2(ISlideGenerator):
                 alt_text = (props.get('alt') or '').strip().lower()
                 metadata_kind = ((props.get('metadata') or {}).get('kind') or '').strip().lower()
                 if alt_text == 'logo' or metadata_kind == 'logo':
+                    logger.info(f"[IMAGE REPLACEMENT]   Skipping logo image (alt={alt_text}, kind={metadata_kind})")
                     continue
             except Exception:
                 pass
             if props.get('src') in ['placeholder', '']:
+                logger.info(f"[IMAGE REPLACEMENT]   Found placeholder image to replace: src={props.get('src')}")
                 image_components.append(comp)
-        
-        logger.info(f"[IMAGE REPLACEMENT] Found {len(image_components)} placeholder image components")
+
+        print(f"\n   Found {len(image_components)} placeholder image components to replace")
+        logger.info(f"[IMAGE REPLACEMENT] Found {len(image_components)} placeholder image components to replace")
 
         if not image_components:
-            logger.warning("[IMAGE REPLACEMENT] No placeholder images found to replace")
+            print(f"\n❌ [IMAGE REPLACEMENT] No placeholder images found - AI may not have created Image components!")
+            logger.warning("[IMAGE REPLACEMENT] ❌ No placeholder images found to replace - AI may not have created Image components")
             return
         
         # Filter for media with previewUrl (images can have type 'image' or 'other')

@@ -24,6 +24,8 @@ class OutlineOptions(BaseModel):
     slide_count: Optional[int] = Field(None, description="Specific number of slides requested (1-20)")
     # New: visual density preference to support information-dense decks
     visual_density: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
+    # Image auto-application control
+    async_images: bool = Field(False, description="If True, images are placeholders; if False, images are auto-applied")
 
     @validator('slide_count')
     def validate_slide_count(cls, v):

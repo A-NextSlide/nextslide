@@ -28,7 +28,7 @@ class StreamingDeckComposeRequest(BaseModel):
     outline: DeckOutline = Field(description="The deck outline containing slide information")
     force_restart: bool = Field(default=False, description="Force restart composition from beginning")
     delay_between_slides: float = Field(default=DELAY_BETWEEN_SLIDES, description="Delay between starting each slide")
-    async_images: bool = Field(default=True, description="If True, images are searched in background and user selects them later")
+    async_images: bool = Field(default=False, description="If True, images are searched in background and user selects them later")
     prefetch_images: bool = Field(default=False, description="If True with async_images, pre-fetches all images before starting slides")
 
 def create_deck_compose_stream(

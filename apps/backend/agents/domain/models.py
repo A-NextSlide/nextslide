@@ -75,20 +75,23 @@ class ThemeDocument:
 
     - deck_theme: deck-wide system and tokens
     - slide_themes: per-slide overlays/instructions keyed by slide id
+    - search_terms: AI-generated image search terms for the deck
     - agent_trace: optional list of structured agent/tool events
     """
     deck_theme: Dict[str, Any]
     slide_themes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    search_terms: List[str] = field(default_factory=list)
     agent_trace: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def empty(cls) -> 'ThemeDocument':
-        return cls(deck_theme={}, slide_themes={}, agent_trace=[])
+        return cls(deck_theme={}, slide_themes={}, search_terms=[], agent_trace=[])
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'deck_theme': self.deck_theme,
             'slide_themes': self.slide_themes,
+            'search_terms': self.search_terms,
             'agent_trace': self.agent_trace
         }
 
@@ -162,7 +165,7 @@ class CompositionOptions:
     """Options for deck composition."""
     max_parallel_slides: int = 4
     delay_between_slides: float = 0.5
-    async_images: bool = True
+    async_images: bool = False
     enable_visual_analysis: bool = False  # DISABLED
     prefetch_images: bool = False
     
@@ -172,7 +175,7 @@ class CompositionOptions:
         return cls(
             max_parallel_slides=kwargs.get('max_parallel', 4),
             delay_between_slides=kwargs.get('delay_between_slides', 0.5),
-            async_images=kwargs.get('async_images', True),
+            async_images=kwargs.get('async_images', False),
             enable_visual_analysis=kwargs.get('enable_visual_analysis', False),  # DISABLED
             prefetch_images=kwargs.get('prefetch_images', False)
         )

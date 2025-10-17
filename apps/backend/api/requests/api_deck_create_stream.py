@@ -44,7 +44,7 @@ class CreateDeckFromOutlineRequest(BaseModel):
     model: str = Field(COMPOSER_MODEL, description="The model to use for generation")
     streaming: bool = Field(True, description="Whether to use token streaming where applicable")
     deck_uuid: Optional[str] = Field(None, description="Optional deck UUID. If not provided, one will be generated.")
-    async_images: bool = Field(True, description="If True, images are searched asynchronously without blocking composition")
+    async_images: bool = Field(False, description="If False, images are auto-applied synchronously; if True, images are searched asynchronously and user selects manually")
 
 
 def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: ComponentRegistry) -> AsyncIterator[str]:

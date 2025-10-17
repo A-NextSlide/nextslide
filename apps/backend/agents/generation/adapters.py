@@ -99,6 +99,23 @@ class SlideGeneratorAdapter:
                 deck_uuid = kwargs.get('deck_uuid', None)
             
             # Create context
+            tagged_media_for_context = [
+                # Convert to dict if it's a Pydantic model
+                media.model_dump() if hasattr(media, 'model_dump') else media
+                for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
+            ]
+
+            print(f"\n📋 [IMAGE FLOW 2/4] Creating context for slide {slide_index + 1}")
+            print(f"   - async_images: {async_images} (False=auto-apply ON)")
+            print(f"   - tagged_media count: {len(tagged_media_for_context)}")
+            if tagged_media_for_context:
+                print(f"   - First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
+            logger.info(f"[IMAGE FLOW 2/4] Creating context for slide {slide_index + 1}")
+            logger.info(f"   - async_images: {async_images} (False=auto-apply ON)")
+            logger.info(f"   - tagged_media count: {len(tagged_media_for_context)}")
+            if tagged_media_for_context:
+                logger.info(f"   - First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
+
             context = SlideGenerationContext(
                 slide_outline=slide_outline,
                 slide_index=slide_index,
@@ -109,11 +126,7 @@ class SlideGeneratorAdapter:
                 deck_uuid=deck_uuid or "",
                 available_images=available_images or [],
                 async_images=async_images,
-                tagged_media=[
-                    # Convert to dict if it's a Pydantic model
-                    media.model_dump() if hasattr(media, 'model_dump') else media
-                    for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
-                ]
+                tagged_media=tagged_media_for_context
             )
             
             # Generate using new system
@@ -236,7 +249,7 @@ def create_refactored_slide_generator(registry, theme_system, available_fonts, a
 
 class SimpleDeckComposer(IDeckComposer):
     """Simple implementation of deck composer using refactored components."""
-    
+
     def __init__(self, slide_generator, theme_manager, persistence, event_bus, image_manager=None):
         self.slide_generator = slide_generator
         self.theme_manager = theme_manager
@@ -245,6 +258,106 @@ class SimpleDeckComposer(IDeckComposer):
         self.orchestrator = ParallelSlideOrchestrator(slide_generator, persistence, image_manager)
         self.image_manager = image_manager
         self.media_processor = TaggedMediaProcessor()
+
+    def _generate_smart_search_query(self, slide: SlideOutline, deck_outline: DeckOutline) -> str:
+        """
+        Generate a smart, specific search query for a slide based on its content.
+
+        Analyzes:
+        - Slide title and content
+        - Deck context and theme
+        - Key concepts from bullet points
+        - Content type (people, data, concepts, products)
+
+        Returns a targeted search query optimized for finding relevant images with style hints.
+        """
+        import re
+
+        # Extract key information
+        slide_title = slide.title or ""
+        slide_content = slide.content or ""
+        deck_title = deck_outline.title or ""
+
+        # Get vibe context from stylePreferences if available
+        vibe_context = ""
+        if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+            vibe_context = getattr(deck_outline.stylePreferences, 'vibeContext', '') or ""
+
+        # Extract key concepts from content (first few sentences or bullet points)
+        content_preview = slide_content[:300]  # First 300 chars for better context
+
+        # Remove markdown formatting and extra whitespace
+        content_preview = re.sub(r'[#*_\-\[\]`]', '', content_preview)
+        content_preview = ' '.join(content_preview.split())
+
+        # Extract key terms from title - be aggressive about filtering
+        title_words = slide_title.split()
+
+        # ULTRA-AGGRESSIVE stopword list - remove ALL filler, generic, and business jargon words
+        stopwords = {
+            # Articles & conjunctions
+            'the', 'a', 'an', 'of', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'with', 'by', 'from', 'is', 'are', 'was', 'were', 'been', 'be', 'have',
+            'has', 'had', 'this', 'that', 'these', 'those', 'it', 'its', 'our', 'your',
+            'his', 'her', 'their', 'into', 'through', 'during', 'before', 'after',
+            # Generic descriptive words
+            'legendary', 'journey', 'story', 'tale', 'hero', 'icon', 'complete', 'guide',
+            'history', 'evolution', 'future', 'modern', 'new', 'old', 'latest', 'best',
+            # Business/presentation jargon
+            'industry', 'market', 'business', 'company', 'enterprise', 'solution', 'service',
+            'overview', 'introduction', 'conclusion', 'summary', 'callout', 'about', 'how',
+            'what', 'why', 'when', 'where', 'who', 'which',
+            # Action words that don't help search
+            'goes', 'comes', 'makes', 'gets', 'shaped', 'changed', 'improved', 'enhanced',
+            # Common slide words
+            'slide', 'presentation', 'deck', 'content', 'section', 'chapter', 'part'
+        }
+
+        # Keep only truly meaningful nouns/names (be VERY selective)
+        key_terms = [
+            word.strip('.,!?:;-')
+            for word in title_words
+            if word.lower() not in stopwords and len(word.strip('.,!?:;-')) > 2 and not word.lower().endswith('ing')
+        ][:2]  # Take max 2 key terms (reduced from 3)
+
+        # Extract proper nouns from content (capitalized words are usually important names)
+        words = content_preview.split()
+        content_terms = [
+            w.strip('.,!?:;-')
+            for w in words[:15]  # Only check first 15 words
+            if w and w[0].isupper() and w.lower() not in stopwords and len(w) > 3 and not w.lower().endswith('ing')
+        ][:1]  # Take max 1 proper noun
+
+        # Build simple, concise query
+        query_parts = []
+
+        # Prioritize key terms from title
+        query_parts.extend(key_terms)
+
+        # Add 1 content term if we have space
+        if len(query_parts) < 3 and content_terms:
+            query_parts.extend(content_terms[:1])
+
+        # If title was too generic, add ONE deck term
+        generic_titles = ['introduction', 'conclusion', 'summary', 'overview', 'agenda', 'thank you', 'questions']
+        if slide_title.lower() in generic_titles and deck_title and len(query_parts) < 2:
+            deck_words = deck_title.split()
+            deck_terms = [w.strip('.,!?:;-') for w in deck_words if w.lower() not in stopwords and not w.lower().endswith('ing')][:1]
+            query_parts.extend(deck_terms)
+
+        # Combine into ultra-concise query (max 3 words - reduced from 4)
+        search_query = ' '.join(query_parts[:3])
+
+        # Remove any remaining common words that slipped through
+        search_query = search_query.replace('  ', ' ').strip()
+
+        print(f"🔍 [QUERY GEN] Slide: '{slide_title}' → Query: '{search_query}'")
+
+        # Fallback if extraction failed
+        if not search_query or len(search_query) < 3:
+            search_query = f"{deck_title} {slide_title}"[:50]  # Limit to 50 chars
+
+        return search_query.strip()
         
     async def compose_deck(
         self,
@@ -256,6 +369,10 @@ class SimpleDeckComposer(IDeckComposer):
         print(f"\n🔴🔴🔴 [SimpleDeckComposer] compose_deck CALLED!")
         print(f"[SimpleDeckComposer] deck_uuid: {deck_uuid}")
         print(f"[SimpleDeckComposer] slides: {len(deck_outline.slides)}")
+        print(f"\n🎯 CRITICAL: async_images value = {options.get('async_images', 'NOT SET (defaults to True)')}")
+        print(f"   - If False: Will search BEFORE slides generate (auto-apply ON)")
+        print(f"   - If True: Will search DURING slides generate (auto-apply OFF)")
+        print(f"   - All options: {list(options.keys())}")
         
         logger.info(f"🎬 SimpleDeckComposer.compose_deck called!")
         logger.info(f"🎬 deck_uuid: {deck_uuid}")
@@ -376,6 +493,12 @@ class SimpleDeckComposer(IDeckComposer):
                                 palette = _palette_from_theme_obj(theme)
                             logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
                             logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+
+                            # CRITICAL: Also extract search_terms from outline.notes if present
+                            if isinstance(outline_notes, dict) and 'search_terms' in outline_notes:
+                                search_terms = outline_notes.get('search_terms', [])
+                                logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from outline: {search_terms}")
+
                         except Exception as e:
                             logger.error(f"[DECK COMPOSER] Error creating ThemeSpec from outline theme: {e}")
                             # Don't set theme = None here! Let it continue and try other sources
@@ -550,16 +673,28 @@ class SimpleDeckComposer(IDeckComposer):
                 try:
                     from utils.supabase import get_deck_theme, get_deck
                     existing_theme_data = get_deck_theme(deck_uuid)
-                    
+
                     if existing_theme_data:
                         logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
                         theme = ThemeSpec.from_dict(existing_theme_data)
-                        
-                        # Also check for palette
+
+                        # Also check for palette and search_terms
                         existing_deck = get_deck(deck_uuid)
-                        if existing_deck and existing_deck.get('data', {}).get('style_spec', {}).get('palette'):
-                            palette = existing_deck['data']['style_spec']['palette']
-                            logger.info(f"[DECK COMPOSER] Found existing palette: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                        if existing_deck and isinstance(existing_deck.get('data'), dict):
+                            deck_data = existing_deck['data']
+
+                            # Extract palette
+                            if deck_data.get('style_spec', {}).get('palette'):
+                                palette = deck_data['style_spec']['palette']
+                                logger.info(f"[DECK COMPOSER] Found existing palette: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                            else:
+                                # Derive palette from existing theme without regenerating
+                                palette = _palette_from_theme_obj(theme)
+
+                            # CRITICAL: Extract search_terms from database if present
+                            if 'search_terms' in deck_data and deck_data['search_terms']:
+                                search_terms = deck_data['search_terms']
+                                logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from database: {search_terms}")
                         else:
                             # Derive palette from existing theme without regenerating
                             palette = _palette_from_theme_obj(theme)
@@ -1043,13 +1178,163 @@ class SimpleDeckComposer(IDeckComposer):
             else:
                 logger.info("Tagged media already processed, skipping media processing phase")
             
-            # Start async image search if enabled
+            # Image search: different behavior based on async_images setting
             image_search_task = None
-            if options.get('async_images', True) and self.image_manager:
+
+            # When async_images=False (auto-apply ON), we need to search for images synchronously BEFORE slides
+            # When async_images=True (auto-apply OFF/placeholders), we search in background during slide generation
+            print(f"\n🔍 [SEARCH MODE CHECK] async_images={options.get('async_images', False)}, image_manager={self.image_manager is not None}")
+            print(f"   - Will use SYNCHRONOUS search: {not options.get('async_images', False) and self.image_manager}")
+            print(f"   - Will use ASYNC search: {options.get('async_images', False) and self.image_manager}")
+
+            if not options.get('async_images', False) and self.image_manager:
+                # AUTO-APPLY MODE: Search for images synchronously BEFORE slide generation
+                print(f"\n🎯 AUTO-APPLY MODE: Searching for images synchronously BEFORE slide generation...")
+                logger.info("🎯 AUTO-APPLY MODE: Searching for images synchronously before slide generation...")
+                logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={options.get('async_images', True)}, image_manager={self.image_manager is not None}")
+                logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
+                logger.info(f"🎨 AI-GENERATED SEARCH TERMS: {search_terms if search_terms else 'None (will use fallback)'}")
+
                 # Start image collection phase if not already started
                 if not needs_media_processing:
                     yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)
-                
+
+                yield {
+                    "type": "image_search_started",
+                    "message": "Searching for images to auto-apply",
+                    "progress": 15
+                }
+
+                # Search for images synchronously and WAIT for results
+                try:
+                    from services.combined_image_service import CombinedImageService
+                    image_service = CombinedImageService()
+
+                    # Collect all images for all slides before proceeding
+                    all_images = {}
+
+                    # Use AI-generated search terms if available, otherwise fall back to per-slide generation
+                    use_ai_search_terms = search_terms and len(search_terms) > 0
+
+                    if use_ai_search_terms:
+                        print(f"\n🎨 USING AI-GENERATED SEARCH TERMS: {search_terms}")
+                        logger.info(f"🎨 Using {len(search_terms)} AI-generated search terms from theme prompting")
+
+                        # Create a mapping of search term to slide
+                        # Distribute search terms across slides intelligently
+                        search_term_index = 0
+
+                    for slide_idx, slide in enumerate(deck_outline.slides):
+                        print(f"\n🔍 Searching images for slide {slide_idx + 1}/{len(deck_outline.slides)}: {slide.title}")
+                        logger.info(f"🔍 Searching images for slide {slide_idx + 1}: {slide.title}")
+
+                        # Generate search query - use AI terms if available, otherwise generate from content
+                        if use_ai_search_terms:
+                            # Use AI search terms intelligently:
+                            # 1. Try to match term to slide content
+                            # 2. Otherwise rotate through terms
+                            # 3. Combine general term with slide-specific keywords for better results
+
+                            base_term = search_terms[search_term_index % len(search_terms)]
+                            search_term_index += 1
+
+                            # Enhance with slide-specific context if needed
+                            slide_keywords = self._generate_smart_search_query(slide, deck_outline)
+
+                            # Combine AI term with slide keywords for best results
+                            if slide_keywords and len(slide_keywords) > 3:
+                                # Use AI term as primary, enhance with 1-2 slide keywords
+                                slide_words = slide_keywords.split()[:2]
+                                search_query = f"{base_term} {' '.join(slide_words)}"
+                            else:
+                                search_query = base_term
+
+                            print(f"   🎨 AI Search Term: '{base_term}' + Slide Context → '{search_query}'")
+                            logger.info(f"🎨 AI-enhanced search query: '{search_query}' (base: '{base_term}')")
+                        else:
+                            # Fallback: Generate smart query from slide content
+                            search_query = self._generate_smart_search_query(slide, deck_outline)
+                            print(f"   Generated query: '{search_query}'")
+                            logger.info(f"🔍 Fallback smart search query: '{search_query}'")
+
+                        images = await image_service.search_images(search_query, max_images=6)
+
+                        if images:
+                            all_images[slide.id] = images
+                            print(f"   ✅ Found {len(images)} images")
+                            logger.info(f"✅ Found {len(images)} images for slide {slide_idx + 1}")
+
+                            # Tag ONLY THE BEST image to the slide outline NOW (before slide generation)
+                            # The first image from search results is the best match
+                            if not hasattr(slide, 'taggedMedia'):
+                                slide.taggedMedia = []
+
+                            # Pick the BEST image (first result from search API)
+                            best_image = images[0]
+                            print(f"   📌 Tagging best image: {best_image.get('url', '')[:60]}...")
+                            tagged_media = {
+                                'id': f"image_{slide.id}_0",
+                                'filename': f"{slide.title.replace(' ', '_')}.jpg",
+                                'type': 'image',
+                                'previewUrl': best_image.get('url', ''),
+                                'interpretation': best_image.get('alt', ''),
+                                'slideId': slide.id,
+                                'status': 'processed',
+                                'metadata': {}
+                            }
+                            slide.taggedMedia.append(tagged_media)
+
+                            print(f"\n✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1}")
+                            print(f"   - URL: {best_image.get('url', '')[:100]}")
+                            print(f"   - taggedMedia count on slide: {len(slide.taggedMedia)}")
+                            print(f"   - slide.id: {slide.id}")
+                            logger.info(f"✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1}")
+                            logger.info(f"   - URL: {best_image.get('url', '')[:100]}")
+                            logger.info(f"   - taggedMedia count on slide: {len(slide.taggedMedia)}")
+                            logger.info(f"   - slide.id: {slide.id}")
+                        else:
+                            logger.warning(f"⚠️ No images found for slide {slide_idx + 1}")
+
+                        # Update progress
+                        progress_pct = int(15 + (slide_idx + 1) / len(deck_outline.slides) * 10)
+                        yield {
+                            "type": "image_search_progress",
+                            "message": f"Found images for slide {slide_idx + 1}/{len(deck_outline.slides)}",
+                            "progress": progress_pct
+                        }
+
+                    print(f"\n✅ AUTO-APPLY: Image search COMPLETE for {len(all_images)} slides")
+                    print(f"   Total slides with images: {len(all_images)}/{len(deck_outline.slides)}")
+                    print(f"   🚦 NOW slides will start generating with images already tagged")
+                    logger.info(f"✅ AUTO-APPLY: Collected images for {len(all_images)} slides")
+
+                    yield {
+                        "type": "image_search_complete",
+                        "message": "Images ready for auto-application",
+                        "progress": 25
+                    }
+
+                    # CRITICAL: Small delay to ensure all taggedMedia is properly set
+                    await asyncio.sleep(0.75)
+                    
+                    # Extra safety: verify all slides have tagged media; if not, wait a bit more
+                    slides_with_media = sum(1 for s in deck_outline.slides if hasattr(s, 'taggedMedia') and s.taggedMedia)
+                    if slides_with_media < len(deck_outline.slides):
+                        logger.warning(f"⚠️ Only {slides_with_media}/{len(deck_outline.slides)} slides have images after sync search; waiting a bit more...")
+                        await asyncio.sleep(0.75)
+                    print(f"✅ Proceeding to slide generation with tagged images...")
+
+                except Exception as e:
+                    logger.error(f"Error in synchronous image search: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            elif options.get('async_images', False) and self.image_manager:
+                # PLACEHOLDER MODE: Start image collection phase if not already started
+                if not needs_media_processing:
+                    yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)
+
+                print(f"\n📌 PLACEHOLDER MODE: Starting ASYNC background image search...")
                 logger.info("Starting background image search...")
                 logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={options.get('async_images', True)}, image_manager={self.image_manager is not None}")
                 logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
@@ -1111,9 +1396,23 @@ class SimpleDeckComposer(IDeckComposer):
             
             # Theme is already generated above, no need to check or generate again
             logger.info("[DECK COMPOSER] Theme is ready, proceeding to slide generation phase")
-            
+
             # Phase 2: Slide generation
             print(f"\n🎯🎯🎯 [ADAPTERS] STARTING SLIDE GENERATION PHASE")
+            print(f"⏰ TIMING CHECK: About to generate {len(deck_outline.slides)} slides")
+
+            # Debug: Check how many slides have taggedMedia NOW (before generation starts)
+            slides_with_tagged_media = 0
+            for slide in deck_outline.slides:
+                if hasattr(slide, 'taggedMedia') and slide.taggedMedia:
+                    slides_with_tagged_media += 1
+
+            print(f"📊 PRE-GENERATION CHECK: {slides_with_tagged_media}/{len(deck_outline.slides)} slides have tagged media")
+            if slides_with_tagged_media > 0:
+                print(f"   ✅ Good! Images were tagged BEFORE slide generation")
+            else:
+                print(f"   ⚠️ WARNING: No slides have tagged media yet - images will be added later (async mode)")
+
             yield progress.start_phase(GenerationPhase.SLIDE_GENERATION)
             
             # Log taggedMedia before creating deck state
@@ -1184,7 +1483,7 @@ class SimpleDeckComposer(IDeckComposer):
             deck_state.update_progress(55, "Starting slide generation")
             
             # If image search is running, give it a brief head start
-            if image_search_task and options.get('async_images', True):
+            if image_search_task and options.get('async_images', False):
                 logger.info("Giving image search a 2-second head start before slide generation...")
                 await asyncio.sleep(2.0)  # Allow image search to populate some results
                 
@@ -1198,7 +1497,7 @@ class SimpleDeckComposer(IDeckComposer):
             comp_options = CompositionOptions(
                 max_parallel_slides=options.get('max_parallel', 4),
                 delay_between_slides=options.get('delay_between_slides', 0.5),
-                async_images=options.get('async_images', True),
+                async_images=options.get('async_images', False),
                 prefetch_images=options.get('prefetch_images', False)
             )
             

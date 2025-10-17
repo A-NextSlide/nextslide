@@ -561,7 +561,25 @@ class OutlineRequest(BaseModel):
     slideCount: Optional[int] = Field(None, description="Specific number of slides requested (1-20)")
     visualDensity: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
     enableResearch: Optional[bool] = Field(None, description="Enable web research (Thinking) during outline creation")
-    
+    async_images: Optional[bool] = Field(default=None, description="If True, images are placeholders; if False, images are auto-applied")
+
+    @validator('async_images', pre=True, always=True)
+    def debug_async_images(cls, v):
+        """Debug validator to log exactly what value is received"""
+        print("=" * 100)
+        print(f"[PYDANTIC VALIDATOR] 🔴🔴🔴 async_images RECEIVED VALUE: {v}")
+        print(f"[PYDANTIC VALIDATOR] 🔴 Type: {type(v)}")
+        print(f"[PYDANTIC VALIDATOR] 🔴 Is None: {v is None}")
+        print(f"[PYDANTIC VALIDATOR] 🔴 Is True: {v is True}")
+        print(f"[PYDANTIC VALIDATOR] 🔴 Is False: {v is False}")
+        print("=" * 100)
+        # If None, default to False (auto-apply mode)
+        if v is None:
+            print(f"[PYDANTIC VALIDATOR] 🔴 Value is None, defaulting to False (auto-apply mode)")
+            return False
+        print(f"[PYDANTIC VALIDATOR] ✅ Returning value as-is: {v}")
+        return v
+
     # Workaround: Also accept slide_count (snake_case)
     slide_count: Optional[int] = Field(None, description="Alternative field name for slide count")
     
@@ -727,7 +745,8 @@ async def process_outline(request: OutlineRequest, registry=None) -> OutlineResp
             files=request.files,
             model=request.model,
             slide_count=inferred_slide_count,
-            visual_density=(request.visualDensity or None)
+            visual_density=(request.visualDensity or None),
+            async_images=request.async_images if request.async_images is not None else False
         )
         
         result = await generator.generate(options)
@@ -838,6 +857,9 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
             logger.info(f"[OUTLINE DEBUG] Request prompt: {request.prompt[:100]}")
             logger.info(f"[OUTLINE DEBUG] colorPreference type: {type(request.colorPreference)}")
             logger.info(f"[OUTLINE DEBUG] colorPreference value: {request.colorPreference}")
+            logger.info(f"[OUTLINE DEBUG] 🔴 request.async_images: {request.async_images}")
+            logger.info(f"[OUTLINE DEBUG] 🔴 type(request.async_images): {type(request.async_images)}")
+            print(f"[OUTLINE DEBUG] 🔴🔴🔴 BACKEND RECEIVED async_images = {request.async_images}")
             
             # Enhanced style preference logging
             if logger.isEnabledFor(logging.DEBUG):
@@ -896,13 +918,17 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 files=request.files,
                 model=request.model,
                 slide_count=inferred_slide_count,
-                visual_density=(request.visualDensity or None)
+                visual_density=(request.visualDensity or None),
+                async_images=request.async_images if request.async_images is not None else False
             )
-            
+
             # CRITICAL DEBUG LOG
             logger.info(f"[OUTLINE DEBUG] ⚠️ CREATED OutlineOptions")
             logger.info(f"[OUTLINE DEBUG] options.detail_level = {options.detail_level}")
             logger.info(f"[OUTLINE DEBUG] options.prompt = {options.prompt[:100]}")
+            logger.info(f"[OUTLINE DEBUG] 🔴 options.async_images = {options.async_images}")
+            logger.info(f"[OUTLINE DEBUG] 🔴 Mapping: request.async_images={request.async_images} → options.async_images={options.async_images}")
+            print(f"[OUTLINE DEBUG] 🔴🔴🔴 CREATED OutlineOptions with async_images = {options.async_images}")
             
             # Debug log the options being passed
             print(f"[OUTLINE OPTIONS] Created with:")

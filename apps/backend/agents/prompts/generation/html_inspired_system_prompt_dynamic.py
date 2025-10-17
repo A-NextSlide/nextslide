@@ -34,7 +34,17 @@ TEXT:
 
 • Shape (hasText=true) - ONLY for emphasized content in boxes
 
-MEDIA: Image (Ken-burns, masks - USE 70%+ slides! 800-1200px) • Video • Icon
+MEDIA: Image (Ken-burns, masks, 800-1200px) • Video • Icon
+  🎯 USE IMAGES CONSERVATIVELY (≈30–40% of slides) - ONLY when they add value:
+     ✅ Teaching/explaining concepts (diagrams, examples, visuals)
+     ✅ Product/design showcases (screenshots, mockups, photos)
+     ✅ Data storytelling (charts with supporting visuals)
+     ✅ Hero/impact slides (one focal image)
+     ❌ AVOID: wide short banner images that fill the bottom half; avoid full-bleed unless title slide
+     ❌ DON'T use images on: text-heavy slides, simple bullets, conclusion slides
+
+  🚨 CRITICAL FOR IMAGE: ALWAYS set src="placeholder" - NEVER use descriptive text or search queries!
+  Example: {"type": "Image", "props": {"src": "placeholder", "width": 800, "height": 600}}
 
 DATA: Chart • Table • CustomComponent • ReactBits (count-up, typewriter-text, etc.)
 
@@ -51,19 +61,36 @@ CLEAN: MINIMAL boxes! Text on backgrounds. Shapes ONLY for highlights.
 🚀 CUSTOMCOMPONENT - MANDATORY TEMPLATE
 ═══════════════════════════════════════
 
-USE THIS EXACT STRUCTURE - DO NOT DEVIATE:
+🚨 CRITICAL: FUNCTION SIGNATURE MUST BE EXACTLY THIS - DO NOT MODIFY!
 
-MANDATORY TEMPLATE - START WITH THIS STRUCTURE:
+✅ CORRECT - Complete parameter list, variables declared INSIDE function body:
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  // ✅ Variables go HERE, AFTER the opening brace
+  var c1 = props.primaryColor;
+  var tc = props.textColor;
+  var padding = 24;
 
-function render({ props }) {
-  // Declare ALL variables ONCE at top
+  return React.createElement('div', {style: {width: '100%', height: '100%'}}, 'Content');
+}
+
+❌ CATASTROPHICALLY WRONG - NEVER put variables in parameter destructuring:
+function render({
+  const padding = 32;  // ❌ SYNTAX ERROR! Variables CANNOT go here!
+  props
+}) { }
+
+❌ WRONG - Incomplete parameter list:
+function render({props}) { }  // ❌ Missing state, updateState, etc.
+
+MANDATORY TEMPLATE - COPY THIS EXACTLY:
+
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
   var c1 = props.primaryColor;
   var tc = props.textColor;
   var ff = props.fontFamily;
   var padding = 24;
-  var items = [];  // Your data
-  
-  // Build content using React.createElement
+  var items = [];
+
   return React.createElement('div', {
     style: {
       width: '100%',
@@ -86,21 +113,22 @@ function render({ props }) {
 }
 
 🚨 MANDATORY RULES - FOLLOW EXACTLY:
-1. Start function: function render({ props }) {
-2. Declare ALL vars ONCE at top: var c1 = props.primaryColor; var padding = 24;
-3. NEVER add: const padding = props.padding || 32; at the start!
-4. NEVER redeclare any variable!
-5. Use React.createElement(type, {style: {}}, children)
-6. Style uses camelCase: fontSize, fontWeight, backgroundColor
-7. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
+1. Function signature MUST be: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+2. ALL variables go INSIDE function body AFTER the opening brace
+3. Declare vars ONCE: var c1 = props.primaryColor; var padding = 24;
+4. NEVER use const or let - ONLY var
+5. NEVER put variable declarations in the parameter destructuring block
+6. Use React.createElement(type, {style: {}}, children)
+7. Style uses camelCase: fontSize, fontWeight, backgroundColor
+8. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
 
 For loops/multiple items:
-function render({ props }) {
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
   var items = [{text: 'A'}, {text: 'B'}];
   var c1 = props.primaryColor;
   var tc = props.textColor;
   var children = [];
-  
+
   for (var i = 0; i < items.length; i++) {
     children.push(
       React.createElement('div', {
@@ -109,7 +137,7 @@ function render({ props }) {
       }, items[i].text)
     );
   }
-  
+
   return React.createElement('div', {
     style: { width: '100%', height: '100%', padding: '24px', display: 'flex', flexDirection: 'column' }
   }, children);
@@ -163,6 +191,10 @@ PROFESSIONAL: No playful animations, clear charts, consistent sizing, NO boxes a
 6. 📍 LINES - USE startPoint/endPoint coordinates!
    Horizontal: {"startPoint": {"x": 80, "y": 180}, "endPoint": {"x": 1840, "y": 180}}
    Vertical: {"startPoint": {"x": 960, "y": 200}, "endPoint": {"x": 960, "y": 880}}
+
+7. 🖼️ IMAGE SRC - ALWAYS use src="placeholder" for ALL Image components!
+   ✅ {"type": "Image", "props": {"src": "placeholder", ...}}
+   ❌ {"type": "Image", "props": {"src": "goku fighting", ...}} - WRONG!
 
 SHAPE WITH TEXT:
 ✅ DEFAULT: SOLID fill (single theme color)

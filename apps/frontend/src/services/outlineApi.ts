@@ -939,8 +939,17 @@ export class OutlineAPI {
       force_restart: false,
       async_images: request.async_images !== undefined ? request.async_images : true
     };
-    
-    
+
+    console.warn('='.repeat(100));
+    console.warn('[outlineApi] 🎨🎨🎨 DECK COMPOSITION REQUEST');
+    console.warn('[outlineApi] 🎨 deck_id:', deck_id);
+    console.warn('[outlineApi] 🎨 request.async_images:', request.async_images);
+    console.warn('[outlineApi] 🎨 requestBody.async_images:', requestBody.async_images);
+    console.warn('[outlineApi] 🎨 typeof:', typeof requestBody.async_images);
+    console.warn('[outlineApi] 🎨 Endpoint:', endpoint);
+    console.warn('='.repeat(100));
+
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -1038,6 +1047,7 @@ export class OutlineAPI {
       fontPreference?: string | null;
       colorPreference?: ColorConfig | null;
       enableResearch?: boolean;
+      autoSelectImages?: boolean;
     } = {},
     onProgress?: StreamingCallback
   ): Promise<DeckOutline> {
@@ -1074,16 +1084,30 @@ export class OutlineAPI {
       // Build request while omitting null/undefined/empty values to satisfy strict validators
       console.warn('[outlineApi] ⚠️ Building request');
       console.warn('[outlineApi] options.detailLevel:', options.detailLevel);
-      
+      console.warn('[outlineApi] 🟡 options.autoSelectImages:', options.autoSelectImages);
+      console.warn('[outlineApi] 🟡 typeof options.autoSelectImages:', typeof options.autoSelectImages);
+      console.warn('[outlineApi] 🟡 options.autoSelectImages !== undefined:', options.autoSelectImages !== undefined);
+      console.warn('[outlineApi] 🟡 !options.autoSelectImages:', !options.autoSelectImages);
+
       const request: any = {
         prompt: prompt && prompt.trim().length > 0 ? prompt : undefined,
         detailLevel: options.detailLevel || 'standard',
         slideCount: typeof options.slideCount === 'number' ? options.slideCount : undefined,
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
         enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
+        async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : false, // Default to auto-apply (synchronous) when unspecified
       };
-      
+
+      console.warn('='.repeat(100));
+      console.warn('[outlineApi] 🟡🟡🟡 FRONTEND SENDING REQUEST');
+      console.warn('[outlineApi] 🟡 options.autoSelectImages:', options.autoSelectImages);
+      console.warn('[outlineApi] 🟡 Computed async_images value:', request.async_images);
+      console.warn('[outlineApi] 🟡 Logic: autoSelectImages=' + options.autoSelectImages + ' → async_images=' + request.async_images);
+      console.warn('[outlineApi] 🟡 typeof async_images:', typeof request.async_images);
+      console.warn('='.repeat(100));
+
       console.warn('[outlineApi] request.detailLevel:', request.detailLevel);
+      console.warn('[outlineApi] request.async_images:', request.async_images);
       console.warn('[outlineApi] Full request:', JSON.stringify(request, null, 2));
       if (filesData.length > 0) request.files = filesData;
       if (options.fontPreference != null && options.fontPreference !== '') request.fontPreference = options.fontPreference;

@@ -383,7 +383,7 @@ export class GenerationCoordinator extends EventTarget {
               if (!composeStreamStarted) {
                 composeStreamStarted = true;
                 // Fire and forget; coordinator prevents duplicates
-                this.startGeneration({
+            this.startGeneration({
                   deckId,
                   outline: validatedOutline,
                   detailLevel: 'standard',

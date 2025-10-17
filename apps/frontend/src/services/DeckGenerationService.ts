@@ -387,7 +387,8 @@ class DeckGenerationService {
           use_ai_palette: true,
           colors: outline.stylePreferences?.colors || stylePreferences?.colors
         },
-        async_images: true
+        // Default to auto-apply (synchronous) when unspecified
+        async_images: (window as any)?.__slideGenerationPreferences?.autoSelectImages === true ? false : false
       };
       
       

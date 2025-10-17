@@ -935,12 +935,18 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   // Keep global generation preferences in sync for auto-apply images
   useEffect(() => {
+    console.log('[OutlineEditor] 🔵 autoSelectImages state changed:', autoSelectImages);
+    console.log('[OutlineEditor] 🔵 typeof autoSelectImages:', typeof autoSelectImages);
+    console.log('[OutlineEditor] 🔵 !!autoSelectImages:', !!autoSelectImages);
+
     if (typeof window !== 'undefined') {
       (window as any).__slideGenerationPreferences = {
         ...(window as any).__slideGenerationPreferences,
         autoSelectImages: !!autoSelectImages
       };
       (window as any).__outlineEnableResearch = !!enableResearch;
+
+      console.log('[OutlineEditor] 🔵 Set window.__slideGenerationPreferences:', (window as any).__slideGenerationPreferences);
     }
   }, [autoSelectImages, enableResearch]);
 

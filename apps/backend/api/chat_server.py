@@ -453,11 +453,16 @@ async def api_openai_outline_stream_endpoint(request: OpenAIOutlineRequest, toke
     Generate slide outline using OpenAI with real-time progress updates via Server-Sent Events
     """
     # CRITICAL: Log IMMEDIATELY to see what frontend sent
-    print("="*80)
+    print("="*100)
     print(f"[ENDPOINT] ⚠️⚠️⚠️ STREAMING ENDPOINT CALLED")
     print(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
     print(f"[ENDPOINT] request.prompt = {request.prompt[:60]}")
-    print("="*80)
+    print(f"[ENDPOINT] 🔴🔴🔴 request.async_images = {request.async_images}")
+    print(f"[ENDPOINT] 🔴 Type: {type(request.async_images)}")
+    print(f"[ENDPOINT] 🔴 Is None: {request.async_images is None}")
+    print(f"[ENDPOINT] 🔴 Is True: {request.async_images is True}")
+    print(f"[ENDPOINT] 🔴 Is False: {request.async_images is False}")
+    print("="*100)
     
     logger.info(f"[ENDPOINT] ⚠️⚠️⚠️ RECEIVED REQUEST AT /api/openai/generate-outline-stream")
     logger.info(f"[ENDPOINT] request.detailLevel = {request.detailLevel}")
@@ -637,8 +642,17 @@ async def api_media_search_endpoint(request: MediaSearchRequest):
 
 @app.post("/api/deck/compose-stream")
 async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: Optional[str] = Depends(get_auth_header)):
+    print("="*100)
+    print(f"[DECK COMPOSE] 🎨🎨🎨 DECK COMPOSITION ENDPOINT CALLED")
+    print(f"[DECK COMPOSE] deck_id: {request.deck_id}")
+    print(f"[DECK COMPOSE] 🔴🔴🔴 request.async_images = {request.async_images}")
+    print(f"[DECK COMPOSE] 🔴 Type: {type(request.async_images)}")
+    print(f"[DECK COMPOSE] 🔴 Is False: {request.async_images is False}")
+    print("="*100)
+
     logger.info(f"Deck composition started for: {request.deck_id}")
-    
+    logger.info(f"🔴 async_images: {request.async_images}")
+
     # Extract user from token if available and associate deck
     if token:
         try:

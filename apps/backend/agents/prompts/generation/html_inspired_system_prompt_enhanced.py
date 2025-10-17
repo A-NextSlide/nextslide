@@ -358,10 +358,12 @@ POSITIONING: Left half (x=80, width=880) OR Right half (x=960, width=880)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🚨 MANDATORY RULES:
-1. Use React.createElement ONLY (no JSX, no HTML strings)
-2. Declare variables ONCE at top: var c1 = props.primaryColor;
-3. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
-4. Use props.primaryColor, props.secondaryColor, props.accentColor (auto-injected!)
+1. Function signature MUST be: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+2. Use React.createElement ONLY (no JSX, no HTML strings)
+3. Declare variables ONCE at top INSIDE function body: var c1 = props.primaryColor;
+4. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
+5. Use props.primaryColor, props.secondaryColor, props.accentColor (auto-injected!)
+6. NEVER put variable declarations in the parameter destructuring block
 
 TEMPLATE:
 {
@@ -372,7 +374,7 @@ TEMPLATE:
     "height": 400,
     "value": "87.5%",
     "label": "Growth Rate",
-    "render": "function render({ props }) { var val = props.value; var lbl = props.label; var c1 = props.primaryColor; var c2 = props.accentColor; var tc = props.textColor; return React.createElement('div', { style: { width: '100%', height: '100%', padding: '32px', background: c1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', overflow: 'hidden' } }, React.createElement('div', { style: { fontSize: '96px', fontWeight: '800', color: c2 } }, val), React.createElement('div', { style: { fontSize: '32px', color: tc, marginTop: '16px' } }, lbl)); }"
+    "render": "function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) { var val = props.value; var lbl = props.label; var c1 = props.primaryColor; var c2 = props.accentColor; var tc = props.textColor; return React.createElement('div', { style: { width: '100%', height: '100%', padding: '32px', background: c1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', overflow: 'hidden' } }, React.createElement('div', { style: { fontSize: '96px', fontWeight: '800', color: c2 } }, val), React.createElement('div', { style: { fontSize: '32px', color: tc, marginTop: '16px' } }, lbl)); }"
   }
 }
 

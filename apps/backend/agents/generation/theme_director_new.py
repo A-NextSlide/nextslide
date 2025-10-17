@@ -70,6 +70,9 @@ class ThemeDirector:
         if color_result.get('metadata', {}).get('logo_url'):
             await self._upload_brand_assets(color_result, deck_outline)
         
+        # Step 6: Generate smart image search terms
+        search_terms = await self._generate_search_terms(deck_outline, title, prompt, analysis)
+        
         # Per-slide theming (minimal)
         slide_themes: Dict[str, Dict[str, Any]] = {}
         if opts.per_slide_theming:
@@ -83,7 +86,7 @@ class ThemeDirector:
                         ]
                     }
 
-        doc = ThemeDocument(deck_theme=deck_theme, slide_themes=slide_themes, agent_trace=[])
+        doc = ThemeDocument(deck_theme=deck_theme, slide_themes=slide_themes, search_terms=search_terms, agent_trace=[])
 
         # Emit artifact
         await self._emit_artifact(
@@ -118,10 +121,7 @@ class ThemeDirector:
             'entity_name': None,
             'topic': None,
             'style_keywords': [],
-            'explicit_colors': [],
-            'audience': None,  # New: detected audience
-            'maturity': None,  # New: content maturity level
-            'vibe': 'professional'  # New: overall vibe
+            'explicit_colors': []
         }
         
         # Check for brand mentions
@@ -175,44 +175,6 @@ class ThemeDirector:
         # Extract style keywords
         style_words = ['modern', 'minimal', 'bold', 'playful', 'professional', 'elegant', 'fun', 'creative']
         analysis['style_keywords'] = [w for w in style_words if w in full_text]
-
-        # NEW: Detect audience and maturity level
-        audience_keywords = {
-            'kids': ['kids', 'children', 'kindergarten', 'elementary', 'preschool', 'toddler'],
-            'teens': ['teen', 'teenager', 'middle school', 'high school', 'youth', 'adolescent'],
-            'students': ['student', 'university', 'college', 'academic', 'class', 'course'],
-            'professionals': ['executive', 'board', 'management', 'corporate', 'investor', 'stakeholder'],
-            'general': ['audience', 'public', 'community', 'general']
-        }
-
-        for audience_type, keywords in audience_keywords.items():
-            if any(keyword in full_text for keyword in keywords):
-                analysis['audience'] = audience_type
-                break
-
-        # Determine maturity level
-        if analysis['audience'] in ['kids', 'teens']:
-            analysis['maturity'] = 'young'
-        elif analysis['audience'] in ['professionals']:
-            analysis['maturity'] = 'executive'
-        elif analysis['topic'] == 'business':
-            analysis['maturity'] = 'professional'
-        else:
-            analysis['maturity'] = 'general'
-
-        # Determine overall vibe
-        if 'playful' in analysis['style_keywords'] or 'fun' in analysis['style_keywords']:
-            analysis['vibe'] = 'playful'
-        elif 'elegant' in analysis['style_keywords'] or 'luxury' in full_text:
-            analysis['vibe'] = 'elegant'
-        elif 'creative' in analysis['style_keywords'] or 'artistic' in full_text:
-            analysis['vibe'] = 'creative'
-        elif 'modern' in analysis['style_keywords'] or 'minimal' in analysis['style_keywords']:
-            analysis['vibe'] = 'modern'
-        elif analysis['topic'] == 'business' or 'professional' in full_text:
-            analysis['vibe'] = 'professional'
-        else:
-            analysis['vibe'] = 'professional'
         
         # Check for explicit colors
         if style_dict and style_dict.get('colors'):
@@ -438,8 +400,6 @@ class ThemeDirector:
                     keywords.append(analysis['topic'])
                 if analysis.get('industry'):
                     keywords.append(analysis['industry'])
-                if analysis.get('maturity'):
-                    keywords.append(analysis['maturity'])
 
                 audience = analysis.get('audience') or analysis.get('target_audience')
 
@@ -449,8 +409,7 @@ class ThemeDirector:
                     vibe=vibe,
                     content_keywords=keywords,
                     target_audience=audience,
-                    variety_seed=variety_seed,
-                    maturity=analysis.get('maturity')  # NEW: Pass maturity level
+                    variety_seed=variety_seed
                 )
                 
                 font_result = {
@@ -660,6 +619,195 @@ class ThemeDirector:
                 "ImageStorageService.upload_from_url",
                 ["Failed to upload"]
             )
+    
+    async def _generate_search_terms(
+        self,
+        deck_outline: Any,
+        title: str,
+        prompt: str,
+        analysis: Dict[str, Any]
+    ) -> List[str]:
+        """
+        Generate smart, concise image search terms for the entire deck.
+        
+        Returns 8-10 targeted search terms optimized for finding relevant,
+        high-quality images that match the deck's content and vibe.
+        """
+        from agents.ai.clients import get_client, invoke
+        from agents.config import COMPOSER_MODEL
+        
+        await self._emit_agent(
+            agent="ThemeDirector",
+            phase="search_terms",
+            summary="Generating image search terms"
+        )
+        
+        # Sample first 5 slide titles for context
+        slides = getattr(deck_outline, 'slides', []) or []
+        slide_titles = [
+            f"{i+1}. {getattr(slide, 'title', 'Untitled')}"
+            for i, slide in enumerate(slides[:5])
+        ]
+        slides_context = "\n".join(slide_titles)
+        
+        # Get vibe context if available
+        vibe_context = ""
+        style_prefs = getattr(deck_outline, 'stylePreferences', None)
+        if style_prefs:
+            vibe = getattr(style_prefs, 'vibeContext', None)
+            if vibe:
+                vibe_context = f"\nVibe: {vibe}"
+        
+        # Build entity/brand context
+        entity_context = ""
+        if analysis.get('is_brand') and analysis.get('brand_name'):
+            entity_context = f"\nBrand: {analysis['brand_name']}"
+        elif analysis.get('is_entity') and analysis.get('entity_name'):
+            entity_context = f"\nEntity/Character: {analysis['entity_name']}"
+        
+        prompt_text = f"""Generate DECK-WIDE image search terms for a presentation.
+
+Context:
+- Title: {title}
+- User request: {prompt[:200]}{vibe_context}{entity_context}
+- First slides: {slides_context}
+- Total slides: {len(slides)}
+
+SMART SEARCH STRATEGY:
+1. Identify 3-5 CORE visual subjects that represent the ENTIRE deck (not individual slides)
+2. Add 2-3 recurring elements or objects that appear across multiple slides
+3. Add 1-2 mood/texture/pattern searches that match the deck's vibe
+4. TOTAL: 8-10 terms MAX
+
+STRICT RULES:
+✅ GOOD - Use nouns and concrete phrases (e.g., "Tesla Model 3", "data visualization", "mountain landscape")
+✅ GOOD - 1-3 words per term, NO sentences
+✅ GOOD - Prefer specific brand/character names when relevant (e.g., "Pikachu", "Apple logo")
+✅ GOOD - Specific objects and scenes (e.g., "solar panel", "business meeting", "ocean sunset")
+
+❌ BAD - Avoid vague/abstract words: introduction, agenda, overview, info, slide, content, idea, concept
+❌ BAD - Avoid generic single words: technology, data, business, power, inside, unlock, great, cool
+❌ BAD - Avoid single colors unless brand-specific (e.g., "blue" is bad, "Tiffany blue" is good)
+❌ BAD - Avoid verbs and adjective-only terms (e.g., "amazing", "great", "powerful")
+❌ BAD - No presentation jargon (e.g., "callout", "summary", "section")
+
+OUTPUT FORMAT:
+Return ONLY the search terms, one per line
+No numbering, no bullets, no explanations, no extra text
+
+EXAMPLES:
+
+For "Tesla Investor Presentation Q4 2024":
+Tesla Model 3
+gigafactory aerial view
+battery pack closeup
+autonomous driving sensor
+solar roof tiles
+production line robotics
+sustainable energy icon
+metallic gradient texture
+
+For "Pokemon: Pikachu Character Analysis":
+Pikachu
+lightning bolt yellow
+Ash trainer
+Poke Ball
+electric type pokemon
+Kanto region map
+anime battle scene
+yellow red energy
+
+For "Ocean Conservation Initiative":
+ocean plastic pollution
+coral reef underwater
+sea turtle swimming
+marine wildlife
+ocean cleanup technology
+coastal ecosystem
+blue water waves
+recycling symbol
+
+Now generate 8-10 search terms for this presentation:"""
+
+        try:
+            client = get_client(COMPOSER_MODEL)
+            response = await invoke(
+                client=client,
+                model=COMPOSER_MODEL,
+                messages=[{"role": "user", "content": prompt_text}],
+                temperature=0.7,
+                max_tokens=300
+            )
+            
+            raw_text = response.get('content', '')
+            logger.info(f"[THEME DIRECTOR] Raw search terms response: {raw_text[:200]}")
+            
+            # Parse search terms from response
+            lines = raw_text.strip().split('\n')
+            search_terms = []
+            
+            # Ultra-aggressive stopword filtering
+            stopwords = {
+                'here', 'are', 'the', 'search', 'terms', 'following', 'below', 'example',
+                'good', 'great', 'excellent', 'for', 'deck', 'presentation', 'slide',
+                'introduction', 'overview', 'summary', 'conclusion', 'agenda',
+                'numbered', 'bulleted', 'list', 'based', 'on', 'these', 'would', 'be',
+                'appropriate', 'relevant', 'suitable'
+            }
+            
+            for line in lines:
+                # Remove numbering, bullets, quotes
+                term = re.sub(r'^[\d\.\-\*\>]+\s*', '', line.strip())
+                term = term.strip('"\':,.')
+                
+                # Skip empty, too short, or stopword lines
+                if not term or len(term) < 3:
+                    continue
+                    
+                # Skip lines that are just stopwords
+                words = term.lower().split()
+                if all(w in stopwords for w in words):
+                    continue
+                
+                # Skip lines with meta-commentary
+                if any(meta in term.lower() for meta in ['note:', 'example:', 'for your', 'these are', 'here are']):
+                    continue
+                
+                search_terms.append(term)
+            
+            # Limit to 10 terms
+            search_terms = search_terms[:10]
+            
+            logger.info(f"[THEME DIRECTOR] Generated {len(search_terms)} search terms: {search_terms}")
+            
+            await self._emit_tool_result(
+                "AI.generate_search_terms",
+                search_terms
+            )
+            
+            return search_terms
+            
+        except Exception as e:
+            logger.error(f"[THEME DIRECTOR] Error generating search terms: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Fallback: extract key nouns from title and first slide
+            fallback_terms = []
+            
+            # Add brand/entity name if available
+            if analysis.get('brand_name'):
+                fallback_terms.append(analysis['brand_name'])
+            elif analysis.get('entity_name'):
+                fallback_terms.append(analysis['entity_name'])
+            
+            # Extract key words from title
+            title_words = title.split()
+            key_words = [w for w in title_words if len(w) > 4 and w.lower() not in stopwords]
+            fallback_terms.extend(key_words[:3])
+            
+            logger.warning(f"[THEME DIRECTOR] Using fallback search terms: {fallback_terms}")
+            return fallback_terms[:5]
     
     def _format_scraper_result(self, result: Dict[str, Any], brand_name: str) -> Dict[str, Any]:
         """Format web scraper result into color result format."""

@@ -15,6 +15,7 @@ def get_condensed_component_schemas() -> str:
   ❌ NEVER use decorative shapes (circles, triangles, etc.) for visual interest - NO EXCEPTIONS!
   ✅ ONLY use Shape component when hasText=true for callout boxes with actual content
 **Image** { position, width, height, src, objectFit: "cover"|"contain", borderRadius, effects: {kenBurns: {enabled, zoom: 1.15}} }
+  🚨 CRITICAL: ALWAYS use src="placeholder" for ALL images - NEVER use descriptive text or search queries as src!
 **Chart** { position, width, height, chartType: "bar"|"line"|"pie"|"area"|"scatter"|"waterfall", data: [{name, value}], colors: ["{{primary}}", "{{secondary}}"], showLegend: bool, theme: "light"|"dark" }
   📊 ALWAYS add a small bold title above chart (24-28pt, {{secondary}}, positioned 40px above chart)
 **Table** { position, width, height, rows: [[{text, style}]], columnWidths: [], rowHeights: [], headerRow: bool, borderWidth: 0, borderColor, cellPadding: 12, backgroundColor: null }
@@ -418,12 +419,190 @@ Interactive Components (for engagement):
 • Shadows: 0 20px 60px rgba(0,0,0,0.15) for depth
 • Border radius: 20-32px for modern feel
 
-**IMAGES - STRATEGIC, NOT MANDATORY:**
-• In presentation mode, PREFER custom components over stock images
-• Only include images when they ADD VALUE (product shots, real photos, specific visuals)
-• When used: Large and impactful (800-1200px width)
-• Image styles: borderRadius 20-32px, subtle shadows
-• Don't force images - cards and components are often better!
+**IMAGES - STRATEGIC DESIGN ELEMENTS (USE WITH PURPOSE!):**
+
+🎯 **PHILOSOPHY: Images are POWERFUL - but use them ONLY when they add clear value!**
+
+🚨 **CRITICAL IMAGE SRC RULE:**
+• Use images CONSERVATIVELY (≈30–40% of slides). Avoid wide, short banner images filling the bottom or top; prefer a single focal image when used. NEVER full-bleed on content slides.
+• ALWAYS use src="placeholder" for ALL Image components
+• NEVER use descriptive text, search queries, or file paths as src
+• The system will handle image selection and replacement
+• Example: src="placeholder" ✅ | src="goku fighting scene" ❌
+
+**WHEN TO USE IMAGES (Strategic - 30-40% of slides):**
+✅ Teaching/explaining concepts (diagrams, examples, process visuals)
+✅ Product/design showcases (screenshots, mockups, demos)
+✅ Data storytelling with context (charts + supporting visuals)
+✅ Hero/impact slides (large feature images for emphasis)
+✅ Before/after comparisons
+✅ Visual metaphors for abstract concepts
+
+**WHEN NOT TO USE IMAGES:**
+❌ Title slides (use bold typography instead)
+❌ Simple text/bullet slides (let content speak)
+❌ Conclusion slides (focus on message)
+❌ Slides already rich with charts/tables
+❌ Just to fill space (embrace whitespace!)
+
+**CREATIVE IMAGE STYLING - BE BOLD:**
+
+**Border Radius - Play with shapes:**
+• Small radius (8-16px): Professional, subtle corners
+• Medium radius (20-40px): Modern, friendly, approachable
+• Large radius (60-100px): Pill shapes, dramatic curves
+• Asymmetric radius: borderRadius: "20px 80px 20px 80px" for unique looks
+• Circular (50%): Perfect circles for portraits, icons, focal points
+
+**Opacity & Blending:**
+• Solid (opacity: 1.0): Full impact images
+• Translucent (opacity: 0.6-0.8): Layered design, subtle backgrounds
+• Ghost images (opacity: 0.3-0.5): Watermark effect, texture layers
+• Combine with gradients: Image with overlay gradient for text readability
+
+**Creative Positioning - NOT just boxes:**
+
+**Layout 1: Split-Screen Power**
+• Large image occupying full left/right half (960px width, full height)
+• Content on opposite side
+• Example: x=0, y=0, width=960, height=1080 (full left half)
+• borderRadius on inside edge only: "0 40px 40px 0"
+
+**Layout 2: Spanning Sections**
+• Image stretches across full width as section divider
+• Height: 300-500px, acts as visual break
+• Example: x=0, y=400, width=1920, height=400
+• Content above and below
+
+**Layout 3: Diagonal / Overlapping**
+• Rotate images slightly for dynamic feel
+• Layer multiple images with opacity
+• Use z-index via Group component for depth
+
+**Layout 4: Content-Integrated**
+• Image wraps around text (text on top with padding)
+• Image becomes background for text blocks
+• Example: Image at x=80, y=200, width=1200, height=700
+• Then TiptapTextBlock at x=140, y=260 (on top of image, contrasting text)
+
+**Layout 5: Bar/Strip Design**
+• Horizontal image strips (1920 x 150-250px)
+• Vertical image bars (200-400px x 1080)
+• Multiple strips for rhythm
+• Example: x=0, y=600, width=1920, height=180
+
+**Layout 6: Shape Cutouts**
+• Circular images as focal points
+• Multiple small circular images (borderRadius: "50%")
+• Grid of rounded image tiles
+• Example: 4 images at 400x400 with borderRadius="50%" in grid
+
+**ADVANCED TECHNIQUES:**
+
+**Ken Burns Effect:**
+• Add subtle zoom animation: effects: {kenBurns: {enabled: true, zoom: 1.15}}
+• Creates dynamic, living slides
+• Use one focal hero image for impact; avoid bottom-half banners
+
+**Image + Shape Combo:**
+• Image with colored shape overlay
+• Shape with cutout effect using borderRadius
+• Image peeking through geometric frames
+
+**Multiple Images:**
+• Collage layouts (3-6 images in creative arrangement)
+• Different sizes and radius for each
+• Overlapping with opacity for depth
+• Example: Large image (800x600) + 2 small circular images (200x200, borderRadius="50%")
+
+**Color Integration:**
+• Match image colors to theme palette
+• Use images with dominant {{primary}} or {{accent}} colors
+• Black & white images with colored overlays
+• Image + gradient overlay for brand consistency
+
+**EXAMPLES:**
+
+Example 1 - Hero Image Split:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 0, "y": 0},
+    "width": 920,
+    "height": 1080,
+    "src": "placeholder",
+    "objectFit": "cover",
+    "borderRadius": "0 80px 80px 0",
+    "effects": {"kenBurns": {"enabled": true, "zoom": 1.12}}
+  }
+}
+
+Example 2 - Circular Focal:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 600, "y": 250},
+    "width": 720,
+    "height": 720,
+    "src": "placeholder",
+    "objectFit": "cover",
+    "borderRadius": "50%",
+    "opacity": 0.9
+  }
+}
+
+Example 3 - Spanning Bar:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 0, "y": 550},
+    "width": 1920,
+    "height": 220,
+    "src": "placeholder",
+    "objectFit": "cover",
+    "borderRadius": "40px",
+    "opacity": 0.7
+  }
+}
+
+Example 4 - Layered Depth:
+[
+  // Background image
+  {
+    "type": "Image",
+    "props": {
+      "position": {"x": 0, "y": 0},
+      "width": 1920,
+      "height": 1080,
+      "src": "placeholder",
+      "objectFit": "cover",
+      "opacity": 0.3
+    }
+  },
+  // Foreground circular image
+  {
+    "type": "Image",
+    "props": {
+      "position": {"x": 1200, "y": 300},
+      "width": 500,
+      "height": 500,
+      "src": "placeholder",
+      "objectFit": "cover",
+      "borderRadius": "50%",
+      "opacity": 1.0
+    }
+  }
+]
+
+**IMAGE PLACEMENT STRATEGY:**
+✅ Use images to SUPPORT content, not just decorate
+✅ Vary radius based on slide mood (sharp = professional, round = friendly)
+✅ Layer images with varying opacity for depth
+✅ Span sections to create visual rhythm
+✅ Integrate images WITH text, not just beside it
+✅ Use creative shapes (circles, pills, asymmetric) for visual interest
+❌ Don't force square boxes - be creative with shapes!
+❌ Don't just place images randomly - design with PURPOSE!
 
 ❌ NEVER USE DECORATIVE SHAPES - Use cards and custom components instead!
 ❌ NEVER USE TABLES - Use card grids with CustomComponents instead!
@@ -1697,17 +1876,23 @@ def get_mode_specific_guidance(mode: str) -> str:
 ❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents!"""
     else:
         return """PRESENTATION MODE ACTIVE - "Design-Focused Storytelling"
-• 🎨 **IMAGES FIRST!** Use large, striking images on 70-80% of content slides
+• 🎨 **IMAGES - USE STRATEGICALLY (30-40% of slides)!** ONLY when they serve a clear purpose:
+  ✅ Teaching/explaining concepts with visuals
+  ✅ Product/design showcases
+  ✅ Data storytelling with context
+  ✅ Hero/impact slides with large feature images
+  ❌ DON'T use on: title slides, simple text slides, conclusion slides
+• **Creative Image Styling:** Vary borderRadius (circles, pills, asymmetric), play with opacity (0.3-1.0), layer images, use spanning bars/sections
+• **Image Layouts:** Split-screen halves, circular focal points, spanning sections (1920x300), layered collages, content-integrated backgrounds
+• **Image Sizes:** Large impact images (800-1200px), full-half splits (960x1080), spanning bars (1920x200-400), circular focal (500-700px with borderRadius="50%")
 • Hero + supporting text layouts with dramatic visual hierarchy
 • Hero statement (64-120pt) + 2-4 key supporting points (32-42pt) below
-• **LARGE IMAGES MANDATORY** - Image sizes: 800-1200px width for maximum visual impact
-• Image layouts: Split-screen, large supporting visuals (NOT backgrounds!)
 • MINIMAL charts: Use charts on 1-2 key slides MAX (20-30% chart density)
-• Prioritize: Large images > bold typography > background gradients > charts
+• Prioritize: Creative images > bold typography > custom components > background gradients > charts
 • When charts needed: Large & impactful (800-1000px width, 600-800px height) - ALWAYS add bold title above (28-32pt, {{secondary}})
 • Tables: AVOID in presentation mode - use visuals instead
 • Title Slides: ABSOLUTELY MASSIVE (450-650pt), width=1700-1800, FILL THE PAGE! Clean gradient/solid backgrounds (NO images!). BIG subtitles (60-80pt)!
-• Content slides: Include large images (800-1200px) positioned strategically (left/right) - NOT as backgrounds
+• Content slides: Images with creative shapes (circular, pill, asymmetric radius), varying opacity for depth, spanning sections for rhythm
 • Icons: 0-1 icon per slide MAX. Most slides = ZERO icons.
 • Generous whitespace for breathing room
 • Heights: fontSize × 1.15 (TIGHT!)

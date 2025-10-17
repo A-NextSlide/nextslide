@@ -802,6 +802,10 @@ export const useOutlineChat = ({
       console.warn('[useOutlineChat] detailLevel being sent:', actualDetailLevel);
       console.warn('[useOutlineChat] Expected: "detailed" for Detailed Analysis, "standard" for Presentation');
       
+      console.log('[useOutlineChat] 🟢 About to call generateOutlineStream with autoSelectImages:', autoSelectImages);
+      console.log('[useOutlineChat] 🟢 typeof autoSelectImages:', typeof autoSelectImages);
+      console.log('[useOutlineChat] 🟢 autoSelectImages value is:', autoSelectImages);
+
       const result = await outlineApi.generateOutlineStream(
         initialIdea,
         uploadedFiles,
@@ -812,6 +816,7 @@ export const useOutlineChat = ({
           colorPreference: colorConfig,
           slideCount: actualSlideCount !== null ? actualSlideCount : undefined,
           enableResearch: !!enableResearch,
+          autoSelectImages: autoSelectImages, // Pass the auto-select images setting
         },
         (event) => {
           console.warn('[useOutlineChat] Inline callback received event:', (event as any)?.type, event);

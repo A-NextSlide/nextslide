@@ -74,6 +74,34 @@ ANALYSIS REQUIRED:
 3. Are there any obvious color associations? (e.g., Pikachu=yellow, ocean=blue, Christmas=red/green)
 4. What is the target audience? (e.g., children, executives, students, general public)
 5. What visual style would best serve this content? (e.g., minimal, bold, playful, corporate)
+6. What presentation TYPE is this? (FUN/CREATIVE vs STRUCTURED/FORMAL - see below)
+
+🎨 COLOR & FONT PRIORITY SYSTEM (CRITICAL - FOLLOW THIS ORDER!):
+
+PRIORITY 1 - BRANDFETCH DATA (HIGHEST):
+- If Brandfetch brand data is available in metadata, use those EXACT colors and fonts
+- Brandfetch data comes from uploaded brand guidelines or detected brand URLs
+- This overrides ALL other color/font suggestions
+- Look for: brandInfo, brandColors, brandFonts in the deck metadata
+
+PRIORITY 2 - KNOWN BRANDS/CHARACTERS:
+- If no Brandfetch data but this is a known entity, use official colors/fonts
+- Examples: Pikachu, Coca-Cola, Google, Nike, Disney, Pokemon
+- Use iconic, recognizable colors that people expect
+- See list below for specific brand colors
+
+PRIORITY 3 - DEFINITIVE TOPICS WITH KNOWN ASSOCIATIONS:
+- Ocean → blues/teals/aqua
+- Fire/Energy → reds/oranges/yellows
+- Nature → greens/browns/earth tones
+- Space → purples/blues/blacks
+- Use these when the topic has clear, universally-recognized colors
+
+PRIORITY 4 - CREATIVE/GENERAL TOPICS:
+- For abstract business topics, education, personal stories
+- Use Huemint for sophisticated, harmonious palettes
+- AI generates creative, appropriate colors
+- Most flexible option for general content
 
 BRAND COLOR DETECTION:
 - If this is about a known brand/character, use OFFICIAL colors:
@@ -163,10 +191,40 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    - DO NOT default to Inter, Helvetica, or Arial! Be creative with font choices!
    - Inter is FORBIDDEN - choose literally any other font!
    - Choose from these ACTUALLY AVAILABLE fonts in the system:
-   
+
    {available_fonts_str}
-   
-   - Match fonts to the content theme (BE CREATIVE - MIX CATEGORIES!):
+
+   🎭 PRESENTATION TYPE DETECTION (CRITICAL FOR FONT CHOICE!):
+
+   📌 FUN/CREATIVE PRESENTATIONS (Characters, Kids, Entertainment, Playful):
+   - Pikachu, Pokemon, Disney characters, cartoons, games
+   - Kids' education, fun topics, creative storytelling
+   - MASSIVE, PLAYFUL typography (hero titles 120-200pt)
+   - Mix fun Script + Bold fonts (Fredoka + Bebas Neue)
+   - Rounded, friendly fonts (Quicksand, Nunito, Bubblegum Sans)
+   - EXPLOSIVE layouts - elements can overlap, rotate, be huge
+   - Dynamic positioning - not everything needs to be aligned
+   - Use ALL available colors - rainbow explosions welcome!
+   - CustomComponents for animated effects, bouncing text, fun counters
+
+   📊 STRUCTURED PRESENTATIONS (Business, Corporate, Academic, Formal):
+   - Business pitches, quarterly reports, academic research
+   - Professional presentations, executive briefings
+   - CLEAN, CONTROLLED typography (hero titles 80-100pt)
+   - Professional sans-serifs (Montserrat, Poppins, Raleway)
+   - Grid-based layouts - proper alignment and spacing
+   - Controlled color palette - 3-4 colors max per slide
+   - Data-focused - charts, tables, bullet points
+   - Minimal decorative elements - function over form
+
+   ⚡ HOW TO DETECT:
+   - FUN: Characters (Pikachu), kids topics, games, creative content, entertainment
+   - STRUCTURED: Business terms, data, reports, corporate, academic, professional
+   - When in doubt, check the audience age/maturity from content
+
+   - Match fonts to the content theme AND AUDIENCE (BE CREATIVE - MIX CATEGORIES!):
+
+   BY CONTENT TYPE:
      * Tech/Startup: Tech & Startup category (IBM Plex, Oxanium, Tomorrow) + Geometric (Questrial, Dosis)
      * Corporate/Business: Branding category (Prompt, Radio Canada) + Premium sans-serifs
      * Playful/Fun: Mix Script (Pacifico, Kaushan) + Retro (Bungee variants, Press Start 2P)
@@ -177,6 +235,45 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
      * Retro/Vintage: Retro category (Monoton, Fascinate) + Design classics
      * Scientific/Academic: Serif (Noto Serif, Bitter) + Monospace for data (JetBrains Mono)
      * Creative/Artistic: Mix ALL categories creatively - be bold with combinations!
+
+   🎯 BY AUDIENCE & MATURITY (CRITICAL - MUST MATCH AUDIENCE!):
+     * KIDS (Elementary/Preschool):
+       - Hero: Fredoka, Bubblegum Sans, Comic Neue, Quicksand, Nunito (friendly, rounded, FUN!)
+       - Body: Nunito, Quicksand, Open Sans, Poppins (readable, approachable)
+       - AVOID: Formal serifs, heavy corporate fonts, anything serious or intimidating
+       - STYLE: Playful, colorful, energetic, soft rounded corners
+
+     * TEENS (Middle/High School):
+       - Hero: Bebas Neue, Oswald, Anton, Righteous, Bungee (bold, edgy, modern)
+       - Body: Poppins, Work Sans, DM Sans, Raleway (clean, trendy)
+       - AVOID: Childish fonts, overly corporate fonts
+       - STYLE: Bold, modern, trendy, energetic
+
+     * COLLEGE/STUDENTS (University):
+       - Hero: Montserrat, Raleway, Space Grotesk, Manrope (contemporary, smart)
+       - Body: Roboto, Open Sans, Lato, Source Sans Pro (clean, academic)
+       - AVOID: Too playful or too corporate
+       - STYLE: Contemporary, professional but approachable
+
+     * PROFESSIONALS/BUSINESS:
+       - Hero: Montserrat, Raleway, Poppins, Playfair Display (polished, confident)
+       - Body: Roboto, Lato, Open Sans, Inter (clean, professional)
+       - AVOID: Playful scripts, comic fonts, anything too casual
+       - STYLE: Clean, modern, trustworthy, sophisticated
+
+     * EXECUTIVES/C-SUITE:
+       - Hero: Playfair Display, Cormorant, Bodoni Moda, Montserrat (refined, elegant)
+       - Body: Inter, Roboto, Source Serif Pro, Lato (sophisticated, readable)
+       - AVOID: Playful fonts, trendy fonts, anything casual
+       - STYLE: Minimal, elegant, sophisticated, high-end
+
+   🎨 BY BRAND (If known brand detected):
+     * For Google: Roboto, Product Sans family
+     * For Apple: SF Pro family or use modern sans-serifs (Poppins, Inter)
+     * For Microsoft: Segoe family or modern geometric sans
+     * For Nike: Bold impact fonts (Bebas Neue, Anton)
+     * For Disney: Playful, whimsical fonts for kids content
+     * ALWAYS prioritize brand fonts when brand is mentioned in title/content!
    
    SIZE REQUIREMENTS - PRECISE AND READABLE:
    - Slide-wide Impact (1-2 words): 250-300pt (massive visual impact)
@@ -197,17 +294,36 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    The canvas is 1920x1080 - GO BIG with text sizing!
 
 4. VISUAL STYLE - STUNNING AND MEMORABLE:
-   - Image Prominence: percentage (0-100%)
-   - Image Effects: ken-burns (subtle zoom), parallax (depth), fade-in (smooth entrance), zoom (dramatic focus)
-   - Image Filters: dramatic (high contrast), cyberpunk (neon tints), vintage (warm tones), vibrant (saturated)
-   - Image Masks: circle (profiles), hexagon (tech), diagonal (energy), polaroid (casual)
-   - Layout Patterns: full-bleed (hero), split-screen (50/50), asymmetric (2/3), layered (depth), collage (creative)
-   - Background Style: ALWAYS GRADIENTS (100% - NEVER solid colors)
-   - Gradient Types: mesh (organic flow), radial (spotlight effect), linear (directional), conic (circular sweep)
-   - Gradient Complexity: Use 3-5 color stops minimum for rich, complex gradients
+
+   🎨 FOR FUN/CREATIVE PRESENTATIONS (Pikachu, Kids, Entertainment):
+   - Image Prominence: 70-90% (HUGE images, characters dominate)
+   - Image Effects: ALL OF THEM - parallax, zoom, bounce, rotation
+   - Image Filters: vibrant, saturated, high-energy, neon
+   - Image Masks: playful shapes - stars, circles, explosions, irregular
+   - Layout Patterns: CHAOTIC ENERGY - overlapping, diagonal, scattered, explosive
+   - Background Style: WILD GRADIENTS - 5-7 colors, aurora effects, mesh madness
+   - Gradient Types: ALL - mesh + radial + linear combined for maximum impact
+   - Shape Usage: EVERYWHERE - giant circles, stars, lightning bolts, decorative chaos
+   - Creative Effects: Shadows, glows, outlines, animations, bouncing text
+   - Typography Freedom: Text can be MASSIVE (200pt+), rotated, colorful, overlapping
+   - Component Freedom: 12-20 components - go WILD with decorative elements
+   - Spacing: TIGHT - elements can touch, overlap for energy
+
+   📊 FOR STRUCTURED PRESENTATIONS (Business, Corporate, Academic):
+   - Image Prominence: 40-60% (balanced with content)
+   - Image Effects: subtle - ken-burns, fade-in only
+   - Image Filters: minimal - slight dramatic or vibrant
+   - Image Masks: clean - rectangles, subtle rounds
+   - Layout Patterns: grid-based, aligned, professional hierarchy
+   - Background Style: CONTROLLED gradients - 2-3 colors, subtle transitions
+   - Gradient Types: linear or radial - single gradient per slide
+   - Shape Usage: MINIMAL - only for data emphasis or dividers
+   - Creative Effects: Subtle shadows, clean overlays, professional polish
+   - Typography Freedom: Clean hierarchy - max 100pt for titles, proper alignment
+   - Component Freedom: 6-10 components - clean, purposeful placement
+   - Spacing: GENEROUS - 60px+ gaps, clear breathing room
+
    - Background Effects: aura (glowing orbs), clouds (atmospheric), waves (flowing motion), mesh (organic gradients), northern-lights (vibrant streaks)
-   - Shape Usage: LARGE circles for stats (300-500px), hexagons for process, arrows for flow
-   - Creative Effects: transparency (30-50%), blur backgrounds, DRAMATIC gradient fills (30-50% color difference)
    - Background Complexity: Use 3-5 gradient stops, multiple overlapping gradients, or CustomComponents for animated effects
 
 5. DESIGN RULES - BOLD & MEMORABLE:
@@ -567,28 +683,90 @@ You are a VISIONARY DESIGN DIRECTOR creating a complete design system and visual
 
 {specific_colors_section}
 
- COLOR PREFERENCE PRIORITY:
-1. HIGHEST PRIORITY: Brand guideline colors (if brand guideline uploaded)
-2. HIGH PRIORITY: User-specified exact colors (if provided)
-3. MEDIUM PRIORITY: Colors mentioned in prompt/content
-4. LOW PRIORITY: AI-generated colors based on content
+ 🎨 COLOR & FONT SELECTION PRIORITY (CRITICAL - FOLLOW THIS ORDER!):
 
-⚠️ CRITICAL RULES FOR COLOR SELECTION:
-- If brand guidelines are provided, use ONLY the brand colors
-- If user specifies exact colors, you MUST include them
-- If user mentions colors in prompt, incorporate them
-- Only use Huemint if NO specific colors are provided
-- When specific colors exist, set "should_use_huemint": false
+PRIORITY 1 - BRANDFETCH/UPLOADED BRAND DATA (HIGHEST - OVERRIDES EVERYTHING):
+- Check deck metadata for: brandInfo, brandColors, brandFonts, extractedBrandInfo
+- If Brandfetch data exists: USE THOSE EXACT COLORS AND FONTS
+- This comes from uploaded brand guidelines or automatic brand detection
+- Set "should_use_huemint": false when Brandfetch data is present
+- Example: If user uploaded Kroger brand guide, use Kroger's exact blue (#0079C2)
+
+PRIORITY 2 - USER-SPECIFIED EXACT COLORS:
+- If user provides hex codes or specific color names
+- Use these exact colors in the palette
+- Set "should_use_huemint": false
+- Build complementary palette around user colors
+
+PRIORITY 3 - KNOWN BRANDS/CHARACTERS WITHOUT BRANDFETCH:
+- If title/content mentions: Pikachu, Pokemon, Google, Nike, Coca-Cola, etc.
+- Use the iconic, official brand colors (see BRAND COLOR DETECTION section)
+- Set "should_use_huemint": false
+- Example: "Pikachu presentation" → #FFCB05 yellow, #EE1515 red, #0075BE blue
+
+PRIORITY 4 - DEFINITIVE TOPICS WITH CLEAR ASSOCIATIONS:
+- Ocean → blues/teals (#0077BE, #20B2AA)
+- Fire → reds/oranges (#FF4500, #FFD700)
+- Nature → greens/browns (#228B22, #8B4513)
+- Space → purples/blacks (#4B0082, #191970)
+- Set "should_use_huemint": false for obvious color associations
+
+PRIORITY 5 - GENERAL/ABSTRACT TOPICS (LOWEST - USE HUEMINT):
+- Business presentations without specific brand
+- Educational content without obvious colors
+- Abstract concepts, personal stories
+- Set "should_use_huemint": true
+- Let Huemint generate sophisticated, harmonious palettes
+
+⚠️ CRITICAL DETECTION RULES:
+- ALWAYS check for Brandfetch data FIRST (in metadata/brandInfo)
+- If Brandfetch exists → ignore everything else, use Brandfetch
+- If no Brandfetch but mentions "Pikachu" → use Pikachu colors
+- If no Brandfetch but mentions "Kroger" → use Kroger brand colors (#0079C2)
+- If no brand/character → check for topic associations (ocean, fire, etc.)
+- If nothing specific → use Huemint for creative generation
+
+🎭 PRESENTATION TYPE ANALYSIS (DO THIS FIRST!):
+
+Analyze the deck title and content to determine presentation TYPE:
+
+TYPE 1 - FUN/CREATIVE (Pikachu, Kids, Characters, Entertainment):
+- Indicators: character names, "kids", "fun", "game", "cartoon", "story"
+- Design: EXPLOSIVE layouts, MASSIVE text (120-200pt), playful fonts
+- Freedom: High - overlap elements, use all colors, decorative shapes
+- Components: 12-20+ (go wild with decorative elements)
+- Examples: "Pikachu Adventure", "Disney Characters", "Fun Math for Kids"
+
+TYPE 2 - STRUCTURED/FORMAL (Business, Corporate, Data):
+- Indicators: "business", "report", "analysis", "strategy", "quarterly"
+- Design: CLEAN layouts, controlled text (80-100pt), professional fonts
+- Freedom: Low - grid-based, proper spacing, minimal decoration
+- Components: 6-10 (purposeful, data-focused)
+- Examples: "Q4 Financial Report", "Market Analysis", "Corporate Strategy"
+
+TYPE 3 - HYBRID (Creative Business, Innovative Startups):
+- Indicators: "innovation", "startup", "creative agency", "design"
+- Design: Bold but controlled, mix playful + professional
+- Freedom: Medium - some creative elements, but maintain structure
+- Components: 8-12 (balanced creative + functional)
+- Examples: "Tech Startup Pitch", "Creative Agency Portfolio"
+
+⚠️ BASED ON TYPE, ADJUST:
+- Font sizes (FUN: 120-200pt hero | STRUCTURED: 80-100pt hero)
+- Layout freedom (FUN: chaotic overlap | STRUCTURED: grid-aligned)
+- Color usage (FUN: 5-7 colors | STRUCTURED: 3-4 colors)
+- Component count (FUN: 12-20 | STRUCTURED: 6-10)
+- Spacing (FUN: tight/overlapping | STRUCTURED: generous gaps)
 
 ADDITIONAL STYLE REQUIREMENTS:
-Based on the deck content, also provide a detailed style specification that includes:
+Based on the deck content AND PRESENTATION TYPE, provide a detailed style specification:
 
-1. Design approach (MINIMALIST, BOLD, CREATIVE, PROFESSIONAL, PLAYFUL)
-2. Specific color values and usage rules
-3. Typography specifications with exact sizes and families
-4. Component usage guidelines
-5. Image treatment and effects
-6. Spacing and layout rules
+1. Design approach (MINIMALIST, BOLD, CREATIVE, PROFESSIONAL, PLAYFUL) - MATCH THE TYPE!
+2. Specific color values and usage rules - FOLLOW PRIORITY SYSTEM ABOVE
+3. Typography specifications with exact sizes - BASED ON PRESENTATION TYPE
+4. Component usage guidelines - FUN=12-20, STRUCTURED=6-10
+5. Image treatment and effects - FUN=vibrant/playful, STRUCTURED=subtle/professional
+6. Spacing and layout rules - FUN=tight/chaotic, STRUCTURED=generous/grid
 
 DECK CONTENT SAMPLE (Representative slides):
 {combined_content}

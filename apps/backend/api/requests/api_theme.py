@@ -286,8 +286,12 @@ async def stream_theme_from_outline(
             except Exception:
                 pass
 
-            # Extract theme + full palette for clients. Do not shrink colors to accents only
+            # Extract theme + full palette + search_terms from ThemeDocument
             deck_theme = theme_doc.deck_theme if hasattr(theme_doc, "deck_theme") else None
+            search_terms = theme_doc.search_terms if hasattr(theme_doc, "search_terms") else []
+            
+            logger.info(f"[THEME API] Extracted {len(search_terms)} search terms from ThemeDocument: {search_terms}")
+            
             palette = None
             try:
                 if isinstance(deck_theme, dict):
@@ -314,6 +318,12 @@ async def stream_theme_from_outline(
                     existing = get_deck(deck_id) or {}
                     data_field = existing.get("data", {}) if isinstance(existing.get("data"), dict) else {}
                     data_field["theme"] = deck_theme
+                    
+                    # CRITICAL: Store search_terms for image search during deck generation
+                    if search_terms and len(search_terms) > 0:
+                        data_field["search_terms"] = search_terms
+                        logger.info(f"[THEME API] Persisting {len(search_terms)} search terms to deck data")
+                    
                     # Also store palette under style_spec if available
                     if isinstance(palette, dict):
                         data_field.setdefault("style_spec", {})

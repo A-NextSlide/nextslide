@@ -1331,14 +1331,14 @@ class SlidePromptBuilder:
         if "ReactBits" in predicted:
             sections.extend([
                 "\n REACTBITS COMPONENT — ANIMATED MODERN COMPONENTS:",
-                "ReactBits provides 26+ animated components for stunning, modern presentations.",
+                "ReactBits provides 37 animated components for stunning, modern presentations.",
                 "",
                 "REACTBITS STRUCTURE:",
                 '{"type": "ReactBits", "props": {"reactBitsId": "component-id", "position": {"x": 100, "y": 200}, "width": 800, "height": 400, ...component-specific-props}}',
                 "",
                 "AVAILABLE REACTBITS COMPONENTS:",
                 "",
-                "TEXT ANIMATIONS (9 components):",
+                "TEXT ANIMATIONS (14 components):",
                 "  - blur-text: Blur-to-sharp reveal effect. Props: text, delay, animateBy ('words'|'characters'), direction, className",
                 "  - count-up: Animated number counter. Props: to, from, duration, separator, className",
                 "  - glitch-text: Cyberpunk RGB split effect. Props: text, className",
@@ -1348,8 +1348,13 @@ class SlidePromptBuilder:
                 "  - neon-text: Glowing neon effect. Props: text, glowColor, intensity, flicker, className",
                 "  - shiny-text: Shimmering highlight effect. Props: text, shimmerColor, speed, className",
                 "  - rotating-text: Rotates through phrases. Props: words (comma-separated), interval, className",
+                "  - split-text: Character-by-character reveal. Props: text, delay, className",
+                "  - shuffle-text: Shuffle letters into place. Props: text, speed, iterations, className",
+                "  - decrypted-text: Hacker-style decrypt effect. Props: text, speed, glitchIntensity, className",
+                "  - loop-text: Continuous scrolling marquee. Props: text, speed, direction ('left'|'right'), className",
+                "  - wavy-text: Smooth wave motion. Props: text, amplitude, frequency, className",
                 "",
-                "BACKGROUNDS (9 components) — use these sparingly, only for title/hero slides:",
+                "BACKGROUNDS (14 components) — use these sparingly, only for title/hero slides:",
                 "  - aurora: Northern lights gradient. Props: color1, color2, color3, speed, amplitude",
                 "  - particles: 3D floating particles. Props: particleCount, colors (array), speed, spread",
                 "  - waves: Smooth SVG wave animation. Props: waveColor, opacity, speed, amplitude",
@@ -1358,15 +1363,23 @@ class SlidePromptBuilder:
                 "  - starfield: Twinkling stars. Props: starCount, starColor, speed, twinkle",
                 "  - beams: Animated light beams. Props: beamColor, beamCount, speed, opacity",
                 "  - ripple-grid: Grid with ripple effects. Props: gridColor, rippleColor, cellSize, speed",
+                "  - grid-motion: Animated grid with motion. Props: gridColor, cellSize, speed, opacity",
+                "  - plasma: Colorful plasma effect. Props: color1, color2, color3, speed",
+                "  - chroma-grid: Grid with chromatic aberration. Props: gridColor, cellSize, aberrationIntensity, speed",
+                "  - cubes: 3D rotating cubes. Props: cubeCount, cubeColor, rotationSpeed, perspective",
+                "  - ballpit: Bouncing physics balls. Props: ballCount, colors (array), gravity, bounce",
+                "  - retro-grid: 80s synthwave grid. Props: gridColor, horizonColor, speed, fogDensity",
                 "",
-                "INTERACTIVE COMPONENTS (5 components):",
-                "  - click-spark: Radial spark particles on click. Props: sparkColor, sparkSize, sparkCount, radius",
-                "  - blob-cursor: Smooth blob cursor trail. Props: fillColor, size",
-                "  - magic-bento: Interactive grid with spotlight. Props: enableSpotlight, enableStars, glowColor, particleCount",
-                "  - carousel: Image carousel with controls. Props: images (array of URLs), autoplay, delay, loop",
+                "INTERACTIVE COMPONENTS (9 components):",
                 "  - spotlight-card: Card with spotlight on hover. Props: title, content, spotlightColor, width",
-                "  - magnet: Magnetic hover effect. Props: text, magnetStrength, className",
                 "  - dock: macOS-style dock. Props: iconCount, iconSize, magnification",
+                "  - bounce-cards: Cards with bounce animation. Props: cardCount, cardWidth, bounceStrength",
+                "  - circular-gallery: Rotating circular gallery. Props: images (array), radius, imageSize, autoRotate",
+                "  - star-border: Animated star border effect. Props: color, speed, starCount",
+                "  - animated-list: Staggered list animations. Props: items (array), staggerDelay, animationType ('fade-up'|'fade-left'|'fade-right'|'scale'), className",
+                "  - card-swap: Swappable card interface. Props: cards (array), swapDirection ('horizontal'|'vertical'), cardHeight, autoSwap",
+                "  - morph-card: Shape-morphing card. Props: title, content, morphShape ('circle'|'hexagon'|'diamond'), cardColor",
+                "  - flip-card: 3D flip card. Props: frontTitle, frontContent, backTitle, backContent, flipDirection ('horizontal'|'vertical'), cardWidth, cardHeight",
                 "",
                 "REACTBITS USAGE GUIDELINES:",
                 "1. WHEN TO USE:",
@@ -1868,8 +1881,9 @@ class SlidePromptBuilder:
                 "\nIMPORTANT: Still use src: 'placeholder' for Image components!",
                 "The system will automatically replace placeholders with the tagged media URLs.",
                 "Your job is to create Image components with src: 'placeholder' where you want images.",
-                "For title slides: Include a hero image with src: 'placeholder'!",
-                "Match the number of Image components to available media based on the interpretations above."
+                "Use images conservatively (~30–40% of slides). Avoid bottom-half banner images; prefer a single focal image box.",
+                "For title slides: Include a hero image with src: 'placeholder' (avoid full-bleed on content slides).",
+                "Match images to slide type: title slides = hero focal image, content slides = only if beneficial."
             ])
         elif context.available_images and context.async_images:
             # Async mode with available images - DON'T show them, just use placeholders
@@ -1877,12 +1891,12 @@ class SlidePromptBuilder:
                 f"\n🖼️ IMAGE PLACEHOLDERS REQUIRED ({len(context.available_images)} images available for user selection)",
                 "CRITICAL: You MUST use src: 'placeholder' for ALL Image components!",
                 "DO NOT use any URLs - the user will select images later.",
-                "Create Image components with src: 'placeholder' where appropriate.",
+                "Create Image components with src: 'placeholder' where appropriate - not every slide needs an image! Use sparingly (~30–40%).",
                 "For title slides: Include a hero image with src: 'placeholder'!",
-                "MANDATORY: Include at least one Image component with src: 'placeholder' on this slide.",
                 "ALSO: For EACH Image component, include props.searchQuery: a concise 2–5 word image search phrase for that specific box (not slide-wide).",
                 "Examples (good): 'super smash bros pikachu', 'venture capital portfolio', 'first round capital logo'.",
-                "Avoid (too generic): 'super', 'plant', 'sun', 'data', 'background'."
+                "Avoid (too generic): 'super', 'plant', 'sun', 'data', 'background'.",
+                "Use images conservatively - data-heavy slides, timeline slides, and conclusion slides often work better without images. Avoid bottom-half banner crops."
             ])
         elif context.available_images:
             # Pre-fetched images mode - show and use them directly
@@ -1890,13 +1904,15 @@ class SlidePromptBuilder:
             sections.append(f"{self._format_available_images(context.available_images[:6])}")
             sections.append("\nUse the URLs above directly in your Image components.")
             sections.append("Add props.searchQuery to each Image (2–5 words) to record the intended content for that slot.")
+            sections.append("Use images conservatively - avoid wide short banners; prefer single focal images if used.")
         else:
             sections.extend([
                 "\n🖼️ IMAGES: Use src: 'placeholder' (just the word 'placeholder', NOT a URL!)",
-                "For title slides: PREFER a full-bleed hero image with src: 'placeholder'. If split-screen, image can be LEFT or RIGHT based on composition.",
-                "MANDATORY: Include at least one Image component with src: 'placeholder' on this slide.",
+                "For title slides: Use a focal hero image with src: 'placeholder' (avoid bottom-half banners).",
+                "For content slides: Use images conservatively where they enhance the message - not every slide needs an image!",
                 "Example (full-bleed): {\"type\": \"Image\", \"props\": {\"src\": \"placeholder\", \"position\": {\"x\": 0, \"y\": 0}, \"width\": 1920, \"height\": 1080}}",
-                "Also include props.searchQuery on each Image to guide later retrieval (2–5 precise words)."
+                "Also include props.searchQuery on each Image to guide later retrieval (2–5 precise words).",
+                "Data-heavy slides, timeline slides, and conclusion slides often work better without images. Avoid wide, short, bottom-half images."
             ])
         
         # Add image boundary rules

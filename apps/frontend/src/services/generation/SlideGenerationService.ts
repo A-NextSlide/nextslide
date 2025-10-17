@@ -150,7 +150,8 @@ export class SlideGenerationService {
     return {
       deck_id: deckId,
       outline,
-      async_images: true
+      // Default to auto-apply (synchronous) when unspecified
+      async_images: (window as any)?.__slideGenerationPreferences?.autoSelectImages === true ? false : false
     };
   }
 

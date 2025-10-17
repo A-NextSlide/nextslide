@@ -226,13 +226,12 @@ class EnhancedFontService:
                            vibe: str,
                            content_keywords: Optional[List[str]] = None,
                            target_audience: Optional[str] = None,
-                           variety_seed: Optional[str] = None,
-                           maturity: Optional[str] = None) -> Dict:
+                           variety_seed: Optional[str] = None) -> Dict:
         """
         Get font recommendations based on theme with intelligent metadata-based selection
         and variety mechanism to avoid repetition.
         """
-        context = self._analyze_context(deck_title, vibe, content_keywords, target_audience, maturity)
+        context = self._analyze_context(deck_title, vibe, content_keywords, target_audience)
         
         # Get fonts with scoring based on metadata
         hero_fonts = self._get_hero_fonts_with_scoring(context)
@@ -252,8 +251,7 @@ class EnhancedFontService:
     
     def _analyze_context(self, deck_title: str, vibe: str,
                         content_keywords: Optional[List[str]],
-                        target_audience: Optional[str],
-                        maturity: Optional[str] = None) -> Dict:
+                        target_audience: Optional[str]) -> Dict:
         """Analyze context to determine font selection criteria"""
 
         context = {
@@ -261,36 +259,12 @@ class EnhancedFontService:
             'vibe': vibe.lower(),
             'keywords': [k.lower() for k in content_keywords] if content_keywords else [],
             'audience': target_audience.lower() if target_audience else '',
-            'maturity': maturity.lower() if maturity else 'general',
             'style': '',
             'type': '',
             'required_tags': set(),
             'preferred_tags': set(),
             'avoid_tags': set()
         }
-
-        # NEW: Audience-based font preferences
-        if target_audience:
-            aud = target_audience.lower()
-            if aud == 'kids':
-                context['preferred_tags'].update(['playful', 'friendly', 'rounded', 'fun', 'colorful'])
-                context['avoid_tags'].update(['formal', 'corporate', 'serious', 'heavy'])
-            elif aud == 'teens':
-                context['preferred_tags'].update(['modern', 'trendy', 'bold', 'edgy'])
-                context['avoid_tags'].update(['childish', 'corporate'])
-            elif aud == 'professionals':
-                context['required_tags'].update(['professional', 'clean', 'modern'])
-                context['avoid_tags'].update(['playful', 'comic', 'childish'])
-
-        # NEW: Maturity-based font preferences
-        if maturity:
-            mat = maturity.lower()
-            if mat == 'young':
-                context['preferred_tags'].update(['friendly', 'playful', 'approachable'])
-                context['avoid_tags'].update(['formal', 'corporate', 'serious'])
-            elif mat == 'executive':
-                context['required_tags'].update(['professional', 'sophisticated', 'refined'])
-                context['avoid_tags'].update(['playful', 'fun', 'casual'])
 
         # Determine style based on vibe and keywords
         if vibe in ['professional', 'corporate', 'formal']:
@@ -694,27 +668,17 @@ class EnhancedFontService:
                         vibe: str,
                         content_keywords: Optional[List[str]] = None,
                         target_audience: Optional[str] = None,
-                        variety_seed: Optional[str] = None,
-                        maturity: Optional[str] = None) -> Dict[str, str]:
+                        variety_seed: Optional[str] = None) -> Dict[str, str]:
         """
         Select a single font pair (hero + body) using variety seed for deterministic rotation.
         This is the main entry point for theme generation.
-
-        Args:
-            deck_title: Title of the presentation
-            vibe: Overall vibe (professional, creative, elegant, etc.)
-            content_keywords: List of topic keywords
-            target_audience: Target audience (kids, teens, students, professionals, general)
-            variety_seed: Seed for deterministic variety in font selection
-            maturity: Content maturity level (young, professional, executive, general)
         """
         recommendations = self.get_fonts_for_theme(
             deck_title=deck_title,
             vibe=vibe,
             content_keywords=content_keywords,
             target_audience=target_audience,
-            variety_seed=variety_seed,
-            maturity=maturity  # Pass maturity
+            variety_seed=variety_seed
         )
         
         hero_fonts = recommendations['hero']

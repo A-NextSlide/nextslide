@@ -255,7 +255,23 @@ Each component must have: id, type, and props."""
             # Process components
             components = slide_data.get('components', [])
             
+            # Valid ReactBits component IDs from catalog
+            VALID_REACTBITS_IDS = {
+                # Text Animations
+                'blur-text', 'count-up', 'glitch-text', 'gradient-text', 'scrambled-text',
+                'typewriter-text', 'neon-text', 'shiny-text', 'rotating-text', 'split-text',
+                'shuffle-text', 'decrypted-text', 'loop-text', 'wavy-text',
+                # Backgrounds
+                'aurora', 'particles', 'waves', 'dots-pattern', 'gradient-mesh', 'starfield',
+                'beams', 'ripple-grid', 'grid-motion', 'plasma', 'chroma-grid', 'cubes',
+                'ballpit', 'retro-grid',
+                # Interactive Components
+                'spotlight-card', 'dock', 'bounce-cards', 'circular-gallery', 'star-border',
+                'animated-list', 'card-swap', 'morph-card', 'flip-card'
+            }
+
             # Ensure each component has required fields
+            components_to_remove = []
             for i, component in enumerate(components):
                 if 'id' not in component:
                     component['id'] = f"component-{i}"
@@ -263,13 +279,30 @@ Each component must have: id, type, and props."""
                     component['type'] = 'Text'
                 if 'props' not in component:
                     component['props'] = {}
+
+                # Validate ReactBits components
+                if component.get('type') == 'ReactBits':
+                    reactbits_id = component.get('props', {}).get('reactBitsId')
+                    if not reactbits_id or reactbits_id not in VALID_REACTBITS_IDS:
+                        logger.warning(
+                            f"[REACTBITS VALIDATION] Invalid ReactBits ID '{reactbits_id}' in slide {context.index + 1}. "
+                            f"Removing component. Valid IDs: {', '.join(sorted(VALID_REACTBITS_IDS))}"
+                        )
+                        components_to_remove.append(i)
+
+            # Remove invalid ReactBits components
+            for i in reversed(components_to_remove):
+                components.pop(i)
             
-            # Add tagged media references
-            if context.tagged_media:
-                print(f"[SLIDE GEN] Processing slide with {len(context.tagged_media)} tagged media items")
+            # Add tagged media references ONLY when async_images is False (auto-apply is ON)
+            # When async_images is True (auto-apply is OFF), leave placeholders for manual selection
+            if context.tagged_media and not context.async_images:
+                print(f"[SLIDE GEN] Auto-apply is ON - Processing slide with {len(context.tagged_media)} tagged media items")
                 for media in context.tagged_media:
                     print(f"[SLIDE GEN] - {media.get('filename')} with URL: {media.get('previewUrl', '')[:100] if media.get('previewUrl') else 'NO URL'}")
                 self._add_tagged_media_to_components(components, context.tagged_media)
+            elif context.tagged_media and context.async_images:
+                print(f"[SLIDE GEN] Auto-apply is OFF - Leaving {len(context.tagged_media)} images as placeholders for manual selection")
             else:
                 print(f"[SLIDE GEN] No tagged media for this slide")
             
