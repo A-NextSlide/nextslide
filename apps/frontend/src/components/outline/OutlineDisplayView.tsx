@@ -1729,22 +1729,59 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                 </div>
                               </div>
                             </div>
-                            {/* Middle: Vertical color bars with labels */}
-                            <div className="h-full p-0 overflow-x-auto overflow-y-hidden">
+                            {/* Vertical color bars with labels - fills available width */}
+                            <div className="h-full flex-1 p-0 overflow-x-auto overflow-y-hidden flex gap-1">
                               {/* Only render palette when a real theme is applied and palette exists */}
                               {swatches.length > 0 ? (
-                                <div className="grid grid-flow-col auto-cols-fr h-full gap-0">
-                                  {swatches.map((sw, idx) => (
-                                    <div key={idx} className="relative h-full cursor-pointer" style={{ backgroundColor: sw.color }} onClick={(e) => openColorPanelAt(e, idx)}>
+                                <>
+                                  <div className="flex-1 flex gap-1">
+                                    {swatches.map((sw, idx) => (
+                                      <Popover key={idx}>
+                                        <PopoverTrigger asChild>
+                                          <div
+                                            className="flex-1 min-w-[20px] rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all relative"
+                                            style={{ backgroundColor: sw.color }}
+                                            title={sw.label || `Color ${idx + 1}`}
+                                          >
+                                            <div
+                                              className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
+                                              style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+                                            >
+                                              {sw.label}
+                                            </div>
+                                          </div>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-2" side="bottom" align="center">
+                                          <EnhancedColorPicker
+                                            color={String(sw.color)}
+                                            onChange={(hex) => updateSwatchColor(idx, hex)}
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
+                                    ))}
+                                  </div>
+                                  {/* Add custom color button */}
+                                  <Popover>
+                                    <PopoverTrigger asChild>
                                       <div
-                                        className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
-                                        style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+                                        className="w-8 h-full rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-orange-500 dark:hover:text-orange-400 text-xl font-light shrink-0"
+                                        title="Add custom color"
                                       >
-                                        {sw.label}
+                                        +
                                       </div>
-                                    </div>
-                                  ))}
-                                </div>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-2" side="bottom" align="center">
+                                      <EnhancedColorPicker
+                                        color="#3b82f6"
+                                        onChange={(hex) => {
+                                          const newSwatch = { color: hex, label: `Custom ${swatches.length + 1}` };
+                                          const updatedSwatches = [...swatches, newSwatch];
+                                          applyThemeUpdate((t) => ({ ...t, swatches: updatedSwatches }));
+                                        }}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                </>
                               ) : (
                                 <div className="h-full w-full flex items-center justify-center text-[11px] text-zinc-400 select-none">
                                   {/* No palette colors available */}
