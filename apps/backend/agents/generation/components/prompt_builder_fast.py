@@ -33,8 +33,8 @@ CRITICAL RULES:
 - NEVER split string literals across lines - keep ALL text on ONE LINE in JavaScript code
 - Use React.createElement only (no JSX); return a single root with width/height 100%, maxWidth '100%', maxHeight '100%', boxSizing 'border-box', overflow 'hidden', display 'flex', flexDirection 'column', flexWrap 'nowrap', position 'relative'.
 - CRITICAL: Define padding FIRST: const padding = props.padding || 32;
-- NO UNDECLARED VARIABLES in CustomComponent: always also declare availableWidth/availableHeight after padding; and if you reference them, declare rayCount (props.rayCount||12), iconSize (Math.min(availableWidth, availableHeight)*0.4), primaryColor (props.primaryColor||props.color||'#FFD100'), secondaryColor ('#4CAF50'), textColor ('#FFFFFF'), fontFamily ('Poppins').
-- Compute internal sizes to FIT: availableWidth = props.width - padding*2; ensure lists/grids wrap within availableWidth; avoid horizontal overflow.
+- NO UNDECLARED VARIABLES in CustomComponent: if you reference them, declare rayCount (props.rayCount||12), iconSize (Math.min(props.width, props.height)*0.4), primaryColor (props.primaryColor||props.color||'#FFD100'), secondaryColor ('#4CAF50'), textColor ('#FFFFFF'), fontFamily ('Poppins').
+- Compute internal sizes to FIT: ensure lists/grids wrap within props.width; avoid horizontal overflow.
 - For multi-item layouts: Use CSS Grid with display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px'
 - MANDATORY: flexDirection 'column' for main container - NEVER 'row' (prevents title-left content-right issue)
 - Title MUST be at TOP: place in separate div with width: '100%', marginBottom: '24px'

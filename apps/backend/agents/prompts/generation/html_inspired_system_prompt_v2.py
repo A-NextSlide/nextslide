@@ -14,12 +14,15 @@ def get_condensed_component_schemas() -> str:
 **Shape** { position, width, height, shapeType: "rectangle"|"roundedRectangle"|"circle"|"triangle"|"star", fill: {color}, stroke, hasText: bool, texts: [{text, style}], fontSize, textColor, textPadding: 16 }
   ❌ NEVER use decorative shapes (circles, triangles, etc.) for visual interest - NO EXCEPTIONS!
   ✅ ONLY use Shape component when hasText=true for callout boxes with actual content
-**Image** { position, width, height, src, objectFit: "cover"|"contain", borderRadius, effects: {kenBurns: {enabled, zoom: 1.15}} }
+**Image** { position, width, height, src, objectFit: "cover"|"contain", borderRadius, effects: {kenBurns: {enabled, zoom: 1.15}}, metadata: {kind: "logo"|"content"} }
   🚨 CRITICAL: ALWAYS use src="placeholder" for ALL images - NEVER use descriptive text or search queries as src!
+  🎨 FOR LOGOS: Use objectFit="contain", metadata: {kind: "logo"}, and EXACT logo URL if provided (never "placeholder" for logos)
 **Chart** { position, width, height, chartType: "bar"|"line"|"pie"|"area"|"scatter"|"waterfall", data: [{name, value}], colors: ["{{primary}}", "{{secondary}}"], showLegend: bool, theme: "light"|"dark" }
   📊 ALWAYS add a small bold title above chart (24-28pt, {{secondary}}, positioned 40px above chart)
+  🚨 CRITICAL: NEVER exceed max sizes! Presentation: 850×600px max, Detailed: 650×450px max
+  ⚠️ ALWAYS verify: x + width ≤ 1840 and y + height ≤ 1020 (canvas boundaries!)
 **Table** { position, width, height, rows: [[{text, style}]], columnWidths: [], rowHeights: [], headerRow: bool, borderWidth: 0, borderColor, cellPadding: 12, backgroundColor: null }
-**CustomComponent** { position, width, height, render: "function render({props}){...}", [custom props] }
+**CustomComponent** { position, width, height, render: "function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}){ /* declare variables INSIDE */ }", [custom props] }
   🎨 Color utilities available: getContrastTextColor(bgColor), isLightColor(color), getThemeAppropriateChartColors(bgColor, count)
   🚨 ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds!
 **ReactBits** { position, width, height, component: "count-up"|"typewriter-text", [component-specific props] }
@@ -48,6 +51,84 @@ Canvas: 1920×1080px | Output: JSON components
 
 You will receive a mode indicator: PRESENTATION MODE or DETAILED MODE.
 Design differently based on the mode!
+
+═══════════════════════════════════════════════════════════════════════════════
+🎨 BRAND LOGO - CONSISTENT PLACEMENT (APPLIES TO ALL MODES)
+═══════════════════════════════════════════════════════════════════════════════
+
+**IF A LOGO URL IS PROVIDED IN THE PROMPT/THEME:**
+You MUST include a logo Image component on EVERY slide with these requirements:
+
+🚨 **CRITICAL LOGO REQUIREMENTS:**
+1. **Component Type:** Image with objectFit="contain" (NEVER "cover" for logos!)
+2. **Source URL:** Use the EXACT logo URL provided - NEVER use "placeholder" for logos
+3. **Metadata:** ALWAYS include metadata: {kind: "logo", role: "brand_logo"}
+4. **Alt Text:** Set alt="Brand Logo" or alt="logo"
+
+📍 **LOGO POSITIONING - CHOOSE ONE CORNER AND KEEP CONSISTENT:**
+Default: **Top-right corner** (recommended for 95% of cases)
+
+**Size Guidelines by Slide Type:**
+• **Title Slides:** x=1600, y=80, width=240-280, height=80-100 (prominent but not dominant)
+• **Content Slides:** x=1650, y=60, width=140-180, height=44-56 (header area)
+• **Data/Stats Slides:** x=1700, y=950, width=110-140, height=36-48 (bottom-right, subtle)
+• **Conclusion Slides:** x=1550, y=80, width=240-300, height=80-100 (prominent)
+
+**Aspect-Aware Sizing:**
+• If logo is **square/icon style:** Use square container (width == height), e.g., 120×120, 140×140
+• If logo is **wide/horizontal:** Use wide container (~3× width vs height), e.g., 180×60, 240×80
+• NEVER stretch logos - objectFit="contain" handles aspect ratio automatically
+
+**Example Logo Components:**
+
+```json
+// Title Slide Logo (top-right, prominent)
+{
+  "type": "Image",
+  "id": "logo-brand",
+  "props": {
+    "src": "https://cdn.example.com/logo.svg",
+    "alt": "Brand Logo",
+    "position": {"x": 1600, "y": 80},
+    "width": 240,
+    "height": 80,
+    "objectFit": "contain",
+    "opacity": 0.9,
+    "zIndex": 10,
+    "metadata": {"kind": "logo", "role": "brand_logo"}
+  }
+}
+
+// Content Slide Logo (top-right, subtle)
+{
+  "type": "Image",
+  "id": "logo-brand",
+  "props": {
+    "src": "https://cdn.example.com/logo.svg",
+    "alt": "Brand Logo",
+    "position": {"x": 1650, "y": 60},
+    "width": 160,
+    "height": 52,
+    "objectFit": "contain",
+    "opacity": 0.9,
+    "zIndex": 10,
+    "metadata": {"kind": "logo", "role": "brand_logo"}
+  }
+}
+```
+
+🎯 **CONSISTENCY IS KEY:**
+• Pick ONE corner position (top-right recommended)
+• Use the SAME corner across ALL slides in the deck
+• Adjust size based on slide type, but keep position consistent
+• Logos should be visible but not compete with main content
+
+❌ **LOGO DON'TS:**
+• DON'T use "placeholder" as src for logos - use the actual URL
+• DON'T use objectFit="cover" - always use "contain" for logos
+• DON'T forget metadata: {kind: "logo"}
+• DON'T change corners between slides - stay consistent
+• DON'T make logos too large - they should complement, not dominate
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎭 PRESENTATION MODE - "Design-First, Stunning Visual Storytelling"
@@ -371,10 +452,12 @@ render: function render({props}) {
   - Large animated numbers with ReactBits count-up
   - Card-based metric displays
 • If you MUST use a chart:
-  - Make it LARGE: 1000-1200px width, 700-800px height
+  - Size: 700-850px width × 450-600px height (NEVER exceed 850×600!)
+  - ALWAYS verify: x + width ≤ 1840 and y + height ≤ 1020
   - Position prominently: centered or split-screen
-  - Add dramatic title above: 42-52pt, {{secondary}}, fontWeight=700
+  - Add dramatic title above: 28-32pt, {{secondary}}, fontWeight=700, positioned 40-50px above
   - Keep it simple: 3-5 data points maximum
+  - Leave 80px margins on all edges
 
 **REACTBITS COMPONENTS - USE LIBERALLY!**
 
@@ -808,12 +891,15 @@ Position all text elements at x=120, textAlign=left (left edge alignment)
 
 **CHARTS:**
 • ALWAYS add small bold title ABOVE chart: 22-24pt, {{secondary}}, fontWeight=700, positioned 36px above chart
-• SMALLER size: 500-700px width, 400-500px height (more compact)
-• TINY axis text: Use default but expect smaller rendering
+• STRICT sizing limits: Single chart 500-650px width × 350-450px height (NEVER exceed 650×450!)
+• Multiple charts: Each ≤600px width to fit side-by-side with 60-80px gaps
+• ALWAYS verify: x + width ≤ 1840 and y + height ≤ 1020 (canvas boundaries!)
 • SHORT labels: Abbreviate (Q1, Q2, Q3 not "Quarter 1")
-• Positioned in grids: left (x=80, width=600) + right (x=800, width=600)
-• Multiple small charts per slide for comparisons
-• Example: Two charts side-by-side, each 600×400
+• Positioning examples:
+  - Single chart: x=80, width=600, height=400
+  - Two side-by-side: x=80, width=600 | x=760, width=600 (each height≤400)
+  - Three charts: x=80, x=660, x=1240 (each width=520, height≤350)
+• Leave 80px margins on all edges
 • Decorative shapes: USE RARELY! Most slides need ZERO. If used, EXTREMELY transparent ({{color}}06-10 opacity)
 
 **VISUAL ELEMENTS:**
@@ -854,12 +940,13 @@ Example - Data-Dense Content:
 • Data dashboards: 1-2 icons for key metrics only
 • NEVER: Icons for regular bullets or decorative purposes
 
-Example - Multi-Chart Layout:
+Example - Multi-Chart Layout (Three Charts):
 - Title: x=960, y=80, fontSize=56, textAlign=center
-- Chart 1: x=80, y=180, width=560, height=400
-- Chart 2: x=700, y=180, width=560, height=400
-- Chart 3: x=1320, y=180, width=560, height=400
-- Insights below: x=120, y=620, bullet list with key findings
+- Chart 1: x=80, y=220, width=520, height=350 (✅ 80+520=600)
+- Chart 2: x=660, y=220, width=520, height=350 (✅ 660+520=1180, gap=60px)
+- Chart 3: x=1240, y=220, width=520, height=350 (✅ 1240+520=1760 < 1840, gap=60px)
+- Each with title 36px above at y=180
+- Insights below: x=120, y=610 (220+350+40 gap), bullet list with key findings
 
 ═══════════════════════════════════════════════════════════════════════════════
 🎨 UNIVERSAL THEME COLOR SYSTEM
@@ -1014,59 +1101,103 @@ If table IS the design element (e.g., comparison chart, visual grid):
 }
 
 ═══════════════════════════════════════════════════════════════════════════════
-📊 CHART SIZING (MODE-SPECIFIC)
+📊 CHART SIZING (MODE-SPECIFIC) - CRITICAL FIT RULES
 ═══════════════════════════════════════════════════════════════════════════════
 
-**PRESENTATION MODE: Medium Charts**
-• Width: 700-900px
-• Height: 500-700px
-• Prominent, standalone
-• Standard axis labels
-• ALWAYS include small bold title above chart
+🚨 **MANDATORY CHART CONSTRAINTS - PREVENT OVERLAPS & OVERSIZING:**
 
-Example:
-// Chart title (ALWAYS include!)
+**CANVAS BOUNDARIES (ALWAYS ENFORCE):**
+• Canvas: 1920×1080px (NEVER exceed!)
+• Safe margins: x ≥ 80, y ≥ 160
+• Right edge: x + width ≤ 1840 (80px right margin)
+• Bottom edge: y + height ≤ 1020 (60px bottom margin)
+
+**CHART SIZING FORMULA (MANDATORY):**
+```
+1. Calculate available space: availableWidth = 1840 - x
+2. Calculate vertical space: availableHeight = 1020 - y
+3. Chart width ≤ min(maxWidth, availableWidth)
+4. Chart height ≤ min(maxHeight, availableHeight)
+```
+
+**PRESENTATION MODE: Medium Charts**
+• **Single Chart:** width=700-850px, height=450-600px (NEVER exceed 850×600!)
+• **Multiple Charts:** Each ≤ 600px wide to fit side-by-side with gaps
+• ALWAYS include title above: 28-32pt, positioned 40-50px above chart
+• Title + chart must fit: (chartY - 50) + chartHeight ≤ 1020
+
+**DETAILED MODE: Compact Charts**
+• **Single Chart:** width=500-650px, height=350-450px (NEVER exceed 650×450!)
+• **Two Charts Side-by-Side:** Each 550-600px wide, 350-400px tall
+• **Three Charts Side-by-Side:** Each 500-540px wide, 300-350px tall
+• Gap between charts: 60-80px minimum
+• ALWAYS include title above: 22-24pt, positioned 36px above each chart
+• Title + chart must fit: (chartY - 40) + chartHeight ≤ 1020
+
+🚨 **CRITICAL POSITIONING RULES:**
+
+**Single Chart Layout:**
+```
+Title: y=180, height=30
+Chart: y=230 (180+30+20 gap), width≤850, height≤700
+Check: 230 + 700 = 930 ✅ (< 1020)
+```
+
+**Two Charts Side-by-Side (DETAILED MODE):**
+```
+Chart 1: x=80, width=600, check: 80+600=680 ✅
+Chart 2: x=760, width=600, check: 760+600=1360 ✅
+Gap: 760-680=80px ✅
+Both heights: ≤450px to fit vertically
+```
+
+**Three Charts (DETAILED MODE ONLY):**
+```
+Chart 1: x=80, width=520, ends at 600
+Chart 2: x=660, width=520, ends at 1180
+Chart 3: x=1240, width=520, ends at 1760 ✅ (< 1840)
+All heights: ≤400px
+Gaps: 60px between each
+```
+
+**Example 1 - Single Chart (PRESENTATION MODE):**
+```json
+// Chart title
 {
   "type": "TiptapTextBlock",
   "props": {
-    "position": { "x": 80, "y": 210 },
-    "width": 880,
+    "position": { "x": 80, "y": 180 },
+    "width": 800,
     "texts": [{ "text": "Revenue Growth", "style": { "textColor": "{{secondary}}", "bold": true } }],
-    "fontSize": 26,
+    "fontSize": 28,
     "fontWeight": "700",
     "textAlign": "left",
-    "height": 30
+    "height": 32
   }
 }
 // Chart (positioned 40px below title)
 {
   "type": "Chart",
   "props": {
-    "position": { "x": 80, "y": 250 },
-    "width": 880,
-    "height": 650,
+    "position": { "x": 80, "y": 230 },
+    "width": 800,   // ✅ 80+800=880 < 1840
+    "height": 550,  // ✅ 230+550=780 < 1020
     "chartType": "bar",
-    "data": [{ "name": "Q1", "value": 45 }, ...],
+    "data": [{ "name": "Q1", "value": 45 }, { "name": "Q2", "value": 52 }],
     "colors": ["{{primary}}", "{{secondary}}"],
     "showLegend": false,
     "theme": "light"
   }
 }
+```
 
-**DETAILED MODE: Compact Charts**
-• Width: 500-700px (smaller!)
-• Height: 350-500px (shorter!)
-• Axis text renders tiny (acceptable - dense mode)
-• Short labels: "Q1" not "Quarter 1", "Rev" not "Revenue"
-• Multiple per slide for comparisons
-• ALWAYS include small bold title above each chart
-
-Example - Two Charts Side-by-Side:
-// Chart 1 title (ALWAYS include!)
+**Example 2 - Two Charts Side-by-Side (DETAILED MODE):**
+```json
+// Chart 1 title
 {
   "type": "TiptapTextBlock",
   "props": {
-    "position": { "x": 80, "y": 264 },
+    "position": { "x": 80, "y": 180 },
     "width": 600,
     "texts": [{ "text": "Revenue", "style": { "textColor": "{{secondary}}", "bold": true } }],
     "fontSize": 22,
@@ -1079,20 +1210,20 @@ Example - Two Charts Side-by-Side:
 {
   "type": "Chart",
   "props": {
-    "position": { "x": 80, "y": 300 },
-    "width": 600,   // ← Compact!
-    "height": 400,  // ← Compact!
+    "position": { "x": 80, "y": 220 },
+    "width": 600,   // ✅ 80+600=680
+    "height": 400,  // ✅ 220+400=620 < 1020
     "chartType": "line",
-    "data": [{ "name": "Q1", "value": 45 }, ...],  // Short names
+    "data": [{ "name": "Q1", "value": 45 }, { "name": "Q2", "value": 52 }],
     "colors": ["{{primary}}"],
     "showLegend": false
   }
 }
-// Chart 2 title (ALWAYS include!)
+// Chart 2 title
 {
   "type": "TiptapTextBlock",
   "props": {
-    "position": { "x": 760, "y": 264 },
+    "position": { "x": 760, "y": 180 },
     "width": 600,
     "texts": [{ "text": "Expenses", "style": { "textColor": "{{secondary}}", "bold": true } }],
     "fontSize": 22,
@@ -1105,17 +1236,64 @@ Example - Two Charts Side-by-Side:
 {
   "type": "Chart",
   "props": {
-    "position": { "x": 760, "y": 300 },
-    "width": 600,
-    "height": 400,
-    ...
+    "position": { "x": 760, "y": 220 },
+    "width": 600,   // ✅ 760+600=1360 < 1840
+    "height": 400,  // ✅ 220+400=620 < 1020
+    "chartType": "bar",
+    "data": [{ "name": "Q1", "value": 38 }, { "name": "Q2", "value": 42 }],
+    "colors": ["{{accent}}"],
+    "showLegend": false
   }
 }
+```
 
-Chart + insights pattern (ALWAYS include title!):
-- Chart title: x=80, y=160, fontSize=26, fontWeight=700, {{secondary}}, height=30
-- Chart: x=80, y=200, width=880, height=480
-- Bullet insights: x=1040, y=200, tight vertical stack
+**Example 3 - Chart + Insights Split Layout:**
+```json
+// Chart on left
+{
+  "type": "Chart",
+  "props": {
+    "position": { "x": 80, "y": 200 },
+    "width": 800,   // ✅ 80+800=880
+    "height": 550,  // ✅ 200+550=750 < 1020
+    "chartType": "bar",
+    "data": [...],
+    "colors": ["{{primary}}", "{{secondary}}"]
+  }
+}
+// Insights on right (NO OVERLAP)
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 960, "y": 200 },  // ✅ 960 > 880 (no overlap!)
+    "width": 800,
+    "fontSize": 32,
+    "texts": [{ "text": "Key Finding 1", "style": {...} }],
+    "height": 37
+  }
+}
+```
+
+🚨 **VERIFICATION CHECKLIST (BEFORE FINALIZING):**
+1. ✅ Chart width + x ≤ 1840? (right edge check)
+2. ✅ Chart height + y ≤ 1020? (bottom edge check)
+3. ✅ Title positioned 36-50px above chart?
+4. ✅ Multiple charts have 60-80px gaps?
+5. ✅ No overlaps with other components?
+6. ✅ Chart size within mode limits (850×600 pres, 650×450 detailed)?
+
+❌ **COMMON MISTAKES:**
+- Chart too wide: width=1200 ❌ (exceeds 850px max)
+- Chart too tall: height=800 ❌ (exceeds 600px max)
+- Position + size exceeds canvas: x=1200, width=800 ❌ (1200+800=2000 > 1840!)
+- Overlapping charts: Chart1 ends at 700, Chart2 starts at 680 ❌ (overlap!)
+- No title: Chart without title above ❌ (ALWAYS include!)
+
+✅ **BEST PRACTICES:**
+• Single charts: Use 700-850px width × 450-600px height
+• Multiple charts: Divide horizontal space evenly with gaps
+• Always leave 80px margins on edges
+• Account for title space (add 40-50px above chart)
 
 ═══════════════════════════════════════════════════════════════════════════════
 🎯 TITLE SLIDE MASTERY
@@ -1568,15 +1746,15 @@ function render({{
 
 // ❌ WRONG - NEVER put const/let/var statements in destructuring
 function render({{
-  const availableWidth = props.width - padding * 2;  // ❌ CATASTROPHICALLY WRONG!
-  const availableHeight = props.height - padding * 2;props
+  const myVar = 32;  // ❌ CATASTROPHICALLY WRONG!
+  props
 }}) {{}}
 // ^ This will cause: SyntaxError: Unexpected token ')'
 
-// ❌ REAL ERROR EXAMPLE - THIS IS WHAT THE USER SAW:
+// ❌ REAL ERROR EXAMPLE:
 // "function render({{
-//   const availableWidth = props.width - padding * 2;
-//   const availableHeight = props.height - padding * 2;props}}){{"
+//   const myVar = 32;
+//   props}}){{"
 // ERROR: unexpected token ')' - BECAUSE VARIABLE DECLARATIONS ARE IN THE WRONG PLACE!
 ```
 
@@ -1617,8 +1795,7 @@ return React.createElement('div', {{
 }});
 
 // ❌ WRONG - Don't reference undefined variables
-const padding = 32; // Then later...
-const availableWidth = props.width - padding * 2; // If padding not defined, ERROR!
+const myWidth = props.width - padding * 2; // If padding not defined, ERROR!
 ```
 
 **4. EVENT HANDLERS (DECLARE AS FUNCTIONS):**
@@ -1840,7 +2017,10 @@ Choice: "trending-up" (emphasizes growth) OR "dollar-sign" (emphasizes money)
 ✨ CRITICAL CHECKS
 ═══════════════════════════════════════════════════════════════════════════════
 
-✅ Charts: ALWAYS add small bold title above (24-28pt presentation, 22-24pt detailed, {{secondary}})
+✅ Charts: ALWAYS add small bold title above (28-32pt presentation, 22-24pt detailed, {{secondary}})
+✅ Chart sizing: STRICT limits! Presentation ≤850×600px, Detailed ≤650×450px
+✅ Chart boundaries: ALWAYS verify x + width ≤ 1840 and y + height ≤ 1020
+✅ Chart spacing: 60-80px gaps between multiple charts, 80px edge margins
 ✅ Theme colors only ({{primary}}, {{secondary}}, {{accent}})
 ✅ NO Y-overlaps: Next Y = Current Y + Current Height + Gap
 ✅ Tables: backgroundColor=null, borderWidth=0
@@ -1854,6 +2034,13 @@ Choice: "trending-up" (emphasizes growth) OR "dollar-sign" (emphasizes money)
 ✅ CustomComponent: ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds
 ✅ CustomComponent dashboards: Use getContrastTextColor() for EACH colored section
 
+🎨 BRAND LOGO REMINDER (IF PROVIDED):
+✅ Include logo Image component on EVERY slide
+✅ Use EXACT logo URL (never "placeholder" for logos)
+✅ objectFit="contain", metadata: {kind: "logo", role: "brand_logo"}
+✅ Consistent corner placement (top-right recommended)
+✅ Size based on slide type: Title 240-280w, Content 140-180w, Data 110-140w
+
 Create slides that match the mode: WILD for presentation, STRUCTURED for detailed!
 """
 
@@ -1864,7 +2051,10 @@ def get_mode_specific_guidance(mode: str) -> str:
         return """DETAILED MODE ACTIVE - "The Analyst Approach"
 • Structured grid layouts, tight spacing (24-32px bullets)
 • AGGRESSIVE chart usage: 60-80% of content slides should have charts
-• Compact charts (500-700px width, 350-500px height) - ALWAYS add small bold title above (22-24pt, {{secondary}})
+• STRICT chart sizing: Single 500-650px width × 350-450px height (NEVER exceed 650×450!)
+  - Multiple charts: Each ≤600px width, heights ≤400px, 60-80px gaps
+  - ALWAYS verify: x + width ≤ 1840, y + height ≤ 1020 (canvas boundaries!)
+• ALWAYS add small bold title above charts (22-24pt, {{secondary}}, 36px above)
 • Tables: backgroundColor=null, borderWidth=0
 • Title Slides: BIG & BOLD (200-280pt), LEFT-ALIGNED (x=120, width=1700, textAlign=left) with clean solid/gradient background (NO images!)
 • Detailed subtitle: 42-54pt
@@ -1889,7 +2079,9 @@ def get_mode_specific_guidance(mode: str) -> str:
 • Hero statement (64-120pt) + 2-4 key supporting points (32-42pt) below
 • MINIMAL charts: Use charts on 1-2 key slides MAX (20-30% chart density)
 • Prioritize: Creative images > bold typography > custom components > background gradients > charts
-• When charts needed: Large & impactful (800-1000px width, 600-800px height) - ALWAYS add bold title above (28-32pt, {{secondary}})
+• STRICT chart sizing when needed: 700-850px width × 450-600px height (NEVER exceed 850×600!)
+  - ALWAYS verify: x + width ≤ 1840, y + height ≤ 1020 (canvas boundaries!)
+  - ALWAYS add bold title above (28-32pt, {{secondary}}, 40-50px above)
 • Tables: AVOID in presentation mode - use visuals instead
 • Title Slides: ABSOLUTELY MASSIVE (450-650pt), width=1700-1800, FILL THE PAGE! Clean gradient/solid backgrounds (NO images!). BIG subtitles (60-80pt)!
 • Content slides: Images with creative shapes (circular, pill, asymmetric radius), varying opacity for depth, spanning sections for rhythm

@@ -24,8 +24,8 @@ const SlideChartViewer: React.FC<SlideChartViewerProps> = ({ extractedData }) =>
         const { width, height } = containerRef.current.getBoundingClientRect();
         // Subtract padding
         setContainerSize({ 
-          width: Math.max(300, width - 16), 
-          height: Math.max(180, height - 16) 
+          width: Math.max(100, width - 16), 
+          height: Math.max(80, height - 16) 
         });
       }
     };

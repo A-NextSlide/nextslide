@@ -411,21 +411,16 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const addedId = addCustomTheme(builtTheme);
             const savedTheme = { ...builtTheme, id: addedId, isCustom: true } as any;
             setWorkspaceTheme(addedId);
-            
             // Capture as initial theme if this is the first theme we receive (branded theme)
-            const isFirstTheme = !initialTheme;
             setInitialTheme(prev => prev || savedTheme);
-            
-            // Only add to generated list if it's NOT the initial theme
-            if (!isFirstTheme) {
-              try {
-                setGeneratedThemes(prev => {
-                  const sig = themeSignature(savedTheme as any);
-                  const dedup = prev.filter(t => themeSignature(t as any) !== sig);
-                  return [savedTheme as any, ...dedup].slice(0, 24);
-                });
-              } catch {}
-            }
+            // Add to generated list (dedup by signature) to show in skinny vertical list
+            try {
+              setGeneratedThemes(prev => {
+                const sig = themeSignature(savedTheme as any);
+                const dedup = prev.filter(t => themeSignature(t as any) !== sig);
+                return [savedTheme as any, ...dedup].slice(0, 24);
+              });
+            } catch {}
             
             if (isRich || isThemeGenerated) {
               setThemeReady(true);

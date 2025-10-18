@@ -64,7 +64,7 @@ class ThemeDirector:
         font_result = await self._select_fonts(analysis, color_result, title, opts.variety_seed)
         
         # Step 4: Generate final theme
-        deck_theme = await self._compose_theme(color_result, font_result, analysis)
+        deck_theme = await self._compose_theme(color_result, font_result, analysis, deck_outline)
         
         # Step 5: Upload any scraped assets (logos)
         if color_result.get('metadata', {}).get('logo_url'):
@@ -440,7 +440,8 @@ class ThemeDirector:
         self,
         color_result: Dict[str, Any],
         font_result: Dict[str, Any],
-        analysis: Dict[str, Any]
+        analysis: Dict[str, Any],
+        deck_outline: Any = None
     ) -> Dict[str, Any]:
         """Compose final theme from colors and fonts.
 
@@ -573,6 +574,34 @@ class ThemeDirector:
             theme['metadata'] = {
                 'entity_name': analysis['entity_name']
             }
+        
+        # Include logo URL in theme if available
+        try:
+            # PRIORITY 1: Check for user-uploaded logo in deck_outline.stylePreferences.logoUrl
+            logo_url = None
+            if deck_outline and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                if hasattr(deck_outline.stylePreferences, 'logoUrl'):
+                    user_logo = deck_outline.stylePreferences.logoUrl
+                    if isinstance(user_logo, str) and user_logo.strip():
+                        logo_url = user_logo.strip()
+                        logger.info(f"[THEME DIRECTOR NEW] Using user-uploaded logo from stylePreferences: {logo_url[:60]}...")
+            
+            # PRIORITY 2: Fallback to scraped brand logo
+            if not logo_url:
+                logo_url = color_result.get('metadata', {}).get('logo_url')
+                if isinstance(logo_url, str) and logo_url.strip():
+                    logger.info(f"[THEME DIRECTOR NEW] Using scraped brand logo: {logo_url[:60]}...")
+            
+            if isinstance(logo_url, str) and logo_url.strip():
+                # Add to brandInfo
+                theme['brandInfo'] = {'logoUrl': logo_url}
+                
+                # Also add to color_palette.metadata for consistency
+                if 'metadata' not in theme['color_palette']:
+                    theme['color_palette']['metadata'] = {}
+                theme['color_palette']['metadata']['logo_url'] = logo_url
+        except Exception as e:
+            logger.warning(f"[THEME DIRECTOR NEW] Error setting logo in theme: {e}")
 
         return theme
     

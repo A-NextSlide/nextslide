@@ -161,11 +161,9 @@ CRITICAL CUSTOMCOMPONENT RULES:
 17. NO TRY/CATCH OR TIMERS - Do not use try/catch blocks or timers (setInterval/setTimeout/requestAnimationFrame) inside render
 18. NO STATE SHADOWING - Never redeclare a variable named 'state' inside render
      const padding = props.padding || 32; // FIRST LINE
-     const availableWidth = props.width - padding * 2;
-     const availableHeight = props.height - padding * 2;
      // If used:
      const rayCount = props.rayCount || 12;
-     const iconSize = Math.min(availableWidth, availableHeight) * 0.4;
+     const iconSize = Math.min(props.width, props.height) * 0.4;
      const primaryColor = props.primaryColor || props.color || '#FFD100';
      const secondaryColor = props.secondaryColor || '#4CAF50';
      const textColor = props.textColor || '#FFFFFF';
@@ -178,10 +176,8 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
  FIT AND RESPONSIVENESS (MANDATORY FOR CustomComponent):
  - CRITICAL FIRST LINES - ALWAYS DEFINE PADDING FIRST:
    const padding = props.padding || 32; // THIS MUST BE THE FIRST LINE
-   const availableWidth = props.width - padding * 2; // NOW you can use padding
-   const availableHeight = props.height - padding * 2;
  - CONTAINER SAFETY: Root style MUST also include maxWidth: '100%', maxHeight: '100%', display: 'flex', flexWrap: 'wrap', position: 'relative', boxSizing: 'border-box', overflow: 'hidden', alignItems: 'flex-start', alignContent: 'flex-start', justifyContent: 'flex-start', overflowWrap: 'anywhere', wordBreak: 'break-word', textOverflow: 'ellipsis', whiteSpace: 'normal'.
- - TEXT FIT: Use clamped sizes, e.g. const titleSize = Math.min(desiredSize, Math.max(16, Math.floor(availableWidth / (title.length * 0.6))));
+ - TEXT FIT: Use clamped sizes, e.g. const titleSize = Math.min(desiredSize, Math.max(16, Math.floor(props.width / (title.length * 0.6))));
  - LAYOUT STRUCTURE: Title at TOP spanning full width, content BELOW. Use flexDirection: 'column' for main container
  - LISTS/GRIDS: For multi-item content, use CSS Grid: display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px'
  - TOO MANY ITEMS: When content would overflow, reduce cols, shrink itemWidth, or cap visible items and add a subtle trailing indicator (e.g., '+3').
@@ -194,7 +190,7 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
     "position": {"x": 500, "y": 300},
     "width": 920,
     "height": 400,
-    "render": "function render({ props, state, updateState, id, isThumbnail }) {\\n  const padding = props.padding || 32;\\n  const availableWidth = props.width - padding * 2;\\n  const availableHeight = props.height - padding * 2;\\n  const value = props.value || '0';\\n  const label = props.label || '';\\n  const primaryColor = props.primaryColor || '#00F0FF';\\n  const fontFamily = props.fontFamily || 'Poppins';\\n  return React.createElement('div', {\\n    style: {\\n      width: '100%',\\n      height: '100%',\\n      maxWidth: '100%',\\n      maxHeight: '100%',\\n      boxSizing: 'border-box',\\n      overflow: 'hidden',\\n      display: 'flex',\\n      flexDirection: 'column',\\n      alignItems: 'center',\\n      justifyContent: 'center',\\n      padding: padding + 'px',\\n      fontFamily: fontFamily\\n    }\\n  }, [\\n    React.createElement('div', {\\n      key: 'value',\\n      style: {\\n        fontSize: Math.min(120, availableWidth / 4) + 'px',\\n        fontWeight: '900',\\n        color: primaryColor,\\n        textShadow: '0 4px 20px ' + primaryColor + '40'\\n      }\\n    }, value),\\n    React.createElement('div', {\\n      key: 'label',\\n      style: {\\n        fontSize: '18px',\\n        color: primaryColor,\\n        opacity: 0.8,\\n        marginTop: '16px'\\n      }\\n    }, label)\\n  ]);\\n}",
+    "render": "function render({ props, state, updateState, id, isThumbnail }) {\\n  const padding = props.padding || 32;\\n  const value = props.value || '0';\\n  const label = props.label || '';\\n  const primaryColor = props.primaryColor || '#00F0FF';\\n  const fontFamily = props.fontFamily || 'Poppins';\\n  return React.createElement('div', {\\n    style: {\\n      width: '100%',\\n      height: '100%',\\n      maxWidth: '100%',\\n      maxHeight: '100%',\\n      boxSizing: 'border-box',\\n      overflow: 'hidden',\\n      display: 'flex',\\n      flexDirection: 'column',\\n      alignItems: 'center',\\n      justifyContent: 'center',\\n      padding: padding + 'px',\\n      fontFamily: fontFamily\\n    }\\n  }, [\\n    React.createElement('div', {\\n      key: 'value',\\n      style: {\\n        fontSize: Math.min(120, props.width / 4) + 'px',\\n        fontWeight: '900',\\n        color: primaryColor,\\n        textShadow: '0 4px 20px ' + primaryColor + '40'\\n      }\\n    }, value),\\n    React.createElement('div', {\\n      key: 'label',\\n      style: {\\n        fontSize: '18px',\\n        color: primaryColor,\\n        opacity: 0.8,\\n        marginTop: '16px'\\n      }\\n    }, label)\\n  ]);\\n}",
     "props": {
       "value": "85%",
       "label": "Growth Rate",

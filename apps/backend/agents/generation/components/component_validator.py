@@ -1384,14 +1384,6 @@ class ComponentValidator:
 
             injections: List[str] = []
 
-            # Ensure availableWidth/availableHeight exist
-            needs_avail_w = not declared('availableWidth')
-            needs_avail_h = not declared('availableHeight')
-            if needs_avail_w:
-                injections.append("  const availableWidth = props.width - padding * 2;")
-            if needs_avail_h:
-                injections.append("  const availableHeight = props.height - padding * 2;")
-
             # rayCount (only if used)
             if token_used('rayCount') and not declared('rayCount'):
                 injections.append("  const rayCount = props.rayCount || 12;")

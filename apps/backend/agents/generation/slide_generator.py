@@ -723,7 +723,7 @@ class SlideGeneratorV2(ISlideGenerator):
         theme_dict_for_logo = context.theme.to_dict() if context.theme and hasattr(context.theme, 'to_dict') else (context.theme if context.theme else {})
 
         # Intelligent logo injection - create logo components if AI didn't include them
-        slide_data = self._inject_intelligent_logo(slide_data, slide_info, theme_dict_for_logo)
+        slide_data = self._inject_intelligent_logo(slide_data, slide_info, theme_dict_for_logo, context)
 
         # Model-only: skip auto chart/table labels
         
@@ -1523,22 +1523,63 @@ class SlideGeneratorV2(ISlideGenerator):
             
         return None
     
-    def _inject_intelligent_logo(self, slide_data: Dict[str, Any], slide_info: Dict[str, Any], theme: Dict[str, Any]) -> Dict[str, Any]:
+    def _inject_intelligent_logo(self, slide_data: Dict[str, Any], slide_info: Dict[str, Any], theme: Dict[str, Any], context: Optional[SlideGenerationContext] = None) -> Dict[str, Any]:
         """Intelligently inject logo based on slide type and context if AI didn't create one."""
         
         try:
-            # Get logo URL from theme
+            # Get logo URL - check ALL possible locations in priority order
             logo_url = None
-            if theme:
-                logo_url = theme.get('metadata', {}).get('logo_url')
+            
+            # PRIORITY 1: Check deck_outline.stylePreferences.logoUrl (user-uploaded logo)
+            if context and hasattr(context, 'deck_outline') and context.deck_outline:
+                if hasattr(context.deck_outline, 'stylePreferences') and context.deck_outline.stylePreferences:
+                    style_prefs = context.deck_outline.stylePreferences
+                    if hasattr(style_prefs, 'logoUrl'):
+                        logo_url = style_prefs.logoUrl
+                        if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                            logger.info(f"[INTELLIGENT LOGO] Using logo from deck_outline.stylePreferences.logoUrl: {logo_url[:60]}...")
+            
+            # PRIORITY 2: Check theme structure (generated or reconstructed theme)
+            if not logo_url and theme:
+                # 2a. Primary location: brandInfo.logoUrl (set by ThemeDirector)
+                brand_info = theme.get('brandInfo', {})
+                if brand_info and isinstance(brand_info, dict):
+                    logo_url = brand_info.get('logoUrl')
+                    if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                        logger.info(f"[INTELLIGENT LOGO] Using logo from theme.brandInfo.logoUrl: {logo_url[:60]}...")
+                
+                # 2b. Fallback: color_palette.metadata.logo_url
                 if not logo_url:
-                    # Try alternative paths
-                    style_prefs = theme.get('stylePreferences', {})
-                    if style_prefs:
-                        logo_url = style_prefs.get('logoUrl')
+                    color_palette = theme.get('color_palette', {})
+                    if color_palette and isinstance(color_palette, dict):
+                        metadata = color_palette.get('metadata', {})
+                        if metadata and isinstance(metadata, dict):
+                            logo_url = metadata.get('logo_url')
+                            if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                                logger.info(f"[INTELLIGENT LOGO] Using logo from color_palette.metadata.logo_url: {logo_url[:60]}...")
+                
+                # 2c. Fallback: top-level metadata.logo_url
+                if not logo_url:
+                    metadata = theme.get('metadata', {})
+                    if metadata and isinstance(metadata, dict):
+                        logo_url = metadata.get('logo_url')
+                        if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                            logger.info(f"[INTELLIGENT LOGO] Using logo from metadata.logo_url: {logo_url[:60]}...")
+                
+                # 2d. Fallback: theme.brand.logo_url
+                if not logo_url:
+                    brand = theme.get('brand', {})
+                    if brand and isinstance(brand, dict):
+                        logo_url = brand.get('logo_url') or brand.get('logoUrl')
+                        if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                            logger.info(f"[INTELLIGENT LOGO] Using logo from theme.brand: {logo_url[:60]}...")
+            
+            # Clean and validate logo URL
+            if logo_url and isinstance(logo_url, str):
+                logo_url = logo_url.strip()
             
             if not logo_url:
-                logger.debug("[INTELLIGENT LOGO] No logo URL found in theme")
+                logger.debug("[INTELLIGENT LOGO] No logo URL found in any location")
                 return slide_data
             
             # Check if logo component already exists

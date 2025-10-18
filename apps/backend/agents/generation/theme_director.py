@@ -67,7 +67,7 @@ class ThemeDirector:
         font_result = await self._select_fonts(analysis, color_result, title, opts.variety_seed)
         
         # Step 4: Generate final theme
-        deck_theme = await self._compose_theme(color_result, font_result, analysis)
+        deck_theme = await self._compose_theme(color_result, font_result, analysis, deck_outline)
         
         # Step 5: Upload any scraped assets (logos)
         if color_result.get('metadata', {}).get('logo_url'):
@@ -1660,7 +1660,8 @@ Ensure structural elements match the deck's maturity and intended use.'''
         self,
         color_result: Dict[str, Any],
         font_result: Dict[str, Any],
-        analysis: Dict[str, Any]
+        analysis: Dict[str, Any],
+        deck_outline: Any = None
     ) -> Dict[str, Any]:
         """Compose final theme from colors and fonts."""
         colors = color_result.get('colors', [])
@@ -1810,7 +1811,22 @@ Ensure structural elements match the deck's maturity and intended use.'''
         # Expose logo URL and aspect at a stable top-level place for the frontend ThemeTab
         try:
             palette_meta = theme.get('color_palette', {}).get('metadata', {}) or {}
-            logo_url_top = (color_result.get('metadata') or {}).get('logo_url') or palette_meta.get('logo_url')
+            
+            # PRIORITY 1: Check for user-uploaded logo in deck_outline.stylePreferences.logoUrl
+            logo_url_top = None
+            if deck_outline and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                if hasattr(deck_outline.stylePreferences, 'logoUrl'):
+                    user_logo = deck_outline.stylePreferences.logoUrl
+                    if isinstance(user_logo, str) and user_logo.strip():
+                        logo_url_top = user_logo.strip()
+                        logger.info(f"[THEME DIRECTOR] Using user-uploaded logo from stylePreferences: {logo_url_top[:60]}...")
+            
+            # PRIORITY 2: Fallback to scraped brand logo
+            if not logo_url_top:
+                logo_url_top = (color_result.get('metadata') or {}).get('logo_url') or palette_meta.get('logo_url')
+                if isinstance(logo_url_top, str) and logo_url_top.strip():
+                    logger.info(f"[THEME DIRECTOR] Using scraped brand logo: {logo_url_top[:60]}...")
+            
             if isinstance(logo_url_top, str) and logo_url_top.strip():
                 # Include aspect information if known
                 aspect_in_meta = (color_result.get('metadata') or {}).get('logo_aspect') or palette_meta.get('logo_aspect')
@@ -1821,14 +1837,20 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 if aspect_in_meta:
                     brand_info['logoAspect'] = aspect_in_meta
                 theme['brandInfo'] = brand_info
+                
+                # Also add to color_palette.metadata for consistency
+                if 'metadata' not in theme['color_palette']:
+                    theme['color_palette']['metadata'] = {}
+                theme['color_palette']['metadata']['logo_url'] = logo_url_top
+                
                 # Also copy back aspect info to palette metadata for downstream consumers if missing
                 try:
                     if aspect_in_meta and 'logo_aspect' not in palette_meta:
                         theme['color_palette']['metadata']['logo_aspect'] = aspect_in_meta
                 except Exception:
                     pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[THEME DIRECTOR] Error setting logo in theme: {e}")
 
         # Attach concise human-readable rationale for palette selection
         try:

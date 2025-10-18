@@ -32,7 +32,7 @@ IMPORTANT RULES:
 6. Use theme colors consistently and position components to avoid overlap
 7. NO emojis anywhere (titles, text, CustomComponents)
 8. CustomComponent render must be a SINGLE escaped string with \n (no raw newlines, no backticks/template literals). The root element must have width/height 100%, maxWidth/maxHeight 100%, boxSizing 'border-box', overflow 'hidden', display 'flex', flexDirection 'column', flexWrap 'nowrap', position 'relative'. Compute internal layout to FIT within props.width/height.
-9. NO UNDECLARED VARIABLES in CustomComponent code. Always declare variables you reference. Include, in order: const padding = props.padding || 32; const availableWidth = props.width - padding * 2; const availableHeight = props.height - padding * 2; If used, also declare: const rayCount = props.rayCount || 12; const iconSize = Math.min(availableWidth, availableHeight) * 0.4; const primaryColor = props.primaryColor || props.color || '#FFD100'; const secondaryColor = props.secondaryColor || '#4CAF50'; const textColor = props.textColor || '#FFFFFF'; const fontFamily = props.fontFamily || 'Poppins'.
+9. NO UNDECLARED VARIABLES in CustomComponent code. Always declare variables you reference. Include, in order: const padding = props.padding || 32; If used, also declare: const rayCount = props.rayCount || 12; const iconSize = Math.min(props.width, props.height) * 0.4; const primaryColor = props.primaryColor || props.color || '#FFD100'; const secondaryColor = props.secondaryColor || '#4CAF50'; const textColor = props.textColor || '#FFFFFF'; const fontFamily = props.fontFamily || 'Poppins'.
 
 LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
 - Do NOT import/require or use any UI frameworks. No JSX. No CSS frameworks.

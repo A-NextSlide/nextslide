@@ -83,8 +83,8 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
       const { width, height } = entries[0].contentRect;
 
       if (width > 0 && height > 0) {
-        const newWidth = Math.max(width, 200);
-        const newHeight = Math.max(height, 200);
+        const newWidth = Math.max(width, 50);
+        const newHeight = Math.max(height, 50);
         
         // Update dimensions
         setDimensions({
@@ -117,8 +117,8 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
       if (hasMeasured.current || !containerRef.current) return;
       const el = containerRef.current;
       const rect = el.getBoundingClientRect();
-      const width = Math.max(rect.width || el.clientWidth || el.offsetWidth || 200, 200);
-      const height = Math.max(rect.height || el.clientHeight || el.offsetHeight || 200, 200);
+      const width = Math.max(rect.width || el.clientWidth || el.offsetWidth || 50, 50);
+      const height = Math.max(rect.height || el.clientHeight || el.offsetHeight || 50, 50);
       if (width > 0 && height > 0) {
         setDimensions({ width, height });
         if (!hasMeasured.current) {

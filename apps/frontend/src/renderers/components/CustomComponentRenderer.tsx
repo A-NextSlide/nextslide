@@ -382,7 +382,51 @@ export const CustomComponentRenderer: React.FC<{
       }
     } catch (_) { /* noop */ }
 
-    // 2. Accept trailing parameters after the destructured object (e.g., ", instanceId", ", containerWidth, containerHeight").
+    // 2. Repair malformed parameter blocks that accidentally contain code (e.g., "function render({ const padding = 24; props }){ ... }")
+    //    Strategy: detect the render signature, extract everything between the first '(' and matching ')'.
+    //    If the parameter block contains semicolons, 'const', 'let', 'var', or assignment operators that are not part of an object pattern,
+    //    move those lines into a prelude inserted at the top of the function body, and clean the parameter list to the canonical shape.
+    try {
+      const renderSigPattern = /function\s+render\s*\(([^)]*)\)\s*\{/m;
+      const sigMatch = unescapedCode.match(renderSigPattern);
+      if (sigMatch) {
+        const rawParams = sigMatch[1] || '';
+        const suspicious = /\b(const|let|var)\b|;|=/.test(rawParams) && !/\{\s*props\s*(?:,[^}]*)?\}/.test(rawParams);
+        if (suspicious) {
+          // Extract any code-ish fragments to move into body prelude
+          const preludeLines: string[] = [];
+          // Grab things like "const x = ...;", "let x=...;", "var x=...;", and plain assignments "x = ...;"
+          const declRegex = /(const|let|var)\s+[^;]+;?/g;
+          let m: RegExpExecArray | null;
+          while ((m = declRegex.exec(rawParams)) !== null) {
+            preludeLines.push(m[0].trim().replace(/^(?:const|let)\s+/, 'var ').replace(/;+$/, ';'));
+          }
+          // Also capture bare assignments separated by semicolons
+          rawParams.split(';').forEach(seg => {
+            const s = seg.trim();
+            if (!s) return;
+            if (!/^(const|let|var)\b/.test(s) && /\w\s*=/.test(s)) {
+              preludeLines.push(s.replace(/;+$/, '') + ';');
+            }
+          });
+
+          // Replace the entire signature with canonical signature
+          unescapedCode = unescapedCode.replace(renderSigPattern, (_all) => {
+            return 'function render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight }) {';
+          });
+
+          // Insert prelude at the start of the function body right after opening brace
+          if (preludeLines.length > 0) {
+            unescapedCode = unescapedCode.replace(/function\s+render\s*\(\{[\s\S]*?\}\)\s*\{/, (hdr) => {
+              const prelude = '\n  ' + preludeLines.join('\n  ') + '\n';
+              return hdr + prelude;
+            });
+          }
+        }
+      }
+    } catch (_) { /* noop */ }
+
+    // 3. Accept trailing parameters after the destructured object (e.g., ", instanceId", ", containerWidth, containerHeight").
     try {
       unescapedCode = unescapedCode.replace(
         /function\s+render\s*\(\{[\s\S]*?\}\s*(?:,[^)]*)?\)/,

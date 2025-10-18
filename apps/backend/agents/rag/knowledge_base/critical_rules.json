@@ -470,18 +470,19 @@
   },
   "title_slide_requirements": {
     "mandatory": [
-      "HERO IMAGE (full-bleed 1920×1080 preferred)",
       "LARGE TYPOGRAPHY (180-300pt for impact)",
       "CRITICAL: Split title into MULTIPLE TiptapTextBlocks",
       "Example: 'The Future' → Block 1: 'The' (96pt), Block 2: 'FUTURE' (280pt)",
       "Use different colors/sizes for each word",
       "Dramatic gradient overlays for text contrast",
       "Consider off-center positioning",
-      "TITLE MUST OVERLAP BACKGROUND (image/gradient). Use overlays to ensure readability",
-      "DO NOT use 50/50 split on title slides unless explicitly requested",
+      "IMAGE PLACEMENT: Full-height vertical strip on left OR right side (400-600px wide, 0-1080px height)",
+      "Image should NOT overlap title text - use side panel layout",
+      "Text occupies remaining space with clear separation from image",
       "Include subtle metadata row when available: presenter • organization • date (24–48pt, muted color)",
       "Alignment: Support centered OR left-aligned hero titles based on vibe/context",
-      "Optional logo placement: small (80–160px) in a bottom corner with clearspace"
+      "Optional logo placement: small (80–160px) in a bottom corner with clearspace",
+      "Sources/citations: ALWAYS at bottom (y=980-1020), 18-22pt, muted color"
     ],
     "layout_options": {
       "centered_hero": {
@@ -515,32 +516,35 @@
   },
   "data_slide_requirements": {
     "mandatory": [
-      "CRITICAL: Make data BEAUTIFUL and IMPACTFUL",
-      "Charts are just ONE way - consider creative alternatives",
-      "If using chart: Modern styling with gradients, animations",
-      "ALWAYS complement with HUGE typography for key numbers",
-      "Use CustomComponents for innovative data viz"
+      "CRITICAL: Make data BEAUTIFUL and IMPACTFUL with LARGE stat cards",
+      "PRIORITIZE stat cards over huge images - images should be minimal/absent",
+      "Create BIG, CREATIVE stat displays using TiptapTextBlock and CustomComponents",
+      "Stats should be 400-600px wide, prominently placed",
+      "If using chart: Keep it SMALLER (400-500px) to leave room for stat cards",
+      "Use CustomComponents for innovative data viz and interactive stat cards"
     ],
-    "creative_data_displays": [
-      "Split numbers into multiple TiptapTextBlocks with size/color hierarchy",
-      "Use kpi_cards CustomComponent for metric dashboards",
-      "animated_progress_rings for percentages and progress",
-      "comparison_bars for before/after scenarios",
-      "Combine tiny chart (400x300) with MASSIVE stat display",
-      "Use gradient-filled shapes as backgrounds for numbers"
+    "creative_stat_cards": [
+      "Large stat cards: 400-600px wide, 300-400px tall, with gradient backgrounds",
+      "Use TiptapTextBlock for number (200-300pt) + label (48-72pt) in single card",
+      "CustomComponents for animated counters, progress rings, comparison grids",
+      "Multiple stat cards in grid: 2x2 or 3-across layouts",
+      "Each stat card should use Shape with gradient fill + TiptapTextBlock overlay",
+      "Stat cards more important than decorative images",
+      "Use icons in stat cards for context (trending-up, dollar-sign, users, etc)"
     ],
-    "typography_for_data": [
-      "Main number: 200-300pt in accent color",
-      "Descriptor: 72-96pt in secondary color",
-      "Context: 48pt in muted color",
-      "NEVER put important numbers in small text",
-      "Use fontWeight: 'bold' for impact"
+    "typography_for_stats": [
+      "Main number: 200-350pt, fontWeight 900, accent color",
+      "Descriptor/label: 48-72pt, secondary color, uppercase with letter-spacing",
+      "Context text: 32-40pt, primary text color",
+      "NEVER use images when stat cards would be more impactful",
+      "Stat cards should dominate the slide, not background images"
     ],
     "layout_patterns": [
-      "Hero stat center stage with supporting viz",
-      "3-stat dashboard with size hierarchy",
-      "Before/after split with dramatic contrast",
-      "Trend visualization with key metric highlighted"
+      "Hero stat card center (600x400) with 2 smaller stats below",
+      "3 stat cards in row (each 550x350)",
+      "2x2 grid of stat cards (each 400x250)",
+      "Large stat card left, small chart right for context",
+      "Stats above fold, chart/viz as supporting element below"
     ]
   },
   "stat_emphasis": {

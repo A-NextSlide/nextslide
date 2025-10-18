@@ -546,8 +546,6 @@ class AISlideGenerator:
         return (
             "function render({ props }) {\n"
             "  const padding = props.padding || 32;\n"
-            "  const availableWidth = Math.max(0, (props.width || 0) - padding * 2);\n"
-            "  const availableHeight = Math.max(0, (props.height || 0) - padding * 2);\n"
             "  const primaryColor = props.primaryColor || props.color || \"#3B4CCA\";\n"
             "  const accentColor = props.accentColor || props.backgroundColor || \"#FFDE00\";\n"
             "  const textColor = props.textColor || \"#1F2937\";\n"
