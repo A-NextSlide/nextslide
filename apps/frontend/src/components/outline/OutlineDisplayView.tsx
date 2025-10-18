@@ -1751,21 +1751,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                 </div>
                               )}
                             </div>
-                            {/* Right: Skinny vertical list of generated themes */}
-                            <div className="h-full p-2 overflow-hidden">
-                              <div className="text-[10px] mb-1 opacity-70">Themes</div>
-                              <div className="h-[calc(100%-16px)]">
-                                <ScrollArea className="h-full w-full">
-                                  <div className="flex flex-col gap-2 pr-1">
-                                    {(generatedThemes.length ? generatedThemes : availableThemes).map((th, idx) => (
-                                      <div key={(th.id || idx) + '-' + idx}>
-                                        {renderMiniThemePreview(th as any, () => applyThemeSelection(th as any), (th as any)?.id === workspaceThemeId)}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </ScrollArea>
-                              </div>
-                            </div>
                             {/* Floating editors */}
                             {fontEditor?.open && (
                               <div
