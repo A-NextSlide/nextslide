@@ -9,3 +9,8 @@ services/debug_json_parse.txt
 .venv/
 venv/
 .venv311/
+*.bak
+*.backup
+**/venv/
+**/.venv/
+path/
