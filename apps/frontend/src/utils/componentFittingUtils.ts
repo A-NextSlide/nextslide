@@ -74,7 +74,7 @@ export function calculateOptimalFontSize(
   // Binary search for optimal font size
   let low = minFontSize;
   let high = Math.min(maxFontSize, currentFontSize);
-  let optimal = currentFontSize;
+  let optimal = minFontSize; // Start with minimum as fallback
 
   // Store original font size
   const originalFontSize = element.style.fontSize;
@@ -87,11 +87,13 @@ export function calculateOptimalFontSize(
     element.offsetHeight;
 
     if (isTextOverflowing(element)) {
+      // Text overflows at this size, try smaller
       high = mid - 1;
-      optimal = mid - 1;
+      // Don't update optimal - we haven't found a size that fits yet
     } else {
-      low = mid + 1;
+      // Text fits at this size! Update optimal and try larger
       optimal = mid;
+      low = mid + 1;
     }
   }
 

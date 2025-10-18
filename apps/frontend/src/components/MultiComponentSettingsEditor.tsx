@@ -75,29 +75,20 @@ const MultiComponentSettingsEditor: React.FC<MultiComponentSettingsEditorProps> 
   const componentDefinition = componentType ? registry.getDefinition(componentType) : null;
   const editorSchema = componentDefinition?.schema?.properties || {};
   
-  // Get common properties (properties that exist on all selected components)
+  // Get common properties (intersection of keys and equal values)
   const getCommonProps = useCallback(() => {
     if (components.length === 0) return {};
-    
-    const firstProps = components[0].props;
+
+    // Intersect keys across all components to avoid leaking type-specific props
+    const keySets = components.map(c => new Set(Object.keys(c.props || {})));
+    const intersection = Array.from(keySets[0]).filter(k => keySets.every(s => s.has(k)));
+
     const commonProps: Record<string, any> = {};
-    
-    // Check each property of the first component
-    Object.keys(firstProps).forEach(key => {
-      // Check if all components have this property and the same value
-      const allSameValue = components.every(comp => {
-        return comp.props[key] !== undefined && 
-               JSON.stringify(comp.props[key]) === JSON.stringify(firstProps[key]);
-      });
-      
-      if (allSameValue) {
-        commonProps[key] = firstProps[key];
-      } else {
-        // Use undefined to indicate mixed values
-        commonProps[key] = undefined;
-      }
+    intersection.forEach(key => {
+      const firstVal = components[0].props[key];
+      const allSame = components.every(c => JSON.stringify(c.props[key]) === JSON.stringify(firstVal));
+      commonProps[key] = allSame ? firstVal : undefined;
     });
-    
     return commonProps;
   }, [components]);
   
@@ -109,19 +100,17 @@ const MultiComponentSettingsEditor: React.FC<MultiComponentSettingsEditorProps> 
   
   // Update all selected components
   const handleUpdateAll = (propUpdates: Record<string, any>) => {
+    // Only apply keys that exist on every component when mixed types
+    const updatesKeys = Object.keys(propUpdates);
+    const allowedKeys = isSameType
+      ? updatesKeys
+      : updatesKeys.filter(key => components.every(c => key in (c.props || {})));
+
     components.forEach(component => {
-      const updates = {
-        props: {
-          ...component.props,
-          ...propUpdates
-        }
-      };
-      
-      if (onUpdate) {
-        onUpdate(component.id, updates);
-      } else {
-        updateComponent(component.id, updates);
-      }
+      const filtered: Record<string, any> = {};
+      allowedKeys.forEach(k => { filtered[k] = propUpdates[k]; });
+      const updates = { props: { ...component.props, ...filtered } };
+      if (onUpdate) onUpdate(component.id, updates); else updateComponent(component.id, updates);
     });
   };
   

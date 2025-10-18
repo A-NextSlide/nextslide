@@ -506,7 +506,16 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         `,
         'data-component-id': component.id,
       },
-      handleKeyDown: () => false,
+      handleKeyDown: (view, event) => {
+        // Allow Enter for newlines and all other text editing keys
+        // Only block if we want to handle specific keys differently
+        if (event.key === 'Escape') {
+          // Exit edit mode on Escape
+          setTextEditingGlobal(false);
+          return true; // Handled - prevent default
+        }
+        return false; // Not handled - allow default behavior
+      },
     },
     onCreate: ({ editor }) => {
       editor.commands.setTextAlign(alignment);

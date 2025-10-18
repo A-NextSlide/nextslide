@@ -203,7 +203,8 @@ export function useComponentDrag({
         }
       }
       
-      const dragStartEvent = new CustomEvent('component:dragstart', {
+      // Emit standardized selection drag event for overlays to sync
+      const dragStartEvent = new CustomEvent('selection:drag-start', {
         bubbles: true,
         detail: {
           componentId: component.id,

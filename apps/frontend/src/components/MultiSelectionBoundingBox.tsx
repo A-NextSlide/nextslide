@@ -121,6 +121,29 @@ const MultiSelectionBoundingBox: React.FC<MultiSelectionBoundingBoxProps> = ({
         containerRef.current.style.setProperty('--drag-y', `${normalizedDy}px`);
         containerRef.current.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))`;
       }
+
+      // Also move each selected component wrapper instantly via CSS vars for perfect sync
+      // This matches useComponentDrag's approach and prevents visual lag
+      try {
+        const parentRect = slideElement.getBoundingClientRect();
+        const parentScaleX = parentRect.width / ((slideElement as HTMLElement).offsetWidth || 1);
+        const parentScaleY = parentRect.height / ((slideElement as HTMLElement).offsetHeight || 1);
+        const normalizedDx = displayDeltaX / (parentScaleX || 1);
+        const normalizedDy = displayDeltaY / (parentScaleY || 1);
+        selectedComponents.forEach((comp) => {
+          const el = document.querySelector(`[data-component-id="${comp.id}"]`) as HTMLElement | null;
+          if (el) {
+            el.style.setProperty('--drag-x', `${normalizedDx}px`);
+            el.style.setProperty('--drag-y', `${normalizedDy}px`);
+            // Keep transform string consistent with ComponentRenderer
+            const rotation = (comp.props.rotation || 0);
+            const tf = el.style.transform || '';
+            if (!tf.includes('var(--drag-x')) {
+              el.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) rotate(${rotation}deg)`;
+            }
+          }
+        });
+      } catch {}
       
       // Update all selected components
       dragStartPositionsRef.current.forEach((startPos, componentId) => {
@@ -182,6 +205,18 @@ const MultiSelectionBoundingBox: React.FC<MultiSelectionBoundingBoxProps> = ({
         containerRef.current.style.removeProperty('--drag-y');
         containerRef.current.style.transform = '';
       }
+
+      // Clear CSS drag offsets on all selected component wrappers
+      try {
+        selectedComponents.forEach((comp) => {
+          const el = document.querySelector(`[data-component-id="${comp.id}"]`) as HTMLElement | null;
+          if (el) {
+            el.style.removeProperty('--drag-x');
+            el.style.removeProperty('--drag-y');
+            // Leave transform to renderer default which uses var(--drag-*)
+          }
+        });
+      } catch {}
       
       // Dispatch drag end event
       document.dispatchEvent(new CustomEvent('component:dragend'));

@@ -81,17 +81,8 @@ export class ComponentOptimizationService {
   private async optimizeTextComponent(component: ComponentInstance): Promise<any> {
     const props = { ...component.props };
 
-    // CRITICAL FIX: Backend already handles all font sizing with adaptive sizer
-    // Frontend optimization is disabled to prevent resize-on-click and double-optimization
-    // If metadata.fontSizingApplied exists, backend already calculated the optimal size
-    if (props.fontOptimized || props.metadata?.fontSizingApplied) {
-      // Already optimized by backend, skip frontend optimization entirely
-      return props;
-    }
-
-    // ALSO skip if component has fontSize - this means backend sized it
-    if (props.fontSize) {
-      // Backend already calculated size, don't override it
+    // If already optimized by frontend, skip re-optimization
+    if (props.fontOptimized) {
       return props;
     }
 
@@ -121,8 +112,19 @@ export class ComponentOptimizationService {
       
       if (isOverflowing) {
         const currentSize = parseInt(props.fontSize || '16');
-        // Set minimum font size higher for Shape components to maintain readability
-        const minFontSize = component.type === 'Shape' ? 12 : 8;
+        // Set minimum font size based on component type and current size
+        // For very large fonts (titles), allow more aggressive shrinking
+        let minFontSize: number;
+        if (currentSize >= 100) {
+          // Large titles can go down to 6px if needed
+          minFontSize = 6;
+        } else if (component.type === 'Shape') {
+          // Shape text minimum
+          minFontSize = 8;
+        } else {
+          // Regular text minimum
+          minFontSize = 6;
+        }
         const optimalSize = calculateOptimalFontSize(textElement, minFontSize, currentSize, currentSize);
         
         console.log(`[FontOptimization] Text overflowing, reducing font size`, {
