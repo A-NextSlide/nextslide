@@ -154,7 +154,11 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
       updateDraftComponent(currentSlide.id, componentId, updates, skipHistory);
       // Force a lightweight re-render via RAF so live controls (color sliders) reflect immediately
       // This is already batched by pendingUpdateRef to avoid spamming
-      forceComponentUpdate();
+      // CRITICAL: Skip force update during text editing (skipHistory=true) to prevent
+      // re-render that would trigger sync effect before the save propagates through the store
+      if (!skipHistory) {
+        forceComponentUpdate();
+      }
     } else {
       // When not editing, update the slide directly
       // This should be rare/unused but included for completeness

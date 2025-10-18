@@ -122,7 +122,8 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
                                       .map(segment => transformNode(segment))
                                       .filter((n): n is JSONContent => n !== null); // Type guard filter
         if (content.length === 0) {
-            content.push({ type: 'text', text: ' ' });
+          // Drop empty paragraphs to avoid stray blank lines
+          return null;
         }
         return { type: 'paragraph', content };
       }
@@ -132,7 +133,8 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
                                       .map(segment => transformNode(segment))
                                       .filter((n): n is JSONContent => n !== null);
         if (content.length === 0) {
-            content.push({ type: 'text', text: ' ' });
+          // Drop empty headings
+          return null;
         }
         return { 
           type: 'heading', 
@@ -145,6 +147,9 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
         const content: JSONContent[] = (listNode.content || []) // Specify JSONContent[]
                                     .map(item => transformNode(item))
                                     .filter((n): n is JSONContent => n !== null); // Type guard filter
+        if (content.length === 0) {
+          return null;
+        }
         return { type: 'bulletList', content };
       }
       case 'orderedList': {
@@ -152,6 +157,9 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
         const content: JSONContent[] = (listNode.content || [])
                                     .map(item => transformNode(item))
                                     .filter((n): n is JSONContent => n !== null);
+        if (content.length === 0) {
+          return null;
+        }
         return { type: 'orderedList', content };
       }
       case 'listItem': {
@@ -160,7 +168,8 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
                                      .map(itemContent => transformNode(itemContent))
                                      .filter((n): n is JSONContent => n !== null);
          if (content.length === 0) {
-             content.push({ type: 'paragraph', content: [{ type: 'text', text: ' ' }] });
+           // Drop empty list items
+           return null;
          }
          return { type: 'listItem', content };
       }
@@ -215,10 +224,14 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
           }
         }
 
-        // Ensure empty strings become spaces for Tiptap/Prosemirror
-        const tiptapText = textSegment.text === '' ? ' ' : textSegment.text;
+        // Drop text nodes that are purely whitespace and have no marks
+        const originalText = textSegment.text || '';
+        const isOnlyWhitespace = originalText.trim().length === 0;
+        if (isOnlyWhitespace && marks.length === 0) {
+          return null;
+        }
 
-        const textNode: JSONContent = { type: 'text', text: tiptapText };
+        const textNode: JSONContent = { type: 'text', text: originalText };
         if (marks.length > 0) {
           textNode.marks = marks;
         }
@@ -269,9 +282,9 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
           .map(childNode => transformTiptapNode(childNode) as StyledTextSegment)
           .filter(segment => segment !== null && segment.type === 'text'); // Only allow text segments directly in paragraphs for our format
 
-        // If paragraph ended up empty (e.g., contained only unsupported nodes), add an empty text segment
-        if (content.length === 0) {
-            content.push({ type: 'text', text: '', style: {} });
+        // Drop empty paragraphs to avoid adding blank lines to our model format
+        if (content.length === 0 || content.every(seg => (seg.text || '').trim() === '')) {
+          return null;
         }
         return { type: 'paragraph', content };
       }
@@ -281,9 +294,9 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
           .map(childNode => transformTiptapNode(childNode) as StyledTextSegment)
           .filter(segment => segment !== null && segment.type === 'text');
           
-        // If heading ended up empty, add an empty text segment
-        if (content.length === 0) {
-            content.push({ type: 'text', text: '', style: {} });
+        // Drop empty headings
+        if (content.length === 0 || content.every(seg => (seg.text || '').trim() === '')) {
+          return null;
         }
         return { type: 'heading', level, content };
       }
@@ -291,12 +304,18 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
         const content: CustomListItem[] = (node.content || [])
           .map(childNode => transformTiptapNode(childNode) as CustomListItem)
           .filter(item => item !== null && item.type === 'listItem'); // Only listItems in bulletList
+        if (content.length === 0) {
+          return null;
+        }
         return { type: 'bulletList', content };
       }
       case 'orderedList': {
         const content: CustomListItem[] = (node.content || [])
           .map(childNode => transformTiptapNode(childNode) as CustomListItem)
           .filter(item => item !== null && item.type === 'listItem');
+        if (content.length === 0) {
+          return null;
+        }
         return { type: 'orderedList', content };
       }
       case 'listItem': {
@@ -308,10 +327,9 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
              item !== null && (item.type === 'paragraph' || item.type === 'bulletList' || item.type === 'orderedList')
            );
 
-         // If list item ended up empty, add an empty paragraph
+         // Drop empty list items
          if (content.length === 0) {
-            // Ensure the default content matches the allowed types (CustomParagraph)
-            content.push({ type: 'paragraph', content: [{ type: 'text', text: '', style: {} }] });
+           return null;
          }
          // Return type now matches the updated CustomListItem definition
          return { type: 'listItem', content };
@@ -355,13 +373,9 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
             }
           });
         }
-        // Don't add placeholder spaces (' ') as segments if they were just for Tiptap structure
-        // Only return actual content or intentionally empty segments if the original node.text was empty
-        if (node.text === ' ' && (!node.marks || node.marks.length === 0)) {
-            // Heuristic: If it's just a space with no marks, it might be structural, ignore it unless it's the *only* thing.
-            // The filtering in parent nodes should handle emptiness better.
-            // Let's return it for now and filter later if needed.
-             // return null; // Potential to ignore structural spaces
+        // Drop structural spaces with no marks
+        if ((node.text || '').trim().length === 0 && (!node.marks || node.marks.length === 0)) {
+          return null;
         }
         return { type: 'text', text: node.text, style };
       }

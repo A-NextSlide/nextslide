@@ -138,6 +138,11 @@ export function useComponentSelection({
     
     // Check if editing is enabled and the component type is text-editable
     if (isEditing && ['TiptapTextBlock'].includes(componentType)) {
+      // Don't re-enter text edit mode if already editing
+      if (isTextEditingGlobal) {
+        return;
+      }
+      
       // Ensure the component is selected before entering text edit mode
       if (!isSelected) {
         onSelect(componentId);

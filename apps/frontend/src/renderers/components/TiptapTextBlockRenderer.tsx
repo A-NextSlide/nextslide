@@ -26,6 +26,7 @@ import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { FontSize } from '@/extensions/FontSize';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
+import { getSlideContainerWidth, isInEditMode } from '../../utils/slideContainerUtils';
 import '../../styles/TiptapStyles.css';
 
 interface TiptapTextBlockRendererProps extends RendererProps {
@@ -58,7 +59,15 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const isTextEditingGlobal = useEditorSettingsStore(state => state.isTextEditing);
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);
   const setActiveTiptapEditor = useEditorStore((state) => state.setActiveTiptapEditor);
-  const isCurrentlyTextEditing = isTextEditingGlobal && isSelected;
+  
+  // =================================================================
+  // TEXT EDITING STATE MANAGEMENT
+  // =================================================================
+  // Track if THIS specific component is being edited. This decouples text editing
+  // from the isSelected prop, preventing premature exit when selection changes.
+  // Set to true on double-click, cleared on blur/escape.
+  const isThisComponentEditingRef = useRef(false);
+  const isCurrentlyTextEditing = isTextEditingGlobal && isThisComponentEditingRef.current;
 
   // =================================================================
   // IDENTITY TRACKING - Prevent cross-component/slide writes
@@ -80,39 +89,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const NATIVE_WIDTH = 1920; // Width at which fonts are designed by backend
   const DEFAULT_SLIDE_DISPLAY_WIDTH = 950; // Default rendered width
 
-  const [slideWidth, setSlideWidth] = React.useState(() => {
-    if (isThumbnail) return NATIVE_WIDTH;
-    
-    // Try to get the actual container width immediately
-    const container = document.getElementById('slide-display-container');
-    if (container) {
-      // Check if we're in edit mode
-      let parent = container.parentElement;
-      let isInEditMode = false;
-      let maxLevels = 5;
-      
-      while (parent && maxLevels > 0) {
-        const transform = window.getComputedStyle(parent).transform;
-        if (transform && transform !== 'none' && transform.includes('0.92')) {
-          isInEditMode = true;
-          break;
-        }
-        parent = parent.parentElement;
-        maxLevels--;
-      }
-      
-      // If in edit mode, use DOM width; otherwise use visual width
-      if (isInEditMode) {
-        const domWidth = container.offsetWidth || container.clientWidth;
-        if (domWidth > 0) return domWidth;
-      } else {
-        const width = container.getBoundingClientRect().width;
-        if (width > 0) return width;
-      }
-    }
-    
-    return DEFAULT_SLIDE_DISPLAY_WIDTH;
-  });
+  const [slideWidth, setSlideWidth] = React.useState(() => 
+    isThumbnail ? NATIVE_WIDTH : getSlideContainerWidth(DEFAULT_SLIDE_DISPLAY_WIDTH)
+  );
 
   useEffect(() => {
     if (isThumbnail) return;
@@ -122,39 +101,8 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
 
     const updateWidth = () => {
       if (!mounted) return;
-      
-      const container = document.getElementById('slide-display-container');
-      if (container) {
-        // Use getBoundingClientRect to get the visual size (accounts for transforms)
-        const rect = container.getBoundingClientRect();
-        if (rect.width > 0) {
-          // Check if we're in edit mode by looking for the transformed parent
-          let parent = container.parentElement;
-          let isInEditMode = false;
-          let maxLevels = 5;
-          
-          while (parent && maxLevels > 0) {
-            const transform = window.getComputedStyle(parent).transform;
-            if (transform && transform !== 'none' && transform.includes('0.92')) {
-              isInEditMode = true;
-              break;
-            }
-            parent = parent.parentElement;
-            maxLevels--;
-          }
-          
-          // If in edit mode, we need to use the actual DOM width, not the visual width
-          // because fonts should be sized for the full container, not the scaled view
-          if (isInEditMode) {
-            const domWidth = container.offsetWidth || container.clientWidth;
-            if (domWidth > 0) {
-              setSlideWidth(domWidth);
-            }
-          } else {
-            setSlideWidth(rect.width);
-          }
-        }
-      }
+      const width = getSlideContainerWidth(DEFAULT_SLIDE_DISPLAY_WIDTH);
+      setSlideWidth(width);
     };
 
     // Initial measurement after a short delay to ensure mount
@@ -192,12 +140,15 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   // =================================================================
   // TIPTAP EDITOR CONFIGURATION
   // =================================================================
-  const initialContent = useMemo(() => {
-    if (!texts) {
-      return { type: 'doc', content: [{ type: 'paragraph', content: [] }] } as any;
-    }
-    return transformMyFormatToTiptap(texts);
-  }, [texts]);
+  // Freeze initial content at mount - don't recalculate when texts prop changes
+  // Content updates are handled by the separate sync effect (line 394-408)
+  const initialContentRef = useRef<any>(null);
+  if (!initialContentRef.current) {
+    initialContentRef.current = texts 
+      ? transformMyFormatToTiptap(texts)
+      : { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
+  }
+  const initialContent = initialContentRef.current;
 
   const extensions = useMemo(() => {
     const exts = [
@@ -257,14 +208,12 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         'data-component-id': component.id,
       },
       handleKeyDown: (view, event) => {
-        // Allow Enter for newlines and all other text editing keys
-        // Only block if we want to handle specific keys differently
         if (event.key === 'Escape') {
-          // Exit edit mode on Escape
+          isThisComponentEditingRef.current = false;
           setTextEditingGlobal(false);
-          return true; // Handled - prevent default
+          return true;
         }
-        return false; // Not handled - allow default behavior
+        return false;
       },
     },
     onCreate: ({ editor }) => {
@@ -308,12 +257,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       
       // Validate we're still on the correct slide
       if (lockedSlideId.current !== slideId) {
-        console.warn('[TiptapTextBlock] Preventing blur save - slide mismatch', {
-          locked: lockedSlideId.current,
-          current: slideId
-        });
         // Still exit text editing mode
         if (isCurrentlyTextEditing) {
+          isThisComponentEditingRef.current = false;
           setTextEditingGlobal(false);
         }
         return;
@@ -324,7 +270,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
         
-        // Double-check we're not unmounting before saving
+        // Save the text changes
         if (!isUnmountingRef.current && lockedSlideId.current === slideId) {
           updateComponent(lockedComponentId.current, { props: { texts: docs } }, true);
         }
@@ -339,12 +285,13 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         }
 
         if (isCurrentlyTextEditing) {
-          // Use microtask to ensure this runs after any pending updates
-          queueMicrotask(() => {
+          // Clear this component's editing flag and global flag
+          isThisComponentEditingRef.current = false;
+          setTimeout(() => {
             if (!isUnmountingRef.current) {
               setTextEditingGlobal(false);
             }
-          });
+          }, 0);
         }
       } finally {
         setTimeout(() => { 
@@ -356,12 +303,10 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     },
   }), [
     extensions,
-    initialContent,
     isCurrentlyTextEditing,
     alignment,
     verticalAlignment,
     component.id,
-    props,
     updateComponent,
     setTextEditingGlobal,
     isThumbnail,
@@ -377,6 +322,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
 
   // Track unmounting to prevent saves during cleanup
   useEffect(() => {
+    // Reset unmounting flag on mount
+    isUnmountingRef.current = false;
+    
     return () => {
       isUnmountingRef.current = true;
       
@@ -385,7 +333,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         try {
           editor.commands.blur();
         } catch (e) {
-          console.warn('[TiptapTextBlock] Error blurring editor on unmount:', e);
+          // Silent - expected during cleanup
         }
       }
     };
@@ -463,6 +411,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     letterSpacing: `${finalLetterSpacing}px`,
     color: textColor,
     padding: typeof padding === 'number' ? `${padding}px` : String(padding),
+    cursor: isCurrentlyTextEditing ? 'text' : (isSelected ? 'text' : 'move'),
   } as React.CSSProperties;
 
   return (
@@ -480,6 +429,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
           e.stopPropagation();
           e.preventDefault();
           if (!isCurrentlyTextEditing && isSelected) {
+            isThisComponentEditingRef.current = true;
             setTextEditingGlobal(true);
           }
         }}

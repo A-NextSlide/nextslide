@@ -1,5 +1,4 @@
 import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -32,6 +31,7 @@ import { ShapeProps } from '@/registry/components/shape';
 import { FontSize } from '@/extensions/FontSize';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
+import { getSlideContainerWidth, isInEditMode } from '../../utils/slideContainerUtils';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { getContrastTextColor } from '@/utils/colorUtils';
 
@@ -203,7 +203,13 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   const setTextEditingGlobal = useEditorSettingsStore(state => state.setTextEditing);
   const setActiveTiptapEditor = useEditorStore((state) => state.setActiveTiptapEditor);
 
-  const isCurrentlyTextEditing = isTextEditingGlobal && isSelected && hasText;
+  // =================================================================
+  // TEXT EDITING STATE MANAGEMENT  
+  // =================================================================
+  // Track if THIS specific shape is being edited. Decoupled from isSelected
+  // to prevent premature exit when selection changes during text editing.
+  const isThisComponentEditingRef = useRef(false);
+  const isCurrentlyTextEditing = isTextEditingGlobal && isThisComponentEditingRef.current && hasText;
   
   // CRITICAL: Lock slideId at mount to prevent cross-slide writes after navigation
   const slideIdRef = useRef(slideId);
@@ -235,36 +241,9 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
   // Track the slide container's width for accurate font scaling
   // Use slide container scale instead of component scale to avoid double-scaling
-  const [slideContainerWidth, setSlideContainerWidth] = useState<number>(() => {
-    if (isThumbnail) return DEFAULT_SLIDE_WIDTH;
-    const slideContainer = document.getElementById('slide-display-container') as HTMLElement | null;
-    if (slideContainer) {
-      // Check if we're in edit mode
-      let parent = slideContainer.parentElement;
-      let isInEditMode = false;
-      let maxLevels = 5;
-      
-      while (parent && maxLevels > 0) {
-        const transform = window.getComputedStyle(parent).transform;
-        if (transform && transform !== 'none' && transform.includes('0.92')) {
-          isInEditMode = true;
-          break;
-        }
-        parent = parent.parentElement;
-        maxLevels--;
-      }
-      
-      // If in edit mode, use DOM dimensions; otherwise use visual dimensions
-      if (isInEditMode) {
-        const w = slideContainer.offsetWidth || slideContainer.clientWidth || 0;
-        if (w > 0) return w;
-      } else {
-        const rect = slideContainer.getBoundingClientRect();
-        if (rect.width > 0) return rect.width;
-      }
-    }
-    return DEFAULT_SLIDE_WIDTH;
-  });
+  const [slideContainerWidth, setSlideContainerWidth] = useState<number>(() => 
+    isThumbnail ? DEFAULT_SLIDE_WIDTH : getSlideContainerWidth(DEFAULT_SLIDE_WIDTH)
+  );
 
   const slideContainerWidthRef = useRef<number>(slideContainerWidth);
 
@@ -273,63 +252,32 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     if (isThumbnail) return;
 
     const updateSlideWidth = () => {
-      // Skip updates during text editing to prevent font size changes on click
-      if (isCurrentlyTextEditing) return;
+      if (isCurrentlyTextEditing) return; // Skip during text editing to prevent font size changes
 
-      const slideContainer = document.getElementById('slide-display-container') as HTMLElement | null;
-      if (!slideContainer) return;
-
-      // Check if we're in edit mode by looking for the transformed parent
-      let parent = slideContainer.parentElement;
-      let isInEditMode = false;
-      let maxLevels = 5;
-      
-      while (parent && maxLevels > 0) {
-        const transform = window.getComputedStyle(parent).transform;
-        if (transform && transform !== 'none' && transform.includes('0.92')) {
-          isInEditMode = true;
-          break;
-        }
-        parent = parent.parentElement;
-        maxLevels--;
-      }
-      
-      // If in edit mode, use DOM width; otherwise use visual width
-      let newWidth: number;
-      if (isInEditMode) {
-        newWidth = slideContainer.offsetWidth || slideContainer.clientWidth || 0;
-      } else {
-        const rect = slideContainer.getBoundingClientRect();
-        newWidth = rect.width || 0;
-      }
-
-      // Only update if difference is significant (>10px) to avoid micro-adjustments
+      const newWidth = getSlideContainerWidth(DEFAULT_SLIDE_WIDTH);
       const widthDiff = Math.abs(newWidth - slideContainerWidthRef.current);
 
+      // Only update if difference is significant to avoid micro-adjustments
       if (newWidth > 0 && widthDiff > 10) {
         slideContainerWidthRef.current = newWidth;
         setSlideContainerWidth(newWidth);
       }
     };
 
-    // Initial measurement
     updateSlideWidth();
 
-    // Use ResizeObserver on slide container
     const slideContainer = document.getElementById('slide-display-container');
     if (!slideContainer) return;
 
     const resizeObserver = new ResizeObserver(updateSlideWidth);
     resizeObserver.observe(slideContainer);
-
-    // Also listen for window resize
     window.addEventListener('resize', updateSlideWidth);
 
     return () => {
       resizeObserver.disconnect();
       window.removeEventListener('resize', updateSlideWidth);
     };
-  }, [isThumbnail]); // CRITICAL: Don't include isCurrentlyTextEditing in dependencies!
+  }, [isThumbnail]);
 
   // Font size calculation - scale based on slide container scale, not component scale
   // This prevents double-scaling since components are already sized as percentages
@@ -402,19 +350,15 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   }, [letterSpacing, isThumbnail, fontScaleFactor]);
 
   // Initial content preparation
-  const initialContent = useMemo(() => {
-    if (!texts) {
-      return {
-        type: 'doc',
-        content: [{
-          type: 'paragraph',
-          content: []
-        }]
-      };
-    }
-
-    return transformMyFormatToTiptap(texts);
-  }, [texts]);
+  // Freeze initial content at mount - don't recalculate when texts prop changes
+  // Content updates are handled by the separate sync effect
+  const initialContentRef = useRef<any>(null);
+  if (!initialContentRef.current) {
+    initialContentRef.current = texts 
+      ? transformMyFormatToTiptap(texts)
+      : { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
+  }
+  const initialContent = initialContentRef.current;
 
   // TipTap extensions
   const getExtensions = useCallback(() => {
@@ -507,14 +451,12 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         'data-component-id': component.id,
       },
       handleKeyDown: (view, event) => {
-        // Allow Enter for newlines and all other text editing keys
-        // Only block if we want to handle specific keys differently
         if (event.key === 'Escape') {
-          // Exit edit mode on Escape
+          isThisComponentEditingRef.current = false;
           setTextEditingGlobal(false);
-          return true; // Handled - prevent default
+          return true;
         }
-        return false; // Not handled - allow default behavior
+        return false;
       },
     },
     onCreate: ({ editor }) => {
@@ -536,8 +478,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         
         // Deep comparison of the content - only update if actually changed
         if (JSON.stringify(newDocs) !== JSON.stringify(currentTexts)) {
-          // Use locked slideId ref to prevent cross-slide writes
-          updateComponent(component.id, { props: { texts: newDocs } }, true, slideIdRef.current);
+          updateComponent(component.id, { props: { texts: newDocs } }, true);
         }
       } finally {
         // Reset the flag after a short delay to allow the update to complete
@@ -563,17 +504,16 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
       try {
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
-        // Use locked slideId ref to prevent writing to wrong slide
-        const targetSlide = slideIdRef.current;
-        updateComponent(component.id, { props: { texts: docs } }, true, targetSlide);
+        updateComponent(component.id, { props: { texts: docs } }, true);
         
-        if (targetSlide) {
+        if (slideIdRef.current) {
           import('@/stores/historyStore').then(({ useHistoryStore }) => {
-            useHistoryStore.getState().endTransientOperation(component.id, targetSlide);
+            useHistoryStore.getState().endTransientOperation(component.id, slideIdRef.current);
           });
         }
         
         if (isCurrentlyTextEditing) {
+          isThisComponentEditingRef.current = false;
           setTimeout(() => setTextEditingGlobal(false), 0);
         }
       } finally {
@@ -584,11 +524,9 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     },
   }), [
     getExtensions,
-    initialContent,
     alignment,
     verticalAlignment,
     component.id,
-    props,
     updateComponent,
     setTextEditingGlobal,
     isThumbnail,
@@ -728,6 +666,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
             } 
           }, true);
         }
+        isThisComponentEditingRef.current = true;
         setTextEditingGlobal(true);
       } finally {
         setTimeout(() => {
@@ -1004,18 +943,15 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
   const preserveAspectRatio = (shapeType === 'circle' || shapeType === 'ellipse') ? "xMidYMid meet" : "none";
 
-  // Container styles - removed explicit width/height to prevent size issues
+  // Container styles
   const containerStyles: React.CSSProperties = {
     display: 'block',
     lineHeight: 0,
     position: 'relative',
-    // Remove box-shadow - now using SVG filter for shape-aware shadows
     borderRadius: shapeType === 'rectangle' && borderRadius > 0 ? `${borderRadius}px` : undefined,
-    // Remove overflow: hidden to allow stroke and shadows to render properly
-    // overflow: 'hidden',
     cursor: isCurrentlyTextEditing ? 'text' : 
-           (isHoveringText && hasText && isEditing && isSelected ? 'text' : 
-           (isEditing && isSelected ? 'move' : 'default')),
+           (hasText && isSelected ? 'text' : 
+           (isEditing ? 'move' : 'default')),
     width: '100%',
     height: '100%'
   };

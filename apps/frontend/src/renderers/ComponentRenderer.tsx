@@ -117,20 +117,23 @@ export const ComponentRenderer: React.FC<Props> = ({
   const croppingComponentId = useEditorSettingsStore(state => state.croppingComponentId);
   const isCroppingThis = isCroppingImage && croppingComponentId === componentId && componentType === 'Image';
 
-  // Ensure text-edit mode doesn't stick when switching selection between text components
+  // Clear text-edit mode when switching to a different component
+  // This ensures text editing doesn't stick when user selects another component
   useEffect(() => {
-    if (!isSelected) return;
-    try {
-      const settings = useEditorSettingsStore.getState();
-      if (!settings.isTextEditing) return;
-      const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
-      const activeId = activeEditor?.view?.dom?.getAttribute?.('data-component-id');
-      if (activeId && activeId !== componentId) {
-        try { activeEditor.commands?.blur?.(); } catch {}
-        settings.setTextEditing(false);
-      }
-    } catch {}
-  }, [isSelected, componentId]);
+    if (!effectiveIsSelected) return;
+    
+    const settings = useEditorSettingsStore.getState();
+    if (!settings.isTextEditing) return;
+    
+    const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
+    const activeId = activeEditor?.view?.dom?.getAttribute?.('data-component-id');
+    
+    // If a different component was being edited, blur it and clear text editing state
+    if (activeId && activeId !== componentId) {
+      try { activeEditor.commands?.blur?.(); } catch {}
+      settings.setTextEditing(false);
+    }
+  }, [effectiveIsSelected, componentId]);
 
   // --- Interaction Hooks ---
 
@@ -182,7 +185,7 @@ export const ComponentRenderer: React.FC<Props> = ({
     componentId,
     componentType,
     isEditing,
-    isSelected,
+    isSelected: effectiveIsSelected,
     onSelect: (id) => {
       // Quiet noisy selection logs
       onSelect(id);
@@ -307,7 +310,7 @@ export const ComponentRenderer: React.FC<Props> = ({
       // Ensure all necessary props, including interaction states are passed
       const rendererProps: RendererProps = {
         component,
-        isSelected,
+        isSelected: effectiveIsSelected,
         isEditing,
         isResizing,
         isDragging,
@@ -321,7 +324,7 @@ export const ComponentRenderer: React.FC<Props> = ({
       if (componentType === "TextBlock") {
         // Add text editing specific props
         Object.assign(rendererProps, {
-          isTextEditing: isTextEditing && isSelected,
+          isTextEditing: isTextEditing && effectiveIsSelected,
           // When text changes during editing
           onTextChange: (text: string) => {
             textUpdateAppliedRef.current = true;
@@ -492,8 +495,8 @@ export const ComponentRenderer: React.FC<Props> = ({
          document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
        )}
 
-      {/* Render selection bounding box only when editing and selected */} 
-      {isEditing && effectiveIsSelected && !isBackground && !isLines && !isCroppingThis && (
+      {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */} 
+      {isEditing && (effectiveIsSelected || isTextEditing) && !isBackground && !isLines && !isCroppingThis && (
                   <SelectionBoundingBox
             component={component}
             isSelected={effectiveIsSelected}
@@ -513,7 +516,7 @@ export const ComponentRenderer: React.FC<Props> = ({
       )}
 
       {/* Render component directly if not editing/selected, background/lines, or actively cropping this image */}
-      {((!isEditing || !effectiveIsSelected || isBackground || isLines) || isCroppingThis) && (
+      {((!isEditing || (!effectiveIsSelected && !isTextEditing) || isBackground || isLines) || isCroppingThis) && (
           <div style={contentContainerStyle}>
               {renderSpecificComponent()}
           </div>

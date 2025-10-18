@@ -36,6 +36,8 @@ import {
 } from '@/components/ui/context-menu';
 import type { Theme } from '@/types/themes';
 import { initialWorkspaceTheme } from '@/types/themes';
+import { Card } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Helper function to determine file type (can be moved to utils if used elsewhere)
 const determineFileTypeLocal = (file: File): 'image' | 'chart' | 'data' | 'pdf' | 'other' => {
@@ -189,6 +191,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const [isUploadingLogo, setIsUploadingLogo] = useState<boolean>(false);
   const workspaceTheme = useThemeStore(state => state.getWorkspaceTheme());
   const isThemeReadyGlobal = useThemeStore(state => state.isThemeReady);
+  const availableThemes = useThemeStore(state => state.availableThemes);
+  const workspaceThemeId = useThemeStore(state => state.workspaceThemeId);
+  const [generatedThemes, setGeneratedThemes] = useState<Theme[]>([]);
   const [fontSearchHeading, setFontSearchHeading] = useState('');
   const [fontSearchBody, setFontSearchBody] = useState('');
   const themePanelRef = useRef<HTMLDivElement | null>(null);
@@ -436,8 +441,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               console.groupEnd();
             } catch {}
             // Always apply workspace theme so preview matches swatches
-            const themeId = addCustomTheme(builtTheme);
-            setWorkspaceTheme(themeId);
+            const addedId = addCustomTheme(builtTheme);
+            const savedTheme = { ...builtTheme, id: addedId, isCustom: true } as any;
+            setWorkspaceTheme(addedId);
+            // Add to generated list (dedup by signature) to show in skinny vertical list
+            try {
+              setGeneratedThemes(prev => {
+                const sig = themeSignature(savedTheme as any);
+                const dedup = prev.filter(t => themeSignature(t as any) !== sig);
+                return [savedTheme as any, ...dedup].slice(0, 24);
+              });
+            } catch {}
             
             if (isRich || isThemeGenerated) {
               setThemeReady(true);
@@ -724,6 +738,83 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     const id = addCustomTheme(updated);
     setWorkspaceTheme(id);
     setOutlineTheme(currentOutline.id, { ...updated, id, isCustom: true });
+  };
+
+  const themeSignature = (t: Theme) => {
+    try {
+      const bg = t.page?.backgroundColor || '';
+      const text = t.typography?.paragraph?.color || '';
+      const accent = (t as any)?.accent1 || '';
+      return `${bg}|${text}|${accent}`;
+    } catch {
+      return `${Math.random()}`;
+    }
+  };
+
+  const applyThemeSelection = (theme: Theme) => {
+    try {
+      const exists = useThemeStore.getState().availableThemes.find(t => t.id === theme.id);
+      const id = exists?.id || addCustomTheme(theme);
+      setWorkspaceTheme(id);
+      setOutlineTheme(currentOutline.id, { ...theme, id, isCustom: true } as any);
+      // Sync outline deck theme palette so swatches reflect selection
+      try {
+        const deckTheme = {
+          color_palette: {
+            primary_background: theme.page?.backgroundColor,
+            primary_text: theme.typography?.paragraph?.color,
+            accent_1: (theme as any)?.accent1,
+            backgrounds: [theme.page?.backgroundColor].filter(Boolean),
+            accents: [(theme as any)?.accent1].filter(Boolean),
+            text_colors: { primary: theme.typography?.paragraph?.color }
+          }
+        } as any;
+        setOutlineDeckTheme(currentOutline.id, deckTheme);
+      } catch {}
+    } catch {}
+  };
+
+  const handleSwapTheme = () => {
+    const combine = [...generatedThemes, ...availableThemes];
+    if (!combine.length) return;
+    const seen = new Set<string>();
+    const deduped = combine.filter(t => {
+      const sig = themeSignature(t as any);
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
+    if (!deduped.length) return;
+    const currentThemeObj = useThemeStore.getState().getWorkspaceTheme();
+    const currSig = themeSignature(currentThemeObj as any);
+    const currentIdx = Math.max(0, deduped.findIndex(t => themeSignature(t as any) === currSig || t.id === workspaceThemeId));
+    const nextIdx = (currentIdx + 1) % deduped.length;
+    applyThemeSelection(deduped[nextIdx]);
+  };
+
+  const renderMiniThemePreview = (theme: Theme, onClick: () => void, isSelected: boolean) => {
+    const bgColor = theme.page?.backgroundColor || '#ffffff';
+    const textColor = theme.typography?.paragraph?.color || '#000000';
+    const accentColor = (theme as any)?.accent1 || '#007bff';
+    return (
+      <Card
+        className={cn(
+          "p-1 cursor-pointer transition-all hover:ring-2 hover:ring-primary shrink-0 w-full overflow-hidden",
+          isSelected ? 'ring-2 ring-primary shadow-lg' : 'hover:shadow-md'
+        )}
+        onClick={onClick}
+        title={theme.name}
+      >
+        <div className="flex h-8 w-full rounded-sm overflow-hidden border">
+          <div className="flex-1 h-full" style={{ backgroundColor: bgColor }} />
+          <div className="flex-1 h-full" style={{ backgroundColor: textColor }} />
+          <div className="flex-1 h-full" style={{ backgroundColor: accentColor }} />
+        </div>
+        <div className="text-[10px] font-medium truncate text-center mt-1 px-1" style={{ color: textColor }}>
+          {theme.name || 'Theme'}
+        </div>
+      </Card>
+    );
   };
 
   // Respond to navigation events from the Flow panel
@@ -1566,12 +1657,22 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                             </div>
                           ) : (
-                          <div ref={themePanelRef} className="h-full w-full grid grid-cols-2 relative">
-                            {/* Left: Typography samples with logo controls pinned to bottom */}
+                          <div ref={themePanelRef} className="h-full w-full grid grid-cols-3 relative">
+                            {/* Left: Typography samples with logo controls pinned to bottom + Swap */}
                             <div 
                               className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
                               style={{ backgroundColor: useThemeStore.getState().getWorkspaceTheme().page?.backgroundColor || '#ffffff' }}
                             >
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] opacity-70">Theme</div>
+                                <button
+                                  className="text-[11px] px-2 py-1 rounded border border-zinc-300 dark:border-neutral-700 hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-60"
+                                  onClick={handleSwapTheme}
+                                  title="Swap to next theme"
+                                >
+                                  Swap
+                                </button>
+                              </div>
                               <div className="flex flex-col">
                                 <div
                                   className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
@@ -1628,7 +1729,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                 </div>
                               </div>
                             </div>
-                            {/* Right: Vertical color bars with labels */}
+                            {/* Middle: Vertical color bars with labels */}
                             <div className="h-full p-0 overflow-x-auto overflow-y-hidden">
                               {/* Only render palette when a real theme is applied and palette exists */}
                               {swatches.length > 0 ? (
@@ -1649,6 +1750,21 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   {/* No palette colors available */}
                                 </div>
                               )}
+                            </div>
+                            {/* Right: Skinny vertical list of generated themes */}
+                            <div className="h-full p-2 overflow-hidden">
+                              <div className="text-[10px] mb-1 opacity-70">Themes</div>
+                              <div className="h-[calc(100%-16px)]">
+                                <ScrollArea className="h-full w-full">
+                                  <div className="flex flex-col gap-2 pr-1">
+                                    {(generatedThemes.length ? generatedThemes : availableThemes).map((th, idx) => (
+                                      <div key={(th.id || idx) + '-' + idx}>
+                                        {renderMiniThemePreview(th as any, () => applyThemeSelection(th as any), (th as any)?.id === workspaceThemeId)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </ScrollArea>
+                              </div>
                             </div>
                             {/* Floating editors */}
                             {fontEditor?.open && (
