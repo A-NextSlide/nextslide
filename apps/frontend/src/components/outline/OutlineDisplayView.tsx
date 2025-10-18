@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { DeckOutline, SlideOutline, TaggedMedia } from '@/types/SlideTypes';
-import { Info, Plus, Microscope, Trash2, Loader2, Upload, ImageIcon, BarChart3, FileText, FileIcon, X } from 'lucide-react';
+import { Info, Plus, Microscope, Trash2, Loader2, Upload, ImageIcon, BarChart3, FileText, FileIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import SlideCard from './SlideCard'; // <-- Import the new SlideCard component
 import ManualSlideCard from './ManualSlideCard'; // Import the manual mode slide card
 import TypewriterText from '@/components/common/TypewriterText';
@@ -194,8 +194,12 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const availableThemes = useThemeStore(state => state.availableThemes);
   const workspaceThemeId = useThemeStore(state => state.workspaceThemeId);
   const [generatedThemes, setGeneratedThemes] = useState<Theme[]>([]);
+  const [initialTheme, setInitialTheme] = useState<Theme | null>(null);
+  const [currentThemeIndex, setCurrentThemeIndex] = useState<number>(0);
   const [fontSearchHeading, setFontSearchHeading] = useState('');
   const [fontSearchBody, setFontSearchBody] = useState('');
+  const [addColorOpen, setAddColorOpen] = useState(false);
+  const [selectedCustomColor, setSelectedCustomColor] = useState('#3b82f6');
   const themePanelRef = useRef<HTMLDivElement | null>(null);
   const fontEditorRef = useRef<HTMLDivElement | null>(null);
   const colorEditorRef = useRef<HTMLDivElement | null>(null);
@@ -263,11 +267,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const isThemeGenerated = d?.type === 'theme_generated' || (!!d?.theme && (d?.palette || d?.theme?.color_palette));
             if (!isThemeArtifact && !isThemeGenerated) return;
             const themePayload = isThemeArtifact ? (d?.content?.deck_theme || d?.content?.theme || d?.content) : (d?.theme || d);
-            try {
-              console.groupCollapsed('[ThemePreview] incoming event');
-              console.debug({ isThemeArtifact, isThemeGenerated, rawPalette: (d as any)?.palette, themePaletteBefore: themePayload?.color_palette });
-              console.groupEnd();
-            } catch {}
             if (!themePayload) return;
             // Merge explicit palette payload (often richer) into themePayload.color_palette
             try {
@@ -291,9 +290,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               try {
                 const afterCP = (themePayload?.color_palette || {}) as any;
                 const afterColors = Array.isArray(afterCP.colors) ? afterCP.colors : [];
-                console.groupCollapsed('[ThemePreview] after merge');
-                console.debug({ themePaletteAfter: afterCP, colorsCount: afterColors.length });
-                console.groupEnd();
               } catch {}
             } catch {}
 
@@ -388,26 +384,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               } else if (newRich === existingRich && newColors.length > existingColors.length) {
                 shouldOverride = true;
               }
-              try {
-                console.groupCollapsed('[ThemePreview] override decision');
-                console.debug({ existingSource, newSource, existingColors, newColors, existingRich, newRich, shouldOverride });
-                console.groupEnd();
-              } catch {}
             } catch {}
             const typography = (themePayload?.typography || {}) as any;
 
             // DEBUG: Log color extraction (colors, colorsArray already extracted above)
-            try {
-              console.groupCollapsed('[ColorDebug] Color extraction from backend');
-              console.debug('Raw color_palette:', colors);
-              console.debug('Original colors array (may be wrong order):', colors.colors);
-              console.debug('Using legacy fields for semantic correctness:');
-              console.debug('  → pageBg (from backgrounds[0]):', pageBg);
-              console.debug('  → textColor (from primary_text):', textColor);
-              console.debug('  → accent1 (from accents[0]):', accent1);
-              console.debug('Rebuilt colorsArray (bg + accent ONLY, no text):', colorsArray);
-              console.groupEnd();
-            } catch {}
             const headingFamily = typography.hero_title?.family || 'Inter';
             const bodyFamily = typography.body_text?.family || 'Inter';
             // Determine richness of palette to avoid locking in minimal (2-color) previews
@@ -427,31 +407,25 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               accent2: accent1  // Use same as accent1 for backwards compatibility
             } as any;
 
-            // DEBUG: Log theme application
-            try {
-              console.groupCollapsed('[ColorDebug] Workspace theme built');
-              console.debug('Theme being applied to workspace:', {
-                'page.backgroundColor': pageBg,
-                'typography.color': textColor,
-                'accent1': accent1,
-                'colorsArray (for swatches)': colorsArray,
-                'Full theme': builtTheme,
-                'shouldOverride': shouldOverride
-              });
-              console.groupEnd();
-            } catch {}
             // Always apply workspace theme so preview matches swatches
             const addedId = addCustomTheme(builtTheme);
             const savedTheme = { ...builtTheme, id: addedId, isCustom: true } as any;
             setWorkspaceTheme(addedId);
-            // Add to generated list (dedup by signature) to show in skinny vertical list
-            try {
-              setGeneratedThemes(prev => {
-                const sig = themeSignature(savedTheme as any);
-                const dedup = prev.filter(t => themeSignature(t as any) !== sig);
-                return [savedTheme as any, ...dedup].slice(0, 24);
-              });
-            } catch {}
+            
+            // Capture as initial theme if this is the first theme we receive (branded theme)
+            const isFirstTheme = !initialTheme;
+            setInitialTheme(prev => prev || savedTheme);
+            
+            // Only add to generated list if it's NOT the initial theme
+            if (!isFirstTheme) {
+              try {
+                setGeneratedThemes(prev => {
+                  const sig = themeSignature(savedTheme as any);
+                  const dedup = prev.filter(t => themeSignature(t as any) !== sig);
+                  return [savedTheme as any, ...dedup].slice(0, 24);
+                });
+              } catch {}
+            }
             
             if (isRich || isThemeGenerated) {
               setThemeReady(true);
@@ -569,28 +543,15 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       // Do not show a placeholder palette: require a real color_palette
       if (!cp || typeof cp !== 'object') return [] as Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }>;
 
-      console.log('[SWATCHES DEBUG] Reading from deck theme:', {
-        primary_background: cp.primary_background,
-        primary_text: cp.primary_text,
-        accent_1: cp.accent_1,
-        backgrounds: cp.backgrounds,
-        accents: cp.accents,
-        text_colors: cp.text_colors
-      });
-
       const primaryBackground = (cp.primary_background || (Array.isArray(cp.backgrounds) ? cp.backgrounds[0] : undefined)) as string | undefined;
       const primaryText = (cp.primary_text || cp.text_colors?.primary) as string | undefined;
       const accent_1 = (cp.accent_1 || (Array.isArray(cp.accents) ? cp.accents[0] : undefined)) as string | undefined;
-
-      console.log('[SWATCHES DEBUG] Extracted for display:', { primaryBackground, primaryText, accent_1 });
 
       // Only show the 3 main theme colors: Background, Text, Accent
       const swatchList: Array<{ role: 'background' | 'text' | 'accent1'; label: string; color: string }> = [];
       if (primaryBackground) swatchList.push({ role: 'background', label: 'Background', color: String(primaryBackground) });
       if (primaryText) swatchList.push({ role: 'text', label: 'Text', color: String(primaryText) });
       if (accent_1) swatchList.push({ role: 'accent1', label: 'Accent', color: String(accent_1) });
-
-      console.log('[SWATCHES DEBUG] Final swatchList:', swatchList);
 
       return swatchList;
     } catch {
@@ -774,23 +735,102 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     } catch {}
   };
 
-  const handleSwapTheme = () => {
-    const combine = [...generatedThemes, ...availableThemes];
-    if (!combine.length) return;
-    const seen = new Set<string>();
-    const deduped = combine.filter(t => {
-      const sig = themeSignature(t as any);
-      if (seen.has(sig)) return false;
-      seen.add(sig);
-      return true;
-    });
-    if (!deduped.length) return;
+  // Get all navigable themes (initial + generated)
+  const getAllThemes = () => {
+    const themes: Theme[] = [];
+    if (initialTheme) {
+      themes.push(initialTheme);
+    }
+    return [...themes, ...generatedThemes];
+  };
+
+  const handleNextTheme = async () => {
+    const allThemes = getAllThemes();
+    if (!allThemes.length) return;
+    
+    const nextIdx = (currentThemeIndex + 1) % allThemes.length;
+    
+    // If we're at the last theme, generate more before moving to the next
+    if (nextIdx === 0 && allThemes.length > 1) {
+      await generateAiThemes();
+    }
+    
+    setCurrentThemeIndex(nextIdx);
+    const updatedThemes = getAllThemes();
+    applyThemeSelection(updatedThemes[nextIdx] || allThemes[nextIdx]);
+  };
+
+  const handlePrevTheme = () => {
+    const allThemes = getAllThemes();
+    if (!allThemes.length) return;
+    
+    const prevIdx = currentThemeIndex === 0 ? allThemes.length - 1 : currentThemeIndex - 1;
+    setCurrentThemeIndex(prevIdx);
+    applyThemeSelection(allThemes[prevIdx]);
+  };
+
+  const [isGeneratingThemes, setIsGeneratingThemes] = useState(false);
+  
+  const generateAiThemes = async () => {
+    setIsGeneratingThemes(true);
+    try {
+      const temperature = 1.0 + Math.random() * 0.4;
+      const response = await fetch("https://api.huemint.com/color", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "transformer",
+          num_colors: 3,
+          temperature: temperature.toString(),
+          num_results: 10,
+          adjacency: ["0","60","50","60","0","50","50","50","0"],
+          palette: ["-","-","-"]
+        }),
+      });
+      if (!response.ok) throw new Error("Huemint API error");
+      const data = await response.json();
+      const newThemes: Theme[] = data.results.map((result: { palette: string[] }, idx: number) => ({
+        id: `ai-theme-${Date.now()}-${idx}`,
+        name: `AI Theme ${idx + 1}`,
+        page: { backgroundColor: result.palette[0] },
+        typography: {
+          paragraph: { fontFamily: workspaceTheme.typography?.paragraph?.fontFamily || 'Inter', color: result.palette[1] },
+          heading: { fontFamily: workspaceTheme.typography?.heading?.fontFamily || 'Inter', color: result.palette[1] }
+        },
+        accent1: result.palette[2],
+        accent2: result.palette[2],
+        swatches: result.palette.map((c, i) => ({ color: c, label: ['Background', 'Text', 'Accent'][i] || `Color ${i+1}` }))
+      } as any));
+      setGeneratedThemes(prev => [...prev, ...newThemes]);
+      if (generatedThemes.length === 0 && newThemes.length > 0) {
+        applyThemeSelection(newThemes[0] as any);
+      }
+    } catch (error) {
+      console.error("Failed to generate themes:", error);
+    } finally {
+      setIsGeneratingThemes(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (!generatedThemes.length && !isGeneratingThemes) {
+      generateAiThemes();
+    }
+  }, []);
+
+  // Sync currentThemeIndex when workspace theme changes
+  useEffect(() => {
+    const allThemes = getAllThemes();
+    if (allThemes.length === 0) return;
+    
     const currentThemeObj = useThemeStore.getState().getWorkspaceTheme();
     const currSig = themeSignature(currentThemeObj as any);
-    const currentIdx = Math.max(0, deduped.findIndex(t => themeSignature(t as any) === currSig || t.id === workspaceThemeId));
-    const nextIdx = (currentIdx + 1) % deduped.length;
-    applyThemeSelection(deduped[nextIdx]);
-  };
+    const foundIdx = allThemes.findIndex(t => themeSignature(t as any) === currSig || t.id === workspaceThemeId);
+    
+    if (foundIdx >= 0 && foundIdx !== currentThemeIndex) {
+      setCurrentThemeIndex(foundIdx);
+    }
+  }, [workspaceThemeId, generatedThemes, initialTheme]);
 
   const renderMiniThemePreview = (theme: Theme, onClick: () => void, isSelected: boolean) => {
     const bgColor = theme.page?.backgroundColor || '#ffffff';
@@ -1657,21 +1697,41 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                             </div>
                           ) : (
-                          <div ref={themePanelRef} className="h-full w-full grid grid-cols-3 relative">
+                          <div ref={themePanelRef} className="h-full w-full grid grid-cols-2 relative">
                             {/* Left: Typography samples with logo controls pinned to bottom + Swap */}
                             <div 
                               className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
                               style={{ backgroundColor: useThemeStore.getState().getWorkspaceTheme().page?.backgroundColor || '#ffffff' }}
                             >
                               <div className="flex items-center justify-between">
-                                <div className="text-[11px] opacity-70">Theme</div>
-                                <button
-                                  className="text-[11px] px-2 py-1 rounded border border-zinc-300 dark:border-neutral-700 hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-60"
-                                  onClick={handleSwapTheme}
-                                  title="Swap to next theme"
-                                >
-                                  Swap
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[11px] opacity-70">Theme</div>
+                                  <div className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                                    {currentThemeIndex === 0 && initialTheme ? 'Branded' : 'AI'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    onClick={handlePrevTheme}
+                                    disabled={getAllThemes().length <= 1 || isGeneratingThemes}
+                                    title="Previous theme"
+                                  >
+                                    <ChevronLeft className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                                  </button>
+                                  <button
+                                    className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    onClick={handleNextTheme}
+                                    disabled={isGeneratingThemes}
+                                    title="Next theme"
+                                  >
+                                    {isGeneratingThemes ? (
+                                      <Loader2 className="h-4 w-4 text-zinc-700 dark:text-zinc-300 animate-spin" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                                    )}
+                                  </button>
+                                </div>
                               </div>
                               <div className="flex flex-col">
                                 <div
@@ -1695,17 +1755,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                               {/* Logo block anchored at bottom with replace/remove */}
                               <div className="mt-auto">
-                                <div className="text-[10px] mb-1 opacity-70">Brand logo</div>
-                                <div className="h-16 w-40 rounded-md border flex items-center justify-center overflow-hidden bg-white/70 dark:bg-zinc-800/50">
+                                <div className="text-xs font-medium mb-2 text-zinc-700 dark:text-zinc-300">Brand logo</div>
+                                <div className="h-16 w-40 rounded-md border-2 border-zinc-300 dark:border-zinc-600 flex items-center justify-center overflow-hidden bg-white dark:bg-zinc-800 shadow-sm">
                                   {logoUrl ? (
                                     <img src={logoUrl} alt="Brand logo" className="max-h-12 max-w-[9rem] object-contain" />
                                   ) : (
-                                    <div className="text-[11px] opacity-60">No logo</div>
+                                    <div className="text-xs text-zinc-400 dark:text-zinc-500">No logo</div>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 mt-2">
+                                <div className="flex items-center gap-2 mt-3">
                                   <button
-                                    className="text-[11px] px-2 py-1 rounded border border-zinc-300 dark:border-neutral-700 hover:bg-zinc-50 dark:hover:bg-white/5 disabled:opacity-60"
+                                    className="text-xs px-3 py-1.5 rounded-md border-2 border-zinc-400 dark:border-zinc-500 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600 hover:border-[#FF4301] dark:hover:border-[#FF4301] disabled:opacity-60 font-medium shadow-sm transition-all"
                                     onClick={handleClickReplaceLogo}
                                     disabled={isUploadingLogo}
                                   >
@@ -1713,7 +1773,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   </button>
                                   {logoUrl && (
                                     <button
-                                      className="text-[11px] px-2 py-1 rounded border border-zinc-300 dark:border-neutral-700 hover:bg-zinc-50 dark:hover:bg-white/5"
+                                      className="text-xs px-3 py-1.5 rounded-md border-2 border-red-400 dark:border-red-500 bg-white dark:bg-zinc-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-500 dark:hover:border-red-400 font-medium shadow-sm transition-all"
                                       onClick={handleRemoveLogo}
                                     >
                                       Remove
@@ -1730,58 +1790,35 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                             </div>
                             {/* Vertical color bars with labels - fills available width */}
-                            <div className="h-full flex-1 p-0 overflow-x-auto overflow-y-hidden flex gap-1">
+                            <div className="h-full p-2 flex gap-1">
                               {/* Only render palette when a real theme is applied and palette exists */}
                               {swatches.length > 0 ? (
-                                <>
-                                  <div className="flex-1 flex gap-1">
-                                    {swatches.map((sw, idx) => (
-                                      <Popover key={idx}>
-                                        <PopoverTrigger asChild>
+                                <div className="flex-1 flex gap-1">
+                                  {swatches.map((sw, idx) => (
+                                    <Popover key={idx}>
+                                      <PopoverTrigger asChild>
+                                        <div
+                                          className="flex-1 min-w-[20px] rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all relative"
+                                          style={{ backgroundColor: sw.color }}
+                                          title={sw.label || `Color ${idx + 1}`}
+                                        >
                                           <div
-                                            className="flex-1 min-w-[20px] rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all relative"
-                                            style={{ backgroundColor: sw.color }}
-                                            title={sw.label || `Color ${idx + 1}`}
+                                            className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
+                                            style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
                                           >
-                                            <div
-                                              className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
-                                              style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
-                                            >
-                                              {sw.label}
-                                            </div>
+                                            {sw.label}
                                           </div>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-2" side="bottom" align="center">
-                                          <EnhancedColorPicker
-                                            color={String(sw.color)}
-                                            onChange={(hex) => updateSwatchColor(idx, hex)}
-                                          />
-                                        </PopoverContent>
-                                      </Popover>
-                                    ))}
-                                  </div>
-                                  {/* Add custom color button */}
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <div
-                                        className="w-8 h-full rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 dark:text-neutral-400 hover:text-orange-500 dark:hover:text-orange-400 text-xl font-light shrink-0"
-                                        title="Add custom color"
-                                      >
-                                        +
-                                      </div>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-2" side="bottom" align="center">
-                                      <EnhancedColorPicker
-                                        color="#3b82f6"
-                                        onChange={(hex) => {
-                                          const newSwatch = { color: hex, label: `Custom ${swatches.length + 1}` };
-                                          const updatedSwatches = [...swatches, newSwatch];
-                                          applyThemeUpdate((t) => ({ ...t, swatches: updatedSwatches }));
-                                        }}
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                </>
+                                        </div>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-auto p-2" side="bottom" align="center">
+                                        <EnhancedColorPicker
+                                          color={String(sw.color)}
+                                          onChange={(hex) => updateSwatchColor(idx, hex)}
+                                        />
+                                      </PopoverContent>
+                                    </Popover>
+                                  ))}
+                                </div>
                               ) : (
                                 <div className="h-full w-full flex items-center justify-center text-[11px] text-zinc-400 select-none">
                                   {/* No palette colors available */}
