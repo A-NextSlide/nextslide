@@ -149,30 +149,33 @@ export const useComponentResize = ({
     // Handle resize start
     if (!resizeStartedRef.current && slideId) {
       resizeStartedRef.current = true;
-      setIsResizing(true);
       
-      // Start transient operation
-      startTransientOperation(slideId, currentComponent.id);
-      
-      // For charts, set global resize flag to disable animations
+      // For charts, set global resize flag immediately to disable animations (synchronous, fast)
       if (currentComponent.type === 'Chart' && typeof window !== 'undefined') {
         (window as any).__isResizingCharts = true;
         (window as any).__currentResizedChart = currentComponent.id;
         document.body.classList.add('charts-resizing');
       }
       
-      // Dispatch resize start event
-      if (typeof document !== 'undefined') {
-        const resizeStartEvent = new CustomEvent('component:resizestart', {
-          bubbles: true,
-          detail: {
-            componentId: currentComponent.id,
-            componentType: currentComponent.type,
-            position: currentComponent.props.position
-          }
-        });
-        document.dispatchEvent(resizeStartEvent);
-      }
+      // DEFERRED: Move ALL setup to next microtask for instant first movement
+      // Use Promise.resolve() for faster scheduling than requestAnimationFrame
+      Promise.resolve().then(() => {
+        setIsResizing(true);
+        startTransientOperation(slideId, currentComponent.id);
+        
+        // Dispatch resize start event
+        if (typeof document !== 'undefined') {
+          const resizeStartEvent = new CustomEvent('component:resizestart', {
+            bubbles: true,
+            detail: {
+              componentId: currentComponent.id,
+              componentType: currentComponent.type,
+              position: currentComponent.props.position
+            }
+          });
+          document.dispatchEvent(resizeStartEvent);
+        }
+      });
     }
     
     // Ensure minimum size

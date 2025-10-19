@@ -425,6 +425,8 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
   // Track if we're updating to prevent loops
   const isUpdatingRef = useRef(false);
+  const lastSavedContentRef = useRef<string | null>(null);
+  const isBlurringRef = useRef(false);
 
   // Editor configuration - start with editable false, update via setEditable to prevent recreation
   const getEditorConfig = useMemo(() => ({
@@ -462,31 +464,6 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     onCreate: ({ editor }) => {
       editor.commands.setTextAlign(alignment);
     },
-    onUpdate: ({ editor }) => {
-      if (!editor || editor.isDestroyed || isUpdatingRef.current) return;
-      
-      // Prevent recursive updates
-      isUpdatingRef.current = true;
-      
-      try {
-        // Get the current JSON from the editor
-        const json = editor.getJSON();
-        const newDocs: CustomDoc = transformTiptapToMyFormat(json);
-        
-        // Compare with current props to prevent infinite loops
-        const currentTexts = props.texts;
-        
-        // Deep comparison of the content - only update if actually changed
-        if (JSON.stringify(newDocs) !== JSON.stringify(currentTexts)) {
-          updateComponent(component.id, { props: { texts: newDocs } }, true);
-        }
-      } finally {
-        // Reset the flag after a short delay to allow the update to complete
-        setTimeout(() => {
-          isUpdatingRef.current = false;
-        }, 100);
-      }
-    },
     onFocus: ({ editor }) => {
       if (!editor || editor.isDestroyed) return;
       if (slideId) {
@@ -498,12 +475,32 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     onBlur: ({ editor }) => {
       if (!editor || editor.isDestroyed || isUpdatingRef.current) return;
       
-      // Prevent recursive updates
+      // console.log('[ShapeWithText] onBlur START', {
+      //   componentId: component.id,
+      //   isCurrentlyTextEditing,
+      //   isBlurring: isBlurringRef.current,
+      //   isUpdating: isUpdatingRef.current
+      // });
+      
+      // Mark that we're in blur process to prevent content sync
+      isBlurringRef.current = true;
       isUpdatingRef.current = true;
       
       try {
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
+        const docsStr = JSON.stringify(docs);
+        
+        // console.log('[ShapeWithText] onBlur SAVING', {
+        //   componentId: component.id,
+        //   contentLength: docsStr.length,
+        //   contentPreview: docsStr.substring(0, 100)
+        // });
+        
+        // Track what we're saving - normalize the format for comparison
+        const normalizedSaved = JSON.stringify(docs);
+        lastSavedContentRef.current = normalizedSaved;
+        
         updateComponent(component.id, { props: { texts: docs } }, true);
         
         if (slideIdRef.current) {
@@ -513,13 +510,21 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
         }
         
         if (isCurrentlyTextEditing) {
+          // console.log('[ShapeWithText] onBlur EXITING edit mode', { componentId: component.id });
           isThisComponentEditingRef.current = false;
           setTimeout(() => setTextEditingGlobal(false), 0);
         }
       } finally {
         setTimeout(() => {
+          // console.log('[ShapeWithText] Clearing isUpdatingRef', { componentId: component.id });
           isUpdatingRef.current = false;
-        }, 100);
+        }, 200); // Increased delay to ensure props have propagated
+        
+        // Clear blur flag after a delay to allow state to settle
+        setTimeout(() => {
+          // console.log('[ShapeWithText] Clearing isBlurringRef', { componentId: component.id });
+          isBlurringRef.current = false;
+        }, 300);
       }
     },
   }), [
@@ -537,21 +542,60 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
   // Sync editor content when texts prop changes
   useEffect(() => {
-    if (editor && !isCurrentlyTextEditing && !isUpdatingRef.current) {
-      const currentContent = editor.getJSON();
-      const currentTexts = transformTiptapToMyFormat(currentContent);
+    // Don't sync during blur transition or while editing
+    if (!editor || isCurrentlyTextEditing || isUpdatingRef.current || isBlurringRef.current) {
+      // console.log('[ShapeWithText] Content sync SKIPPED', {
+      //   componentId: component.id,
+      //   noEditor: !editor,
+      //   isEditing: isCurrentlyTextEditing,
+      //   isUpdating: isUpdatingRef.current,
+      //   isBlurring: isBlurringRef.current
+      // });
+      return;
+    }
 
-      if (JSON.stringify(texts) !== JSON.stringify(currentTexts)) {
-        const newContent = transformMyFormatToTiptap(texts || {
-          type: 'doc',
-          content: [{
-            type: 'paragraph',
-            content: []
-          }]
-        });
+    const currentContent = editor.getJSON();
+    const currentTexts = transformTiptapToMyFormat(currentContent);
+    const currentTextsStr = JSON.stringify(currentTexts);
+    
+    // Normalize incoming texts to same format for comparison
+    const normalizedTexts = JSON.stringify(texts);
 
-        editor.commands.setContent(newContent, false);
-      }
+    // console.log('[ShapeWithText] Content sync CHECK', {
+    //   componentId: component.id,
+    //   currentLength: currentTextsStr.length,
+    //   newLength: normalizedTexts.length,
+    //   lastSavedMatches: lastSavedContentRef.current === normalizedTexts,
+    //   contentsMatch: currentTextsStr === normalizedTexts,
+    //   lastSavedPreview: lastSavedContentRef.current?.substring(0, 50),
+    //   incomingPreview: normalizedTexts.substring(0, 50)
+    // });
+
+    // Skip sync if this is the content we just saved on blur
+    if (lastSavedContentRef.current && lastSavedContentRef.current === normalizedTexts) {
+      // console.log('[ShapeWithText] Content sync SKIPPED - matches last saved', { componentId: component.id });
+      lastSavedContentRef.current = null; // Clear the flag
+      return;
+    }
+
+    // Only update if content actually differs
+    if (normalizedTexts !== currentTextsStr) {
+      // console.log('[ShapeWithText] Content sync APPLYING', {
+      //   componentId: component.id,
+      //   currentPreview: currentTextsStr.substring(0, 100),
+      //   newPreview: normalizedTexts.substring(0, 100)
+      // });
+      const newContent = transformMyFormatToTiptap(texts || {
+        type: 'doc',
+        content: [{
+          type: 'paragraph',
+          content: []
+        }]
+      });
+
+      editor.commands.setContent(newContent, false);
+    } else {
+      // console.log('[ShapeWithText] Content sync SKIPPED - no changes', { componentId: component.id });
     }
   }, [editor, texts, isCurrentlyTextEditing]);
 

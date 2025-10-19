@@ -77,6 +77,8 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const lockedSlideId = useRef(slideId);
   const isUpdatingRef = useRef(false);
   const isUnmountingRef = useRef(false);
+  const lastSavedContentRef = useRef<string | null>(null);
+  const isBlurringRef = useRef(false);
 
   // Use a key that changes when component/slide changes to force complete remount
   const instanceKey = `${component.id}_${slideId}`;
@@ -219,29 +221,6 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     onCreate: ({ editor }) => {
       editor.commands.setTextAlign(alignment);
     },
-    onUpdate: ({ editor }) => {
-      if (!editor || editor.isDestroyed || isUpdatingRef.current || isUnmountingRef.current) return;
-      
-      // Validate we're still on the correct slide
-      if (lockedSlideId.current !== slideId) {
-        console.warn('[TiptapTextBlock] Preventing update - slide mismatch', {
-          locked: lockedSlideId.current,
-          current: slideId
-        });
-        return;
-      }
-
-      isUpdatingRef.current = true;
-      try {
-        const json = editor.getJSON();
-        const newDocs: CustomDoc = transformTiptapToMyFormat(json);
-        if (JSON.stringify(newDocs) !== JSON.stringify(props.texts)) {
-          updateComponent(lockedComponentId.current, { props: { texts: newDocs } }, true);
-        }
-      } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 100);
-      }
-    },
     onFocus: () => {
       if (lockedSlideId.current) {
         import('@/stores/historyStore').then(({ useHistoryStore }) => {
@@ -255,6 +234,13 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     onBlur: ({ editor }) => {
       if (!editor || editor.isDestroyed || isUpdatingRef.current || isUnmountingRef.current) return;
       
+      // console.log('[TiptapTextBlock] onBlur START', {
+      //   componentId: component.id,
+      //   isCurrentlyTextEditing,
+      //   isBlurring: isBlurringRef.current,
+      //   isUpdating: isUpdatingRef.current
+      // });
+      
       // Validate we're still on the correct slide
       if (lockedSlideId.current !== slideId) {
         // Still exit text editing mode
@@ -265,10 +251,24 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         return;
       }
 
+      // Mark that we're in blur process to prevent content sync
+      isBlurringRef.current = true;
       isUpdatingRef.current = true;
+      
       try {
         const json = editor.getJSON();
         const docs: CustomDoc = transformTiptapToMyFormat(json);
+        const docsStr = JSON.stringify(docs);
+        
+        // console.log('[TiptapTextBlock] onBlur SAVING', {
+        //   componentId: component.id,
+        //   contentLength: docsStr.length,
+        //   contentPreview: docsStr.substring(0, 100)
+        // });
+        
+        // Track what we're saving - normalize the format for comparison
+        const normalizedSaved = JSON.stringify(docs);
+        lastSavedContentRef.current = normalizedSaved;
         
         // Save the text changes
         if (!isUnmountingRef.current && lockedSlideId.current === slideId) {
@@ -286,6 +286,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
 
         if (isCurrentlyTextEditing) {
           // Clear this component's editing flag and global flag
+          // console.log('[TiptapTextBlock] onBlur EXITING edit mode', { componentId: component.id });
           isThisComponentEditingRef.current = false;
           setTimeout(() => {
             if (!isUnmountingRef.current) {
@@ -296,9 +297,16 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       } finally {
         setTimeout(() => { 
           if (!isUnmountingRef.current) {
+            // console.log('[TiptapTextBlock] Clearing isUpdatingRef', { componentId: component.id });
             isUpdatingRef.current = false;
           }
-        }, 100);
+        }, 200); // Increased delay to ensure props have propagated
+        
+        // Clear blur flag after a delay to allow state to settle
+        setTimeout(() => {
+          // console.log('[TiptapTextBlock] Clearing isBlurringRef', { componentId: component.id });
+          isBlurringRef.current = false;
+        }, 300);
       }
     },
   }), [
@@ -341,17 +349,56 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
 
   // Sync text content when props change
   useEffect(() => {
-    if (!editor || isCurrentlyTextEditing || isUpdatingRef.current) return;
+    // Don't sync during blur transition or while editing
+    if (!editor || isCurrentlyTextEditing || isUpdatingRef.current || isBlurringRef.current) {
+      // console.log('[TiptapTextBlock] Content sync SKIPPED', {
+      //   componentId: component.id,
+      //   noEditor: !editor,
+      //   isEditing: isCurrentlyTextEditing,
+      //   isUpdating: isUpdatingRef.current,
+      //   isBlurring: isBlurringRef.current
+      // });
+      return;
+    }
 
     const currentContent = editor.getJSON();
     const currentTexts = transformTiptapToMyFormat(currentContent);
+    const currentTextsStr = JSON.stringify(currentTexts);
+    
+    // Normalize incoming texts to same format for comparison
+    const normalizedTexts = JSON.stringify(texts);
 
-    if (JSON.stringify(texts) !== JSON.stringify(currentTexts)) {
+    // console.log('[TiptapTextBlock] Content sync CHECK', {
+    //   componentId: component.id,
+    //   currentLength: currentTextsStr.length,
+    //   newLength: normalizedTexts.length,
+    //   lastSavedMatches: lastSavedContentRef.current === normalizedTexts,
+    //   contentsMatch: currentTextsStr === normalizedTexts,
+    //   lastSavedPreview: lastSavedContentRef.current?.substring(0, 50),
+    //   incomingPreview: normalizedTexts.substring(0, 50)
+    // });
+
+    // Skip sync if this is the content we just saved on blur
+    if (lastSavedContentRef.current && lastSavedContentRef.current === normalizedTexts) {
+      // console.log('[TiptapTextBlock] Content sync SKIPPED - matches last saved', { componentId: component.id });
+      lastSavedContentRef.current = null; // Clear the flag
+      return;
+    }
+
+    // Only update if content actually differs
+    if (normalizedTexts !== currentTextsStr) {
+      // console.log('[TiptapTextBlock] Content sync APPLYING', {
+      //   componentId: component.id,
+      //   currentPreview: currentTextsStr.substring(0, 100),
+      //   newPreview: normalizedTexts.substring(0, 100)
+      // });
       const newContent = transformMyFormatToTiptap(texts || {
         type: 'doc',
         content: [{ type: 'paragraph', content: [] }]
       });
       editor.commands.setContent(newContent, false);
+    } else {
+      // console.log('[TiptapTextBlock] Content sync SKIPPED - no changes', { componentId: component.id });
     }
   }, [editor, texts, isCurrentlyTextEditing]);
 

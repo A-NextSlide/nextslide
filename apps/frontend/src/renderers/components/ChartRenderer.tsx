@@ -11,7 +11,7 @@ import { BaseChartRenderer } from '@/charts';
 import { ChartProps } from '@/types/ChartTypes';
 import { useEditModeTransitionStore } from '@/stores/editModeTransitionStore';
 import { useTheme } from '@/context/ThemeContext';
-import { generateColorPalette } from '@/utils/colorUtils';
+import { generateChartColorPalette } from '@/utils/colorUtils';
 
 // Use global window object to ensure chart component cache persists across rerenders
 // This prevents charts from being recreated when switching to edit mode
@@ -161,17 +161,30 @@ export const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({
   // Derive a theme-based default palette when not explicitly provided
   const { currentTheme } = useTheme();
   const themeAccent = currentTheme?.accent1 || '#4287f5';
+  const themeBg = currentTheme?.page?.backgroundColor || '#ffffff';
+  const themeText = currentTheme?.typography?.paragraph?.color || '#000000';
   const themeDefaultPalette = useMemo(() => {
     try {
       const data = (component.props && Array.isArray(component.props.data)) ? component.props.data : [];
       const inferredCount = data && data.length > 0
         ? (Array.isArray((data as any)[0]?.data) ? (data as any).length : (data as any).length)
         : 8;
-      return generateColorPalette(themeAccent, Math.max(3, Math.min(24, inferredCount)));
+      
+      // Use chart's background if set, otherwise use theme background
+      const chartBg = component.props?.backgroundColor;
+      const effectiveBg = (chartBg && 
+                          chartBg !== 'transparent' && 
+                          chartBg !== '#00000000' &&
+                          chartBg !== 'rgba(0,0,0,0)' &&
+                          chartBg !== 'rgba(0, 0, 0, 0)') 
+        ? chartBg 
+        : themeBg;
+      
+      return generateChartColorPalette(themeAccent, effectiveBg, Math.max(3, Math.min(24, inferredCount)), themeText);
     } catch {
-      return generateColorPalette(themeAccent, 8);
+      return generateChartColorPalette(themeAccent, themeBg, 8, themeText);
     }
-  }, [component.props, themeAccent]);
+  }, [component.props, themeAccent, themeBg, themeText]);
   
   // Create stable component with the simplified props - keeping only one instance
   const stableComponent = useMemo(() => {

@@ -1001,27 +1001,38 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 brand_colors_result = await brand_searcher.search_brand_colors(brand_name)
                 
                 if brand_colors_result and brand_colors_result.get('source') == 'brandfetch_cache':
-                    # Found in cache! Use this data directly
+                    # Found in cache! Use this data directly with proper categorization
                     colors = brand_colors_result.get('colors', [])
                     fonts = brand_colors_result.get('fonts', [])
+                    logo_url = brand_colors_result.get('logo_url')
                     confidence = brand_colors_result.get('confidence', 0)
-                    
+
+                    # Get properly categorized backgrounds, accents, and text colors from searcher
+                    backgrounds = brand_colors_result.get('backgrounds', [])
+                    accents = brand_colors_result.get('accents', [])
+                    text_colors = brand_colors_result.get('text_colors', [])
+
                     logger.info(f"✅ BRANDFETCH CACHE HIT via BrandColorSearcher for {brand_name}: {colors}")
-                    
-                    await self._emit_tool_result("BrandColorSearcher", 
-                        [f"✅ CACHE HIT: {len(colors)} colors, {len(fonts)} fonts",
+                    if logo_url:
+                        logger.info(f"✅ LOGO FOUND via BrandColorSearcher: {logo_url[:80]}...")
+
+                    await self._emit_tool_result("BrandColorSearcher",
+                        [f"✅ CACHE HIT: {len(colors)} colors, {len(fonts)} fonts" + (", logo found" if logo_url else ""),
                          f"Colors: {colors[:3]}...",
+                         f"Backgrounds: {backgrounds}, Accents: {accents}, Text: {text_colors}",
                          f"Confidence: {confidence}"])
-                    
+
                     return {
                         'colors': colors[:8],
-                        'source': 'brandfetch_cache_via_searcher',
+                        'source': 'brandfetch_cache',  # ← TRUST THIS SOURCE!
                         'palette_name': f"{brand_name} Brand Colors",
-                        'backgrounds': ['#FFFFFF'] + ([colors[2]] if len(colors) > 2 else []),
-                        'accents': colors[:2],
+                        'backgrounds': backgrounds if backgrounds else [],
+                        'accents': accents if accents else [],
+                        'text_colors': text_colors if text_colors else [],  # Include text colors
                         'metadata': {
                             'brand': brand_name,
                             'fonts': fonts,
+                            'logo_url': logo_url,
                             'confidence': confidence,
                             'source': 'brandfetch_cache'
                         }
@@ -1669,19 +1680,116 @@ Ensure structural elements match the deck's maturity and intended use.'''
         accents = color_result.get('accents', [])
         text_colors = color_result.get('text_colors', {})
         gradients = color_result.get('gradients', [])
-        
+        is_brand_cache = color_result.get('source') == 'brandfetch_cache'
+
+        print(f"\n🎨 [THEME BUILD] Source: {color_result.get('source')}, is_brand_cache: {is_brand_cache}")
+        print(f"🎨 [THEME BUILD] Colors: {colors}")
+        print(f"🎨 [THEME BUILD] Backgrounds: {backgrounds}")
+        print(f"🎨 [THEME BUILD] Accents: {accents}")
+        print(f"🎨 [THEME BUILD] Text Colors: {color_result.get('text_colors')}")
+
+        # ✅ IF BRAND CACHE: USE COLORS EXACTLY AS-IS, NO SANITIZATION, NO FALLBACKS!
+        if is_brand_cache and backgrounds and accents:
+            print(f"🎨 [BRAND COLORS] ✅ USING EXACT BRAND COLORS - NO MODIFICATIONS!")
+            primary_bg = backgrounds[0]
+            secondary_bg = backgrounds[1] if len(backgrounds) > 1 else (accents[0] if accents else primary_bg)
+            accent_1 = accents[0]
+            accent_2 = accents[1] if len(accents) > 1 else accent_1
+
+            # Use brand text colors if available, otherwise compute them
+            brand_text_colors = color_result.get('text_colors')  # This is a list like ['#003D29']
+            if brand_text_colors and isinstance(brand_text_colors, list) and len(brand_text_colors) > 0:
+                # Use brand text colors - build the dict from the list
+                primary_text = brand_text_colors[0]
+                secondary_text = brand_text_colors[1] if len(brand_text_colors) > 1 else primary_text
+                text_colors = {
+                    "primary": primary_text,
+                    "secondary": secondary_text,
+                    "heading": primary_text,
+                    "body": primary_text
+                }
+                print(f"🎨 [BRAND COLORS] Using brand text color: {primary_text}")
+            elif not text_colors:
+                # Fallback: compute text colors based on background brightness
+                text_colors = self._compute_text_colors(primary_bg, accent_1, accent_2)
+                print(f"🎨 [BRAND COLORS] Computed text colors from background")
+
+            print(f"🎨 [BRAND COLORS] ✅ FINAL: bg={primary_bg}, accent1={accent_1}, accent2={accent_2}, text={text_colors.get('primary') if isinstance(text_colors, dict) else text_colors}\n")
+
+            # Skip ALL sanitization - jump straight to building the theme object
+            theme = {
+                'color_palette': {
+                    'primary_background': primary_bg,
+                    'secondary_background': secondary_bg,
+                    'accent_1': accent_1,
+                    'accent_2': accent_2,
+                    'colors': colors,
+                    'backgrounds': backgrounds,
+                    'accents': accents,
+                    'text_colors': text_colors,
+                    'gradients': gradients if gradients else [],
+                    'source': 'brandfetch_cache',
+                    'palette_name': color_result.get('palette_name', 'Brand Colors'),
+                    'metadata': color_result.get('metadata', {})
+                },
+                'typography': {
+                    'hero_title': {
+                        'family': font_result.get('hero', 'Montserrat'),
+                        'weight': '700',
+                        'size': '48px'
+                    },
+                    'body_text': {
+                        'family': font_result.get('body', 'Roboto'),
+                        'weight': '400',
+                        'size': '16px'
+                    },
+                    'fonts': color_result.get('fonts', []),
+                    'font_source': font_result.get('source', 'contextual')
+                },
+                'visual_style': {
+                    'background_style': 'solid',
+                    'style_keywords': analysis.get('style_keywords', [])
+                }
+            }
+
+            # Add logo if available
+            try:
+                logo_url_top = (color_result.get('metadata') or {}).get('logo_url')
+                if deck_outline and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                    if hasattr(deck_outline.stylePreferences, 'logoUrl'):
+                        user_logo = deck_outline.stylePreferences.logoUrl
+                        if isinstance(user_logo, str) and user_logo.strip():
+                            logo_url_top = user_logo.strip()
+
+                if isinstance(logo_url_top, str) and logo_url_top.strip():
+                    theme['brandInfo'] = {'logoUrl': logo_url_top}
+                    if 'metadata' not in theme['color_palette']:
+                        theme['color_palette']['metadata'] = {}
+                    theme['color_palette']['metadata']['logo_url'] = logo_url_top
+            except Exception:
+                pass
+
+            return theme
+
+        # ELSE: Non-brand colors - do normal inference and sanitization
+        print(f"🎨 [THEME BUILD] Not brand cache - doing inference and sanitization...")
+
         # Ensure we have valid backgrounds and accents
         if not backgrounds:
             backgrounds = self._infer_backgrounds(colors)
+            print(f"🎨 [THEME BUILD] Inferred backgrounds: {backgrounds}")
         if not accents:
             accents = self._infer_accents(colors)
-        
+            print(f"🎨 [THEME BUILD] Inferred accents: {accents}")
+
         # Select primary/secondary from lists
         primary_bg = backgrounds[0] if backgrounds else '#0A0E27'
         secondary_bg = backgrounds[1] if len(backgrounds) > 1 else self._darken_color(primary_bg, 0.15)
         accent_1 = accents[0] if accents else '#2563EB'
         accent_2 = accents[1] if len(accents) > 1 else self._shift_hue(accent_1, 60)
-        
+
+        print(f"🎨 [THEME BUILD] BEFORE sanitize - primary_bg: {primary_bg}, accent_1: {accent_1}")
+
         # Policy: avoid grey and pink backgrounds unless explicitly requested
         def _is_greyish(hex_color: str) -> bool:
             try:
@@ -1710,9 +1818,19 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 return False
         
         def _sanitize_bg(bg: str, fallback_from: str) -> str:
+            # IMPORTANT: If this is from brand cache, trust it completely
+            is_from_brand_cache = color_result.get('source') == 'brandfetch_cache'
+            print(f"🎨 [SANITIZE] Input bg: {bg}, is_from_brand_cache: {is_from_brand_cache}")
+            if is_from_brand_cache:
+                print(f"🎨 [SANITIZE] ✅ Trusting brand cache background: {bg}")
+                return bg
+
             # For presentations, near-white backgrounds are GOOD! Only reject grey/pink
             if not _is_greyish(bg) and not _is_pinkish(bg):
+                print(f"🎨 [SANITIZE] ✅ Background {bg} is acceptable")
                 return bg
+
+            print(f"🎨 [SANITIZE] ❌ Background {bg} rejected as greyish/pinkish, finding alternative")
             # Try to find a better candidate from provided colors
             try:
                 candidates = [c for c in (colors or []) if isinstance(c, str)]
@@ -1725,6 +1843,7 @@ Ensure structural elements match the deck's maturity and intended use.'''
                     reverse=True
                 )
                 if ranked:
+                    logger.info(f"[THEME] Using alternative background: {ranked[0]}")
                     return ranked[0]
             except Exception:
                 pass
@@ -1735,11 +1854,14 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 candidate = self._lighten_color(base, 0.22)
                 if _is_pinkish(candidate):
                     candidate = self._shift_hue(candidate, -20)
+                logger.info(f"[THEME] Synthesized background: {candidate}")
                 return candidate
             except Exception:
                 return fallback_from
 
         primary_bg = _sanitize_bg(primary_bg, primary_bg)
+        print(f"🎨 [THEME BUILD] AFTER sanitize - primary_bg: {primary_bg}")
+
         # Normalize potential None values before string operations
         try:
             primary_bg = str(primary_bg or '#FFFFFF')
@@ -1751,6 +1873,8 @@ Ensure structural elements match the deck's maturity and intended use.'''
             secondary_bg = str(secondary_bg) if secondary_bg is not None else primary_bg
             accent_1 = str(accent_1) if accent_1 is not None else '#FF4301'
             accent_2 = str(accent_2) if accent_2 is not None else accent_1
+
+        print(f"🎨 [THEME BUILD] ✅ FINAL THEME - primary_bg: {primary_bg}, accent_1: {accent_1}, accent_2: {accent_2}\n")
         # Ensure secondary differs and is usable
         if secondary_bg.lower() == primary_bg.lower() or _is_greyish(secondary_bg) or _is_pinkish(secondary_bg):
             secondary_bg = self._darken_color(primary_bg, 0.15)

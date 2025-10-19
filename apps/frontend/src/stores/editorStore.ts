@@ -294,12 +294,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       _needsDeepClone: undefined
     };
 
-    // Create the new components array
-    const updatedComponents = [
-        ...currentComponents.slice(0, componentIndex),
-        updatedComponent,
-        ...currentComponents.slice(componentIndex + 1)
-    ];
+    // PERFORMANCE: Create new array by mutating (faster for frequent updates like resize)
+    // Still creates a new reference so Zustand detects the change, but faster than slice/spread
+    const updatedComponents = currentComponents.slice();
+    updatedComponents[componentIndex] = updatedComponent;
 
     // PERFORMANCE: Update directly without additional cloning
     set(state => ({

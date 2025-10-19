@@ -951,11 +951,20 @@ class SimpleDeckComposer(IDeckComposer):
                     else:
                         pd.setdefault('colors', existing_colors)
                         logger.info(f"[COLOR TRACE] Preserving original colors: {existing_colors}")
-                    pd.setdefault('text_colors', {
-                        'primary': primary_text,
-                        'on_accent_1': '#FFFFFF',
-                        'on_accent_2': '#FFFFFF'
-                    })
+                    # Check if brand text colors exist in theme, otherwise use defaults
+                    brand_text_colors = colors.get('text_colors')
+                    if brand_text_colors and isinstance(brand_text_colors, dict):
+                        # Use brand text colors from theme (already set by theme_director)
+                        pd.setdefault('text_colors', brand_text_colors)
+                        print(f"🎨 [PALETTE NORM] Using brand text colors: {brand_text_colors}")
+                    else:
+                        # Use computed text colors
+                        pd.setdefault('text_colors', {
+                            'primary': primary_text,
+                            'on_accent_1': '#FFFFFF',
+                            'on_accent_2': '#FFFFFF'
+                        })
+                        print(f"🎨 [PALETTE NORM] Using computed text colors: {primary_text}")
                     # Enrich emitted palette colors with non-neutral backgrounds while preserving any existing list
                     try:
                         col_list = [c for c in (pd.get('colors') or []) if isinstance(c, str)]

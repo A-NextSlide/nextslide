@@ -118,24 +118,35 @@ class SimpleBrandfetchCache:
             raise RuntimeError("Service must be used as async context manager")
         
         normalized_id = self._normalize_identifier(identifier)
-        
+
         # Step 1: Check cache first (unless force refresh or non-cacheable)
-        if not force_refresh and not normalized_id.startswith('_brand_name_') and not normalized_id.startswith('_invalid_'):
-            cached_result = await self._get_from_cache(normalized_id)
-            if cached_result:
-                logger.info(f"✓ Cache HIT for {normalized_id}")
-                await self._increment_hit_count(normalized_id)
+        if not force_refresh:
+            # For brand names (non-domains), also try checking cache with .com appended
+            cache_keys_to_try = []
 
-                # Check if logos in cached result are still valid
-                if await self._should_refresh_logos(cached_result):
-                    logger.info(f"🔄 Refreshing stale logos for {normalized_id}")
-                    return await self.get_brand_data(identifier, force_refresh=True)
+            if not normalized_id.startswith('_brand_name_') and not normalized_id.startswith('_invalid_'):
+                cache_keys_to_try.append(normalized_id)
+            elif normalized_id.startswith('_brand_name_'):
+                # Extract the brand name and try with .com
+                brand_name = normalized_id.replace('_brand_name_', '')
+                cache_keys_to_try.append(f"{brand_name}.com")
+                logger.info(f"📝 Brand name detected: {identifier} - will check cache for {brand_name}.com")
 
-                return cached_result
-            else:
-                logger.info(f"✗ Cache MISS for {normalized_id}")
-        elif normalized_id.startswith('_brand_name_') or normalized_id.startswith('_invalid_'):
-            logger.info(f"⚠️  Skipping cache for non-domain: {identifier}")
+            # Try cache lookups
+            for cache_key in cache_keys_to_try:
+                cached_result = await self._get_from_cache(cache_key)
+                if cached_result:
+                    logger.info(f"✓ Cache HIT for {cache_key} (searched: {identifier})")
+                    await self._increment_hit_count(cache_key)
+
+                    # Check if logos in cached result are still valid
+                    if await self._should_refresh_logos(cached_result):
+                        logger.info(f"🔄 Refreshing stale logos for {cache_key}")
+                        return await self.get_brand_data(identifier, force_refresh=True)
+
+                    return cached_result
+
+            logger.info(f"✗ Cache MISS for {identifier} (tried: {cache_keys_to_try})")
         else:
             logger.info(f"🔄 Force refresh for {normalized_id}")
         
@@ -196,13 +207,22 @@ class SimpleBrandfetchCache:
     async def _store_in_cache(self, identifier: str, normalized_identifier: str, api_result: Dict[str, Any]) -> None:
         """Store API result in cache (only valid domains)."""
         try:
-            # Skip caching if it's not a valid domain
-            if normalized_identifier.startswith('_brand_name_') or normalized_identifier.startswith('_invalid_'):
-                logger.info(f"⚠️  Skipping cache for non-domain: {identifier}")
+            # If the API result contains a domain, use that as the cache key instead
+            # This handles cases where "instacart" is searched but API returns "instacart.com"
+            cache_key = normalized_identifier
+            if normalized_identifier.startswith('_brand_name_') and api_result.get('domain'):
+                # Use the domain from API result as the cache key
+                cache_key = api_result['domain']
+                logger.info(f"📝 Using domain from API result for caching: {cache_key}")
+            elif normalized_identifier.startswith('_invalid_'):
+                logger.info(f"⚠️  Skipping cache for invalid identifier: {identifier}")
                 return
-                
+            elif normalized_identifier.startswith('_brand_name_'):
+                logger.info(f"⚠️  No domain in API result, skipping cache for: {identifier}")
+                return
+
             success = not api_result.get('error')
-            
+
             async with self.db_pool.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO public.brandfetch_cache (
@@ -212,14 +232,14 @@ class SimpleBrandfetchCache:
                         api_response = EXCLUDED.api_response,
                         success = EXCLUDED.success,
                         created_at = NOW()
-                """, 
+                """,
                     identifier,
-                    normalized_identifier,
+                    cache_key,
                     json.dumps(api_result),
                     success
                 )
-                
-                logger.info(f"💾 Cached {normalized_identifier} (success: {success})")
+
+                logger.info(f"💾 Cached {cache_key} (success: {success})")
                 
         except Exception as e:
             logger.error(f"Error storing in cache: {e}")

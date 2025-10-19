@@ -351,6 +351,7 @@ def _is_reasonable_brand_term(identifier: str) -> bool:
 async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem], domain_hint: Optional[str] = None) -> Optional[StylePreferencesItem]:
     """Ensure style preferences include brand colors, font, and logo by refetching brand data when needed."""
     if not style_prefs:
+        logger.debug("[STYLE PREF HYDRATE] No style_prefs provided, returning None")
         return style_prefs
 
     try:
@@ -358,10 +359,13 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
         has_colors = bool(colors and (colors.accent1 or colors.accent2 or colors.accent3 or colors.background or colors.text))
         has_logo = bool(getattr(style_prefs, 'logoUrl', None))
         has_font = bool(getattr(style_prefs, 'font', None))
-    except Exception:
+        logger.info(f"[STYLE PREF HYDRATE] Status check: has_colors={has_colors}, has_logo={has_logo}, has_font={has_font}")
+    except Exception as e:
+        logger.warning(f"[STYLE PREF HYDRATE] Error checking status: {e}")
         has_colors = has_logo = has_font = False
 
     if has_colors and has_logo and has_font:
+        logger.info("[STYLE PREF HYDRATE] All data present, skipping brandfetch")
         return style_prefs
 
     vibe_context = getattr(style_prefs, 'vibeContext', None)
@@ -374,6 +378,9 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
         guessed = _guess_brand_identifier(vibe_context)
         if guessed:
             candidate_chain.append(guessed)
+    
+    logger.info(f"[STYLE PREF HYDRATE] Domain extraction - domain_hint: {domain_hint}, vibeContext: {vibe_context}")
+    logger.info(f"[STYLE PREF HYDRATE] Candidate chain: {candidate_chain}")
 
     domain = None
     for candidate in candidate_chain:
@@ -381,38 +388,55 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
             continue
         if _looks_like_domain(candidate):
             domain = candidate.strip()
+            logger.info(f"[STYLE PREF HYDRATE] ✅ Found domain (looks_like_domain): {domain}")
             break
         if _is_reasonable_brand_term(candidate):
             domain = candidate.strip()
+            logger.info(f"[STYLE PREF HYDRATE] ✅ Found domain (reasonable_brand_term): {domain}")
             break
 
     if not domain:
-        logger.debug("[STYLE PREF HYDRATE] No valid brand identifier found; skipping Brandfetch hydration")
+        logger.warning("[STYLE PREF HYDRATE] ⚠️ No valid brand identifier found; skipping Brandfetch hydration")
+        logger.warning(f"[STYLE PREF HYDRATE] Tried candidates: {candidate_chain}")
         return style_prefs
 
     brand_data = None
+    logger.info(f"[STYLE PREF HYDRATE] 🔍 Attempting to fetch brand data for: {domain}")
     try:
         from services.simple_brandfetch_cache import SimpleBrandfetchCache
         db_url = os.getenv('DATABASE_URL')
         if db_url:
+            logger.info(f"[STYLE PREF HYDRATE] 📦 Checking SimpleBrandfetchCache for: {domain}")
             async with SimpleBrandfetchCache(db_url) as cache_service:
                 brand_data = await cache_service.get_brand_data(domain)
+                if brand_data and not brand_data.get('error'):
+                    logger.info(f"[STYLE PREF HYDRATE] ✅ Found in cache: {domain}")
+                else:
+                    logger.info(f"[STYLE PREF HYDRATE] ❌ Not in cache: {domain}")
+        else:
+            logger.warning("[STYLE PREF HYDRATE] ⚠️ No DATABASE_URL, skipping cache check")
     except Exception as cache_error:
-        logger.debug(f"[STYLE PREF HYDRATE] Cache fetch failed: {cache_error}")
+        logger.warning(f"[STYLE PREF HYDRATE] Cache fetch failed: {cache_error}")
 
     if not brand_data:
         try:
+            logger.info(f"[STYLE PREF HYDRATE] 🌐 Calling BrandfetchService API for: {domain}")
             from services.brandfetch_service import BrandfetchService
             async with BrandfetchService() as service:
                 # Use search-capable resolver to handle non-domain identifiers gracefully
                 brand_data = await service.get_brand_data_with_search(domain)
+                if brand_data:
+                    logger.info(f"[STYLE PREF HYDRATE] ✅ BrandfetchService returned data for: {domain}")
+                else:
+                    logger.info(f"[STYLE PREF HYDRATE] ❌ BrandfetchService returned no data for: {domain}")
         except Exception as direct_error:
-            logger.debug(f"[STYLE PREF HYDRATE] Direct Brandfetch fetch failed: {direct_error}")
+            logger.warning(f"[STYLE PREF HYDRATE] Direct Brandfetch fetch failed: {direct_error}")
             brand_data = None
 
     # FINAL FALLBACK: Use BrandColorSearcher to get basic brand colors/fonts/logo if Brandfetch fails
     if not brand_data and domain:
         try:
+            logger.info(f"[STYLE PREF HYDRATE] 🔎 Trying BrandColorSearcher fallback for: {domain}")
             from agents.tools.theme.brand_color_tools import BrandColorSearcher
             searcher = BrandColorSearcher()
             sr = await searcher.search_brand_colors(domain)
@@ -425,17 +449,23 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
                     logos_section = {
                         'light': [{ 'formats': [{'url': sr['logo_url']}]}]
                     }
+                    logger.info(f"[STYLE PREF HYDRATE] ✅ BrandColorSearcher found logo: {sr['logo_url'][:60]}...")
                 brand_data = {
                     'colors': colors_section,
                     'fonts': fonts_section,
                     'logos': logos_section
                 }
-                logger.info(f"[STYLE PREF HYDRATE] BrandColorSearcher provided fallback brand data for {domain}")
+                logger.info(f"[STYLE PREF HYDRATE] ✅ BrandColorSearcher provided fallback brand data for {domain}")
+            else:
+                logger.info(f"[STYLE PREF HYDRATE] ❌ BrandColorSearcher returned no data for: {domain}")
         except Exception as _search_err:
-            logger.debug(f"[STYLE PREF HYDRATE] BrandColorSearcher fallback failed: {_search_err}")
+            logger.warning(f"[STYLE PREF HYDRATE] BrandColorSearcher fallback failed: {_search_err}")
 
     if not brand_data:
+        logger.warning(f"[STYLE PREF HYDRATE] ⚠️ No brand data found for: {domain} (tried cache, API, and fallback)")
         return style_prefs
+    
+    logger.info(f"[STYLE PREF HYDRATE] ✅ Successfully retrieved brand data for: {domain}")
 
     try:
         colors_data = brand_data.get('colors', {})
@@ -519,6 +549,7 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
 
         if not has_logo:
             logos = brand_data.get('logos', {})
+            logger.info(f"[STYLE PREF HYDRATE] 🖼️ Extracting logo - logos data: {list(logos.keys()) if logos else 'None'}")
             try:
                 for logo_type in ['light', 'dark', 'icons', 'other']:
                     items = logos.get(logo_type)
@@ -531,16 +562,22 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
                             url = formats[0].get('url')
                             if url:
                                 style_prefs.logoUrl = url
+                                logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type}: {url[:60]}...")
                                 break
                         url = first_item.get('url')
                         if url:
                             style_prefs.logoUrl = url
+                            logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (direct): {url[:60]}...")
                             break
                     elif isinstance(first_item, str) and first_item.startswith('http'):
                         style_prefs.logoUrl = first_item
+                        logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (string): {first_item[:60]}...")
                         break
-            except Exception:
-                pass
+                        
+                if not getattr(style_prefs, 'logoUrl', None):
+                    logger.warning(f"[STYLE PREF HYDRATE] ⚠️ No logo URL found in brand_data despite having logos: {logos}")
+            except Exception as logo_err:
+                logger.warning(f"[STYLE PREF HYDRATE] Logo extraction failed: {logo_err}")
 
     except Exception as hydrate_error:
         logger.debug(f"[STYLE PREF HYDRATE] Failed to hydrate style preferences: {hydrate_error}")

@@ -346,10 +346,22 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       
       // Use 'e' key to toggle edit mode - only if current slide is completed
       if (e.key === 'e' && isCurrentSlideCompleted) {
-        setIsEditing(!isEditingMode);
+        const newEditingState = !isEditingMode;
+        
+        // CRITICAL: If exiting edit mode, save draft changes FIRST
+        if (!newEditingState && isEditingMode) {
+          const applyDraftChanges = useEditorStore.getState().applyDraftChanges;
+          applyDraftChanges();
+          
+          setTimeout(() => {
+            setIsEditing(newEditingState);
+          }, 0);
+        } else {
+          setIsEditing(newEditingState);
+        }
         
         // Also dispatch the force event for redundancy
-        if (!isEditingMode) {
+        if (newEditingState) {
           window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
         }
       }
@@ -359,7 +371,21 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     const handleToggleEditMode = () => {
       if (isCurrentSlideCompleted) {
         const newEditingState = !isEditingMode;
-        setIsEditing(newEditingState);
+        
+        // CRITICAL: If exiting edit mode, save draft changes FIRST before toggling
+        // This prevents showing old component state during the transition
+        if (!newEditingState && isEditingMode) {
+          const applyDraftChanges = useEditorStore.getState().applyDraftChanges;
+          applyDraftChanges();
+          
+          // Small delay to ensure draft changes are applied before switching view mode
+          setTimeout(() => {
+            setIsEditing(newEditingState);
+          }, 0);
+        } else {
+          // Entering edit mode - toggle immediately
+          setIsEditing(newEditingState);
+        }
         
         // Log component font sizes when entering edit mode
         if (newEditingState && currentSlide) {

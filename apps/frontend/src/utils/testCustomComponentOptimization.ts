@@ -162,5 +162,5 @@ if (import.meta.env.DEV) {
     }
   };
   
-  console.log('[CustomComponentOptimization] Test utilities loaded. Available at window.testCustomComponentOptimization');
+  // console.log('[CustomComponentOptimization] Test utilities loaded. Available at window.testCustomComponentOptimization');
 }

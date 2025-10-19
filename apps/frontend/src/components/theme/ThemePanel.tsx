@@ -27,7 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { createDefaultBackground } from '@/utils/componentUtils';
-import { generateColorPalette } from '@/utils/colorUtils';
+import { generateColorPalette, generateChartColorPalette, isLightColor } from '@/utils/colorUtils';
 
 export interface ThemePanelProps {
   onClose?: () => void;
@@ -242,10 +242,26 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
             break;
           case 'Chart':
             try {
+              // Determine chart background (use slide background if chart is transparent)
+              const currentBgColor = component.props.backgroundColor;
+              const isTransparent = !currentBgColor || 
+                                   currentBgColor === 'transparent' || 
+                                   currentBgColor === '#00000000' ||
+                                   currentBgColor === 'rgba(0,0,0,0)' ||
+                                   currentBgColor === 'rgba(0, 0, 0, 0)' ||
+                                   (currentBgColor.startsWith('#') && currentBgColor.length === 9 && currentBgColor.endsWith('00'));
+              
+              const effectiveChartBg = isTransparent ? bgColor : currentBgColor;
+              
               // Generate a theme-based palette and apply to chart colors and data
               const dataArr = Array.isArray(component.props.data) ? component.props.data : [];
               const inferredCount = dataArr.length > 0 ? dataArr.length : 8;
-              const palette = generateColorPalette(accentColor, Math.max(3, Math.min(24, inferredCount)));
+              const palette = generateChartColorPalette(
+                accentColor, 
+                effectiveChartBg, 
+                Math.max(3, Math.min(24, inferredCount)),
+                paraStyle.color // Pass text color for subtle variation
+              );
               component.props.colors = palette;
 
               if (dataArr.length > 0) {
@@ -261,6 +277,19 @@ const ThemePanel: React.FC<ThemePanelProps> = ({ onClose }) => {
                   });
                 }
               }
+
+              // Update chart theme to match slide background (light or dark)
+              const shouldBeDarkTheme = !isLightColor(bgColor);
+              component.props.theme = shouldBeDarkTheme ? 'dark' : 'light';
+              
+              // Update chart font family to match theme
+              component.props.fontFamily = fontFamily;
+              
+              // Update chart background color if not transparent
+              if (!isTransparent) {
+                component.props.backgroundColor = bgColor;
+              }
+              // If it's transparent, keep it transparent (do nothing)
             } catch (e) {
               console.warn('[ThemePanel] Failed to apply chart palette from accent', e);
               component.props.colors = [accentColor, ...(component.props.colors?.slice(1) || [])];

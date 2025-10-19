@@ -92,6 +92,183 @@ export const adjustBrightness = (color: string, amount: number): string => {
 };
 
 /**
+ * Converts RGB to HSL
+ * @param r Red value (0-255)
+ * @param g Green value (0-255)
+ * @param b Blue value (0-255)
+ * @returns HSL object with h (0-360), s (0-100), l (0-100)
+ */
+export const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: number } => {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      case b:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100)
+  };
+};
+
+/**
+ * Converts HSL to RGB
+ * @param h Hue (0-360)
+ * @param s Saturation (0-100)
+ * @param l Lightness (0-100)
+ * @returns RGB object with r, g, b values (0-255)
+ */
+export const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: number } => {
+  h = h / 360;
+  s = s / 100;
+  l = l / 100;
+
+  let r: number, g: number, b: number;
+
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+
+  return {
+    r: Math.round(r * 255),
+    g: Math.round(g * 255),
+    b: Math.round(b * 255)
+  };
+};
+
+/**
+ * Generates a theme-aware color palette for charts with variations of accent color darkness
+ * @param accentColor Base accent color in hex
+ * @param backgroundColor Background color to consider for contrast
+ * @param count Number of colors to generate
+ * @param textColor Optional text color to incorporate for variety
+ * @returns Array of hex color codes
+ */
+export const generateChartColorPalette = (
+  accentColor: string,
+  backgroundColor: string,
+  count: number,
+  textColor?: string
+): string[] => {
+  const palette: string[] = [];
+  
+  // Determine if background is light or dark
+  const isDarkBg = !isLightColor(backgroundColor);
+  
+  // Get HSL values of the accent color
+  const rgb = hexToRgb(accentColor);
+  if (!rgb) return Array(count).fill(accentColor);
+  
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  
+  // Get background lightness to ensure we don't match it
+  const bgRgb = hexToRgb(backgroundColor);
+  const bgHsl = bgRgb ? rgbToHsl(bgRgb.r, bgRgb.g, bgRgb.b) : { h: 0, s: 0, l: isDarkBg ? 10 : 90 };
+  
+  // Generate variations of the accent color only (same hue, different lightness)
+  if (count === 1) {
+    return [accentColor];
+  }
+  
+  // Define lightness range based on background
+  // For dark backgrounds: use lighter shades (50-85%)
+  // For light backgrounds: use darker shades (25-60%)
+  const minLight = isDarkBg ? 50 : 25;
+  const maxLight = isDarkBg ? 85 : 60;
+  
+  // Avoid background lightness range
+  const bgLightness = bgHsl.l;
+  const safeMargin = 15; // Minimum difference from background
+  
+  for (let i = 0; i < count; i++) {
+    // Create even distribution across the lightness range
+    const step = (maxLight - minLight) / (count - 1);
+    let targetLightness = count === 1 ? hsl.l : minLight + (i * step);
+    
+    // Ensure we don't get too close to background lightness
+    if (Math.abs(targetLightness - bgLightness) < safeMargin) {
+      if (isDarkBg) {
+        // For dark backgrounds, push lighter
+        targetLightness = Math.min(bgLightness + safeMargin, maxLight);
+      } else {
+        // For light backgrounds, push darker
+        targetLightness = Math.max(bgLightness - safeMargin, minLight);
+      }
+    }
+    
+    // Keep the same hue as accent, full saturation, vary only lightness
+    const saturation = Math.max(60, Math.min(90, hsl.s)); // Keep saturation vibrant
+    const newRgb = hslToRgb(hsl.h, saturation, targetLightness);
+    const color = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+    
+    // Double-check we're not matching background
+    if (color !== backgroundColor) {
+      palette.push(color);
+    }
+  }
+  
+  // If we have textColor and room for more variation, add one shade based on text color
+  if (textColor && count >= 3 && palette.length >= 2) {
+    const textRgb = hexToRgb(textColor);
+    if (textRgb) {
+      const textHsl = rgbToHsl(textRgb.r, textRgb.g, textRgb.b);
+      // Blend accent hue with text color for one variation
+      const blendedHue = hsl.h; // Keep accent hue dominant
+      const blendedSat = Math.min(hsl.s, 70); // Slightly muted
+      const blendedLight = isDarkBg ? 65 : 45; // Mid-range
+      const blendedRgb = hslToRgb(blendedHue, blendedSat, blendedLight);
+      const blendedColor = rgbToHex(blendedRgb.r, blendedRgb.g, blendedRgb.b);
+      
+      // Replace the middle color with this blended one for subtle variety
+      if (palette.length >= 3) {
+        const midIndex = Math.floor(palette.length / 2);
+        palette[midIndex] = blendedColor;
+      }
+    }
+  }
+  
+  return palette;
+};
+
+/**
  * Generates a complementary color
  * @param color Hex color code
  * @returns Complementary color in hex

@@ -18,7 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { CirclePlus, CircleMinus } from 'lucide-react';
 import { notifyChartPropertyChanged } from '@/charts/utils/ThemeUtils';
 import { useTheme } from '@/context/ThemeContext';
-import { generateColorPalette } from '@/utils/colorUtils';
+import { generateChartColorPalette } from '@/utils/colorUtils';
 
 // Define ValueInput component outside ChartDataEditor
 // This component handles numeric input with proper parsing to prevent string concatenation issues
@@ -167,13 +167,15 @@ const ChartDataEditor: React.FC<ChartDataEditorProps> = ({
 }) => {
   const { currentTheme } = useTheme();
   const themeAccent = currentTheme?.accent1 || '#4287f5';
+  const themeBg = currentTheme?.page?.backgroundColor || '#ffffff';
+  const themeText = currentTheme?.typography?.paragraph?.color || '#000000';
   const getThemePalette = React.useCallback((count: number) => {
     try {
-      return generateColorPalette(themeAccent, Math.max(3, Math.min(24, count)));
+      return generateChartColorPalette(themeAccent, themeBg, Math.max(3, Math.min(24, count)), themeText);
     } catch {
       return DEFAULT_CHART_COLORS.slice(0, Math.max(3, Math.min(10, count)));
     }
-  }, [themeAccent]);
+  }, [themeAccent, themeBg, themeText]);
   // Define chart type groups once at the top
   const barPieTypes = ['bar', 'column', 'pie', 'funnel', 'pyramid', 'gauge'];
   const lineSeriesTypes = ['line', 'spline', 'area', 'areaspline', 'scatter', 'bubble', 'radar', 'waterfall', 'boxplot', 'errorbar'];

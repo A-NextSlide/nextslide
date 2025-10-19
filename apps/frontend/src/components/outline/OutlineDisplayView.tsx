@@ -411,16 +411,22 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const addedId = addCustomTheme(builtTheme);
             const savedTheme = { ...builtTheme, id: addedId, isCustom: true } as any;
             setWorkspaceTheme(addedId);
+            
             // Capture as initial theme if this is the first theme we receive (branded theme)
+            const isFirstTheme = !initialTheme;
             setInitialTheme(prev => prev || savedTheme);
-            // Add to generated list (dedup by signature) to show in skinny vertical list
-            try {
-              setGeneratedThemes(prev => {
-                const sig = themeSignature(savedTheme as any);
-                const dedup = prev.filter(t => themeSignature(t as any) !== sig);
-                return [savedTheme as any, ...dedup].slice(0, 24);
-              });
-            } catch {}
+            
+            // Add to generated list (dedup by signature) ONLY if it's not the initial theme
+            // to avoid duplicating the branded theme in the theme list
+            if (!isFirstTheme) {
+              try {
+                setGeneratedThemes(prev => {
+                  const sig = themeSignature(savedTheme as any);
+                  const dedup = prev.filter(t => themeSignature(t as any) !== sig);
+                  return [savedTheme as any, ...dedup].slice(0, 24);
+                });
+              } catch {}
+            }
             
             if (isRich || isThemeGenerated) {
               setThemeReady(true);
@@ -1702,7 +1708,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                 <div className="flex items-center gap-2">
                                   <div className="text-[11px] opacity-70">Theme</div>
                                   <div className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                                    {currentThemeIndex === 0 && initialTheme ? 'Branded' : 'AI'}
+                                    {currentThemeIndex === 0 && initialTheme ? 'Branded' : 'AI Generated'}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1">

@@ -150,9 +150,12 @@ export function useComponentDrag({
       onSelect(component.id);
     }
 
-    // Simplified history tracking - only record initial state
+    // DEFERRED: Move history tracking to next microtask for instant first drag
+    // Using Promise.resolve() is faster than requestAnimationFrame
     if (slideId) {
-      historyStore.startTransientOperation(component.id, slideId);
+      Promise.resolve().then(() => {
+        historyStore.startTransientOperation(component.id, slideId);
+      });
     }
     
     // Store positions for multi-drag if needed

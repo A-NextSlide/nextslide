@@ -66,7 +66,7 @@ class ComponentValidator:
                 
                 # Special handling for text components - standardize and enrich formatting
                 if comp_type in ['TiptapTextBlock', 'TextBlock', 'Title']:
-                    component = self._clean_text_component(component)
+                    component = self._clean_text_component(component, theme)
                     # Normalize fontFamily casing to match schema enums (e.g., 'OPEN SANS' -> 'Open Sans')
                     try:
                         p = component.get('props') or {}
@@ -124,7 +124,7 @@ class ComponentValidator:
         """Overlap enforcement removed - AI model handles positioning directly."""
         return components
     
-    def _clean_text_component(self, component: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_text_component(self, component: Dict[str, Any], theme: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Normalize text components to satisfy typed schema while keeping visual intent.
         - Ensure required fields exist with safe defaults
         - Coerce types (e.g., letterSpacing numeric)
@@ -132,6 +132,13 @@ class ComponentValidator:
         - Keep background visually transparent by default using '#00000000'
         """
         props = component.get('props', {}) or {}
+
+        # Get default text color from theme if available, otherwise use black
+        default_text_color = '#000000ff'
+        if theme and isinstance(theme, dict):
+            color_palette = theme.get('color_palette', {})
+            if isinstance(color_palette, dict):
+                default_text_color = color_palette.get('primary_text', '#000000ff')
 
         # Base visual defaults often required by schema
         props.setdefault('opacity', 1)
@@ -203,7 +210,7 @@ class ComponentValidator:
         if dominant_color and isinstance(dominant_color, str):
             props['textColor'] = dominant_color
         else:
-            props.setdefault('textColor', '#000000ff')
+            props.setdefault('textColor', default_text_color)
 
         # Compute root fontSize/fontWeight heuristics if missing
         # Use larger default sizes for better visibility
@@ -234,7 +241,7 @@ class ComponentValidator:
             if bold_flag is None:
                 fw = seg.get('fontWeight') or props.get('fontWeight')
                 bold_flag = True if str(fw).lower() == 'bold' or str(fw).isdigit() and int(str(fw)) >= 600 else False
-            style.setdefault('textColor', color or '#000000ff')
+            style.setdefault('textColor', color or default_text_color)
             style.setdefault('backgroundColor', '#00000000')
             style.setdefault('bold', bool(bold_flag))
             style.setdefault('italic', False)
@@ -640,7 +647,7 @@ class ComponentValidator:
                     'text': (w + ' '),
                     'fontSize': large_size if w == longest and comp_type != 'TextBlock' else base_size,
                     'style': {
-                        'textColor': props.get('textColor') or props.get('color') or '#000000ff',
+                        'textColor': props.get('textColor') or props.get('color') or default_text_color,
                         'backgroundColor': '#00000000',
                         'bold': (w == longest) or (str(props.get('fontWeight', 'normal')).lower() == 'bold'),
                         'italic': False,

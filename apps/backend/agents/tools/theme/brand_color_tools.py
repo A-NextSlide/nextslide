@@ -52,22 +52,32 @@ class BrandColorSearcher:
             colors = db_result.get('colors', [])
             fonts = db_result.get('fonts', [])
             logo_url = db_result.get('logo_url')
-            backgrounds, accents = self._analyze_brand_colors(colors)
-            
+
+            # Use pre-categorized colors if available, otherwise analyze
+            backgrounds = db_result.get('backgrounds')
+            accents = db_result.get('accents')
+            text_colors = db_result.get('text_colors')  # Get text colors from cache
+
+            if not backgrounds or not accents:
+                # Fallback to analysis if categories not available
+                backgrounds, accents = self._analyze_brand_colors(colors)
+
             logger.info(f"✅ BRANDFETCH CACHE HIT for {brand_name}: {colors}")
-            
+            logger.info(f"   Backgrounds: {backgrounds}, Accents: {accents}, Text: {text_colors}")
+
             result = {
                 "colors": colors,
-                "source": "brandfetch_cache", 
+                "source": "brandfetch_cache",
                 "confidence": 0.95,  # Highest confidence for cached brand data
                 "backgrounds": backgrounds,
                 "accents": accents,
+                "text_colors": text_colors,  # Pass through brand text colors
                 "brand_name": db_result.get('name', brand_name),
                 "fonts": fonts,
                 "logo_url": logo_url,
                 "domain": db_result.get('domain', brand_name)
             }
-            
+
             # IMMEDIATELY RETURN - No AI calls needed when we have brand cache data
             return result
         

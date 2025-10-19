@@ -49,9 +49,9 @@ SlideCompletionHandler.getInstance().initialize();
 
 // Set up custom component optimization
 try {
-  console.warn('[Main] Setting up custom component optimization...');
+  // console.warn('[Main] Setting up custom component optimization...');
   CustomComponentOptimizationService.setupAutoOptimization();
-  console.warn('[Main] Custom component optimization setup complete');
+  // console.warn('[Main] Custom component optimization setup complete');
 } catch (error) {
   console.error('[Main] Failed to setup custom component optimization:', error);
 }

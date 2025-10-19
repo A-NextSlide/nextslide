@@ -100,14 +100,22 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
             fonts_data = brand_data.get('fonts', [])
             logos_data = brand_data.get('logos', {})
             
-            # Extract color list
+            # Extract color list with categories
             colors = []
+            color_categories = {}  # Map hex to category (background, text, accent)
             if colors_data:
                 if isinstance(colors_data, dict) and colors_data.get('hex_list'):
                     colors = colors_data['hex_list']
                 elif isinstance(colors_data, list):
-                    # Handle legacy format where colors might be a list
-                    colors = [c.get('hex') for c in colors_data if isinstance(c, dict) and c.get('hex')]
+                    # Handle format where colors is a list of objects with hex and category
+                    for c in colors_data:
+                        if isinstance(c, dict) and c.get('hex'):
+                            hex_color = c.get('hex')
+                            colors.append(hex_color)
+                            # Preserve category information
+                            category = c.get('category') or c.get('type')
+                            if category:
+                                color_categories[hex_color] = category
             
             # Extract font list  
             fonts = []
@@ -145,16 +153,25 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                                         break
             
             if colors:
+                # Build categorized color lists based on the category information
+                backgrounds = [c for c in colors if color_categories.get(c) == 'background']
+                texts = [c for c in colors if color_categories.get(c) == 'text']
+                accents = [c for c in colors if color_categories.get(c) == 'accent']
+
                 result = {
                     "colors": colors,
                     "name": brand_data.get('company_name', brand_name),
                     "fonts": fonts,
                     "logo_url": logo_url,
                     "source": "brandfetch_cache",
-                    "domain": brand_data.get('domain') or identifier
+                    "domain": brand_data.get('domain') or identifier,
+                    "color_categories": color_categories,  # Include category mapping
+                    "backgrounds": backgrounds if backgrounds else None,
+                    "accents": accents if accents else None,
+                    "text_colors": texts if texts else None  # Return text colors for brand cache
                 }
-                
-                logger.info(f"[BRANDFETCH DB] ✅ Found brand data for {brand_name}: {len(colors)} colors, {len(fonts)} fonts, logo: {bool(logo_url)}")
+
+                logger.info(f"[BRANDFETCH DB] ✅ Found brand data for {brand_name}: {len(colors)} colors ({len(backgrounds)} bg, {len(texts)} text, {len(accents)} accent), {len(fonts)} fonts, logo: {bool(logo_url)}")
                 return result
             else:
                 logger.info(f"[BRANDFETCH DB] Brand data found but no colors for {domain}")
