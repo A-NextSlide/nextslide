@@ -705,32 +705,22 @@ def _is_chart_request(message: str) -> bool:
 def _extract_chart_extractedData_from_content(content: str, slide_title: str) -> Optional[Dict[str, Any]]:
     """Parse the slide content to build an extractedData payload if possible.
 
-    Looks for lines containing a label and a numeric value, e.g.:
-    - "North America: 4.5M"
-    - "Online - 62%"
-    - "Q1 2024: $1,200,000"
+    Handles multiple formats:
+    1. Label:value pairs (e.g., "North America: 4.5M")
+    2. Tabular data with tabs or multiple spaces as delimiters
     Returns None if insufficient comparable series is found.
     """
     if not content:
         return None
 
-    lines = [l.strip() for l in content.split("\n") if l.strip()]
+    # Keep lines unstripped initially to preserve tabs and multiple spaces
+    raw_lines = [l for l in content.split("\n") if l.strip()]
     data_points: List[Dict[str, Any]] = []
     percent_points = []
 
-    # Regex patterns for label:value pairs with optional units/symbols
-    # Examples captured:
-    #  - Label: 1,234 or $1,234 or 45% or 1.2M
-    #  - Label - 1,234
-    #  - Label (45%)
-    pair_pattern = re.compile(r"^[-•*\d\.)\s]*([A-Za-z0-9][^:–—\-\(]{0,100}?)\s*[:\-–—]\s*\$?([\d,\.]+)\s*%?\s*$")
-    paren_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\(]{1,100}?)\s*\(\s*([\d,\.]+)\s*%\s*\)\s*$")
-    # Also capture trailing percentage after text, e.g., "Online sales 62%"
-    trailing_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\d]{1,100}?)\s+([\d,\.]+)\s*%\s*$")
-
     def _to_number(s: str) -> Optional[float]:
         try:
-            clean = s.replace(",", "").replace("$", "")
+            clean = s.replace(",", "").replace("$", "").replace("%", "").replace("(", "").replace(")", "").strip()
             # Handle shorthand like 1.2M or 3.4k
             match = re.match(r"^([\d\.]+)\s*([kKmMbB])?$", clean)
             if match:
@@ -748,6 +738,191 @@ def _extract_chart_extractedData_from_content(content: str, slide_title: str) ->
         except Exception:
             return None
 
+    # STEP 1: Try to parse as tabular data (tab-separated or multi-space separated)
+    # Check if content looks like a table (check raw lines before stripping)
+    has_tabs = any('\t' in line for line in raw_lines)
+    has_multi_spaces = any('  ' in line for line in raw_lines)  # 2+ consecutive spaces
+    
+    if has_tabs or has_multi_spaces:
+        # Parse as table (use raw_lines to preserve delimiters)
+        table_rows = []
+        for line in raw_lines:
+            # Split by tabs or multiple spaces
+            if '\t' in line:
+                cells = [cell.strip() for cell in line.split('\t') if cell.strip()]
+            else:
+                # Split by 2+ spaces
+                cells = [cell.strip() for cell in re.split(r'\s{2,}', line) if cell.strip()]
+            
+            if cells:
+                table_rows.append(cells)
+        
+        if len(table_rows) >= 3:  # Need at least header + 2 data rows
+            # Try to identify header row and data columns
+            header = table_rows[0]
+            data_rows = table_rows[1:]
+            
+            # Find which columns contain mostly numeric data
+            # Also check if header contains unit/measurement indicators
+            if len(header) >= 2:
+                col_is_numeric = []
+                for col_idx in range(len(header)):
+                    # Check header for numeric indicators (units, $, %, etc.)
+                    header_cell = header[col_idx].lower().strip()
+                    
+                    # Skip generic axis labels like "X Value", "Y Value", "X", "Y"
+                    is_generic_axis = header_cell in ['x', 'y', 'x value', 'y value', 'x-value', 'y-value']
+                    
+                    header_suggests_numeric = not is_generic_axis and any(indicator in header_cell for indicator in [
+                        '$', '€', '£', '¥', '%', 'revenue', 'sales', 'price', 'cost', 'amount',
+                        'million', 'billion', 'thousand', 'growth', 'rate', 'percentage',
+                        'total', 'sum', 'average', 'mean', 'median', 'count'
+                    ])
+                    header_suggests_label = not is_generic_axis and any(indicator in header_cell for indicator in [
+                        'name', 'label', 'category', 'region', 'country', 'product', 'id',
+                        'year', 'month', 'quarter', 'date', 'time', 'period', 'type', 'group'
+                    ])
+                    
+                    # Count numeric values in data rows
+                    numeric_count = 0
+                    total_count = 0
+                    for row in data_rows:
+                        if col_idx < len(row):
+                            total_count += 1
+                            if _to_number(row[col_idx]) is not None:
+                                numeric_count += 1
+                    
+                    # Column is numeric if:
+                    # - Header suggests it (has units/indicators) OR
+                    # - Majority of data rows contain numbers AND header doesn't suggest labels
+                    is_numeric = (
+                        header_suggests_numeric or 
+                        (numeric_count > 0 and numeric_count >= total_count * 0.8 and not header_suggests_label)
+                    )
+                    col_is_numeric.append(is_numeric)
+                
+                # Try to find label column (first non-numeric) and value column (first numeric)
+                # Prefer the first column as label if it's not strongly numeric
+                label_col_idx = None
+                value_col_idx = None
+                
+                # First pass: look for clear labels and values based on analysis
+                for idx, is_numeric in enumerate(col_is_numeric):
+                    if not is_numeric and label_col_idx is None:
+                        label_col_idx = idx
+                    elif is_numeric and value_col_idx is None:
+                        value_col_idx = idx
+                    if label_col_idx is not None and value_col_idx is not None:
+                        break
+                
+                # If no label column found but we have 2+ columns, use first as label
+                if label_col_idx is None and value_col_idx is not None:
+                    label_col_idx = 0 if value_col_idx != 0 else 1
+                
+                # Extract data points from table
+                if label_col_idx is not None and value_col_idx is not None:
+                    for row in data_rows:
+                        if len(row) > max(label_col_idx, value_col_idx):
+                            label = row[label_col_idx].strip()
+                            val = _to_number(row[value_col_idx])
+                            
+                            # Skip if label looks like a header or column name
+                            label_lower = label.lower()
+                            # Check for obvious header patterns
+                            header_keywords = [
+                                'x value', 'y value', 'label', 'value', 'name', 'category', 'data'
+                            ]
+                            # Check for measurement/metric keywords that shouldn't be labels
+                            metric_keywords = [
+                                'market size', 'revenue', 'sales', 'price', 'cost', 'growth rate',
+                                'market share', 'profit', 'income', 'expense', 'total'
+                            ]
+                            is_likely_header = (
+                                any(keyword in label_lower for keyword in header_keywords) or
+                                (any(keyword in label_lower for keyword in metric_keywords) and 
+                                 ('$' in label or '€' in label or '£' in label or '¥' in label or '%' in label))
+                            )
+                            
+                            if label and val is not None and not is_likely_header:
+                                data_points.append({"label": label, "value": val})
+                                if '%' in row[value_col_idx]:
+                                    percent_points.append(val)
+                    
+                    # If no valid labels found (all filtered as headers), create data points with auto-generated labels
+                    if len(data_points) == 0 and len(data_rows) >= 2:
+                        logger.warning(f"[CHART] All labels filtered as headers, auto-generating labels for {len(data_rows)} data points")
+                        for i, row in enumerate(data_rows):
+                            if len(row) > value_col_idx:
+                                val = _to_number(row[value_col_idx])
+                                if val is not None:
+                                    data_points.append({"label": f"Point {i + 1}", "value": val})
+                                    if '%' in row[value_col_idx]:
+                                        percent_points.append(val)
+                    
+                    # If we successfully extracted table data, return it
+                    if len(data_points) >= 2:
+                        logger.info(f"[CHART] Extracted {len(data_points)} points from tabular data")
+                        
+                        # Check if all labels are the same (indicating they're actually column headers repeated)
+                        unique_labels = set(p['label'] for p in data_points)
+                        if len(unique_labels) == 1:
+                            # All labels are identical - this is likely a column header repeated
+                            # Replace with sequential labels
+                            logger.warning(f"[CHART] All X values are identical ('{list(unique_labels)[0]}'), auto-generating sequential labels")
+                            for i, point in enumerate(data_points):
+                                point['label'] = f"Point {i + 1}"
+                        elif len(unique_labels) < len(data_points) * 0.5:
+                            # More than half the labels are duplicates - likely a data issue
+                            # Check if labels look like column headers
+                            first_label = data_points[0]['label'].lower()
+                            if any(keyword in first_label for keyword in ['market', 'revenue', 'sales', 'value', 'size', 'price', 'cost', 'growth']):
+                                logger.warning(f"[CHART] Many duplicate X values that look like column headers, auto-generating sequential labels")
+                                for i, point in enumerate(data_points):
+                                    point['label'] = f"Data Point {i + 1}"
+                        
+                        # Determine chart type
+                        pct_sum = sum(percent_points) if percent_points else 0.0
+                        is_time_series = any(header_name.lower() in ['year', 'month', 'date', 'time', 'quarter', 'q1', 'q2', 'q3', 'q4'] 
+                                           for header_name in [header[label_col_idx]])
+                        
+                        if percent_points and len(percent_points) >= len(data_points) * 0.6 and 90 <= pct_sum <= 110:
+                            chart_type = "pie"
+                        elif is_time_series:
+                            chart_type = "line"
+                        else:
+                            chart_type = "column"
+                        
+                        # Normalize pie charts
+                        if chart_type == "pie":
+                            total = sum(p['value'] for p in data_points)
+                            if total > 0:
+                                scaled = []
+                                running = 0.0
+                                for i, p in enumerate(data_points):
+                                    if i < len(data_points) - 1:
+                                        v = round(p['value'] * 100.0 / total, 1)
+                                        running += v
+                                        scaled.append({"label": p['label'], "value": v})
+                                    else:
+                                        scaled.append({"label": p['label'], "value": round(100.0 - running, 1)})
+                                data_points = scaled
+                        
+                        return {
+                            "source": "outline_edit",
+                            "chartType": chart_type,
+                            "title": f"{slide_title} {('Distribution' if chart_type == 'pie' else 'Over Time' if chart_type == 'line' else 'Comparison')}",
+                            "data": data_points[:12],
+                            "metadata": {}
+                        }
+
+    # STEP 2: Fall back to label:value pair parsing
+    # Regex patterns for label:value pairs with optional units/symbols
+    pair_pattern = re.compile(r"^[-•*\d\.)\s]*([A-Za-z0-9][^:–—\-\(]{0,100}?)\s*[:\-–—]\s*\$?([\d,\.]+)\s*%?\s*$")
+    paren_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\(]{1,100}?)\s*\(\s*([\d,\.]+)\s*%\s*\)\s*$")
+    trailing_pct_pattern = re.compile(r"^[-•*\d\.)\s]*([^\d]{1,100}?)\s+([\d,\.]+)\s*%\s*$")
+
+    # Strip lines for pattern matching
+    lines = [l.strip() for l in raw_lines]
     for line in lines:
         m = pair_pattern.match(line)
         if m:
@@ -772,8 +947,8 @@ def _extract_chart_extractedData_from_content(content: str, slide_title: str) ->
                 data_points.append({"label": label, "value": val})
                 percent_points.append(val)
 
-    # Require minimum 3 points for a meaningful chart
-    if len(data_points) < 3:
+    # Require minimum 2 points for a meaningful chart (reduced from 3 to be more lenient)
+    if len(data_points) < 2:
         return None
 
     # Decide chartType: if mostly percentages -> pie, else column
@@ -784,7 +959,6 @@ def _extract_chart_extractedData_from_content(content: str, slide_title: str) ->
     if chart_type == "pie":
         total = sum(p['value'] for p in data_points)
         if total > 0:
-            # Scale values to sum to 100 and round to 1 decimal (adjust last to fix rounding)
             scaled = []
             running = 0.0
             for i, p in enumerate(data_points):

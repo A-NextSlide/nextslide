@@ -1168,6 +1168,18 @@ class CombinedImageService:
         title = slide.title or ""
         content = slide.content or ""
 
+        # 🚨 CRITICAL: Check for multi-item content FIRST!
+        # If slide is about multiple distinct items (planets, products, people, etc.),
+        # extract each item individually for per-item image searches
+        multi_items = self._extract_multi_item_entities(title, content, deck_outline)
+        if multi_items:
+            logger.info(f"🎯 Multi-item slide detected! Found {len(multi_items)} items: {multi_items}")
+            # Add each item as a separate search topic
+            for item in multi_items:
+                topics.add(item)
+            # Return early - we have specific items to search for!
+            return list(topics)[:10]  # Allow up to 10 items for multi-item slides
+
         # 1. Get the main subject of the whole deck
         deck_prompt = ""
         try:
@@ -1252,8 +1264,16 @@ class CombinedImageService:
         Extract a comprehensive list of search topics from a slide, including
         the main subject, thematic elements, and specific entities.
         """
-        # Start with simple topics
+        # Start with simple topics (which now includes multi-item detection!)
         topics = set(self._extract_topics_from_slide(slide, index, deck_outline))
+        
+        # If multi-item topics were found, return them directly (we want to search for each item)
+        # The _extract_topics_from_slide will return individual item names if multi-item detected
+        if len(topics) >= 2:
+            # Check if these look like distinct items (not just generic topics)
+            topic_list = list(topics)
+            # If we have multiple specific topics, return them all (up to max_topics)
+            return topic_list[:max(max_topics, 10)]  # Allow more topics for multi-item slides
         
         title = slide.title or ""
         content = slide.content or ""
@@ -2193,6 +2213,110 @@ class CombinedImageService:
                     topics.append(' '.join(topic2))
         
         return topics
+    
+    def _extract_multi_item_entities(self, title: str, content: str, deck_outline: Any) -> List[str]:
+        """
+        Detect and extract multiple distinct items from slide content.
+        Used when a slide is ABOUT multiple things (planets, products, people, etc.)
+        
+        Returns a list of individual item names to search for, or empty list if not multi-item.
+        """
+        items = []
+        full_text = f"{title}\n{content}"
+        
+        # Get deck subject for context
+        deck_subject = ""
+        try:
+            deck_subject = self._extract_main_subject(deck_outline.title, deck_outline.prompt or "")
+        except:
+            pass
+        
+        # Pattern 1: Detect lists with bullets, numbers, or line breaks
+        # Example: "- Mercury\n- Venus\n- Earth" or "1. Mercury 2. Venus 3. Earth"
+        
+        # Split by common list delimiters
+        lines = re.split(r'[\n•\-\*]|\d+\.', full_text)
+        potential_items = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line or len(line) < 2:
+                continue
+            
+            # Extract the first few words (likely the item name)
+            # Remove common prefixes like "The", "A", etc.
+            words = line.split()
+            if words:
+                # Get first 1-3 words that start with capital letter
+                item_words = []
+                for word in words[:3]:
+                    # Clean punctuation
+                    word = word.strip(',:;!?"()[]')
+                    if word and word[0].isupper() and word.lower() not in self.STOP_WORDS:
+                        item_words.append(word)
+                    elif item_words:  # Stop after first non-capitalized word
+                        break
+                
+                if item_words:
+                    item_name = ' '.join(item_words)
+                    # Avoid adding the slide title itself
+                    if item_name.lower() != title.lower() and len(item_name) > 2:
+                        potential_items.append(item_name)
+        
+        # Pattern 2: Look for comma-separated lists of capitalized names
+        # Example: "Mercury, Venus, Earth, and Mars"
+        comma_pattern = r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s*(?:,|and|&)\s*([A-Z][a-zA-Z]+)'
+        comma_matches = re.findall(comma_pattern, content)
+        for match_group in comma_matches:
+            for match in match_group:
+                match = match.strip()
+                if match and match.lower() not in self.STOP_WORDS and len(match) > 2:
+                    potential_items.append(match)
+        
+        # Pattern 3: Detect "X vs Y" or "X and Y" patterns
+        vs_pattern = r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:vs\.?|versus|and|&)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)'
+        vs_matches = re.findall(vs_pattern, full_text)
+        for match1, match2 in vs_matches:
+            if match1.lower() not in self.STOP_WORDS:
+                potential_items.append(match1)
+            if match2.lower() not in self.STOP_WORDS:
+                potential_items.append(match2)
+        
+        # Deduplicate and clean
+        seen = set()
+        for item in potential_items:
+            item_clean = item.strip()
+            item_lower = item_clean.lower()
+            
+            # Skip if too short, vague, or already seen
+            if len(item_clean) < 3 or item_lower in self.VAGUE_TERMS or item_lower in seen:
+                continue
+            
+            # Skip common slide words
+            if item_lower in {'slide', 'content', 'overview', 'introduction', 'conclusion', 'summary'}:
+                continue
+            
+            seen.add(item_lower)
+            items.append(item_clean)
+        
+        # Only return if we found 2+ distinct items (indicates multi-item slide)
+        if len(items) >= 2:
+            # Optionally append deck subject to each item for context
+            # E.g., "Mercury" becomes "Mercury planet" if deck is about planets
+            if deck_subject and deck_subject.lower() not in self.VAGUE_TERMS:
+                contextualized_items = []
+                for item in items:
+                    # Only add context if item doesn't already contain deck subject
+                    if deck_subject.lower() not in item.lower():
+                        contextualized_items.append(f"{item} {deck_subject}")
+                    else:
+                        contextualized_items.append(item)
+                return contextualized_items[:10]  # Max 10 items
+            else:
+                return items[:10]  # Max 10 items
+        
+        # Not a multi-item slide
+        return []
     
     def _extract_specific_entities(self, title: str, content: str) -> List[str]:
         """Extract specific person, brand, or product names."""

@@ -593,7 +593,7 @@ class EnhancedFontService:
         def _path_exists(rel: str) -> bool:
             return (Path(__file__).parent.parent / rel).exists()
 
-        def _scan_for_best(base_dir: Path, is_pixelbuddha: bool) -> Optional[str]:
+        def _scan_for_best(base_dir: Path, is_pixelbuddha: bool, actual_dir_name: Optional[str] = None) -> Optional[str]:
             if not base_dir.exists():
                 return None
             # Recursively find valid font files, excluding macOS resource files
@@ -614,15 +614,20 @@ class EnhancedFontService:
                 return None
             # Preference is already implied by extension iteration order
             chosen = candidates[0]
+            # Use actual directory name if provided, otherwise use font_id
+            dir_name = actual_dir_name if actual_dir_name else font_id
             if is_pixelbuddha:
                 remainder = chosen.relative_to(base_dir).as_posix()
                 # Use actual on-disk layout under downloads/extracted
-                return f"assets/fonts/pixelbuddha/downloads/extracted/{font_id}/{remainder}"
+                return f"assets/fonts/pixelbuddha/downloads/extracted/{dir_name}/{remainder}"
             else:
                 remainder = chosen.relative_to(base_dir).as_posix()
-                return f"assets/fonts/designer/{font_id}/{remainder}"
+                return f"assets/fonts/designer/{dir_name}/{remainder}"
 
-        if source == 'pixelbuddha':
+        if source == 'pixelbuddha' or source == 'registry':
+            # For 'registry' source, we need to search both PixelBuddha and Designer
+            # But try PixelBuddha first since most fonts are from there
+            
             # Prefer declared files if they exist
             files = font_data.get('files', []) or []
             for f in files:
@@ -649,13 +654,33 @@ class EnhancedFontService:
                         if not d.is_dir():
                             continue
                         name = d.name
-                        if name == font_id or name == base_id or name.startswith(base_id + '-'):
+                        # FIXED: Match directories with number prefixes (e.g., "4126-403-doshi" matches "403-doshi")
+                        # Strategy: Check if the font_id appears at the end of the directory name, or as a component
+                        # This handles cases like:
+                        # - "4126-403-doshi" matching "403-doshi"
+                        # - "4905-avilar-display-font" matching "avilar"
+                        if (name == font_id or 
+                            name == base_id or 
+                            name.endswith('-' + font_id) or
+                            name.endswith('-' + base_id) or
+                            ('-' + font_id + '-') in name or
+                            ('-' + base_id + '-') in name or
+                            name.startswith(font_id + '-') or
+                            name.startswith(base_id + '-')):
                             candidate_dir = d
                             break
                     if candidate_dir:
-                        return _scan_for_best(candidate_dir, True)
+                        return _scan_for_best(candidate_dir, True, candidate_dir.name)
             except Exception:
                 pass
+            
+            # If source is 'registry' and we didn't find it in PixelBuddha, try Designer
+            if source == 'registry':
+                base_dir = assets_root / 'designer' / font_id
+                resolved = _scan_for_best(base_dir, False)
+                if resolved:
+                    return resolved
+            
             return None
         else:
             styles = font_data.get('styles', {}) or {}

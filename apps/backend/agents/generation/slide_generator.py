@@ -3421,12 +3421,15 @@ class SlideGeneratorV2(ISlideGenerator):
         
         # Apply images to image components with smart matching
         for i, img_comp in enumerate(image_components):
-            # Check if component has a specific searchQuery
+            # Check if component has a specific searchQuery or alt text
             component_search_query = img_comp.get('props', {}).get('searchQuery', '').strip().lower()
+            # Fallback to alt text if searchQuery not provided
+            if not component_search_query:
+                component_search_query = img_comp.get('props', {}).get('alt', '').strip().lower()
             
             media = None
             
-            # Strategy 1: If component has searchQuery, try to find a matching image
+            # Strategy 1: If component has searchQuery/alt, try to find a matching image
             if component_search_query:
                 logger.info(f"[IMAGE REPLACEMENT] Component {i+1} has searchQuery: '{component_search_query}'")
                 

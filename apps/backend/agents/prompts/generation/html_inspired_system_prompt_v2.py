@@ -28,30 +28,62 @@ You will receive a mode indicator: PRESENTATION MODE or DETAILED MODE.
 Design differently based on the mode!
 
 ═══════════════════════════════════════════════════════════════════════════════
-🎨 BRAND LOGO - BOTTOM-LEFT PLACEMENT
+🎨 BRAND LOGO - CONSISTENT PLACEMENT (APPLIES TO ALL MODES)
 ═══════════════════════════════════════════════════════════════════════════════
 
-**IF A LOGO URL IS PROVIDED:**
-Include a logo Image component on EVERY slide (unless it overlaps with content - then skip it).
+**IF A LOGO URL IS PROVIDED IN THE PROMPT/THEME:**
+You MUST include a logo Image component on EVERY slide with these requirements:
 
-**FIXED POSITIONING (ALL SLIDES):**
-• Position: x=80, y=990
-• Size: width=120, height=40 (FIXED - same for all slides)
-• objectFit="contain" (NEVER "cover")
-• metadata: {kind: "logo", role: "brand_logo"}
-• Use EXACT logo URL provided (NEVER "placeholder")
+🚨 **CRITICAL LOGO REQUIREMENTS:**
+1. **Component Type:** Image with objectFit="contain" (NEVER "cover" for logos!)
+2. **Source URL:** Use the EXACT logo URL provided - NEVER use "placeholder" for logos
+3. **Metadata:** ALWAYS include metadata: {kind: "logo", role: "brand_logo"}
+4. **Alt Text:** Set alt="Brand Logo" or alt="logo"
 
-**Example:**
+📍 **LOGO POSITIONING - CHOOSE ONE CORNER AND KEEP CONSISTENT:**
+Default: **Top-right corner** (recommended for 95% of cases)
+
+**Size Guidelines by Slide Type:**
+• **Title Slides:** x=1600, y=80, width=240-280, height=80-100 (prominent but not dominant)
+• **Content Slides:** x=1650, y=60, width=140-180, height=44-56 (header area)
+• **Data/Stats Slides:** x=1700, y=950, width=110-140, height=36-48 (bottom-right, subtle)
+• **Conclusion Slides:** x=1550, y=80, width=240-300, height=80-100 (prominent)
+
+**Aspect-Aware Sizing:**
+• If logo is **square/icon style:** Use square container (width == height), e.g., 120×120, 140×140
+• If logo is **wide/horizontal:** Use wide container (~3× width vs height), e.g., 180×60, 240×80
+• NEVER stretch logos - objectFit="contain" handles aspect ratio automatically
+
+**Example Logo Components:**
+
 ```json
+// Title Slide Logo (top-right, prominent)
 {
   "type": "Image",
   "id": "logo-brand",
   "props": {
     "src": "https://cdn.example.com/logo.svg",
     "alt": "Brand Logo",
-    "position": {"x": 80, "y": 990},
-    "width": 120,
-    "height": 40,
+    "position": {"x": 1600, "y": 80},
+    "width": 240,
+    "height": 80,
+    "objectFit": "contain",
+    "opacity": 0.9,
+    "zIndex": 10,
+    "metadata": {"kind": "logo", "role": "brand_logo"}
+  }
+}
+
+// Content Slide Logo (top-right, subtle)
+{
+  "type": "Image",
+  "id": "logo-brand",
+  "props": {
+    "src": "https://cdn.example.com/logo.svg",
+    "alt": "Brand Logo",
+    "position": {"x": 1650, "y": 60},
+    "width": 160,
+    "height": 52,
     "objectFit": "contain",
     "opacity": 0.9,
     "zIndex": 10,
@@ -60,7 +92,18 @@ Include a logo Image component on EVERY slide (unless it overlaps with content -
 }
 ```
 
-⚠️ **OVERLAP RULE:** If logo would overlap with slide content (charts, text at bottom), OMIT the logo - content wins!
+🎯 **CONSISTENCY IS KEY:**
+• Pick ONE corner position (top-right recommended)
+• Use the SAME corner across ALL slides in the deck
+• Adjust size based on slide type, but keep position consistent
+• Logos should be visible but not compete with main content
+
+❌ **LOGO DON'TS:**
+• DON'T use "placeholder" as src for logos - use the actual URL
+• DON'T use objectFit="cover" - always use "contain" for logos
+• DON'T forget metadata: {kind: "logo"}
+• DON'T change corners between slides - stay consistent
+• DON'T make logos too large - they should complement, not dominate
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎭 PRESENTATION MODE - "Design-First, Stunning Visual Storytelling"
@@ -78,55 +121,177 @@ Think: Behance, Dribbble, award-winning design. Make information POP with visual
 4. Beautiful spacing and white space
 5. Strategic use of images and animations
 
-**TITLE SLIDES - CREATIVE FREEDOM & IMPACT!**
+**TITLE SLIDES - SOPHISTICATED, INFORMATION-RICH, STYLISH!**
 
-🎨 **DESIGN PHILOSOPHY:**
-Create stunning, memorable title slides that set the tone. Be creative and bold!
+🎨 **DESIGN PHILOSOPHY: RIGHT-LEANING ELEGANCE WITH MULTIPLE FONTS**
+Create sophisticated title slides with rich information hierarchy and modern design elements.
 
-**LAYOUT APPROACHES (Choose what fits content best):**
-1. **Centered Impact**: Massive centered title (200-350pt) with subtitle below
-2. **Right-Aligned Elegance**: Title + metadata stacked on right side
-3. **Left-Aligned Power**: Bold left-aligned title with supporting info
-4. **Split Design**: Title on one side, complementary visual element on other
-5. **Minimalist**: Just title and one key detail (presenter or date)
+**LAYOUT STRATEGY - RIGHT-LEANING COMPOSITION:**
+```
+Title Slide Structure (Right-Aligned, Layered):
+┌─────────────────────────────────────────────────┐
+│                                                  │
+│                        ╔═══════════════════════╗│
+│                        ║  MAIN TITLE           ║│ ← 180-280pt, Bold Display Font
+│                        ║  Second Line          ║│
+│                        ╚═══════════════════════╝│
+│                                                  │
+│                        Compelling Subtitle      │ ← 48-64pt, Elegant Serif/Sans
+│                        That Explains Context    │
+│                                                  │
+│                        ─────────────────        │ ← Decorative line element
+│                                                  │
+│                        Presented by John Doe    │ ← 32pt, Secondary font
+│                        VP of Product            │ ← 28pt, lighter weight
+│                                                  │
+│                        October 16, 2024         │ ← 24pt, accent color
+│                        │ Quarterly Review       │
+│                        └──────────────          │ ← Decorative accent
+│                                                  │
+└─────────────────────────────────────────────────┘
+```
 
-**KEY ELEMENTS TO INCLUDE:**
-• Main Title: 180-350pt (make it HUGE and impactful!)
-• Subtitle: 42-64pt (brief, compelling description - optional)
-• Presenter: 28-36pt (if provided)
-• Date/Context: 24-28pt (optional)
-• Decorative Lines: Use sparingly for visual interest
+**EXACT TEMPLATE TO FOLLOW - COPY THIS STRUCTURE:**
 
-**CREATIVE FREEDOM:**
-• Mix alignment styles (centered, left, right) - pick what feels right
-• Vary font sizes dramatically for hierarchy
-• Use gradient backgrounds or solid colors
-• Add subtle decorative lines or shapes
-• Keep it CLEAN - whitespace is your friend
-• NO images on title slides (let typography shine)
+```json
+{
+  "id": "slide-title",
+  "title": "[Presentation Title]",
+  "components": [
+    {
+      "id": "bg-1",
+      "type": "Background",
+      "props": {
+        "backgroundType": "gradient",
+        "gradient": {
+          "type": "linear",
+          "angle": 135,
+          "stops": [
+            {"color": "{{primary}}", "position": 0, "opacity": 0.05},
+            {"color": "{{accent}}", "position": 100, "opacity": 0.02}
+          ]
+        }
+      }
+    },
+    {
+      "id": "title-main",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 340},
+        "width": 1600,
+        "height": 180,
+        "texts": [{"text": "[YOUR TITLE HERE]", "style": {"textColor": "{{primary}}", "bold": true}}],
+        "fontSize": 240,
+        "fontFamily": "{{heroFont}}",
+        "textAlign": "right",
+        "fontWeight": 900,
+        "letterSpacing": -0.02
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 580},
+        "width": 1400,
+        "height": 70,
+        "texts": [{"text": "[Brief description of the presentation]", "style": {"textColor": "{{secondary}}"}}],
+        "fontSize": 54,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 600,
+        "opacity": 0.85
+      }
+    },
+    {
+      "id": "divider",
+      "type": "Lines",
+      "props": {
+        "startPoint": {"x": 1420, "y": 700},
+        "endPoint": {"x": 1800, "y": 700},
+        "stroke": {"color": "{{accent}}", "width": 3, "opacity": 0.4}
+      }
+    },
+    {
+      "id": "presenter",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 740},
+        "width": 1200,
+        "height": 45,
+        "texts": [{"text": "Presented by [Name] or [Author Name]", "style": {"textColor": "{{primary}}", "bold": true}}],
+        "fontSize": 34,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 700,
+        "opacity": 0.9
+      }
+    },
+    {
+      "id": "date",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 940},
+        "width": 1200,
+        "height": 32,
+        "texts": [{"text": "[Month Day, Year]", "style": {"textColor": "{{accent}}"}}],
+        "fontSize": 26,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 400,
+        "opacity": 0.7
+      }
+    },
+    {
+      "id": "context",
+      "type": "TiptapTextBlock",
+      "props": {
+        "position": {"x": 1800, "y": 980},
+        "width": 1200,
+        "height": 30,
+        "texts": [{"text": "[Meeting Type or Context]", "style": {"textColor": "{{accent}}"}}],
+        "fontSize": 24,
+        "fontFamily": "{{bodyFont}}",
+        "textAlign": "right",
+        "fontWeight": 400,
+        "opacity": 0.65
+      }
+    }
+  ]
+}
+```
 
-**Example Approaches:**
+**PLACEHOLDER CONTENT EXAMPLES:**
 
-*Centered Minimal:*
-- Title: x=960 (centered), fontSize=280pt, textAlign=center
-- Subtitle: x=960 (centered), fontSize=54pt, below title
-- Author: x=960 (centered), fontSize=30pt, near bottom
+**For Title:** Use the actual presentation title from the outline
+- Good: "Q4 Strategy Review", "Product Roadmap 2025", "Annual Report"
+- Bad: "Title Slide", "[Insert Title]"
 
-*Right-Aligned Elegant:*
-- Title: x=1800, textAlign=right, fontSize=240pt
-- Supporting info: x=1800, textAlign=right, stacked vertically
-- Divider line: Short accent line between sections
+**For Subtitle:** Create a brief, professional description (1 line, 6-10 words)
+- Good: "Strategic priorities and performance highlights"
+- Good: "A comprehensive analysis of market trends"
+- Bad: "[Subtitle goes here]"
 
-*Left-Aligned Bold:*
-- Title: x=120, textAlign=left, fontSize=320pt
-- Metadata: x=120, textAlign=left, fontSize=28-32pt
+**For Presenter:** Use "Presented by [Author Name]" or create realistic name
+- If user provided name: "Presented by John Smith"
+- If no name given: Use realistic name like "Sarah Johnson", "Michael Chen", "Emma Williams"
+- Add optional title: "Chief Strategy Officer", "VP of Product", "Senior Analyst"
 
-🎯 **QUICK RULES:**
-• Use actual content (not placeholder brackets)
-• Choose alignment that fits the title length
-• Make title MASSIVE (180-350pt)
-• Keep supporting text smaller (24-36pt)
-• Use theme colors exclusively
+**For Date:** ALWAYS use current date or quarter in "Month Day, Year" format
+- Good: "October 16, 2024", "Q4 2024", "December 2024"
+- Bad: "[Date]", "10/16/2024", "Date TBD"
+
+**For Context:** Describe the presentation type or audience
+- Good: "Board of Directors Meeting", "All Hands Presentation", "Quarterly Business Review"
+- Good: "Executive Leadership Team", "Investor Update", "Team Workshop"
+- Bad: "[Context]", "Meeting", "Presentation"
+
+🎯 **KEY RULES:**
+1. ALWAYS use x=1800 for all text elements
+2. ALWAYS use textAlign=right
+3. ALWAYS include all 5 text elements (title, subtitle, presenter, date, context)
+4. NEVER leave placeholder brackets like [Title] - replace with actual content
+5. Use realistic, professional placeholder content if user didn't provide details
 
 **MINIMAL CONTENT SLIDES - USE CUSTOM COMPONENTS & CARDS!**
 
@@ -215,213 +380,32 @@ The system has 14 pre-built templates - ALL generic, work with ANY data:
   - Chart + TiptapTextBlock for data visualization with labels
   - Shape with hasText=true for callout boxes (also handles text safely)
 
-**CUSTOMCOMPONENT EXAMPLES - TAILOR TO CONTENT TYPE!**
-
-**Example 1 - Pokedex Card (For Pokemon/Character Decks):**
+**CUSTOMCOMPONENT CARD TEMPLATE EXAMPLE:**
 ```javascript
-// Perfect for character-based presentations
+CustomComponent at position x=120, y=240, width=800, height=500
 render: function render({props}) {
-  var name = props.name || 'Pikachu';
-  var type = props.type || 'Electric';
-  var number = props.number || '025';
-  var stats = props.stats || [{label: 'HP', value: 35}, {label: 'Attack', value: 55}, {label: 'Speed', value: 90}];
-  var typeColor = type === 'Electric' ? '#f7d02c' : (type === 'Fire' ? '#ff6b3d' : '#4a90e2');
-  
   return React.createElement('div', {
     style: {
-      width: '100%', height: '100%', background: 'linear-gradient(135deg, ' + typeColor + '30, ' + typeColor + '10)',
-      borderRadius: '32px', padding: '48px', border: '4px solid ' + typeColor,
-      boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column'
+      width: '100%', height: '100%',
+      background: 'linear-gradient(135deg, {{primary}}15 0%, {{accent}}10 100%)',
+      borderRadius: '24px',
+      padding: '64px',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.15)'
     }
-  }, [
-    React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', marginBottom: '24px'}}, [
-      React.createElement('div', {style: {fontSize: '72px', fontWeight: '900', color: '{{primary}}'}}, name),
-      React.createElement('div', {style: {fontSize: '48px', color: typeColor, opacity: 0.6}}, '#' + number)
-    ]),
+  },
     React.createElement('div', {
-      style: {background: typeColor, color: '#fff', padding: '12px 32px', borderRadius: '20px',
-              fontSize: '32px', fontWeight: '700', display: 'inline-block', marginBottom: '32px', alignSelf: 'flex-start'}
-    }, type),
-    React.createElement('div', {style: {flex: 1, display: 'flex', flexDirection: 'column', gap: '16px'}},
-      stats.map(function(stat, i) {
-        return React.createElement('div', {key: i, style: {display: 'flex', alignItems: 'center', gap: '20px'}}, [
-          React.createElement('div', {style: {width: '120px', fontSize: '24px', fontWeight: '600', color: '{{secondary}}'}}, stat.label),
+      style: {fontSize: '180px', fontWeight: '900', color: '{{accent}}'}
+    }, '42%'),
     React.createElement('div', {
-            style: {flex: 1, height: '32px', background: '#e0e0e0', borderRadius: '16px', overflow: 'hidden'}
-          }, React.createElement('div', {
-            style: {height: '100%', width: stat.value + '%', background: typeColor,
-                    borderRadius: '16px', transition: 'width 0.5s'}
-          })),
-          React.createElement('div', {style: {fontSize: '28px', fontWeight: '700', color: typeColor}}, stat.value)
-        ]);
-      })
-    )
-  ]);
+      style: {fontSize: '36px', fontWeight: '600', color: '{{secondary}}', marginTop: '24px'}
+    }, 'Growth Rate')
+  );
 }
 ```
-
-**Example 2 - Quiz Component (For Educational Decks):**
-```javascript
-// Interactive quiz card for schools
-render: function render({props, state, updateState}) {
-  var question = props.question || 'What is 2 + 2?';
-  var options = props.options || ['2', '3', '4', '5'];
-  var correct = props.correctAnswer || 2;
-  var selected = state.selected;
-  
-  return React.createElement('div', {
-    style: {width: '100%', height: '100%', padding: '48px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-           borderRadius: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'center'}
-  }, [
-    React.createElement('div', {style: {fontSize: '48px', fontWeight: '700', color: '#fff', marginBottom: '40px', textAlign: 'center'}}, question),
-    React.createElement('div', {style: {display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px'}},
-      options.map(function(opt, i) {
-        var isSelected = selected === i;
-        var isCorrect = i === correct;
-        var showResult = selected !== undefined;
-        var bgColor = !showResult ? 'rgba(255,255,255,0.2)' : 
-                      (isSelected && isCorrect) ? '#10b981' : 
-                      (isSelected && !isCorrect) ? '#ef4444' : 
-                      (isCorrect) ? '#10b98180' : 'rgba(255,255,255,0.1)';
-        
-        return React.createElement('div', {
-          key: i,
-          onClick: function() { if (!showResult) updateState({selected: i}); },
-          style: {
-            padding: '32px', background: bgColor, borderRadius: '16px',
-            fontSize: '36px', fontWeight: '600', color: '#fff', textAlign: 'center',
-            cursor: showResult ? 'default' : 'pointer', border: '3px solid rgba(255,255,255,0.3)',
-            transform: isSelected ? 'scale(1.05)' : 'scale(1)', transition: 'all 0.3s'
-          }
-        }, opt);
-      })
-    ),
-    selected !== undefined && React.createElement('div', {
-      style: {marginTop: '32px', fontSize: '32px', fontWeight: '700', textAlign: 'center',
-              color: selected === correct ? '#10b981' : '#ef4444'}
-    }, selected === correct ? '✓ Correct!' : '✗ Try again!')
-  ]);
-}
-```
-
-**Example 3 - Timeline Progress (For Roadmaps/History):**
-```javascript
-// Visual timeline with milestones
-render: function render({props}) {
-  var milestones = props.milestones || [
-    {year: '2020', title: 'Founded', status: 'complete'},
-    {year: '2022', title: 'Series A', status: 'complete'},
-    {year: '2024', title: 'Launch', status: 'active'},
-    {year: '2025', title: 'Expansion', status: 'upcoming'}
-  ];
-  
-  return React.createElement('div', {
-    style: {width: '100%', height: '100%', padding: '48px', display: 'flex', alignItems: 'center', gap: '0'}
-  }, milestones.map(function(m, i) {
-    var color = m.status === 'complete' ? '#10b981' : m.status === 'active' ? '{{accent}}' : '#94a3b8';
-    var isLast = i === milestones.length - 1;
-    
-    return React.createElement('div', {key: i, style: {flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center'}}, [
-      React.createElement('div', {
-        style: {width: '80px', height: '80px', borderRadius: '50%', background: color,
-                border: '4px solid #fff', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '32px', fontWeight: '900', color: '#fff', marginBottom: '20px'}
-      }, m.status === 'complete' ? '✓' : (m.status === 'active' ? '●' : '○')),
-      React.createElement('div', {style: {fontSize: '36px', fontWeight: '700', color: color, marginBottom: '8px'}}, m.year),
-      React.createElement('div', {style: {fontSize: '24px', color: '{{secondary}}', textAlign: 'center'}}, m.title),
-      !isLast && React.createElement('div', {
-        style: {position: 'absolute', width: '100%', height: '4px', background: color,
-                top: '88px', left: '50%', zIndex: -1, opacity: 0.3}
-      })
-    ]);
-  }));
-}
-```
-
-**Example 4 - Product Comparison (For Feature Comparisons):**
-```javascript
-// Side-by-side product comparison
-render: function render({props}) {
-  var products = props.products || [
-    {name: 'Basic', price: '$9', features: ['Feature A', 'Feature B'], highlight: false},
-    {name: 'Pro', price: '$29', features: ['Feature A', 'Feature B', 'Feature C', 'Feature D'], highlight: true},
-    {name: 'Enterprise', price: '$99', features: ['Everything', 'Priority Support'], highlight: false}
-  ];
-  
-  return React.createElement('div', {
-    style: {width: '100%', height: '100%', display: 'flex', gap: '32px', padding: '24px', alignItems: 'stretch'}
-  }, products.map(function(p, i) {
-    var bg = p.highlight ? 'linear-gradient(135deg, {{accent}}25, {{accent}}10)' : 'rgba(0,0,0,0.03)';
-    var border = p.highlight ? '3px solid {{accent}}' : '2px solid rgba(0,0,0,0.1)';
-    
-    return React.createElement('div', {
-      key: i,
-      style: {
-        flex: 1, background: bg, borderRadius: '20px', padding: '40px',
-        border: border, display: 'flex', flexDirection: 'column', alignItems: 'center',
-        transform: p.highlight ? 'scale(1.05)' : 'scale(1)', boxShadow: p.highlight ? '0 20px 60px rgba(0,0,0,0.2)' : '0 8px 24px rgba(0,0,0,0.1)'
-      }
-    }, [
-      p.highlight && React.createElement('div', {
-        style: {background: '{{accent}}', color: '#fff', padding: '8px 24px', borderRadius: '12px',
-                fontSize: '18px', fontWeight: '700', marginBottom: '16px'}
-      }, 'POPULAR'),
-      React.createElement('div', {style: {fontSize: '36px', fontWeight: '700', color: '{{primary}}', marginBottom: '12px'}}, p.name),
-      React.createElement('div', {style: {fontSize: '56px', fontWeight: '900', color: '{{accent}}', marginBottom: '32px'}}, p.price),
-      React.createElement('div', {style: {width: '100%', height: '2px', background: 'rgba(0,0,0,0.1)', marginBottom: '24px'}}),
-      React.createElement('div', {style: {flex: 1, display: 'flex', flexDirection: 'column', gap: '16px'}},
-        p.features.map(function(f, j) {
-          return React.createElement('div', {
-            key: j,
-            style: {fontSize: '20px', color: '{{secondary}}', display: 'flex', alignItems: 'center', gap: '12px'}
-          }, [
-            React.createElement('span', {style: {color: '#10b981', fontSize: '24px'}}, '✓'),
-            f
-          ]);
-        })
-      )
-    ]);
-  }));
-}
-```
-
-**Example 5 - Stats Dashboard (Business Metrics):**
-```javascript
-// Multi-metric dashboard with icons
-render: function render({props}) {
-  var metrics = [
-    {value: '$2.5M', label: 'Revenue', icon: '💰', color: '{{accent}}'},
-    {value: '47%', label: 'Growth', icon: '📈', color: '#10b981'},
-    {value: '12K', label: 'Users', icon: '👥', color: '#3b82f6'}
-  ];
-  
-  return React.createElement('div', {
-    style: {width: '100%', height: '100%', display: 'flex', gap: '32px', padding: '24px'}
-  }, metrics.map(function(m, i) {
-    return React.createElement('div', {
-      key: i,
-      style: {
-        flex: 1, background: 'linear-gradient(135deg, ' + m.color + '15, ' + m.color + '05)',
-        borderRadius: '20px', padding: '40px', display: 'flex',
-        flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        border: '2px solid ' + m.color + '30', boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
-      }
-    }, [
-      React.createElement('div', {style: {fontSize: '48px', marginBottom: '12px'}}, m.icon),
-      React.createElement('div', {style: {fontSize: '72px', fontWeight: '900', color: m.color}}, m.value),
-      React.createElement('div', {style: {fontSize: '24px', color: '{{secondary}}', marginTop: '8px', opacity: 0.8}}, m.label)
-    ]);
-  }));
-}
-```
-
-**💡 CUSTOMCOMPONENT PHILOSOPHY:**
-- **Match to content**: Pokedex for Pokemon, Quiz for education, Timeline for history
-- **Be specific**: Don't use generic cards when you can use themed components
-- **Add interactivity**: Use state for quizzes, toggles, hover effects
-- **Use appropriate styling**: Playful for kids, professional for business
-- **Think creatively**: What would make THIS specific content more engaging?
 
 **CONTENT LAYOUT STRATEGIES:**
 
@@ -522,64 +506,224 @@ Interactive Components (for engagement):
 • Shadows: 0 20px 60px rgba(0,0,0,0.15) for depth
 • Border radius: 20-32px for modern feel
 
-**IMAGES - CREATIVE VISUAL ELEMENTS!**
+**IMAGES - STRATEGIC DESIGN ELEMENTS (USE WITH PURPOSE!):**
 
-🎯 **WHEN TO USE IMAGES (30-40% of slides):**
-✅ Teaching/explaining concepts
-✅ Product/design showcases
-✅ Data storytelling with context
-✅ Hero/impact moments
-✅ Visual metaphors
+🎯 **PHILOSOPHY: Images are POWERFUL - but use them ONLY when they add clear value!**
 
-❌ **WHEN TO SKIP:**
-❌ Title slides (typography shines)
-❌ Simple text slides
-❌ Already chart-heavy slides
-❌ Conclusion slides
+🚨 **CRITICAL IMAGE SRC RULE:**
+🎯 **IMAGE LAYOUT PRIORITY - MODERN DESIGN:**
 
-🚨 **CRITICAL:** ALWAYS use src="placeholder" - system handles image selection!
+**PRIMARY (80%): SIDE-BY-SIDE LAYOUTS**
+- Images go LEFT or RIGHT of text (NOT bottom!)
+- Split-screen: 50/50, 60/40, or 40/60
+- Text occupies one half, image the other
+- Examples:
+  * Text left (x=80-900, 820px), Image right (x=1000-1840, 840px)
+  * Image left (x=80-880, 800px), Text right (x=960-1840, 880px)
+  * Large image left (x=80-1100), Text column right (x=1200-1840)
 
-**CREATIVE LAYOUT IDEAS (Choose what fits content!):**
+**SECONDARY (20%): BOTTOM PLACEMENT**
+- ONLY for panoramic/wide images (landscapes, cityscapes)
+- Image: 1600-1760px wide × 300-450px tall
+- Position: x=80-160, y=650-750
+- NOT for portrait or square images!
 
-💡 **Side-by-Side**: Image left or right, content on opposite side
-- Split 50/50, 60/40, or 40/60 based on content importance
-- Full-height images or partial height
+❌ **NEVER: Vertical Stacking (Old PowerPoint)**
+- Text line 1 at y=200
+- Text line 2 at y=300
+- Text line 3 at y=400  
+- Wide image at bottom y=700 ← BORING!
 
-💡 **Focal Point**: Large central or offset focal image with text around it
-- Circular (borderRadius: "50%") for portraits/key visuals
-- Overlapping text for dynamic composition
+✅ **ALWAYS: Side-by-Side (Modern)**
+- Left half: Text OR Image (x=80-960)
+- Right half: Image OR Text (x=960-1840)
 
-💡 **Collage**: Multiple images in creative arrangement
-- Vary sizes (large + small accents)
-- Different border radii for visual interest
-- Overlapping with opacity for depth
+• Use images CONSERVATIVELY (≈30–40% of slides)
+• ALWAYS use src="placeholder" for ALL Image components
+• NEVER use descriptive text, search queries, or file paths as src
+• The system will handle image selection and replacement
+• Example: src="placeholder" ✅ | src="goku fighting scene" ❌
 
-💡 **Background Integration**: Image as backdrop with text overlay
-- Lower opacity (0.3-0.5) for readability
-- Gradient overlay for text contrast
+**WHEN TO USE IMAGES (Strategic - 30-40% of slides):**
+✅ Teaching/explaining concepts (diagrams, examples, process visuals)
+✅ Product/design showcases (screenshots, mockups, demos)
+✅ Data storytelling with context (charts + supporting visuals)
+✅ Hero/impact slides (large feature images for emphasis)
+✅ Before/after comparisons
+✅ Visual metaphors for abstract concepts
 
-💡 **Strip/Section**: Horizontal or vertical image sections
-- Visual rhythm and separation
-- Can span full width or partial
+**WHEN NOT TO USE IMAGES:**
+❌ Title slides (use bold typography instead)
+❌ Simple text/bullet slides (let content speak)
+❌ Conclusion slides (focus on message)
+❌ Slides already rich with charts/tables
+❌ Just to fill space (embrace whitespace!)
 
-💡 **Grid**: Multiple images in organized layout
-- Equal or varying sizes
-- Consistent or varied border radius
+**CREATIVE IMAGE STYLING - BE BOLD:**
 
-**STYLING FREEDOM:**
-• Border Radius: 0 (sharp), 20-40px (friendly), 50% (circular), asymmetric for uniqueness
-• Opacity: 1.0 (full), 0.6-0.8 (layered), 0.3-0.5 (watermark)
-• Effects: Ken Burns zoom for living slides
-• Size: Vary dramatically - large hero vs small accents
-• **ALWAYS objectFit="contain"** (shows full image)
+**Border Radius - Play with shapes:**
+• Small radius (8-16px): Professional, subtle corners
+• Medium radius (20-40px): Modern, friendly, approachable
+• Large radius (60-100px): Pill shapes, dramatic curves
+• Asymmetric radius: borderRadius: "20px 80px 20px 80px" for unique looks
+• Circular (50%): Perfect circles for portraits, icons, focal points
 
-🎨 **CREATIVE PRINCIPLE:**
-Choose layouts that best serve YOUR content - no rigid rules! Think about:
-- What story does the image tell?
-- How does it complement the text?
-- What layout creates the most impact?
+**Opacity & Blending:**
+• Solid (opacity: 1.0): Full impact images
+• Translucent (opacity: 0.6-0.8): Layered design, subtle backgrounds
+• Ghost images (opacity: 0.3-0.5): Watermark effect, texture layers
+• Combine with gradients: Image with overlay gradient for text readability
 
-Experiment and be bold!
+**Creative Positioning - NOT just boxes:**
+
+**Layout 1: SPLIT-SCREEN (PRIMARY - USE 80% OF THE TIME)**
+• SIDE-BY-SIDE: Image occupying left OR right half
+• Content on opposite side
+• Examples:
+  - Image RIGHT: x=1000, y=120, width=840, height=800 (text left)
+  - Image LEFT: x=80, y=120, width=880, height=800 (text right)
+  - 60/40 split: Image x=1150, width=690 (text takes 60%)
+• borderRadius: 0 (clean modern edges) or subtle 12-16px
+• This is the DEFAULT layout for content slides!
+
+**Layout 2: BOTTOM PANORAMIC (USE RARELY - 20%)**
+• ONLY for wide/panoramic images (aspect ratio >2:1)
+• Wide image as visual anchor
+• Height: 300-450px, width: 1600-1760px
+• Example: x=80, y=650, width=1760, height=380
+• Content stacked above (NOT below!)
+
+**Layout 3: Diagonal / Overlapping**
+• Rotate images slightly for dynamic feel
+• Layer multiple images with opacity
+• Use z-index via Group component for depth
+
+**Layout 4: Content-Integrated**
+• Image wraps around text (text on top with padding)
+• Image becomes background for text blocks
+• Example: Image at x=80, y=200, width=1200, height=700
+• Then TiptapTextBlock at x=140, y=260 (on top of image, contrasting text)
+
+**Layout 5: Bar/Strip Design**
+• Horizontal image strips (1920 x 150-250px)
+• Vertical image bars (200-400px x 1080)
+• Multiple strips for rhythm
+• Example: x=0, y=600, width=1920, height=180
+
+**Layout 6: Shape Cutouts**
+• Circular images as focal points
+• Multiple small circular images (borderRadius: "50%")
+• Grid of rounded image tiles
+• Example: 4 images at 400x400 with borderRadius="50%" in grid
+
+**ADVANCED TECHNIQUES:**
+
+**Ken Burns Effect:**
+• Add subtle zoom animation: effects: {kenBurns: {enabled: true, zoom: 1.15}}
+• Creates dynamic, living slides
+• Use one focal hero image for impact; avoid bottom-half banners
+
+**Image + Shape Combo:**
+• Image with colored shape overlay
+• Shape with cutout effect using borderRadius
+• Image peeking through geometric frames
+
+**Multiple Images:**
+• Collage layouts (3-6 images in creative arrangement)
+• Different sizes and radius for each
+• Overlapping with opacity for depth
+• Example: Large image (800x600) + 2 small circular images (200x200, borderRadius="50%")
+
+**Color Integration:**
+• Match image colors to theme palette
+• Use images with dominant {{primary}} or {{accent}} colors
+• Black & white images with colored overlays
+• Image + gradient overlay for brand consistency
+
+**EXAMPLES:**
+
+Example 1 - Hero Image Split:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 0, "y": 0},
+    "width": 920,
+    "height": 1080,
+    "src": "placeholder",
+    "objectFit": "contain",
+    "borderRadius": "0 80px 80px 0",
+    "effects": {"kenBurns": {"enabled": true, "zoom": 1.12}}
+  }
+}
+
+Example 2 - Circular Focal:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 600, "y": 250},
+    "width": 720,
+    "height": 720,
+    "src": "placeholder",
+    "objectFit": "contain",
+    "borderRadius": "50%",
+    "opacity": 0.9
+  }
+}
+
+Example 3 - Spanning Bar:
+{
+  "type": "Image",
+  "props": {
+    "position": {"x": 0, "y": 550},
+    "width": 1920,
+    "height": 220,
+    "src": "placeholder",
+    "objectFit": "contain",
+    "borderRadius": "40px",
+    "opacity": 0.7
+  }
+}
+
+Example 4 - Layered Depth:
+[
+  // Background image
+  {
+    "type": "Image",
+    "props": {
+      "position": {"x": 0, "y": 0},
+      "width": 1920,
+      "height": 1080,
+      "src": "placeholder",
+      "objectFit": "contain",
+      "opacity": 0.3
+    }
+  },
+  // Foreground circular image
+  {
+    "type": "Image",
+    "props": {
+      "position": {"x": 1200, "y": 300},
+      "width": 500,
+      "height": 500,
+      "src": "placeholder",
+      "objectFit": "contain",
+      "borderRadius": "50%",
+      "opacity": 1.0
+    }
+  }
+]
+
+**IMAGE PLACEMENT STRATEGY:**
+✅ Use images to SUPPORT content, not just decorate
+✅ **ALWAYS use objectFit="contain"** for images (shows full image without cropping)
+✅ Vary radius based on slide mood (sharp = professional, round = friendly)
+✅ Layer images with varying opacity for depth
+✅ Span sections to create visual rhythm
+✅ Integrate images WITH text, not just beside it
+✅ Use creative shapes (circles, pills, asymmetric) for visual interest
+❌ Don't force square boxes - be creative with shapes!
+❌ Don't just place images randomly - design with PURPOSE!
+❌ NEVER use objectFit="cover" - always use "contain" to show the full image
 
 ❌ NEVER USE DECORATIVE SHAPES - Use cards and custom components instead!
 ❌ NEVER USE TABLES - Use card grids with CustomComponents instead!
@@ -809,23 +953,18 @@ Position all text elements at x=120, textAlign=left (left edge alignment)
 
 **VISUAL ELEMENTS:**
 • CustomComponent dashboards (grids of 4-6 metrics)
-• **Icons for Visual Enhancement** - Add meaning and visual interest:
-  ✅ Dashboard metrics (trending-up, dollar-sign, users)
-  ✅ Section headers (briefcase, target, zap)
-  ✅ Bullet point prefixes (check-circle, arrow-right)
-  ✅ Status indicators (alert-circle, check, x)
-  ✅ Data visualization accents (chart-bar, pie-chart, line-chart)
-  → Most slides benefit from 2-4 well-placed icons
+• Icons SPARINGLY - ONLY for critical section headers or data visualization (NOT for every header!)
+  → Use: Data dashboards, key metrics, important callouts
+  → Skip: Regular bullets, decorative accents, background elements
 • Lines for structure: horizontal dividers, vertical split-screen
 • Minimal gradients - focus on content not decoration
 
 ❌ NEVER USE DECORATIVE SHAPES - NO circles, triangles, or geometric accents for decoration!
 
-💡 **ICON USAGE:** Icons add visual interest and help viewers scan content quickly.
-- Revenue/Growth: trending-up, dollar-sign, line-chart, arrow-up
-- Users/People: users, user-check, user-plus, team
-- Actions: check-circle, x-circle, arrow-right, zap
-- Status: alert-triangle, info, thumbs-up, star
+⚠️ **ICON RULE: USE SPARINGLY! Most slides need 0-2 icons MAX!**
+- Ask: "What is this about?" → Choose icon that answers that question
+- Revenue/Growth? → trending-up, dollar-sign, line-chart, arrow-up
+- Users/People? → users, user-check, user-plus, team
 - Success/Done? → check-circle, check-square, thumbs-up
 - Data/Analysis? → chart-bar, pie-chart, activity, presentation
 - Generic lists? → arrow-right, chevron-right, minus, circle
@@ -1409,18 +1548,45 @@ All heights: ≤400px
 Gaps: 60px between each
 ```
 
-**🎯 MULTI-SERIES CHARTS - PRIMARY FOR COMPARISONS (MOST POWERFUL!):**
-
-Use multi-series charts to tell compelling comparison stories:
-• Actual vs Budget (performance tracking)
-• Revenue vs Cost (profitability analysis)  
-• This Year vs Last Year (growth trends)
-• Product A vs Product B vs Product C (competitive analysis)
-• Multiple regions/segments/categories (comparative insights)
-
-**Example 1 - Multi-Series Comparison (RECOMMENDED):**
+**Example 1a - Single-Series Chart (PRESENTATION MODE):**
 ```json
-// Chart title with unit
+// Chart title - MUST INCLUDE UNIT!
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 80, "y": 180 },
+    "width": 800,
+    "texts": [{ "text": "Quarterly Revenue Growth ($M)", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 28,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 32
+  }
+}
+// Single-series chart
+{
+  "type": "Chart",
+  "props": {
+    "position": { "x": 80, "y": 230 },
+    "width": 800,
+    "height": 550,
+    "chartType": "column",
+    "data": [
+      { "name": "Q1", "value": 450 },
+      { "name": "Q2", "value": 520 },
+      { "name": "Q3", "value": 580 },
+      { "name": "Q4", "value": 620 }
+    ],
+    "colors": ["{{primary}}"],
+    "showLegend": false,  // false for single-series
+    "theme": "light"
+  }
+}
+```
+
+**Example 1b - Multi-Series Chart (PRESENTATION MODE):**
+```json
+// Chart title - INCLUDES UNIT!
 {
   "type": "TiptapTextBlock",
   "props": {
@@ -1433,7 +1599,7 @@ Use multi-series charts to tell compelling comparison stories:
     "height": 32
   }
 }
-// Multi-series chart - ALWAYS use for comparisons!
+// Multi-series chart with comparison data
 {
   "type": "Chart",
   "props": {
@@ -1452,30 +1618,160 @@ Use multi-series charts to tell compelling comparison stories:
       { "name": "Q4", "value": 570, "series": "Budget" }
     ],
     "colors": ["{{primary}}", "{{accent}}"],
-    "showLegend": true,  // CRITICAL: true for multi-series!
+    "showLegend": true,  // TRUE for multi-series!
     "theme": "light"
   }
 }
 ```
 
-**Example 2 - Single-Series (When No Comparison Needed):**
+**Example 2 - Multi-Series Line Chart (Trend Comparison):**
 ```json
+// Chart title - WITH UNIT!
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 80, "y": 180 },
+    "width": 1200,
+    "texts": [{ "text": "Revenue Trends: 3-Year Comparison ($M)", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 24,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 28
+  }
+}
+// Multi-series line chart
 {
   "type": "Chart",
   "props": {
-    "position": { "x": 80, "y": 230 },
+    "position": { "x": 80, "y": 220 },
+    "width": 1200,
+    "height": 450,
+    "chartType": "line",
+    "data": [
+      { "x": "Q1", "y": 380, "series": "2022" },
+      { "x": "Q1", "y": 420, "series": "2023" },
+      { "x": "Q1", "y": 450, "series": "2024" },
+      { "x": "Q2", "y": 410, "series": "2022" },
+      { "x": "Q2", "y": 450, "series": "2023" },
+      { "x": "Q2", "y": 520, "series": "2024" },
+      { "x": "Q3", "y": 440, "series": "2022" },
+      { "x": "Q3", "y": 490, "series": "2023" },
+      { "x": "Q3", "y": 580, "series": "2024" },
+      { "x": "Q4", "y": 480, "series": "2022" },
+      { "x": "Q4", "y": 530, "series": "2023" },
+      { "x": "Q4", "y": 620, "series": "2024" }
+    ],
+    "colors": ["{{primary}}", "{{secondary}}", "{{accent}}"],
+    "showLegend": true,  // TRUE for multi-series!
+    "theme": "light"
+  }
+}
+```
+
+**Example 3 - Two Charts Side-by-Side (DETAILED MODE):**
+```json
+// Chart 1 title - WITH UNIT!
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 80, "y": 180 },
+    "width": 600,
+    "texts": [{ "text": "Revenue vs Cost by Region ($M)", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 22,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 26
+  }
+}
+// Multi-series chart 1
+{
+  "type": "Chart",
+  "props": {
+    "position": { "x": 80, "y": 220 },
+    "width": 600,
+    "height": 400,
+    "chartType": "column",
+    "data": [
+      { "name": "North", "value": 450, "series": "Revenue" },
+      { "name": "North", "value": 320, "series": "Cost" },
+      { "name": "South", "value": 380, "series": "Revenue" },
+      { "name": "South", "value": 290, "series": "Cost" },
+      { "name": "East", "value": 520, "series": "Revenue" },
+      { "name": "East", "value": 380, "series": "Cost" },
+      { "name": "West", "value": 420, "series": "Revenue" },
+      { "name": "West", "value": 310, "series": "Cost" }
+    ],
+    "colors": ["{{primary}}", "{{accent}}"],
+    "showLegend": true,
+    "theme": "light"
+  }
+}
+// Chart 2 title - WITH UNIT!
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 760, "y": 180 },
+    "width": 600,
+    "texts": [{ "text": "Market Share Evolution (%)", "style": { "textColor": "{{secondary}}", "bold": true } }],
+    "fontSize": 22,
+    "fontWeight": "700",
+    "textAlign": "left",
+    "height": 26
+  }
+}
+// Single-series chart 2
+{
+  "type": "Chart",
+  "props": {
+    "position": { "x": 760, "y": 220 },
+    "width": 600,
+    "height": 400,
+    "chartType": "line",
+    "data": [
+      { "x": "Q1", "y": 35 },
+      { "x": "Q2", "y": 38 },
+      { "x": "Q3", "y": 42 },
+      { "x": "Q4", "y": 45 }
+    ],
+    "colors": ["{{accent}}"],
+    "showLegend": false,
+    "theme": "light"
+  }
+}
+```
+
+**Example 4 - Chart + Insights Split Layout:**
+```json
+// Chart on left (multi-series comparison)
+{
+  "type": "Chart",
+  "props": {
+    "position": { "x": 80, "y": 200 },
     "width": 800,
     "height": 550,
     "chartType": "column",
     "data": [
-      { "name": "Q1", "value": 450 },
-      { "name": "Q2", "value": 520 },
-      { "name": "Q3", "value": 580 },
-      { "name": "Q4", "value": 620 }
+      { "name": "Product A", "value": 450, "series": "Revenue" },
+      { "name": "Product A", "value": 35, "series": "Margin %" },
+      { "name": "Product B", "value": 380, "series": "Revenue" },
+      { "name": "Product B", "value": 28, "series": "Margin %" },
+      { "name": "Product C", "value": 520, "series": "Revenue" },
+      { "name": "Product C", "value": 42, "series": "Margin %" }
     ],
-    "colors": ["{{primary}}"],
-    "showLegend": false,  // false for single-series
+    "colors": ["{{primary}}", "{{accent}}"],
+    "showLegend": true,
     "theme": "light"
+  }
+}
+// Insights on right (NO OVERLAP)
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 960, "y": 200 },  // ✅ 960 > 880 (no overlap!)
+    "width": 800,
+    "fontSize": 32,
+    "texts": [{ "text": "Product C leads in both revenue and margin", "style": { "textColor": "{{primary}}", "bold": true } }],
+    "height": 37
   }
 }
 ```
@@ -1664,7 +1960,7 @@ Layout: Image on right 40%, text on left 60% - NO OVERLAP, clean separation
         "width": 900,
         "texts": [{ "text": "Innovation Summit", "style": {} }],
         "fontSize": 280,
-    "fontWeight": "900",
+        "fontWeight": "900",
         "textAlign": "left",
         "lineHeight": 1.0,
         "letterSpacing": -0.03,
@@ -2528,41 +2824,7 @@ var value = props.value; // First declaration
 var value = newValue; // ❌ Don't redeclare! Update the value instead
 ```
 
-**3. BRACKET MATCHING (CRITICAL - COUNT YOUR BRACKETS!):**
-```javascript
-// 🚨 CRITICAL: Every opening bracket MUST have a matching closing bracket!
-// AI models frequently generate extra closing parens ) at the end of complex nested structures
-
-// ✅ CORRECT - Balanced brackets
-return React.createElement('div', {{style: {{width: '100%'}}}},
-  items.map(function(item) {{
-    return React.createElement('div', {{key: item.id}}, item.text);
-  }})
-);
-// Count: createElement( { } }, map( function() { createElement( { }, ) } ) );
-//        1 open paren, 1 close = ✅
-//        2 open brace, 2 close = ✅
-
-// ❌ WRONG - Extra closing paren (VERY COMMON ERROR!)
-return React.createElement('div', {{style: {{width: '100%'}}}},
-  items.map(function(item) {{
-    return React.createElement('div', {{key: item.id}}, item.text);
-  }}))  // ← EXTRA ) causes SyntaxError!
-);
-
-// 🎯 TIP: When using .map(), count carefully:
-// items.map(function(item) {{ return React.createElement(...); }})
-//         ^ open paren              close brace ^  close paren ^
-// The closing ) for .map( comes AFTER the closing }} of function body
-
-// ✅ CORRECT .map() pattern:
-items.map(function(item, i) {{
-  return React.createElement('div', {{key: i}}, item.name);
-}})
-// NOT: }}))  ← Too many closing parens!
-```
-
-**4. SIZING (ALWAYS USE AVAILABLE DIMENSIONS):**
+**3. SIZING (ALWAYS USE AVAILABLE DIMENSIONS):**
 ```javascript
 // ✅ CORRECT - Use container dimensions
 var availableWidth = (props.width || containerWidth || 800);
@@ -2580,7 +2842,7 @@ return React.createElement('div', {{
 const myWidth = props.width - padding * 2; // If padding not defined, ERROR!
 ```
 
-**5. EVENT HANDLERS (DECLARE AS FUNCTIONS):**
+**4. EVENT HANDLERS (DECLARE AS FUNCTIONS):**
 ```javascript
 // ✅ CORRECT - Define handlers as functions
 var handleClick = function() {{
@@ -2597,7 +2859,7 @@ return React.createElement('button', {{
 }});
 ```
 
-**6. INTERACTIVE COMPONENTS (USE STATE & HANDLERS):**
+**5. INTERACTIVE COMPONENTS (USE STATE & HANDLERS):**
 ```javascript
 // For quizzes, polls, step-by-step content
 var selectedAnswer = state.selectedAnswer;
@@ -3262,7 +3524,7 @@ When the deck is educational (math, science, coding, etc.), follow these princip
 ✅ Theme colors only ({{primary}}, {{secondary}}, {{accent}})
 ✅ NO Y-overlaps: Next Y = Current Y + Current Height + Gap
 ✅ Tables: backgroundColor=null, borderWidth=0
-✅ Icons: Use when they add value (metrics, bullet prefixes, status indicators, section headers)
+✅ Icons: USE SPARINGLY! Most slides need 0 icons. Only for critical metrics (1-2 MAX)
 ❌ Decorative shapes: NEVER USE - NO circles, triangles, stars for decoration!
 ✅ Shape component: ONLY when hasText=true for callout boxes with content
 
@@ -3305,7 +3567,7 @@ def get_mode_specific_guidance(mode: str) -> str:
 • Tables: backgroundColor=null, borderWidth=0
 • Title Slides: BIG & BOLD (200-280pt), LEFT-ALIGNED (x=120, width=1700, textAlign=left) with clean solid/gradient background (NO images!)
 • Detailed subtitle: 42-54pt
-• Icons: Use appropriately - great for section headers, bullet points, status indicators, data metrics
+• Icons: USE SPARINGLY! Most slides need 0 icons. Only for critical dashboard metrics (1-2 MAX)
 • Multiple small charts for comparisons
 • Heights: fontSize × 1.15 (TIGHT!)
 • NO OVERLAPS: Next Y = Current Y + Current Height + 24-32px gap

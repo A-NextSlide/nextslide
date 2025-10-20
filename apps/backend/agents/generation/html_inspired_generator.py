@@ -284,7 +284,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
                     import json
                     chart_info += f"\nCOMPLETE DATA:\n{json.dumps(data, indent=2)}\n"
                     chart_info += f"\n🚨 CRITICAL: Use Chart component positioned left (x=80, width=880) OR right (x=960, width=880)!"
-                    chart_info += f"\nChart props: chartType='{chart_type}', data=[use exact data above], showLegend=false, theme='light'"
+                    chart_info += f"\nChart props: chartType='{chart_type}', data=[use exact data above], showLegend=false"
                 
                 logger.info(f"✅ [CHART] Added {data_count} data points to prompt for slide {context.slide_index + 1}")
             except Exception as e:
@@ -293,6 +293,82 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         
         # Get mode-specific guidance from V2 prompt
         mode_guidance = get_mode_specific_guidance(mode)
+
+        # 🚨 Detect multi-item content for special guidance
+        multi_item_guidance = ""
+        try:
+            # Simple detection: Look for lists, bullets, multiple capitalized names
+            content_lower = context.slide_outline.content.lower()
+            title_lower = context.slide_outline.title.lower()
+            
+            # Count list indicators
+            list_indicators = content_lower.count('\n-') + content_lower.count('\n•') + content_lower.count('\n*')
+            
+            # Count capitalized words (potential item names)
+            import re
+            capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b', context.slide_outline.content)
+            unique_caps = len(set(capitalized_words))
+            
+            # Detect multi-item scenarios
+            is_multi_item = (
+                list_indicators >= 2 or  # Has 2+ list items
+                unique_caps >= 3 or  # Has 3+ different capitalized names
+                any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries']) or
+                any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'])  # Common multi-item examples
+            )
+            
+            if is_multi_item:
+                # Extract item names for logging
+                item_names = []
+                lines = context.slide_outline.content.split('\n')
+                for line in lines:
+                    line = line.strip().lstrip('-•*0123456789. ')
+                    if line and len(line) > 2 and line[0].isupper():
+                        # Get first 1-2 words
+                        words = line.split()[:2]
+                        item_name = ' '.join(words)
+                        if len(item_name) > 2:
+                            item_names.append(item_name)
+                
+                if len(item_names) >= 2:
+                    logger.info(f"🎯 [MULTI-ITEM DETECTED] Slide {context.slide_index + 1} has {len(item_names)} items: {item_names}")
+                    
+                    multi_item_guidance = f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 MULTI-ITEM SLIDE DETECTED - BREAK APART INTO SECTIONS!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚨 THIS SLIDE IS ABOUT {len(item_names)} DISTINCT ITEMS: {', '.join(item_names[:5])}
+
+**CRITICAL INSTRUCTIONS:**
+✅ Create SEPARATE SECTIONS for EACH item
+✅ Each section gets: Title + Facts + Individual Image
+✅ Layout: Horizontal sections, Vertical stack, or Grid (choose based on {len(item_names)} items)
+✅ Each Image component MUST have metadata with specific topic/searchQuery
+
+**REQUIRED FOR EACH ITEM:**
+- Item name/title in bold, accent color ({{{{accent}}}})
+- 2-4 key facts/details about that specific item
+- Image component with:
+  * src="placeholder"
+  * alt="[Specific description of THIS item]"
+  * metadata: {{"topic": "[Item name]", "searchQuery": "[Item name + context]"}}
+
+**LAYOUT GUIDANCE FOR {len(item_names)} ITEMS:**
+{'Horizontal sections (3 columns)' if len(item_names) == 3 else 'Grid layout (2x3)' if len(item_names) >= 4 else 'Vertical stack'}
+
+**EXAMPLE METADATA FOR EACH IMAGE:**
+Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} {deck_subject if 'deck_subject' in locals() else ''}"}}
+{'Item 2: metadata: {"topic": "' + item_names[1] + '", "searchQuery": "' + item_names[1] + '"}' if len(item_names) > 1 else ''}
+
+🚨 DO NOT group with 1 image - EACH ITEM NEEDS ITS OWN IMAGE!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        except Exception as e:
+            logger.debug(f"Multi-item detection failed: {e}")
+            multi_item_guidance = ""
 
         dynamic_part = f"""
 ═══════════════════════════════════════════════════════════
@@ -304,7 +380,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
 **CONTENT:**
 {context.slide_outline.content}
 
-**SLIDE TYPE:** {slide_type}{chart_info}
+**SLIDE TYPE:** {slide_type}{chart_info}{multi_item_guidance}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎨 THEME COLORS - CONCRETE JSON EXAMPLES (COPY THESE EXACTLY!)

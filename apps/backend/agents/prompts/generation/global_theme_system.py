@@ -40,13 +40,21 @@ class GlobalThemeSystem:
         
         all_content = "\n\n".join(sampled_content)
         
-        # Format available fonts - SHOW ALL FONTS (user wants complete list!)
+        # Format available fonts
         available_fonts_str = ""
         if available_fonts:
             for category, fonts in available_fonts.items():
                 if fonts:  # Only show categories with fonts
-                    # Show ALL fonts in every category - no limiting!
-                    available_fonts_str += f"\n   {category}: {', '.join(fonts)}"
+                    # Show all fonts for important categories, limit others
+                    if category in ["Script", "Bold", "Design", "Designer", "Unique"]:
+                        available_fonts_str += f"\n   {category}: {', '.join(fonts)}"
+                    else:
+                        # Show first 10 fonts for other categories
+                        display_fonts = fonts[:10]
+                        if len(fonts) > 10:
+                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)} (+ {len(fonts) - 10} more)"
+                        else:
+                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)}"
         else:
             available_fonts_str = "\n   [Font list not provided - use your best judgment]"
         
@@ -179,19 +187,12 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    - Caption: Font family, size (pt), weight
 
    FONT SELECTION GUIDANCE:
-   - 🚨 CRITICAL: NEVER USE LATO, ROBOTO, OR INTER! These are boring and overused!
-   - FORBIDDEN FONTS: Lato, Roboto, Inter, Helvetica, Arial
-   - BE CREATIVE! Match fonts to content ENERGY and AUDIENCE!
-   - You have access to HUNDREDS of fonts - use interesting ones!
+   - 🚨 CRITICAL: NEVER USE INTER! It's boring and overused!
+   - DO NOT default to Inter, Helvetica, or Arial! Be creative with font choices!
+   - Inter is FORBIDDEN - choose literally any other font!
    - Choose from these ACTUALLY AVAILABLE fonts in the system:
 
    {available_fonts_str}
-   
-   💡 FONT SELECTION STRATEGY:
-   - Look at the presentation TOPIC first
-   - Match font PERSONALITY to content energy (playful topic = playful fonts!)
-   - Consider AUDIENCE maturity (kids = fun fonts, executives = sophisticated fonts)
-   - DON'T default to "safe" choices - be bold and appropriate!
 
    🎭 PRESENTATION TYPE DETECTION (CRITICAL FOR FONT CHOICE!):
 

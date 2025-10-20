@@ -43,22 +43,17 @@ def get_optimized_component_schemas() -> str:
 ═══ ACCENT COMPONENTS (Use Sparingly) ═══
 
 **Icon** { position, width: 24-40, height: 24-40, iconLibrary: "lucide", iconName, color: "{{accent}}" }
-  💡 Icons add visual interest and help viewers scan content quickly!
-  ✅ USE for: 
-    • Dashboard metrics (trending-up, dollar-sign)
-    • Bullet point prefixes (check-circle, arrow-right)
-    • Section headers (briefcase, target, zap)
-    • Status indicators (alert-circle, check, x)
-    • Data visualization accents (chart-bar, pie-chart)
+  🚨 USE SPARINGLY! Most slides need 0 icons.
+  ✅ USE for: Dashboard metrics (1-2 MAX), critical data points
+  ❌ DON'T use for: Bullets, headers, decoration
   📚 Available: 5000+ icons (lucide default)
   💡 Naming: kebab-case ("dollar-sign", "trending-up", "users", "chart-bar")
-  🎯 Common selections:
+  🎯 Semantic selection:
     • Money/Revenue: "dollar-sign", "coins", "banknote"
     • Growth: "trending-up", "arrow-up-right", "line-chart"
     • Users: "users", "user-plus", "user-check"
     • Time: "clock", "calendar", "timer"
-    • Success: "check-circle", "thumbs-up", "star"
-    • Actions: "arrow-right", "zap", "target"
+    • Success: "check-circle", "thumbs-up"
 
 **Shape** { position, width, height, shapeType: "rectangle"|"roundedRectangle"|"circle", fill, hasText, texts, fontSize, textColor }
   ❌ NEVER use decorative shapes (NO circles/triangles for decoration!)

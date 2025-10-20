@@ -439,11 +439,14 @@ class ThemeAdapter:
                 # Provide a generic colors array if missing
                 if 'colors' not in props or not isinstance(props.get('colors'), list):
                     props['colors'] = props.get('seriesColors', [accent1, accent2, text_color, '#A3A3A3'])
-                # Light/dark theme hint
+                # ALWAYS enforce light/dark theme based on background color
+                # This ensures charts are readable regardless of AI-generated theme setting
                 try:
-                    props.setdefault('theme', 'dark' if contrast_mgr.is_dark_color(_normalize_hex(page_bg)) else 'light')
+                    # Dark background -> 'dark' theme (light text/ticks for contrast)
+                    # Light background -> 'light' theme (dark text/ticks for contrast)
+                    props['theme'] = 'dark' if contrast_mgr.is_dark_color(_normalize_hex(page_bg)) else 'light'
                 except Exception:
-                    props.setdefault('theme', 'light')
+                    props['theme'] = 'light'
 
             # 7) Tables - Apply theme colors following infographic best practices
             elif ctype == 'Table':

@@ -237,7 +237,36 @@ export class SlideImageUpdater {
   ): any {
     const { images, images_by_topic, topics } = imageData;
     
-    // 1. If component has a preferred topic
+    // 🚨 PRIORITY 1: Check component metadata for specific topic/searchQuery
+    // This is used for multi-item slides where each image has a specific topic
+    if (component.props.metadata) {
+      const metadata = component.props.metadata;
+      
+      // Try metadata.topic first (exact match)
+      if (metadata.topic && images_by_topic?.[metadata.topic]) {
+        const topicImages = images_by_topic[metadata.topic];
+        if (topicImages.length > 0) {
+          console.log(`[SlideImageUpdater] Matched image by metadata.topic: ${metadata.topic}`);
+          return topicImages[0]; // Use first image for this topic
+        }
+      }
+      
+      // Try metadata.searchQuery (fuzzy match)
+      if (metadata.searchQuery) {
+        const searchTerms = metadata.searchQuery.toLowerCase().split(' ');
+        const matchedImage = images.find(img => {
+          if (!img.topic && !img.description) return false;
+          const imgText = `${img.topic || ''} ${img.description || ''}`.toLowerCase();
+          return searchTerms.some(term => imgText.includes(term));
+        });
+        if (matchedImage) {
+          console.log(`[SlideImageUpdater] Matched image by metadata.searchQuery: ${metadata.searchQuery}`);
+          return matchedImage;
+        }
+      }
+    }
+    
+    // 2. If component has a preferred topic prop (legacy support)
     if (component.props.topic && images_by_topic?.[component.props.topic]) {
       const topicImages = images_by_topic[component.props.topic];
       if (topicImages.length > 0) {
@@ -245,7 +274,7 @@ export class SlideImageUpdater {
       }
     }
     
-    // 2. If component has keywords that match image descriptions
+    // 3. If component has keywords that match image descriptions
     if (component.props.keywords) {
       const keywords = component.props.keywords.toLowerCase().split(',').map((k: string) => k.trim());
       const matchedImage = images.find(img => 
@@ -258,7 +287,7 @@ export class SlideImageUpdater {
       }
     }
     
-    // 3. Try to match based on the slide's primary topic
+    // 4. Try to match based on the slide's primary topic
     if (topics && topics.length > 0 && images_by_topic) {
       const primaryTopic = topics[0];
       if (images_by_topic[primaryTopic] && images_by_topic[primaryTopic].length > 0) {
@@ -266,7 +295,7 @@ export class SlideImageUpdater {
       }
     }
     
-    // 4. Fall back to using images in order
+    // 5. Fall back to using images in order
     if (images.length > 0) {
       return images[fallbackIndex % images.length];
     }
