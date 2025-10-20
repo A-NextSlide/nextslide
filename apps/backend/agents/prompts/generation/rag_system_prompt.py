@@ -68,16 +68,26 @@ AVOID THESE MISTAKES:
 - Shapes without purpose
 
 ELEGANT PATTERNS TO USE:
+
+**IMAGE LAYOUTS (CRITICAL - MODERN DESIGN):**
+- **PRIMARY (80%): SIDE-BY-SIDE layouts** - Image LEFT or RIGHT, text on opposite side
+  * Split-screen 50/50: Text left (x=80-900), Image right (x=1000-1840)
+  * Split-screen 40/60: Image left (x=80-700), Text right (x=800-1840)
+  * Split-screen 60/40: Text left (x=80-1100), Image right (x=1150-1840)
+- **SECONDARY (20%): BOTTOM panoramic** - ONLY for wide/landscape images (aspect >2:1)
+  * Wide image: x=80, y=650-750, width=1600-1760, height=300-450
+- ❌ **NEVER: Vertical stacking** with wide image at bottom (old PowerPoint style!)
+
+**OTHER PATTERNS:**
 - Hero images with ken-burns animation and solid-color overlays
-- Split-screen asymmetric layouts (50/50, 60/40, 70/30). It’s OK for an image to occupy an entire half or third of the slide when appropriate.
 - MASSIVE circle statistics (400-500px) with huge numbers
 - Hexagon grids for process flows and tech workflows (only if labels/flow are present)
 - Layered images with 30-50% transparency for depth
 - Diagonal or circular image masks for visual interest
 - CustomComponents for ALL data visualization
 - Arrows and flow shapes for dynamic progression (with functional labels)
-- Icon + text adjacency (optional, use sparingly) for bullets/labels (left OR right), with a 16–20px gap, vertically aligned; do not include bullet characters in the text label itself
-- Text layout variations: staggered blocks (left/right), two-column text, sidebar with body copy, pull-quote blocks, callout stat cards, caption-over-image with contrast, and card grids for features
+- Icon + text adjacency (optional, use sparingly) for bullets/labels (left OR right), with a 16–20px gap, vertically aligned
+- Text layout variations: staggered blocks (left/right), two-column text, sidebar with body copy, pull-quote blocks, callout stat cards
 
 VARIANT SERIES AND COMPARISONS (STRICT):
 - Variant series (e.g., NBA teams, products, countries):

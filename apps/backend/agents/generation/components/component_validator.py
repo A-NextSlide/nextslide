@@ -50,7 +50,13 @@ class ComponentValidator:
                 # Proactive normalization for specific component types
                 if comp_type == 'Chart':
                     component = self._normalize_chart_props(component)
+                    component = self._ensure_chart_data_colors(component, theme)
+                    component = self._ensure_axis_bottom_fields(component)
                     component = self._ensure_axis_label_rotation(component)
+                
+                # Special handling for Lines component
+                if comp_type == 'Lines':
+                    component = self._fix_lines_component(component)
                 
                 # Special handling for CustomComponent
                 if comp_type == 'CustomComponent':
@@ -77,7 +83,7 @@ class ComponentValidator:
                             component['props'] = p
                     except Exception:
                         pass
-                    component = self._promote_plain_text_to_rich_tiptap(component)
+                    component = self._promote_plain_text_to_rich_tiptap(component, theme)
                     # Apply intelligent font sizing
                     component = self._apply_intelligent_font_sizing(component)
                 
@@ -95,11 +101,20 @@ class ComponentValidator:
                     
             except Exception as e:
                 logger.warning(f"Component validation failed for {comp_type}: {e}")
-                # Last-chance sanitation for Chart components before keeping
+                # Last-chance sanitation for Chart and Lines components before keeping
                 try:
                     if comp_type == 'Chart':
                         component = self._normalize_chart_props(component)
+                        component = self._ensure_chart_data_colors(component, theme)
+                        component = self._ensure_axis_bottom_fields(component)
                         component = self._ensure_axis_label_rotation(component)
+                        if registry and comp_type in registry._component_models:
+                            ComponentModel = registry._component_models[comp_type]
+                            validated_comp = ComponentModel(**component)
+                            validated.append(validated_comp.model_dump())
+                            continue
+                    elif comp_type == 'Lines':
+                        component = self._fix_lines_component(component)
                         if registry and comp_type in registry._component_models:
                             ComponentModel = registry._component_models[comp_type]
                             validated_comp = ComponentModel(**component)
@@ -133,12 +148,37 @@ class ComponentValidator:
         """
         props = component.get('props', {}) or {}
 
+        # CRITICAL FIX: Validate and fix obviously invalid font names
+        # LLM sometimes generates invalid fonts like "Fonts", "Font Family", etc.
+        invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default']
+        current_font = str(props.get('fontFamily', '')).lower().strip()
+        if current_font in invalid_fonts or not current_font:
+            # Use theme font if available, otherwise use safe default
+            if theme and isinstance(theme, dict):
+                typography = theme.get('typography', {})
+                # Try to get body font from theme
+                props['fontFamily'] = typography.get('body_text', {}).get('family', 'Inter')
+                logger.info(f"[FONT FIX] Replaced invalid font '{props.get('fontFamily')}' with theme font: {props['fontFamily']}")
+            else:
+                props['fontFamily'] = 'Inter'
+                logger.info(f"[FONT FIX] Replaced invalid font with default: Inter")
+
         # Get default text color from theme if available, otherwise use black
         default_text_color = '#000000ff'
+        is_branded_theme = False
         if theme and isinstance(theme, dict):
             color_palette = theme.get('color_palette', {})
             if isinstance(color_palette, dict):
                 default_text_color = color_palette.get('primary_text', '#000000ff')
+                # Check if this is a branded theme (brandfetch, brand)
+                palette_source = color_palette.get('source') or theme.get('palette_source')
+                is_branded_theme = palette_source in ['brandfetch_cache', 'brand', 'brandfetch']
+                if is_branded_theme:
+                    print(f"🎨 [VALIDATOR] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
+                else:
+                    print(f"🎨 [VALIDATOR] Using theme text color: {default_text_color}")
+        else:
+            print(f"🎨 [VALIDATOR] No theme provided, using default black: {default_text_color}")
 
         # Base visual defaults often required by schema
         props.setdefault('opacity', 1)
@@ -207,10 +247,20 @@ class ComponentValidator:
                 if seg_size >= dominant_size and seg_color:
                     dominant_color = seg_color
                     dominant_size = seg_size
-        if dominant_color and isinstance(dominant_color, str):
+
+        # Determine the text color to use
+        if is_branded_theme:
+            # For branded themes, ALWAYS use the brand text color (ignore AI-generated colors)
+            props['textColor'] = default_text_color
+            print(f"🎨 [VALIDATOR] Branded theme: forcing brand text color {default_text_color}")
+        elif dominant_color and isinstance(dominant_color, str):
+            # Use dominant color from text segments
             props['textColor'] = dominant_color
-        else:
-            props.setdefault('textColor', default_text_color)
+        elif not props.get('textColor') or props.get('textColor') in ['#000000', '#000000ff']:
+            # If no textColor set, or if it's black, use theme color
+            props['textColor'] = default_text_color
+            print(f"🎨 [VALIDATOR] Setting textColor to theme default: {default_text_color}")
+        # Otherwise keep whatever textColor was already set
 
         # Compute root fontSize/fontWeight heuristics if missing
         # Use larger default sizes for better visibility
@@ -227,6 +277,9 @@ class ComponentValidator:
             props['fontSize'] = max_size or default_size
         if 'fontWeight' not in props:
             props['fontWeight'] = 'bold' if props.get('fontSize', 0) >= 72 else 'normal'
+        elif isinstance(props['fontWeight'], (int, float)):
+            # Convert numeric fontWeight to string literal (400 -> 'normal', 700 -> 'bold')
+            props['fontWeight'] = 'bold' if props['fontWeight'] >= 600 else 'normal'
 
         # Restructure texts[].style if missing to satisfy schema requirements
         normalized_texts: List[Dict[str, Any]] = []
@@ -241,7 +294,18 @@ class ComponentValidator:
             if bold_flag is None:
                 fw = seg.get('fontWeight') or props.get('fontWeight')
                 bold_flag = True if str(fw).lower() == 'bold' or str(fw).isdigit() and int(str(fw)) >= 600 else False
-            style.setdefault('textColor', color or default_text_color)
+
+            # Set text color
+            if is_branded_theme:
+                # For branded themes, always use brand text color
+                style['textColor'] = default_text_color
+                print(f"🎨 [SEGMENT] Branded theme: forcing brand text color {default_text_color}")
+            elif not color or color in ['#000000', '#000000ff']:
+                # Replace black with theme color
+                style['textColor'] = default_text_color
+                print(f"🎨 [SEGMENT] Replaced black with theme color: {default_text_color}")
+            else:
+                style.setdefault('textColor', color)
             style.setdefault('backgroundColor', '#00000000')
             style.setdefault('bold', bool(bold_flag))
             style.setdefault('italic', False)
@@ -266,6 +330,9 @@ class ComponentValidator:
             })
         if texts and normalized_texts:
             props['texts'] = normalized_texts
+
+        # Debug: Log final textColor
+        print(f"🎨 [FINAL] Component {component.get('type')} textColor: {props.get('textColor')}, fontWeight: {props.get('fontWeight')}")
 
         component['props'] = props
         return component
@@ -355,7 +422,7 @@ class ComponentValidator:
                 base_size = sizing_result['fontSize']
                 for text_segment in props['texts']:
                     # Check if this segment was meant to be emphasized
-                    current_size = text_segment.get('fontSize', base_size)
+                    current_size = text_segment.get('fontSize', base_size) or base_size
                     is_emphasized = current_size > base_size * 1.3
 
                     if is_emphasized and role == 'title':
@@ -587,7 +654,7 @@ class ComponentValidator:
             logger.warning(f"[FONT NORMALIZATION] Failed: {e}")
             return components
 
-    def _promote_plain_text_to_rich_tiptap(self, component: Dict[str, Any]) -> Dict[str, Any]:
+    def _promote_plain_text_to_rich_tiptap(self, component: Dict[str, Any], theme: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Ensure text components use rich Tiptap texts[] structure with style and emphasis.
         - If props.text exists and props.texts is missing, convert to texts[]
         - Create emphasis by splitting into segments and applying bold+accent to the largest token
@@ -596,6 +663,23 @@ class ComponentValidator:
         try:
             comp_type = component.get('type')
             props = component.get('props', {}) or {}
+
+            # Get default text color from theme if available, otherwise use black
+            default_text_color = '#000000ff'
+            is_branded_theme = False
+            if theme and isinstance(theme, dict):
+                color_palette = theme.get('color_palette', {})
+                if isinstance(color_palette, dict):
+                    default_text_color = color_palette.get('primary_text', '#000000ff')
+                    # Check if this is a branded theme (brandfetch, brand)
+                    palette_source = color_palette.get('source') or theme.get('palette_source')
+                    is_branded_theme = palette_source in ['brandfetch_cache', 'brand', 'brandfetch']
+                    if is_branded_theme:
+                        print(f"🎨 [TIPTAP PROMOTE] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
+                    else:
+                        print(f"🎨 [TIPTAP PROMOTE] Using theme text color: {default_text_color}")
+            else:
+                print(f"🎨 [TIPTAP PROMOTE] No theme provided, using default black")
             if comp_type not in ['TiptapTextBlock', 'TextBlock', 'Title']:
                 return component
             # If texts already present and properly structured, keep as-is but ensure style subkeys
@@ -607,7 +691,23 @@ class ComponentValidator:
                     style = seg.get('style') if isinstance(seg.get('style'), dict) else {}
                     # Map color to style.textColor if present
                     if 'color' in seg and 'textColor' not in style:
-                        style['textColor'] = seg.get('color')
+                        color_val = seg.get('color')
+                        if is_branded_theme:
+                            # For branded themes, always use brand text color
+                            style['textColor'] = default_text_color
+                        elif color_val in ['#000000', '#000000ff']:
+                            # Replace black with theme color
+                            style['textColor'] = default_text_color
+                        else:
+                            style['textColor'] = color_val
+                    elif 'textColor' in style:
+                        if is_branded_theme:
+                            # For branded themes, always use brand text color
+                            style['textColor'] = default_text_color
+                        elif style['textColor'] in ['#000000', '#000000ff']:
+                            # Replace black textColor with theme color
+                            style['textColor'] = default_text_color
+                    style.setdefault('textColor', default_text_color)
                     style.setdefault('backgroundColor', '#00000000')
                     style.setdefault('bold', bool(str(seg.get('fontWeight', props.get('fontWeight', 'normal'))).lower() == 'bold'))
                     style.setdefault('italic', False)
@@ -643,11 +743,21 @@ class ComponentValidator:
 
             texts: List[Dict[str, Any]] = []
             for w in words:
+                # Determine text color
+                if is_branded_theme:
+                    # For branded themes, always use brand text color
+                    text_color = default_text_color
+                else:
+                    # For non-branded themes, use props color or fallback to theme color
+                    text_color = props.get('textColor') or props.get('color') or default_text_color
+                    if text_color in ['#000000', '#000000ff']:
+                        text_color = default_text_color
+
                 seg: Dict[str, Any] = {
                     'text': (w + ' '),
                     'fontSize': large_size if w == longest and comp_type != 'TextBlock' else base_size,
                     'style': {
-                        'textColor': props.get('textColor') or props.get('color') or default_text_color,
+                        'textColor': text_color,
                         'backgroundColor': '#00000000',
                         'bold': (w == longest) or (str(props.get('fontWeight', 'normal')).lower() == 'bold'),
                         'italic': False,
@@ -1070,6 +1180,132 @@ class ComponentValidator:
             logger.debug(f"_ensure_axis_label_rotation skipped: {e}")
         return component
 
+    def _ensure_chart_data_colors(self, component: Dict[str, Any], theme: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Ensure all chart data points have a color field (required by schema).
+        Adds colors from theme palette or defaults if missing.
+        """
+        try:
+            props = component.get('props', {}) or {}
+            data = props.get('data') or []
+            colors = props.get('colors') or []
+            
+            if not isinstance(data, list) or not data:
+                return component
+            
+            # Get theme colors if available
+            theme_colors = []
+            if theme:
+                theme_dict = theme.to_dict() if hasattr(theme, 'to_dict') else (theme if isinstance(theme, dict) else {})
+                palette = theme_dict.get('color_palette', {}) or {}
+                theme_colors = [
+                    palette.get('accent_1', '#FF4301'),
+                    palette.get('accent_2', '#FF4301'),
+                    palette.get('primary_text', '#272323'),
+                ]
+            
+            # Fallback colors if no theme
+            default_colors = ['#FF4301', '#6772e5', '#99b898', '#fcb900', '#ff6900', '#00d084', '#0693e3', '#eb144c']
+            available_colors = theme_colors if theme_colors else default_colors
+            if colors:
+                available_colors = colors + available_colors
+            
+            # Add color field to data points that don't have it
+            modified = False
+            for i, point in enumerate(data):
+                if not isinstance(point, dict):
+                    continue
+                if not point.get('color'):
+                    point['color'] = available_colors[i % len(available_colors)]
+                    modified = True
+            
+            if modified:
+                props['data'] = data
+                component['props'] = props
+                logger.info(f"[CHART FIX] Added missing color fields to {sum(1 for p in data if isinstance(p, dict) and p.get('color'))} data points")
+                
+        except Exception as e:
+            logger.warning(f"_ensure_chart_data_colors failed: {e}")
+        return component
+
+    def _ensure_axis_bottom_fields(self, component: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure axisBottom has required legend and legendOffset fields."""
+        try:
+            props = component.get('props', {}) or {}
+            axis_bottom = props.get('axisBottom')
+            
+            # Only process if axisBottom exists
+            if axis_bottom is not None:
+                if not isinstance(axis_bottom, dict):
+                    axis_bottom = {}
+                
+                # Add missing required fields with sensible defaults
+                if 'legend' not in axis_bottom:
+                    axis_bottom['legend'] = ''
+                if 'legendOffset' not in axis_bottom:
+                    axis_bottom['legendOffset'] = 36
+                    
+                props['axisBottom'] = axis_bottom
+                component['props'] = props
+                
+        except Exception as e:
+            logger.debug(f"_ensure_axis_bottom_fields failed: {e}")
+        return component
+
+    def _fix_lines_component(self, component: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix Lines components that were incorrectly generated with position/width/height instead of startPoint/endPoint.
+        Also fixes stroke structure if it's an object instead of a color string.
+        """
+        try:
+            props = component.get('props', {}) or {}
+            
+            # Check if this Lines component has the wrong structure (position/width/height)
+            has_position = 'position' in props and isinstance(props.get('position'), dict)
+            has_dimensions = 'width' in props or 'height' in props
+            missing_points = 'startPoint' not in props or 'endPoint' not in props
+            
+            if (has_position or has_dimensions) and missing_points:
+                # Convert from box-based to coordinate-based positioning
+                position = props.get('position', {})
+                x = position.get('x', 100) if isinstance(position, dict) else 100
+                y = position.get('y', 100) if isinstance(position, dict) else 100
+                width = props.get('width', 200)
+                height = props.get('height', 2)
+                
+                # Set startPoint and endPoint
+                props['startPoint'] = {'x': x, 'y': y}
+                props['endPoint'] = {'x': x + width, 'y': y + height}
+                
+                # Remove the box-based props
+                props.pop('position', None)
+                props.pop('width', None)
+                props.pop('height', None)
+                
+                logger.info(f"[LINES FIX] Converted Lines from box-based to coordinate-based positioning")
+            
+            # Fix stroke if it's an object instead of a color string
+            stroke = props.get('stroke')
+            if isinstance(stroke, dict):
+                # Extract color from the stroke object
+                color = stroke.get('color', '#000000')
+                props['stroke'] = color
+                
+                # If strokeWidth is in the stroke object, move it to top level
+                if 'width' in stroke:
+                    props['strokeWidth'] = stroke['width']
+                if 'opacity' in stroke:
+                    # Append opacity to color if it's a hex color
+                    if isinstance(color, str) and color.startswith('#') and len(color) == 7:
+                        opacity_hex = format(int(stroke['opacity'] * 255), '02x')
+                        props['stroke'] = color + opacity_hex
+                
+                logger.info(f"[LINES FIX] Converted stroke from object to color string")
+            
+            component['props'] = props
+            
+        except Exception as e:
+            logger.warning(f"_fix_lines_component failed: {e}")
+        return component
+
     def _fix_custom_component_render(self, component: Dict[str, Any]) -> Dict[str, Any]:
         """Fix CustomComponent render function to be properly escaped string."""
         props = component.get('props', {})
@@ -1106,7 +1342,19 @@ class ComponentValidator:
         if render:
             logger.info(f"[CustomComponent Fix] Processing render function (length: {len(render)})")
         
-        # First, proactively sanitize template literals/backticks which break our runtime wrapper
+        # FIRST: Fix bracket mismatches (extra/missing parens/braces)
+        # This is critical and should run before other transformations
+        try:
+            if isinstance(render, str) and render:
+                fixed_render = self._fix_bracket_mismatch(render)
+                if fixed_render != render:
+                    props['render'] = fixed_render
+                    render = fixed_render
+                    logger.info(f"[CustomComponent Fix] Fixed bracket mismatch in render")
+        except Exception as e:
+            logger.warning(f"[CustomComponent Fix] Failed to fix bracket mismatch: {e}")
+        
+        # Second, proactively sanitize template literals/backticks which break our runtime wrapper
         # Convert `${expr}` to string concatenation and replace backticks with single quotes
         try:
             if isinstance(render, str) and ('${' in render or '`' in render):
@@ -1566,6 +1814,82 @@ class ComponentValidator:
             return updated
         except Exception as e:
             logger.debug(f"_normalize_layout_responsiveness failed: {e}")
+            return render_str
+
+    def _fix_bracket_mismatch(self, render_str: str) -> str:
+        """Detect and fix bracket mismatches in React.createElement code.
+        AI sometimes generates extra closing parens/braces, especially at the end of complex nested structures.
+        """
+        if not isinstance(render_str, str) or not render_str.strip():
+            return render_str
+        
+        try:
+            # Count brackets outside of strings
+            paren_depth = 0
+            brace_depth = 0
+            in_string = False
+            string_char = None
+            escape_next = False
+            errors = []
+            
+            for i, ch in enumerate(render_str):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == '\\':
+                    escape_next = True
+                    continue
+                if ch in ['"', "'"]:
+                    if not in_string:
+                        in_string = True
+                        string_char = ch
+                    elif ch == string_char:
+                        in_string = False
+                        string_char = None
+                    continue
+                
+                if in_string:
+                    continue
+                
+                if ch == '(':
+                    paren_depth += 1
+                elif ch == ')':
+                    paren_depth -= 1
+                    if paren_depth < 0:
+                        errors.append(('paren', i, ch))
+                        # Remove this extra closing paren
+                        logger.warning(f"[CustomComponent Fix] Found extra closing paren at position {i}")
+                        render_str = render_str[:i] + render_str[i+1:]
+                        # Re-run the check from start after modification
+                        return self._fix_bracket_mismatch(render_str)
+                elif ch == '{':
+                    brace_depth += 1
+                elif ch == '}':
+                    brace_depth -= 1
+                    if brace_depth < 0:
+                        errors.append(('brace', i, ch))
+                        logger.warning(f"[CustomComponent Fix] Found extra closing brace at position {i}")
+                        render_str = render_str[:i] + render_str[i+1:]
+                        return self._fix_bracket_mismatch(render_str)
+            
+            # Check if there are unclosed brackets at the end
+            if paren_depth > 0:
+                logger.warning(f"[CustomComponent Fix] Found {paren_depth} unclosed opening parens - adding closing parens")
+                render_str = render_str.rstrip() + (')' * paren_depth)
+            elif paren_depth < 0:
+                # This shouldn't happen as we fix inline above, but just in case
+                logger.warning(f"[CustomComponent Fix] Still have {abs(paren_depth)} extra closing parens after fixing")
+            
+            if brace_depth > 0:
+                logger.warning(f"[CustomComponent Fix] Found {brace_depth} unclosed opening braces - adding closing braces")
+                render_str = render_str.rstrip() + ('}' * brace_depth)
+            elif brace_depth < 0:
+                logger.warning(f"[CustomComponent Fix] Still have {abs(brace_depth)} extra closing braces after fixing")
+            
+            return render_str
+            
+        except Exception as e:
+            logger.warning(f"[CustomComponent Fix] Error fixing bracket mismatch: {e}")
             return render_str
 
     def _sanitize_render_string(self, render_str: str) -> str:

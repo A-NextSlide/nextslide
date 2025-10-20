@@ -13,6 +13,8 @@ import { LinesDefinition } from './lines';
 import { GroupDefinition } from './group';
 import { IconDefinition } from './icon';
 import { ReactBitsDefinition } from './reactbits';
+import { MathDefinition } from './math';
+import { DiagramDefinition } from './diagram';
 
 // Export all component definitions
 export { ChartDefinition } from './chart';
@@ -27,6 +29,8 @@ export { LinesDefinition } from './lines';
 export { GroupDefinition } from './group';
 export { IconDefinition } from './icon';
 export { ReactBitsDefinition } from './reactbits';
+export { MathDefinition } from './math';
+export { DiagramDefinition } from './diagram';
 
 // Register all components with the registry
 export function registerComponents() {
@@ -48,6 +52,8 @@ export function registerComponents() {
   registry.register(GroupDefinition);
   registry.register(IconDefinition);
   registry.register(ReactBitsDefinition);
+  registry.register(MathDefinition);
+  registry.register(DiagramDefinition);
 }
 
 // Auto-register components when this module is imported

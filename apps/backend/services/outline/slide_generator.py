@@ -4,7 +4,7 @@ import asyncio
 import uuid
 import re
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel
 
 from agents.ai.clients import get_client, invoke, get_max_tokens_for_model
@@ -19,6 +19,32 @@ from setup_logging_optimized import get_logger
 from agents import config as agents_config
 
 logger = get_logger(__name__)
+
+
+def extract_image_prompt_from_content(content: str) -> Tuple[str, Optional[str]]:
+    """
+    Extract [IMAGE: ...] tag from content and return cleaned content and extracted prompt.
+    
+    Args:
+        content: The slide content potentially containing [IMAGE: ...] tags
+        
+    Returns:
+        Tuple of (cleaned_content, image_prompt)
+    """
+    # Match [IMAGE: ...] with case insensitive
+    pattern = r'\[IMAGE:\s*([^\]]+)\]'
+    match = re.search(pattern, content, re.IGNORECASE)
+    
+    if match:
+        image_prompt = match.group(1).strip()
+        # Remove the [IMAGE: ...] tag from content
+        cleaned_content = re.sub(pattern, '', content, flags=re.IGNORECASE).strip()
+        # Clean up any extra newlines that might be left
+        cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
+        logger.info(f"[IMAGE EXTRACT] Extracted image prompt: '{image_prompt}'")
+        return cleaned_content, image_prompt
+    
+    return content, None
 
 # ===== CONSTANTS =====
 # Title slide constraints (ALWAYS ENFORCED - NEVER OVERRIDE REGARDLESS OF MODE!)
@@ -43,20 +69,24 @@ SENTENCE_SPLIT_THRESHOLD = 250  # Increased to support longer supporting text
 MIN_SLIDES_FOR_CHARTS = 3
 MIN_NARRATIVE_SLIDES_FOR_CHARTS = 5
 
-# Narrative topic keywords
+# Narrative topic keywords (extended to include personal/creative indicators)
 NARRATIVE_KEYWORDS = [
     'biography', 'biographical', 'historical', 'history',
-    'story', 'timeline of life', 'about', 'who is', 'early life'
+    'story', 'timeline of life', 'about', 'who is', 'early life',
+    # 🎉 Personal/creative indicators
+    'birthday', 'party', 'celebration', 'silly', 'fun', 'pikachu',
+    'pokemon', 'mario', 'disney', 'cartoon', 'hobby', 'personal',
+    'slideshow for', 'vacation', 'travel', 'pet', 'recipe'
 ]
 
 
 def _is_narrative_topic(prompt: str, slide_title: str) -> bool:
-    """Check if the topic is narrative/biographical (not suited for heavy chart usage)."""
+    """Check if the topic is narrative/biographical/personal (not suited for heavy chart usage)."""
     prompt_lower = (prompt or '').lower()
     title_lower = (slide_title or '').lower()
 
     return (
-        any(keyword in prompt_lower for keyword in ['biography', 'historical', 'history']) or
+        any(keyword in prompt_lower for keyword in ['biography', 'historical', 'history', 'birthday', 'party', 'silly', 'pikachu', 'pokemon', 'hobby', 'personal']) or
         any(keyword in title_lower for keyword in NARRATIVE_KEYWORDS)
     )
 
@@ -214,11 +244,14 @@ class SlideGenerator:
                     )
                 except Exception as e:
                     logger.error(f"Failed to generate slide '{actual_title}': {e}")
+                    fallback_content = self._create_fallback_content(actual_title, slide_type, outline_plan["title"])
+                    cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
                     slide = SlideContent(
                         id=str(uuid.uuid4()),
                         title=actual_title,
-                        content=self._create_fallback_content(actual_title, slide_type, outline_plan["title"]),
-                        slide_type=slide_type
+                        content=cleaned_fallback_content,
+                        slide_type=slide_type,
+                        suggestedImagePrompt=fallback_image_prompt
                     )
             
             results[index] = slide
@@ -405,15 +438,24 @@ class SlideGenerator:
                     )
                 logger.info(f"[CHART DEBUG] PRESENTATION MODE - selective chart generation: {should_generate_chart}")
 
-            # Global guardrails: avoid charts on tiny decks and narrative topics
+            # Global guardrails: avoid charts on tiny decks, narrative topics, and PERSONAL/CREATIVE contexts
             total_slides_guard = 0
             try:
                 total_slides_guard = int((context or {}).get('total_slides', 0))
             except Exception:
                 pass
+            
+            # 🎉 CRITICAL: Check for personal/creative context - NEVER generate charts
+            presentation_ctx = (context or {}).get('presentation_context', 'business')
+            is_personal_creative = presentation_ctx in ['personal', 'creative', 'informational']
+            
             is_narrative_topic = _is_narrative_topic(options.prompt, slide_title)
-            if self._should_skip_charts_for_deck(total_slides_guard, is_narrative_topic):
+            
+            # Skip charts if: tiny deck, narrative topic, OR personal/creative context
+            if self._should_skip_charts_for_deck(total_slides_guard, is_narrative_topic) or is_personal_creative:
                 should_generate_chart = False
+                if is_personal_creative:
+                    logger.info(f"[CHART DEBUG] 🎉 SKIPPING CHART - Personal/Creative context detected: {presentation_ctx}")
             
             logger.info(f"[CHART DEBUG] Slide: {slide_title}")
             logger.info(f"[CHART DEBUG] Presentation title: {presentation_title}")
@@ -460,25 +502,32 @@ class SlideGenerator:
                 except Exception:
                     pass
 
+            # Extract [IMAGE: ...] tag if present
+            cleaned_content, image_prompt = extract_image_prompt_from_content(content)
+
             return SlideContent(
                 id=str(uuid.uuid4()),
                 title=slide_title,
-                content=content,
+                content=cleaned_content,
                 slide_type=slide_type,
                 chart_data=chart_data,
                 extractedData=extracted_data,
                 research_notes=("Citations available" if slide_citations else None),
                 citationsFooter=citations_footer,
-                comparison=self._maybe_build_comparison(slide_title, content)
+                comparison=self._maybe_build_comparison(slide_title, content),
+                suggestedImagePrompt=image_prompt
             )
             
         except Exception as e:
             logger.error(f"Failed to generate slide '{slide_title}': {e}")
+            fallback_content = self._create_fallback_content(slide_title, slide_type, presentation_title)
+            cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
             return SlideContent(
                 id=str(uuid.uuid4()),
                 title=slide_title,
-                content=self._create_fallback_content(slide_title, slide_type, presentation_title),
-                slide_type=slide_type
+                content=cleaned_fallback_content,
+                slide_type=slide_type,
+                suggestedImagePrompt=fallback_image_prompt
             )
     
     def _build_slide_context(
@@ -834,25 +883,32 @@ class SlideGenerator:
                 except Exception:
                     pass
 
+            # Extract [IMAGE: ...] tag if present
+            cleaned_content, image_prompt = extract_image_prompt_from_content(content)
+
             return SlideContent(
                 id=str(uuid.uuid4()),
                 title=slide_title,
-                content=content,
+                content=cleaned_content,
                 slide_type=slide_type,
                 chart_data=chart_data,
                 extractedData=extracted_data,
                 research_notes=("Citations available" if slide_citations else None),
                 citationsFooter=citations_footer,
-                comparison=self._maybe_build_comparison(slide_title, content)
+                comparison=self._maybe_build_comparison(slide_title, content),
+                suggestedImagePrompt=image_prompt
             )
             
         except Exception as e:
             logger.error(f"Failed to generate slide '{slide_title}': {e}")
+            fallback_content = self._create_fallback_content(slide_title, slide_type, presentation_title)
+            cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
             return SlideContent(
                 id=str(uuid.uuid4()),
                 title=slide_title,
-                content=self._create_fallback_content(slide_title, slide_type, presentation_title),
-                slide_type=slide_type
+                content=cleaned_fallback_content,
+                slide_type=slide_type,
+                suggestedImagePrompt=fallback_image_prompt
             )
 
     def _maybe_build_comparison(self, slide_title: str, content: str) -> Optional[Dict[str, Any]]:

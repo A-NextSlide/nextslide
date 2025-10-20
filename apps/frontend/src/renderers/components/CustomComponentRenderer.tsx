@@ -316,6 +316,77 @@ export const CustomComponentRenderer: React.FC<{
     // Harden: ensure raw newlines inside quoted string literals are converted to \n
     unescapedCode = escapeRawNewlinesInStringLiterals(unescapedCode);
 
+    // FIX BRACKET MISMATCHES: AI sometimes generates extra closing parens/braces
+    // Detect and auto-fix before compilation to prevent SyntaxError
+    try {
+      let parenDepth = 0;
+      let braceDepth = 0;
+      let inString = false;
+      let stringChar: string | null = null;
+      let escapeNext = false;
+      
+      for (let i = 0; i < unescapedCode.length; i++) {
+        const ch = unescapedCode[i];
+        
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escapeNext = true;
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          if (!inString) {
+            inString = true;
+            stringChar = ch;
+          } else if (ch === stringChar) {
+            inString = false;
+            stringChar = null;
+          }
+          continue;
+        }
+        
+        if (inString) continue;
+        
+        if (ch === '(') {
+          parenDepth++;
+        } else if (ch === ')') {
+          parenDepth--;
+          if (parenDepth < 0) {
+            // Extra closing paren - remove it
+            console.warn('[CustomComponent] Removing extra closing paren at position', i);
+            unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
+            i--; // Re-check from same position
+            parenDepth = 0;
+          }
+        } else if (ch === '{') {
+          braceDepth++;
+        } else if (ch === '}') {
+          braceDepth--;
+          if (braceDepth < 0) {
+            // Extra closing brace - remove it
+            console.warn('[CustomComponent] Removing extra closing brace at position', i);
+            unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
+            i--;
+            braceDepth = 0;
+          }
+        }
+      }
+      
+      // Add missing closing brackets at the end if needed
+      if (parenDepth > 0) {
+        console.warn('[CustomComponent] Adding', parenDepth, 'missing closing parens');
+        unescapedCode += ')'.repeat(parenDepth);
+      }
+      if (braceDepth > 0) {
+        console.warn('[CustomComponent] Adding', braceDepth, 'missing closing braces');
+        unescapedCode += '}'.repeat(braceDepth);
+      }
+    } catch (err) {
+      console.warn('[CustomComponent] Bracket fix failed:', err);
+    }
+
     // Note: Do NOT escape backticks. User code may legitimately use template literals,
     // and since we inject via string interpolation, backticks inside the injected
     // code do not interfere with this wrapper template.

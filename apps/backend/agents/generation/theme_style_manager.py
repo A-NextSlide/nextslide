@@ -138,6 +138,12 @@ class ThemeStyleManager:
     async def analyze_theme_and_style(self, deck_outline: DeckOutline, progress_callback=None) -> Dict[str, Any]:
         """Analyze deck content and generate theme, style, and image queries."""
         try:
+            print(f"\n{'='*100}")
+            print(f"🎨 THEME_STYLE_MANAGER.analyze_theme_and_style() CALLED")
+            print(f"   Deck Title: '{deck_outline.title}'")
+            print(f"   This will call _analyze_theme_simple() which runs font selection")
+            print(f"{'='*100}\n")
+            
             logger.info("="*60)
             logger.info("[THEME ANALYSIS] Starting theme and style analysis")
             logger.info(f"[THEME ANALYSIS] Deck title: {deck_outline.title}")
@@ -301,6 +307,12 @@ class ThemeStyleManager:
             # Extract key information
             title = deck_outline.title
             vibe = deck_outline.stylePreferences.vibeContext if deck_outline.stylePreferences else "professional"
+            
+            print(f"\n{'🎨'*40}")
+            print(f"📋 _analyze_theme_simple() EXECUTING")
+            print(f"   Title (will be passed to font selection): '{title}'")
+            print(f"   Vibe: '{vibe}'")
+            print(f"{'🎨'*40}\n")
             
             # First check if we can get a palette from the database
             logger.info(f"[THEME SIMPLE] Checking database for palette matching: {title}")
@@ -946,6 +958,69 @@ NO OTHER TEXT. Just the 8 lines above with real colors.
             async def generate_fonts_task():
                 """Generate font pairings in parallel"""
                 logger.info("[THEME PARALLEL] Task 2: Starting font selection...")
+                print(f"\n{'='*80}")
+                print(f"🔍 FONT SELECTION DEBUG - CHECKING FOR FUN TOPICS")
+                print(f"   Title: '{title}'")
+                print(f"   Title (lowercase): '{title.lower()}'")
+                print(f"{'='*80}\n")
+                
+                # CRITICAL: Check for fun/playful topics FIRST!
+                title_lower = title.lower()
+                vibe_lower = vibe.lower()
+                
+                # Expanded keyword list with MORE coverage
+                fun_keywords = [
+                    'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
+                    'kids', 'children', 'child', 'game', 'games', 'fun', 'play', 'cartoon',
+                    'toy', 'toys', 'party', 'arcade', 'retro', 'gaming', 'video game',
+                    'nintendo', 'sega', 'sonic', 'zelda', 'playstation'
+                ]
+                
+                # Check each keyword and log matches
+                matched_keywords = [kw for kw in fun_keywords if kw in title_lower]
+                is_fun_topic = len(matched_keywords) > 0
+                
+                print(f"🔍 Fun keywords found in title: {matched_keywords}")
+                print(f"🔍 is_fun_topic: {is_fun_topic}")
+                
+                if is_fun_topic:
+                    logger.info(f"🎨 FUN TOPIC DETECTED: '{title}' (matched: {matched_keywords}) → Using PLAYFUL fonts")
+                    print(f"\n🎨🎨🎨 FUN TOPIC DETECTED IN THEME_STYLE_MANAGER 🎨🎨🎨")
+                    print(f"   Title: '{title}'")
+                    print(f"   Matched keywords: {matched_keywords}")
+                    print(f"   → Selecting CREATIVE, PLAYFUL fonts!\n")
+                    
+                    # Rotate through playful font combinations using deterministic seed
+                    import hashlib
+                    seed_hash = int(hashlib.md5(title.encode()).hexdigest(), 16)
+                    
+                    playful_combos = [
+                        {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                        {'hero': 'Fredoka', 'body': 'Quicksand'},
+                        {'hero': 'Righteous', 'body': 'Poppins'},
+                        {'hero': 'Bungee', 'body': 'Asap'},
+                        {'hero': 'Bangers', 'body': 'Rubik'},
+                        {'hero': 'Titan One', 'body': 'Cabin'},
+                        {'hero': 'Pacifico', 'body': 'Comfortaa'},
+                        {'hero': 'Press Start 2P', 'body': 'Space Mono'}
+                    ]
+                    
+                    combo_idx = seed_hash % len(playful_combos)
+                    selected_combo = playful_combos[combo_idx]
+                    
+                    logger.info(f"✅ PLAYFUL FONTS: Hero={selected_combo['hero']}, Body={selected_combo['body']}")
+                    print(f"\n✅✅✅ PLAYFUL FONTS SELECTED ✅✅✅")
+                    print(f"   Hero: {selected_combo['hero']}")
+                    print(f"   Body: {selected_combo['body']}")
+                    print(f"   Combo index: {combo_idx}/{len(playful_combos)}")
+                    print(f"   Returning playful fonts NOW!\n")
+                    
+                    return selected_combo
+                
+                # If we reach here, NOT a fun topic
+                print(f"\n📊 PROFESSIONAL TOPIC - Using AI font selection")
+                print(f"   Title: '{title}'")
+                print(f"   No fun keywords matched\n")
                 
                 # First check if db_palette has fonts in metadata
                 scraped_fonts = []
@@ -1033,8 +1108,14 @@ PAIR BY DECK TYPE (GUIDANCE, NOT LIMITS):
 - Product/Tech Demo: Tech Display (Oxanium) + Geometric Sans (Questrial, Dosis)
 - Luxury/Fashion: Elegant Serif (Cormorant, Italiana) + Refined Sans (Tenor Sans)
 - Editorial/Magazine: Serif Display (Rozha One) + Contemporary Sans (Instrument Sans, Bricolage)
-- Playful/Creative: Retro/Unique (Bungee, Monoton) + Friendly Sans (Nunito, Comfortaa)
+- Playful/Kids/Games: BOLD Playful (Fredoka, Bebas Neue, Bungee, Bangers, Righteous) + Friendly Sans (Nunito, Quicksand, Comfortaa, Comic Neue)
+- Retro Gaming: Pixel/Retro (Press Start 2P, VT323, Monoton) + Tech Sans (Space Mono, Orbitron)
 - Scientific/Data: Editorial Serif (Faustina, Noticia) + Monospace (JetBrains Mono, Fira Code)
+
+🎮 CRITICAL FOR FUN TOPICS (Pikachu, Pokemon, Games, Kids):
+- ALWAYS use playful, energetic fonts (Fredoka, Bebas Neue, Bungee, Bangers, Righteous)
+- NEVER use boring professional fonts (Lato, Raleway, Montserrat, Inter)
+- Examples: Fredoka+Quicksand, Bebas Neue+Nunito, Bungee+Asap, Bangers+Rubik
 
 RULES:
 1) Hero must make a statement (use display/serif/unique where appropriate).
@@ -1062,6 +1143,10 @@ Body Font: Space Grotesk
                 # Parse fonts
                 all_available_fonts = RegistryFonts.get_all_fonts_list()
                 fonts = self._parse_fonts_from_text_flexible(font_response, all_available_fonts)
+                
+                # VALIDATE: Ensure fonts aren't invalid strings like "fonts"
+                fonts['hero'] = self._validate_font_name(fonts.get('hero', 'Montserrat'))
+                fonts['body'] = self._validate_font_name(fonts.get('body', 'Poppins'))
                 
                 logger.info(f"[THEME PARALLEL] Task 2: Font selection complete - Hero: {fonts.get('hero')}, Body: {fonts.get('body')}")
                 logger.warning(f"[FONT SELECTION] AI selected fonts - Hero: {fonts.get('hero')}, Body: {fonts.get('body')}")
@@ -1147,117 +1232,92 @@ Provide specific recommendations that create a cohesive, memorable design system
                 return design_elements
             
             async def generate_search_terms_task():
-                """Generate image search terms in parallel"""
-                logger.info("[THEME PARALLEL] Task 4: Starting search terms generation...")
+                """Generate per-slide image search terms in parallel"""
+                logger.info("[THEME PARALLEL] Task 4: Starting per-slide search terms generation...")
                 
-                # Step 4: Get image search terms
-                image_prompt = f"""
-Generate DECK-WIDE image search topics for a presentation.
+                # Step 4: Get slide-specific search terms
+                image_prompt = f"""Generate specific image search terms for EACH slide listed below.
 
-Context:
-- Title: {title}
-- Vibe: {vibe}
-- Content preview (first slides):
+Deck: {title}
+
+SLIDES TO ANALYZE:
 {first_slides}
-{full_context}
 
-SMART SEARCH STRATEGY:
-- Identify 3–5 core visual subjects in the deck (nouns or concrete phrases)
-- Add 2–3 recurring elements or objects that appear multiple times
-- Add 1–2 mood/texture/pattern searches that match the deck's vibe
-- TOTAL: 8–10 terms MAX
-
-STRICT RULES:
-- Use nouns and concrete phrases only (e.g., "ocean", "city skyline", "electric vehicle")
-- 1–3 words per term; NO sentences
-- Prefer brand or subject names when relevant (e.g., "Tesla", "iPhone")
-- Avoid vague/abstract/generic words: introduction, agenda, overview, info, slide, content, idea, concept, power, inside, unlock, great, cool, amazing, things, stuff, technology (by itself), data (by itself)
-- Avoid single colors unless a brand color is the subject
-- Avoid verbs and adjectives-only terms
-- Presentation-appropriate imagery only; no NSFW
+REQUIREMENTS PER SLIDE:
+1. Generate 2-3 search terms for EACH slide
+2. Terms must be 1-3 words, specific to that slide's content
+3. Use concrete nouns related to slide title and content
+4. Think: "What images would help illustrate THIS specific slide?"
 
 OUTPUT FORMAT:
-- Return ONLY the final terms, one per line
-- No numbering, no bullets, no extra text
+For each slide, write:
+Slide N: term1, term2, term3
 
-GOOD EXAMPLE (for "Nova Analytics: AI Business Intelligence"):
-analytics
-dashboard UI
-business meeting
-data center
-line chart
-neural network
-dark geometric patterns
-blue abstract gradient
+GOOD EXAMPLE:
+Slide 1: video game controller, retro arcade
+Slide 2: pac-man arcade, space invaders cabinet
+Slide 3: nintendo console, sega genesis
+Slide 4: 3d graphics card, polygon rendering
 
-GOOD EXAMPLE (for "Tesla Investor Presentation"):
-Tesla
-electric vehicle
-gigafactory
-battery pack
-autonomous driving sensor
-production line
-sustainability icons
-metallic texture
+BAD EXAMPLE:
+Slide 1: gaming, history, evolution (too generic)
+Slide 2: arcade (too vague)
 
-Now produce 8–10 deck-wide search terms, one per line:
-"""
+Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
             
                 image_response = await self._async_invoke(
                 client=client,
                 model=model,
                 messages=[{"role": "user", "content": image_prompt}],
-                max_tokens=150,
-                response_model=None
+                max_tokens=300,  # Increased for per-slide output
+                response_model=None,
+                temperature=0.5
                 )
                 
-                # Parse search terms more carefully
-                raw_terms = image_response.strip().split('\n')
-                search_terms = []
-                seen_lower = set()
-                vague = {
-                    'image', 'picture', 'photo', 'illustration', 'graphic', 'visual',
-                    'slide', 'presentation', 'content', 'text', 'info', 'information',
-                    'agenda', 'overview', 'introduction', 'intro', 'what', 'why', 'how', 'when',
-                    'things', 'stuff', 'amazing', 'great', 'cool', 'power', 'inside', 'unlock',
-                    'technology', 'data'
-                }
-                for line in raw_terms:
-                    term = line.strip()
-                    if not term:
+                # Parse per-slide terms from response
+                raw_lines = image_response.strip().split('\n')
+                search_terms_dict = {}  # Dict keyed by slide index
+                
+                for line in raw_lines:
+                    line = line.strip()
+                    if not line:
                         continue
-                    # Skip explanatory lines
-                    lowered = term.lower()
-                    if any(x in lowered for x in [
-                        'here are', 'search terms', 'following', 'below', 'example', 'good example',
-                        'output format', 'smart search strategy', 'context:', 'title:', 'vibe:',
-                        'content preview', 'now produce'
-                    ]):
-                        continue
-                    # Remove numbering/bullets/prefix punctuation and trim quotes
-                    term = term.lstrip('0123456789.-*:• ').strip("'\"")
-                    if not term or len(term) < 2:
-                        continue
-                    lower = term.lower().strip()
-                    if lower in vague:
-                        continue
-                    if lower in seen_lower:
-                        continue
-                    # Clamp overly long entries
-                    if len(term) > 50:
-                        term = term[:50].rstrip()
-                    search_terms.append(term)
-                    seen_lower.add(lower)
-            
-                # Take up to 10 valid terms
-                search_terms = search_terms[:10]
+                    
+                    # Look for "Slide N:" pattern
+                    match = re.match(r'slide\s+(\d+)\s*:\s*(.+)', line, re.IGNORECASE)
+                    if match:
+                        slide_num = int(match.group(1)) - 1  # Convert to 0-based index
+                        terms_str = match.group(2)
+                        
+                        # Split terms by comma
+                        terms = [t.strip().strip('"\':,.') for t in terms_str.split(',')]
+                        # Filter and clean
+                        cleaned_terms = []
+                        for term in terms:
+                            if term and len(term) >= 3 and len(term.split()) <= 4:
+                                cleaned_terms.append(term)
+                        
+                        if cleaned_terms:
+                            search_terms_dict[str(slide_num)] = cleaned_terms[:3]  # Max 3 per slide
+                
+                # Fallback: if parsing failed, create simple per-slide terms
+                if not search_terms_dict and deck_outline and hasattr(deck_outline, 'slides'):
+                    logger.warning("[THEME IMAGE] Parsing failed, using fallback per-slide extraction")
+                    for idx, slide in enumerate(deck_outline.slides[:10]):
+                        slide_title = getattr(slide, 'title', '')
+                        # Extract 2 key words from title
+                        words = [w for w in slide_title.split() if len(w) > 3]
+                        if words:
+                            search_terms_dict[str(idx)] = words[:2]
                 
                 # Debug logging
-                logger.debug(f"[THEME IMAGE] Raw response: {image_response[:200]}...")
-                logger.debug(f"[THEME IMAGE] Parsed search terms: {search_terms}")
+                logger.info(f"[THEME IMAGE] Raw response: {image_response[:300]}...")
+                logger.info(f"[THEME IMAGE] Parsed {len(search_terms_dict)} slides with terms: {list(search_terms_dict.keys())}")
+                for slide_idx, terms in list(search_terms_dict.items())[:3]:
+                    logger.info(f"  Slide {slide_idx}: {terms}")
                 
-                logger.info("[THEME PARALLEL] Task 4: Search terms generation complete")
-                return search_terms
+                logger.info("[THEME PARALLEL] Task 4: Per-slide search terms generation complete")
+                return search_terms_dict
             
             # Execute all 4 tasks in parallel
             logger.info("[THEME PARALLEL] 🚀 Launching all 4 tasks in parallel...")
@@ -1367,9 +1427,13 @@ Now produce 8–10 deck-wide search terms, one per line:
                 db_fonts = db_palette['metadata']['fonts']
                 logger.info(f"[THEME] Using database palette fonts: {db_fonts}")
                 if len(db_fonts) >= 2:
-                    fonts = {"hero": db_fonts[0], "body": db_fonts[1]}
+                    fonts = {
+                        "hero": self._validate_font_name(db_fonts[0]),
+                        "body": self._validate_font_name(db_fonts[1])
+                    }
                 elif len(db_fonts) == 1:
-                    fonts = {"hero": db_fonts[0], "body": db_fonts[0]}
+                    validated_font = self._validate_font_name(db_fonts[0])
+                    fonts = {"hero": validated_font, "body": validated_font}
                 logger.info(f"[THEME] Palette fonts override - Hero: {fonts.get('hero')}, Body: {fonts.get('body')}")
             
             # Tag source in color_palette for downstream precedence logic
@@ -1390,26 +1454,26 @@ Now produce 8–10 deck-wide search terms, one per line:
                 },
                 'typography': {
                     'hero_title': {
-                        'family': fonts.get('hero', 'Montserrat'),
+                        'family': self._validate_font_name(fonts.get('hero', 'Montserrat')),
                         'size': 240,
                         'weight': '900',
                         'letter_spacing': -0.03,
                         'text_transform': design_elements.get('title_transform', 'none')
                     },
                     'section_title': {
-                        'family': fonts.get('hero', 'Montserrat'),
+                        'family': self._validate_font_name(fonts.get('hero', 'Montserrat')),
                         'size': 144,
                         'weight': '700',
                         'letter_spacing': -0.02
                     },
                     'body_text': {
-                        'family': fonts.get('body', 'Poppins'),  # Changed default from Inter
+                        'family': self._validate_font_name(fonts.get('body', 'Poppins')),
                         'size': 36,
                         'weight': '400',
                         'line_height': 1.6
                     },
                     'caption': {
-                        'family': fonts.get('body', 'Poppins'),  # Changed default from Inter
+                        'family': self._validate_font_name(fonts.get('body', 'Poppins')),
                         'size': 24,
                         'weight': '400',
                         'style': 'italic'
@@ -1448,9 +1512,9 @@ Now produce 8–10 deck-wide search terms, one per line:
                     "overlay": {"color": "#000000", "opacity": 0.15}
                 },
                 "typography": {
-                    "hero_title": {"family": fonts.get("hero", "Montserrat"), "size": 96, "weight": "800"},
-                    "section_title": {"family": fonts.get("hero", "Montserrat"), "size": 64, "weight": "700"},
-                    "body_text": {"family": fonts.get("body", "Inter"), "size": 36, "weight": "500"}
+                    "hero_title": {"family": self._validate_font_name(fonts.get("hero", "Montserrat")), "size": 96, "weight": "800"},
+                    "section_title": {"family": self._validate_font_name(fonts.get("hero", "Montserrat")), "size": 64, "weight": "700"},
+                    "body_text": {"family": self._validate_font_name(fonts.get("body", "Poppins")), "size": 36, "weight": "500"}
                 },
                 "images": {
                     "prominence": 0.7,
@@ -1733,6 +1797,23 @@ Now produce 8–10 deck-wide search terms, one per line:
         
         logger.info(f"Final font selection: Hero='{fonts.get('hero')}', Body='{fonts.get('body')}'")
         return fonts
+    
+    def _validate_font_name(self, font_name: str) -> str:
+        """Validate font name and return safe fallback if invalid."""
+        if not font_name or not isinstance(font_name, str):
+            logger.warning(f"⚠️  Invalid font (empty or wrong type): {font_name} → Using Montserrat")
+            print(f"⚠️  INVALID FONT: {font_name} → Replaced with Montserrat")
+            return 'Montserrat'
+        
+        # List of obviously invalid font names
+        invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default', 'none', 'null']
+        
+        if font_name.lower().strip() in invalid_fonts:
+            logger.warning(f"⚠️  Invalid font name detected: '{font_name}' → Using Montserrat")
+            print(f"⚠️  INVALID FONT NAME: '{font_name}' → Replaced with Montserrat")
+            return 'Montserrat'
+        
+        return font_name
     
     def _get_brightness(self, hex_color: str) -> float:
         """Calculate brightness of a hex color (0 = dark, 1 = light)."""

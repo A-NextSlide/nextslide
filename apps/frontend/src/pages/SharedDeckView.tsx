@@ -30,6 +30,7 @@ const SharedDeckView: React.FC = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [deck, setDeck] = useState<any>(null);
   const [canEdit, setCanEdit] = useState(false);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
 
@@ -332,27 +333,32 @@ const SharedDeckView: React.FC = () => {
   return (
     <div className="h-screen w-screen overflow-hidden relative">
       {/* Presentation Mode */}
-      <PresentationMode
-        slides={deck.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
-        currentSlideIndex={0}
-        renderSlide={renderSlide}
-        isViewOnly={!canEdit}
-      />
-      
-      {/* Optional edit button if user has permissions */}
-      {canEdit && (
-        <div className="absolute top-4 right-4 z-50">
-          <Button
-            onClick={handleSwitchToEdit}
-            size="sm"
-            variant="secondary"
-            className="shadow-lg"
-          >
-            <Edit size={14} className="mr-2" />
-            Edit Deck
-          </Button>
-        </div>
-      )}
+      <NavigationProvider 
+        initialSlideIndex={0}
+        onSlideChange={(index) => setCurrentSlideIndex(index)}
+      >
+        <PresentationMode
+          slides={deck.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+          currentSlideIndex={currentSlideIndex}
+          renderSlide={renderSlide}
+          isViewOnly={!canEdit}
+        />
+        
+        {/* Optional edit button if user has permissions */}
+        {canEdit && (
+          <div className="absolute top-4 right-4 z-50">
+            <Button
+              onClick={handleSwitchToEdit}
+              size="sm"
+              variant="secondary"
+              className="shadow-lg"
+            >
+              <Edit size={14} className="mr-2" />
+              Edit Deck
+            </Button>
+          </div>
+        )}
+      </NavigationProvider>
     </div>
   );
 };

@@ -146,7 +146,12 @@ class ChartGenerator:
     def _determine_chart_type_from_data(
         self, data: List[Dict[str, Any]], title: str, content: str, context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Determine best chart type based on AI-generated data and context"""
+        """Determine best chart type based on AI-generated data and context
+        
+        IMPORTANT: This should RARELY override the AI model's choice.
+        The AI model should specify chart_type in the response.
+        This is only a fallback for legacy or edge cases.
+        """
         
         # Get previously used chart types from context
         used_charts = []
@@ -159,49 +164,94 @@ class ChartGenerator:
         # Analyze the data structure
         data_count = len(data)
         
-        # Basic heuristics based on data characteristics
-        if data_count <= 8:
-            # Check if values are percentages
+        # Check if data has multi-series grouping
+        has_series_key = any(d.get('series') or d.get('group') or d.get('dataset') for d in data)
+        
+        # Analyze slide title and content for chart type hints
+        title_content_lower = (title + ' ' + content).lower()
+        
+        # 1. PARTS OF WHOLE - Use pie/donut for distributions
+        if data_count <= 10:
             values = [d.get('value', 0) for d in data]
             total = sum(values)
-            if all(0 <= v <= 100 for v in values) and 90 <= total <= 110:
-                # Likely percentages - use pie chart
+            # Check if it's a percentage breakdown or distribution
+            is_distribution = (
+                any(word in title_content_lower for word in ['breakdown', 'distribution', 'share', 'composition', 'mix']) or
+                (all(0 <= v <= 100 for v in values) and 90 <= total <= 110)  # Percentages
+            )
+            if is_distribution and not has_series_key:
                 if 'pie' in available_types and 'pie' not in used_charts:
                     return 'pie'
                 elif 'donut' in available_types:
                     return 'donut'
         
-        # Check if data appears to be time-based
-        time_indicators = ['q1', 'q2', 'q3', 'q4', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 
-                          'jul', 'aug', 'sep', 'oct', 'nov', 'dec', '2020', '2021', '2022', 
-                          '2023', '2024', 'year', 'month', 'week', 'day']
-        names_lower = [d.get('name', '').lower() for d in data]
-        has_time_data = any(indicator in name for name in names_lower for indicator in time_indicators)
+        # 2. FLOW/PROCESS - Use waterfall for sequential changes
+        if any(word in title_content_lower for word in ['bridge', 'waterfall', 'flow', 'process', 'funnel', 'stages']):
+            if 'waterfall' in available_types and 'waterfall' not in used_charts:
+                return 'waterfall'
         
-        if has_time_data and data_count >= 3:
-            if 'line' in available_types and 'line' not in used_charts:
+        # 3. TIME SERIES - Use line/area ONLY when clearly temporal
+        # Be more strict about time detection - need multiple consecutive time periods
+        time_patterns = {
+            'quarters': ['q1', 'q2', 'q3', 'q4'],
+            'months': ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'],
+            'years': ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']
+        }
+        
+        names_lower = [d.get('name', '').lower() for d in data]
+        
+        # Check for sequential time periods (not just ANY time mention)
+        is_time_series = False
+        for pattern_type, patterns in time_patterns.items():
+            matches = sum(1 for name in names_lower if any(p in name for p in patterns))
+            # Need at least 3 consecutive time periods to be a time series
+            if matches >= 3 and data_count >= 3:
+                is_time_series = True
+                break
+        
+        # Also check if title/content explicitly mentions trends or time progression
+        has_trend_language = any(word in title_content_lower for word in 
+            ['trend', 'over time', 'evolution', 'growth over', 'historical', 'projection', 'forecast'])
+        
+        if (is_time_series or has_trend_language) and data_count >= 4:
+            # Vary between line, area, spline based on usage
+            if 'line' in available_types and used_charts.count('line') < 2:
                 return 'line'
-            elif 'area' in available_types:
+            elif 'area' in available_types and used_charts.count('area') == 0:
                 return 'area'
-            elif 'spline' in available_types:
+            elif 'spline' in available_types and used_charts.count('spline') == 0:
                 return 'spline'
         
-        # Check if values are decreasing (potential waterfall/process)
-        if data_count >= 3:
-            values = [d.get('value', 0) for d in data]
-            decreasing_count = sum(1 for i in range(1, len(values)) if values[i] < values[i-1])
-            if decreasing_count >= len(values) * 0.6:  # 60% decreasing
-                if 'waterfall' in available_types and 'waterfall' not in used_charts:
-                    return 'waterfall'
+        # 4. COMPARISONS - Use bar/column for categorical comparisons
+        # This should be the DEFAULT for most data, not line charts!
+        comparison_words = ['compare', 'comparison', 'versus', 'vs', 'by region', 'by product', 'by category', 
+                          'performance', 'analysis', 'ranking', 'top', 'leading']
+        is_comparison = any(word in title_content_lower for word in comparison_words)
         
-        # Default to bar/column for general comparisons
-        if 'column' in available_types and used_charts.count('column') < 2:
+        if is_comparison or not is_time_series:
+            # Use column/bar for comparisons
+            # Vary to avoid repetition
+            if 'column' in available_types and used_charts.count('column') < 2:
+                return 'column'
+            elif 'bar' in available_types and used_charts.count('bar') < 2:
+                return 'bar'
+            # If both used, use radar for multi-dimensional comparisons
+            elif data_count >= 5 and has_series_key and 'radar' in available_types and 'radar' not in used_charts:
+                return 'radar'
+        
+        # 5. ADVANCED CHART TYPES based on content
+        if 'correlation' in title_content_lower or 'relationship' in title_content_lower:
+            if 'scatter' in available_types and 'scatter' not in used_charts:
+                return 'scatter'
+        
+        # 6. Default to column for general comparisons (NOT line!)
+        if 'column' in available_types and used_charts.count('column') < 3:
             return 'column'
-        elif 'bar' in available_types and used_charts.count('bar') < 2:
+        elif 'bar' in available_types and used_charts.count('bar') < 3:
             return 'bar'
         
-        # Fallback
-        return available_types[0] if available_types else 'bar'
+        # 7. Fallback to first available or column
+        return 'column' if 'column' in available_types else (available_types[0] if available_types else 'bar')
     
     async def generate_chart_title(
         self, 
@@ -210,7 +260,7 @@ class ChartGenerator:
         data: List[Dict[str, Any]], 
         presentation_title: str
     ) -> str:
-        """Generate an appropriate title for the chart"""
+        """Generate an appropriate title for the chart with units"""
         
         # Try to extract a meaningful title from the slide title
         title_lower = slide_title.lower()
@@ -223,38 +273,152 @@ class ChartGenerator:
         
         cleaned_title = ' '.join(title_words)
         
+        # Detect units from data labels or values
+        unit = self._detect_unit_from_data(data, title_lower)
+        unit_suffix = f" ({unit})" if unit else ""
+        
         # Contextual enhancements based on chart type
         if chart_type == "pie":
             if "distribution" not in title_lower and "breakdown" not in title_lower:
-                return f"{cleaned_title} Distribution"
+                return f"{cleaned_title} Distribution{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         elif chart_type in ["line", "area", "spline"]:
             if "trend" not in title_lower and "over time" not in title_lower:
-                return f"{cleaned_title} Trend"
+                return f"{cleaned_title} Trend{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         elif chart_type in ["bar", "column"]:
             if "comparison" not in title_lower:
-                return f"{cleaned_title} Comparison"
+                return f"{cleaned_title} Comparison{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         elif chart_type == "waterfall":
             if "flow" not in title_lower and "process" not in title_lower:
-                return f"{cleaned_title} Flow"
+                return f"{cleaned_title} Flow{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         elif chart_type == "gauge":
             if "performance" not in title_lower:
-                return f"{cleaned_title} Performance"
+                return f"{cleaned_title} Performance{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         elif chart_type in ["scatter", "bubble"]:
             if "correlation" not in title_lower:
-                return f"{cleaned_title} Analysis"
+                return f"{cleaned_title} Analysis{unit_suffix}"
+            return f"{cleaned_title}{unit_suffix}"
         
         # If the slide title is already descriptive, use it as is
-        return cleaned_title
+        return f"{cleaned_title}{unit_suffix}"
+    
+    def _detect_unit_from_data(self, data: List[Dict[str, Any]], title_lower: str) -> str:
+        """Detect the unit of measurement from data labels or context"""
+        if not data or len(data) == 0:
+            return ""
+        
+        # Check title for unit indicators
+        if any(word in title_lower for word in ['revenue', 'sales', 'profit', 'cost', 'price']):
+            # Check if it mentions billions, millions, thousands
+            if 'billion' in title_lower or '$b' in title_lower:
+                return "$B"
+            elif 'million' in title_lower or '$m' in title_lower:
+                return "$M"
+            elif 'thousand' in title_lower or '$k' in title_lower:
+                return "$K"
+            else:
+                return "$"
+        
+        # Check for percentage indicators
+        if any(word in title_lower for word in ['percent', 'share', 'rate', 'growth', 'margin']):
+            return "%"
+        
+        # Check for count indicators
+        if any(word in title_lower for word in ['units', 'count', 'number of', 'quantity']):
+            return "Units"
+        
+        # Check data labels for unit patterns
+        sample_labels = ' '.join([str(d.get('name', '')) for d in data[:5]]).lower()
+        
+        # Currency patterns
+        if '$' in sample_labels or 'usd' in sample_labels or 'dollar' in sample_labels:
+            if 'million' in sample_labels or 'mm' in sample_labels:
+                return "$M"
+            elif 'billion' in sample_labels:
+                return "$B"
+            else:
+                return "$"
+        
+        # Percentage patterns
+        if '%' in sample_labels or 'percent' in sample_labels:
+            return "%"
+        
+        # Time-based - no unit needed
+        if any(word in sample_labels for word in ['q1', 'q2', 'jan', 'feb', 'month', 'quarter']):
+            return ""
+        
+        # Check data values to infer units
+        values = [d.get('value', 0) for d in data]
+        if values and len(values) > 0:
+            avg_value = sum(values) / len(values)
+            total = sum(values)
+            
+            # If values sum to ~100 and all small, likely percentages
+            if all(0 <= v <= 100 for v in values) and 90 <= total <= 110:
+                return "%"
+            
+            # Large numbers suggest millions
+            elif avg_value > 1000000:
+                return "$M"
+            elif avg_value > 100000:
+                return "$K"
+        
+        # Default: no unit
+        return ""
     
     def _validate_unit_consistency(self, data_points: List[Dict[str, Any]]) -> bool:
-        """Check if all values use compatible units"""
+        """Check if all values use compatible units
+        
+        For multi-series charts, we check consistency within each series separately.
+        Different series CAN have different units (e.g., Revenue vs Growth %)
+        """
+        if len(data_points) < 2:
+            return True
+        
+        # Check if this is multi-series data (has 'series', 'group', or 'dataset' field)
+        is_multi_series = any(
+            point.get('series') or point.get('group') or point.get('dataset')
+            for point in data_points
+        )
+        
+        if is_multi_series:
+            # For multi-series, group by series and validate each independently
+            series_groups = {}
+            for point in data_points:
+                series_name = (
+                    point.get('series') or 
+                    point.get('group') or 
+                    point.get('dataset') or 
+                    'default'
+                )
+                if series_name not in series_groups:
+                    series_groups[series_name] = []
+                series_groups[series_name].append(point)
+            
+            # Validate each series independently
+            for series_name, series_points in series_groups.items():
+                if not self._validate_single_series_units(series_points):
+                    logger.warning(f"[CHART] Mixed units detected in series '{series_name}'. Rejecting chart.")
+                    return False
+            
+            return True
+        else:
+            # For single-series, validate all points together
+            return self._validate_single_series_units(data_points)
+    
+    def _validate_single_series_units(self, data_points: List[Dict[str, Any]]) -> bool:
+        """Validate unit consistency within a single series"""
         if len(data_points) < 2:
             return True
             
         # Extract potential unit indicators from names/labels
         unit_patterns = {
             'currency': ['$', '€', '£', 'usd', 'eur', 'dollars', 'million', 'billion', 'revenue', 'sales', 'price', 'cost'],
-            'percentage': ['%', 'percent', 'rate', 'share', 'portion'],
+            'percentage': ['%', 'percent', 'rate', 'share', 'portion', 'growth'],
             'count': ['count', 'number', 'units', 'quantity', 'items'],
             'time': ['hours', 'days', 'months', 'years', 'minutes', 'seconds'],
             'bytes': ['kb', 'mb', 'gb', 'tb', 'ram', 'memory', 'storage'],
@@ -270,9 +434,8 @@ class ChartGenerator:
                     detected_units.add(unit_type)
                     break
         
-        # If multiple unit types detected, or mix of known units with unknown, reject chart
+        # If multiple unit types detected in a SINGLE series, that's problematic
         if len(detected_units) > 1:
-            logger.warning(f"[CHART] Mixed units detected: {detected_units}. Rejecting chart to avoid confusion.")
             return False
             
         return True

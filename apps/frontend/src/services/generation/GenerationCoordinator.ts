@@ -313,7 +313,7 @@ export class GenerationCoordinator extends EventTarget {
       body: JSON.stringify({
         outline: validatedOutline,
         style_preferences: stylePreferences,
-        async_images: true,
+        async_images: true,  // Default to TRUE (placeholders) - user can toggle auto-apply ON if desired
         // Include the deck name from outline title
         deck_name: validatedOutline.title || 'New Presentation'
       })

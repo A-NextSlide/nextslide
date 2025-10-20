@@ -249,7 +249,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
   // Measure slide container's width for font scaling
   useEffect(() => {
-    if (isThumbnail) return;
+    if (isThumbnail || isPresenting) return;
 
     const updateSlideWidth = () => {
       if (isCurrentlyTextEditing) return; // Skip during text editing to prevent font size changes
@@ -277,14 +277,14 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
       resizeObserver.disconnect();
       window.removeEventListener('resize', updateSlideWidth);
     };
-  }, [isThumbnail]);
+  }, [isThumbnail, isPresenting]);
 
   // Font size calculation - scale based on slide container scale, not component scale
   // This prevents double-scaling since components are already sized as percentages
   const fontScaleFactor = useMemo(() => {
-    // Thumbnails are already scaled by outer slide transform; keep fonts at native size
+    // Thumbnails and presentation mode are already scaled by outer slide transform; keep fonts at native size
     // The entire slide (including fonts) will be CSS-scaled together
-    if (isThumbnail) {
+    if (isThumbnail || isPresenting) {
       return 1;
     }
 
@@ -294,7 +294,7 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
 
     // Round to 4 decimal places to prevent micro-fluctuations
     return Math.round(scaleFactor * 10000) / 10000;
-  }, [isThumbnail, slideContainerWidth]);
+  }, [isThumbnail, isPresenting, slideContainerWidth]);
 
   // CRITICAL FIX: Store the stable font size to prevent resize on click/selection
   // We lock the font size based on props.fontSize and fontScaleFactor, only recalculate when they change

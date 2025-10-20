@@ -598,7 +598,7 @@ class OutlineRequest(BaseModel):
     slideCount: Optional[int] = Field(None, description="Specific number of slides requested (1-20)")
     visualDensity: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
     enableResearch: Optional[bool] = Field(None, description="Enable web research (Thinking) during outline creation")
-    async_images: Optional[bool] = Field(default=None, description="If True, images are placeholders; if False, images are auto-applied")
+    async_images: Optional[bool] = Field(default=True, description="If True, images are placeholders; if False, images are auto-applied (default: True = placeholders)")
 
     @validator('async_images', pre=True, always=True)
     def debug_async_images(cls, v):
@@ -610,10 +610,10 @@ class OutlineRequest(BaseModel):
         print(f"[PYDANTIC VALIDATOR] 🔴 Is True: {v is True}")
         print(f"[PYDANTIC VALIDATOR] 🔴 Is False: {v is False}")
         print("=" * 100)
-        # If None, default to False (auto-apply mode)
+        # If None, default to True (placeholder mode - safer default)
         if v is None:
-            print(f"[PYDANTIC VALIDATOR] 🔴 Value is None, defaulting to False (auto-apply mode)")
-            return False
+            print(f"[PYDANTIC VALIDATOR] 🔴 Value is None, defaulting to True (placeholder mode)")
+            return True
         print(f"[PYDANTIC VALIDATOR] ✅ Returning value as-is: {v}")
         return v
 

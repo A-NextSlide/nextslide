@@ -102,6 +102,11 @@ class SlideOutline(BaseModel):
         default=None,
         description="Structured comparison block with left/right bullets and labels for side-by-side slides."
     )
+    # AI-suggested image prompt extracted from [IMAGE: ...] tags in outline
+    suggestedImagePrompt: Optional[str] = Field(
+        default=None,
+        description="Suggested image description extracted from outline, to be used in AI image generation tab."
+    )
 
 class DiscardedFileItem(BaseModel):
     file_id: str = Field(description="Unique ID of the discarded file.")

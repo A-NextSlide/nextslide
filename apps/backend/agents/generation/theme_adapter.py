@@ -126,12 +126,20 @@ class ThemeAdapter:
         accent2 = theme_panel.get('accent2', accent1)
         palette_source = theme_panel.get('metadata', {}).get('paletteSource', 'unknown')
 
+        # Check if this is a branded theme - if so, preserve brand colors
+        is_branded_theme = palette_source in ['brandfetch_cache', 'brand', 'brandfetch']
+
         # Derive a base readable text color against the page background
-        try:
-            contrast = ColorContrastManager().get_readable_text_color(str(page_bg))
-            base_text_color = contrast.get('recommended') or text_color
-        except Exception:
+        # For branded themes, use the brand text color directly
+        if is_branded_theme:
             base_text_color = text_color
+            print(f"🎨 [THEME ADAPTER] Branded theme detected ({palette_source}), preserving brand text color: {text_color}")
+        else:
+            try:
+                contrast = ColorContrastManager().get_readable_text_color(str(page_bg))
+                base_text_color = contrast.get('recommended') or text_color
+            except Exception:
+                base_text_color = text_color
 
         # Helpers for local background detection and safe color handling
         def _normalize_hex(color: Any) -> Any:
@@ -264,21 +272,29 @@ class ThemeAdapter:
                     local_bg = _normalize_hex(local_bg)
                     dominant_color = None
                     for t in texts:
-                        if not t.get('color') or str(t.get('color')).lower() in ['#000', '#000000']:
-                            # Emphasize the largest segment with accent1; others use readable base text color
+                        # For branded themes, ALWAYS force brand text color for ALL segments (ignore AI-generated colors)
+                        if is_branded_theme:
+                            t['color'] = base_text_color
+                            print(f"🎨 [THEME_ADAPTER] Branded theme: forcing segment color to {base_text_color}")
+                        elif not t.get('color') or str(t.get('color')).lower() in ['#000', '#000000']:
+                            # For non-branded themes, use accent for largest segment
                             t['color'] = accent1 if t.get('fontSize', 0) == max_size else base_text_color
+
                         # If color matches the local background or contrast is too low, adjust to readable
-                        try:
-                            current = _normalize_hex(t.get('color'))
-                            if isinstance(current, str) and isinstance(local_bg, str):
-                                same = current.lower() == local_bg.lower()
-                                cr = contrast_mgr.get_contrast_ratio(local_bg, current)
-                                if same or cr < 4.5:
-                                    recommended = contrast_mgr.get_readable_text_color(local_bg).get('recommended')
-                                    if isinstance(recommended, str):
-                                        t['color'] = recommended
-                        except Exception:
-                            pass
+                        # Skip contrast adjustment for branded themes to preserve exact brand colors
+                        if not is_branded_theme:
+                            try:
+                                current = _normalize_hex(t.get('color'))
+                                if isinstance(current, str) and isinstance(local_bg, str):
+                                    same = current.lower() == local_bg.lower()
+                                    cr = contrast_mgr.get_contrast_ratio(local_bg, current)
+                                    if same or cr < 4.5:
+                                        recommended = contrast_mgr.get_readable_text_color(local_bg).get('recommended')
+                                        if isinstance(recommended, str):
+                                            t['color'] = recommended
+                            except Exception:
+                                pass
+
                         # Ensure nested style structure is present for frontend
                         style = t.get('style') if isinstance(t.get('style'), dict) else {}
                         # Always mirror the adjusted readable color into style.textColor so renderers use it
@@ -291,11 +307,16 @@ class ThemeAdapter:
                                 dominant_color = _normalize_hex(t.get('color'))
                         except Exception:
                             pass
+
                     # Also reflect a readable color at the root for renderers that use props.textColor
-                    if isinstance(dominant_color, str):
+                    # For branded themes, ALWAYS use brand text color (don't allow dominant_color override)
+                    if is_branded_theme:
+                        props['textColor'] = base_text_color
+                        print(f"🎨 [THEME_ADAPTER] Branded theme: setting root textColor to {base_text_color}")
+                    elif isinstance(dominant_color, str):
                         props['textColor'] = dominant_color
                     else:
-                        # Fall back to a readable color against local/page background
+                        # Fall back to contrast-optimized color
                         try:
                             props['textColor'] = contrast_mgr.get_readable_text_color(local_bg).get('recommended') or base_text_color
                         except Exception:
@@ -318,7 +339,11 @@ class ThemeAdapter:
                     chosen = _normalize_hex(chosen)
                     try:
                         if not isinstance(chosen, str) or contrast_mgr.get_contrast_ratio(local_bg, chosen) < 4.5:
-                            chosen = contrast_mgr.get_readable_text_color(local_bg).get('recommended') or base_text_color
+                            # For branded themes, keep brand color; otherwise optimize for contrast
+                            if is_branded_theme:
+                                chosen = base_text_color
+                            else:
+                                chosen = contrast_mgr.get_readable_text_color(local_bg).get('recommended') or base_text_color
                     except Exception:
                         chosen = base_text_color
                     props['color'] = chosen
@@ -347,7 +372,11 @@ class ThemeAdapter:
                 chosen = _normalize_hex(chosen)
                 try:
                     if not isinstance(chosen, str) or contrast_mgr.get_contrast_ratio(local_bg, chosen) < 4.5:
-                        chosen = contrast_mgr.get_readable_text_color(local_bg).get('recommended') or base_text_color
+                        # For branded themes, keep brand color; otherwise optimize for contrast
+                        if is_branded_theme:
+                            chosen = base_text_color
+                        else:
+                            chosen = contrast_mgr.get_readable_text_color(local_bg).get('recommended') or base_text_color
                 except Exception:
                     chosen = base_text_color
                 props['textColor'] = chosen
@@ -396,11 +425,15 @@ class ThemeAdapter:
                 if not isinstance(sc, list) or len(sc) == 0:
                     props['seriesColors'] = [accent1, accent2, text_color, '#A3A3A3']
                 # Apply theme-aware text/background defaults expected by renderers
-                try:
-                    # textColor readable against page background
-                    readable = contrast_mgr.get_readable_text_color(_normalize_hex(page_bg)).get('recommended') or text_color
-                except Exception:
+                # For branded themes, use brand color; otherwise optimize for contrast
+                if is_branded_theme:
                     readable = text_color
+                else:
+                    try:
+                        # textColor readable against page background
+                        readable = contrast_mgr.get_readable_text_color(_normalize_hex(page_bg)).get('recommended') or text_color
+                    except Exception:
+                        readable = text_color
                 props.setdefault('textColor', readable)
                 props.setdefault('backgroundColor', _normalize_hex(page_bg))
                 # Provide a generic colors array if missing
@@ -478,10 +511,14 @@ class ThemeAdapter:
 
             # 9) Images: ensure a default textColor for overlays/captions
             elif ctype == 'Image':
-                try:
-                    readable_img = contrast_mgr.get_readable_text_color(_normalize_hex(page_bg)).get('recommended') or text_color
-                except Exception:
+                # For branded themes, use brand color; otherwise optimize for contrast
+                if is_branded_theme:
                     readable_img = text_color
+                else:
+                    try:
+                        readable_img = contrast_mgr.get_readable_text_color(_normalize_hex(page_bg)).get('recommended') or text_color
+                    except Exception:
+                        readable_img = text_color
                 props.setdefault('textColor', readable_img)
 
             # Write back props

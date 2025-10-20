@@ -332,6 +332,83 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
     }
   }, [deckId, imageOptions, toast]);
 
+  // NEW: Fetch images for a slide based on stored search terms
+  const fetchImagesForSlide = useCallback(async (slideId: string) => {
+    console.log('[useImageOptions] Fetching images for slide:', slideId);
+    
+    // Check if already cached
+    if (window.__slideImageCache?.[slideId]) {
+      console.log('[useImageOptions] Using cached images');
+      return window.__slideImageCache[slideId];
+    }
+    
+    // Get slide from deck (using useDeckStore if available)
+    const deckStore = (window as any).deckStore?.getState?.();
+    const slide = deckStore?.deckData?.slides?.find((s: any) => s.id === slideId);
+    
+    if (!slide) {
+      console.log('[useImageOptions] Slide not found in deck data');
+      return null;
+    }
+    
+    // Check if slide has stored search terms
+    if (!slide.imageSearchTerms || Object.keys(slide.imageSearchTerms).length === 0) {
+      console.log('[useImageOptions] No imageSearchTerms in slide data');
+      return null;
+    }
+    
+    console.log('[useImageOptions] Found search terms:', slide.imageSearchTerms);
+    
+    try {
+      // Fetch images for each search term
+      const imagesByTerm: Record<string, any[]> = {};
+      
+      for (const [componentKey, searchTerm] of Object.entries(slide.imageSearchTerms)) {
+        const response = await fetch('/api/media/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: searchTerm,
+            type: 'images',
+            limit: 3
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const images = data.results || [];
+          imagesByTerm[searchTerm as string] = images.map(processImageUrls);
+          console.log(`[useImageOptions] Fetched ${images.length} images for term: ${searchTerm}`);
+        }
+      }
+      
+      // Flatten and cache
+      const allImages: any[] = [];
+      Object.values(imagesByTerm).forEach(images => {
+        allImages.push(...images);
+      });
+      
+      const cacheData = {
+        slideId,
+        slideIndex: deckStore?.deckData?.slides?.findIndex((s: any) => s.id === slideId) || 0,
+        slideTitle: slide.title,
+        images: allImages,
+        images_by_search_term: imagesByTerm,
+        search_terms: Object.values(slide.imageSearchTerms),
+        topics: Object.values(slide.imageSearchTerms)
+      };
+      
+      window.__slideImageCache[slideId] = cacheData;
+      
+      console.log(`[useImageOptions] ✅ Cached ${allImages.length} images for slide ${slideId}`);
+      
+      return cacheData;
+    } catch (error) {
+      console.error('[useImageOptions] Error fetching images:', error);
+      return null;
+    }
+  }, []);
+
   // Select an image for a slide
   const selectImage = useCallback((slideId: string, imageUrl: string) => {
     setSelectedImages(prev => {
@@ -381,7 +458,14 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
   // Get images for the current slide
   const getCurrentSlideImages = useCallback((slideId?: string) => {
     const targetSlideId = slideId || currentSlideId;
-    if (!targetSlideId) return [];
+    if (!targetSlideId) {
+      console.log('[getCurrentSlideImages] No slide ID provided');
+      return [];
+    }
+    
+    console.log('[getCurrentSlideImages] 🔍 Looking for images for SPECIFIC slide:', targetSlideId);
+    console.log('[getCurrentSlideImages] Cache keys:', Object.keys(window.__slideImageCache || {}));
+    console.log('[getCurrentSlideImages] Requesting images ONLY for this slide, not others');
     
     // First check if we have images from the API
     if (imageOptions) {
@@ -402,6 +486,7 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
         });
         
         if (allImages.length > 0) {
+          console.log('[getCurrentSlideImages] ✅ Found from API for slide', targetSlideId, ':', allImages.length);
           return allImages;
         }
       }
@@ -411,20 +496,46 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
     if (window.__slideImageCache) {
       // Try direct lookup first
       let cachedData = window.__slideImageCache[targetSlideId];
+      console.log('[getCurrentSlideImages] Direct cache lookup for', targetSlideId, ':', cachedData ? `${cachedData.images?.length} images` : 'not found');
+      
+      if (cachedData) {
+        console.log('[getCurrentSlideImages] ✅ MATCH FOUND - Slide ID matches cache key exactly');
+        console.log('[getCurrentSlideImages] Cached data:', {
+          slideId: cachedData.slideId,
+          slideIndex: cachedData.slideIndex,
+          slideTitle: cachedData.slideTitle,
+          imageCount: cachedData.images?.length,
+          searchTerms: cachedData.search_terms
+        });
+      }
       
       // If not found, try to find by slide index (for slides that haven't been saved yet)
       if (!cachedData) {
-        // Extract slide index from ID like "slide-1-photosynthesis-intro"
-        const slideIndexMatch = targetSlideId.match(/^slide-(\d+)/);
+        console.log('[getCurrentSlideImages] Direct lookup failed, trying alternatives...');
+        
+        // Try by slide_index_N format
+        const slideIndexMatch = targetSlideId.match(/^slide-(\d+)|^([a-f0-9\-]{36})/);
         if (slideIndexMatch) {
-          const slideIndex = parseInt(slideIndexMatch[1]) - 1; // Convert to 0-based index
-          cachedData = window.__slideImageCache[`slide_index_${slideIndex}`];
+          const slideNum = slideIndexMatch[1];
+          if (slideNum) {
+            const slideIndex = parseInt(slideNum) - 1;
+            cachedData = window.__slideImageCache[`slide_index_${slideIndex}`];
+            console.log('[getCurrentSlideImages] Tried slide_index lookup:', cachedData ? 'found' : 'not found');
+          }
         }
         
         // Also check all cached entries to find matching slide
         if (!cachedData) {
-          Object.values(window.__slideImageCache).forEach((cache: any) => {
-            if (cache.slideTitle && targetSlideId.includes(cache.slideTitle.toLowerCase().replace(/\s+/g, '-'))) {
+          console.log('[getCurrentSlideImages] Trying to match by title or UUID...');
+          Object.entries(window.__slideImageCache).forEach(([cacheKey, cache]: [string, any]) => {
+            // Try UUID match (first 8 chars)
+            if (targetSlideId.includes(cacheKey.substring(0, 8)) || cacheKey.includes(targetSlideId.substring(0, 8))) {
+              console.log('[getCurrentSlideImages] Matched by UUID prefix:', cacheKey);
+              cachedData = cache;
+            }
+            // Try title match
+            else if (cache.slideTitle && targetSlideId.includes(cache.slideTitle.toLowerCase().replace(/\s+/g, '-'))) {
+              console.log('[getCurrentSlideImages] Matched by title:', cache.slideTitle);
               cachedData = cache;
             }
           });
@@ -471,8 +582,13 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
         
         // Fallback to flat images array
         if (cachedData.images && cachedData.images.length > 0) {
+          console.log('[getCurrentSlideImages] Returning flat images:', cachedData.images.length);
           return cachedData.images;
         }
+        
+        console.log('[getCurrentSlideImages] Cached data found but no images');
+      } else {
+        console.log('[getCurrentSlideImages] No cached data found for this slide');
       }
     }
     
@@ -597,5 +713,6 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
     openImagePicker,
     closeImagePicker,
     getCurrentSlideImages,
+    fetchImagesForSlide,  // NEW: Fetch images from stored search terms
   };
 }; 

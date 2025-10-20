@@ -801,17 +801,19 @@
   },
   "chart_guidelines": {
     "dimensions": [
-      "Left half chart: 880px wide \u00d7 800px+ tall (X=80)",
-      "Right half chart: 880px wide \u00d7 800px+ tall (X=960)",
+      "Left half chart: 880px wide, height based on available space (X=80)",
+      "Right half chart: 880px wide, height based on available space (X=960)",
       "NO VERTICAL LAYOUTS! Always side-by-side with text",
       "Chart takes exactly HALF the slide width",
-      "NEVER make a chart smaller than 800\u00d7600px!"
+      "Size charts adaptively: 500-700px height for slides with multiple elements, up to 800px only when chart is the main focus"
     ],
     "positioning": [
-      "Left side: X=80, Y=140-240, Width=880, Height=600-800",
-      "Right side: X=960, Y=140-240, Width=880, Height=600-800",
+      "Left side: X=80, Y=140-240, Width=880, Height=500-700 (adaptive)",
+      "Right side: X=960, Y=140-240, Width=880, Height=500-700 (adaptive)",
       "NO center positioning - always pick a side!",
-      "NO full-width charts - text needs its half!"
+      "NO full-width charts - text needs its half!",
+      "CRITICAL: Ensure chart bottom (Y + height) leaves 100px+ margin from slide bottom (1080px)",
+      "Calculate: If Y=140, max height=840px; If Y=200, max height=780px; If Y=240, max height=740px"
     ],
     "configuration": {
       "BAR/COLUMN CHARTS": "MUST set showLegend: false (legends are redundant)",

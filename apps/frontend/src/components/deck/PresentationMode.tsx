@@ -38,6 +38,42 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const slideContainerRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
   
+  // Dispatch slidechange event when slide changes in presentation mode
+  // This ensures chart animations are triggered properly
+  useEffect(() => {
+    if (!isPresenting) return;
+    
+    const currentSlide = slides[currentSlideIndex];
+    if (!currentSlide?.id) return;
+    
+    // Use requestAnimationFrame to ensure the slide is rendered before dispatching the event
+    let raf1: number | null = null;
+    let raf2: number | null = null;
+    
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        // Dispatch the slidechange event
+        const event = new CustomEvent('slidechange', {
+          detail: { slideId: currentSlide.id, index: currentSlideIndex }
+        });
+        document.dispatchEvent(event);
+        
+        // Also update the global window state for chart animations
+        if (typeof window !== 'undefined') {
+          (window as any).__lastSlideChangeDispatch = { 
+            slideId: currentSlide.id, 
+            ts: Date.now() 
+          };
+        }
+      });
+    });
+    
+    return () => {
+      if (raf1 !== null) cancelAnimationFrame(raf1);
+      if (raf2 !== null) cancelAnimationFrame(raf2);
+    };
+  }, [currentSlideIndex, slides, isPresenting]);
+  
   // Calculate slide scale based on container size
   useEffect(() => {
     const calculateScale = () => {

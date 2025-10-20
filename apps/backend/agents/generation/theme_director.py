@@ -1620,42 +1620,95 @@ Ensure structural elements match the deck's maturity and intended use.'''
                 font_result = matched
         
         if not font_result:
-            # Use EnhancedFontService for intelligent metadata-based selection
-            try:
-                font_service = EnhancedFontService()
+            # CRITICAL: Check if this is a fun/playful entity (Pikachu, Pokemon, etc.)
+            entity_name = (analysis.get('entity_name') or '').lower() if analysis.get('entity_name') else ''
+            is_fun_entity = any(keyword in entity_name for keyword in [
+                'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
+                'cartoon', 'game', 'toy', 'character'
+            ]) if entity_name else False
+            
+            # Check if title suggests kids/fun topic
+            title_lower = (title or '').lower() if title else ''
+            is_fun_topic = any(keyword in title_lower for keyword in [
+                'pikachu', 'pokemon', 'kids', 'children', 'game', 'fun', 'play',
+                'cartoon', 'toy', 'party', 'arcade', 'retro', 'gaming', 'birthday',
+                'silly', 'celebration', 'video'
+            ]) if title_lower else False
+            
+            if is_fun_entity or is_fun_topic:
+                # OVERRIDE: Use playful fonts!
+                logger.info(f"🎨 FUN TOPIC DETECTED: {entity_name or title} → Using PLAYFUL fonts")
+                print(f"\n🎨🎨🎨 FUN TOPIC DETECTED IN THEME_DIRECTOR 🎨🎨🎨")
+                print(f"   Title: '{title}'")
+                print(f"   Entity: '{entity_name}'")
+                print(f"   → Selecting CREATIVE, PLAYFUL fonts!\n")
                 
-                # Extract context from analysis
-                vibe = analysis.get('vibe', 'professional')
-                keywords = []
-                if analysis.get('topic'):
-                    keywords.append(analysis['topic'])
-                if analysis.get('industry'):
-                    keywords.append(analysis['industry'])
-                    
-                audience = analysis.get('audience') or analysis.get('target_audience')
+                # Rotate through playful font combinations
+                import hashlib
+                seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
                 
-                # Get intelligent font pair with variety
-                font_pair = font_service.select_font_pair(
-                    deck_title=title,
-                    vibe=vibe,
-                    content_keywords=keywords,
-                    target_audience=audience,
-                    variety_seed=variety_seed
-                )
+                playful_combos = [
+                    {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                    {'hero': 'Fredoka', 'body': 'Quicksand'},
+                    {'hero': 'Righteous', 'body': 'Poppins'},
+                    {'hero': 'Bungee', 'body': 'Asap'},
+                    {'hero': 'Bangers', 'body': 'Rubik'},
+                    {'hero': 'Titan One', 'body': 'Cabin'},
+                    {'hero': 'Pacifico', 'body': 'Comfortaa'},
+                    {'hero': 'Press Start 2P', 'body': 'Space Mono'}
+                ]
+                
+                combo_idx = seed_hash % len(playful_combos)
+                selected_combo = playful_combos[combo_idx]
                 
                 font_result = {
-                    'hero': font_pair['hero'],
-                    'body': font_pair['body'],
-                    'source': font_pair.get('source', 'enhanced_metadata'),
-                    'hero_category': font_pair.get('hero_category'),
-                    'body_category': font_pair.get('body_category')
+                    'hero': selected_combo['hero'],
+                    'body': selected_combo['body'],
+                    'source': 'fun_topic_override',
+                    'hero_category': 'playful',
+                    'body_category': 'friendly'
                 }
-            except Exception as e:
-                # Fallback to safe defaults
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"EnhancedFontService failed, using fallback: {e}")
-                font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
+                
+                logger.info(f"✅ PLAYFUL FONTS: Hero={font_result['hero']}, Body={font_result['body']}")
+                print(f"✅✅✅ PLAYFUL FONTS SELECTED ✅✅✅")
+                print(f"   Hero: {font_result['hero']}")
+                print(f"   Body: {font_result['body']}")
+                print(f"   Combo: {combo_idx + 1}/{len(playful_combos)}\n")
+            else:
+                # Use EnhancedFontService for intelligent metadata-based selection
+                try:
+                    font_service = EnhancedFontService()
+                    
+                    # Extract context from analysis
+                    vibe = analysis.get('vibe', 'professional')
+                    keywords = []
+                    if analysis.get('topic'):
+                        keywords.append(analysis['topic'])
+                    if analysis.get('industry'):
+                        keywords.append(analysis['industry'])
+                    
+                    audience = analysis.get('audience') or analysis.get('target_audience')
+                    
+                    # Get intelligent font pair with variety
+                    font_pair = font_service.select_font_pair(
+                        deck_title=title,
+                        vibe=vibe,
+                        content_keywords=keywords,
+                        target_audience=audience,
+                        variety_seed=variety_seed
+                    )
+                    
+                    font_result = {
+                        'hero': font_pair['hero'],
+                        'body': font_pair['body'],
+                        'source': font_pair.get('source', 'enhanced_metadata'),
+                        'hero_category': font_pair.get('hero_category'),
+                        'body_category': font_pair.get('body_category')
+                    }
+                except Exception as e:
+                    # Fallback to safe defaults
+                    logger.warning(f"EnhancedFontService failed, using fallback: {e}")
+                    font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",

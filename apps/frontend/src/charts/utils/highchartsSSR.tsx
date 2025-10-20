@@ -28,6 +28,9 @@ import { isSSR, getSlideDisplayScaleFactor } from '@ssr/ssrContext.ts';
 // Configure Highcharts globally
 if (typeof window !== 'undefined' && Highcharts) {
   Highcharts.setOptions({
+    chart: {
+      backgroundColor: 'transparent'  // Default to transparent background
+    },
     exporting: {
       enabled: false
     },

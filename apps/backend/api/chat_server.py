@@ -837,7 +837,7 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
             stylePreferences=request.get('stylePreferences'),
             max_parallel=request.get('max_parallel', MAX_PARALLEL_SLIDES),
             delay_between_slides=request.get('delay_between_slides', DELAY_BETWEEN_SLIDES),
-            async_images=request.get('async_images', True)  # Support async image selection
+            async_images=request.get('async_images', False)  # Default to auto-apply mode to show image recommendations
         )
         
         # Store user_id in request for later use

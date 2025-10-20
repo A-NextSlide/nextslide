@@ -382,7 +382,9 @@ class SerpAPIService:
             # Build a higher-quality query from slide signals
             search_query = self._build_query_from_slide(slide_title, slide_content, slide_type, style_preferences)
         
-        print(f"Searching Google Images for: '{search_query}' (slide: {slide_title})")
+        print(f"🔍 [SERPAPI] Searching Google Images for: '{search_query}' (slide: {slide_title})")
+        print(f"   - API Key available: {bool(self.api_key)}")
+        print(f"   - is_available: {self.is_available}")
         
         # Search for more images than requested to account for filtering
         results = await self.search_images(

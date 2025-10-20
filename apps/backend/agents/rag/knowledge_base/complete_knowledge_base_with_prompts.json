@@ -495,14 +495,19 @@
         "set_theme": "Based on Background component color"
       },
       "legend_rules": {
-        "bar": false,
-        "column": false,
-        "pie": false,
-        "line": "Only if multiple series",
-        "default": false
+        "single_series_bar": false,
+        "single_series_column": false,
+        "single_series_pie": false,
+        "multi_series_bar": true,
+        "multi_series_column": true,
+        "multi_series_line": true,
+        "multi_series_area": true,
+        "default": "Show legend when chart has 2+ series to identify them"
       },
       "examples": [
-        "{\n  \"type\": \"Chart\",\n  \"props\": {\n    \"position\": {\"x\": 80, \"y\": 140},\n    \"width\": 880,\n    \"height\": 700,\n    \"chartType\": \"bar\",\n    \"theme\": \"light\",  // or \"dark\" based on background\n    \"showLegend\": false,  // MANDATORY for bar/column charts\n    \"tickSpacing\": 1,  // Show every label (1 = no skipping)\n    \"tickSpacingY\": 1,  // Show every value (1 = no skipping)\n    \"data\": [\n      {\"name\": \"NES\", \"value\": 61.91, \"color\": \"#0066CC\"},\n      {\"name\": \"SNES\", \"value\": 49.10, \"color\": \"#00AA55\"},\n      {\"name\": \"N64\", \"value\": 32.93, \"color\": \"#FF6B6B\"},\n      {\"name\": \"GameCube\", \"value\": 21.74, \"color\": \"#FFA500\"},\n      {\"name\": \"Wii\", \"value\": 101.63, \"color\": \"#9B59B6\"}\n    ]\n  }\n}"
+        "// SINGLE-SERIES BAR CHART\n{\n  \"type\": \"Chart\",\n  \"props\": {\n    \"position\": {\"x\": 80, \"y\": 140},\n    \"width\": 880,\n    \"height\": 700,\n    \"chartType\": \"bar\",\n    \"theme\": \"light\",\n    \"showLegend\": false,  // false for single-series\n    \"tickSpacing\": 1,\n    \"tickSpacingY\": 1,\n    \"data\": [\n      {\"name\": \"NES\", \"value\": 61.91},\n      {\"name\": \"SNES\", \"value\": 49.10},\n      {\"name\": \"N64\", \"value\": 32.93},\n      {\"name\": \"GameCube\", \"value\": 21.74},\n      {\"name\": \"Wii\", \"value\": 101.63}\n    ]\n  }\n}",
+        "// MULTI-SERIES COLUMN CHART (Revenue vs Cost by Region)\n{\n  \"type\": \"Chart\",\n  \"props\": {\n    \"position\": {\"x\": 80, \"y\": 140},\n    \"width\": 880,\n    \"height\": 700,\n    \"chartType\": \"column\",\n    \"theme\": \"light\",\n    \"showLegend\": true,  // TRUE for multi-series\n    \"tickSpacing\": 1,\n    \"tickSpacingY\": 1,\n    \"data\": [\n      {\"name\": \"North America\", \"value\": 450, \"series\": \"Revenue\"},\n      {\"name\": \"North America\", \"value\": 320, \"series\": \"Cost\"},\n      {\"name\": \"Europe\", \"value\": 380, \"series\": \"Revenue\"},\n      {\"name\": \"Europe\", \"value\": 290, \"series\": \"Cost\"},\n      {\"name\": \"Asia\", \"value\": 520, \"series\": \"Revenue\"},\n      {\"name\": \"Asia\", \"value\": 380, \"series\": \"Cost\"}\n    ]\n  }\n}",
+        "// MULTI-SERIES LINE CHART (Quarterly Trends)\n{\n  \"type\": \"Chart\",\n  \"props\": {\n    \"position\": {\"x\": 80, \"y\": 140},\n    \"width\": 880,\n    \"height\": 700,\n    \"chartType\": \"line\",\n    \"theme\": \"light\",\n    \"showLegend\": true,  // TRUE for multi-series\n    \"tickSpacing\": 1,\n    \"data\": [\n      {\"x\": \"Q1 2023\", \"y\": 450, \"series\": \"Actual\"},\n      {\"x\": \"Q1 2023\", \"y\": 420, \"series\": \"Budget\"},\n      {\"x\": \"Q2 2023\", \"y\": 480, \"series\": \"Actual\"},\n      {\"x\": \"Q2 2023\", \"y\": 440, \"series\": \"Budget\"},\n      {\"x\": \"Q3 2023\", \"y\": 520, \"series\": \"Actual\"},\n      {\"x\": \"Q3 2023\", \"y\": 460, \"series\": \"Budget\"},\n      {\"x\": \"Q4 2023\", \"y\": 580, \"series\": \"Actual\"},\n      {\"x\": \"Q4 2023\", \"y\": 490, \"series\": \"Budget\"}\n    ]\n  }\n}"
       ]
     },
     "CustomComponent": {
@@ -797,17 +802,19 @@
   },
   "chart_guidelines": {
     "dimensions": [
-      "Left half chart: 880px wide \u00d7 800px+ tall (X=80)",
-      "Right half chart: 880px wide \u00d7 800px+ tall (X=960)",
+      "Left half chart: 880px wide, height based on available space (X=80)",
+      "Right half chart: 880px wide, height based on available space (X=960)",
       "NO VERTICAL LAYOUTS! Always side-by-side with text",
       "Chart takes exactly HALF the slide width",
-      "NEVER make a chart smaller than 800\u00d7600px!"
+      "Size charts adaptively: 500-700px height for slides with multiple elements, up to 800px only when chart is the main focus"
     ],
     "positioning": [
-      "Left side: X=80, Y=140-240, Width=880, Height=600-800",
-      "Right side: X=960, Y=140-240, Width=880, Height=600-800",
+      "Left side: X=80, Y=140-240, Width=880, Height=500-700 (adaptive)",
+      "Right side: X=960, Y=140-240, Width=880, Height=500-700 (adaptive)",
       "NO center positioning - always pick a side!",
-      "NO full-width charts - text needs its half!"
+      "NO full-width charts - text needs its half!",
+      "CRITICAL: Ensure chart bottom (Y + height) leaves 100px+ margin from slide bottom (1080px)",
+      "Calculate: If Y=140, max height=840px; If Y=200, max height=780px; If Y=240, max height=740px"
     ],
     "configuration": {
       "BAR/COLUMN CHARTS": "MUST set showLegend: false (legends are redundant)",

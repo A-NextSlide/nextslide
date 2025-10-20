@@ -7,6 +7,7 @@ import { SSRHighcharts } from '../utils/highchartsSSR';
 import Highcharts from 'highcharts';
 import { getChartTheme } from '../utils/ThemeUtils';
 import { ComponentInstance } from '@/types/components';
+import { isLightColor } from '@/utils/colorUtils';
 
 /**
  * Shared frame component for rendering Highcharts charts with common props.
@@ -161,9 +162,23 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
   const highchartsOptions = useMemo(() => {
     if (!dimensions) return null;
     
-    const theme = props.theme || 'light';
     const backgroundColor = props.backgroundColor;
     const fontFamily = props.fontFamily;
+    
+    // Auto-detect theme based on background color
+    // If backgroundColor is not set or is transparent, default to light
+    let autoTheme: 'light' | 'dark' = 'light';
+    if (backgroundColor && 
+        backgroundColor !== 'transparent' && 
+        backgroundColor !== '#00000000' &&
+        backgroundColor !== 'rgba(0,0,0,0)' &&
+        backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      // Determine theme based on background color luminance
+      autoTheme = isLightColor(backgroundColor) ? 'light' : 'dark';
+    }
+    
+    // Use explicit theme if provided, otherwise use auto-detected theme
+    const theme = props.theme || autoTheme;
     
     const themeOptions = convertToHighchartsTheme(theme, backgroundColor, fontFamily);
     const commonOptions = getCommonHighchartsOptions(props);

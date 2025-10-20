@@ -698,10 +698,18 @@ class SlideGeneratorV2(ISlideGenerator):
             for idx, media in enumerate(context.tagged_media):
                 logger.info(f"   - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
             self._apply_tagged_media_to_images(slide_data, context.tagged_media)
-        elif context.available_images and context.async_images:
-            print(f"\n📌 [IMAGE FLOW 4/4] Placeholder mode - attaching {len(context.available_images)} available images for selection")
-            logger.info(f"[IMAGE FLOW 4/4] Placeholder mode - attaching {len(context.available_images)} available images for selection")
-            self._apply_available_images_to_placeholders(slide_data, context.available_images)
+        elif context.async_images:
+            # PLACEHOLDER MODE: DO NOT apply images, keep them as placeholders for manual selection
+            print(f"\n📌 [IMAGE FLOW 4/4] PLACEHOLDER MODE - keeping images as placeholders (NOT auto-applying)")
+            print(f"   - async_images=True → Images stay as placeholders")
+            print(f"   - Available images: {len(context.available_images or [])} (stored for manual selection)")
+            logger.info(f"[IMAGE FLOW 4/4] 📌 PLACEHOLDER MODE - NOT applying images")
+            logger.info(f"   - async_images=True → User will manually select from recommendations")
+            
+            # Store available images in slide_data but DON'T apply them to components
+            if context.available_images:
+                slide_data['availableImages'] = context.available_images
+                logger.info(f"[IMAGE FLOW 4/4] ✅ Stored {len(context.available_images)} available images (not applied to components)")
         else:
             print(f"\n❌ [IMAGE FLOW 4/4] NO IMAGE REPLACEMENT:")
             print(f"   - async_images={context.async_images}")
@@ -847,6 +855,20 @@ class SlideGeneratorV2(ISlideGenerator):
         except Exception as e:
             logger.warning(f"[SLIDE GENERATOR] Outline value injection skipped due to error: {e}")
 
+        # Extract and store image search terms from components for persistence
+        image_search_terms = {}
+        for idx, comp in enumerate(validated_components):
+            if comp.get('type') == 'Image':
+                search_query = comp.get('props', {}).get('searchQuery', '')
+                if search_query and isinstance(search_query, str) and search_query.strip():
+                    image_search_terms[f'image_{idx}'] = search_query.strip()
+        
+        if image_search_terms:
+            slide_data['imageSearchTerms'] = image_search_terms
+            logger.info(f"[SLIDE GEN] ✅ Stored {len(image_search_terms)} image search terms in slide data")
+            for key, term in list(image_search_terms.items())[:3]:
+                logger.info(f"   {key}: '{term}'")
+        
         logger.info(
             f"  [Step 4/4] ✓ Post-processing complete - "
             f"{len(validated_components)} components validated"
@@ -2457,12 +2479,10 @@ class SlideGeneratorV2(ISlideGenerator):
         """
         try:
             from services.registry_fonts import RegistryFonts
-            from models.registry import ComponentRegistry
             
-            # Get available fonts
-            registry = ComponentRegistry.get_instance()
-            available_fonts_dict = RegistryFonts.get_available_fonts(registry)
-            all_available = RegistryFonts.get_all_fonts_list(registry)
+            # Get available fonts (pass None as registry - will use schema file fallback)
+            available_fonts_dict = RegistryFonts.get_available_fonts(None)
+            all_available = RegistryFonts.get_all_fonts_list(None)
             
             # Check if requested font is available
             font_normalized = str(font_name).lower().strip()
@@ -2670,6 +2690,8 @@ class SlideGeneratorV2(ISlideGenerator):
             line_components: List[Dict[str, Any]] = []
             logo_image: Optional[Dict[str, Any]] = None
 
+            hero_image: Optional[Dict[str, Any]] = None
+            
             for comp in components:
                 ctype = comp.get('type')
                 if ctype == 'Background':
@@ -2680,9 +2702,20 @@ class SlideGeneratorV2(ISlideGenerator):
                 # Preserve divider lines if any
                 elif ctype == 'Lines':
                     line_components.append(comp)
-                elif ctype == 'Image' and logo_image is None:
-                    # Keep ONE image as a logo candidate; we'll normalize props later
-                    logo_image = comp
+                elif ctype == 'Image':
+                    # Distinguish between hero images (full-height) and logos (small)
+                    img_props = comp.get('props', {})
+                    img_height = img_props.get('height', 0)
+                    img_width = img_props.get('width', 0)
+                    
+                    # If image is large (full-height or nearly full), treat as hero image
+                    if img_height >= 800 or img_width >= 1500:
+                        # This is a hero image - keep it and ensure no borderRadius
+                        hero_image = comp
+                        logger.info(f"[TITLE ENHANCE] Found hero image: {img_width}x{img_height}")
+                    elif logo_image is None:
+                        # Small image - treat as logo
+                        logo_image = comp
                 # Drop charts/icons/shapes by default on title (unless Lines)
 
             # Choose or create hero title block
@@ -2986,20 +3019,41 @@ class SlideGeneratorV2(ISlideGenerator):
             except Exception as _e:
                 logger.debug(f"[TITLE ENHANCE] Pairing logic skipped: {_e}")
 
-            # Assemble final components: Background(s) + Lines + ALL title text blocks + optional logo
+            # Assemble final components: Background(s) + Hero Image + Lines + ALL title text blocks + optional logo
             final_components: List[Dict[str, Any]] = []
+            
             # Ensure background exists; if not, kept_components may be empty and upstream will inject fallback
             final_components.extend(kept_components)
+            
+            # Add hero image if present (MUST come after background but before text)
+            if hero_image is not None:
+                hero_img_props = hero_image.setdefault('props', {})
+                # Ensure no borderRadius on title slide images
+                hero_img_props['borderRadius'] = 0
+                # Ensure it spans full height if it's close to full height
+                if hero_img_props.get('height', 0) >= 800:
+                    hero_img_props['height'] = 1080
+                    hero_img_props['position'] = hero_img_props.get('position', {'x': 0, 'y': 0})
+                    # Make sure y position is 0 for full-height
+                    hero_img_props['position']['y'] = 0
+                # Set proper z-index (above background, below text)
+                hero_img_props['zIndex'] = 1
+                final_components.append(hero_image)
+                logger.info(f"[TITLE ENHANCE] Added hero image (full-height, borderRadius: 0)")
+            
             final_components.extend(line_components)
+            
             # Keep text blocks in their current order (hero may already be included)
             for tb in text_blocks:
                 if tb not in final_components:
                     final_components.append(tb)
+            
+            # Add logo if present (small, in corner)
             if logo_image is not None and logo_image not in final_components:
                 final_components.append(logo_image)
 
             slide_data['components'] = final_components
-            logger.info("[TITLE ENHANCE] Applied enhanced title layout (preserved all title text blocks)")
+            logger.info(f"[TITLE ENHANCE] Applied enhanced title layout ({len(final_components)} components, hero_image={hero_image is not None})")
         except Exception as e:
             logger.warning(f"[TITLE ENHANCE] Skipped due to error: {e}")
 

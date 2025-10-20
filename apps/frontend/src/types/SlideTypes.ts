@@ -120,6 +120,8 @@ export interface SlideOutline {
   isManual?: boolean;
   // Optional notes from research process; presence can hint citations exist
   research_notes?: string;
+  // AI-suggested image prompt extracted from [IMAGE: ...] tags in outline
+  suggestedImagePrompt?: string;
 }
 
 /**

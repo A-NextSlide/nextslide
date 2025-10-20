@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import ComponentToolbar from './ComponentToolbar';
@@ -14,6 +14,7 @@ import { useDeckStore } from '@/stores/deckStore';
 import { AnimatePresence } from 'framer-motion';
 import { GenerationProgressTracker } from '@/services/generation/GenerationProgressTracker';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useToast } from '@/hooks/use-toast';
 
 interface SlideContainerProps {
   slides: SlideData[];
@@ -44,6 +45,9 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
 }) => {
   // Reference to keep track of the slide we're currently saving
   const savingSlideRef = useRef<string | null>(null);
+  
+  // Toast notifications
+  const { toast } = useToast();
   
   // Get editor state for accessing draft components
   const { getComponents } = useEditor();
@@ -82,6 +86,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     closeImagePicker,
     getCurrentSlideImages,
     searchAdditionalImages,
+    fetchImagesForSlide,  // NEW: Fetch images from stored search terms
   } = useImageOptions(deckId, deckUuid);
   
   // Check if current slide has image placeholders
@@ -423,9 +428,22 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     }
   };
   
-  // Get current slide info from image options
-  const currentSlideInfo = currentSlide && imageOptions?.slides[currentSlide.id];
-  const currentTopics = currentSlideInfo?.topics || [];
+  // Get current slide topics (slide-specific, memoized)
+  const currentTopics = useMemo(() => {
+    if (!currentSlide) return [];
+    
+    // Get from cache for this specific slide
+    const cachedSlideData = window.__slideImageCache?.[currentSlide.id];
+    const topics = cachedSlideData?.topics || cachedSlideData?.search_terms || [];
+    
+    // Fallback to imageOptions if cache not available
+    if (topics.length === 0 && imageOptions?.slides[currentSlide.id]) {
+      return imageOptions.slides[currentSlide.id].topics || [];
+    }
+    
+    console.log(`[SlideContainer] Topics for slide ${currentSlide.id} ONLY:`, topics);
+    return topics;
+  }, [currentSlide?.id, imageOptions]);
   
   const handleSave = () => {
     // If no slides or invalid index, just return
@@ -559,6 +577,42 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       window.removeEventListener('deck:refresh-ui', handleRefreshUI);
     };
   }, []);
+  
+  // Listen for slide images becoming available and show notification
+  useEffect(() => {
+    const handleSlideImagesAvailable = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { slideId, images } = customEvent.detail;
+      
+      console.log('[SlideContainer] Images available for slide:', slideId, images?.length);
+      
+      // Show a subtle toast notification
+      if (images && images.length > 0) {
+        toast({
+          title: "Images Ready",
+          description: `Found ${images.length} recommended images for your slides`,
+          duration: 3000,
+        });
+      }
+    };
+    
+    window.addEventListener('slide_images_available', handleSlideImagesAvailable as EventListener);
+    
+    return () => {
+      window.removeEventListener('slide_images_available', handleSlideImagesAvailable as EventListener);
+    };
+  }, [toast]);
+  
+  // Auto-fetch images when entering a slide (if not already cached)
+  useEffect(() => {
+    if (currentSlide && currentSlide.imageSearchTerms && !isGenerating) {
+      // Check if images are already cached
+      if (!window.__slideImageCache?.[currentSlide.id]) {
+        console.log('[SlideContainer] Auto-fetching images for slide:', currentSlide.id);
+        fetchImagesForSlide(currentSlide.id);
+      }
+    }
+  }, [currentSlideIndex, currentSlide, fetchImagesForSlide, isGenerating]);
 
   // Determine if we're in a new deck state
 
@@ -591,6 +645,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
             topics={currentTopics}
             isLoading={isLoadingImages}
             targetAspectRatio={computeTargetAspectRatio()}
+            suggestedImagePrompt={deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt}
           />
         )}
       </AnimatePresence>

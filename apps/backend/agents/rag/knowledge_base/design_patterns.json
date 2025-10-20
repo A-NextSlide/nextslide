@@ -1,67 +1,181 @@
 {
   "title_slides": {
-    "hero_centered": {
-      "description": "Massive centered title",
-      "components": [
-        "Background",
-        "TiptapTextBlock"
-      ],
+    "classic_center": {
+      "description": "Clean centered title with subtitle and bottom metadata line",
+      "components": ["Background", "TiptapTextBlock", "Lines"],
       "typography": {
-        "size": "400-600pt",
-        "weight": "900",
+        "title_size": "260-300pt",
+        "subtitle_size": "64-80pt",
+        "metadata_size": "26-30pt"
+      },
+      "layout": {
+        "title_y": 380,
+        "subtitle_y": 640,
+        "metadata_y": 990,
         "alignment": "center"
       },
       "tips": [
-        "Use full-bleed background image",
-        "Add gradient overlay for contrast",
-        "Keep it to 1-5 words max"
+        "Title MASSIVE 260-300pt for impact",
+        "Subtitle large 64-80pt for hierarchy",
+        "Bottom line divider with metadata",
+        "Simple and professional"
       ]
     },
-    "left_aligned_hero": {
-      "description": "Massive left-aligned title with subtle metadata row",
-      "components": [
-        "Background",
-        "TiptapTextBlock"
-      ],
-      "typography": {
-        "size": "280-400pt",
-        "weight": "900",
+    "split_screen_image": {
+      "description": "MODERN: Image on side (40%), text on other side (60%) - NO OVERLAP",
+      "components": ["Background", "Image", "TiptapTextBlock", "Lines"],
+      "image": {
+        "position": { "x": 1152, "y": 80 },
+        "width": 688,
+        "height": 920,
+        "borderRadius": 0,
+        "objectFit": "cover"
+      },
+      "text": {
+        "position": { "x": 120, "y": 340 },
+        "width": 900,
         "alignment": "left"
       },
-      "metadata": {
-        "fields": ["presenter", "organization", "date"],
-        "size": "24-48pt",
-        "color": "muted",
-        "placement": "bottom-left or bottom-right"
+      "typography": {
+        "title_size": "280pt",
+        "subtitle_size": "64pt"
       },
-      "tips": [
-        "Maintain 80px edge margins",
-        "Increase letter-spacing for metadata",
-        "Ensure hierarchy: title > subtitle > metadata"
-      ]
+      "critical": "Image confined to RIGHT 40%, text has LEFT 60% completely clear - NO OVERLAP!"
     },
-    "split_screen": {
-      "description": "Text and image side by side",
-      "components": [
-        "Background",
-        "Image",
-        "TiptapTextBlock"
-      ],
-      "layout": {
-        "image": "Left or right half (960px wide)",
-        "text": "Opposite half, vertically centered"
+    "split_image_fullheight": {
+      "description": "Half-slide full-height image with text on opposite side",
+      "components": ["Background", "Image", "TiptapTextBlock", "Lines"],
+      "image": {
+        "position": { "x": 960, "y": 0 },
+        "width": 960,
+        "height": 1080,
+        "borderRadius": 0,
+        "objectFit": "cover"
+      },
+      "text_side": {
+        "x": 480,
+        "width": 800,
+        "alignment": "center"
+      },
+      "critical": "Image must span full height (1080px) with borderRadius: 0"
+    },
+    "minimal_elegance": {
+      "description": "Minimal design with title in center and thin accent line",
+      "components": ["Background", "TiptapTextBlock", "Lines"],
+      "typography": {
+        "title_size": "140-180pt",
+        "metadata_size": "18-22pt"
+      },
+      "accents": {
+        "top_line": "Thin line above title",
+        "bottom_line": "Full-width line with metadata below"
       }
     },
-    "corner_accent": {
-      "description": "Title with functional text background",
-      "components": [
-        "Background",
-        "TiptapTextBlock"
-      ],
-      "placement": "Title with backgroundColor property for emphasis"
+    "vertical_stack": {
+      "description": "Everything stacked vertically in center",
+      "components": ["Background", "TiptapTextBlock", "Lines"],
+      "layout": {
+        "title_y": 400,
+        "subtitle_y": 630,
+        "metadata_y": 1025
+      },
+      "metadata": {
+        "underline": true,
+        "format": "Organization | Context | Date"
+      }
+    },
+    "image_background_cinematic": {
+      "description": "Full-bleed image background with gradient overlay",
+      "components": ["Image", "Shape", "TiptapTextBlock", "Lines"],
+      "image": {
+        "position": { "x": 0, "y": 0 },
+        "width": 1920,
+        "height": 1080,
+        "borderRadius": 0
+      },
+      "overlay": {
+        "gradient": true,
+        "opacity": 0.5
+      },
+      "critical": "Use borderRadius: 0 - NO curves on title images!"
+    },
+    "asymmetric_creative": {
+      "description": "Off-center title with vertical accent bar",
+      "components": ["Background", "Shape", "TiptapTextBlock", "Lines"],
+      "accent_bar": {
+        "position": { "x": 80, "y": 300 },
+        "width": 12,
+        "height": 480
+      },
+      "typography": {
+        "title_size": "160-200pt",
+        "alignment": "left",
+        "title_x": 180
+      }
     }
   },
   "content_slides": {
+    "CRITICAL_LAYOUT_VARIETY": "ROTATE through different layouts! DO NOT use the same pattern for every slide!",
+    "IMAGE_LAYOUT_PRIORITY": {
+      "PRIMARY_80_PERCENT": "SIDE-BY-SIDE layouts - Image LEFT or RIGHT of text",
+      "SECONDARY_20_PERCENT": "Bottom panoramic - ONLY for wide landscape images",
+      "NEVER": "Vertical stacking with wide image at bottom - OLD POWERPOINT STYLE!"
+    },
+    "split_screen_image_right": {
+      "description": "TEXT LEFT + IMAGE RIGHT (Use 40% of slides with images)",
+      "priority": "PRIMARY",
+      "components": ["TiptapTextBlock", "Image"],
+      "layout": {
+        "text": { "x": 120, "y": 160, "width": 900, "height": "varies" },
+        "image": { "x": 1000, "y": 120, "width": 840, "height": 800 }
+      },
+      "when": "Default for most content slides with images",
+      "example": "Title + bullets left, visual right"
+    },
+    "split_screen_image_left": {
+      "description": "IMAGE LEFT + TEXT RIGHT (Use 30% of slides with images)",
+      "priority": "PRIMARY",
+      "components": ["Image", "TiptapTextBlock"],
+      "layout": {
+        "image": { "x": 80, "y": 120, "width": 880, "height": 800 },
+        "text": { "x": 960, "y": 160, "width": 880, "height": "varies" }
+      },
+      "when": "When image is primary focus",
+      "example": "Product screenshot left, features right"
+    },
+    "text_heavy_60_40": {
+      "description": "TEXT 60% + IMAGE 40% (Use 20% of slides with images)",
+      "priority": "SECONDARY",
+      "components": ["TiptapTextBlock", "Image"],
+      "layout": {
+        "text": { "x": 120, "y": 160, "width": 1000, "height": "varies" },
+        "image": { "x": 1150, "y": 120, "width": 690, "height": 800 }
+      },
+      "when": "More text content, image as support",
+      "example": "Detailed explanation with small supporting image"
+    },
+    "panoramic_bottom": {
+      "description": "Wide panoramic image at BOTTOM (Use RARELY - 10%)",
+      "priority": "RARE",
+      "components": ["TiptapTextBlock", "Image"],
+      "layout": {
+        "text": { "x": 120, "y": 160, "width": 1680, "max_height": 500 },
+        "image": { "x": 80, "y": 680, "width": 1760, "height": 340 }
+      },
+      "when": "ONLY for panoramic landscapes (aspect >2:1)",
+      "critical": "ONLY cityscapes, landscapes, wide products - NOT for square/portrait!"
+    },
+    "ANTI_PATTERN_vertical_stacking": {
+      "description": "DO NOT USE - This is OLD POWERPOINT!",
+      "bad_layout": {
+        "text_line_1": { "y": 200 },
+        "text_line_2": { "y": 300 },
+        "text_line_3": { "y": 400 },
+        "wide_image_bottom": { "y": 700, "width": 1760 }
+      },
+      "why_forbidden": "Boring, dated, wastes horizontal space, looks amateur",
+      "correct_replacement": "Use split-screen with image LEFT or RIGHT instead!"
+    },
     "bullet_points": {
       "description": "Classic list format",
       "typography": {

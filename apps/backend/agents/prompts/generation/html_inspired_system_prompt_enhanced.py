@@ -364,6 +364,7 @@ POSITIONING: Left half (x=80, width=880) OR Right half (x=960, width=880)
 4. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
 5. Use props.primaryColor, props.secondaryColor, props.accentColor (auto-injected!)
 6. NEVER put variable declarations in the parameter destructuring block
+7. TEXT STRINGS: Use single quotes; ESCAPE apostrophes: 'it\'s' 'don\'t' 'user\'s' 'Reese\'s'
 
 TEMPLATE:
 {

@@ -874,6 +874,7 @@ class CombinedImageService:
         color: Optional[str] = None,
         locale: Optional[str] = None,
     ) -> Dict[str, Any]:
+        print(f"🔍 [CombinedImageService] search_images called with query: '{query}', per_page: {per_page}")
         """Search images with provider preference and aggregation.
 
         If IMAGE_SEARCH_PROVIDER == 'perplexity', we will fetch from Perplexity and SerpAPI concurrently,
@@ -958,11 +959,13 @@ class CombinedImageService:
 
             # Cap to an expanded size (favor more Perplexity)
             cap = max(per_page * 3, per_page + 20)
+            print(f"   ✅ [CombinedImageService] Returning {len(ordered[:cap])} images (perplexity: {len(pplx_imgs)}, serpapi: {len(serp_imgs)})")
             return {"photos": ordered[:cap], "total_results": len(ordered)}
 
         # Non-aggregation path
         if getattr(self.serpapi, 'is_available', False):
-            return await self.serpapi.search_images(
+            print(f"   📡 [CombinedImageService] Using SerpAPI only (non-aggregation path)")
+            results = await self.serpapi.search_images(
                 query=query,
                 per_page=per_page,
                 page=page,
@@ -971,8 +974,13 @@ class CombinedImageService:
                 color=color,
                 locale=locale
             )
+            print(f"   ✅ [CombinedImageService] SerpAPI returned {len(results.get('photos', []))} images")
+            return results
 
         logger.warning(f"No web image provider available for query: {query}")
+        print(f"   ❌ [CombinedImageService] WARNING: No web image provider available for query: {query}")
+        print(f"   - SerpAPI is_available: {getattr(self.serpapi, 'is_available', False)}")
+        print(f"   - Perplexity is_available: {getattr(self.perplexity, 'is_available', False)}")
         return {"photos": [], "total_results": 0}
     
     def _extract_topics_from_text(self, text: str) -> List[str]:
@@ -1326,6 +1334,7 @@ class CombinedImageService:
         provider = (IMAGE_SEARCH_PROVIDER or 'serpapi').lower()
         if provider == 'perplexity' and getattr(self.perplexity, 'is_available', False):
             logger.info(f"Using Perplexity for topic: {topic}")
+            print(f"🔍 [IMAGE SEARCH] Using Perplexity for topic: {topic}")
             search_results = await self.perplexity.search_images(
                 query=topic,
                 per_page=num_images * 3,
@@ -1333,11 +1342,15 @@ class CombinedImageService:
             )
         elif getattr(self.serpapi, 'is_available', False):
             logger.info(f"Using Google Images (SerpAPI) for topic: {topic}")
+            print(f"🔍 [IMAGE SEARCH] Using Google Images (SerpAPI) for topic: {topic}")
+            print(f"   - SerpAPI is_available: {self.serpapi.is_available}")
+            print(f"   - Requesting {num_images * 3} images")
             search_results = await self.serpapi.search_images(
                 query=topic,
                 per_page=num_images * 3,
                 orientation='landscape'
             )
+            print(f"   - SerpAPI returned {len(search_results.get('photos', []))} images")
             
             if search_results and search_results.get('photos'):
                 google_results = search_results['photos']
@@ -1445,8 +1458,18 @@ class CombinedImageService:
         logger.info(f"🖼️ Deck-wide topics: {deck_wide_topics}")
         
         if deck_wide_topics:
-            deck_wide_topics = deck_wide_topics[:10]  # Limit to 10 topics
-            logger.info(f"🖼️ Deck-wide topics: {deck_wide_topics}")
+            # Handle both list (old format) and dict (new per-slide format)
+            if isinstance(deck_wide_topics, dict):
+                # Convert dict values to flat list of all terms
+                all_terms = []
+                for slide_terms in deck_wide_topics.values():
+                    if isinstance(slide_terms, list):
+                        all_terms.extend(slide_terms)
+                deck_wide_topics = all_terms[:10]  # Limit to 10 topics
+                logger.info(f"🖼️ Converted per-slide dict to flat list: {deck_wide_topics}")
+            elif isinstance(deck_wide_topics, list):
+                deck_wide_topics = deck_wide_topics[:10]  # Limit to 10 topics
+                logger.info(f"🖼️ Using flat list of topics: {deck_wide_topics}")
             
             logger.info(f"Using {len(deck_wide_topics)} deck-wide topics from theme extraction")
             

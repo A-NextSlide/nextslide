@@ -27,6 +27,7 @@ import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { FontSize } from '@/extensions/FontSize';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
 import { getSlideContainerWidth, isInEditMode } from '../../utils/slideContainerUtils';
+import { usePresentationStore } from '@/stores/presentationStore';
 import '../../styles/TiptapStyles.css';
 
 interface TiptapTextBlockRendererProps extends RendererProps {
@@ -91,12 +92,16 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const NATIVE_WIDTH = 1920; // Width at which fonts are designed by backend
   const DEFAULT_SLIDE_DISPLAY_WIDTH = 950; // Default rendered width
 
+  // Check if we're in presentation mode - if so, don't scale fonts
+  // In presentation mode, the entire slide is CSS-scaled, so text should not be separately scaled
+  const isPresenting = usePresentationStore(state => state.isPresenting);
+
   const [slideWidth, setSlideWidth] = React.useState(() => 
     isThumbnail ? NATIVE_WIDTH : getSlideContainerWidth(DEFAULT_SLIDE_DISPLAY_WIDTH)
   );
 
   useEffect(() => {
-    if (isThumbnail) return;
+    if (isThumbnail || isPresenting) return;
 
     let resizeObserver: ResizeObserver | null = null;
     let mounted = true;
@@ -132,10 +137,11 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       }
       window.removeEventListener('resize', updateWidth);
     };
-  }, [isThumbnail]);
+  }, [isThumbnail, isPresenting]);
 
   // Scale factor converts from backend's 1920px design to actual display width
-  const scaleFactor = isThumbnail ? 1 : slideWidth / NATIVE_WIDTH;
+  // In presentation mode or thumbnails, don't scale (entire slide is CSS-scaled)
+  const scaleFactor = (isThumbnail || isPresenting) ? 1 : slideWidth / NATIVE_WIDTH;
   const finalFontSize = Math.round((props.fontSize || fontSize) * scaleFactor);
   const finalLetterSpacing = Math.round(letterSpacing * scaleFactor);
 

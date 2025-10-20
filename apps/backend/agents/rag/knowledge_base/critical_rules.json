@@ -90,7 +90,7 @@
     "dynamic_font_sizing": "Calculate: container_width / (character_count * 0.6) for optimal size. NEVER truncate, always fit.",
     "height_calculation": "Single line: fontSize × 1.2, Multi-line: fontSize × lines × 1.3, Always add 10-20% buffer",
     "chart_positioning": "ALWAYS left (x=80) or right (x=960) half, NEVER center, 880px wide",
-    "chart_legends": "ALWAYS false for bar/column/pie charts, only show for multi-series line charts",
+    "chart_legends": "Show legends for multi-series charts (multiple lines, bars, or areas). ALWAYS false for single-series bar/column/pie. Set showLegend=true when chart has 2+ series to identify them.",
     "overlap_prevention": "Minimum 40px gap between all components, 60px for charts/images",
     "icon_placement": "Icons NEXT TO text (x: text.x - 60), NEVER overlapping. Align vertically centered with text.",
     "edge_margins": "Text must be 80px from edges, charts 60px, images can be full-bleed",
@@ -178,7 +178,7 @@
     "size_limits": {
       "max_text_height": "fontSize × lines × 1.3 + 20px buffer",
       "max_component_width": 1840,
-      "charts": "width=880, height=600-800",
+      "charts": "width=880, height=500-700 (adaptive, max based on Y position)",
       "images": "maintain aspect ratio, max-height=800"
     }
   },
@@ -334,12 +334,28 @@
       ]
     },
     "layout_patterns": {
-      "full_bleed": "Hero images that command attention",
+      "CRITICAL_INSTRUCTION": "USE VARIETY! Rotate through 4-5 different layouts across the deck!",
+      "MODERN_SIDE_BY_SIDE_80_PERCENT": {
+        "description": "PRIMARY - Image LEFT or RIGHT of text",
+        "split_image_right": "Text left (x=120-900), Image right (x=1000-1840)",
+        "split_image_left": "Image left (x=80-880), Text right (x=960-1840)",
+        "usage": "80% of slides with images should use this"
+      },
+      "PANORAMIC_BOTTOM_20_PERCENT": {
+        "description": "RARE - Wide image at bottom",
+        "layout": "Text top (y=160-500), Panoramic image bottom (y=680, width=1760, height=340)",
+        "usage": "ONLY for landscapes/cityscapes with aspect ratio >2:1"
+      },
+      "FORBIDDEN_VERTICAL_STACKING": {
+        "DO_NOT_USE": "Text stacked vertically with wide image at bottom",
+        "why": "Boring, dated, looks like PowerPoint 2003",
+        "fix": "Use side-by-side split-screen instead!"
+      },
+      "full_bleed": "Hero images that command attention (title slides only)",
       "split_screen": "50/50 image and content balance",
-      "asymmetric": "2/3 or 1/3 dynamic compositions",
+      "asymmetric": "60/40 or 40/60 dynamic compositions",
       "collage": "Multiple images creatively arranged",
-      "layered": "Overlapping with transparency for depth",
-      "scattered": "Polaroid-style casual arrangement"
+      "layered": "Overlapping with transparency for depth"
     }
   },
   "creative_layouts": {
@@ -545,7 +561,24 @@
       "2x2 grid of stat cards (each 400x250)",
       "Large stat card left, small chart right for context",
       "Stats above fold, chart/viz as supporting element below"
-    ]
+    ],
+    "LAYOUT_VARIETY_EXAMPLES": {
+      "deck_with_12_slides_example": {
+        "slide_1": "Title - classic_center (no image)",
+        "slide_2": "Content - split_screen_image_right (text left, image right)",
+        "slide_3": "Content - split_screen_image_left (image left, text right)",
+        "slide_4": "Data - chart left, insights right (no background image)",
+        "slide_5": "Content - split_screen_image_right (text left, image right)",
+        "slide_6": "Stat - hero number center (no image)",
+        "slide_7": "Content - text_heavy_60_40 (text 60%, small image 40%)",
+        "slide_8": "Content - split_screen_image_left (image left, text right)",
+        "slide_9": "Content - panoramic_bottom (RARE - wide landscape only)",
+        "slide_10": "Quote - text only (no image)",
+        "slide_11": "Content - split_screen_image_right (text left, image right)",
+        "slide_12": "Conclusion - text only or split with contact image"
+      },
+      "instructions": "ROTATE layouts! Don't use split_screen_image_right for ALL slides. Mix it up!"
+    }
   },
   "stat_emphasis": {
     "detection": "Look for numbers, percentages, dollar amounts, metrics, KPIs",
@@ -2017,7 +2050,7 @@
     "size_limits": {
       "max_text_height": "fontSize × lines × 1.3 + 20px buffer",
       "max_component_width": 1840,
-      "charts": "width=880, height=600-800",
+      "charts": "width=880, height=500-700 (adaptive, max based on Y position)",
       "images": "maintain aspect ratio, max-height=800"
     }
   }

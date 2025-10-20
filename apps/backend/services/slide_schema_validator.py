@@ -239,12 +239,22 @@ class SlideSchemaValidator:
                     props['width'] = 880
                     self.fixes_applied += 1
         
-        # Ensure optimal height range
-        if 'height' not in props or props['height'] < 600:
-            props['height'] = 700
+        # Ensure optimal height range with adaptive sizing
+        # Calculate max height based on Y position to avoid overflow
+        y_position = props.get('position', {}).get('y', 200)
+        max_safe_height = 1080 - y_position - 100  # Leave 100px bottom margin
+        
+        if 'height' not in props or props['height'] < 500:
+            # Default to 600px for good chart visibility
+            props['height'] = min(600, max_safe_height)
+            self.fixes_applied += 1
+        elif props['height'] > max_safe_height:
+            # Cap height to prevent overflow
+            props['height'] = max_safe_height
             self.fixes_applied += 1
         elif props['height'] > 800:
-            props['height'] = 800
+            # Hard cap at 800px
+            props['height'] = min(800, max_safe_height)
             self.fixes_applied += 1
             
         # Ensure required chartType

@@ -22,6 +22,7 @@ import TextStyle from '@tiptap/extension-text-style';
 import Link from '@tiptap/extension-link';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { usePresentationStore } from '@/stores/presentationStore';
 import '../../styles/TiptapStyles.css';
 import { Plus, Minus } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -108,12 +109,15 @@ export const renderTable: RendererFunction = (props) => {
     hoverEffect,
   } = finalTableStyles;
 
+  // Check if we're in presentation mode
+  const isPresenting = usePresentationStore(state => state.isPresenting);
+
   // Scale pixel-based table metrics to match slide scale in editor view.
-  // Keep thumbnails unscaled (transform handles it there).
+  // Keep thumbnails and presentation mode unscaled (transform handles it there).
   const [pixelScale, setPixelScale] = useState(1);
 
   useEffect(() => {
-    if (!containerRef?.current) return;
+    if (!containerRef?.current || isThumbnail || isPresenting) return;
     const slideContainer = containerRef.current.closest('.slide-container') as HTMLElement | null;
     if (!slideContainer) return;
 
@@ -131,9 +135,9 @@ export const renderTable: RendererFunction = (props) => {
     const ro = new ResizeObserver(() => computeScale());
     ro.observe(slideContainer);
     return () => ro.disconnect();
-  }, [containerRef]);
+  }, [containerRef, isThumbnail, isPresenting]);
 
-  const effectivePixelScale = isThumbnail ? 1 : pixelScale;
+  const effectivePixelScale = (isThumbnail || isPresenting) ? 1 : pixelScale;
 
   // State management
   const [isDragging, setIsDragging] = useState(false);

@@ -24,14 +24,27 @@ export function transformChartData(data: any, chartType: ChartType): ChartData {
     'data' in arrayData[0] &&
     Array.isArray((arrayData[0] as any).data);
   
+  // Check if data has grouping keys for multi-series (regardless of chart type)
+  const hasGroupingKey = !isSeriesData && arrayData.some((point: any) => 
+    point && typeof point === 'object' &&
+    (point.series !== undefined || point.group !== undefined || point.dataset !== undefined)
+  );
+  
   // Transform based on target chart type
   switch (chartType) {
     case 'bar':
     case 'column':
+      // Bar/column can be single-series OR multi-series
+      if (hasGroupingKey || isSeriesData) {
+        return transformToSeries(arrayData, isSeriesData);
+      }
+      return transformToDataPoints(arrayData, isSeriesData);
+    
     case 'pie':
     case 'funnel':
     case 'pyramid':
     case 'gauge':
+      // These are always single-series
       return transformToDataPoints(arrayData, isSeriesData);
     
     case 'line':
@@ -46,6 +59,7 @@ export function transformChartData(data: any, chartType: ChartType): ChartData {
     case 'errorbar':
     case 'heatmap':
     case 'streamgraph':
+      // These are always series-based (can be single or multi)
       return transformToSeries(arrayData, isSeriesData);
     
     // Special cases that need custom handling
@@ -190,12 +204,56 @@ function transformToSeries(data: any[], isSeriesFormat: boolean): ChartSeries[] 
     });
   }
   
-  // Data is in data point format, convert to a single series
+  // Data is in data point format - check if it has grouping keys for multi-series
   // Filter out any invalid data items first
   const validData = Array.isArray(data) ? data.filter(item => item && typeof item === 'object') : [];
   
   if (validData.length === 0) return [{ id: 'Series', data: [] }];
   
+  // Check if data has a grouping key (series, group, or dataset) for multi-series
+  const hasGroupingKey = validData.some(point => 
+    point.series !== undefined || point.group !== undefined || point.dataset !== undefined
+  );
+
+  if (hasGroupingKey) {
+    // Group data by series/group/dataset field
+    const seriesMap = new Map<string, any[]>();
+    
+    validData.forEach(item => {
+      const seriesName = item.series || item.group || item.dataset || 'Series 1';
+      if (!seriesMap.has(seriesName)) {
+        seriesMap.set(seriesName, []);
+      }
+      
+      // Extract x value (check for x, name, or id)
+      const xValue = item.x || item.name || item.id || 'Unknown';
+      
+      // Ensure y value is a number and can never be NaN
+      let yValue = 0;
+      if (typeof item.y === 'number' && !isNaN(item.y)) {
+        yValue = item.y;
+      } else if (typeof item.y === 'string') {
+        const parsed = parseFloat(item.y);
+        yValue = isNaN(parsed) ? 0 : parsed;
+      } else if (typeof item.value === 'number' && !isNaN(item.value)) {
+        yValue = item.value;
+      } else if (typeof item.value === 'string') {
+        const parsed = parseFloat(item.value);
+        yValue = isNaN(parsed) ? 0 : parsed;
+      }
+      
+      const { x, name, id, value, color, series, group, dataset, ...rest } = item;
+      seriesMap.get(seriesName)!.push({ x: xValue, y: yValue, ...rest } as any);
+    });
+    
+    // Convert map to series array
+    return Array.from(seriesMap.entries()).map(([seriesName, points]) => ({
+      id: seriesName,
+      data: points
+    }));
+  }
+  
+  // Single series - no grouping key
   return [{
     id: 'Series',
     data: validData.map(item => {

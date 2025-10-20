@@ -42,6 +42,42 @@ class OutlinePlanner:
         
         logger.info(f"[PLAN] Creating plan with slide_count: {options.slide_count}, detail_level: {options.detail_level}")
         
+        # 🎉 DETECT PRESENTATION TYPE from user prompt
+        prompt_lower = options.prompt.lower()
+        
+        # Personal/creative indicators
+        personal_creative_indicators = [
+            'birthday', 'party', 'celebration', 'anniversary', 'silly', 'fun',
+            'pikachu', 'pokemon', 'mario', 'disney', 'cartoon', 'character',
+            'hobby', 'personal', 'my story', 'my journey', 'family', 'friend',
+            'wedding', 'baby shower', 'retirement party', 'surprise', 'gift',
+            'vacation', 'travel', 'adventure', 'pet', 'recipe', 'cooking',
+            'craft', 'diy', 'art project', 'scrapbook', 'slideshow for'
+        ]
+        
+        # How-to/tutorial indicators
+        howto_indicators = [
+            'how to', 'guide to', 'tutorial', 'step by step', 'learn to',
+            'beginner guide', 'getting started', 'introduction to', 'basics of'
+        ]
+        
+        # Educational indicators
+        educational_indicators = [
+            'education', 'school', 'student', 'teacher', 'learning', 'lesson',
+            'curriculum', 'course', 'module', 'training', 'workshop'
+        ]
+        
+        detected_context = "business"  # default
+        if any(indicator in prompt_lower for indicator in personal_creative_indicators):
+            detected_context = "personal"
+            logger.info(f"[PLANNER] 🎉 Detected PERSONAL/CREATIVE topic - will avoid charts and technical content")
+        elif any(indicator in prompt_lower for indicator in howto_indicators):
+            detected_context = "informational"
+            logger.info(f"[PLANNER] 📚 Detected HOW-TO/TUTORIAL topic - will focus on steps and practical content")
+        elif any(indicator in prompt_lower for indicator in educational_indicators):
+            detected_context = "educational"
+            logger.info(f"[PLANNER] 🎓 Detected EDUCATIONAL topic")
+        
         # Log the prompt to see if file context is included
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"[PLANNER] Prompt length: {len(options.prompt)} chars")
@@ -99,7 +135,7 @@ class OutlinePlanner:
                 if 'slide_types' not in raw or not isinstance(raw.get('slide_types'), list):
                     raw['slide_types'] = self._infer_slide_types(raw['slides'])
                 if 'context' not in raw:
-                    raw['context'] = 'business'
+                    raw['context'] = detected_context  # Use detected context instead of default "business"
                 result = raw
             
             # Do not adjust counts in code; rely on prompt compliance
@@ -146,23 +182,30 @@ DO NOT generate more or fewer slides."""
             elif options.detail_level == 'detailed':
                 enforcement = "\nGUIDELINE: Because detail level is 'detailed', generate 8 or more slides as appropriate (aim 8-12 unless the topic clearly merits more)."
         
+        # 🎯 Add context hint based on detected type
+        context_hint = ""
+        if detected_context == "personal":
+            context_hint = f"\n\n🎉 CRITICAL: This is a PERSONAL/CREATIVE presentation (birthday, party, silly slideshow, etc.).\n- Keep it SHORT, FUN, and LIGHT\n- NO charts, statistics, or technical content\n- NO agenda or team slides\n- Focus on fun facts, stories, and entertaining content\n- Use {slide_hint} slides or fewer"
+        elif detected_context == "informational":
+            context_hint = f"\n\n📚 CRITICAL: This is a HOW-TO/TUTORIAL presentation.\n- Keep it PRACTICAL and step-focused\n- NO charts unless explicitly requested\n- NO agenda or team slides\n- Focus on steps, tips, examples, and practical guidance"
+        
         simplified_prompt = f"""Create a presentation outline for: {options.prompt}
                     
 Detail level: {options.detail_level}
 Style: {options.style_context or 'Professional'}
-Slides needed: {slide_count_info}{special_instruction}{enforcement}
+Slides needed: {slide_count_info}{special_instruction}{enforcement}{context_hint}
 
 Return JSON with EXACTLY {options.slide_count if options.slide_count else 'the appropriate number of'} slides:
 - title: The presentation title
 - slides: Array with EXACTLY {options.slide_count if options.slide_count else 'the right number of'} slide titles
 - slide_types: Array with EXACTLY {options.slide_count if options.slide_count else 'the same number of'} types
-- context: business, educational, personal, or informational
+- context: {detected_context} (use this value - it was auto-detected from the topic)
 
 CRITICAL FLOW RULES:
 {self._get_flow_rules(options.slide_count, options.detail_level)}
 
 CONTEXT GUARDRAILS:
-- If the topic is PERSONAL/CREATIVE or GENERAL/HOW-TO (e.g., recipes, hobbies, crafts, lifestyle):
+- If the topic is PERSONAL/CREATIVE or GENERAL/HOW-TO (e.g., recipes, hobbies, crafts, lifestyle, birthday parties):
   - AVOID statistics, market sizing, ROI, KPIs, or charts unless the user explicitly asks
   - Do NOT add agenda/team slides; keep it fun, story-driven, and practical
   - Focus on steps, tips, examples, anecdotes, flavors/textures/tools, and creative ideas
@@ -199,6 +242,8 @@ Make it specific to the topic, not generic."""
                 raise ValueError("Missing slides in response")
             if 'title' not in result:
                 result['title'] = "Presentation Outline"
+            if 'context' not in result:
+                result['context'] = detected_context  # Use detected context
             if 'slide_types' not in result:
                 result['slide_types'] = self._infer_slide_types(result['slides'])
             else:
@@ -245,6 +290,14 @@ Make it specific to the topic, not generic."""
     
     def _create_fallback_plan(self, options: OutlineOptions) -> Dict[str, Any]:
         """Create a fallback plan when AI fails"""
+        # Detect context for fallback as well
+        prompt_lower = options.prompt.lower()
+        personal_creative_indicators = [
+            'birthday', 'party', 'celebration', 'silly', 'fun', 'pikachu', 'pokemon',
+            'mario', 'disney', 'cartoon', 'hobby', 'personal', 'slideshow for'
+        ]
+        detected_context = "personal" if any(ind in prompt_lower for ind in personal_creative_indicators) else "business"
+        
         title = "Presentation Outline"
         slides = []
         slide_types = []
@@ -276,7 +329,7 @@ Make it specific to the topic, not generic."""
             "title": title,
             "slides": slides,
             "slide_types": slide_types,
-            "context": "business"
+            "context": detected_context  # Use detected context instead of hardcoded "business"
         }
     
     def _infer_slide_types(self, slides: List[str]) -> List[str]:

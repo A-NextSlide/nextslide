@@ -121,6 +121,8 @@ function render({props, state, updateState, id, isThumbnail, containerWidth, con
 6. Use React.createElement(type, {style: {}}, children)
 7. Style uses camelCase: fontSize, fontWeight, backgroundColor
 8. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
+9. TEXT STRINGS: Use single quotes for all strings; ESCAPE apostrophes with backslash
+   ✅ 'Reese\'s' 'don\'t' 'it\'s' 'user\'s' | ❌ 'Reese's' (breaks string!)
 
 For loops/multiple items:
 function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {

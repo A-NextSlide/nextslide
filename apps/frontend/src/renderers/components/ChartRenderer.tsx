@@ -163,6 +163,18 @@ export const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({
   const themeAccent = currentTheme?.accent1 || '#4287f5';
   const themeBg = currentTheme?.page?.backgroundColor || '#ffffff';
   const themeText = currentTheme?.typography?.paragraph?.color || '#000000';
+  
+  // Determine effective background for the chart (for theme detection)
+  // If chart background is transparent, use slide background
+  const chartBg = component.props?.backgroundColor;
+  const effectiveChartBg = (chartBg && 
+                      chartBg !== 'transparent' && 
+                      chartBg !== '#00000000' &&
+                      chartBg !== 'rgba(0,0,0,0)' &&
+                      chartBg !== 'rgba(0, 0, 0, 0)') 
+    ? chartBg 
+    : themeBg;
+  
   const themeDefaultPalette = useMemo(() => {
     try {
       const data = (component.props && Array.isArray(component.props.data)) ? component.props.data : [];
@@ -170,27 +182,20 @@ export const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({
         ? (Array.isArray((data as any)[0]?.data) ? (data as any).length : (data as any).length)
         : 8;
       
-      // Use chart's background if set, otherwise use theme background
-      const chartBg = component.props?.backgroundColor;
-      const effectiveBg = (chartBg && 
-                          chartBg !== 'transparent' && 
-                          chartBg !== '#00000000' &&
-                          chartBg !== 'rgba(0,0,0,0)' &&
-                          chartBg !== 'rgba(0, 0, 0, 0)') 
-        ? chartBg 
-        : themeBg;
-      
-      return generateChartColorPalette(themeAccent, effectiveBg, Math.max(3, Math.min(24, inferredCount)), themeText);
+      return generateChartColorPalette(themeAccent, effectiveChartBg, Math.max(3, Math.min(24, inferredCount)), themeText);
     } catch {
       return generateChartColorPalette(themeAccent, themeBg, 8, themeText);
     }
-  }, [component.props, themeAccent, themeBg, themeText]);
+  }, [component.props, themeAccent, effectiveChartBg, themeText]);
   
   // Create stable component with the simplified props - keeping only one instance
   const stableComponent = useMemo(() => {
     // Apply thumbnail settings directly in the props
     const compiledProps: any = {
       ...safeProps,
+      // Pass the effective background color for theme detection
+      // This ensures charts with transparent backgrounds use the slide background for theming
+      backgroundColor: effectiveChartBg,
       // For thumbnails, pass through the isThumbnail flag explicitly
       isThumbnail,
       // For thumbnails, add additional suppression flags
@@ -235,7 +240,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = React.memo(({
       ...component,
       props: compiledProps
     };
-  }, [component, safeProps, isThumbnail, shouldDisableAnimation, themeDefaultPalette]);
+  }, [component, safeProps, isThumbnail, shouldDisableAnimation, themeDefaultPalette, effectiveChartBg]);
   
   // Add explicit flags to prevent re-renders on edit mode
   // This is run on every render to ensure the flags are set

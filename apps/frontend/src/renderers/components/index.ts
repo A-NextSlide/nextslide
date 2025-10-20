@@ -6,4 +6,6 @@ export { renderCustomComponent } from './CustomComponentRenderer';
 export { renderImage } from './ImageRenderer';
 export { renderVideo } from './VideoRenderer';
 export { renderBackground } from './BackgroundRenderer';
-export { renderChart } from './ChartRenderer'; 
+export { renderChart } from './ChartRenderer';
+export { renderMath } from './MathRenderer';
+export { renderDiagram } from './DiagramRenderer'; 

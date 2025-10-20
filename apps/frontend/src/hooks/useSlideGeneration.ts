@@ -585,7 +585,61 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         window.__slideImageCache = {};
       }
       
-      if (slideData.images_by_topic && Object.keys(slideData.images_by_topic).length > 0) {
+      // NEW: Handle images_by_search_term structure (per-component terms)
+      if (slideData.images_by_search_term && Object.keys(slideData.images_by_search_term).length > 0) {
+        const cacheData = {
+          slideId: slideData.slide_id,
+          slideIndex: slideData.slide_index,
+          slideTitle: slideData.slide_title,
+          search_terms: slideData.search_terms || [],
+          images_by_search_term: slideData.images_by_search_term,
+          images: [],
+          topics: slideData.search_terms || []
+        };
+        
+        // Flatten all images for backward compatibility
+        const allImages: any[] = [];
+        const seenUrls = new Set<string>();
+        
+        Object.entries(slideData.images_by_search_term).forEach(([searchTerm, termImages]: [string, any]) => {
+          if (Array.isArray(termImages)) {
+            termImages.forEach((img: any) => {
+              if (!seenUrls.has(img.url)) {
+                seenUrls.add(img.url);
+                allImages.push(processImageUrls({
+                  ...img,
+                  topic: searchTerm,
+                  searchQuery: searchTerm
+                }));
+              }
+            });
+          }
+        });
+        
+        cacheData.images = allImages;
+        
+        // Store in cache
+        window.__slideImageCache[slideData.slide_id] = cacheData;
+        window.__slideImageCache[`slide_index_${slideData.slide_index}`] = cacheData;
+        
+        console.log(`[ImageCache] ✅ Cached ${allImages.length} images for slide ${slideData.slide_id} (index ${slideData.slide_index}) across ${slideData.search_terms?.length || 0} search terms`);
+        console.log(`[ImageCache] Slide-specific terms:`, slideData.search_terms);
+        console.log(`[ImageCache] Cache key:`, slideData.slide_id);
+        
+        // Dispatch events with slide-specific data
+        window.dispatchEvent(new CustomEvent('slide_images_available', {
+          detail: {
+            slideId: slideData.slide_id,
+            slideIndex: slideData.slide_index,
+            images: allImages,
+            searchTerms: slideData.search_terms,
+            // IMPORTANT: Mark this as slide-specific
+            isSlideSpecific: true
+          }
+        }));
+      }
+      // LEGACY: Handle old images_by_topic structure
+      else if (slideData.images_by_topic && Object.keys(slideData.images_by_topic).length > 0) {
         // Process and store images
         const cacheData = {
           slideId: slideData.slide_id,
@@ -1566,7 +1620,11 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     // Handle slide_images_found event (images assigned to a specific slide)
     if (event.type === 'slide_images_found' && event.data) {
       const { slide_id, slide_index, images_count, slide_title, images } = event.data;
-      console.log(`[SlideImages] Slide "${slide_title}" has ${images_count} images`);
+      console.log(`[SlideImages] ✅✅✅ RECEIVED slide_images_found event for slide "${slide_title}"`);
+      console.log(`[SlideImages]    - slide_id: ${slide_id}`);
+      console.log(`[SlideImages]    - slide_index: ${slide_index}`);
+      console.log(`[SlideImages]    - images_count: ${images_count}`);
+      console.log(`[SlideImages]    - images.length: ${images?.length || 0}`);
       
       if (images && images.length > 0 && slide_id) {
         // Initialize cache if needed
@@ -1617,7 +1675,9 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
           images_by_topic: imagesByTopic
         };
         
-        console.log(`[SlideImages] Cached ${processedImages.length} images for slide ${slide_id}`);
+        console.log(`[SlideImages] ✅ Successfully cached ${processedImages.length} images for slide ${slide_id}`);
+        console.log(`[SlideImages]    - Cache key: ${slide_id}`);
+        console.log(`[SlideImages]    - Total cache entries: ${Object.keys(window.__slideImageCache).length}`);
         
         // Dispatch event to notify UI
         window.dispatchEvent(new CustomEvent('slide_images_available', {

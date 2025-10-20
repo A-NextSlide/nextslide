@@ -77,6 +77,8 @@ class SlideContent(BaseModel):
     citationsFooter: Optional[Dict[str, Any]] = None  # { showThinDivider: bool, urls: string[] }
     # New: structured two-column comparison content (for side-by-side layout)
     comparison: Optional[Dict[str, Any]] = None  # { layout?: string, leftLabel?: string, rightLabel?: string, leftBullets: string[], rightBullets: string[] }
+    # AI-suggested image prompt extracted from [IMAGE: ...] tags in outline
+    suggestedImagePrompt: Optional[str] = None
 
 
 class OutlineResult(BaseModel):
@@ -107,6 +109,11 @@ class ChartDataPoint(BaseModel):
     x: str = Field(default="", description="X-axis value (e.g., year as string)")
     y: float = Field(default=0.0, description="Y-axis numeric value")
     
+    # For multi-series support (IMPORTANT: Add series/group/dataset to enable multi-series charts)
+    series: Optional[str] = Field(default=None, description="Series name for multi-series charts (e.g., 'Revenue', 'Cost', 'Actual', 'Budget')")
+    group: Optional[str] = Field(default=None, description="Alternative grouping field for multi-series")
+    dataset: Optional[str] = Field(default=None, description="Alternative dataset field for multi-series")
+    
     # For complex nested data (legacy support)
     id: str = Field(default="", description="Unique identifier")
 
@@ -118,5 +125,21 @@ class TypedSlideResponse(BaseModel):
     has_statistics: bool = Field(description="True if content mentions quantitative data that would benefit from visualization")
     requires_chart: bool = Field(default=False, description="True if the slide contains categories, distributions, comparisons, trends, or any data that would be clearer with visualization. Examples: market segments, process steps, time series, percentages, rankings, or any numbered list that represents data")
     chart_type: str = Field(default="", description="Chart type if requires_chart is true")
-    chart_data: List[ChartDataPoint] = Field(default_factory=list, description="Chart data with REAL category names and values from the content. Use actual names like 'Q1 Revenue', 'Mobile Devices', 'Photosynthesis Rate' NOT generic labels like 'Category A'")
+    chart_data: List[ChartDataPoint] = Field(
+        default_factory=list, 
+        description="""Chart data with REAL category names and values from the content. Use actual names like 'Q1 Revenue', 'Mobile Devices', 'North America' NOT generic labels like 'Category A'.
+        
+        FOR SINGLE-SERIES CHARTS (bar, pie, single line):
+        Use simple format: [{"name": "Category", "value": 450}, ...]
+        
+        FOR MULTI-SERIES CHARTS (multi-line, multi-bar/column, area):
+        Add 'series' field to group data points: [{"name": "Q1 2023", "value": 450, "series": "Revenue"}, {"name": "Q1 2023", "value": 320, "series": "Cost"}, ...]
+        OR use 'x' and 'y' with 'series': [{"x": "Q1 2023", "y": 450, "series": "Actual"}, {"x": "Q1 2023", "y": 420, "series": "Budget"}, ...]
+        
+        Multi-series examples:
+        - Revenue vs Cost by Region: Use 'series' to distinguish metrics
+        - Actual vs Budget trends: Use 'series' to compare scenarios
+        - Multi-product performance: Use 'series' for each product line
+        """
+    )
     chart_title: str = Field(default="", description="Chart title that describes what the data shows") 

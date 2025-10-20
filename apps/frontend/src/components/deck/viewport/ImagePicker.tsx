@@ -44,6 +44,7 @@ interface ImagePickerProps {
   topics?: string[];
   isLoading?: boolean;
   targetAspectRatio?: '16:9' | '1:1' | '9:16';
+  suggestedImagePrompt?: string; // AI-suggested image prompt from outline
 }
 
 const ImagePicker: React.FC<ImagePickerProps> = ({
@@ -56,7 +57,8 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   slideTitle,
   topics = [],
   isLoading = false,
-  targetAspectRatio = '16:9'
+  targetAspectRatio = '16:9',
+  suggestedImagePrompt
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -242,7 +244,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   const [activeTab, setActiveTab] = useState<'recommended' | 'search' | 'upload' | 'generate' | 'recent'>(hasImages ? 'recommended' : 'generate');
 
   // AI Generation state
-  const [generatePrompt, setGeneratePrompt] = useState('');
+  const [generatePrompt, setGeneratePrompt] = useState(suggestedImagePrompt || '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<ImageOption[]>([]);
   

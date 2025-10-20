@@ -389,42 +389,122 @@ class ThemeDirector:
                 font_result = matched
         
         if not font_result:
-            # Use EnhancedFontService for intelligent metadata-based selection
-            try:
-                font_service = EnhancedFontService()
+            # CRITICAL: Check if this is a fun/playful entity (Pikachu, Pokemon, Disney, etc.)
+            # These should get CREATIVE fonts, not boring corporate ones!
+            entity_name = analysis.get('entity_name', '').lower()
+            is_fun_entity = any(keyword in entity_name for keyword in [
+                'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
+                'cartoon', 'game', 'toy', 'character'
+            ])
+            
+            # Check if title/content suggests kids/fun topic
+            title_lower = title.lower()
+            is_fun_topic = any(keyword in title_lower for keyword in [
+                'pikachu', 'pokemon', 'kids', 'children', 'game', 'fun', 'play',
+                'cartoon', 'toy', 'party', 'arcade', 'retro'
+            ])
+            
+            if is_fun_entity or is_fun_topic:
+                # OVERRIDE: Use playful fonts for fun topics!
+                logger.info(f"🎨 FUN TOPIC DETECTED: {entity_name or title} → Using PLAYFUL fonts")
+                print(f"🎨 FUN TOPIC DETECTED: '{entity_name or title}' → Selecting CREATIVE, PLAYFUL fonts")
                 
-                # Extract context from analysis
-                vibe = analysis.get('vibe', 'professional')
-                keywords = []
-                if analysis.get('topic'):
-                    keywords.append(analysis['topic'])
-                if analysis.get('industry'):
-                    keywords.append(analysis['industry'])
-
-                audience = analysis.get('audience') or analysis.get('target_audience')
-
-                # Get intelligent font pair with variety
-                font_pair = font_service.select_font_pair(
-                    deck_title=title,
-                    vibe=vibe,
-                    content_keywords=keywords,
-                    target_audience=audience,
-                    variety_seed=variety_seed
-                )
+                # Get available fonts to validate our choices
+                try:
+                    from models.registry import ComponentRegistry
+                    registry = ComponentRegistry()
+                    available_fonts = RegistryFonts.get_available_fonts(registry)
+                except Exception:
+                    available_fonts = RegistryFonts.get_all_fonts_list()
                 
-                font_result = {
-                    'hero': font_pair['hero'],
-                    'body': font_pair['body'],
-                    'source': font_pair.get('source', 'enhanced_metadata'),
-                    'hero_category': font_pair.get('hero_category'),
-                    'body_category': font_pair.get('body_category')
-                }
-            except Exception as e:
-                # Fallback to safe defaults
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"EnhancedFontService failed, using fallback: {e}")
-                font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
+                available_fonts_lower = {f.lower(): f for f in available_fonts}
+                
+                # Rotate through playful font combinations
+                # ONLY include fonts we know exist in the registry!
+                import hashlib
+                seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
+                
+                playful_combos = [
+                    {'hero': 'Bebas Neue', 'body': 'Nunito'},        # Highly available
+                    {'hero': 'Fredoka', 'body': 'Quicksand'},        # Google fonts
+                    {'hero': 'Righteous', 'body': 'Poppins'},        # Safe combos
+                    {'hero': 'Bungee', 'body': 'Asap'},              # Fun + readable
+                    {'hero': 'Titan One', 'body': 'Cabin'},          # Bold + clean
+                    {'hero': 'Fredoka One', 'body': 'Comic Neue'},   # Playful pair
+                    {'hero': 'Bangers', 'body': 'Rubik'},            # Cartoon style
+                    {'hero': 'Baloo 2', 'body': 'Varela Round'}      # Friendly
+                ]
+                
+                # Validate combo exists, otherwise try next one
+                for attempt in range(len(playful_combos)):
+                    combo_idx = (seed_hash + attempt) % len(playful_combos)
+                    selected_combo = playful_combos[combo_idx]
+                    
+                    hero_exists = selected_combo['hero'].lower() in available_fonts_lower
+                    body_exists = selected_combo['body'].lower() in available_fonts_lower
+                    
+                    if hero_exists and body_exists:
+                        # Get properly cased names from registry
+                        font_result = {
+                            'hero': available_fonts_lower[selected_combo['hero'].lower()],
+                            'body': available_fonts_lower[selected_combo['body'].lower()],
+                            'source': 'fun_topic_override',
+                            'hero_category': 'playful',
+                            'body_category': 'friendly'
+                        }
+                        logger.info(f"✅ Selected playful fonts: Hero={font_result['hero']}, Body={font_result['body']}")
+                        print(f"✅ PLAYFUL FONTS SELECTED: Hero={font_result['hero']}, Body={font_result['body']}")
+                        break
+                    else:
+                        logger.warning(f"⚠️  Combo {combo_idx} has missing fonts: hero_exists={hero_exists}, body_exists={body_exists}")
+                else:
+                    # None of the combos worked, fall back to guaranteed available fonts
+                    logger.warning("⚠️  No playful combos available, using fallback")
+                    font_result = {
+                        'hero': 'Bebas Neue',  # Guaranteed available
+                        'body': 'Poppins',     # Guaranteed available  
+                        'source': 'fun_topic_fallback',
+                        'hero_category': 'bold',
+                        'body_category': 'sans-serif'
+                    }
+                    print(f"⚠️  FALLBACK FONTS: Hero=Bebas Neue, Body=Poppins")
+            else:
+                # Use EnhancedFontService for intelligent metadata-based selection
+                try:
+                    font_service = EnhancedFontService()
+                    
+                    # Extract context from analysis
+                    vibe = analysis.get('vibe', 'professional')
+                    keywords = []
+                    if analysis.get('topic'):
+                        keywords.append(analysis['topic'])
+                    if analysis.get('industry'):
+                        keywords.append(analysis['industry'])
+
+                    audience = analysis.get('audience') or analysis.get('target_audience')
+
+                    # Get intelligent font pair with variety
+                    font_pair = font_service.select_font_pair(
+                        deck_title=title,
+                        vibe=vibe,
+                        content_keywords=keywords,
+                        target_audience=audience,
+                        variety_seed=variety_seed
+                    )
+                    
+                    font_result = {
+                        'hero': font_pair['hero'],
+                        'body': font_pair['body'],
+                        'source': font_pair.get('source', 'enhanced_metadata'),
+                        'hero_category': font_pair.get('hero_category'),
+                        'body_category': font_pair.get('body_category')
+                    }
+                except Exception as e:
+                    # Fallback to safe defaults
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"EnhancedFontService failed, using fallback: {e}")
+                    font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",
@@ -480,12 +560,12 @@ class ThemeDirector:
                 },
                 'typography': {
                     'hero_title': {
-                        'family': font_result.get('hero', 'Montserrat'),
+                        'family': self._validate_font_name(font_result.get('hero', 'Montserrat')),
                         'weight': '700',
                         'size': '48px'
                     },
                     'body_text': {
-                        'family': font_result.get('body', 'Roboto'),
+                        'family': self._validate_font_name(font_result.get('body', 'Poppins')),
                         'weight': '400',
                         'size': '16px'
                     },
@@ -547,12 +627,12 @@ class ThemeDirector:
                 },
                 'typography': {
                     'hero_title': {
-                        'family': font_result.get('hero', 'Montserrat'),
+                        'family': self._validate_font_name(font_result.get('hero', 'Montserrat')),
                         'weight': '700',
                         'size': '48px'
                     },
                     'body_text': {
-                        'family': font_result.get('body', 'Roboto'),
+                        'family': self._validate_font_name(font_result.get('body', 'Poppins')),
                         'weight': '400',
                         'size': '16px'
                     },
@@ -657,10 +737,9 @@ class ThemeDirector:
         analysis: Dict[str, Any]
     ) -> List[str]:
         """
-        Generate smart, concise image search terms for the entire deck.
+        Generate simple, concise image search terms (1-3 words each).
         
-        Returns 8-10 targeted search terms optimized for finding relevant,
-        high-quality images that match the deck's content and vibe.
+        Returns 5-8 specific, concrete search terms optimized for SerpAPI/Google Images.
         """
         from agents.ai.clients import get_client, invoke
         from agents.config import COMPOSER_MODEL
@@ -673,90 +752,45 @@ class ThemeDirector:
         
         # Sample first 5 slide titles for context
         slides = getattr(deck_outline, 'slides', []) or []
-        slide_titles = [
-            f"{i+1}. {getattr(slide, 'title', 'Untitled')}"
-            for i, slide in enumerate(slides[:5])
-        ]
-        slides_context = "\n".join(slide_titles)
+        slide_titles = [getattr(slide, 'title', 'Untitled') for i, slide in enumerate(slides[:5])]
         
-        # Get vibe context if available
-        vibe_context = ""
-        style_prefs = getattr(deck_outline, 'stylePreferences', None)
-        if style_prefs:
-            vibe = getattr(style_prefs, 'vibeContext', None)
-            if vibe:
-                vibe_context = f"\nVibe: {vibe}"
+        # Build simple context
+        context_parts = [f"Deck: {title}"]
+        if analysis.get('brand_name'):
+            context_parts.append(f"Brand: {analysis['brand_name']}")
+        elif analysis.get('entity_name'):
+            context_parts.append(f"Topic: {analysis['entity_name']}")
+        if slide_titles:
+            context_parts.append(f"Slides: {', '.join(slide_titles)}")
         
-        # Build entity/brand context
-        entity_context = ""
-        if analysis.get('is_brand') and analysis.get('brand_name'):
-            entity_context = f"\nBrand: {analysis['brand_name']}"
-        elif analysis.get('is_entity') and analysis.get('entity_name'):
-            entity_context = f"\nEntity/Character: {analysis['entity_name']}"
+        context_text = "\n".join(context_parts)
         
-        prompt_text = f"""Generate DECK-WIDE image search terms for a presentation.
+        prompt_text = f"""Generate 5-8 simple image search terms for Google Images.
 
-Context:
-- Title: {title}
-- User request: {prompt[:200]}{vibe_context}{entity_context}
-- First slides: {slides_context}
-- Total slides: {len(slides)}
+{context_text}
 
-SMART SEARCH STRATEGY:
-1. Identify 3-5 CORE visual subjects that represent the ENTIRE deck (not individual slides)
-2. Add 2-3 recurring elements or objects that appear across multiple slides
-3. Add 1-2 mood/texture/pattern searches that match the deck's vibe
-4. TOTAL: 8-10 terms MAX
+REQUIREMENTS:
+1. Each term must be 1-3 words ONLY
+2. Use specific, concrete nouns (objects, places, things you can photograph)
+3. If brand/character mentioned, include it
+4. NO abstract concepts, NO verbs, NO adjectives alone
+5. Think: "What would I type into Google Images to find good photos for this?"
 
-STRICT RULES:
-✅ GOOD - Use nouns and concrete phrases (e.g., "Tesla Model 3", "data visualization", "mountain landscape")
-✅ GOOD - 1-3 words per term, NO sentences
-✅ GOOD - Prefer specific brand/character names when relevant (e.g., "Pikachu", "Apple logo")
-✅ GOOD - Specific objects and scenes (e.g., "solar panel", "business meeting", "ocean sunset")
+GOOD EXAMPLES:
+- "Tesla car"
+- "solar panel"
+- "business meeting"
+- "ocean waves"
+- "Pikachu"
+- "laptop coding"
 
-❌ BAD - Avoid vague/abstract words: introduction, agenda, overview, info, slide, content, idea, concept
-❌ BAD - Avoid generic single words: technology, data, business, power, inside, unlock, great, cool
-❌ BAD - Avoid single colors unless brand-specific (e.g., "blue" is bad, "Tiffany blue" is good)
-❌ BAD - Avoid verbs and adjective-only terms (e.g., "amazing", "great", "powerful")
-❌ BAD - No presentation jargon (e.g., "callout", "summary", "section")
+BAD EXAMPLES:
+- "introduction to our company" (too long, abstract)
+- "powerful" (adjective only)
+- "overview" (abstract)
+- "data" (too generic)
 
-OUTPUT FORMAT:
-Return ONLY the search terms, one per line
-No numbering, no bullets, no explanations, no extra text
-
-EXAMPLES:
-
-For "Tesla Investor Presentation Q4 2024":
-Tesla Model 3
-gigafactory aerial view
-battery pack closeup
-autonomous driving sensor
-solar roof tiles
-production line robotics
-sustainable energy icon
-metallic gradient texture
-
-For "Pokemon: Pikachu Character Analysis":
-Pikachu
-lightning bolt yellow
-Ash trainer
-Poke Ball
-electric type pokemon
-Kanto region map
-anime battle scene
-yellow red energy
-
-For "Ocean Conservation Initiative":
-ocean plastic pollution
-coral reef underwater
-sea turtle swimming
-marine wildlife
-ocean cleanup technology
-coastal ecosystem
-blue water waves
-recycling symbol
-
-Now generate 8-10 search terms for this presentation:"""
+Return ONLY the search terms, one per line, NO numbering, NO explanations."""
 
         try:
             client = get_client(COMPOSER_MODEL)
@@ -764,50 +798,46 @@ Now generate 8-10 search terms for this presentation:"""
                 client=client,
                 model=COMPOSER_MODEL,
                 messages=[{"role": "user", "content": prompt_text}],
-                temperature=0.7,
-                max_tokens=300
+                temperature=0.5,  # Lower temperature for more focused results
+                max_tokens=150
             )
             
             raw_text = response.get('content', '')
-            logger.info(f"[THEME DIRECTOR] Raw search terms response: {raw_text[:200]}")
+            logger.info(f"[THEME DIRECTOR] Raw search terms: {raw_text}")
             
-            # Parse search terms from response
+            # Parse and clean terms
             lines = raw_text.strip().split('\n')
             search_terms = []
             
-            # Ultra-aggressive stopword filtering
-            stopwords = {
-                'here', 'are', 'the', 'search', 'terms', 'following', 'below', 'example',
-                'good', 'great', 'excellent', 'for', 'deck', 'presentation', 'slide',
-                'introduction', 'overview', 'summary', 'conclusion', 'agenda',
-                'numbered', 'bulleted', 'list', 'based', 'on', 'these', 'would', 'be',
-                'appropriate', 'relevant', 'suitable'
-            }
-            
             for line in lines:
-                # Remove numbering, bullets, quotes
+                # Clean up the line
                 term = re.sub(r'^[\d\.\-\*\>]+\s*', '', line.strip())
                 term = term.strip('"\':,.')
                 
-                # Skip empty, too short, or stopword lines
+                # Skip if empty or too short
                 if not term or len(term) < 3:
                     continue
-                    
-                # Skip lines that are just stopwords
-                words = term.lower().split()
-                if all(w in stopwords for w in words):
+                
+                # Skip if too many words (more than 4)
+                if len(term.split()) > 4:
                     continue
                 
-                # Skip lines with meta-commentary
-                if any(meta in term.lower() for meta in ['note:', 'example:', 'for your', 'these are', 'here are']):
+                # Skip meta-commentary
+                if any(meta in term.lower() for meta in ['here', 'example:', 'note:', 'search term']):
                     continue
                 
                 search_terms.append(term)
             
-            # Limit to 10 terms
-            search_terms = search_terms[:10]
+            # Limit to 8 terms
+            search_terms = search_terms[:8]
             
-            logger.info(f"[THEME DIRECTOR] Generated {len(search_terms)} search terms: {search_terms}")
+            # If we got too few, add fallback
+            if len(search_terms) < 3:
+                fallback = self._get_fallback_terms(title, analysis)
+                search_terms.extend(fallback[:5])
+                search_terms = search_terms[:8]
+            
+            logger.info(f"[THEME DIRECTOR] Final search terms: {search_terms}")
             
             await self._emit_tool_result(
                 "AI.generate_search_terms",
@@ -818,25 +848,26 @@ Now generate 8-10 search terms for this presentation:"""
             
         except Exception as e:
             logger.error(f"[THEME DIRECTOR] Error generating search terms: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            
-            # Fallback: extract key nouns from title and first slide
-            fallback_terms = []
-            
-            # Add brand/entity name if available
-            if analysis.get('brand_name'):
-                fallback_terms.append(analysis['brand_name'])
-            elif analysis.get('entity_name'):
-                fallback_terms.append(analysis['entity_name'])
-            
-            # Extract key words from title
-            title_words = title.split()
-            key_words = [w for w in title_words if len(w) > 4 and w.lower() not in stopwords]
-            fallback_terms.extend(key_words[:3])
-            
-            logger.warning(f"[THEME DIRECTOR] Using fallback search terms: {fallback_terms}")
-            return fallback_terms[:5]
+            fallback_terms = self._get_fallback_terms(title, analysis)
+            logger.warning(f"[THEME DIRECTOR] Using fallback: {fallback_terms}")
+            return fallback_terms
+    
+    def _get_fallback_terms(self, title: str, analysis: Dict[str, Any]) -> List[str]:
+        """Generate fallback search terms from title and analysis."""
+        terms = []
+        
+        # Add brand/entity if available
+        if analysis.get('brand_name'):
+            terms.append(analysis['brand_name'])
+        elif analysis.get('entity_name'):
+            terms.append(analysis['entity_name'])
+        
+        # Extract key nouns from title (simple heuristic)
+        stopwords = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'}
+        title_words = [w for w in title.split() if len(w) > 3 and w.lower() not in stopwords]
+        terms.extend(title_words[:4])
+        
+        return terms[:5]
     
     def _format_scraper_result(self, result: Dict[str, Any], brand_name: str) -> Dict[str, Any]:
         """Format web scraper result into color result format."""
@@ -867,6 +898,22 @@ Now generate 8-10 search terms for this presentation:"""
                 'guidelines_url': result.get('guidelines_url')
             }
         }
+    
+    def _validate_font_name(self, font_name: str) -> str:
+        """Validate font name and return safe fallback if invalid."""
+        if not font_name or not isinstance(font_name, str):
+            logger.warning(f"⚠️  Invalid font (empty or wrong type): {font_name} → Using Montserrat")
+            return 'Montserrat'
+        
+        # List of obviously invalid font names
+        invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default', 'none', 'null']
+        
+        if font_name.lower().strip() in invalid_fonts:
+            logger.warning(f"⚠️  Invalid font name detected: '{font_name}' → Using Montserrat")
+            print(f"⚠️  INVALID FONT NAME: '{font_name}' → Replaced with Montserrat")
+            return 'Montserrat'
+        
+        return font_name
     
     def _match_fonts(self, scraped_fonts: List[str], available_fonts: List[str]) -> Dict[str, str]:
         """Match scraped fonts to available fonts."""

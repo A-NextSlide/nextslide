@@ -38,8 +38,13 @@ layout_guidelines = f"""
 ⸻
 
 4. Content Slide
-	•	Top-down structure: Heading at top, supporting content below.
-	•	Two-column layout (optional): Text left, image right (or image left, text right) — choose based on visual flow.
+	•	SPLIT-SCREEN LAYOUT (PRIMARY): Side-by-side text + image
+		- Text left (50-60%), Image right (40-50%)  
+		- OR: Image left (40-50%), Text right (50-60%)
+		- NEVER stack text vertically with image at bottom!
+	•	Image placement rules:
+		- DEFAULT: LEFT or RIGHT (80% of slides)
+		- RARELY: Bottom (20% - ONLY for panoramic/wide images)
 	•	Use grid: Align all elements to an 8pt/12pt baseline grid.
 
 ⸻

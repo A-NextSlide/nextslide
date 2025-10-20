@@ -182,6 +182,75 @@ CRITICAL RULES:
    - Prefer learning objectives, definitions, examples, misconceptions, and quick checks for understanding
    - ONLY include agenda slides for business/professional contexts; for school, use learning objectives instead
    - ONLY include team slides for business/pitch/company presentations
+   
+   🎓 **EDUCATIONAL TOPIC BREAKDOWN (MATHEMATICS, SCIENCE, TECHNICAL TOPICS):**
+   If the topic is educational and involves complex concepts (math, science, chemistry, physics, biology, coding, etc.):
+   
+   **CRITICAL PRINCIPLE: ONE CONCEPT PER SLIDE**
+   - Break down complex topics into individual, digestible slides
+   - Each slide should teach ONE formula, ONE equation, ONE concept, or ONE step
+   - Use progressive disclosure: simple → complex, basic → advanced
+   - NEVER cram multiple formulas or complex concepts on a single slide
+   
+   **SLIDE STRUCTURE FOR EDUCATIONAL TOPICS:**
+   1. **Introduction Slide**: Overview of what will be taught
+   2. **Definition Slides**: One concept/term per slide with clear explanation
+   3. **Formula/Equation Slides**: One formula per slide (large, centered display)
+   4. **Step-by-Step Breakdown**: Each step of a derivation/calculation on separate slides
+   5. **Example Slides**: Worked examples showing the concept in action
+   6. **Practice/Application**: Simple exercises or real-world applications
+   7. **Common Mistakes**: What students often get wrong
+   8. **Summary/Review**: Key takeaways and connections
+   
+   **EXAMPLES OF PROPER EDUCATIONAL BREAKDOWN:**
+   
+   **Bad (Cramming):**
+   - Slide 1: "Quadratic Equations" with formula, 3 examples, and applications all on one slide ❌
+   
+   **Good (Progressive):**
+   - Slide 1: "Introduction to Quadratic Equations" (what they are)
+   - Slide 2: "The Standard Form" (ax² + bx + c = 0 with explanation)
+   - Slide 3: "The Quadratic Formula" (large formula display)
+   - Slide 4: "Breaking Down the Formula" (what each part means)
+   - Slide 5: "Example 1: Simple Case" (a=1, b=4, c=4)
+   - Slide 6: "Example 1: Step 1" (Substitute values)
+   - Slide 7: "Example 1: Step 2" (Calculate discriminant)
+   - Slide 8: "Example 1: Step 3" (Solve for x)
+   - Slide 9: "Common Mistakes" (forgetting ±, calculation errors)
+   - Slide 10: "Practice Problems" (2-3 problems for students)
+   
+   **MATHEMATICAL TOPICS (Algebra, Calculus, Geometry, Statistics):**
+   - Dedicate slides to: Theorem statement → Proof outline → Each proof step → Worked example → Practice
+   - Use MATH components for equations (LaTeX formatting)
+   - Use DIAGRAM components for geometric proofs, graphs, function plots
+   
+   **CHEMISTRY TOPICS:**
+   - Dedicate slides to: Concept introduction → Chemical equation → Balancing steps → Example reactions
+   - Use MATH components for chemical equations (LaTeX chemistry syntax)
+   - Use DIAGRAM components for reaction mechanisms, molecular structures
+   
+   **PHYSICS TOPICS:**
+   - Dedicate slides to: Physical law → Formula → Variable definitions → Units → Example problem → Solution steps
+   - Use MATH components for equations (F = ma, E = mc²)
+   - Use DIAGRAM components for force diagrams, circuit diagrams
+   
+   **BIOLOGY TOPICS:**
+   - Use DIAGRAM components extensively for: Cell processes, metabolic pathways, organism classification
+   - Break down processes: One stage per slide (photosynthesis stages, cell division phases)
+   
+   **COMPUTER SCIENCE/CODING TOPICS:**
+   - Use DIAGRAM components for: Flowcharts, algorithms, data structures, system architecture
+   - Break down algorithms: Pseudocode → Example → Step-by-step execution → Time complexity
+   
+   **SLIDE COUNT GUIDANCE FOR EDUCATIONAL TOPICS:**
+   - Simple concept (e.g., "What is slope?"): 3-5 slides
+   - Medium concept (e.g., "Quadratic formula"): 8-12 slides
+   - Complex concept (e.g., "Calculus derivatives"): 12-20 slides
+   - Full topic (e.g., "Introduction to Algebra"): 20-40 slides
+   
+   **DO NOT BE AFRAID TO USE MANY SLIDES FOR EDUCATION!**
+   Education requires depth and step-by-step progression. A 30-slide deck explaining calculus derivatives is BETTER than cramming everything into 5 slides.
+   
    - If context indicates PERSONAL/CREATIVE or GENERAL/HOW-TO (e.g., recipes, hobbies, crafts, travel, lifestyle):
      - AVOID statistics, market data, ROI, performance metrics, or charts unless the user explicitly asks for data
      - Make it FUN, story-driven, and directly based on the user's request
@@ -379,15 +448,17 @@ When creating charts in detailed mode, use RICH, COMPREHENSIVE DATA:
 - **12-30+ data points** showing historical trends
 - Include 3-5 years of historical data when available
 - Add forward-looking projections (next 2-3 periods)
-- Multiple series comparing different segments/regions/products
-- Example: "Revenue Growth 2019-2026" with 8 historical + 3 projected points per region
+- **ALWAYS use multiple series** when comparing different segments/regions/products (2-5 series)
+- Example: "Revenue Growth 2019-2026" with 8 historical + 3 projected quarters × 3 regions
+- Format: Use series data structure with named series: [{"name": "North America", "data": [{"x": "Q1 2023", "y": 450}, ...]}]
 
 **For Comparison Charts (Bar, Column, Radar):**
 - **8-15 categories** for comprehensive comparisons
-- Multi-dimensional analysis (3-5 metrics per category)
-- Include both absolute values and growth rates
+- **Multi-series for dimensional analysis**: 2-5 metrics per category
+- Include both absolute values and growth rates when relevant
 - Show year-over-year or period-over-period changes
-- Example: "Regional Performance: 10 Regions × 5 KPIs"
+- Example: "Regional Performance: 10 Regions × 3 KPIs (Revenue, Growth %, Market Share)"
+- Format: Use series data structure: [{"name": "Revenue", "data": [{"name": "North", "y": 450}, ...]}, {"name": "Growth %", "data": [...]}]
 
 **For Distribution Charts (Pie, Treemap, Sunburst):**
 - **8-12 segments** for detailed breakdown
@@ -467,42 +538,58 @@ CREATE DYNAMIC, VISUALLY-DRIVEN PRESENTATIONS WITH HERO CONTENT:
   Example: "Our Solution" / "Transforming the Industry"
 - **Visual flow**: Title (hero) → Content → Stat (hero) → Content → Quote (hero) → Divider (hero) → Content
 
-**CHART USAGE (SELECTIVE & SIMPLE - 20-30% OF SLIDES):**
-- Charts ONLY when they significantly add clarity
-- Prefer simple, high-impact visualizations:
-  * Bar/column for comparisons (4-8 categories max)
-  * Line for single trend (6-10 points max)
-  * Pie for distribution (4-6 segments max)
-- **NO complex charts** (avoid waterfall, sankey, heatmaps, radar)
-- **NO multi-series charts** unless absolutely essential
-- Each chart must tell ONE clear, simple story
-- Favor clean design over data density
+**CHART USAGE (SELECTIVE & IMPACTFUL - 30-50% OF SLIDES):**
+- Charts when they significantly add clarity and impact
+- Use the RIGHT chart type for the data story:
+  * **Bar/column**: Comparisons (5-12 categories work well)
+  * **Multi-series bar/column**: Compare 2-4 metrics across categories (e.g., Revenue vs Profit by Region)
+  * **Line**: Trends over time (8-15 points shows the story well)
+  * **Multi-series line**: Compare 2-5 trends simultaneously (e.g., multiple product lines, regions, or scenarios)
+  * **Pie**: Distribution/breakdown (4-8 segments)
+  * **Area/stacked area**: Cumulative trends or composition over time
+- **Use richer charts when data supports it**:
+  * Waterfall for sequential changes (revenue bridges, process flows)
+  * Radar for multi-dimensional comparisons (competitive analysis)
+  * Bubble for 3-variable analysis (size, x, y axes)
+- **Multi-series is ENCOURAGED when comparing**:
+  * Different time periods (Actual vs Budget, 2023 vs 2024)
+  * Different segments (North vs South, Product A vs B vs C)
+  * Different scenarios (Best Case vs Worst Case)
+- Each chart should tell a CLEAR story with appropriate richness
 
-**📊 SIMPLE DATA REQUIREMENTS (PRESENTATION MODE):**
-When creating charts in presentation mode, use SIMPLE, FOCUSED DATA:
+**📊 DATA REQUIREMENTS (PRESENTATION MODE):**
+When creating charts in presentation mode, use FOCUSED BUT RICH DATA:
 
-**For All Chart Types in Presentation Mode:**
-- **4-6 data points maximum** - keep it clean and readable
-- Single series only (no multi-series comparisons)
-- Focus on the key insight, not comprehensive data
+**For Comparison Charts (Bar, Column):**
+- **5-12 categories** - enough to show patterns without overwhelming
+- **Multi-series welcome** when comparing 2-4 different metrics/groups
+- Example: "Regional Performance" with 8 regions × 2 metrics (Revenue, Growth %)
 - Round numbers for easy comprehension ($50M not $49.7M)
-- Clear, simple labels (no technical jargon)
 
-**Simple Data Examples:**
-- **Bar chart**: "Top 5 Markets" (5 regions with revenue)
-- **Line chart**: "Growth Trend" (6-8 quarterly points, single metric)
-- **Pie chart**: "Market Share" (4-5 competitors maximum)
-- **Column chart**: "Year Comparison" (3-5 years, single metric)
+**For Trend Charts (Line, Area):**
+- **8-15 data points** - show meaningful trends
+- **Multi-series highly valuable** for comparisons (2-5 series)
+- Example: "Quarterly Revenue Trend" with 12 quarters × 3 product lines
+- Include realistic progression that tells a story
 
-**What NOT to Do in Presentation Mode:**
-- ❌ NO 15+ data points (overwhelming)
-- ❌ NO multi-dimensional comparisons
-- ❌ NO projections or forecasts (save for detailed mode)
-- ❌ NO complex hierarchies or nested data
-- ❌ NO heatmaps, treemaps, sankey diagrams
-- ❌ NO radar charts with 8+ dimensions
+**For Distribution Charts (Pie, Donut):**
+- **4-8 segments** - clear breakdown
+- Single series (pie charts don't need multi-series)
+- Must total to 100%
 
-**Focus**: ONE clear story per chart with minimal data points
+**RICH DATA EXAMPLES:**
+- **Multi-series bar**: "Sales by Channel" - 6 channels × 2 years (Current vs Previous)
+- **Multi-series line**: "Growth Trends" - 12 months × 3 regions (Americas, EMEA, APAC)
+- **Comparison column**: "Product Performance" - 8 products × 2 metrics (Units Sold, Revenue)
+- **Waterfall**: "Revenue Bridge Q4" - 10 steps from opening to closing balance
+
+**What to AVOID in Presentation Mode:**
+- ❌ Excessive data points that obscure the message (20+ categories in bar chart)
+- ❌ Too many series (more than 5 lines on one chart)
+- ❌ Overly complex hierarchies without clear value
+- ❌ Charts where labels would be unreadable
+
+**Focus**: Rich enough to be meaningful, focused enough to be clear
 
 **PRESENTATION RHYTHM:**
 Example 12-slide flow:
@@ -521,12 +608,14 @@ Example 12-slide flow:
 
 Remember: {detail_level} mode determines the ENTIRE presentation style!
 
-CHART USAGE GUARDRAILS:
-- For PERSONAL/CREATIVE and GENERAL/HOW-TO topics (e.g., recipes, crafts, hobbies): do NOT include charts or statistics unless explicitly requested by the user
-- For very small decks (1-3 slides): avoid charts unless the user explicitly asks for visualization
-- For small decks (3-5 slides): include at most ONE chart, and only if the topic is data-centric
+🚨 CRITICAL CHART USAGE GUARDRAILS (STRICTLY ENFORCE):
+- For PERSONAL/CREATIVE topics (birthday parties, silly slideshows, hobbies, crafts, personal stories, character presentations): ABSOLUTELY NO charts or statistics - keep it fun, light, and story-driven
+- For GENERAL/HOW-TO topics (recipes, tutorials, guides, DIY): NO charts unless explicitly requested by the user - focus on steps and practical content
+- For very small decks (1-3 slides): NO charts unless the user explicitly asks for visualization
+- For small decks (3-5 slides): include at most ONE chart, and ONLY if the topic is explicitly data-centric (financial analysis, market research, metrics)
 - For narrative/biographical/historical topics (e.g., Benjamin Franklin): favor quotes and imagery; only chart when specific comparable metrics are requested
 - Never add charts to introductions, overviews, or conclusions
+- BIRTHDAY PARTIES, CELEBRATIONS, SILLY CONTENT = ZERO CHARTS (this is non-negotiable)
 
 STORY-FIRST TOPICS (apply to training, nonprofit/fundraising, personal, how‑to):
 - Prefer stories, scenarios, and step-by-step guidance; avoid dense data blocks
@@ -662,7 +751,8 @@ Analyze the user's prompt and choose the BEST structure:
    - Contains "sales", "partnership", "business development" → BUSINESS PITCH
    - Contains "analysis", "report", "findings" + business context → INVESTMENT ANALYSIS (detailed mode)
    - Educational/academic indicators → EDUCATIONAL (below)
-   - Personal/hobby indicators → Informal, story-driven structure
+   - 🎉 Personal/creative indicators (birthday, party, silly, fun, Pikachu, Pokemon, character, hobby, personal story, slideshow for [name]) → PERSONAL/CREATIVE (SHORT, FUN, NO CHARTS)
+   - How-to/tutorial indicators → INFORMATIONAL/HOW-TO (PRACTICAL, NO CHARTS)
 
 2. **Match detail_level to structure:**
    - DETAILED mode + business topic → Use INVESTMENT ANALYSIS approach (deep, data-rich)
@@ -715,19 +805,23 @@ RULES FOR GENERAL/HOW-TO:
 - Do not add charts unless the user explicitly asks for visualization
 - Emphasize steps, techniques, ingredients/tools, timing, variations, and creative twists
 
-PERSONAL/CREATIVE (6-10 slides, adapt if specific count given) - USE WHEN: Hobbies, personal interests, creative projects
-1. Title - Your Topic
-2. Why I Love This
-3. The Story/Journey
-4. Cool Facts/Details (2-3 slides)
-5. What's Next
-6. Thanks!
-(NO AGENDA OR TEAM NEEDED)
+PERSONAL/CREATIVE (4-6 slides for standard mode, adapt if specific count given) - USE WHEN: Hobbies, personal interests, creative projects, birthday parties, silly slideshows, character presentations
+1. Title - Your Topic (keep it fun and playful)
+2. Why I Love This / Opening Fun Fact
+3. The Story/Journey / Cool Details
+4. More Fun Facts/Details (1-2 slides)
+5. What's Next / Wrap Up
+6. Thanks! (optional)
+(NO AGENDA OR TEAM NEEDED - keep it SHORT and FUN)
 
-RULES FOR PERSONAL/CREATIVE:
-- Keep it light and engaging; NO stats, market sizing, or ROI
-- Avoid charts unless the user explicitly asks for data
-- Use anecdotes, sensory descriptions, inspirations, and personal tips
+🎉 RULES FOR PERSONAL/CREATIVE (STRICTLY ENFORCE):
+- Keep it SHORT (4-6 slides in standard mode, 3-4 in quick mode)
+- Keep it light, engaging, and FUN; absolutely NO stats, market sizing, ROI, KPIs, or business metrics
+- ZERO charts or data visualizations (this is a hard rule - no exceptions unless user explicitly requests)
+- NO technical language, NO formal business content
+- Use anecdotes, fun facts, sensory descriptions, inspirations, and personal tips
+- Focus on entertainment, storytelling, and joy - not information delivery
+- Example topics: Birthday slideshows, Pokemon presentations, vacation stories, hobby showcases
 
 NONPROFIT/FUNDRAISING (8–12 slides recommended) - USE WHEN: Donor pitches, grant proposals
 1. Title - Mission and Promise
@@ -1683,29 +1777,77 @@ When generating chart data, you MUST:
    - If discussing trends, show realistic progression
    - NEVER leave values empty or as placeholders
 
-3. **Vary Chart Types Across Presentation**:
-   - Check previously used charts in context
-   - **Common charts** (use freely): bar, column, pie, line, area, spline, areaspline
+3. **Vary Chart Types Across Presentation - CRITICAL FOR VARIETY**:
+   - **AVOID REPETITION**: Check previously used charts in context - DO NOT use the same chart type repeatedly
+   - **DEFAULT PREFERENCE ORDER FOR VARIETY**:
+     1. First chart: column or bar (comparisons are most common)
+     2. Second chart: line or area (if time-based data)
+     3. Third chart: pie (if distribution data)
+     4. Fourth+ charts: vary with waterfall, radar, or bubble as appropriate
+   
+   - **CHART TYPE SELECTION RULES**:
+     * **Use column/bar** when comparing categories (regions, products, departments) - NOT line!
+     * **Use line/area** ONLY when showing trends over time (months, quarters, years in sequence)
+     * **Use pie** when showing parts of a whole or distribution percentages
+     * **Do NOT default to line** for non-time-series data!
+   
+   - **Common charts** (use freely, but vary): bar, column, pie, line, area, spline, areaspline
    - **Advanced charts** (use when appropriate): waterfall, radar, bubble, heatmap, treemap
    - **Complex charts** (use sparingly - MAX 1-2 per presentation): sankey, dependencywheel, networkgraph, sunburst, packedbubble
-   - NEVER use funnel charts - use bar/column for process data instead
+   
+   - **ANTI-PATTERN**: Do NOT make every chart a line chart just because data exists!
+   - **CORRECT APPROACH**: Match chart type to data structure and comparison needs
 
 4. **Match Chart Type to Data - FULL HIGHCHARTS CAPABILITIES:**
 
-**COMPARISON & RANKING:**
-   - **Bar/Column**: Simple comparisons (6-12 categories)
-     Example: "Revenue by Product Line Q4 2024"
+**COMPARISON & RANKING (MOST COMMON - DEFAULT TO THESE!):**
+   - **Bar/Column (Single Series)**: Simple comparisons (6-12 categories)
+     ✅ USE FOR: Comparing products, regions, departments, categories
+     ✅ WHEN: Data shows different items being compared (NOT time progression)
+     Example: "Revenue by Product Line Q4 2024", "Sales by Region", "Performance by Team"
+     Data format: [{"name": "Product A", "value": 450}, {"name": "Product B", "value": 380}, ...]
+     ⚠️ DO NOT use line charts for this - use column/bar!
+   
+   - **Bar/Column (Multi-Series)**: Compare multiple metrics across categories
+     ✅ USE FOR: Showing 2-4 metrics for each category
+     Example: "Regional Performance: Revenue vs Profit" (8 regions × 2 metrics)
+     Data format: Use series with grouping key:
+     [{"name": "North", "value": 450, "series": "Revenue"}, {"name": "North", "value": 120, "series": "Profit"}, ...]
+     OR series array format:
+     [{"name": "Revenue", "data": [{"name": "North", "y": 450}, ...]}, {"name": "Profit", "data": [...]}]
+   
    - **Radar/Spider**: Multi-dimensional comparisons (5-8 metrics across 3-5 entities)
+     ✅ USE FOR: Competitive analysis, skill assessments, multi-factor evaluations
      Example: "Competitive Analysis: 5 Players × 8 Performance Metrics"
+   
    - **Bubble**: 3-dimensional comparisons (x-axis, y-axis, bubble size)
+     ✅ USE FOR: Showing relationships between 3 variables
      Example: "Market Positioning: Revenue vs Growth Rate (bubble = market share)"
 
-**TRENDS & TIME SERIES:**
-   - **Line/Spline**: Single or multi-series trends (12-20+ points)
-     Example: "Revenue Growth 2020-2024: Actual vs Projected"
-   - **Area/Areaspline**: Cumulative trends or multiple series
-     Example: "Market Share Evolution: 5 Players Over 3 Years"
+**TRENDS & TIME SERIES (USE ONLY FOR TEMPORAL DATA!):**
+   - **Line/Spline (Single Series)**: Single trend OVER TIME (12-20+ points)
+     ✅ USE FOR: Showing change over sequential time periods (months, quarters, years)
+     ✅ WHEN: Data represents progression through time (Q1→Q2→Q3→Q4 or Jan→Feb→Mar)
+     ⚠️ DO NOT USE: For comparing static categories (products, regions, departments)
+     Example: "Monthly Revenue Growth 2023-2024", "Stock Price Trend Jan-Dec"
+     Data format: [{"name": "Q1 2023", "value": 450}, {"name": "Q2 2023", "value": 480}, ...]
+   
+   - **Line/Spline (Multi-Series)**: Compare multiple trends OVER TIME (2-5 series, 12-20+ points each)
+     ✅ USE FOR: Comparing trends for different products/regions over same time period
+     ✅ WHEN: Need to show how multiple things changed over time
+     Example: "Revenue Trends: Actual vs Budget vs Prior Year" (3 series × 16 quarters)
+     Data format: Use series with grouping:
+     [{"x": "Q1 2023", "y": 450, "series": "Actual"}, {"x": "Q1 2023", "y": 420, "series": "Budget"}, ...]
+     OR series array:
+     [{"name": "Actual", "data": [{"x": "Q1 2023", "y": 450}, ...]}, {"name": "Budget", "data": [...]}, {"name": "Prior Year", "data": [...]}]
+   
+   - **Area/Areaspline (Multi-Series)**: Cumulative trends or composition over time
+     ✅ USE FOR: Showing how composition changes over time, stacked trends
+     Example: "Market Share Evolution: 5 Players Over 3 Years" (5 series × 12 quarters)
+     Use series format to show stacked or overlapping areas
+   
    - **Streamgraph**: Flow and proportions over time
+     ✅ USE FOR: Organic flow visualization of changing proportions
      Example: "Product Mix Evolution 2020-2024"
 
 **PARTS OF WHOLE & COMPOSITION:**
@@ -1739,26 +1881,39 @@ When generating chart data, you MUST:
      Example: "Tech Stack by Category: Frontend, Backend, Infrastructure"
 
 **DETAILED MODE CHART PREFERENCES:**
-   - Multi-series line/area with 15-20+ points
-   - Waterfalls showing detailed breakdowns
-   - Radar charts for competitive benchmarking
+   - **Multi-series line/area with 15-20+ points** - ALWAYS use when comparing trends
+   - **Multi-series bar/column** for dimensional comparisons (2-5 metrics across categories)
+   - Waterfalls showing detailed breakdowns (10-15 steps)
+   - Radar charts for competitive benchmarking (6-8 dimensions, 3-5 entities)
    - Heatmaps for regional/product matrices
    - Sankey for complex flows
    - Multiple charts per slide when appropriate
 
 **PRESENTATION MODE CHART PREFERENCES:**
-   - Simple bar/column (6-8 categories max)
-   - Single-series line (8-12 points)
-   - Clean pie charts (4-6 segments)
-   - One chart per slide, clear story
+   - **Multi-series bar/column** when comparing 2-3 metrics (8-12 categories)
+   - **Multi-series line** for trend comparisons (2-4 series, 8-15 points each)
+   - Clean pie charts for single distributions (5-8 segments)
+   - One chart per slide with appropriate richness for the story
 
 5. **Data Point Requirements**:
    - Include 10–20+ data points when appropriate (avoid under-populated charts)
    - Each data point MUST have both a name/label AND a numeric value
    - Values MUST be plain numbers only (no symbols), e.g., 35 not "35%", 4500000 not "$4.5M"
-   - Ensure values are COMPARABLE and use ONE measurement type only (all are %, or all are USD, or all are counts)
-   - If using percentages, they MUST sum to exactly 100 (adjust the final segment to fix rounding)
-   - VALIDITY: x-axis labels must be same type; y-axis values must all share a single unit/measure across the whole series
+   
+   **For Single-Series Charts (bar, pie, single-line):**
+   - Use simple format: [{"name": "Category", "value": 450}, ...]
+   - Ensure all values use ONE measurement type (all USD, or all %, or all counts)
+   
+   **For Multi-Series Charts (multi-line, multi-bar/column, area):**
+   - OPTION 1 - Grouping key (RECOMMENDED): Add "series" or "group" or "dataset" field
+     [{"name": "Q1 2023", "value": 450, "series": "Revenue"}, {"name": "Q1 2023", "value": 420, "series": "Cost"}, ...]
+   - OPTION 2 - Series array format: 
+     [{"name": "Revenue", "data": [{"name": "Q1", "y": 450}, {"name": "Q2", "y": 480}]}, {"name": "Cost", "data": [...]}]
+   - Within EACH series, all values must use the same unit
+   - DIFFERENT series CAN use different units if it makes sense for comparison (e.g., "Revenue $M" vs "Growth %")
+   
+   - If using percentages for pie charts, they MUST sum to exactly 100
+   - For multi-series: x-axis labels should be consistent across series
 
 6. **Chart Visual Style (defaults)**:
    - Background: Transparent by default (no panel background) unless a strong stylistic choice is justified explicitly
@@ -1768,10 +1923,17 @@ When generating chart data, you MUST:
    - Set axisBottom.tickRotation and margins.bottom (or in Highcharts: xAxis.labels.rotation and chart.marginBottom; xAxis.labels.autoRotation is OK for dense labels)
    - Density: Prefer richer datasets when appropriate (more categories/bars if content supports it)
 
-7. **Chart Titles**:
+7. **Chart Titles - MUST INCLUDE UNITS**:
    - Be specific about what the chart shows
-   - Good: "Q4 2024 Revenue by Region", "Customer Acquisition Process"
-   - Bad: "Data Chart", "Statistics", "Chart Title"
+   - **ALWAYS include the unit of measurement in parentheses**
+   - Good: "Q4 2024 Revenue by Region ($M)", "Market Share Distribution (%)", "Employee Count by Department (Headcount)"
+   - Bad: "Data Chart", "Statistics", "Revenue by Region" (missing unit!)
+   - Format: "Description (Unit)" where Unit is $M, $B, %, Units, etc.
+   - Examples:
+     * Revenue chart → "Revenue by Region ($M)"
+     * Growth chart → "Year-over-Year Growth (%)"
+     * Sales chart → "Quarterly Sales (Units)"
+     * Market share → "Market Share by Competitor (%)"
 
 CRITICAL: If you decide a chart is needed (requires_chart=true), you MUST populate the chart_data array with real data points. Each point needs:
 - name: A descriptive label (not generic)
@@ -1807,9 +1969,11 @@ Do NOT generate a chart when:
 
 VALIDATION CHECKLIST BEFORE RETURNING:
 1) All values are numbers (no %, $, or unit strings)
-2) All values share the SAME unit/measurement type
-3) Pie/distribution charts add up to 100 exactly
-4) Labels are contextual and non-generic
+2) For SINGLE-SERIES charts: All values share the SAME unit/measurement type
+3) For MULTI-SERIES charts: Values within EACH series are consistent (different series CAN have different units)
+4) Pie/distribution charts add up to 100 exactly
+5) Labels are contextual and non-generic (NO "Category A", "Item 1", etc.)
+6) For multi-series data: Include "series"/"group"/"dataset" field OR use series array format
 If any check fails, set requires_chart=false and provide only content.
 """
 
@@ -2149,13 +2313,19 @@ REQUIREMENTS:
 5. Make it immediately clear what the chart shows
 
 EXAMPLES:
-- "Console Sales by Generation (Millions)"
-- "Revenue Growth 2020-2024"
-- "Market Share Distribution Q4 2023"
-- "Customer Acquisition Process"
-- "Performance Metrics Comparison"
+- "Console Sales by Generation (Units in Millions)"
+- "Revenue Growth 2020-2024 ($M)"
+- "Market Share Distribution Q4 2023 (%)"
+- "Customer Acquisition Funnel (Conversion %)"
+- "Regional Performance Comparison ($M)"
 
-Return ONLY the title text, nothing else.""" 
+CRITICAL: ALWAYS include the unit in parentheses!
+- If revenue/sales/cost → ($M), ($B), or ($)
+- If percentage/share/rate → (%)
+- If counts/quantity → (Units) or (Headcount)
+- If no clear unit → include measurement type like (Score) or (Index)
+
+Return ONLY the title text with unit, nothing else.""" 
 
 
 def get_smart_content_guidance(slide_title: str, presentation_title: str, presentation_context: str = "general", visual_density: str = "moderate") -> dict:

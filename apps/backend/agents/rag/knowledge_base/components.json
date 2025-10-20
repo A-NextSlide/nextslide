@@ -11,18 +11,70 @@
     "critical_rules": {
       "padding": "Must always be 0 (numeric, not string)",
       "texts": "Array of text objects. Each item may include 'text', 'fontSize', and a 'style' object.",
-      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor"],
-      "height": "Calculate as fontSize \u00d7 1.2 for single line"
+      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor", "highlight"],
+      "height": "Calculate as fontSize x 1.15 for single line (TIGHT!)",
+      "multiple_blocks": "CRITICAL: BREAK content into MULTIPLE TiptapTextBlock components - DON'T cram everything into one!"
     },
     "best_practices": [
-      "Group related text in one component",
-      "NEVER use backgroundColor unless absolutely necessary",
-      "Combine multiple styles in texts array",
-      "Use for tables with small fonts (8pt+)",
-      "CRITICAL: For bullet points, create SEPARATE TiptapTextBlock components (one per bullet), stacked vertically 60-80px apart",
-      "USE RICH FORMATTING: Always split text into multiple segments to apply bold, highlight, and accent colors to key words/numbers",
-      "EMPHASIZE KEY DATA: Use bold + accent color for numbers/metrics, add highlight with backgroundColor for maximum impact"
+      "BREAK content into multiple TiptapTextBlock components - separate blocks for title, subtitle, each bullet point",
+      "USE highlighting extensively with theme colors: {{primary}}15, {{secondary}}20, {{accent}}15-25",
+      "EMPHASIZE key numbers/terms: combine bold + textColor + highlight + backgroundColor",
+      "MIX fonts in same slide: heroFont for titles, bodyFont for content",
+      "BUCKET horizontally or vertically when 2-5 items (don't just stack!)",
+      "Combine multiple styles in texts array for rich formatting",
+      "Use for tables with small fonts (8pt+)"
     ],
+    "formatting_features": {
+      "text_styling": {
+        "bold": "Make text bold - use for emphasis",
+        "italic": "Italicize text - use for subtle emphasis or quotes",
+        "underline": "Underline text - use sparingly",
+        "strike": "Strikethrough - use for showing changes"
+      },
+      "highlighting": {
+        "primary_subtle": "{ \"highlight\": true, \"backgroundColor\": \"{{primary}}08\" }",
+        "primary_light": "{ \"highlight\": true, \"backgroundColor\": \"{{primary}}15\" }",
+        "secondary": "{ \"highlight\": true, \"backgroundColor\": \"{{secondary}}20\" }",
+        "accent_light": "{ \"highlight\": true, \"backgroundColor\": \"{{accent}}15\" }",
+        "accent_strong": "{ \"highlight\": true, \"backgroundColor\": \"{{accent}}25\" }",
+        "accent_bold": "{ \"highlight\": true, \"backgroundColor\": \"{{accent}}30\" }",
+        "usage": "USE highlighting extensively! Make key numbers and terms pop with theme-colored highlights"
+      },
+      "text_colors": {
+        "primary": "\"textColor\": \"{{primary}}\"",
+        "secondary": "\"textColor\": \"{{secondary}}\"",
+        "accent": "\"textColor\": \"{{accent}}\"",
+        "combined": "{ \"bold\": true, \"textColor\": \"{{accent}}\", \"highlight\": true, \"backgroundColor\": \"{{accent}}15\" }"
+      },
+      "font_mixing": {
+        "title_font": "Set fontFamily: \"{{heroFont}}\" for titles and emphasis",
+        "body_font": "Set fontFamily: \"{{bodyFont}}\" for content and supporting text",
+        "strategy": "Use different fonts in same slide - heroFont for headers, bodyFont for bullets"
+      },
+      "special_formatting": {
+        "superscript": "For TM, R, superscript numbers, footnotes",
+        "subscript": "For H2O, CO2, chemical formulas",
+        "link": "{ \"link\": true, \"href\": \"https://example.com\" }"
+      }
+    },
+    "layout_strategies": {
+      "when_to_use": "When you have 2-5 items with minimal text - DON'T just stack vertically!",
+      "horizontal_buckets": {
+        "description": "Side-by-side sections for 2-3 items",
+        "use_for": "Before/after, comparisons, paired stats",
+        "example": "Left section at x=120, right section at x=1000, both centered"
+      },
+      "vertical_sections": {
+        "description": "Top-to-bottom sections for 3-4 items",
+        "use_for": "Timeline, sequence, progression",
+        "example": "Section 1 at y=200, section 2 at y=450, section 3 at y=700"
+      },
+      "grid_layout": {
+        "description": "4+ items in 2x2 or 2x3 grid",
+        "use_for": "Multiple stats, features, benefits",
+        "example": "Top-left (120,200), top-right (1000,200), bottom-left (120,600), bottom-right (1000,600)"
+      }
+    },
     "common_patterns": {
       "title_subtitle": {
         "texts": [
@@ -71,10 +123,138 @@
       "bullet_with_emphasis": {
         "description": "Bullet point with key numbers/words emphasized",
         "texts": [
-          {"text": "• Featured in ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
+          {"text": "Featured in ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
           {"text": "2,000+", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}", "highlight": true, "backgroundColor": "{accent_1}20"}},
           {"text": " newspapers by ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
           {"text": "early 1980s", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}"}}
+        ]
+      },
+      "horizontal_bucket_example": {
+        "description": "Two stats side-by-side instead of stacked",
+        "blocks": [
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 300},
+              "width": 700,
+              "height": 92,
+              "texts": [{"text": "$964M", "style": {"bold": true, "textColor": "{{accent}}"}}],
+              "fontSize": 72,
+              "fontFamily": "{{heroFont}}",
+              "textAlign": "center"
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 410},
+              "width": 700,
+              "height": 37,
+              "texts": [{"text": "1961 Budget", "style": {"textColor": "{{secondary}}"}}],
+              "fontSize": 32,
+              "fontFamily": "{{bodyFont}}",
+              "textAlign": "center"
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 1000, "y": 300},
+              "width": 700,
+              "height": 92,
+              "texts": [{"text": "$35B+", "style": {"bold": true, "textColor": "{{accent}}"}}],
+              "fontSize": 72,
+              "fontFamily": "{{heroFont}}",
+              "textAlign": "center"
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 1000, "y": 410},
+              "width": 700,
+              "height": 37,
+              "texts": [{"text": "Artemis 2025", "style": {"textColor": "{{secondary}}"}}],
+              "fontSize": 32,
+              "fontFamily": "{{bodyFont}}",
+              "textAlign": "center"
+            }
+          }
+        ]
+      },
+      "multiple_blocks_structured": {
+        "description": "Break NASA budget example into multiple well-formatted blocks",
+        "blocks": [
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 160},
+              "width": 1680,
+              "height": 77,
+              "texts": [{"text": "NASA Budget Evolution", "style": {"bold": true, "textColor": "{{primary}}"}}],
+              "fontSize": 64,
+              "fontFamily": "{{heroFont}}",
+              "fontWeight": 900
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 260},
+              "width": 1680,
+              "height": 55,
+              "texts": [
+                {"text": "From ", "style": {"textColor": "{{secondary}}"}},
+                {"text": "$964M", "style": {"bold": true, "textColor": "{{accent}}", "highlight": true, "backgroundColor": "{{accent}}15"}},
+                {"text": " (1961) to ", "style": {"textColor": "{{secondary}}"}},
+                {"text": "$35B+", "style": {"bold": true, "textColor": "{{accent}}", "highlight": true, "backgroundColor": "{{accent}}15"}},
+                {"text": " (Artemis 2025)", "style": {"textColor": "{{secondary}}"}}
+              ],
+              "fontSize": 44,
+              "fontFamily": "{{bodyFont}}",
+              "fontWeight": 600
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 360},
+              "width": 800,
+              "height": 43,
+              "texts": [{"text": "KEY MILESTONES", "style": {"bold": true, "textColor": "{{secondary}}", "uppercase": true}}],
+              "fontSize": 36,
+              "fontFamily": "{{bodyFont}}",
+              "fontWeight": 700
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 440},
+              "width": 800,
+              "height": 37,
+              "texts": [
+                {"text": "Sputnik: ", "style": {"textColor": "{{primary}}"}},
+                {"text": "$0.1B", "style": {"bold": true, "textColor": "{{accent}}"}}
+              ],
+              "fontSize": 32,
+              "fontFamily": "{{bodyFont}}"
+            }
+          },
+          {
+            "type": "TiptapTextBlock",
+            "props": {
+              "position": {"x": 120, "y": 500},
+              "width": 800,
+              "height": 37,
+              "texts": [
+                {"text": "Gagarin: ", "style": {"textColor": "{{primary}}"}},
+                {"text": "$0.96B", "style": {"bold": true, "textColor": "{{accent}}"}}
+              ],
+              "fontSize": 32,
+              "fontFamily": "{{bodyFont}}"
+            }
+          }
         ]
       }
     }
@@ -152,7 +332,7 @@
       "props"
     ],
     "critical_rules": {
-      "mandatory_format": "🚨 MUST use React.createElement ONLY - NO HTML strings! This avoids ALL quote and escaping issues",
+      "mandatory_format": "MUST use React.createElement ONLY - NO HTML strings! This avoids ALL quote and escaping issues",
       "signature": "function render({ props, state, updateState, id, isThumbnail }) { - Clean signature, NO code inside destructuring!",
       "variable_extraction": "Extract ALL props ONCE at top: var c1 = props.primaryColor; var tc = props.textColor; NEVER redeclare variables!",
       "style_format": "Use JavaScript style objects with camelCase: { fontSize: '96px', fontWeight: '800', backgroundColor: '#FFF' }",
@@ -220,10 +400,10 @@
     ],
     "src_rule": "ALWAYS use 'placeholder', never URLs",
     "minimum_sizes": {
-      "hero": "1600\u00d7900",
-      "feature": "800\u00d7600",
-      "card": "400\u00d7500",
-      "thumbnail": "200\u00d7200"
+      "hero": "1600x900",
+      "feature": "800x600",
+      "card": "400x500",
+      "thumbnail": "200x200"
     },
     "object_fit_options": {
       "cover": "Default - crops to fill",

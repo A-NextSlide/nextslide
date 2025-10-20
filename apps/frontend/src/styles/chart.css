@@ -8,6 +8,16 @@
   box-sizing: border-box;
 }
 
+/* Override Highcharts default background rect - ensure transparency */
+[data-component-type="Chart"] .highcharts-background {
+  fill: transparent !important;
+}
+
+/* Ensure plot background is also transparent by default */
+[data-component-type="Chart"] .highcharts-plot-background {
+  fill: transparent !important;
+}
+
 /* Highcharts container */
 [data-component-type="Chart"] .highcharts-container {
   position: relative !important;

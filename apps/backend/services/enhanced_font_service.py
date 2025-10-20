@@ -38,20 +38,43 @@ class EnhancedFontService:
     
     def __init__(self):
         self.font_metadata = self._load_font_metadata()
-        # DISABLED: PixelBuddha fonts disabled due to missing files on disk
-        # self.pixelbuddha_fonts = self._load_pixelbuddha_fonts()
-        self.pixelbuddha_fonts = {}  # Empty - not using PixelBuddha fonts
-        self.designer_fonts = self._load_designer_fonts()
-        self.google_fonts = self._load_google_fonts()
-        self.all_fonts = {**self.designer_fonts, **self.google_fonts}  # Only Designer + Google
+        
+        # Load ALL fonts from ComponentRegistry instead of just 26!
+        try:
+            from services.registry_fonts import RegistryFonts
+            
+            # Use static method that doesn't need registry instance
+            all_font_names = RegistryFonts.get_all_fonts_list()
+            
+            # Build font dict from registry names
+            self.all_fonts = {}
+            invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default', 'none', 'null']
+            
+            for font_name in all_font_names:
+                if font_name.lower() not in invalid_fonts:
+                    font_id = font_name.lower().replace(' ', '-')
+                    self.all_fonts[font_id] = {
+                        'id': font_id,
+                        'name': font_name,
+                        'source': 'registry',
+                        'category': self._guess_category_from_name(font_name)
+                    }
+            
+            logger.info(f"✅ Loaded {len(self.all_fonts)} fonts from ComponentRegistry")
+            print(f"✅ ENHANCED_FONT_SERVICE: Loaded {len(self.all_fonts)} fonts from registry")
+            
+        except Exception as e:
+            # Fallback to old method if registry fails
+            logger.warning(f"Failed to load from registry: {e}, using fallback")
+            self.pixelbuddha_fonts = {}
+            self.designer_fonts = self._load_designer_fonts()
+            self.google_fonts = self._load_google_fonts()
+            self.all_fonts = {**self.designer_fonts, **self.google_fonts}
 
         # Build tag index for fast lookup
         self.tag_index = self._build_tag_index()
         self.best_for_index = self._build_best_for_index()
 
-        logger.info(f"PixelBuddha fonts: DISABLED (only using Designer + Google fonts)")
-        logger.info(f"Loaded {len(self.designer_fonts)} Designer fonts")
-        logger.info(f"Loaded {len(self.google_fonts)} Google fonts")
         logger.info(f"Total fonts available: {len(self.all_fonts)}")
         logger.info(f"Loaded metadata for {len(self.font_metadata)} fonts")
         logger.info(f"Built index with {len(self.tag_index)} tags")
@@ -167,6 +190,29 @@ class EnhancedFontService:
         }
         
         return google_fonts
+    
+    def _guess_category_from_name(self, font_name: str) -> str:
+        """Guess font category from name when metadata unavailable"""
+        name_lower = font_name.lower()
+        
+        # Playful/Fun fonts
+        if any(kw in name_lower for kw in ['fredoka', 'baloo', 'chewy', 'bubblegum', 'bungee', 'bangers', 'comic', 'righteous', 'titan']):
+            return 'playful'
+        # Display/Bold fonts
+        elif any(kw in name_lower for kw in ['bebas', 'anton', 'oswald', 'impact', 'black', 'bold']):
+            return 'display'
+        # Script/Handwritten
+        elif any(kw in name_lower for kw in ['pacifico', 'kaushan', 'caveat', 'script', 'hand']):
+            return 'script'
+        # Mono/Code
+        elif any(kw in name_lower for kw in ['mono', 'code', 'jetbrains', 'fira', 'consolas']):
+            return 'mono'
+        # Serif
+        elif any(kw in name_lower for kw in ['serif', 'times', 'garamond', 'playfair', 'merriweather']):
+            return 'serif'
+        # Default to sans
+        else:
+            return 'sans'
     
     def _categorize_pixelbuddha_font(self, font_id: str, font_data: Dict) -> str:
         """Categorize PixelBuddha font based on metadata"""
@@ -703,25 +749,66 @@ class EnhancedFontService:
         selected_hero = hero_fonts[hero_idx]
         selected_body = body_fonts[body_idx]
         
+        # CRITICAL: Validate font names aren't invalid strings
+        invalid_fonts = ['fonts', 'font', 'font family', 'fontfamily', 'default', 'none', 'null']
+        
+        hero_name = selected_hero.get('name', '')
+        body_name = selected_body.get('name', '')
+        
+        # If hero font is invalid, try next ones or fallback
+        if hero_name.lower() in invalid_fonts:
+            logger.warning(f"⚠️  Invalid hero font '{hero_name}' detected! Trying alternatives...")
+            for attempt in range(min(5, len(hero_fonts))):
+                alt_idx = (hero_idx + attempt + 1) % len(hero_fonts)
+                if hero_fonts[alt_idx]['name'].lower() not in invalid_fonts:
+                    selected_hero = hero_fonts[alt_idx]
+                    hero_name = selected_hero['name']
+                    logger.info(f"✅ Using alternative hero font: {hero_name}")
+                    break
+            else:
+                # All failed, use hardcoded fallback
+                logger.warning("⚠️  All hero fonts invalid! Using Bebas Neue fallback")
+                selected_hero = {'id': 'bebas-neue', 'name': 'Bebas Neue', 'category': 'bold'}
+                hero_name = 'Bebas Neue'
+        
+        # If body font is invalid, try alternatives or fallback
+        if body_name.lower() in invalid_fonts:
+            logger.warning(f"⚠️  Invalid body font '{body_name}' detected! Trying alternatives...")
+            for attempt in range(min(8, len(body_fonts))):
+                alt_idx = (body_idx + attempt + 1) % len(body_fonts)
+                if body_fonts[alt_idx]['name'].lower() not in invalid_fonts:
+                    selected_body = body_fonts[alt_idx]
+                    body_name = selected_body['name']
+                    logger.info(f"✅ Using alternative body font: {body_name}")
+                    break
+            else:
+                # All failed, use hardcoded fallback
+                logger.warning("⚠️  All body fonts invalid! Using Poppins fallback")
+                selected_body = {'id': 'poppins', 'name': 'Poppins', 'category': 'sans-serif'}
+                body_name = 'Poppins'
+        
         # Ensure hero and body are different
-        if selected_hero['name'] == selected_body['name'] and len(body_fonts) > 1:
+        if hero_name == body_name and len(body_fonts) > 1:
             body_idx = (body_idx + 1) % len(body_fonts)
-            selected_body = body_fonts[body_idx]
+            if body_fonts[body_idx]['name'].lower() not in invalid_fonts:
+                selected_body = body_fonts[body_idx]
+                body_name = selected_body['name']
         
         # Track usage for future variety
-        self._track_font_usage(selected_hero['id'], is_hero=True)
-        self._track_font_usage(selected_body['id'], is_hero=False)
+        self._track_font_usage(selected_hero.get('id', hero_name), is_hero=True)
+        self._track_font_usage(selected_body.get('id', body_name), is_hero=False)
         
         result = {
-            'hero': selected_hero['name'],
-            'body': selected_body['name'],
+            'hero': hero_name,
+            'body': body_name,
             'source': 'enhanced_metadata',
-            'hero_id': selected_hero['id'],
-            'body_id': selected_body['id'],
+            'hero_id': selected_hero.get('id', hero_name),
+            'body_id': selected_body.get('id', body_name),
             'hero_category': selected_hero.get('category', 'unknown'),
             'body_category': selected_body.get('category', 'unknown')
         }
         
         logger.info(f"Selected font pair: {result['hero']} (hero) + {result['body']} (body)")
+        print(f"✅ ENHANCED_FONT_SERVICE selected: Hero={result['hero']}, Body={result['body']}")
         
         return result

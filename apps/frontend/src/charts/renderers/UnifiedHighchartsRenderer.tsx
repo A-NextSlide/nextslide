@@ -966,11 +966,26 @@ function convertDataForHighcharts(
   }
   
   // Handle regular chart types
+  // Check if data is in series format (array of objects with 'data' arrays)
+  const isSeriesFormat = Array.isArray(data) && data.length > 0 && 
+                         data[0] && typeof data[0] === 'object' &&
+                         'data' in data[0] && Array.isArray(data[0].data);
+  
   switch (chartType) {
     case 'bar':
     case 'column':
+      // Bar/column can be single-series OR multi-series
+      if (isSeriesFormat) {
+        // Multi-series bar/column chart
+        return convertSeriesData(data as ChartSeries[], chartType, colors);
+      } else {
+        // Single-series bar/column chart
+        return convertBarPieData(data as ChartDataPoint[], chartType, colors);
+      }
+    
     case 'pie':
     case 'gauge':
+      // These are always single-series
       return convertBarPieData(data as ChartDataPoint[], chartType, colors);
     
     case 'funnel':
@@ -1177,11 +1192,54 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           [transformedData, chartType, colors]
         );
 
-        // Extract categories for bar/column charts
+        // Extract categories for charts with categorical x-axis
         const categories = useMemo(() => {
+          // For bar/column charts
           if ((chartType === 'bar' || chartType === 'column') && Array.isArray(transformedData)) {
-            return (transformedData as ChartDataPoint[]).map(d => d.name || d.id || '');
+            // Check if data is in series format (multi-series)
+            if (transformedData.length > 0 && 
+                transformedData[0] && 
+                typeof transformedData[0] === 'object' && 
+                'data' in transformedData[0] && 
+                Array.isArray((transformedData[0] as any).data)) {
+              // Multi-series: extract categories from first series
+              const firstSeries = transformedData[0] as any;
+              return firstSeries.data.map((point: any) => point.x || point.name || '');
+            } else {
+              // Single-series: extract from data points
+              return (transformedData as ChartDataPoint[]).map(d => d.name || d.id || '');
+            }
           }
+          
+          // For LINE, AREA, SPLINE charts - ALSO NEED CATEGORIES!
+          if (['line', 'spline', 'area', 'areaspline'].includes(chartType) && Array.isArray(transformedData)) {
+            // Check if data is in series format
+            if (transformedData.length > 0 && 
+                transformedData[0] && 
+                typeof transformedData[0] === 'object' && 
+                'data' in transformedData[0] && 
+                Array.isArray((transformedData[0] as any).data)) {
+              // Extract categories from first series
+              const firstSeries = transformedData[0] as any;
+              const cats = firstSeries.data.map((point: any) => {
+                // For categorical data, the 'name' property contains the label
+                if (point.name && typeof point.name === 'string') {
+                  return point.name;
+                }
+                // Fallback to x if it's a string
+                if (typeof point.x === 'string') {
+                  return point.x;
+                }
+                return '';
+              }).filter((cat: string) => cat !== '');
+              
+              // Only return categories if we found string labels (categorical data)
+              if (cats.length > 0 && cats.length === firstSeries.data.length) {
+                return cats;
+              }
+            }
+          }
+          
           // For radar charts, extract categories from the first series data points
           if (chartType === 'radar' && Array.isArray(transformedData) && transformedData.length > 0) {
             const firstSeries = transformedData[0];
@@ -1270,7 +1328,10 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
             xAxis: {
               ...highchartsOptions.xAxis,
               ...chartSpecificOptions.xAxis,
-              ...(categories ? { categories } : {}),
+              ...(categories ? { 
+                categories,
+                type: 'category'  // Explicitly set as categorical when we have categories
+              } : {}),
               // Respect explicit tickSpacing exactly for categorical axes (1 = show all)
               tickInterval: categories && typeof tickSpacing === 'number' && tickSpacing >= 1 ? tickSpacing : undefined,
               gridLineWidth: enableGrid ? 1 : 0,
@@ -1279,7 +1340,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
                 ...(highchartsOptions.xAxis as any)?.labels,
                 ...(chartSpecificOptions.xAxis as any)?.labels,
                 rotation: 0, // Flat labels (no slant)
-                y: Math.round(30 * containerScale), // Position down from axis base, scales with container
+                y: Math.round(40 * containerScale), // Moved down even more (was 35, now 40)
                 style: {
                   ...(highchartsOptions.xAxis as any)?.labels?.style,
                   ...(chartSpecificOptions.xAxis as any)?.labels?.style,
@@ -1311,14 +1372,14 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
                 ...(highchartsOptions.yAxis as any)?.labels,
                 ...(chartSpecificOptions.yAxis as any)?.labels,
                 rotation: 0, // Flat labels
-                x: Math.round(-5 * containerScale), // Position closer to axis, scales with container
+                x: Math.round(-8 * containerScale), // Position away from axis for more space
                 style: {
                   ...(highchartsOptions.yAxis as any)?.labels?.style,
                   ...(chartSpecificOptions.yAxis as any)?.labels?.style,
-                  fontSize: `${labelFontSizePx}px`,
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  width: `${Math.round(60 * containerScale)}px` // Max width scales with container
+                  fontSize: `${Math.max(7, labelFontSizePx - 1)}px`, // Smaller font for y-axis
+                  textOverflow: 'clip', // Don't show ellipsis
+                  whiteSpace: 'nowrap'
+                  // Remove width constraint to prevent truncation
                 } as any
               },
               // Ensure title style is preserved from theme

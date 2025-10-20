@@ -114,6 +114,14 @@ const SlideChartViewer: React.FC<SlideChartViewerProps> = ({ extractedData }) =>
     return map;
   }, [metadata]);
 
+  // Detect dark mode to set appropriate background for chart
+  const isDarkMode = typeof window !== 'undefined' && 
+    window.matchMedia && 
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  
+  // Use actual background colors that match the container classes
+  const chartBg = isDarkMode ? '#1f2937' : '#ffffff'; // gray-800 : white
+  
   // Create a mock component instance for the UnifiedHighchartsRenderer
   const mockComponent: ComponentInstance = useMemo(() => ({
     id: `chart-preview-${Date.now()}`,
@@ -123,7 +131,8 @@ const SlideChartViewer: React.FC<SlideChartViewerProps> = ({ extractedData }) =>
     props: {
       chartType: chartType,
       data: enrichedData,
-      theme: 'light',
+      backgroundColor: chartBg, // Set background to match container
+      // Don't set explicit theme - let auto-detection handle it based on backgroundColor
       enableLabel: true,
       enableAxisTicks: true,
       enableGrid: true,
@@ -137,7 +146,7 @@ const SlideChartViewer: React.FC<SlideChartViewerProps> = ({ extractedData }) =>
     styles: {},
     locked: false,
     visible: true
-  }), [chartType, displayData, containerSize, adaptiveTickRotation]);
+  }), [chartType, displayData, containerSize, adaptiveTickRotation, chartBg]);
 
   return (
     <div className="p-2">

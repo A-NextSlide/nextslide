@@ -22,6 +22,23 @@ export function convertToHighchartsTheme(theme: 'light' | 'dark', backgroundColo
   const convertHexToRgba = (hex: string): string => {
     if (!hex || hex === 'transparent') return 'transparent';
     
+    // Handle rgba format with alpha 0 - convert to transparent
+    if (hex.toLowerCase().startsWith('rgba(')) {
+      const match = hex.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/i);
+      if (match) {
+        const a = parseFloat(match[4]);
+        // If alpha is 0, return transparent
+        if (a === 0) return 'transparent';
+      }
+      // Return as-is for non-zero alpha rgba
+      return hex;
+    }
+    
+    // Handle rgb format (no alpha) - return as-is
+    if (hex.toLowerCase().startsWith('rgb(')) {
+      return hex;
+    }
+    
     // Handle 8-digit hex (with alpha)
     if (hex.startsWith('#') && hex.length === 9) {
       const r = parseInt(hex.slice(1, 3), 16);
@@ -47,8 +64,9 @@ export function convertToHighchartsTheme(theme: 'light' | 'dark', backgroundColo
   // Ensure we use transparent if no backgroundColor is provided
   const bgColor = backgroundColor !== undefined ? convertHexToRgba(backgroundColor) : 'transparent';
   
-  // Highcharts prefers null for transparent backgrounds
-  const highchartsBgColor = bgColor === 'transparent' ? null : bgColor;
+  // Highcharts supports both null and 'transparent' for transparent backgrounds
+  // Use 'transparent' explicitly to ensure no default grey background is applied
+  const highchartsBgColor = bgColor === 'transparent' ? 'transparent' : bgColor;
   
   return {
     chart: {
@@ -153,7 +171,8 @@ export function convertToHighchartsTheme(theme: 'light' | 'dark', backgroundColo
 }
 
 /**
- * Convert bar/pie chart data to Highcharts format
+ * Convert bar/pie chart data to Highcharts format (SINGLE-SERIES ONLY)
+ * For multi-series bar/column charts, use convertSeriesData instead
  */
 export function convertBarPieData(
   data: ChartDataPoint[], 
@@ -202,7 +221,7 @@ export function convertBarPieData(
     }];
   }
   
-  // Bar/Column chart
+  // Bar/Column chart (SINGLE-SERIES)
   return [{
     type: 'column',
     name: 'Values',
@@ -222,7 +241,14 @@ export function convertBarPieData(
 }
 
 /**
- * Convert series data (line/scatter/area/spline) to Highcharts format
+ * Convert series data (line/scatter/area/spline/bar/column) to Highcharts format
+ * 
+ * According to Highcharts API (https://api.highcharts.com/highcharts/):
+ * - For categorical x-axis: use { name: category, y: value } format
+ * - For numerical x-axis: use { x: number, y: value } format
+ * - For datetime x-axis: use [timestamp, value] or { x: timestamp, y: value }
+ * 
+ * Supports both single-series and multi-series charts for all chart types.
  */
 export function convertSeriesData(
   data: ChartSeries[], 
@@ -240,8 +266,21 @@ export function convertSeriesData(
     }];
   }
   
-  // For radar charts, use 'line' as the series type since Highcharts doesn't have a 'radar' type
-  const seriesType = chartType === 'radar' ? 'line' : chartType;
+  // Map chart types to Highcharts series types
+  let seriesType: string;
+  if (chartType === 'radar') {
+    // For radar charts, use 'line' as the series type since Highcharts uses polar + line
+    seriesType = 'line';
+  } else if (chartType === 'bar') {
+    // For horizontal bars, Highcharts uses 'bar' type
+    seriesType = 'bar';
+  } else if (chartType === 'column') {
+    // For vertical bars, Highcharts uses 'column' type
+    seriesType = 'column';
+  } else {
+    // For all other types (line, area, spline, etc.), use the type as-is
+    seriesType = chartType;
+  }
   
   return data.map((series, index) => {
     // Ensure series.data exists and is an array
@@ -252,14 +291,35 @@ export function convertSeriesData(
       name: series?.name || series?.id || `Series ${index + 1}`,
       color: series?.color || chartColors[index % chartColors.length],
       data: seriesData.map(point => {
+        // Get the y value
+        const yVal = typeof point?.y === 'number' ? point.y : 0;
+        
+        // Determine the data point format based on x type
         const p: any = {
-          x: typeof point?.x === 'number' ? point.x : undefined,
-          y: typeof point?.y === 'number' ? point.y : 0,
-          name: typeof point?.x === 'string' ? point.x : undefined
+          y: yVal
         };
+        
+        // Handle x-axis value
+        if (point?.x !== undefined && point?.x !== null) {
+          if (typeof point.x === 'string') {
+            // Categorical data: use 'name' property for category labels
+            p.name = point.x;
+          } else if (typeof point.x === 'number') {
+            // Numerical data: use 'x' property
+            p.x = point.x;
+          }
+        }
+        
+        // Also check for 'name' property directly (for categorical data)
+        if (!p.name && point?.name) {
+          p.name = String(point.name);
+        }
+        
+        // Preserve sourceIndex for tooltip mapping
         if ((point as any)?.sourceIndex !== undefined) {
           p.sourceIndex = (point as any).sourceIndex;
         }
+        
         return p;
       })
     };

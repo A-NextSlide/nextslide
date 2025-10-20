@@ -78,6 +78,8 @@ import './components/GroupRenderer';
 import './components/IconRenderer';
 import './components/WavyLinesRenderer';
 import './components/ReactBitsRenderer';
+import './components/MathRenderer';
+import './components/DiagramRenderer';
 
 // Auto-register chart renderers from the new charts system
 import '@/charts/renderers/BaseChartRenderer';

@@ -40,21 +40,13 @@ class GlobalThemeSystem:
         
         all_content = "\n\n".join(sampled_content)
         
-        # Format available fonts
+        # Format available fonts - SHOW ALL FONTS (user wants complete list!)
         available_fonts_str = ""
         if available_fonts:
             for category, fonts in available_fonts.items():
                 if fonts:  # Only show categories with fonts
-                    # Show all fonts for important categories, limit others
-                    if category in ["Script", "Bold", "Design", "Designer", "Unique"]:
-                        available_fonts_str += f"\n   {category}: {', '.join(fonts)}"
-                    else:
-                        # Show first 10 fonts for other categories
-                        display_fonts = fonts[:10]
-                        if len(fonts) > 10:
-                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)} (+ {len(fonts) - 10} more)"
-                        else:
-                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)}"
+                    # Show ALL fonts in every category - no limiting!
+                    available_fonts_str += f"\n   {category}: {', '.join(fonts)}"
         else:
             available_fonts_str = "\n   [Font list not provided - use your best judgment]"
         
@@ -187,25 +179,59 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    - Caption: Font family, size (pt), weight
 
    FONT SELECTION GUIDANCE:
-   - 🚨 CRITICAL: NEVER USE INTER! It's boring and overused!
-   - DO NOT default to Inter, Helvetica, or Arial! Be creative with font choices!
-   - Inter is FORBIDDEN - choose literally any other font!
+   - 🚨 CRITICAL: NEVER USE LATO, ROBOTO, OR INTER! These are boring and overused!
+   - FORBIDDEN FONTS: Lato, Roboto, Inter, Helvetica, Arial
+   - BE CREATIVE! Match fonts to content ENERGY and AUDIENCE!
+   - You have access to HUNDREDS of fonts - use interesting ones!
    - Choose from these ACTUALLY AVAILABLE fonts in the system:
 
    {available_fonts_str}
+   
+   💡 FONT SELECTION STRATEGY:
+   - Look at the presentation TOPIC first
+   - Match font PERSONALITY to content energy (playful topic = playful fonts!)
+   - Consider AUDIENCE maturity (kids = fun fonts, executives = sophisticated fonts)
+   - DON'T default to "safe" choices - be bold and appropriate!
 
    🎭 PRESENTATION TYPE DETECTION (CRITICAL FOR FONT CHOICE!):
 
    📌 FUN/CREATIVE PRESENTATIONS (Characters, Kids, Entertainment, Playful):
-   - Pikachu, Pokemon, Disney characters, cartoons, games
-   - Kids' education, fun topics, creative storytelling
+   - Pikachu, Pokemon, Disney characters, cartoons, games, toys, animals
+   - Kids' education, fun topics, creative storytelling, hobbies, parties
    - MASSIVE, PLAYFUL typography (hero titles 120-200pt)
-   - Mix fun Script + Bold fonts (Fredoka + Bebas Neue)
-   - Rounded, friendly fonts (Quicksand, Nunito, Bubblegum Sans)
+   
+   🎨 SUPER CREATIVE FONT COMBOS FOR FUN TOPICS:
+   
+   **Playful & Energetic** (Kids, Games, Fun):
+   - Hero: Fredoka One, Baloo 2, Chewy, Righteous, Bubblegum Sans
+   - Body: Quicksand, Nunito, Comfortaa, Comic Neue, Varela Round
+   - Accent: Bungee, Bungee Shade, Bungee Inline (for extra pop!)
+   
+   **Retro & Nostalgic** (80s/90s, Gaming, Pop Culture):
+   - Hero: Press Start 2P, VT323, Monoton, Orbitron, Audiowide
+   - Body: Space Mono, IBM Plex Mono, Major Mono Display
+   - Accent: Fascinate, Fascinate Inline, Faster One
+   
+   **Whimsical & Handwritten** (Creative, Personal, Storytelling):
+   - Hero: Pacifico, Kaushan Script, Caveat, Amatic SC
+   - Body: Indie Flower, Patrick Hand, Shadows Into Light
+   - Accent: Righteous, Courgette, Gloria Hallelujah
+   
+   **Bold & Cartoon** (Comics, Animation, Youth):
+   - Hero: Bangers, Bungee, Titan One, Carter One, Sigmar One
+   - Body: Signika, Asap, Rubik, Cabin
+   - Accent: Passion One, Calistoga, Bungee Hairline
+   
+   **Modern Fun** (Contemporary, Fresh, Vibrant):
+   - Hero: Fredoka, Sora, Outfit, Manrope, Space Grotesk
+   - Body: DM Sans, Plus Jakarta Sans, Lexend, Figtree
+   - Accent: Bebas Neue, Archivo Black, Staatliches
+   
    - EXPLOSIVE layouts - elements can overlap, rotate, be huge
    - Dynamic positioning - not everything needs to be aligned
    - Use ALL available colors - rainbow explosions welcome!
    - CustomComponents for animated effects, bouncing text, fun counters
+   - MIX MULTIPLE FONT WEIGHTS from same family for variety
 
    📊 STRUCTURED PRESENTATIONS (Business, Corporate, Academic, Formal):
    - Business pitches, quarterly reports, academic research
@@ -225,23 +251,29 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    - Match fonts to the content theme AND AUDIENCE (BE CREATIVE - MIX CATEGORIES!):
 
    BY CONTENT TYPE:
-     * Tech/Startup: Tech & Startup category (IBM Plex, Oxanium, Tomorrow) + Geometric (Questrial, Dosis)
-     * Corporate/Business: Branding category (Prompt, Radio Canada) + Premium sans-serifs
-     * Playful/Fun: Mix Script (Pacifico, Kaushan) + Retro (Bungee variants, Press Start 2P)
-     * Elegant/Luxury: Luxury category (Tenor Sans, Cormorant variants) + Editorial (Bodoni Moda, Rozha One)
-     * Editorial/Magazine: Editorial category + Mix Modern (Satoshi, Cabinet Grotesk) for contrast
-     * Bold/Impact: Bold category (Bebas Neue, Anton) + Unique (Orbitron, Audiowide)
-     * Fashion/Beauty: Luxury fonts + Elegant scripts (Allura, Great Vibes)
-     * Retro/Vintage: Retro category (Monoton, Fascinate) + Design classics
-     * Scientific/Academic: Serif (Noto Serif, Bitter) + Monospace for data (JetBrains Mono)
-     * Creative/Artistic: Mix ALL categories creatively - be bold with combinations!
+     * Tech/Startup: IBM Plex Sans, Oxanium, Tomorrow, Space Grotesk, Orbitron
+     * Corporate/Business: Montserrat, Poppins, Raleway, Work Sans, DM Sans
+     * Playful/Fun: Fredoka, Baloo 2, Righteous, Bungee, Pacifico, Bubblegum Sans
+     * Kids/Children: Fredoka One, Comic Neue, Quicksand, Nunito, Varela Round
+     * Games/Retro: Press Start 2P, VT323, Monoton, Orbitron, Space Mono
+     * Whimsical/Creative: Pacifico, Kaushan Script, Caveat, Indie Flower, Amatic SC
+     * Bold/Energetic: Bangers, Bebas Neue, Anton, Sigmar One, Titan One, Righteous
+     * Elegant/Luxury: Playfair Display, Cormorant, Bodoni Moda, Tenor Sans
+     * Editorial/Magazine: Libre Baskerville, Merriweather, Lora, Crimson Text
+     * Modern Minimal: Sora, Outfit, Manrope, Cabinet Grotesk, Satoshi
+     * Retro/Vintage: Fascinate, Monoton, Faster One, Major Mono Display
+     * Scientific/Academic: Noto Serif, Bitter, Source Serif Pro + JetBrains Mono
+     * Cartoon/Animation: Bangers, Bungee, Carter One, Sigmar One, Calistoga
+     * Handwritten/Personal: Caveat, Patrick Hand, Shadows Into Light, Gloria Hallelujah
+     * Creative/Artistic: Mix ALL categories creatively - be BOLD with combinations!
 
    🎯 BY AUDIENCE & MATURITY (CRITICAL - MUST MATCH AUDIENCE!):
      * KIDS (Elementary/Preschool):
-       - Hero: Fredoka, Bubblegum Sans, Comic Neue, Quicksand, Nunito (friendly, rounded, FUN!)
-       - Body: Nunito, Quicksand, Open Sans, Poppins (readable, approachable)
+       - Hero: Fredoka One, Baloo 2, Chewy, Bubblegum Sans, Righteous, Comic Neue
+       - Body: Nunito, Quicksand, Comfortaa, Varela Round, Poppins
+       - Accent: Bungee, Bungee Inline, Passion One (for EXTRA energy!)
        - AVOID: Formal serifs, heavy corporate fonts, anything serious or intimidating
-       - STYLE: Playful, colorful, energetic, soft rounded corners
+       - STYLE: Playful, colorful, energetic, soft rounded corners, FUN VARIETY!
 
      * TEENS (Middle/High School):
        - Hero: Bebas Neue, Oswald, Anton, Righteous, Bungee (bold, edgy, modern)

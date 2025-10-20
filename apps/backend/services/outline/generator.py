@@ -5,7 +5,8 @@ import json
 import time
 import uuid
 import os
-from typing import Dict, Any, Optional, List, AsyncGenerator
+import re
+from typing import Dict, Any, Optional, List, AsyncGenerator, Tuple
 from dotenv import load_dotenv
 
 from .models import (
@@ -32,6 +33,32 @@ from setup_logging_optimized import get_logger
 from services.pptx_text_extractor import extract_pptx_text_from_bytes
 
 logger = get_logger(__name__)
+
+
+def extract_image_prompt_from_content(content: str) -> Tuple[str, Optional[str]]:
+    """
+    Extract [IMAGE: ...] tag from content and return cleaned content and extracted prompt.
+    
+    Args:
+        content: The slide content potentially containing [IMAGE: ...] tags
+        
+    Returns:
+        Tuple of (cleaned_content, image_prompt)
+    """
+    # Match [IMAGE: ...] with case insensitive
+    pattern = r'\[IMAGE:\s*([^\]]+)\]'
+    match = re.search(pattern, content, re.IGNORECASE)
+    
+    if match:
+        image_prompt = match.group(1).strip()
+        # Remove the [IMAGE: ...] tag from content
+        cleaned_content = re.sub(pattern, '', content, flags=re.IGNORECASE).strip()
+        # Clean up any extra newlines that might be left
+        cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
+        logger.info(f"[IMAGE EXTRACT] Extracted image prompt: '{image_prompt}'")
+        return cleaned_content, image_prompt
+    
+    return content, None
 
 # Load environment variables from .env file, overriding existing ones
 load_dotenv(override=True)
@@ -1357,15 +1384,19 @@ class OutlineGenerator:
                 # Fallback slide
                 fallback_title = str(outline_plan["slides"][index])
                 slide_type = slide_types[index]
+                fallback_content = self.slide_generator._create_fallback_content(
+                    fallback_title if isinstance(fallback_title, str) else fallback_title.get('title', 'Slide'),
+                    slide_type,
+                    outline_plan.get("title", "Presentation")
+                )
+                # Extract [IMAGE: ...] tag if present
+                cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
                 fallback_slide = SlideContent(
                     id=str(uuid.uuid4()),
                     title=fallback_title if isinstance(fallback_title, str) else fallback_title.get('title', 'Slide'),
-                    content=self.slide_generator._create_fallback_content(
-                        fallback_title if isinstance(fallback_title, str) else fallback_title.get('title', 'Slide'),
-                        slide_type,
-                        outline_plan.get("title", "Presentation")
-                    ),
-                    slide_type=slide_type
+                    content=cleaned_fallback_content,
+                    slide_type=slide_type,
+                    suggestedImagePrompt=fallback_image_prompt
                 )
                 results[index] = fallback_slide
                 completed += 1
@@ -1644,15 +1675,19 @@ class OutlineGenerator:
             
             content = '\n'.join(content_lines) if content_lines else pptx_slide.get('text', '')
             
+            # Extract [IMAGE: ...] tag if present
+            cleaned_content, image_prompt = extract_image_prompt_from_content(content)
+            
             # Create SlideContent object
             slide = SlideContent(
                 id=str(uuid.uuid4()),
                 title=title,
-                content=content,
+                content=cleaned_content,
                 slide_type='content',
                 deepResearch=False,
                 extractedData=None,
-                taggedMedia=[]
+                taggedMedia=[],
+                suggestedImagePrompt=image_prompt
             )
             
             slides.append(slide)
@@ -2254,11 +2289,15 @@ CITE ALL FACTS with [1], [2], [3] etc."""
                 from .models import SlideContent
                 import uuid
                 
+                # Extract [IMAGE: ...] tag if present
+                cleaned_content, image_prompt = extract_image_prompt_from_content(slide_content)
+                
                 slide = SlideContent(
                     id=str(uuid.uuid4()),
                     title=slide_title,
-                    content=slide_content,
-                    slide_type=slide_type or "content"
+                    content=cleaned_content,
+                    slide_type=slide_type or "content",
+                    suggestedImagePrompt=image_prompt
                 )
                 
                 # Add citations to slide if found
@@ -2343,11 +2382,15 @@ CITE ALL FACTS with [1], [2], [3] etc."""
                 from .models import SlideContent
                 import uuid
                 
+                fallback_content = f"Content for {slide_title}"
+                # Extract [IMAGE: ...] tag if present
+                cleaned_fallback_content, fallback_image_prompt = extract_image_prompt_from_content(fallback_content)
                 fallback_slide = SlideContent(
                     id=str(uuid.uuid4()),
                     title=slide_title,
-                    content=f"Content for {slide_title}",
-                    slide_type="content"
+                    content=cleaned_fallback_content,
+                    slide_type="content",
+                    suggestedImagePrompt=fallback_image_prompt
                 )
                 return idx, fallback_slide
         
@@ -2532,14 +2575,50 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
             
             client, model_name = get_client(model)
             max_tokens = min(20000, get_max_tokens_for_model(model, 20000))
-            # Slide count guardrails (default to fewer slides in auto mode)
-            slide_hint = options.slide_count or {
-                'quick': 3,
-                'standard': 6,
-                'detailed': 10
-            }.get(options.detail_level or 'standard', 6)
+            
             # Smart content scaling: detect request type and adjust fact density
             prompt_lower = options.prompt.lower()
+            
+            # 🎉 DETECT PERSONAL/CREATIVE/SILLY TOPICS (birthday, party, fun, etc.)
+            personal_creative_indicators = [
+                'birthday', 'party', 'celebration', 'anniversary', 'silly', 'fun',
+                'pikachu', 'pokemon', 'mario', 'disney', 'cartoon', 'character',
+                'hobby', 'personal', 'my story', 'my journey', 'family', 'friend',
+                'wedding', 'baby shower', 'retirement party', 'surprise', 'gift',
+                'vacation', 'travel', 'adventure', 'pet', 'recipe', 'cooking',
+                'craft', 'diy', 'art project', 'scrapbook', 'slideshow for'
+            ]
+            
+            # 📚 DETECT HOW-TO/TUTORIAL TOPICS
+            howto_indicators = [
+                'how to', 'guide to', 'tutorial', 'step by step', 'learn to',
+                'beginner guide', 'getting started', 'introduction to', 'basics of'
+            ]
+            
+            is_personal_creative = any(indicator in prompt_lower for indicator in personal_creative_indicators)
+            is_howto = any(indicator in prompt_lower for indicator in howto_indicators)
+            
+            # Slide count guardrails (default to fewer slides in auto mode)
+            # 🎯 ADJUST FOR PERSONAL/CREATIVE: Use minimal slide counts for short, fun content
+            if options.slide_count is None:
+                if is_personal_creative or is_howto:
+                    # Personal/creative content should be SHORT and focused
+                    slide_hint = {
+                        'quick': 3,
+                        'standard': 5,  # Reduced from 6 to 5
+                        'detailed': 8   # Reduced from 10 to 8
+                    }.get(options.detail_level or 'standard', 5)
+                    logger.info(f"[OUTLINE] 🎉 Detected personal/creative/silly topic - using SHORT slide count: {slide_hint}")
+                else:
+                    # Business/formal content uses normal defaults
+                    slide_hint = {
+                        'quick': 3,
+                        'standard': 6,
+                        'detailed': 10
+                    }.get(options.detail_level or 'standard', 6)
+            else:
+                # User explicitly specified slide count - respect it
+                slide_hint = options.slide_count
             # Detect pitch-style decks where visual simplicity is preferred
             pitch_indicators = [
                 'pitch deck', 'investor pitch', 'sales pitch', 'product pitch', 'demo day',
@@ -2550,7 +2629,8 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 ' pitch' in prompt_lower and 'baseball' not in prompt_lower
             )
             # For pitch decks without an explicit slide count, allow slightly more slides with simpler content
-            if options.slide_count is None and is_pitch:
+            # BUT NOT for personal/creative topics - those should stay short
+            if options.slide_count is None and is_pitch and not is_personal_creative:
                 slide_hint = {
                     'quick': 6,
                     'standard': 10,
@@ -2633,28 +2713,59 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
             )
 
             chart_rules = (
-                "- When a slide lends itself to visualization (categories, timelines, rankings, shares, trends), include a chart with REAL, NUMERIC data.\n"
-                "- STRICT SCHEMA (use one):\n"
-                "  chart: { chartType: 'column'|'bar'|'line'|'pie', title: string, data: Array<{ name: string, value: number }> }\n"
-                "  // Alternative accepted keys if needed (we will normalize):\n"
-                "  chart_data | dataset | table | series | datasets (same structure; we will convert to data: [{name,value}]).\n"
+                "- When a slide lends itself to visualization (categories, timelines, rankings, shares, trends, comparisons), include a chart with REAL, NUMERIC data.\n"
+                "- CHART DATA SCHEMA:\n"
+                "  SINGLE-SERIES: { chartType: 'column'|'bar'|'line'|'pie', title: string, data: [{name: string, value: number}] }\n"
+                "  MULTI-SERIES: { chartType: 'column'|'bar'|'line'|'area', title: string, data: [{name: string, value: number, series: string}] }\n"
+                "  Example multi-series: [{name: 'Q1', value: 450, series: 'Revenue'}, {name: 'Q1', value: 320, series: 'Cost'}, {name: 'Q2', value: 480, series: 'Revenue'}, ...]\n"
+                "\n"
+                "- USE MULTI-SERIES CHARTS when comparing:\n"
+                "  * Multiple time periods: Actual vs Budget, This Year vs Last Year\n"
+                "  * Multiple metrics: Revenue vs Profit, Sales vs Targets\n"
+                "  * Multiple segments: Product A vs Product B vs Product C\n"
+                "  * Multiple scenarios: Best Case vs Base Case vs Worst Case\n"
+                "\n"
+                "- MULTI-SERIES EXAMPLES:\n"
+                "  ✅ Revenue vs Cost by Region (column chart, 2 series × 8 regions):\n"
+                "     [{name: 'North', value: 450, series: 'Revenue'}, {name: 'North', value: 320, series: 'Cost'}, {name: 'South', value: 380, series: 'Revenue'}, ...]\n"
+                "  ✅ Quarterly Trends: Actual vs Budget (line chart, 2 series × 12 quarters):\n"
+                "     [{x: 'Q1 2023', y: 450, series: 'Actual'}, {x: 'Q1 2023', y: 420, series: 'Budget'}, {x: 'Q2 2023', y: 480, series: 'Actual'}, ...]\n"
+                "  ✅ Product Performance Over Time (area chart, 3 series × 16 months):\n"
+                "     [{x: 'Jan 2023', y: 150, series: 'Product A'}, {x: 'Jan 2023', y: 120, series: 'Product B'}, {x: 'Jan 2023', y: 90, series: 'Product C'}, ...]\n"
+                "\n"
                 "- Use real category names (e.g., 'North America', 'Q1 2024', 'Chrome'). NEVER use generic labels like 'Category A' or 'Item 1'.\n"
                 "- Values MUST be numbers (no '%' sign, no strings).\n"
-                "- CRITICAL MIXED UNITS RULE: All values in a single chart MUST share ONE measurement unit across the entire dataset (all % OR all USD OR all counts). DO NOT mix units under any circumstances.\n"
-                "- FORBIDDEN MIXED UNIT EXAMPLES:\n"
-                "  ❌ NEVER DO: [{name: 'Lifetime Sales (Millions)', value: 150}, {name: 'RAM (KB)', value: 64}, {name: 'On-Screen Colors', value: 256}] // Mixing sales $ + memory + count\n"
-                "  ❌ NEVER DO: [{name: 'Revenue', value: 2500000}, {name: 'Employees', value: 45}, {name: 'Market Share %', value: 12}] // Mixing currency + headcount + percentage\n"
-                "  ❌ NEVER DO: [{name: 'Game Sales', value: 50}, {name: 'Console RAM', value: 512}, {name: 'Color Palette', value: 16}] // Mixing units + memory + technical specs\n"
-                "- CORRECT SINGLE-UNIT EXAMPLES:\n"
-                "  ✅ GOOD: [{name: 'Q1 Sales', value: 150}, {name: 'Q2 Sales', value: 180}, {name: 'Q3 Sales', value: 200}] // All millions USD\n"
-                "  ✅ GOOD: [{name: 'Chrome', value: 65}, {name: 'Firefox', value: 18}, {name: 'Safari', value: 17}] // All percentages\n"
-                "  ✅ GOOD: [{name: 'North America', value: 450}, {name: 'Europe', value: 320}, {name: 'Asia', value: 280}] // All employee counts\n"
-                "- WHEN UNITS CANNOT BE UNIFIED: Present the information as bullet points with clear units in text. DO NOT attempt to chart incompatible data.\n"
-                "- MIXED UNIT DETECTION: If your data includes sales figures, technical specifications, percentages, counts, memory sizes, or other incompatible units - DO NOT create a chart.\n"
-                "- DATA DENSITY: Prefer 10–20+ points when appropriate. For time series, include at least 12–24 periods (e.g., months) or 8–12 quarters.\n"
-                "- Prefer 'line' for time series, 'column' for categories, 'pie' only for shares that sum to ~100%.\n"
-                "- Axis labels: Rotate bottom axis labels 30–45° when long to avoid cropping; increase bottom margin accordingly (Highcharts: xAxis.labels.rotation/autoRotation + chart.marginBottom).\n"
-                "- Omit chart if not clearly beneficial or if data has mixed units."
+                "\n"
+                "- UNIT CONSISTENCY RULES:\n"
+                "  * SINGLE-SERIES: All values MUST share ONE unit (all % OR all USD OR all counts)\n"
+                "  * MULTI-SERIES: Values within EACH series must be consistent, but DIFFERENT series CAN have different units when it makes sense\n"
+                "    ✅ OK: Revenue (USD millions) vs Growth Rate (%) - different series, different units\n"
+                "    ✅ OK: Sales (units) vs Market Share (%) - complementary metrics\n"
+                "    ❌ NEVER within same series: [{name: 'Revenue', value: 2500000, series: 'Metrics'}, {name: 'Employees', value: 45, series: 'Metrics'}]\n"
+                "\n"
+                "- FORBIDDEN MIXED UNITS (within single series):\n"
+                "  ❌ [{name: 'Sales ($M)', value: 150}, {name: 'RAM (KB)', value: 64}, {name: 'Colors', value: 256}] // Mixing incompatible units\n"
+                "  ❌ [{name: 'Revenue', value: 2500000}, {name: 'Employees', value: 45}, {name: 'Market Share %', value: 12}] // Not comparable\n"
+                "\n"
+                "- CORRECT EXAMPLES:\n"
+                "  ✅ Single-series: [{name: 'Q1 Sales', value: 150}, {name: 'Q2 Sales', value: 180}, {name: 'Q3 Sales', value: 200}] // All millions USD\n"
+                "  ✅ Multi-series: [{name: 'North', value: 450, series: 'Revenue'}, {name: 'North', value: 15, series: 'Growth %'}, ...] // Different units in different series\n"
+                "\n"
+                "- DATA DENSITY:\n"
+                "  * Single-series: 8-15 points typical\n"
+                "  * Multi-series: 2-5 series with 8-20 points each\n"
+                "  * Time series: 12-24 months or 8-12 quarters per series\n"
+                "\n"
+                "- Chart type selection - MATCH TYPE TO DATA STRUCTURE:\n"
+                "  * 'column' or 'bar' for COMPARISONS of categories (products, regions, departments) - DEFAULT CHOICE!\n"
+                "  * 'line' or 'area' ONLY for TIME SERIES showing progression (Q1→Q2→Q3, Jan→Feb→Mar)\n"
+                "  * 'pie' only for parts-of-whole distributions that sum to ~100%\n"
+                "  * 'waterfall' for sequential changes and bridges\n"
+                "  * 'radar' for multi-dimensional competitive comparisons\n"
+                "  * DO NOT use 'line' for static category comparisons - use 'column' instead!\n"
+                "  * VARY chart types across slides - don't use the same type repeatedly\n"
+                "\n"
+                "- Omit chart only if not clearly beneficial or impossible to create with consistent data."
             )
 
             # Dynamic callout (quote/stat) plan based on slide count

@@ -359,6 +359,20 @@ class SimpleDeckComposer(IDeckComposer):
 
         return search_query.strip()
 
+    def _generate_simple_search_query(self, slide: SlideOutline) -> str:
+        """Generate a very simple 1-3 word search query from slide title (fallback)."""
+        title = getattr(slide, 'title', '')
+        if not title:
+            return "business presentation"
+        
+        # Remove common stopwords and take first 2-3 meaningful words
+        stopwords = {'the', 'a', 'an', 'and', 'or', 'for', 'of', 'to', 'in', 'on', 'our', 'your'}
+        words = [w for w in title.split() if w.lower() not in stopwords and len(w) > 2]
+        
+        # Take first 2-3 words
+        search_words = words[:3] if len(words) >= 3 else words[:2]
+        return ' '.join(search_words) if search_words else title[:30]
+    
     def _should_prefer_diagram(self, slide: SlideOutline) -> bool:
         """Heuristic: decide if this slide benefits from a 'diagram' search hint."""
         try:
@@ -492,38 +506,55 @@ class SimpleDeckComposer(IDeckComposer):
                 if isinstance(outline_notes, dict):
                     logger.info(f"[DECK COMPOSER] DEBUG: outline_notes keys: {list(outline_notes.keys())}")
 
-                if isinstance(outline_notes, dict) and outline_notes.get('theme'):
-                    outline_theme = outline_notes.get('theme')
-                    logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
-                    if isinstance(outline_theme, dict):
-                        logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
-                        logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
+                    if outline_notes.get('theme'):
+                        outline_theme = outline_notes.get('theme')
+                        logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
+                        if isinstance(outline_theme, dict):
+                            # CRITICAL: Check if fun topic with boring fonts!
+                            title_lower = deck_outline.title.lower()
+                            is_fun_topic = any(kw in title_lower for kw in [
+                            'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
+                            'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
+                        ])
+                        
+                        current_hero = outline_theme.get('typography', {}).get('hero_title', {}).get('family', '')
+                        current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
+                        boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
+                        has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
+                        
+                        if is_fun_topic and has_boring_fonts:
+                            print(f"\n🎮🎮🎮 FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES! 🎮🎮🎮")
+                            print(f"   Title: '{deck_outline.title}'")
+                            print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
+                            print(f"   ✅ CLEARING outline.notes.theme to force regeneration!\n")
+                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
+                            outline_theme = None  # Clear it!
+                        
+                        if outline_theme:  # Only use if not cleared
+                            logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
+                            logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
 
-                        try:
-                            theme = ThemeSpec.from_dict(outline_theme)
-                            # Also get palette from outline theme
-                            palette = outline_theme.get('color_palette') or outline_theme.get('palette')
-                            if not palette:
-                                # Derive palette directly from provided theme without new theme generation
-                                palette = _palette_from_theme_obj(theme)
-                            logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
-                            logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
-
-                            # CRITICAL: Also extract search_terms from outline.notes if present
-                            if isinstance(outline_notes, dict) and 'search_terms' in outline_notes:
-                                search_terms = outline_notes.get('search_terms', [])
-                                logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from outline: {search_terms}")
-
-                        except Exception as e:
-                            logger.error(f"[DECK COMPOSER] Error creating ThemeSpec from outline theme: {e}")
-                            # Don't set theme = None here! Let it continue and try other sources
-                            # theme = None
-                            # palette = None
+                            try:
+                                theme = ThemeSpec.from_dict(outline_theme)
+                                # Also get palette from outline theme
+                                palette = outline_theme.get('color_palette') or outline_theme.get('palette')
+                                if not palette:
+                                    # Derive palette directly from provided theme without new theme generation
+                                    palette = _palette_from_theme_obj(theme)
+                                logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
+                                logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                                
+                                # CRITICAL: Also extract search_terms from outline.notes if present
+                                if isinstance(outline_notes, dict) and 'search_terms' in outline_notes:
+                                    search_terms = outline_notes.get('search_terms', [])
+                                    logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from outline: {search_terms}")
+                            except Exception as e:
+                                logger.error(f"Error creating theme from outline: {e}")
+                                theme = None
+                        else:
+                            logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
                     else:
-                        logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
-                else:
-                    logger.info(f"[DECK COMPOSER] DEBUG: No outline.notes or no theme key")
-
+                        logger.info(f"[DECK COMPOSER] DEBUG: No theme key in outline.notes")
             except Exception as e:
                 logger.error(f"[DECK COMPOSER] Error checking outline theme: {e}")
                 import traceback
@@ -590,15 +621,50 @@ class SimpleDeckComposer(IDeckComposer):
                 from utils.supabase import get_deck_theme, get_deck
                 existing_theme_data = get_deck_theme(deck_uuid)
                 if existing_theme_data:
-                    logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
-                    theme = ThemeSpec.from_dict(existing_theme_data)
-                    # Attempt to get persisted palette if available
-                    try:
-                        existing_deck = get_deck(deck_uuid)
-                        if existing_deck and existing_deck.get('data', {}).get('style_spec', {}).get('palette'):
-                            palette = existing_deck['data']['style_spec']['palette']
-                    except Exception:
-                        pass
+                    # CRITICAL: Check if this is a fun topic that needs playful fonts
+                    # If so, SKIP cached theme and regenerate!
+                    title_lower = deck_outline.title.lower()
+                    is_fun_topic = any(kw in title_lower for kw in [
+                        'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
+                        'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation'
+                    ])
+                    
+                    current_hero = existing_theme_data.get('typography', {}).get('hero_title', {}).get('family', 'unknown')
+                    current_body = existing_theme_data.get('typography', {}).get('body_text', {}).get('family', 'unknown')
+                    
+                    # Check if cached theme has boring fonts
+                    boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans']
+                    has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
+                    
+                    if is_fun_topic and has_boring_fonts:
+                        print(f"\n🎮 FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
+                        print(f"   Title: {deck_outline.title}")
+                        print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
+                        print(f"   ✅ FORCING theme regeneration to get playful fonts!")
+                        print(f"   Ignoring cached theme...\n")
+                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' has boring cached fonts - forcing regeneration")
+                        existing_theme_data = None  # Skip cached theme!
+                    else:
+                        print(f"\n⚠️  FOUND EXISTING THEME IN DATABASE")
+                        print(f"   Deck: {deck_outline.title}")
+                        print(f"   Theme has cached fonts - NOT regenerating!")
+                        print(f"   Hero font: {current_hero}")
+                        print(f"   Body font: {current_body}")
+                        if is_fun_topic and not has_boring_fonts:
+                            print(f"   ✅ Fun topic already has good fonts - keeping them!\n")
+                        else:
+                            print(f"   Using cached theme...\n")
+                        
+                        logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
+                        theme = ThemeSpec.from_dict(existing_theme_data)
+                        
+                        # Attempt to get persisted palette if available
+                        try:
+                            existing_deck = get_deck(deck_uuid)
+                            if existing_deck and existing_deck.get('data', {}).get('style_spec', {}).get('palette'):
+                                palette = existing_deck['data']['style_spec']['palette']
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.error(f"Error checking existing theme from database: {e}")
 
@@ -665,16 +731,37 @@ class SimpleDeckComposer(IDeckComposer):
                         outline_theme = outline_notes.get('theme')
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
-                            logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
-                            logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
-                            theme = ThemeSpec.from_dict(outline_theme)
-                            # Also get palette from outline theme
-                            palette = outline_theme.get('color_palette') or outline_theme.get('palette')
-                            if not palette:
-                                # Derive palette directly from theme without regenerating
-                                palette = _palette_from_theme_obj(theme)
-                            logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
-                            logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                            # CRITICAL: Check if fun topic with boring fonts!
+                            title_lower = deck_outline.title.lower()
+                            is_fun_topic = any(kw in title_lower for kw in [
+                                'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
+                                'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
+                            ])
+                            
+                            current_hero = outline_theme.get('typography', {}).get('hero_title', {}).get('family', '')
+                            current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
+                            boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
+                            has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
+                            
+                            if is_fun_topic and has_boring_fonts:
+                                print(f"\n🎮🎮🎮 FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
+                                print(f"   Title: '{deck_outline.title}'")
+                                print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
+                                print(f"   ✅ CLEARING outline theme to force regeneration!\n")
+                                logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
+                                outline_theme = None  # Clear it!
+                            
+                            if outline_theme:  # Only use if not cleared
+                                logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
+                                logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
+                                theme = ThemeSpec.from_dict(outline_theme)
+                                # Also get palette from outline theme
+                                palette = outline_theme.get('color_palette') or outline_theme.get('palette')
+                                if not palette:
+                                    # Derive palette directly from theme without regenerating
+                                    palette = _palette_from_theme_obj(theme)
+                                logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
+                                logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
                         
@@ -867,6 +954,54 @@ class SimpleDeckComposer(IDeckComposer):
             else:
                 logger.info("[DECK COMPOSER] ✅ Using existing theme from outline - skipping theme generation")
                 logger.info(f"[DECK COMPOSER] Preserving theme: {getattr(theme, 'theme_name', 'unnamed') if hasattr(theme, 'theme_name') else 'theme from outline'}")
+            
+            # CRITICAL: Generate per-slide search terms if we don't have any yet
+            if not search_terms or (isinstance(search_terms, dict) and len(search_terms) == 0):
+                logger.info("[DECK COMPOSER] No search terms found - generating per-slide fallback terms...")
+                try:
+                    import re
+                    slides = deck_outline.slides if hasattr(deck_outline, 'slides') else []
+                    
+                    stopwords = {
+                        'the', 'a', 'an', 'and', 'or', 'for', 'of', 'to', 'in', 'on', 'our', 'your', 
+                        'how', 'what', 'why', 'when', 'where', 'from', 'with', 'about', 'into',
+                        'stat', 'quote', 'title', 'slide', 'introduction', 'conclusion', 'callout'
+                    }
+                    
+                    # Generate per-slide terms
+                    search_terms = {}
+                    for slide_idx, slide in enumerate(slides[:10]):
+                        slide_title = getattr(slide, 'title', '')
+                        slide_content = getattr(slide, 'content', '')[:200]  # First 200 chars
+                        
+                        # Combine title and content
+                        text = f"{slide_title} {slide_content}"
+                        # Remove punctuation
+                        text = re.sub(r'[:\-\"\'\•\|]', ' ', text)
+                        words = text.split()
+                        
+                        # Extract key nouns
+                        key_words = []
+                        for word in words:
+                            word_clean = word.strip('.,!?;()')
+                            if (word_clean and 
+                                len(word_clean) > 3 and 
+                                word_clean.lower() not in stopwords and
+                                not word_clean.lower().endswith('ing')):
+                                if word_clean not in key_words:
+                                    key_words.append(word_clean)
+                            if len(key_words) >= 3:
+                                break
+                        
+                        if key_words:
+                            search_terms[str(slide_idx)] = key_words[:2]  # 2 terms per slide
+                    
+                    logger.info(f"[DECK COMPOSER] ✅ Generated {len(search_terms)} slides with fallback terms")
+                    for slide_idx, terms in list(search_terms.items())[:3]:
+                        logger.info(f"  Slide {slide_idx}: {terms}")
+                except Exception as e:
+                    logger.error(f"[DECK COMPOSER] Error generating fallback search terms: {e}")
+                    search_terms = {}
             
             # Normalize theme & palette to ensure all required fields exist and are consistent across slides
             def _normalize_theme_and_palette(theme_obj: ThemeSpec, palette_dict: Dict[str, Any]) -> tuple[ThemeSpec, Dict[str, Any]]:
@@ -1207,15 +1342,17 @@ class SimpleDeckComposer(IDeckComposer):
 
             # When async_images=False (auto-apply ON), we need to search for images synchronously BEFORE slides
             # When async_images=True (auto-apply OFF/placeholders), we search in background during slide generation
-            print(f"\n🔍 [SEARCH MODE CHECK] async_images={options.get('async_images', False)}, image_manager={self.image_manager is not None}")
-            print(f"   - Will use SYNCHRONOUS search: {not options.get('async_images', False) and self.image_manager}")
-            print(f"   - Will use ASYNC search: {options.get('async_images', False) and self.image_manager}")
+            # CRITICAL: Default must match compose_deck_stream signature (True = async/placeholders)
+            async_images_mode = options.get('async_images', True)
+            print(f"\n🔍 [SEARCH MODE CHECK] async_images={async_images_mode}, image_manager={self.image_manager is not None}")
+            print(f"   - AUTO-APPLY MODE (sync search): {not async_images_mode and self.image_manager}")
+            print(f"   - PLACEHOLDER MODE (async search): {async_images_mode and self.image_manager}")
 
-            if not options.get('async_images', False) and self.image_manager:
+            if not async_images_mode and self.image_manager:
                 # AUTO-APPLY MODE: Search for images synchronously BEFORE slide generation
                 print(f"\n🎯 AUTO-APPLY MODE: Searching for images synchronously BEFORE slide generation...")
                 logger.info("🎯 AUTO-APPLY MODE: Searching for images synchronously before slide generation...")
-                logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={options.get('async_images', True)}, image_manager={self.image_manager is not None}")
+                logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
                 logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
                 logger.info(f"🎨 AI-GENERATED SEARCH TERMS: {search_terms if search_terms else 'None (will use fallback)'}")
 
@@ -1236,64 +1373,86 @@ class SimpleDeckComposer(IDeckComposer):
 
                     # Collect all images for all slides before proceeding
                     all_images = {}
+                    slide_search_queries = {}  # Track which queries were used per slide
+                    
+                    # search_terms is now a dict: {slide_idx: [term1, term2, ...]}
+                    is_dict_format = isinstance(search_terms, dict)
 
                     for slide_idx, slide in enumerate(deck_outline.slides):
                         print(f"\n🔍 Searching images for slide {slide_idx + 1}/{len(deck_outline.slides)}: {slide.title}")
                         logger.info(f"🔍 Searching images for slide {slide_idx + 1}: {slide.title}")
 
-                        # Always generate a per-slide smart query (≤3 words)
-                        search_query = self._generate_smart_search_query(slide, deck_outline)
+                        # Get slide-specific terms (2-3 per slide)
+                        if is_dict_format:
+                            slide_terms = search_terms.get(str(slide_idx), [])
+                            if not isinstance(slide_terms, list):
+                                slide_terms = []
+                        else:
+                            # Backward compatibility: if still flat list, convert to per-slide
+                            slide_terms = [search_terms[slide_idx % len(search_terms)]] if search_terms else []
                         
-                        # If slide looks diagram-friendly, ensure 'diagram' is included (trim to ≤3 words)
-                        try:
-                            if self._should_prefer_diagram(slide):
-                                parts = [p for p in search_query.split() if p]
-                                if 'diagram' not in parts:
-                                    parts = (parts[:2] + ['diagram']) if len(parts) >= 2 else (parts + ['diagram'])
-                                # Keep to max 3 tokens
-                                parts = parts[:3]
-                                search_query = ' '.join(parts)
-                        except Exception:
-                            pass
+                        if not slide_terms:
+                            # Fallback: extract from slide title
+                            slide_terms = [self._generate_simple_search_query(slide)]
+                            logger.info(f"🔍 Using fallback for slide {slide_idx + 1}")
+                        
+                        logger.info(f"🎨 Slide {slide_idx + 1} terms ({len(slide_terms)}): {slide_terms}")
+                        
+                        # Search for images using EACH term separately (2-3 searches per slide)
+                        slide_images_by_term = {}
+                        all_slide_photos = []
+                        
+                        for term_idx, search_query in enumerate(slide_terms[:3]):  # Max 3 terms
+                            print(f"   🔍 Term {term_idx + 1}/{len(slide_terms[:3])}: '{search_query}'")
+                            term_images = await image_service.search_images(search_query, per_page=3)  # 3 per term
+                            
+                            # Extract photos
+                            if term_images and 'photos' in term_images:
+                                photos = term_images['photos']
+                            else:
+                                photos = term_images if isinstance(term_images, list) else []
+                            
+                            if photos:
+                                # Store by term for component-specific recommendations
+                                slide_images_by_term[search_query] = photos
+                                all_slide_photos.extend(photos)
+                                print(f"      ✅ Found {len(photos)} images for '{search_query}'")
+                                logger.info(f"   Found {len(photos)} images for term: '{search_query}'")
 
-                        print(f"   Generated query: '{search_query}'")
-                        logger.info(f"🔍 Smart per-slide search query: '{search_query}'")
+                        # Store images grouped by term
+                        if slide_images_by_term:
+                            all_images[slide.id] = slide_images_by_term
+                            # Also store flat list of all search queries for this slide
+                            slide_search_queries[slide.id] = slide_terms
+                            print(f"   📦 Stored {len(all_slide_photos)} total images across {len(slide_terms)} terms")
 
-                        images = await image_service.search_images(search_query, max_images=6)
-
-                        if images:
-                            all_images[slide.id] = images
-                            print(f"   ✅ Found {len(images)} images")
-                            logger.info(f"✅ Found {len(images)} images for slide {slide_idx + 1}")
-
-                            # Tag ONLY THE BEST image to the slide outline NOW (before slide generation)
-                            # The first image from search results is the best match
+                            # Tag ONLY THE FIRST image from FIRST term for auto-apply
                             if not hasattr(slide, 'taggedMedia'):
                                 slide.taggedMedia = []
 
-                            # Pick the BEST image (first result from search API)
-                            best_image = images[0]
-                            print(f"   📌 Tagging best image: {best_image.get('url', '')[:60]}...")
-                            tagged_media = {
-                                'id': f"image_{slide.id}_0",
-                                'filename': f"{slide.title.replace(' ', '_')}.jpg",
-                                'type': 'image',
-                                'previewUrl': best_image.get('url', ''),
-                                'interpretation': best_image.get('alt', ''),
-                                'slideId': slide.id,
-                                'status': 'processed',
-                                'metadata': {}
-                            }
-                            slide.taggedMedia.append(tagged_media)
+                            # Pick the BEST image (first result from first term)
+                            first_term = slide_terms[0]
+                            first_term_images = slide_images_by_term.get(first_term, [])
+                            if first_term_images:
+                                best_image = first_term_images[0]
+                                print(f"   📌 Tagging best image from '{first_term}': {best_image.get('url', '')[:60]}...")
+                                tagged_media = {
+                                    'id': f"image_{slide.id}_0",
+                                    'filename': f"{slide.title.replace(' ', '_')}.jpg",
+                                    'type': 'image',
+                                    'previewUrl': best_image.get('url', ''),
+                                    'interpretation': best_image.get('alt', ''),
+                                    'slideId': slide.id,
+                                    'status': 'processed',
+                                    'metadata': {'searchQuery': first_term}
+                                }
+                                slide.taggedMedia.append(tagged_media)
 
-                            print(f"\n✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1}")
-                            print(f"   - URL: {best_image.get('url', '')[:100]}")
-                            print(f"   - taggedMedia count on slide: {len(slide.taggedMedia)}")
-                            print(f"   - slide.id: {slide.id}")
-                            logger.info(f"✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1}")
-                            logger.info(f"   - URL: {best_image.get('url', '')[:100]}")
-                            logger.info(f"   - taggedMedia count on slide: {len(slide.taggedMedia)}")
-                            logger.info(f"   - slide.id: {slide.id}")
+                                print(f"\n✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1}")
+                                print(f"   - Search term: '{first_term}'")
+                                print(f"   - URL: {best_image.get('url', '')[:100]}")
+                                print(f"   - taggedMedia count on slide: {len(slide.taggedMedia)}")
+                                logger.info(f"✅ [IMAGE FLOW 1/4] Tagged BEST image to slide {slide_idx + 1} (term: '{first_term}')")
                         else:
                             logger.warning(f"⚠️ No images found for slide {slide_idx + 1}")
 
@@ -1309,6 +1468,56 @@ class SimpleDeckComposer(IDeckComposer):
                     print(f"   Total slides with images: {len(all_images)}/{len(deck_outline.slides)}")
                     print(f"   🚦 NOW slides will start generating with images already tagged")
                     logger.info(f"✅ AUTO-APPLY: Collected images for {len(all_images)} slides")
+
+                    # EMIT slide_images_found events with images grouped by search term
+                    print(f"\n📤 EMITTING slide_images_found events for {len(all_images)} slides")
+                    for slide_idx, slide in enumerate(deck_outline.slides):
+                        if slide.id in all_images:
+                            images_by_term = all_images[slide.id]  # Dict: {term: [images]}
+                            slide_terms = slide_search_queries.get(slide.id, [])
+                            
+                            print(f"   📤 Preparing event for slide {slide_idx + 1}: {slide.title}")
+                            print(f"      - slide.id: {slide.id}")
+                            print(f"      - terms: {slide_terms}")
+                            print(f"      - images by term: {list(images_by_term.keys())}")
+                            
+                            # Format images grouped by search term
+                            formatted_images_by_term = {}
+                            total_images = 0
+                            
+                            for term, term_images in images_by_term.items():
+                                formatted_term_images = []
+                                for img in term_images:
+                                    formatted_term_images.append({
+                                        'id': img.get('id', f"img-{slide.id}-{total_images}"),
+                                        'url': img.get('url', ''),
+                                        'thumbnail': img.get('thumbnail', img.get('url', '')),
+                                        'alt': img.get('alt', ''),
+                                        'photographer': img.get('photographer'),
+                                        'photographer_url': img.get('photographer_url'),
+                                        'width': img.get('width'),
+                                        'height': img.get('height'),
+                                        'source': img.get('source', 'serpapi'),
+                                        'topic': term,
+                                        'searchQuery': term
+                                    })
+                                    total_images += 1
+                                formatted_images_by_term[term] = formatted_term_images
+                            
+                            # Emit slide_images_found event with component-specific structure
+                            yield {
+                                "type": "slide_images_found",
+                                "data": {
+                                    "slide_id": slide.id,
+                                    "slide_index": slide_idx,
+                                    "slide_title": slide.title,
+                                    "images_by_search_term": formatted_images_by_term,
+                                    "search_terms": slide_terms,
+                                    "total_count": total_images
+                                }
+                            }
+                            logger.info(f"📤 Emitted slide_images_found for slide {slide_idx + 1}: {total_images} images across {len(slide_terms)} terms")
+                            print(f"📤 Emitted slide_images_found event for slide {slide_idx + 1}: {total_images} images, {len(slide_terms)} terms")
 
                     yield {
                         "type": "image_search_complete",
@@ -1331,14 +1540,14 @@ class SimpleDeckComposer(IDeckComposer):
                     import traceback
                     logger.error(traceback.format_exc())
 
-            elif options.get('async_images', False) and self.image_manager:
+            elif async_images_mode and self.image_manager:
                 # PLACEHOLDER MODE: Start image collection phase if not already started
                 if not needs_media_processing:
                     yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)
 
                 print(f"\n📌 PLACEHOLDER MODE: Starting ASYNC background image search...")
                 logger.info("Starting background image search...")
-                logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={options.get('async_images', True)}, image_manager={self.image_manager is not None}")
+                logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
                 logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
                 
                 # Create a callback to yield image updates
@@ -1391,9 +1600,9 @@ class SimpleDeckComposer(IDeckComposer):
                     "progress": 15
                 }
             else:
-                logger.warning(f"⚠️ IMAGE SEARCH SKIPPED: async_images={options.get('async_images')}, image_manager={self.image_manager is not None}")
+                logger.warning(f"⚠️ IMAGE SEARCH SKIPPED: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
                 print(f"\n⚠️ IMAGE SEARCH SKIPPED:")
-                print(f"  - async_images: {options.get('async_images')}")
+                print(f"  - async_images: {async_images_mode}")
                 print(f"  - image_manager: {self.image_manager is not None}")
             
             # Theme is already generated above, no need to check or generate again
@@ -1485,7 +1694,7 @@ class SimpleDeckComposer(IDeckComposer):
             deck_state.update_progress(55, "Starting slide generation")
             
             # If image search is running, give it a brief head start
-            if image_search_task and options.get('async_images', False):
+            if image_search_task and async_images_mode:
                 logger.info("Giving image search a 2-second head start before slide generation...")
                 await asyncio.sleep(2.0)  # Allow image search to populate some results
                 
@@ -1499,7 +1708,7 @@ class SimpleDeckComposer(IDeckComposer):
             comp_options = CompositionOptions(
                 max_parallel_slides=options.get('max_parallel', 4),
                 delay_between_slides=options.get('delay_between_slides', 0.5),
-                async_images=options.get('async_images', False),
+                async_images=async_images_mode,  # Use the extracted value
                 prefetch_images=options.get('prefetch_images', False)
             )
             
