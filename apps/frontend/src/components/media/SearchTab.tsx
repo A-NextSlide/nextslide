@@ -11,6 +11,8 @@ import { createPortal } from 'react-dom';
 interface SearchTabProps {
     onSelect: (url: string, type: 'image' | 'video' | 'icon' | 'other') => void;
     onLoadMore?: (query: string) => Promise<any[]>;  // Add onLoadMore prop
+    defaultSearchTerm?: string; // Auto-fill search with this term
+    autoSearchToken?: string | number; // Triggers one-time auto search per picker open
 }
 
 // Match the ImageOption interface from recommended tab
@@ -40,8 +42,8 @@ interface SearchResponse {
     type: string;
 }
 
-export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore }) => {
-    const [searchTerm, setSearchTerm] = useState('');
+export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore, defaultSearchTerm, autoSearchToken }) => {
+    const [searchTerm, setSearchTerm] = useState(defaultSearchTerm || '');
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [allResults, setAllResults] = useState<SearchResult[]>([]); // Store all results
@@ -56,6 +58,21 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore }) =>
     const { toast } = useToast();
     
     const ITEMS_PER_PAGE = 20;
+
+    // Auto-run search exactly once per picker open using token
+    const lastTokenRef = React.useRef<string | number | null>(null);
+    React.useEffect(() => {
+        if (!defaultSearchTerm) return;
+        if (autoSearchToken == null) return;
+        if (lastTokenRef.current === autoSearchToken) return; // already ran for this open
+        lastTokenRef.current = autoSearchToken;
+        setSearchTerm(defaultSearchTerm);
+        // Run after mount paint
+        const t = setTimeout(() => {
+            handleSearch();
+        }, 0);
+        return () => clearTimeout(t);
+    }, [autoSearchToken, defaultSearchTerm]);
 
     const searchWithBackend = async (query: string, searchType: 'images' | 'videos' | 'gifs', limit: number = 100, page: number = 1) => {
         try {
@@ -118,7 +135,9 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore }) =>
         try {
             const searchResponse = await searchWithBackend(searchTerm, activeTab, 100); // Get more results
             
-            // console.log('Search response:', searchResponse); // Debug log
+            console.log('[SearchTab] Search response:', searchResponse); // Debug log
+            console.log('[SearchTab] Results count:', searchResponse.results?.length);
+            console.log('[SearchTab] First result:', searchResponse.results?.[0]);
             
             if (!searchResponse.results || searchResponse.results.length === 0) {
                 toast({ 
@@ -136,6 +155,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore }) =>
                 
                 // Display first page
                 const firstPage = searchResponse.results.slice(0, ITEMS_PER_PAGE);
+                console.log('[SearchTab] Setting displayedResults to:', firstPage.length, 'items');
                 setDisplayedResults(firstPage);
                 
                 // console.log('Client-side pagination:', {

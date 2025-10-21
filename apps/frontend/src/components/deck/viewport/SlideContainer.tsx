@@ -78,6 +78,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     selectedImages,
     isPickerOpen,
     currentSlideId,
+    currentComponentId, // NEW: Get which component we're picking for
     hasImagePlaceholders,
     getImagePlaceholders,
     fetchImageOptions,
@@ -215,8 +216,9 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
         // Ensure crop mode is not active when opening the picker
         try { useEditorSettingsStore.getState().stopImageCrop(); } catch {}
 
-        // Open the image picker
-        openImagePicker(currentSlide.id);
+        // Open the image picker with component ID if available
+        const componentId = (event as any).detail?.componentId;
+        openImagePicker(currentSlide.id, componentId);
       }
     };
     
@@ -298,13 +300,9 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     if (imageUrl !== 'generating://ai-image') {
       try { useEditorSettingsStore.getState().stopImageCrop(); } catch {}
     }
-    
-    // Remove flushSync to prevent infinite loops - let React batch updates naturally
 
     // Reset potentially masking image effects when a real image is applied
-    // This avoids cases where legacy/template overlays or filters hide the image until a UI change forces rerender
     const effectSafetyReset = {
-      // Filters
       filterPreset: 'none' as const,
       brightness: 100,
       contrast: 100,
@@ -314,7 +312,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       hueRotate: 0,
       blur: 0,
       invert: 0,
-      // Color/gradient overlays
       overlayColor: '#00000000',
       overlayOpacity: 0,
       overlayBlendMode: 'normal' as const,
@@ -324,33 +321,67 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       gradientStartColor: '#000000',
       gradientEndColor: '#ffffff',
       gradientDirection: 0,
-      // Masks & special effects
       maskShape: 'none' as const,
       maskSize: 100,
       duotoneEnabled: false,
       glitchEnabled: false,
       glitchIntensity: 50,
     };
+    
+    // NEW: If we have a currentComponentId, apply to THAT specific component
+    if (currentComponentId) {
+      const targetComponent = currentSlide.components.find(c => c.id === currentComponentId);
+      if (targetComponent) {
+        // Track if this is a generating component
+        if (imageUrl === 'generating://ai-image') {
+          generatingComponentRef.current = currentComponentId;
+        }
+        
+        updateComponent(currentComponentId, {
+          props: {
+            src: imageUrl,
+            isGenerating: imageUrl === 'generating://ai-image',
+            userSetSrc: imageUrl !== 'generating://ai-image',
+            cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
+            cropOriginalFrame: undefined,
+            cropResizesCanvas: undefined,
+            ...(imageUrl !== 'generating://ai-image' ? effectSafetyReset : {})
+          }
+        });
+        
+        updateSlide(currentSlide.id, {
+          components: currentSlide.components.map(c => 
+            c.id === currentComponentId 
+              ? { ...c, props: { ...c.props, src: imageUrl, isGenerating: imageUrl === 'generating://ai-image', userSetSrc: imageUrl !== 'generating://ai-image', cropRect: { left: 0, top: 0, right: 0, bottom: 0 }, cropOriginalFrame: undefined, cropResizesCanvas: undefined, ...(imageUrl !== 'generating://ai-image' ? effectSafetyReset : {}) } }
+              : c
+          )
+        });
+        
+        // Close picker after applying to specific component (unless generating)
+        if (imageUrl !== 'generating://ai-image') {
+          closeImagePicker();
+        }
+        return;
+      }
+    }
+    
+    // FALLBACK: Old behavior - find first empty placeholder
     // Check if this is an update to a generating component
     if (generatingComponentRef.current && imageUrl !== 'generating://ai-image') {
       const componentId = generatingComponentRef.current;
       
-      // Update the component with the actual image
       updateComponent(componentId, {
         props: {
           src: imageUrl,
           isGenerating: false,
           userSetSrc: true,
-          // Reset any prior crop state so no mask persists
           cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
           cropOriginalFrame: undefined,
           cropResizesCanvas: undefined,
-          // Also reset effects that could mask the image
           ...effectSafetyReset,
         }
       });
       
-      // Also update in the slide data
       updateSlide(currentSlide.id, {
         components: currentSlide.components.map(c => 
           c.id === componentId 
@@ -359,12 +390,10 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
         )
       });
       
-      // Clear the ref
       generatingComponentRef.current = null;
       return;
     }
     
-    // Find the first placeholder that doesn't have a real image yet
     const emptyPlaceholder = placeholders.find(placeholder => {
       const src = placeholder.props.src;
       const isEmpty = !src || 
@@ -377,9 +406,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     });
     
     if (emptyPlaceholder) {
-      // Update the component with the selected image
-      
-      // Track if this is a generating component
       if (imageUrl === 'generating://ai-image') {
         generatingComponentRef.current = emptyPlaceholder.id;
       }
@@ -391,12 +417,10 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
           isGenerating: imageUrl === 'generating://ai-image',
           ...(imageUrl !== 'generating://ai-image' ? { userSetSrc: true } : {}),
           ...(imageUrl !== 'generating://ai-image' ? { cropRect: { left: 0, top: 0, right: 0, bottom: 0 }, cropOriginalFrame: undefined, cropResizesCanvas: undefined } : {}),
-          // Reset masking effects when applying a real image (not generating placeholder)
           ...(imageUrl !== 'generating://ai-image' ? effectSafetyReset : {})
         }
       });
       
-      // Also update in the slide data
       updateSlide(currentSlide.id, {
         components: currentSlide.components.map(c => 
           c.id === emptyPlaceholder.id 
@@ -406,7 +430,10 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       });
     }
     
-    // Don't count generating images as filled
+    if (imageUrl === 'generating://ai-image') {
+      return;
+    }
+    
     const filledCount = placeholders.filter(p => {
       const src = p.props.src;
       return src && 
@@ -417,12 +444,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
              src !== 'generating://ai-image';
     }).length + (imageUrl !== 'generating://ai-image' ? 1 : 0);
     
-    // Don't close if we're generating an image
-    if (imageUrl === 'generating://ai-image') {
-      return;
-    }
-    
-    // Close the picker if all placeholders are filled or if there's only one placeholder
     if (filledCount >= placeholders.length || placeholders.length === 1) {
       closeImagePicker();
     }
@@ -603,16 +624,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     };
   }, [toast]);
   
-  // Auto-fetch images when entering a slide (if not already cached)
-  useEffect(() => {
-    if (currentSlide && currentSlide.imageSearchTerms && !isGenerating) {
-      // Check if images are already cached
-      if (!window.__slideImageCache?.[currentSlide.id]) {
-        console.log('[SlideContainer] Auto-fetching images for slide:', currentSlide.id);
-        fetchImagesForSlide(currentSlide.id);
-      }
-    }
-  }, [currentSlideIndex, currentSlide, fetchImagesForSlide, isGenerating]);
+  // Removed auto-fetch on slide change to ensure searches only run when picker opens
 
   // Determine if we're in a new deck state
 
@@ -633,21 +645,42 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     >
       {/* Image picker overlay */}
       <AnimatePresence>
-        {isPickerOpen && currentSlide && (
-          <ImagePicker
-            images={getCurrentSlideImages(currentSlide.id)}
-            onImageSelect={handleImageSelect}
-            onClose={closeImagePicker}
-            onLoadMore={searchAdditionalImages}
-            selectedImages={selectedImages[currentSlide.id] || []}
-            placeholderCount={placeholders.length}
-            slideTitle={currentSlide.title || ''}
-            topics={currentTopics}
-            isLoading={isLoadingImages}
-            targetAspectRatio={computeTargetAspectRatio()}
-            suggestedImagePrompt={deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt}
-          />
-        )}
+        {isPickerOpen && currentSlide && (() => {
+          // Get component info if picking for specific component
+          let componentInfo = null;
+          if (currentComponentId) {
+            const component = currentSlide.components?.find((c: any) => c.id === currentComponentId);
+            if (component && component.type === 'Image' && component.props.metadata) {
+              componentInfo = {
+                componentId: currentComponentId,
+                topic: component.props.metadata.topic,
+                searchQuery: component.props.metadata.searchQuery,
+                alt: component.props.alt
+              };
+            }
+          }
+          
+          return (
+            <ImagePicker
+              images={getCurrentSlideImages(currentSlide.id)}
+              onImageSelect={handleImageSelect}
+              onClose={closeImagePicker}
+              onLoadMore={(topic) => {
+                // If picking for specific component, search for its topic
+                const searchTopic = componentInfo?.topic || componentInfo?.searchQuery || topic;
+                return searchAdditionalImages(searchTopic);
+              }}
+              selectedImages={selectedImages[currentSlide.id] || []}
+              placeholderCount={placeholders.length}
+              slideTitle={currentSlide.title || ''}
+              topics={currentTopics}
+              isLoading={isLoadingImages}
+              targetAspectRatio={computeTargetAspectRatio()}
+              suggestedImagePrompt={deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt}
+              componentInfo={componentInfo} // NEW: Pass component-specific info
+            />
+          );
+        })()}
       </AnimatePresence>
       
       {/* Edit controls container */}

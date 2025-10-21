@@ -218,6 +218,65 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const currentHeadingFont = workspaceTheme?.typography?.heading?.fontFamily || '';
   const currentBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily || '';
 
+  // Load fonts when theme changes - with loading state to prevent FOUC
+  useEffect(() => {
+    if (!currentHeadingFont) return;
+    
+    let cancelled = false;
+    
+    (async () => {
+      try {
+        await FontLoadingService.syncDesignerFonts?.();
+        await FontLoadingService.loadFont(currentHeadingFont);
+        
+        // Small delay to ensure browser has processed the font
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Force a re-render by checking if font is actually loaded
+        if (!cancelled && 'fonts' in document) {
+          try {
+            await document.fonts.load(`24px "${currentHeadingFont}"`);
+          } catch (err) {
+            // Font loading API failed, but font might still load
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load heading font:', currentHeadingFont, err);
+      }
+    })();
+    
+    return () => { cancelled = true; };
+  }, [currentHeadingFont]);
+
+  useEffect(() => {
+    if (!currentBodyFont) return;
+    
+    let cancelled = false;
+    
+    (async () => {
+      try {
+        await FontLoadingService.syncDesignerFonts?.();
+        await FontLoadingService.loadFont(currentBodyFont);
+        
+        // Small delay to ensure browser has processed the font
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Force a re-render by checking if font is actually loaded
+        if (!cancelled && 'fonts' in document) {
+          try {
+            await document.fonts.load(`14px "${currentBodyFont}"`);
+          } catch (err) {
+            // Font loading API failed, but font might still load
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load body font:', currentBodyFont, err);
+      }
+    })();
+    
+    return () => { cancelled = true; };
+  }, [currentBodyFont]);
+
   // Parallel theme load when outline appears (only once per outline ID)
   useEffect(() => {
     if (!currentOutline) return;
@@ -1702,7 +1761,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                             {/* Left: Typography samples with logo controls pinned to bottom + Swap */}
                             <div 
                               className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
-                              style={{ backgroundColor: useThemeStore.getState().getWorkspaceTheme().page?.backgroundColor || '#ffffff' }}
+                              style={{ backgroundColor: workspaceTheme.page?.backgroundColor || '#ffffff' }}
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -1738,9 +1797,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                 <div
                                   className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
                                   style={{ 
-                                    fontFamily: useThemeStore.getState().getWorkspaceTheme().typography.heading?.fontFamily || 'Inter', 
-                                    color: useThemeStore.getState().getWorkspaceTheme().typography.heading?.color || '#1f2937',
-                                    borderBottom: `2px solid ${useThemeStore.getState().getWorkspaceTheme().accent1 || '#FF4301'}`
+                                    fontFamily: workspaceTheme.typography.heading?.fontFamily || 'Inter', 
+                                    color: workspaceTheme.typography.heading?.color || '#1f2937',
+                                    borderBottom: `2px solid ${workspaceTheme.accent1 || '#FF4301'}`
                                   }}
                                   onClick={(e) => openFontPanelAt(e, 'heading')}
                                 >
@@ -1749,7 +1808,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                               <div
                                 className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
-                                style={{ fontFamily: useThemeStore.getState().getWorkspaceTheme().typography.paragraph?.fontFamily || 'Inter', color: useThemeStore.getState().getWorkspaceTheme().typography.paragraph?.color || '#1f2937' }}
+                                style={{ fontFamily: workspaceTheme.typography.paragraph?.fontFamily || 'Inter', color: workspaceTheme.typography.paragraph?.color || '#1f2937' }}
                                 onClick={(e) => openFontPanelAt(e, 'body')}
                               >
                                 Body sample text shows the selected body font.
@@ -1841,13 +1900,25 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
                                   options={ALL_FONT_NAMES}
                                   groups={fontGroups}
-                                  onChange={(value) => {
-                                    if (fontEditor.type === 'heading') {
-                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, heading: { ...(t.typography?.heading || {}), fontFamily: String(value) } } } as any));
-                                    } else {
-                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, paragraph: { ...(t.typography?.paragraph || {}), fontFamily: String(value) } } } as any));
+                                  onChange={async (value) => {
+                                    const fontName = String(value);
+                                    
+                                    // Load font FIRST before applying to theme
+                                    try {
+                                      await FontLoadingService.syncDesignerFonts?.();
+                                      await FontLoadingService.loadFont(fontName);
+                                      // Small delay to ensure font is rendered
+                                      await new Promise(resolve => setTimeout(resolve, 100));
+                                    } catch (err) {
+                                      console.warn('Font loading error:', err);
                                     }
-                                    try { FontLoadingService.syncDesignerFonts?.().finally(() => FontLoadingService.loadFont(String(value)).catch(() => {})); } catch {}
+                                    
+                                    // Now apply the theme update
+                                    if (fontEditor.type === 'heading') {
+                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, heading: { ...(t.typography?.heading || {}), fontFamily: fontName } } } as any));
+                                    } else {
+                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, paragraph: { ...(t.typography?.paragraph || {}), fontFamily: fontName } } } as any));
+                                    }
                                     setFontEditor(null);
                                   }}
                                   placeholder="Select font"

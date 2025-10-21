@@ -67,10 +67,11 @@ async def get_font_list(
     search: Optional[str] = Query(None, description="Search fonts by name"),
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: Optional[int] = Query(0, description="Offset for pagination"),
-    available_only: Optional[bool] = Query(False, description="Only include fonts with resolvable files")
+    available_only: Optional[bool] = Query(True, description="Only include fonts with resolvable files (default: True)")
 ):
     """
-    Get list of all available fonts with optional filtering
+    Get list of all available fonts with optional filtering.
+    By default, only returns fonts with actual files to prevent 404 errors.
     """
     try:
         fonts = []
@@ -84,6 +85,7 @@ async def get_font_list(
                 continue
             if search and search.lower() not in font_data.get('name', '').lower():
                 continue
+            # CRITICAL: By default, only include fonts with actual files
             if available_only:
                 try:
                     # Quick availability check
@@ -227,13 +229,28 @@ async def get_font_recommendations(request: FontRecommendation):
 @router.get("/search")
 async def search_fonts(
     query: str = Query(..., description="Search query"),
-    limit: int = Query(20, description="Maximum results to return")
+    limit: int = Query(20, description="Maximum results to return"),
+    available_only: Optional[bool] = Query(True, description="Only include fonts with actual files (default: True)")
 ):
     """
-    Search fonts by name, category, or tags
+    Search fonts by name, category, or tags.
+    By default, only returns fonts with actual files to prevent 404 errors.
     """
     try:
         results = font_service.search_fonts(query, limit)
+        
+        # Filter to only available fonts if requested
+        if available_only:
+            filtered_results = []
+            for font in results:
+                font_id = font.get('id', '')
+                try:
+                    if font_id and font_service.get_font_path(font_id, 'regular'):
+                        filtered_results.append(font)
+                except Exception:
+                    continue
+            results = filtered_results
+        
         return {"results": results, "total": len(results)}
         
     except Exception as e:
@@ -256,10 +273,13 @@ async def get_font_statistics():
 
 
 @router.get("/catalog")
-async def get_font_catalog():
+async def get_font_catalog(
+    available_only: Optional[bool] = Query(True, description="Only include fonts with actual files (default: True)")
+):
     """
-    Get a simplified font catalog for frontend consumption
-    Returns font names grouped by category with basic metadata
+    Get a simplified font catalog for frontend consumption.
+    Returns font names grouped by category with basic metadata.
+    By default, only includes fonts with actual files to prevent 404 errors.
     """
     try:
         catalog = {
@@ -273,6 +293,14 @@ async def get_font_catalog():
         
         # Group fonts by category
         for font_id, font_data in font_service.all_fonts.items():
+            # CRITICAL: Skip fonts without actual files
+            if available_only:
+                try:
+                    if not font_service.get_font_path(font_id, 'regular'):
+                        continue
+                except Exception:
+                    continue
+            
             category = font_data.get('category', 'unknown')
             source = font_data.get('source', 'unknown')
             
@@ -399,14 +427,29 @@ async def serve_designer_font(font_id: str, filename: str):
 
 @router.get("/search-by-tags")
 async def search_by_tags(
-    tags: str = Query(..., description="Comma-separated list of tags to search for")
+    tags: str = Query(..., description="Comma-separated list of tags to search for"),
+    available_only: Optional[bool] = Query(True, description="Only include fonts with actual files (default: True)")
 ):
     """
-    Search fonts by specific tags from metadata
+    Search fonts by specific tags from metadata.
+    By default, only returns fonts with actual files to prevent 404 errors.
     """
     try:
         tag_list = [tag.strip() for tag in tags.split(',')]
         results = font_service.search_fonts_by_tags(tag_list)
+        
+        # Filter to only available fonts if requested
+        if available_only:
+            filtered_results = []
+            for font in results:
+                font_id = font.get('id', '')
+                try:
+                    if font_id and font_service.get_font_path(font_id, 'regular'):
+                        filtered_results.append(font)
+                except Exception:
+                    continue
+            results = filtered_results
+        
         return {"results": results, "total": len(results), "searched_tags": tag_list}
         
     except Exception as e:
@@ -415,12 +458,29 @@ async def search_by_tags(
 
 
 @router.get("/use-case/{use_case}")
-async def get_fonts_by_use_case(use_case: str):
+async def get_fonts_by_use_case(
+    use_case: str,
+    available_only: Optional[bool] = Query(True, description="Only include fonts with actual files (default: True)")
+):
     """
-    Get fonts recommended for specific use case (body_text, headline, print, etc)
+    Get fonts recommended for specific use case (body_text, headline, print, etc).
+    By default, only returns fonts with actual files to prevent 404 errors.
     """
     try:
         fonts = font_service.get_fonts_for_use_case(use_case)
+        
+        # Filter to only available fonts if requested
+        if available_only:
+            filtered_fonts = []
+            for font in fonts:
+                font_id = font.get('id', '')
+                try:
+                    if font_id and font_service.get_font_path(font_id, 'regular'):
+                        filtered_fonts.append(font)
+                except Exception:
+                    continue
+            fonts = filtered_fonts
+        
         return {
             "use_case": use_case,
             "fonts": fonts,

@@ -68,7 +68,8 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
   const [selectedImages, setSelectedImages] = useState<Record<string, string[]>>({});
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [currentSlideId, setCurrentSlideId] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [currentComponentId, setCurrentComponentId] = useState<string | null>(null); // Track which component we're picking for
+  const { toast} = useToast();
 
   // Check if a slide has image placeholders
   const hasImagePlaceholders = useCallback((slide: SlideData): boolean => {
@@ -443,9 +444,10 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
     });
   }, [imageOptions, toast]);
 
-  // Open the image picker for a specific slide
-  const openImagePicker = useCallback((slideId: string) => {
+  // Open the image picker for a specific slide and optionally a specific component
+  const openImagePicker = useCallback((slideId: string, componentId?: string) => {
     setCurrentSlideId(slideId);
+    setCurrentComponentId(componentId || null);
     setIsPickerOpen(true);
   }, []);
 
@@ -453,6 +455,7 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
   const closeImagePicker = useCallback(() => {
     setIsPickerOpen(false);
     setCurrentSlideId(null);
+    setCurrentComponentId(null);
   }, []);
 
   // Get images for the current slide
@@ -704,6 +707,7 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
     selectedImages,
     isPickerOpen,
     currentSlideId,
+    currentComponentId, // NEW: Expose which component we're picking for
     hasImagePlaceholders,
     getImagePlaceholders,
     fetchImageOptions,

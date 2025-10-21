@@ -433,6 +433,11 @@ render: function render({props}) {
 - Include internal card grid with animated counters
 - Each metric card: 500x350px with generous spacing
 
+🎯 **MULTI-ITEM SLIDES:** When listing items (planets, products, people):
+- Each item gets: Title + Facts + Image with metadata: {"topic": "Item name", "searchQuery": "Item name"}
+- Layout: Horizontal sections or grid based on count
+- Example: 3 planets → 3 sections side-by-side, each with its own image
+
 **CHART USAGE - WHEN DATA TELLS A STORY (30-50% of slides with data):**
 • Charts are for DATA STORYTELLING - use them to show comparisons, trends, and insights!
 • **CRITICAL: VARY CHART TYPES - DON'T USE LINE FOR EVERYTHING!**
@@ -1960,7 +1965,7 @@ Layout: Image on right 40%, text on left 60% - NO OVERLAP, clean separation
         "width": 900,
         "texts": [{ "text": "Innovation Summit", "style": {} }],
         "fontSize": 280,
-        "fontWeight": "900",
+    "fontWeight": "900",
         "textAlign": "left",
         "lineHeight": 1.0,
         "letterSpacing": -0.03,

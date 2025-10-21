@@ -375,88 +375,8 @@ class CombinedImageService:
         num_images: int = 6,
         deck_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Search for images using the most appropriate service."""
-        
-        # Choose provider for web images
-        web_results = []
-        provider = (IMAGE_SEARCH_PROVIDER or 'serpapi').lower()
-        if provider == 'perplexity' and getattr(self.perplexity, 'is_available', False):
-            logger.info(f"Using Perplexity for slide images: {slide_title}")
-            web_results = await self.perplexity.search_images_for_slide(
-                slide_content=slide_content,
-                slide_title=slide_title,
-                slide_type=slide_type,
-                style_preferences=style_preferences,
-                num_images=num_images * 2
-            )
-        elif getattr(self.serpapi, 'is_available', False):
-            logger.info(f"Using Google Images (SerpAPI) for slide: {slide_title}")
-            web_results = await self.serpapi.search_images_for_slide(
-                slide_content=slide_content,
-                slide_title=slide_title,
-                slide_type=slide_type,
-                style_preferences=style_preferences,
-                num_images=num_images * 2
-            )
-        
-        if web_results:
-            selected_images = await self._select_diverse_images(web_results, num_images, deck_id)
-            if selected_images:
-                return selected_images
-        
-        logger.debug("Web image provider returned no results, will check if AI generation is appropriate...")
-        
-        # Only use AI generation as a fallback or for specific needs
-        if (self.ai_generator.is_available and 
-            deck_id and 
-            self.get_ai_count(deck_id) < self.max_ai_images_per_deck and
-            self.ai_generator.should_use_ai_generation(slide_title, slide_content)):
-            
-            # Extract the specific subject needing AI generation
-            subject = self._extract_ai_subject(slide_title, slide_content)
-            
-            if subject:
-                # Only use AI if we really need it (no Google results or very specific technical diagrams)
-                if not google_results or self._needs_technical_diagram(slide_title, slide_content):
-                    result = await self.ai_generator.generate_supporting_image(
-                        subject=subject,
-                        context=slide_content[:200] if slide_content else slide_title,
-                        style_preferences=style_preferences,
-                        transparent_background=IMAGE_TRANSPARENT_DEFAULT_SUPPORTING
-                    )
-                    
-                    if "error" not in result:
-                        self._ai_usage_per_deck[deck_id] = self.get_ai_count(deck_id) + 1
-                        logger.info(f"Using AI generation ({self.get_ai_count(deck_id)}/{self.max_ai_per_deck}) for: {subject}")
-                        
-                        # Format the OpenAI result
-                        # Attribution and model identification per provider
-                        model_used = 'gemini-2.5-flash-image-preview' if IMAGE_PROVIDER == 'gemini' else 'gpt-image-1'
-                        attribution_url = 'https://ai.google.dev' if IMAGE_PROVIDER == 'gemini' else 'https://openai.com'
-
-                        ai_result = {
-                            'id': f'{IMAGE_PROVIDER}-generated-{self.get_ai_count(deck_id)}',
-                            'photographer': 'AI Generated',
-                            'photographer_url': attribution_url,
-                            'page_url': '[AI Generated Image]',
-                            'url': '[AI Generated Image]',  # Will be replaced after upload
-                            'alt': f'AI generated {subject}',
-                            'ai_generated': True,
-                            'transparent_background': IMAGE_TRANSPARENT_DEFAULT_SUPPORTING,
-                            'model_used': model_used,
-                            'revised_prompt': result.get('revised_prompt'),
-                            'b64_json': result.get('b64_json'),
-                            'usage': result.get('usage')
-                        }
-                        
-                        # AI images still need to be uploaded since they're base64
-                        uploaded_ai = await self._upload_single_image(ai_result)
-                        
-                        if uploaded_ai:
-                            return [uploaded_ai]
-            
-        # Last resort: no images available
-        logger.warning(f"No images available for slide: {slide_title}")
+        """Disabled: backend web image collection has been removed."""
+        logger.info("Image web search during generation disabled; returning no images")
         return []
     
     def _needs_technical_diagram(self, title: str, content: str) -> bool:
@@ -875,16 +795,8 @@ class CombinedImageService:
         locale: Optional[str] = None,
     ) -> Dict[str, Any]:
         print(f"🔍 [CombinedImageService] search_images called with query: '{query}', per_page: {per_page}")
-        """Search images with provider preference and aggregation.
-
-        If IMAGE_SEARCH_PROVIDER == 'perplexity', we will fetch from Perplexity and SerpAPI concurrently,
-        prioritize Perplexity results on top, and return a larger set (favoring Perplexity).
-        If only SerpAPI is available, fallback to SerpAPI.
-        """
-
-        provider = (IMAGE_SEARCH_PROVIDER or 'serpapi').lower()
-
-        # Aggregation path: prefer Perplexity but also include SerpAPI if available
+        """Web image search disabled (no backend aggregation)."""
+        return {"photos": [], "total_results": 0}
         if provider == 'perplexity' and (getattr(self.perplexity, 'is_available', False) or getattr(self.serpapi, 'is_available', False)):
             tasks = []
             pplx_task = None

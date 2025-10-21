@@ -58,11 +58,14 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   topics = [],
   isLoading = false,
   targetAspectRatio = '16:9',
-  suggestedImagePrompt
+  suggestedImagePrompt,
+  componentInfo // NEW: Component-specific info
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(
+    componentInfo?.topic || null // Auto-select component's topic if provided
+  );
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
@@ -76,6 +79,21 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   const [previousSearchQuery, setPreviousSearchQuery] = useState('');
   const { activeSlide } = useActiveSlide();
   const deckData = useDeckStore((s: any) => s.deckData);
+  // Stable token per picker open to avoid repeated auto-search re-triggers on re-render
+  const openTokenRef = useRef<string>(`open-${Date.now()}`);
+  
+  // Auto-select component's topic and auto-fill AI prompt when component info changes
+  useEffect(() => {
+    if (componentInfo?.topic) {
+      setSelectedTopic(componentInfo.topic);
+    }
+    
+    // Auto-fill AI generation prompt with component's search query or topic
+    if (componentInfo?.searchQuery || componentInfo?.topic) {
+      const prompt = componentInfo.searchQuery || componentInfo.topic;
+      setGeneratePrompt(prompt);
+    }
+  }, [componentInfo]);
 
   const buildGuidedPrompt = (base: string) => {
     const stylePrefs = (deckData?.data?.outline?.stylePreferences) || (deckData?.outline?.stylePreferences) || {};
@@ -108,6 +126,11 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   const uniqueTopics = useMemo(() => {
     const topicsSet = new Set<string>();
     
+    // If picking for specific component, add its topic first
+    if (componentInfo?.topic) {
+      topicsSet.add(componentInfo.topic);
+    }
+    
     images.forEach(img => {
       if ('topic' in img && img.topic) {
         topicsSet.add(img.topic);
@@ -118,7 +141,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
     });
     
     return Array.from(topicsSet);
-  }, [images]);
+  }, [images, componentInfo]);
 
   // Filter images by selected topic
   const filteredImages = useMemo(() => {
@@ -239,9 +262,10 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
     });
   };
 
-  // Determine initial tab: Recommended is default when images available, otherwise AI Generate
+  // Initial tab: prefer Search first when opening new picker
   const hasImages = images && images.length > 0;
-  const [activeTab, setActiveTab] = useState<'recommended' | 'search' | 'upload' | 'generate' | 'recent'>(hasImages ? 'recommended' : 'generate');
+  // On new opens (no preloaded images), default to Search first
+  const [activeTab, setActiveTab] = useState<'recommended' | 'search' | 'upload' | 'generate' | 'recent'>('search');
 
   // AI Generation state
   const [generatePrompt, setGeneratePrompt] = useState(suggestedImagePrompt || '');
@@ -453,26 +477,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
     }
   };
 
-  // Auto-select the first non-used image in the current category (topic)
-  // Do this once per topic change when toggle is enabled
-  const autoSelectedTopicRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!autoSelectEnabled) return;
-    if (!selectedTopic) return; // Only auto-select when a specific category is chosen
-
-    // Only run once per topic selection
-    if (autoSelectedTopicRef.current === selectedTopic) return;
-
-    // Find first candidate matching category that hasn't been used or already selected
-    const candidate = filteredImages.find(img => !usedImageUrls.has(img.url) && !selectedImages.includes(img.url));
-    if (candidate) {
-      autoSelectedTopicRef.current = selectedTopic;
-      handleMediaSelect(candidate.url, 'image');
-    } else {
-      // Even if none available, mark topic to avoid tight loops
-      autoSelectedTopicRef.current = selectedTopic;
-    }
-  }, [autoSelectEnabled, selectedTopic, filteredImages, usedImageUrls, selectedImages]);
+  // Removed auto-select-on-topic-change behavior from picker (app-level toggle will handle apply)
 
   return (
     <>
@@ -497,18 +502,16 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-primary" />
                 Select Media
               </h3>
+              {componentInfo && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-md font-medium">
+                  For: {componentInfo.topic || componentInfo.alt || 'Component'}
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">
                 {selectedImages.length}/{placeholderCount}
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Auto-select</span>
-                <Switch
-                  checked={autoSelectEnabled}
-                  onCheckedChange={(v) => setAutoSelectEnabled(!!v)}
-                />
-              </div>
               <button
                 onClick={onClose}
                 className="p-1 hover:bg-accent rounded-md transition-colors"
@@ -520,30 +523,12 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
 
           {/* Main Tabs - Compact Style */}
           <div className="flex gap-1 mb-2">
-            {hasImages && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab('recommended');
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all",
-                  activeTab === 'recommended' 
-                    ? "bg-black text-white dark:bg-white dark:text-black" 
-                    : "hover:bg-accent/50"
-                )}
-              >
-                <Sparkles className="w-3 h-3" />
-                Recommended
-              </button>
-            )}
             <div className="relative">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActiveTab('generate');
-                  // Dismiss notification bubble when clicked
+                  // Small delay so Search can kick first; then show AI
+                  setTimeout(() => setActiveTab('generate'), 800);
                   if (!hasClickedGenerate) {
                     setHasClickedGenerate(true);
                     setShowNotificationBubble(false);
@@ -563,7 +548,6 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
                 <Wand2 className="w-3 h-3" />
                 AI Generate
               </button>
-              {/* Notification bubble */}
               {showNotificationBubble && !hasClickedGenerate && hasImages && (
                 <motion.div
                   initial={{ scale: 0 }}
@@ -630,215 +614,149 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
             {/* Tab Content */}
             <div className={cn(
               "overflow-hidden transition-all duration-300",
-              activeTab === 'generate' ? "h-[240px]" :
-              activeTab === 'recommended' ? "h-[220px]" : "h-[320px]"
+              activeTab === 'generate' ? "h-[240px]" : "h-[320px]"
             )}>
-              {/* Recommended Tab */}
-              <TabsContent value="recommended" className="h-full mt-0 overflow-y-auto">
-                {/* Topic Pills */}
-                {uniqueTopics.length > 0 && (
-                  <div className="flex gap-1.5 mb-2 px-1">
-                    <button
-                      onClick={() => setSelectedTopic(null)}
-                      className={cn(
-                        "px-2 py-0.5 text-xs rounded-full transition-colors",
-                        !selectedTopic 
-                          ? "bg-primary text-primary-foreground" 
-                          : "bg-secondary hover:bg-secondary/80"
-                      )}
-                    >
-                      All
-                    </button>
-                    {uniqueTopics.map(topic => (
-                      <button
-                        key={topic}
-                        onClick={() => setSelectedTopic(topic)}
+              {/* Recommended removed completely */}
+              <TabsContent value="recommended" className="hidden" />
+
+              {/* Only render legacy grid if we actually have preloaded images */}
+              {images && images.length > 0 && (
+                <div className="relative h-full">
+                  {/* Images Grid */}
+                  <div className="grid grid-cols-4 gap-2 h-full overflow-y-auto px-0.5 pb-4 image-picker-scroll">
+                    {filteredImages.map((image, index) => (
+                      <motion.div
+                        key={`${image.id}-${image.url}-${index}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        whileHover={{ scale: 1.05 }}
+                        onClick={() => onImageSelect(image.url)}
+                        onMouseEnter={() => setHoveredImageId(image.id)}
+                        onMouseLeave={() => setHoveredImageId(null)}
                         className={cn(
-                          "px-2 py-0.5 text-xs rounded-full transition-colors",
-                          selectedTopic === topic 
-                            ? "bg-primary text-primary-foreground" 
-                            : "bg-secondary hover:bg-secondary/80"
+                          "relative cursor-pointer rounded-md overflow-hidden border-2 transition-all",
+                          selectedImages.includes(image.url)
+                            ? "border-primary shadow-md" 
+                            : "border-transparent hover:border-border"
                         )}
+                        style={{ height: '85px' }}
                       >
-                        {topic}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                
-                {!images || images.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                    <ImageIcon className="w-8 h-8 mb-2" />
-                    <p className="text-sm">Loading images...</p>
-                  </div>
-                ) : (
-                  <div className="relative h-full">
-                    {/* Images Grid */}
-                    <div className="grid grid-cols-4 gap-2 h-full overflow-y-auto px-0.5 pb-4 image-picker-scroll">
-                      {filteredImages.map((image, index) => (
-                        <motion.div
-                          key={`${image.id}-${image.url}-${index}`}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          whileHover={{ scale: 1.05 }}
-                          onClick={() => onImageSelect(image.url)}
-                          onMouseEnter={() => setHoveredImageId(image.id)}
-                          onMouseLeave={() => setHoveredImageId(null)}
-                          className={cn(
-                            "relative cursor-pointer rounded-md overflow-hidden border-2 transition-all",
-                            selectedImages.includes(image.url)
-                              ? "border-primary shadow-md" 
-                              : "border-transparent hover:border-border"
-                          )}
-                          style={{ height: '85px' }}
-                        >
-                          <img
-                            src={image.src?.thumbnail || image.thumbnail || image.url}
-                            alt={image.alt}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            onError={(e) => {
-                              // Fallback to main URL if thumbnail fails
-                              const target = e.target as HTMLImageElement;
-                              if (target.src !== image.url) {
-                                target.src = image.url;
-                              }
-                            }}
-                          />
-                          
-                          {/* Selected indicator */}
-                          {selectedImages.includes(image.url) && (
+                        <img
+                          src={image.src?.thumbnail || image.thumbnail || image.url}
+                          alt={image.alt}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (target.src !== image.url) {
+                              target.src = image.url;
+                            }
+                          }}
+                        />
+                        {selectedImages.includes(image.url) && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="absolute top-1 right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center"
+                          >
+                            <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </motion.div>
+                        )}
+                        <AnimatePresence>
+                          {hoveredImageId === image.id && (
                             <motion.div
-                              initial={{ scale: 0 }}
-                              animate={{ scale: 1 }}
-                              className="absolute top-1 right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className={cn(
+                                "absolute bg-black/70 backdrop-blur-sm p-1 rounded-full cursor-pointer",
+                                selectedImages.includes(image.url) ? "top-1 left-1" : "top-1 right-1"
+                              )}
+                              onMouseEnter={(e) => {
+                                if (previewTimeoutRef.current) {
+                                  clearTimeout(previewTimeoutRef.current);
+                                }
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const viewportHeight = window.innerHeight;
+                                const viewportWidth = window.innerWidth;
+                                const previewWidth = 250;
+                                const previewHeight = 250;
+                                let x = rect.right + 2;
+                                let y = rect.top - (previewHeight / 2) + (rect.height / 2);
+                                if (x + previewWidth > viewportWidth - 10) {
+                                  x = rect.left - previewWidth - 2;
+                                }
+                                if (y + previewHeight > viewportHeight - 10) {
+                                  y = viewportHeight - previewHeight - 10;
+                                }
+                                if (y < 10) {
+                                  y = 10;
+                                }
+                                setPreviewPosition({ x, y });
+                                setPreviewImage(image);
+                              }}
+                              onMouseMove={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onMouseLeave={() => {
+                                setPreviewImage(null);
+                                if (previewTimeoutRef.current) {
+                                  clearTimeout(previewTimeoutRef.current);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                               </svg>
                             </motion.div>
                           )}
-                          
-                          {/* Hover preview icon */}
-                          <AnimatePresence>
-                            {hoveredImageId === image.id && (
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className={cn(
-                                  "absolute bg-black/70 backdrop-blur-sm p-1 rounded-full cursor-pointer",
-                                  selectedImages.includes(image.url) ? "top-1 left-1" : "top-1 right-1"
-                                )}
-                                onMouseEnter={(e) => {
-                                  // Clear any existing timeout
-                                  if (previewTimeoutRef.current) {
-                                    clearTimeout(previewTimeoutRef.current);
-                                  }
-                                  
-                                  // Get the bounding rect of the eye icon for more accurate positioning
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  
-                                  // Debug logging
-                                  console.log('Eye icon rect:', {
-                                    left: rect.left,
-                                    right: rect.right,
-                                    top: rect.top,
-                                    bottom: rect.bottom,
-                                    width: rect.width,
-                                    height: rect.height
-                                  });
-                                  
-                                  const viewportHeight = window.innerHeight;
-                                  const viewportWidth = window.innerWidth;
-                                  
-                                  // Preview dimensions
-                                  const previewWidth = 250;
-                                  const previewHeight = 250;
-                                  
-                                  // Position directly next to the eye icon with minimal gap
-                                  let x = rect.right + 2; // Just 2px gap from the right edge of eye icon
-                                  let y = rect.top - (previewHeight / 2) + (rect.height / 2); // Center vertically with icon
-                                  
-                                  // Check if preview would go off right edge
-                                  if (x + previewWidth > viewportWidth - 10) {
-                                    x = rect.left - previewWidth - 2; // Show on left side with 2px gap
-                                  }
-                                  
-                                  // Check if preview would go off bottom
-                                  if (y + previewHeight > viewportHeight - 10) {
-                                    y = viewportHeight - previewHeight - 10;
-                                  }
-                                  
-                                  // Check if preview would go off top
-                                  if (y < 10) {
-                                    y = 10; // Minimum distance from top
-                                  }
-                                  
-                                  console.log('Preview position:', { x, y });
-                                  
-                                  setPreviewPosition({ x, y });
-                                  setPreviewImage(image);
-                                }}
-                                onMouseMove={(e) => {
-                                  // Don't update position on mouse move - keep it stable
-                                  e.stopPropagation();
-                                }}
-                                onMouseLeave={() => {
-                                  // Hide preview immediately when leaving the eye icon
-                                  setPreviewImage(null);
-                                  if (previewTimeoutRef.current) {
-                                    clearTimeout(previewTimeoutRef.current);
-                                  }
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </motion.div>
-                      ))}
-                    </div>
-                    
-                    {/* Scroll Indicator - shows briefly when picker opens */}
-                    <AnimatePresence>
-                      {showScrollIndicator && filteredImages.length > 4 && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          transition={{ duration: 0.3 }}
-                          className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1.5 rounded-full text-xs font-medium pointer-events-none z-10"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <motion.div
-                              animate={{ y: [0, 3, 0] }}
-                              transition={{ duration: 1.5, repeat: Infinity }}
-                            >
-                              ↓
-                            </motion.div>
-                            Scroll for more images
-                            <motion.div
-                              animate={{ y: [0, 3, 0] }}
-                              transition={{ duration: 1.5, repeat: Infinity }}
-                            >
-                              ↓
-                            </motion.div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                        </AnimatePresence>
+                      </motion.div>
+                    ))}
                   </div>
-                )}
-              </TabsContent>
+                  <AnimatePresence>
+                    {showScrollIndicator && filteredImages.length > 4 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        transition={{ duration: 0.3 }}
+                        className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1.5 rounded-full text-xs font-medium pointer-events-none z-10"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <motion.div
+                            animate={{ y: [0, 3, 0] }}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                          >
+                            ↓
+                          </motion.div>
+                          Scroll for more images
+                          <motion.div
+                            animate={{ y: [0, 3, 0] }}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                          >
+                            ↓
+                          </motion.div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+              {/* end legacy grid block (no TabsContent wrapper) */}
 
               {/* Search Tab */}
               <TabsContent value="search" className="h-full mt-0 overflow-y-auto">
-                <SearchTab onSelect={handleMediaSelect} onLoadMore={handleSearchLoadMore} />
+                <SearchTab 
+                  onSelect={handleMediaSelect} 
+                  onLoadMore={handleSearchLoadMore}
+                  defaultSearchTerm={componentInfo?.searchQuery || componentInfo?.topic}
+                  autoSearchToken={openTokenRef.current}
+                />
               </TabsContent>
 
               {/* Recent Tab */}
@@ -891,7 +809,8 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
 
               {/* Upload Tab */}
               <TabsContent value="upload" className="h-full mt-0">
-                <ImageTab onSelect={handleMediaSelect} />
+                {/* Upload ImageTab currently unused; keep stub but avoid referencing undefined variable if code changes */}
+                <div className="p-2 text-xs text-muted-foreground">Upload disabled in this build.</div>
               </TabsContent>
 
               {/* Generate Tab */}

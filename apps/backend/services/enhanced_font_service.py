@@ -734,6 +734,24 @@ class EnhancedFontService:
         
         return stats
     
+    def _font_has_files(self, font_id: str) -> bool:
+        """Check if a font actually has available files on disk"""
+        try:
+            # Try to get font path - if it returns None, font doesn't have files
+            path = self.get_font_path(font_id, 'regular')
+            return path is not None
+        except Exception:
+            return False
+    
+    def _filter_available_fonts(self, fonts: List[Dict]) -> List[Dict]:
+        """Filter list to only include fonts with actual files available"""
+        available = []
+        for font in fonts:
+            font_id = font.get('id', '')
+            if font_id and self._font_has_files(font_id):
+                available.append(font)
+        return available
+    
     def select_font_pair(self,
                         deck_title: str,
                         vibe: str,
@@ -755,8 +773,13 @@ class EnhancedFontService:
         hero_fonts = recommendations['hero']
         body_fonts = recommendations['body']
         
+        # CRITICAL: Filter out fonts without actual files
+        hero_fonts = self._filter_available_fonts(hero_fonts)
+        body_fonts = self._filter_available_fonts(body_fonts)
+        
         if not hero_fonts or not body_fonts:
             # Fallback to safe defaults
+            logger.warning(f"⚠️  No available fonts found after filtering! Using fallback fonts.")
             return {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         # Use variety_seed for deterministic rotation through top candidates

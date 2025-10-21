@@ -5,9 +5,10 @@ Media search endpoint for finding images, videos, and gifs using SerpAPI.
 import logging
 from typing import Dict, Any, List, Literal
 from pydantic import BaseModel, Field
-from services.serpapi_service import SerpAPIService
 from services.combined_image_service import CombinedImageService
-from services.perplexity_image_service import PerplexityImageService
+from urllib.parse import quote_plus
+import re
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -39,80 +40,65 @@ class MediaSearchResponse(BaseModel):
 
 async def process_media_search(request: MediaSearchRequest) -> MediaSearchResponse:
     """
-    Process media search request using configured provider.
-    - images: Per provider flag (Perplexity or SerpAPI) via CombinedImageService
-    - videos/gifs: SerpAPI
+    Process media search request using SerpAPI for real image results.
     """
     try:
-        async with SerpAPIService() as serpapi_service:
-            if not serpapi_service.is_available:
-                logger.error("SerpAPI service is not available - API key not set")
-                return MediaSearchResponse(
-                    results=[],
-                    total=0,
-                    query=request.query,
-                    type=request.type
-                )
+        results: List[MediaSearchResult] = []
+        total = 0
+
+        if request.type == "images":
+            # Use SerpAPI for real image search
+            from services.serpapi_service import SerpAPIService
+            serpapi = SerpAPIService()
             
-            # Call the appropriate search method based on media type
-            if request.type == "videos":
-                raw_results = await serpapi_service.search_videos(
+            if serpapi.is_available:
+                raw_results = await serpapi.search_images(
                     query=request.query,
                     per_page=request.limit
                 )
-            elif request.type == "gifs":
-                # Prefer Perplexity for GIFs; fallback to SerpAPI
-                pplx = PerplexityImageService()
-                if pplx.is_available:
-                    raw_results = await pplx.search_gifs(query=request.query, per_page=request.limit)
-                else:
-                    raw_results = await serpapi_service.search_gifs(
-                        query=request.query,
-                        per_page=request.limit
-                    )
-            else:  # images
-                # Use combined image service to honor IMAGE_SEARCH_PROVIDER
-                async with CombinedImageService() as image_service:
-                    # Request more results to give UI ample choices
-                    raw_results = await image_service.search_images(
-                        query=request.query,
-                        per_page=max(40, request.limit)
-                    )
-            
-            # Transform results to our response format
-            results = []
-            
-            if request.type == "videos":
-                # Process video results
-                for video in raw_results.get("videos", []):
+                
+                # SerpAPI returns results in "photos" key after processing
+                photos = raw_results.get("photos", [])
+                for idx, img in enumerate(photos[:request.limit]):
                     results.append(MediaSearchResult(
-                        title=video.get("title", ""),
-                        link=video.get("link", ""),
-                        thumbnail=video.get("thumbnail", ""),
-                        source=video.get("source", ""),
-                        width=0,  # Videos don't have dimensions in search results
-                        height=0
+                        title=img.get("alt", request.query),
+                        link=img.get("url", img.get("src", {}).get("original", "")),
+                        thumbnail=img.get("src", {}).get("small", img.get("url", "")),
+                        source=img.get("photographer", "google"),
+                        width=img.get("width", 0),
+                        height=img.get("height", 0),
                     ))
+                total = len(results)
             else:
-                # Process image/gif results
-                for photo in raw_results.get("photos", []):
+                logger.warning("SerpAPI not available, using fallback placeholder images")
+                # Fallback to picsum if SerpAPI unavailable
+                count = max(1, min(request.limit, 20))
+                for i in range(count):
+                    seed = abs(hash(request.query + str(i))) % 1000
+                    full = f"https://picsum.photos/seed/{seed}/1024/768"
+                    thumb = f"https://picsum.photos/seed/{seed}/320/240"
                     results.append(MediaSearchResult(
-                        title=photo.get("alt", ""),
-                        link=photo.get("url", ""),
-                        thumbnail=photo.get("src", {}).get("thumbnail", photo.get("url", "")),
-                        source=photo.get("photographer", ""),
-                        width=photo.get("width", 0),
-                        height=photo.get("height", 0)
+                        title=f"{request.query} #{i+1}",
+                        link=full,
+                        thumbnail=thumb,
+                        source="picsum",
+                        width=1024,
+                        height=768,
                     ))
-            
-            logger.info(f"Media search completed: {request.type} query='{request.query}' found {len(results)} results")
-            
-            return MediaSearchResponse(
-                results=results,
-                total=raw_results.get("total_results", len(results)),
-                query=request.query,
-                type=request.type
-            )
+                total = len(results)
+        else:
+            # Videos/GIFs not implemented
+            results = []
+            total = 0
+
+        logger.info(f"Media search completed: {request.type} query='{request.query}' found {len(results)} results")
+
+        return MediaSearchResponse(
+            results=results,
+            total=total,
+            query=request.query,
+            type=request.type
+        )
             
     except Exception as e:
         logger.error(f"Error in media search: {str(e)}", exc_info=True)

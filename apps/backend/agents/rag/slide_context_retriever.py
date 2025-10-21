@@ -247,12 +247,47 @@ class SlideContextRetriever:
         # Always need text
         components.append("TiptapTextBlock")
         
-        # ALWAYS include Image component (use on most slides for visual impact!)
-        # Skip only for very text-heavy slides or title slides
+        # Selectively add Image component - only when it adds value
         slide_type = getattr(slide_outline, 'slide_type', 'content').lower()
-        if slide_type not in ['title', 'cover', 'table_of_contents', 'thank_you']:
+        content_lower = slide_outline.content.lower()
+        title_lower = slide_outline.title.lower()
+        
+        # Check for multi-item content (planets, products, people, etc.)
+        has_list_items = content_lower.count('\n-') + content_lower.count('\n•') >= 2
+        has_multiple_caps = len([w for w in slide_outline.content.split() if w and w[0].isupper()]) >= 3
+        is_multi_item = has_list_items or has_multiple_caps
+        
+        # Decide if this slide should have images
+        should_add_image = False
+        
+        # ALWAYS add for multi-item slides (each item needs an image)
+        if is_multi_item:
+            should_add_image = True
+            logger.info("  🖼️ Image component added (multi-item slide)")
+        # Add for process/timeline slides (visual context helps)
+        elif 'process' in slide_type or 'timeline' in slide_type or 'history' in title_lower:
+            should_add_image = True
+            logger.info("  🖼️ Image component added (process/timeline)")
+        # Add for product/feature showcases
+        elif any(word in title_lower or word in content_lower for word in ['product', 'feature', 'showcase', 'demo']):
+            should_add_image = True
+            logger.info("  🖼️ Image component added (product/feature)")
+        # Add for educational/learning content
+        elif any(word in title_lower for word in ['how', 'what', 'why', 'learn', 'understand']):
+            should_add_image = True
+            logger.info("  🖼️ Image component added (educational)")
+        # SKIP for stats, metrics, data-heavy, text-heavy slides
+        elif any(word in slide_type for word in ['stat', 'metric', 'data', 'comparison']):
+            logger.info("  ⏭️  Image skipped (stats/metrics - use charts instead)")
+        # SKIP for conclusion/thank you slides
+        elif slide_type in ['title', 'cover', 'conclusion', 'thank_you', 'table_of_contents']:
+            logger.info("  ⏭️  Image skipped (title/conclusion)")
+        # SKIP by default for regular content slides (let design breathe)
+        else:
+            logger.info("  ⏭️  Image skipped (regular content - focus on design)")
+        
+        if should_add_image:
             components.append("Image")
-            logger.info("  🖼️ Image component added (use images for beautiful slides!)")
         
         # 🚨 CRITICAL: Analyze content for CustomComponent triggers
         content_lower = slide_outline.content.lower()
