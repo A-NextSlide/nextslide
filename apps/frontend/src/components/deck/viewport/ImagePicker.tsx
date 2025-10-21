@@ -80,7 +80,7 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   const { activeSlide } = useActiveSlide();
   const deckData = useDeckStore((s: any) => s.deckData);
   // Stable token per picker open to avoid repeated auto-search re-triggers on re-render
-  const openTokenRef = useRef<string>(`open-${Date.now()}`);
+  const [autoSearchToken] = useState(() => `open-${Date.now()}`);
   
   // Auto-select component's topic and auto-fill AI prompt when component info changes
   useEffect(() => {
@@ -619,143 +619,13 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
               {/* Recommended removed completely */}
               <TabsContent value="recommended" className="hidden" />
 
-              {/* Only render legacy grid if we actually have preloaded images */}
-              {images && images.length > 0 && (
-                <div className="relative h-full">
-                  {/* Images Grid */}
-                  <div className="grid grid-cols-4 gap-2 h-full overflow-y-auto px-0.5 pb-4 image-picker-scroll">
-                    {filteredImages.map((image, index) => (
-                      <motion.div
-                        key={`${image.id}-${image.url}-${index}`}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        whileHover={{ scale: 1.05 }}
-                        onClick={() => onImageSelect(image.url)}
-                        onMouseEnter={() => setHoveredImageId(image.id)}
-                        onMouseLeave={() => setHoveredImageId(null)}
-                        className={cn(
-                          "relative cursor-pointer rounded-md overflow-hidden border-2 transition-all",
-                          selectedImages.includes(image.url)
-                            ? "border-primary shadow-md" 
-                            : "border-transparent hover:border-border"
-                        )}
-                        style={{ height: '85px' }}
-                      >
-                        <img
-                          src={image.src?.thumbnail || image.thumbnail || image.url}
-                          alt={image.alt}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            if (target.src !== image.url) {
-                              target.src = image.url;
-                            }
-                          }}
-                        />
-                        {selectedImages.includes(image.url) && (
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="absolute top-1 right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center"
-                          >
-                            <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </motion.div>
-                        )}
-                        <AnimatePresence>
-                          {hoveredImageId === image.id && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.8 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.8 }}
-                              className={cn(
-                                "absolute bg-black/70 backdrop-blur-sm p-1 rounded-full cursor-pointer",
-                                selectedImages.includes(image.url) ? "top-1 left-1" : "top-1 right-1"
-                              )}
-                              onMouseEnter={(e) => {
-                                if (previewTimeoutRef.current) {
-                                  clearTimeout(previewTimeoutRef.current);
-                                }
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                const viewportHeight = window.innerHeight;
-                                const viewportWidth = window.innerWidth;
-                                const previewWidth = 250;
-                                const previewHeight = 250;
-                                let x = rect.right + 2;
-                                let y = rect.top - (previewHeight / 2) + (rect.height / 2);
-                                if (x + previewWidth > viewportWidth - 10) {
-                                  x = rect.left - previewWidth - 2;
-                                }
-                                if (y + previewHeight > viewportHeight - 10) {
-                                  y = viewportHeight - previewHeight - 10;
-                                }
-                                if (y < 10) {
-                                  y = 10;
-                                }
-                                setPreviewPosition({ x, y });
-                                setPreviewImage(image);
-                              }}
-                              onMouseMove={(e) => {
-                                e.stopPropagation();
-                              }}
-                              onMouseLeave={() => {
-                                setPreviewImage(null);
-                                if (previewTimeoutRef.current) {
-                                  clearTimeout(previewTimeoutRef.current);
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </motion.div>
-                    ))}
-                  </div>
-                  <AnimatePresence>
-                    {showScrollIndicator && filteredImages.length > 4 && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        transition={{ duration: 0.3 }}
-                        className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1.5 rounded-full text-xs font-medium pointer-events-none z-10"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <motion.div
-                            animate={{ y: [0, 3, 0] }}
-                            transition={{ duration: 1.5, repeat: Infinity }}
-                          >
-                            ↓
-                          </motion.div>
-                          Scroll for more images
-                          <motion.div
-                            animate={{ y: [0, 3, 0] }}
-                            transition={{ duration: 1.5, repeat: Infinity }}
-                          >
-                            ↓
-                          </motion.div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-              {/* end legacy grid block (no TabsContent wrapper) */}
-
               {/* Search Tab */}
               <TabsContent value="search" className="h-full mt-0 overflow-y-auto">
                 <SearchTab 
                   onSelect={handleMediaSelect} 
                   onLoadMore={handleSearchLoadMore}
                   defaultSearchTerm={componentInfo?.searchQuery || componentInfo?.topic}
-                  autoSearchToken={openTokenRef.current}
+                  autoSearchToken={autoSearchToken}
                 />
               </TabsContent>
 
