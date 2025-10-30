@@ -104,10 +104,10 @@ function createInitialHtmlFromText(text: string): string {
   // Normalize and coalesce list items that are separated by blank lines
   // This fixes cases like "Sources:" where items are written as "1. ..." with blank lines between them
   let normalized = normalizeInputText(t);
-  // Collapse blank lines between ordered list items (e.g., 1. ItemA \n\n 1. ItemB → 1. ItemA \n 1. ItemB)
-  normalized = normalized.replace(/(^\s*\d+[\.)]\s+.+)\n\s*\n(?=\s*\d+[\.)]\s+)/gm, '$1\n');
-  // Collapse blank lines between unordered list items (e.g., • ItemA \n\n • ItemB → • ItemA \n • ItemB)
-  normalized = normalized.replace(/(^\s*(?:[-*+]|•)\s+.+)\n\s*\n(?=\s*(?:[-*+]|•)\s+)/gm, '$1\n');
+  // Collapse blank lines between ordered list items ONLY at same indentation level
+  normalized = normalized.replace(/(^\d+[\.)]\s+.+)\n\s*\n(?=\d+[\.)]\s+)/gm, '$1\n');
+  // Collapse blank lines between unordered list items ONLY at same indentation level
+  normalized = normalized.replace(/(^(?:[-*+]|•)\s+.+)\n\s*\n(?=(?:[-*+]|•)\s+)/gm, '$1\n');
   // Preserve markdown formatting into HTML (basic)
   // Bold/italic
   let html = escapeHtml(normalized)
@@ -119,26 +119,86 @@ function createInitialHtmlFromText(text: string): string {
              .replace(/^#\s+(.+)$/gm, '<h1>$1<\/h1>');
   // Lists
   // Convert unordered lists (support hyphen, asterisk, plus, and bullet character •)
-  // Greedy match to capture contiguous list items in one block
-  html = html.replace(/^(?:(?:[-*+]|•)\s+.+(?:\n|$))+/gm, (block) => {
-    const items = block
-      .trim()
-      .split(/\n/)
-      .map(li => li.replace(/^(?:[-*+]|•)\s+/, '').trim())
-      .filter(i => i.length > 0);
-    if (items.length === 0) return '';
-    return `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+  // Support both top-level and indented bullets
+  html = html.replace(/^(?:\s*(?:[-*+]|•)\s+.+(?:\n|$))+/gm, (block) => {
+    const lines = block.trim().split(/\n/);
+    let result = '';
+    let currentLevel = 0;
+    const levelStack: number[] = [];
+
+    lines.forEach((line, idx) => {
+      // Count leading spaces to determine nesting level
+      const leadingSpaces = line.match(/^\s*/)?.[0].length || 0;
+      const level = Math.floor(leadingSpaces / 2); // 2 spaces = 1 level of nesting
+      const content = line.replace(/^\s*(?:[-*+]|•)\s+/, '').trim();
+
+      if (!content) return;
+
+      // Close nested lists if moving to lower level
+      while (currentLevel > level) {
+        result += '</ul>';
+        levelStack.pop();
+        currentLevel--;
+      }
+
+      // Open new nested list if moving to higher level
+      while (currentLevel < level) {
+        result += '<ul>';
+        levelStack.push(currentLevel);
+        currentLevel++;
+      }
+
+      result += `<li>${content}</li>`;
+    });
+
+    // Close any remaining open lists
+    while (currentLevel > 0) {
+      result += '</ul>';
+      currentLevel--;
+    }
+
+    return `<ul>${result}</ul>`;
   });
   // Convert ordered lists
-  // Greedy match to capture contiguous list items in one block
-  html = html.replace(/^(?:\d+[\.)]\s+.+(?:\n|$))+/gm, (block) => {
-    const items = block
-      .trim()
-      .split(/\n/)
-      .map(li => li.replace(/^\d+[\.)]\s+/, '').trim())
-      .filter(i => i.length > 0);
-    if (items.length === 0) return '';
-    return `<ol>${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
+  // Support both top-level and indented numbered lists
+  html = html.replace(/^(?:\s*\d+[\.)]\s+.+(?:\n|$))+/gm, (block) => {
+    const lines = block.trim().split(/\n/);
+    let result = '';
+    let currentLevel = 0;
+    const levelStack: number[] = [];
+
+    lines.forEach((line) => {
+      // Count leading spaces to determine nesting level
+      const leadingSpaces = line.match(/^\s*/)?.[0].length || 0;
+      const level = Math.floor(leadingSpaces / 2); // 2 spaces = 1 level of nesting
+      const content = line.replace(/^\s*\d+[\.)]\s+/, '').trim();
+
+      if (!content) return;
+
+      // Close nested lists if moving to lower level
+      while (currentLevel > level) {
+        result += '</ol>';
+        levelStack.pop();
+        currentLevel--;
+      }
+
+      // Open new nested list if moving to higher level
+      while (currentLevel < level) {
+        result += '<ol>';
+        levelStack.push(currentLevel);
+        currentLevel++;
+      }
+
+      result += `<li>${content}</li>`;
+    });
+
+    // Close any remaining open lists
+    while (currentLevel > 0) {
+      result += '</ol>';
+      currentLevel--;
+    }
+
+    return `<ol>${result}</ol>`;
   });
   // Wrap remaining lines as paragraphs
   html = html

@@ -319,7 +319,9 @@ class EnhancedFontService:
             context['avoid_tags'].update(['graffiti', 'distorted', 'horror', 'comic'])
         elif vibe in ['creative', 'artistic', 'playful']:
             context['style'] = 'creative'
-            context['preferred_tags'].update(['creative', 'artistic', 'unique', 'display'])
+            context['preferred_tags'].update(['creative', 'artistic', 'unique', 'display', 'playful', 'fun', 'bold', 'expressive'])
+            # Avoid overly corporate/boring fonts for creative contexts
+            context['avoid_tags'].update(['corporate', 'formal', 'conservative'])
         elif vibe in ['modern', 'minimal', 'clean']:
             context['style'] = 'modern'
             context['required_tags'].update(['modern', 'minimal', 'clean'])
@@ -332,8 +334,20 @@ class EnhancedFontService:
         
         # Analyze keywords for additional context
         all_text = ' '.join([deck_title] + (content_keywords or []))
-        
-        if any(word in all_text.lower() for word in ['tech', 'software', 'digital', 'ai', 'data']):
+
+        if any(word in all_text.lower() for word in ['gaming', 'game', 'arcade', 'pixel', '8bit', '8-bit', 'retro game']):
+            context['type'] = 'gaming'
+            context['preferred_tags'].update(['pixel', 'arcade', '8bit', '8-bit', 'retro', 'game'])
+        elif any(word in all_text.lower() for word in ['80s', '70s', '60s', 'disco', 'groovy', 'vintage', 'throwback']):
+            context['type'] = 'retro'
+            context['preferred_tags'].update(['retro', 'vintage', '80s', '70s', '60s', 'disco', 'groovy'])
+        elif any(word in all_text.lower() for word in ['music', 'concert', 'festival', 'band', 'artist']):
+            context['type'] = 'music'
+            context['preferred_tags'].update(['bold', 'creative', 'artistic', 'display'])
+        elif any(word in all_text.lower() for word in ['kids', 'children', 'playful', 'fun']):
+            context['type'] = 'kids'
+            context['preferred_tags'].update(['playful', 'fun', 'cute', 'friendly', 'rounded'])
+        elif any(word in all_text.lower() for word in ['tech', 'software', 'digital', 'ai', 'data']):
             context['type'] = 'tech'
             context['preferred_tags'].update(['geometric', 'futuristic', 'tech'])
         elif any(word in all_text.lower() for word in ['finance', 'banking', 'investment']):

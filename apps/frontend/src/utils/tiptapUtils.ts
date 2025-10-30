@@ -196,7 +196,7 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
           marks.push({ 
             type: 'link', 
             attrs: { 
-              href: style.href || '#', 
+              href: style.link, 
               target: '_blank'
             }
           });

@@ -1575,17 +1575,32 @@ class CombinedImageService:
             
             # Track total number of tasks for progress logging
             total_tasks = len(coroutines)
-            
-            # Gather all results at once
-            try:
-                results = await asyncio.gather(*coroutines, return_exceptions=True)
-            except Exception as e:
-                logger.error(f"Error gathering search results: {e}")
-                results = []
-            
-            # Process results with their metadata
+
+            # Process results as they complete (streaming) instead of waiting for all
+            # This sends images to frontend immediately when each search finishes
             completed_count = 0
-            for (topic, slide_ids), result in zip(task_metadata, results):
+
+            # Wrapper function that returns metadata with result
+            async def search_with_metadata(topic, slide_ids, coro):
+                try:
+                    result = await coro
+                    return (topic, slide_ids, result, None)
+                except Exception as e:
+                    return (topic, slide_ids, None, e)
+
+            # Create wrapped tasks
+            wrapped_tasks = [
+                search_with_metadata(topic, slide_ids, coro)
+                for (topic, slide_ids), coro in zip(task_metadata, coroutines)
+            ]
+
+            # Process results as they complete (much faster UX!)
+            for completed_coro in asyncio.as_completed(wrapped_tasks):
+                topic, slide_ids, result, error = await completed_coro
+
+                # Convert error back to exception for existing error handling
+                if error:
+                    result = error
                 try:
                     logger.debug(f"Processing result for topic '{topic}' -> slides: {slide_ids}")
                     
@@ -1627,19 +1642,87 @@ class CombinedImageService:
                         # Initialize slide data if needed
                         if slide_id not in slide_accumulated_images:
                             slide_accumulated_images[slide_id] = {}  # topic -> images mapping
-                        
+
                         # Give ALL images from this topic to this slide
                         topic_slide_images = images.copy()  # Copy so we don't modify original
-                        
+
                         # Add topic field to each image
                         for img in topic_slide_images:
                             img['topic'] = topic
-                        
+
                         # Store under the topic
                         slide_accumulated_images[slide_id][topic] = topic_slide_images
-                        
+
                         logger.info(f"Added ALL {len(topic_slide_images)} images from topic '{topic}' to slide {slide_id}")
-                        
+
+                        # 🚀 IMMEDIATE SEND: Check if this slide has all its topics ready and send immediately
+                        slide_expected_topics = set(slide_topics.get(slide_id, []))
+                        slide_received_topics = set(slide_accumulated_images[slide_id].keys())
+
+                        if slide_expected_topics and slide_received_topics >= slide_expected_topics:
+                            # This slide has all its images - send immediately!
+                            if slide_id not in slides_with_images:
+                                slides_with_images.add(slide_id)
+
+                                # Find slide info
+                                slide_info = next((s for s in deck_outline.slides if s.id == slide_id), None)
+                                slide_index = next((i for i, s in enumerate(deck_outline.slides) if s.id == slide_id), 0)
+
+                                # Create flat array of all images
+                                images_by_topic = slide_accumulated_images[slide_id]
+                                all_images = []
+                                for topic_name, topic_imgs in images_by_topic.items():
+                                    all_images.extend(topic_imgs)
+
+                                total_images_sent += len(all_images)
+
+                                logger.info(f"🚀 STREAMING: Sending slide {slide_index + 1} immediately with {len(all_images)} images")
+
+                                # Send slide_images_ready for internal tracking
+                                if callback:
+                                    await callback({
+                                        "type": "slide_images_ready",
+                                        "slide_id": slide_id,
+                                        "images": all_images
+                                    })
+
+                                # Format images
+                                formatted_images_by_topic = {}
+                                for topic_name, topic_imgs in images_by_topic.items():
+                                    formatted_images_by_topic[topic_name] = self._format_images_for_streaming(topic_imgs)
+
+                                formatted_images_flat = self._format_images_for_streaming(all_images)
+
+                                # Send slide_images_found
+                                await callback({
+                                    "type": "slide_images_found",
+                                    "message": f"Images ready for slide {slide_index + 1}",
+                                    "progress": 20,
+                                    "data": {
+                                        "slide_id": slide_id,
+                                        "slide_title": slide_info.title if slide_info else "Unknown",
+                                        "slide_index": slide_index,
+                                        "topics": list(images_by_topic.keys()),
+                                        "images_by_topic": formatted_images_by_topic,
+                                        "images": formatted_images_flat,
+                                        "images_count": len(all_images),
+                                        "partial": False
+                                    }
+                                })
+
+                                # Send slide_images_available
+                                await callback({
+                                    "type": "slide_images_available",
+                                    "data": {
+                                        "slide_id": slide_id,
+                                        "slide_index": slide_index,
+                                        "images": formatted_images_flat,
+                                        "images_by_topic": formatted_images_by_topic,
+                                        "topics": list(images_by_topic.keys()),
+                                        "total_count": len(all_images)
+                                    }
+                                })
+
                     completed_count += 1
                     logger.debug(f"Task {completed_count}/{total_tasks} completed")
                     

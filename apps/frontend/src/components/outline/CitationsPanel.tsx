@@ -39,7 +39,10 @@ const CitationsPanel: React.FC<CitationsPanelProps> = ({ citations = [], editabl
     }));
   }, [citations, normalizedCitations]);
 
+  // Don't render if no citations/footnotes, OR if citations look like referenceLinks (no title/source, just URLs)
+  const hasRealCitations = citations.some(c => c?.title || c?.source) || (footnotes && footnotes.length > 0);
   if ((!citations || citations.length === 0) && (!footnotes || footnotes.length === 0)) return null;
+  if (!hasRealCitations && (!footnotes || footnotes.length === 0)) return null;
 
   return (
     <div className={cn('mt-2 border rounded bg-zinc-50/60 dark:bg-zinc-900/30', className)}>

@@ -154,7 +154,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // Test outline creation
   onCreateTestOutline,
   // Auto select images
-  autoSelectImages = false,
+  autoSelectImages = false, // Default to false - user must explicitly enable
   setAutoSelectImages,
   // Detail level
   detailLevel = 'standard',
@@ -1099,8 +1099,22 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         <Switch
                           checked={autoSelectImages}
                           onCheckedChange={(checked) => {
+                            console.log('[ChatInputView] 🔴🔴🔴 Auto Images toggle changed to:', checked);
+                            console.log('[ChatInputView] 🔴 Before: autoSelectImages =', autoSelectImages);
                             if (setAutoSelectImages) {
                               setAutoSelectImages(checked);
+                              console.log('[ChatInputView] 🔴 setAutoSelectImages called with:', checked);
+                              // Also set it immediately in window for instant feedback
+                              if (typeof window !== 'undefined') {
+                                (window as any).__slideGenerationPreferences = {
+                                  ...(window as any).__slideGenerationPreferences,
+                                  autoSelectImages: checked
+                                };
+                                console.log('[ChatInputView] 🔴 IMMEDIATELY set window preference to:', checked);
+                                console.log('[ChatInputView] 🔴 Verified window value:', (window as any).__slideGenerationPreferences?.autoSelectImages);
+                              }
+                            } else {
+                              console.warn('[ChatInputView] ⚠️ setAutoSelectImages is undefined!');
                             }
                           }}
                           className="scale-75"

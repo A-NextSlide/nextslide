@@ -74,7 +74,7 @@ class SlideContent(BaseModel):
     citations: List[Dict[str, Any]] = Field(default_factory=list)  # Citations from research/Perplexity
     footnotes: List[Dict[str, Any]] = Field(default_factory=list)  # Numbered footnotes for citation panel
     # New: optional footer spec for rendering citations at the bottom in small text
-    citationsFooter: Optional[Dict[str, Any]] = None  # { showThinDivider: bool, urls: string[] }
+    citationsFooter: Optional[Dict[str, Any]] = None  # { showThinDivider: bool, sources: [{index: int, title: string, url: string}] }
     # New: structured two-column comparison content (for side-by-side layout)
     comparison: Optional[Dict[str, Any]] = None  # { layout?: string, leftLabel?: string, rightLabel?: string, leftBullets: string[], rightBullets: string[] }
     # AI-suggested image prompt extracted from [IMAGE: ...] tags in outline

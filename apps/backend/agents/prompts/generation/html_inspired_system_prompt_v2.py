@@ -3533,6 +3533,121 @@ When the deck is educational (math, science, coding, etc.), follow these princip
 ❌ Decorative shapes: NEVER USE - NO circles, triangles, stars for decoration!
 ✅ Shape component: ONLY when hasText=true for callout boxes with content
 
+**SOURCE CITATIONS - AUTOMATIC RENDERING (citationsFooter):**
+🚨 CRITICAL: The slide may include a `citationsFooter` object in the JSON. If present, you MUST render it!
+
+**citationsFooter Structure:**
+```json
+{
+  "showThinDivider": true,
+  "sources": [
+    {"index": 1, "title": "Source Title", "url": "https://..."},
+    {"index": 2, "title": "Another Source", "url": "https://..."}
+  ]
+}
+```
+
+**MANDATORY: If citationsFooter exists, ALWAYS add these components:**
+
+**1. Thin divider line (ALWAYS include if showThinDivider is true):**
+```json
+{
+  "type": "Lines",
+  "props": {
+    "startPoint": { "x": 1200, "y": 960 },
+    "endPoint": { "x": 1840, "y": 960 },
+    "stroke": { "color": "{{secondary}}", "width": 1, "opacity": 0.3 }
+  }
+}
+```
+
+**2. Clickable source links with index and titles (bottom-right, small, with proper Tiptap link marks):**
+```json
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 1200, "y": 980 },
+    "width": 640,
+    "height": 35,
+    "texts": [
+      { "text": "Sources: ", "style": { "textColor": "{{secondary}}70", "fontSize": 14 } },
+      {
+        "text": "[1] Source Title 1",
+        "style": {
+          "textColor": "{{accent}}90",
+          "fontSize": 14,
+          "link": "https://example.com/1"
+        }
+      },
+      { "text": ", ", "style": { "textColor": "{{secondary}}70", "fontSize": 14 } },
+      {
+        "text": "[2] Source Title 2",
+        "style": {
+          "textColor": "{{accent}}90",
+          "fontSize": 14,
+          "link": "https://example.com/2"
+        }
+      }
+    ],
+    "fontSize": 14,
+    "textAlign": "right",
+    "fontFamily": "{{bodyFont}}"
+  }
+}
+```
+
+**RENDERING INSTRUCTIONS:**
+✅ **POSITION**: Always y=980-1000 (bottom zone), x=1200-1700 (right-aligned), width=600-640
+✅ **FORMATTING**: 14pt text, muted colors ({{secondary}}70 for label, {{accent}}90 for links)
+✅ **CLICKABLE LINKS**: Use "link" property in text style with the URL - This creates proper Tiptap hyperlinks!
+✅ **FORMAT**: Each citation must be "[INDEX] Title" - e.g., "[1] Nature.com", "[2] TechCrunch"
+✅ **ENTIRE TEXT IS CLICKABLE**: The whole text including the [number] and title should have the "link" property
+✅ **SEPARATOR**: Comma-space between sources for readability
+✅ **DIVIDER**: Add thin line at y=960 if showThinDivider is true
+
+**CRITICAL RULES:**
+🚨 CHECK FOR citationsFooter IN THE INPUT - If it exists, YOU MUST render it!
+🚨 EVERY citation must be a CLICKABLE LINK using the "link" style property!
+✅ Format: "[1] Source Title" where the ENTIRE text (bracket, number, title) has the link
+✅ Use source.index for the number in brackets and source.title for the name
+✅ ALWAYS place at y=980, right-aligned
+✅ Use small, subtle styling that doesn't distract from content
+✅ Separator between sources: comma-space for clean reading
+
+**Example with Real Data:**
+If citationsFooter = {showThinDivider: true, sources: [{index: 1, title: "Nature.com", url: "https://nature.com/article"}, {index: 2, title: "MIT Tech Review", url: "https://technologyreview.com/story"}]}
+
+Then render:
+```json
+[
+  {
+    "type": "Lines",
+    "props": {
+      "startPoint": { "x": 1200, "y": 960 },
+      "endPoint": { "x": 1840, "y": 960 },
+      "stroke": { "color": "{{secondary}}", "width": 1, "opacity": 0.3 }
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": { "x": 1200, "y": 980 },
+      "width": 640,
+      "height": 35,
+      "texts": [
+        { "text": "Sources: ", "style": { "textColor": "{{secondary}}70", "fontSize": 14 } },
+        { "text": "[1] Nature.com", "style": { "textColor": "{{accent}}90", "fontSize": 14, "link": "https://nature.com/article" } },
+        { "text": ", ", "style": { "textColor": "{{secondary}}70", "fontSize": 14 } },
+        { "text": "[2] MIT Tech Review", "style": { "textColor": "{{accent}}90", "fontSize": 14, "link": "https://technologyreview.com/story" } }
+      ],
+      "fontSize": 14,
+      "textAlign": "right",
+      "fontFamily": "{{bodyFont}}"
+    }
+  }
+]
+```
+
 **CUSTOMCOMPONENT TEXT RESTRICTION:**
 ❌ NEVER create CustomComponent if content contains double quotes (") or apostrophes (')
 ❌ NEVER use CustomComponent for text with contractions (it's, don't, can't, won't)

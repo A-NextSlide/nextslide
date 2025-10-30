@@ -190,12 +190,32 @@ const SlideCard: React.FC<SlideCardProps> = ({
   // Build one-time-use domain map → index for footnote numbering
   const domainToIndexRef = React.useRef<Map<string, number>>(new Map());
   const footnotes = React.useMemo(() => {
+    // Extract referenced indices from content to see what's actually tagged
+    const content = slide.content || '';
+    const referencedIndices = new Set<number>();
+    const citationPattern = /\[(\d+)\]/g;
+    let match;
+    while ((match = citationPattern.exec(content)) !== null) {
+      referencedIndices.add(parseInt(match[1], 10));
+    }
+
+    // If no citation tags [1], [2], etc. exist in content, return empty array
+    // This ensures we ONLY show sources that are explicitly tagged
+    if (referencedIndices.size === 0) {
+      domainToIndexRef.current = new Map();
+      return [];
+    }
+
+    // We have citation tags, so filter backend footnotes to match them
     const backendFootnotes = Array.isArray((slide as any)?.footnotes) ? (slide as any).footnotes : [];
+
     if (backendFootnotes.length > 0) {
       const map = new Map<string, number>();
       const sanitized = backendFootnotes
         .slice()
         .sort((a: any, b: any) => a.index - b.index)
+        // Filter to only include footnotes that are actually referenced in the content
+        .filter((f: any) => referencedIndices.has(f.index))
         .map((f: any) => {
           const label = deriveFootnoteLabel({ label: f.label, url: f.url }, combinedCitations);
           try {
@@ -207,26 +227,16 @@ const SlideCard: React.FC<SlideCardProps> = ({
           } catch {}
           return { index: f.index, label, url: f.url };
         });
+
       domainToIndexRef.current = map;
       return sanitized;
     }
 
+    // No backend footnotes, but we have citation tags - return empty for now
+    // (citations should have been provided by backend if they were tagged)
     domainToIndexRef.current = new Map();
-    const deduped = combinedCitations;
-    const out: Array<{ index: number; label: string; url: string }> = [];
-    deduped.forEach((citation, idx) => {
-      const normalized = canonicalizeCitation(citation);
-      const index = idx + 1;
-      if (normalized.url) {
-        domainToIndexRef.current.set(normalized.host || normalized.url, index);
-        domainToIndexRef.current.set(normalized.url, index);
-      } else {
-        domainToIndexRef.current.set(`label:${normalized.label}|${idx}`, index);
-      }
-      out.push({ index, label: normalized.label, url: normalized.url || '' });
-    });
-    return out;
-  }, [combinedCitations, (slide as any)?.footnotes]);
+    return [];
+  }, [combinedCitations, (slide as any)?.footnotes, slide.content]);
 
   const sourcesFooter = React.useMemo(() => {
     if (!normalizedCitations || normalizedCitations.length === 0) return null;
@@ -664,11 +674,11 @@ const SlideCard: React.FC<SlideCardProps> = ({
       {slide.extractedData && <ChartDataTable slide={slide} setCurrentOutline={setCurrentOutline} />}
       {slide.extractedData && <SlideChartViewer extractedData={slide.extractedData} />}
       {slide.tableData && <TableDataEditor slide={slide} setCurrentOutline={setCurrentOutline} />}
-      {/* Citations Panel (grouped, editable hint). Uses extractedData.metadata.citations if present */}
-      {combinedCitations && combinedCitations.length > 0 && (
-        <CitationsPanel 
-          citations={combinedCitations} 
-          editable={true} 
+      {/* Citations Panel - ONLY show when footnotes exist (i.e., when content has citation tags [1], [2]) */}
+      {footnotes && footnotes.length > 0 && (
+        <CitationsPanel
+          citations={combinedCitations}
+          editable={true}
           footnotes={footnotes}
           onChange={(next) => {
             const normalizedNext = next.map((c) => {

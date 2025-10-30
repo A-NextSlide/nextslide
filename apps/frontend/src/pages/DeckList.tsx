@@ -451,14 +451,14 @@ const DeckList: React.FC = () => {
   } = useDeckManagement();
   
   useEffect(() => {
-    // Clear any stale preferences on mount
+    // Don't clear preferences on mount - they may have been set by OutlineEditor
+    // Just ensure the unmounting flag is cleared
     if (typeof window !== 'undefined') {
-      delete (window as any).__slideGenerationPreferences;
-      console.log('[DeckList] Cleared stale slide generation preferences');
       // We are fully on deck list; clear unmounting flag
       (window as any).__isUnmounting = false;
+      console.log('[DeckList] Mounted, preserving any existing slide generation preferences');
     }
-    
+
     return () => {
     };
   }, []);
@@ -827,10 +827,30 @@ const DeckList: React.FC = () => {
       const coordinator = GenerationCoordinator.getInstance();
       
       // Store autoSelectImages preference globally
+      // PRIORITY: Use existing window preference (from toggle), then outline preference, then default to FALSE
+      // This prevents overwriting what the toggle already set!
+      const existingWindowPref = typeof window !== 'undefined'
+        ? (window as any).__slideGenerationPreferences?.autoSelectImages
+        : undefined;
+
+      const autoSelectImagesValue =
+        existingWindowPref !== undefined
+          ? existingWindowPref // ✅ Use what the toggle already set
+          : currentOutline?.stylePreferences?.autoSelectImages !== undefined
+          ? currentOutline.stylePreferences.autoSelectImages
+          : false; // Default to FALSE - user must explicitly enable
+
+      console.log('[DeckList] 🔴 Setting autoSelectImages preference before generation');
+      console.log('[DeckList] 🔴 Existing window preference:', existingWindowPref);
+      console.log('[DeckList] 🔴 currentOutline.stylePreferences:', currentOutline?.stylePreferences);
+      console.log('[DeckList] 🔴 stylePreferences:', stylePreferences);
+      console.log('[DeckList] 🔴 Final autoSelectImages value:', autoSelectImagesValue);
+
       if (typeof window !== 'undefined') {
         (window as any).__slideGenerationPreferences = {
-          autoSelectImages: stylePreferences?.autoSelectImages || false
+          autoSelectImages: autoSelectImagesValue
         };
+        console.log('[DeckList] 🔴 Set window.__slideGenerationPreferences:', (window as any).__slideGenerationPreferences);
       }
       
       // Attach current workspace theme into outline so backend can skip theme creation

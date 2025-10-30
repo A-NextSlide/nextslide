@@ -180,7 +180,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         defaultAlignment: alignment,
       }),
       Link.configure({
-        openOnClick: false,
+        openOnClick: !isCurrentlyTextEditing,
         HTMLAttributes: { class: 'text-blue-600 underline cursor-pointer' },
       })
     ];
@@ -193,7 +193,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     }
 
     return exts;
-  }, [alignment, isThumbnail]);
+  }, [alignment, isThumbnail, isCurrentlyTextEditing]);
 
   const editorConfig = useMemo(() => ({
     extensions,

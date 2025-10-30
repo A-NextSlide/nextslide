@@ -400,6 +400,20 @@ class Summarizer:
         """Summarize a set of (url, text) documents into findings."""
         if not docs:
             return []
+
+        # Build URL to domain mapping for matching sources back to URLs
+        url_map = {}
+        for url, _ in docs:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                domain = parsed.netloc.lower()
+                if domain.startswith("www."):
+                    domain = domain[4:]
+                url_map[domain] = url
+            except Exception:
+                pass
+
         # Compact input
         joined = []
         budget = 16000
@@ -435,12 +449,24 @@ Return as lines in the format: "- <title>: <1-2 sentence summary> (Source: <doma
             body = line.lstrip("- ")
             title, summary = (body.split(":", 1) + [""])[:2]
             src = None
+            matched_url = None
             if "(Source:" in summary:
                 try:
                     src = summary.split("(Source:", 1)[1].split(")", 1)[0].strip()
+                    # Try to match the source domain to a URL
+                    src_lower = src.lower()
+                    for domain, url in url_map.items():
+                        if domain in src_lower or src_lower in domain:
+                            matched_url = url
+                            break
                 except Exception:
                     pass
-            findings.append(ResearchFinding(title=title.strip(), summary=summary.strip(), source=src))
+            findings.append(ResearchFinding(
+                title=title.strip(),
+                summary=summary.strip(),
+                source=src,
+                url=matched_url
+            ))
         return findings
 
 

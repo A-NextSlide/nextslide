@@ -389,19 +389,36 @@ class ThemeDirector:
                 font_result = matched
         
         if not font_result:
-            # CRITICAL: Check if this is a fun/playful entity (Pikachu, Pokemon, Disney, etc.)
+            # CRITICAL: Check if this is a fun/playful/creative entity
             # These should get CREATIVE fonts, not boring corporate ones!
             entity_name = analysis.get('entity_name', '').lower()
             is_fun_entity = any(keyword in entity_name for keyword in [
                 'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
-                'cartoon', 'game', 'toy', 'character'
+                'cartoon', 'game', 'toy', 'character', 'arcade', 'retro',
+                'sonic', 'zelda', 'minecraft', 'roblox'
             ])
-            
-            # Check if title/content suggests kids/fun topic
+
+            # Check if title/content suggests creative/fun/casual topic
             title_lower = title.lower()
-            is_fun_topic = any(keyword in title_lower for keyword in [
+            prompt_lower = (analysis.get('topic', '') + ' ' + analysis.get('vibe', '')).lower()
+            full_context = f"{title_lower} {prompt_lower}"
+
+            is_fun_topic = any(keyword in full_context for keyword in [
+                # Kids/Fun
                 'pikachu', 'pokemon', 'kids', 'children', 'game', 'fun', 'play',
-                'cartoon', 'toy', 'party', 'arcade', 'retro'
+                'cartoon', 'toy', 'party', 'arcade', 'retro', 'playful',
+                # Gaming/Tech Culture
+                'gaming', 'esports', 'twitch', 'stream', 'gamer', 'pixel',
+                '8bit', '8-bit', 'minecraft', 'roblox', 'fortnite',
+                # Creative/Artistic
+                'creative', 'artistic', 'design', 'art', 'music', 'festival',
+                'concert', 'band', 'artist', 'gallery', 'exhibition',
+                # Retro/Vintage
+                '80s', '70s', '60s', 'vintage', 'retro', 'nostalgic', 'throwback',
+                'disco', 'groovy', 'psychedelic',
+                # Casual/Social
+                'casual', 'social', 'community', 'meetup', 'hangout', 'club',
+                'hobby', 'passion', 'enthusiast'
             ])
             
             if is_fun_entity or is_fun_topic:
@@ -424,15 +441,31 @@ class ThemeDirector:
                 import hashlib
                 seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
                 
+                # CREATIVE PIXELBUDDHA FONTS - Much more interesting than boring Google Fonts!
                 playful_combos = [
-                    {'hero': 'Bebas Neue', 'body': 'Nunito'},        # Highly available
-                    {'hero': 'Fredoka', 'body': 'Quicksand'},        # Google fonts
-                    {'hero': 'Righteous', 'body': 'Poppins'},        # Safe combos
-                    {'hero': 'Bungee', 'body': 'Asap'},              # Fun + readable
-                    {'hero': 'Titan One', 'body': 'Cabin'},          # Bold + clean
-                    {'hero': 'Fredoka One', 'body': 'Comic Neue'},   # Playful pair
-                    {'hero': 'Bangers', 'body': 'Rubik'},            # Cartoon style
-                    {'hero': 'Baloo 2', 'body': 'Varela Round'}      # Friendly
+                    # Arcade/Gaming/Retro themes
+                    {'hero': 'Arcade Quest - 8Bit Font', 'body': 'Poppins'},
+                    {'hero': 'Pixel Impact - Retro 8Bit Font', 'body': 'Nunito'},
+                    {'hero': 'Plump Pixel - Bouncy 8-Bit Font', 'body': 'Quicksand'},
+
+                    # Retro 80s/Groovy themes
+                    {'hero': 'Binary Groove - Groovy 1980\'s Typeface', 'body': 'Raleway'},
+                    {'hero': 'Cosmic Hippie - Groovy Font', 'body': 'Work Sans'},
+                    {'hero': 'Boho Melody - Groovy Typeface', 'body': 'Outfit'},
+
+                    # Playful/Bubble/Fun themes
+                    {'hero': 'Double Bubble 3D Typeface', 'body': 'Varela Round'},
+                    {'hero': 'Chunky Charmer - Bold Typeface', 'body': 'Cabin'},
+
+                    # Bold Modern Creative
+                    {'hero': 'Kickbox - Bold Family Typeface', 'body': 'DM Sans'},
+                    {'hero': 'Gridiron Glory - Sport Typeface', 'body': 'Roboto'},
+
+                    # Fallback to Google Fonts if PixelBuddha not available
+                    {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                    {'hero': 'Bangers', 'body': 'Rubik'},
+                    {'hero': 'Fredoka', 'body': 'Quicksand'},
+                    {'hero': 'Bungee', 'body': 'Asap'}
                 ]
                 
                 # Validate combo exists, otherwise try next one

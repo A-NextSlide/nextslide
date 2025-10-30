@@ -643,11 +643,30 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                         />
                       </div>
                       {slide.extractedData?.metadata?.citations && (() => {
+                        // Check for citation tags [1], [2] in content first
+                        const content = slide.content || '';
+                        const referencedIndices = new Set<number>();
+                        const citationPattern = /\[(\d+)\]/g;
+                        let match;
+                        while ((match = citationPattern.exec(content)) !== null) {
+                          referencedIndices.add(parseInt(match[1], 10));
+                        }
+
+                        // Only show citations panel if content has citation tags
+                        if (referencedIndices.size === 0) {
+                          return null;
+                        }
+
                         // Prefer backend-provided footnotes when available
                         const providedFootnotes = (slide as any)?.footnotes as Array<{ index: number; label: string; url?: string }> | undefined;
                         const cits = slide.extractedData?.metadata?.citations || [];
                         if (providedFootnotes && providedFootnotes.length > 0) {
-                          return <CitationsPanel citations={cits} editable={true} footnotes={providedFootnotes as any} />;
+                          // Filter to only show footnotes that are actually referenced
+                          const filteredFootnotes = providedFootnotes.filter(f => referencedIndices.has(f.index));
+                          if (filteredFootnotes.length === 0) {
+                            return null;
+                          }
+                          return <CitationsPanel citations={cits} editable={true} footnotes={filteredFootnotes as any} />;
                         }
                         const foots: Array<{ index: number; label: string; url: string }> = [];
                         let i = 0;

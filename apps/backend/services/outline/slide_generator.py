@@ -199,7 +199,7 @@ class SlideGenerator:
                     self._add_file_suggestions_to_context(context, processed_files, slide_type, actual_title)
                 except Exception as e:
                     logger.warning(f"Failed adding file suggestions for slide {index+1}: {e}")
-                # Add web research citations if available
+                # Add web research citations if available - ONLY when content is HIGHLY relevant
                 try:
                     findings = (processed_files or {}).get("web_research_findings") or []
                     if findings:
@@ -207,14 +207,25 @@ class SlideGenerator:
                         scored = []
                         for f in findings:
                             text = ((f.get('title') or '') + ' ' + (f.get('summary') or '')).lower()
-                            score = sum(1 for w in title_l.split() if w and w in text)
+                            # Count matching words (>3 chars, excluding common words)
+                            common_words = {'the', 'and', 'for', 'with', 'from', 'this', 'that', 'your', 'about'}
+                            score = sum(1 for w in title_l.split() if w and len(w) > 3 and w not in common_words and w in text)
                             scored.append((score, f))
                         scored.sort(key=lambda x: x[0], reverse=True)
-                        # Prefer more citations per slide: take up to 5 matches; if none match, take top 3 overall
-                        top_n = 5
-                        matched = [f for s, f in scored if s > 0][:top_n]
-                        if not matched:
-                            matched = [f for _, f in scored[:3]]
+
+                        # STRICT MATCHING: Require minimum score threshold based on slide type
+                        # Quote/stat slides: need high relevance (score >= 2), max 1-2 sources
+                        # Content slides: moderate relevance (score >= 2), max 2-3 sources
+                        min_score = 2  # Require at least 2 meaningful word matches
+                        if slide_type.lower() in ['quote', 'stat', 'transition']:
+                            max_sources = 1  # Quotes/stats should cite ONE primary source
+                        elif slide_type.lower() in ['content', 'data']:
+                            max_sources = 3  # Content slides can have up to 3 sources
+                        else:
+                            max_sources = 2  # Default: max 2 sources
+
+                        matched = [f for s, f in scored if s >= min_score][:max_sources]
+                        # DO NOT add sources if no strong matches - we're citing sources, not showing search results
                         if matched:
                             context['web_citations'] = [
                                 {'title': f.get('title'), 'url': f.get('url'), 'source': f.get('source')}
@@ -322,15 +333,21 @@ class SlideGenerator:
         sources_block = ""
         if isinstance(context, dict) and context.get('web_citations'):
             try:
-                sources_block += "\n\nWEB SOURCES (INDEXED):"
+                sources_block += "\n\nWEB SOURCES AVAILABLE (USE ONLY IF CONTENT REFERENCES THEM):"
                 for idx, c in enumerate(context['web_citations'], start=1):
                     src = (c.get('source') or '').strip()
                     url = (c.get('url') or '').strip()
                     title = (c.get('title') or '').strip()
-                    sources_block += f"\n[{idx}] {title or src or url}: {url}"
+                    sources_block += f"\n[{idx}] {title or src or 'Source'}"
+                    if url:
+                        sources_block += f" - {url}"
                 sources_block += (
-                    "\n\nCITATION STYLE: Append numeric citations like [1], [2] to bullets that use facts from these sources. Use the index above. If a bullet is general background, omit citations."
-                    "\nSOURCES FOOTER RULES: Render a SINGLE micro 'Sources: [1][2][3]' FOOTNOTE anchored to the SLIDE BOTTOM-RIGHT (footer zone), not within the content area. Use small font, muted color, right-aligned. Add a thin short divider line above the footer zone. Never create more than one sources block per slide."
+                    "\n\nCITATION INSTRUCTIONS:"
+                    "\n• ONLY use these sources if you actually reference their facts/data in the slide content"
+                    "\n• When you use information from these sources, cite them in your content"
+                    "\n• If the slide content is general knowledge or doesn't use these sources, DO NOT include any citations"
+                    "\n• This is NOT a search results page - sources are for attribution only when relevant"
+                    "\n\nNote: These sources are available for reference. The slide design will handle citation formatting automatically."
                 )
             except Exception:
                 sources_block = ""
@@ -492,13 +509,19 @@ class SlideGenerator:
             citations_footer = None
             if slide_citations and isinstance(slide_citations, list):
                 try:
-                    urls = []
-                    for c in slide_citations:
+                    sources = []
+                    for idx, c in enumerate(slide_citations, start=1):
                         u = (c.get('url') or '').strip()
+                        t = (c.get('title') or c.get('source') or '').strip()
                         if u:
-                            urls.append(u)
-                    if urls:
-                        citations_footer = {"showThinDivider": True, "urls": urls}
+                            # Create source entry with title and URL for clickable links
+                            sources.append({
+                                "index": idx,
+                                "title": t if t else f"Source {idx}",
+                                "url": u
+                            })
+                    if sources:
+                        citations_footer = {"showThinDivider": True, "sources": sources}
                 except Exception:
                     pass
 

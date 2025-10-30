@@ -3,12 +3,22 @@ import * as CollapsiblePrimitive from "@radix-ui/react-collapsible"
 import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const Collapsible = CollapsiblePrimitive.Root
+type CollapsibleProps = React.ComponentPropsWithoutRef<typeof CollapsiblePrimitive.Root> & {
+  children?: React.ReactNode
+  className?: string
+}
+
+const Collapsible = React.forwardRef<HTMLDivElement, CollapsibleProps>(
+  (props, ref) => <CollapsiblePrimitive.Root {...props} ref={ref} />
+)
+Collapsible.displayName = "Collapsible"
 
 const CollapsibleTrigger = React.forwardRef<
   React.ElementRef<typeof CollapsiblePrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof CollapsiblePrimitive.Trigger> & {
     showIcon?: boolean
+    children?: React.ReactNode
+    className?: string
   }
 >(({ className, children, showIcon = true, ...props }, ref) => (
   <CollapsiblePrimitive.Trigger
@@ -27,7 +37,10 @@ CollapsibleTrigger.displayName = CollapsiblePrimitive.Trigger.displayName
 
 const CollapsibleContent = React.forwardRef<
   React.ElementRef<typeof CollapsiblePrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof CollapsiblePrimitive.Content>
+  React.ComponentPropsWithoutRef<typeof CollapsiblePrimitive.Content> & {
+    children?: React.ReactNode
+    className?: string
+  }
 >(({ className, children, ...props }, ref) => (
   <CollapsiblePrimitive.Content
     ref={ref}

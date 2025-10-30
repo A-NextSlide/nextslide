@@ -1305,7 +1305,7 @@ class OutlineGenerator:
                     if processed_files.get('extracted_data') and 'extracted_data' not in context['processed_files']:
                         context['processed_files']['extracted_data'] = processed_files['extracted_data']
 
-                    # Attach web citations from research findings (up to 5 best matches; fallback to top 3)
+                    # Attach web citations from research findings - ONLY when content is HIGHLY relevant
                     try:
                         findings = (processed_files or {}).get("web_research_findings") or []
                         if findings:
@@ -1313,13 +1313,25 @@ class OutlineGenerator:
                             scored = []
                             for f in findings:
                                 text = ((f.get('title') or '') + ' ' + (f.get('summary') or '')).lower()
-                                score = sum(1 for w in title_l.split() if w and w in text)
+                                # Count matching words (>3 chars, excluding common words)
+                                common_words = {'the', 'and', 'for', 'with', 'from', 'this', 'that', 'your', 'about'}
+                                score = sum(1 for w in title_l.split() if w and len(w) > 3 and w not in common_words and w in text)
                                 scored.append((score, f))
                             scored.sort(key=lambda x: x[0], reverse=True)
-                            top_n = 5
-                            matched = [f for s, f in scored if s > 0][:top_n]
-                            if not matched:
-                                matched = [f for _, f in scored[:3]]
+
+                            # STRICT MATCHING: Require minimum score threshold based on slide type
+                            # Quote/stat slides: need high relevance (score >= 2), max 1-2 sources
+                            # Content slides: moderate relevance (score >= 2), max 2-3 sources
+                            min_score = 2  # Require at least 2 meaningful word matches
+                            if slide_type.lower() in ['quote', 'stat', 'transition']:
+                                max_sources = 1  # Quotes/stats should cite ONE primary source
+                            elif slide_type.lower() in ['content', 'data']:
+                                max_sources = 3  # Content slides can have up to 3 sources
+                            else:
+                                max_sources = 2  # Default: max 2 sources
+
+                            matched = [f for s, f in scored if s >= min_score][:max_sources]
+                            # DO NOT add sources if no strong matches - we're citing sources, not showing search results
                             if matched:
                                 context['web_citations'] = [
                                     {'title': f.get('title'), 'url': f.get('url'), 'source': f.get('source')}
@@ -2132,38 +2144,45 @@ FORMAT:
 
 CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research."""
                     else:
-                        # PRESENTATION MODE - Ultra-concise, visual-first
-                        logger.info(f"[STREAMING] Slide {idx+1}: Using PRESENTATION mode prompt (MAX 50 words, 3-4 bullets)")
-                        slide_prompt = f"""Create ULTRA-CONCISE PRESENTATION content for this slide:
+                        # PRESENTATION MODE - Flexible, educational
+                        logger.info(f"[STREAMING] Slide {idx+1}: Using FLEXIBLE presentation mode")
+                        slide_prompt = f"""Create effective presentation content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {options.prompt}
 
-🎨 PRESENTATION MODE - STRICT LIMITS (ENFORCE!):
-⚠️ COUNT YOUR BULLETS AND WORDS!
+🎯 FLEXIBLE PRESENTATION MODE:
 
-ABSOLUTE REQUIREMENTS:
-- MAX 3 bullets (preferred) or 4 bullets (only if critical)
-- MAX 10 words per bullet
-- MAX 50 total words for the entire slide
+GOAL: Audience LEARNS and UNDERSTANDS the topic.
+
+CONTENT APPROACH:
+- Use what's needed to TEACH the topic effectively
+- Mix bullets, sub-bullets (2-space indent), inline metrics
+- Include section headers (##) if they help organize
+- Ask: "Does this TEACH the topic?" NOT "How many bullets?"
+
+❌ TOO SHALLOW (DON'T DO THIS):
+• Supreme Court ruling
+• Charter authority
+• Protects rights
+
+✅ TEACHES TOPIC (DO THIS):
+• Supreme Court ruled 9-0 Quebec had no veto over Charter
+  Context: Quebec sought special status but federal proceeded
+
+• Charter shifted power to federal government and courts
+  Provinces lost autonomy over rights legislation
+  Created judicial review framework
+
+• Fundamental freedoms and minority protections
+  Language rights for English/French in each province
+  Indigenous rights Section 35, multiculturalism Section 27
+
+FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
+- Metrics inline: "Revenue grew 40% from $10M to $14M"
 - Include [IMAGE: specific visual description] tag
-- Each bullet = ONE stat/fact only
-
-FORMAT (COPY THIS EXACTLY):
-• AI reduces errors by 42%
-• 85% patient satisfaction
-• $187B market by 2030
-[IMAGE: {slide_title.lower()}]
-
-FORBIDDEN:
-- NO paragraphs or long explanations
-- NO sub-bullets or nested structures
-- NO section headers
-- NO bullets longer than 10 words
-- NO more than 4 bullets total
-
-CITE ALL FACTS with [1], [2], [3] etc."""
+- CITE ALL FACTS with [1], [2], [3] etc."""
 
                 logger.info(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
                 
@@ -2202,30 +2221,23 @@ CITE ALL FACTS with [1], [2], [3] etc."""
                 
                 slide_content = slide_response.choices[0].message.content
                 
-                # PRESENTATION MODE: Enforce limits post-generation (streaming path)
+                # Add [IMAGE: ] tags if missing (no bullet trimming - content is flexible)
                 if detail_mode != 'detailed':
                     try:
-                        # Trim bullets to MAX 4 (apply to ALL slides except special types)
                         if slide_type not in ['title', 'stat', 'quote', 'divider', 'transition']:
-                            bullets = [line for line in slide_content.split('\n') if line.strip().startswith('•')]
-                            if len(bullets) > 4:
-                                logger.warning(f"[PRESENTATION STREAM] Slide {idx+1} '{slide_title}' has {len(bullets)} bullets, trimming to 4")
-                                other_lines = [line for line in slide_content.split('\n') if not line.strip().startswith('•')]
-                                slide_content = '\n'.join(bullets[:4] + other_lines)
-                            
-                            # Add [IMAGE: ] tag if missing
+                            # Add [IMAGE: ] tag if missing for content slides
                             if '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
                                 image_desc = slide_title.lower().replace(':', '').replace('-', '').strip()
                                 slide_content += f"\n[IMAGE: {image_desc}]"
                                 logger.info(f"[PRESENTATION STREAM] Added image tag to slide {idx+1} '{slide_title}'")
-                        
+
                         # For title slides, also add image
                         elif slide_type == 'title' and '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
                             slide_content += f"\n[IMAGE: {presentation_title.lower()}]"
                             logger.info(f"[PRESENTATION STREAM] Added hero image tag to title slide")
-                            
+
                     except Exception as e:
-                        logger.warning(f"[PRESENTATION STREAM] Failed to enforce limits for slide {idx+1}: {e}")
+                        logger.warning(f"[PRESENTATION STREAM] Failed to add image tags for slide {idx+1}: {e}")
                 
                 # Extract citations from Perplexity response
                 citations = []
@@ -2814,25 +2826,21 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 )
             else:
                 system = (
-                    "You are a PRESENTATION MODE outliner. Create CONCISE, VISUAL-FIRST slide outlines. "
-                    "⚠️ CRITICAL RULES (NO EXCEPTIONS): "
-                    "1. MAX 3-4 bullets per content slide "
-                    "2. MAX 8-12 words per bullet "
+                    "You are a FLEXIBLE PRESENTATION outliner. Create effective, educational slide content. "
+                    "⚠️ KEY PRINCIPLES: "
+                    "1. FLEXIBLE content structure - use what's needed to TEACH effectively "
+                    "2. Mix bullets, sub-bullets (2-space indent), section headers (##), inline metrics "
                     "3. Include [IMAGE: description] on 70% of content slides "
-                    "4. NO paragraphs, NO verbose explanations "
+                    "4. Ask: 'Does this TEACH?' NOT 'How many bullets?' "
                     "5. Return STRICT JSON only "
-                    "FOCUS: High-impact facts with numbers. Each bullet = ONE key point + ONE stat. "
+                    "FOCUS: Educational clarity with data. Use explanatory/tutorial/descriptive formats as needed. "
                     "CITATION POLICY: Do NOT use YouTube as a source."
                 )
-            # Dynamic bullet limits for 'content' slides - DETAILED MODE gets more bullets
+            # Dynamic bullet guidance for 'content' slides - FLEXIBLE approach
             if options.detail_level == 'detailed':
-                content_bullet_limits = "5–8 bullets (15-25 words each, data-rich with specific numbers, percentages, dates); include sub-bullets for breakdowns and supporting details."
-            elif is_pitch:
-                content_bullet_limits = "2–4 bullets (≤ 12–14 words each); prefer one chart/stat when possible."
-                if density == 'minimal':
-                    content_bullet_limits = "1–3 bullets (≤ 12–14 words); prefer a single stat or chart."
+                content_bullet_limits = "150-250 words with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms."
             else:
-                content_bullet_limits = "3–5 bullets (concise, fact‑first)."
+                content_bullet_limits = "Flexible content structure - use what's needed to TEACH the topic effectively. Mix of bullets, sub-bullets (2-space indent), inline metrics. Ask: 'Does this teach the topic?' NOT 'How many bullets?' Use explanatory/tutorial/code/descriptive formats as appropriate."
 
             user = (
                 f"Topic: {options.prompt}\n\n"
@@ -2863,7 +2871,15 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "- Use section headers (## Header Name) to organize content into logical groups.\n"
                 "- Use main bullets (•) for primary points and indented sub-bullets (  •) for supporting details.\n"
                 "- Use **bold** formatting for emphasis on key numbers, companies, and important terms.\n"
-                f"- {'DETAILED MODE: Structure content with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms.' if options.detail_level == 'detailed' else 'Each bullet is ONE sentence (MAX two) and ≤ 12–14 words when possible.'}\n"
+            )
+
+            # Add mode-specific content guidance
+            if options.detail_level == 'detailed':
+                user += "- DETAILED MODE: Structure content with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms.\n"
+            else:
+                user += '- FLEXIBLE MODE: Use the structure that best TEACHES the topic. Mix bullets, sub-bullets (2-space indent), section headers (##), and inline metrics. Ask: "Does this teach?" NOT "How many bullets?"\n'
+
+            user += (
                 "- FACT-FIRST: Prefer numbers, dates, names, and concrete outcomes over adjectives.\n\n"
                 "DETAIL LEVEL GUIDANCE (CRITICAL):\n"
                 f"- Current detail level: {options.detail_level}\n"
@@ -2890,14 +2906,15 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     "  • COMPARISONS: Year-over-year, before/after, benchmarks, competitor data\n\n"
                 )
             else:
-                # PRESENTATION MODE (standard/quick): Visual-first, design-focused
+                # PRESENTATION MODE (standard/quick): Flexible, educational
                 user += (
-                    "🎨 PRESENTATION MODE - ULTRA-CONCISE + IMAGES (ENFORCE STRICTLY):\n\n"
-                    "⚠️ ABSOLUTE RULES - COUNT YOUR BULLETS!\n"
-                    "  • MAX 3 bullets per content slide (count them: 1, 2, 3 STOP!)\n"
-                    "  • MAX 4 bullets ONLY if absolutely necessary\n"
-                    "  • MAX 10 words per bullet (count them!)\n"
-                    "  • Title slide: MAX 15 words\n\n"
+                    "🎯 FLEXIBLE PRESENTATION MODE - TEACH EFFECTIVELY:\n\n"
+                    "KEY PRINCIPLES:\n"
+                    "  • GOAL: Audience LEARNS and UNDERSTANDS the topic\n"
+                    "  • Use structure that TEACHES effectively (not rigid bullet counts)\n"
+                    "  • Mix bullets, sub-bullets (2-space indent), section headers (##)\n"
+                    "  • Ask: 'Does this TEACH the topic?' NOT 'How many bullets?'\n"
+                    "  • Title slide: concise title + metadata\n\n"
                     "🖼️ IMAGE TAGS - MANDATORY ON 70% OF SLIDES!\n"
                     "  • Add [IMAGE: specific visual description] to content field\n"
                     "  • Title slide: [IMAGE: hero visual for topic]\n"
@@ -2906,19 +2923,19 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     "    [IMAGE: healthcare AI robot scanning patient data]\n"
                     "    [IMAGE: futuristic medical dashboard with charts]\n"
                     "    [IMAGE: doctor using AI diagnostic tools]\n\n"
-                    "✅ PERFECT EXAMPLE (COPY THIS STYLE):\n"
-                    "Slide 2 - AI Benefits:\n"
+                    "✅ GOOD EXAMPLE - TEACHES TOPIC:\n"
                     "{\n"
-                    "  \"title\": \"AI Benefits in Healthcare\",\n"
-                    "  \"content\": \"• AI reduces diagnostic errors by 42%\\n• 85% patient satisfaction rate\\n• $187B market by 2030\\n[IMAGE: doctor using AI diagnostic interface]\"\n"
+                    "  \"title\": \"Charter Impact\",\n"
+                    "  \"content\": \"• Supreme Court ruled 9-0 Quebec had no veto over Charter\\n  Context: Quebec sought special status but federal proceeded\\n\\n• Charter shifted power to federal government and courts\\n  Provinces lost autonomy over rights legislation\\n  Created judicial review framework\\n\\n• Fundamental freedoms and minority protections\\n  Language rights for English/French in each province\\n  Indigenous rights Section 35, multiculturalism Section 27\\n[IMAGE: Canadian Charter document with key sections highlighted]\"\n"
                     "}\n\n"
-                    "❌ BAD EXAMPLES (DON'T DO THIS!):\n"
-                    "• AI is revolutionizing healthcare by enhancing patient care (TOO LONG!)\n"
-                    "• Multiple long bullets with detailed explanations (TOO MANY WORDS!)\n"
-                    "• No [IMAGE: ] tags (MISSING IMAGES!)\n\n"
+                    "❌ BAD EXAMPLE - TOO SHALLOW:\n"
+                    "• Supreme Court ruling\n"
+                    "• Charter authority\n"
+                    "• Protects rights\n"
+                    "(This doesn't teach anything!)\n\n"
                     "📊 CHARTS:\n"
-                    "  • MAX 1 chart for entire deck (optional)\n"
-                    "  • Only for most critical data\n\n"
+                    "  • Use when appropriate for quantitative business/financial/research data\n"
+                    "  • NOT for educational/explanatory content (concepts, processes, tutorials)\n\n"
                 )
             
             user += (
@@ -2944,7 +2961,7 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 "2) STRUCTURE: Slide 1 is Title (hero + brief metadata). Title slide has ONLY metadata placeholders; no body bullets. For educational topics: include 'Learning Objectives' early; include 'Core Concepts/Overview', 'Fun Facts' or 'Key Facts', 'Activities', and 'Conclusion/Questions'. Team slide only if explicitly warranted.\n"
                 "3) CHART UNITS: Each chart uses ONE measurement unit; no mixed units. If mixed, omit the chart and summarize as text bullets.\n"
                 "4) CALLOUTS: Include at least one dedicated Quote slide and one dedicated Stat slide when strong facts/quotes exist; keep them short (≤ 24 words).\n"
-                f"5) CONCISION: {'DETAILED MODE: Content slides use 5–8 bullets with sub-bullets; each bullet 15-25 words with data. Pack in information!' if options.detail_level == 'detailed' else 'Content slides use 3–5 bullets; each bullet one sentence (≤ 12–14 words).'} Minimal slides (quote/stat/divider/transition) use 1 line.\n"
+                f"5) CONTENT QUALITY: {'DETAILED MODE: Content slides use section headers, main bullets, and sub-bullets; each main bullet 15-25 words with data. Pack in information!' if options.detail_level == 'detailed' else 'FLEXIBLE MODE: Content slides use the structure needed to TEACH the topic effectively. Mix bullets, sub-bullets, section headers, and inline metrics. Focus on clarity and teaching, not bullet count.'} Minimal slides (quote/stat/divider/transition) use 1 line.\n"
                 "6) VALIDATION: If any checklist item fails, internally revise and regenerate the outline; repeat up to 2 times before responding. Return only the final JSON.\n\n"
                 "Return JSON object (STRICT JSON, no prose):\n"
                 "{\n"
@@ -3042,26 +3059,18 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     # Best effort; if anything fails, keep original
                     pass
                 
-                # PRESENTATION MODE: Enforce bullet limits and add image tags
+                # PRESENTATION MODE: Add image tags (content is flexible, no truncation)
                 slide_type = (s or {}).get('type') or 'content'
                 if options.detail_level != 'detailed':
                     try:
-                        # Enforce bullet limits
-                        bullets = [line for line in s_content.split('\n') if line.strip().startswith('•')]
-                        if len(bullets) > 4 and slide_type not in ['title', 'stat', 'quote', 'divider', 'transition']:
-                            # Keep only first 4 bullets
-                            logger.warning(f"[PRESENTATION] Slide '{s_title}' has {len(bullets)} bullets, trimming to 4")
-                            other_lines = [line for line in s_content.split('\n') if not line.strip().startswith('•')]
-                            s_content = '\n'.join(bullets[:4] + other_lines)
-                        
-                        # Add [IMAGE: ] tag if missing for content slides
+                        # Add [IMAGE: ] tag if missing for content slides (no bullet trimming - content is flexible)
                         if slide_type in ['content'] and '[IMAGE:' not in s_content and '[image:' not in s_content.lower():
                             # Generate image description based on slide title
                             image_desc = s_title.lower().replace(':', '').replace('-', '').strip()
                             s_content += f"\n[IMAGE: {image_desc}]"
                             logger.info(f"[PRESENTATION] Added image tag to slide '{s_title}'")
                     except Exception as e:
-                        logger.warning(f"[PRESENTATION] Failed to enforce limits: {e}")
+                        logger.warning(f"[PRESENTATION] Failed to add image tags: {e}")
                         pass
                 citations = (s or {}).get('citations') or []
                 # Optional callouts supplied by Perplexity (quotes/stats)
@@ -3161,12 +3170,18 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 # Attach citations into extractedData metadata for frontend and a tiny footer
                 if isinstance(citations, list) and citations:
                     try:
-                        urls = []
+                        sources_list = []
                         meta_citations = []
-                        for c in citations:
+                        for idx, c in enumerate(citations, start=1):
                             url = (c or {}).get('url')
+                            title = (c or {}).get('title') or (c or {}).get('source') or ''
                             if url:
-                                urls.append(url)
+                                # Create source entry with title and URL for clickable links
+                                sources_list.append({
+                                    'index': idx,
+                                    'title': title if title else f"Source {idx}",
+                                    'url': url
+                                })
                             meta_citations.append({
                                 'title': (c or {}).get('title'),
                                 'source': (c or {}).get('source'),
@@ -3174,7 +3189,7 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                             })
                         # Store citations for footer and possible chart metadata, but do NOT set extractedData unless we have real chart data
                         citations_meta = meta_citations
-                        footer = {'showThinDivider': True, 'urls': [u for u in urls if u]}
+                        footer = {'showThinDivider': True, 'sources': sources_list} if sources_list else None
                     except Exception:
                         pass
                 # Ensure citations are returned even when no chart is present by attaching a minimal annotations payload

@@ -370,15 +370,44 @@ Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} 
             logger.debug(f"Multi-item detection failed: {e}")
             multi_item_guidance = ""
 
+        # Check if citationsFooter exists and format it
+        citations_info = ""
+        if hasattr(context.slide_outline, 'citationsFooter') and context.slide_outline.citationsFooter:
+            footer = context.slide_outline.citationsFooter
+            if footer.get('sources'):
+                import json
+                citations_info = f"\n\n**CITATIONS FOOTER (MUST RENDER):**\n{json.dumps(footer, indent=2)}\n🚨 CRITICAL: Render the divider line and clickable source links at the bottom-right as shown in the system prompt!"
+
+        # Extract design_style from theme
+        design_style = theme_dict.get('design_style', '')
+        design_style_section = ""
+        if design_style:
+            design_style_section = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎨 DESIGN STYLE FOR THIS DECK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{design_style}
+
+🚨 IMPORTANT: Follow this design style throughout the slide!
+- Use the layout approach described (left-aligned, centered, corners, etc.)
+- Apply the typography philosophy (minimal, bold, structured, etc.)
+- Incorporate the visual elements mentioned (rotations, geometric accents, etc.)
+- Match the overall mood and spacing approach
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+            logger.info(f"🎨 Design style for slide {context.slide_index + 1}: {design_style}")
+
         dynamic_part = f"""
 ═══════════════════════════════════════════════════════════
 🎯 SLIDE {context.slide_index + 1} OF {context.total_slides} - CREATE NOW
 ═══════════════════════════════════════════════════════════
-
+{design_style_section}
 **SLIDE TITLE:** {context.slide_outline.title}
 
 **CONTENT:**
-{context.slide_outline.content}
+{context.slide_outline.content}{citations_info}
 
 **SLIDE TYPE:** {slide_type}{chart_info}{multi_item_guidance}
 

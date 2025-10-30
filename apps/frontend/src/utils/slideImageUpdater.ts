@@ -65,27 +65,15 @@ export class SlideImageUpdater {
 
   private applyImagesToSlide(imageData: SlideImageData) {
     // Check if auto-select images is enabled
-    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
-    
+    const preferences = (window as any).__slideGenerationPreferences;
+    // Only apply if EXPLICITLY set to TRUE
+    const autoSelectImages = preferences?.autoSelectImages === true;
+
     if (!autoSelectImages) {
-      console.log('[SlideImageUpdater] Auto-select images is disabled, skipping automatic image application');
       return;
     }
     
     const { deckData } = useDeckStore.getState();
-    
-    console.log(`[SlideImageUpdater] === APPLYING IMAGES ===`);
-    console.log(`[SlideImageUpdater] Image data:`, {
-      slideId: imageData.slideId,
-      slideIndex: imageData.slideIndex,
-      imageCount: imageData.images?.length || 0,
-      firstImageUrl: imageData.images?.[0]?.url
-    });
-    console.log(`[SlideImageUpdater] Current deck state:`, {
-      totalSlides: deckData.slides.length,
-      slideIds: deckData.slides.map(s => s.id),
-      slideIndices: deckData.slides.map((s, i) => i)
-    });
     
     // PRIORITIZE INDEX-BASED MATCHING
     // Backend sends slide_index which is more reliable than slide_id
@@ -94,58 +82,48 @@ export class SlideImageUpdater {
     if (imageData.slideIndex !== undefined && imageData.slideIndex < deckData.slides.length) {
       // Try by index first (more reliable for backend generation)
       slide = deckData.slides[imageData.slideIndex];
-      if (slide) {
-        console.log(`[SlideImageUpdater] ✓ Found slide by index ${imageData.slideIndex} (id: ${slide.id})`);
-      }
     }
     
     // If not found by index, try by ID as fallback
     if (!slide && imageData.slideId) {
       slide = deckData.slides.find(s => s.id === imageData.slideId);
-      if (slide) {
-        console.log(`[SlideImageUpdater] ✓ Found slide by ID ${imageData.slideId}`);
-      }
     }
     
     if (!slide) {
-      console.error(`[SlideImageUpdater] ❌ SLIDE NOT FOUND`, {
-        triedId: imageData.slideId,
-        triedIndex: imageData.slideIndex,
-        totalSlides: deckData.slides.length,
-        availableSlideIds: deckData.slides.map(s => s.id)
-      });
       return;
     }
 
     // Find Image components that need images
     const allImageComponents = slide.components.filter(c => c.type === 'Image');
-    const imageComponents = slide.components.filter(c => 
-      c.type === 'Image' && this.needsImage(c)
-    );
 
-    console.log(`[SlideImageUpdater] Component analysis for slide ${slide.id}:`, {
-      totalComponents: slide.components.length,
-      componentTypes: slide.components.map(c => c.type),
-      totalImageComponents: allImageComponents.length,
-      imageComponentsNeedingImages: imageComponents.length
+    // Check for duplicate images (same src on multiple components)
+    const srcCounts = new Map<string, number>();
+    allImageComponents.forEach(c => {
+      const src = c.props.src;
+      if (src && !this.needsImage(c)) {
+        srcCounts.set(src, (srcCounts.get(src) || 0) + 1);
+      }
     });
-    
-    if (allImageComponents.length > 0) {
-      console.log(`[SlideImageUpdater] Image components detail:`, 
-        allImageComponents.map(c => ({
-          id: c.id,
-          src: c.props.src,
-          needsImage: this.needsImage(c)
-        }))
-      );
-    }
+
+    // Find components with duplicate srcs or that need images
+    const imageComponents = slide.components.filter(c => {
+      if (c.type !== 'Image') return false;
+
+      // If it needs an image (placeholder), include it
+      if (this.needsImage(c)) return true;
+
+      // If its src is used by multiple components (duplicates), include it
+      const src = c.props.src;
+      if (src && srcCounts.has(src) && (srcCounts.get(src) || 0) > 1) {
+        return true;
+      }
+
+      return false;
+    });
 
     if (imageComponents.length === 0) {
-      console.log('[SlideImageUpdater] ❌ No Image components need images');
       return;
     }
-
-    console.log(`[SlideImageUpdater] ✓ Found ${imageComponents.length} Image components needing images`);
 
     // Update components with images
     const updatedComponents = slide.components.map(component => {
@@ -153,10 +131,8 @@ export class SlideImageUpdater {
         // Get the next image for this slide
         const imageIndex = this.getNextImageIndex(imageData.slideId, imageData.images.length);
         const selectedImage = this.selectBestImage(imageData, component, imageIndex);
-        
+
         if (selectedImage) {
-          console.log(`[SlideImageUpdater] Applying image to component ${component.id}:`, selectedImage.url);
-          
           return {
             ...component,
             props: {
@@ -172,17 +148,6 @@ export class SlideImageUpdater {
       }
       return component;
     });
-
-    // Log the update that will be made
-    console.log(`[SlideImageUpdater] 🚀 Updating slide ${slide.id} with new components`);
-    console.log(`[SlideImageUpdater] Components before:`, slide.components.filter(c => c.type === 'Image').map(c => ({
-      id: c.id,
-      src: c.props.src
-    })));
-    console.log(`[SlideImageUpdater] Components after:`, updatedComponents.filter(c => c.type === 'Image').map(c => ({
-      id: c.id,
-      src: c.props.src
-    })));
     
     // Update the slide with new components
     const { batchUpdateSlideComponents } = useDeckStore.getState();
@@ -231,26 +196,25 @@ export class SlideImageUpdater {
   }
 
   private selectBestImage(
-    imageData: SlideImageData, 
+    imageData: SlideImageData,
     component: ComponentInstance,
     fallbackIndex: number
   ): any {
     const { images, images_by_topic, topics } = imageData;
-    
-    // 🚨 PRIORITY 1: Check component metadata for specific topic/searchQuery
+
+    // PRIORITY 1: Check component metadata for specific topic/searchQuery
     // This is used for multi-item slides where each image has a specific topic
     if (component.props.metadata) {
       const metadata = component.props.metadata;
-      
+
       // Try metadata.topic first (exact match)
       if (metadata.topic && images_by_topic?.[metadata.topic]) {
         const topicImages = images_by_topic[metadata.topic];
         if (topicImages.length > 0) {
-          console.log(`[SlideImageUpdater] Matched image by metadata.topic: ${metadata.topic}`);
           return topicImages[0]; // Use first image for this topic
         }
       }
-      
+
       // Try metadata.searchQuery (fuzzy match)
       if (metadata.searchQuery) {
         const searchTerms = metadata.searchQuery.toLowerCase().split(' ');
@@ -260,7 +224,6 @@ export class SlideImageUpdater {
           return searchTerms.some(term => imgText.includes(term));
         });
         if (matchedImage) {
-          console.log(`[SlideImageUpdater] Matched image by metadata.searchQuery: ${metadata.searchQuery}`);
           return matchedImage;
         }
       }
@@ -273,12 +236,12 @@ export class SlideImageUpdater {
         return topicImages[fallbackIndex % topicImages.length];
       }
     }
-    
+
     // 3. If component has keywords that match image descriptions
     if (component.props.keywords) {
       const keywords = component.props.keywords.toLowerCase().split(',').map((k: string) => k.trim());
-      const matchedImage = images.find(img => 
-        img.description && keywords.some(keyword => 
+      const matchedImage = images.find(img =>
+        img.description && keywords.some(keyword =>
           img.description!.toLowerCase().includes(keyword)
         )
       );
@@ -286,7 +249,7 @@ export class SlideImageUpdater {
         return matchedImage;
       }
     }
-    
+
     // 4. Try to match based on the slide's primary topic
     if (topics && topics.length > 0 && images_by_topic) {
       const primaryTopic = topics[0];
@@ -294,12 +257,12 @@ export class SlideImageUpdater {
         return images_by_topic[primaryTopic][fallbackIndex % images_by_topic[primaryTopic].length];
       }
     }
-    
+
     // 5. Fall back to using images in order
     if (images.length > 0) {
       return images[fallbackIndex % images.length];
     }
-    
+
     return null;
   }
 
@@ -307,11 +270,11 @@ export class SlideImageUpdater {
    * Manually trigger image application for a specific slide
    */
   public async applyImagesFromCache(slideId: string) {
-    // Check if auto-select images is enabled
-    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
-    
+    // Check if auto-select images is enabled (default to TRUE)
+    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
+
     if (!autoSelectImages) {
-      console.log('[SlideImageUpdater] Auto-select images is disabled, skipping manual cache application');
+      console.log('[SlideImageUpdater] Auto-select images is explicitly disabled, skipping manual cache application');
       return;
     }
     
@@ -334,11 +297,11 @@ export class SlideImageUpdater {
    * Apply images to all slides that have cached images
    */
   public applyAllCachedImages() {
-    // Check if auto-select images is enabled
-    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
-    
+    // Check if auto-select images is enabled (default to TRUE)
+    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
+
     if (!autoSelectImages) {
-      console.log('[SlideImageUpdater] Auto-select images is disabled, skipping automatic image application');
+      console.log('[SlideImageUpdater] Auto-select images is explicitly disabled, skipping automatic image application');
       return;
     }
     

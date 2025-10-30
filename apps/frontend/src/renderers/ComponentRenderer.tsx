@@ -450,13 +450,14 @@ export const ComponentRenderer: React.FC<Props> = ({
       data-position-y={(normalizedPosition as any).y}
       data-is-dragging={isDragging ? 'true' : 'false'}
       onClick={(e) => {
-        // Check if the click is on the button or button area
+        // Check if the click is on the button, link, or button area
         const target = e.target as HTMLElement;
         const isButton = target.tagName === 'BUTTON' || target.closest('button');
         const isButtonArea = target.closest('[data-button-area="true"]');
+        const isLink = target.tagName === 'A' || target.closest('a');
         
-        if (isButton || isButtonArea) {
-          // Don't handle the click if it's on the button
+        if (isButton || isButtonArea || isLink) {
+          // Don't handle the click if it's on the button or link
           return;
         }
         
@@ -470,12 +471,13 @@ export const ComponentRenderer: React.FC<Props> = ({
           return; 
         }
         
-        // Check if the mousedown is on the button or button area
+        // Check if the mousedown is on the button, link, or button area
         const isButton = targetElement.tagName === 'BUTTON' || targetElement.closest('button');
         const isButtonArea = targetElement.closest('[data-button-area="true"]');
+        const isLink = targetElement.tagName === 'A' || targetElement.closest('a');
         
-        if (isButton || isButtonArea) {
-          // Don't start drag if it's on the button
+        if (isButton || isButtonArea || isLink) {
+          // Don't start drag if it's on the button or link
           return;
         }
 

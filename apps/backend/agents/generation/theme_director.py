@@ -1822,6 +1822,10 @@ Ensure structural elements match the deck's maturity and intended use.'''
             except Exception:
                 pass
 
+            # Generate creative design style
+            design_style = await self._generate_design_style(analysis, deck_outline)
+            theme['design_style'] = design_style
+
             return theme
 
         # ELSE: Non-brand colors - do normal inference and sanitization
@@ -2108,9 +2112,79 @@ Ensure structural elements match the deck's maturity and intended use.'''
             theme['metadata'] = {
                 'entity_name': analysis['entity_name']
             }
-        
+
+        # Generate creative design style
+        design_style = await self._generate_design_style(analysis, deck_outline)
+        theme['design_style'] = design_style
+
         return theme
     
+    async def _generate_design_style(
+        self,
+        analysis: Dict[str, Any],
+        deck_outline: Any
+    ) -> str:
+        """Generate a creative design style description using AI.
+
+        The AI will come up with its own creative style based on the content,
+        not from a fixed list. Examples it might create:
+        - "Minimalist with bold typography and ample whitespace"
+        - "Playful with rotated elements and vibrant energy"
+        - "Corporate clean with structured grids"
+        - "Editorial magazine-style with dramatic imagery"
+        """
+        title = getattr(deck_outline, 'title', '') or ''
+        prompt = getattr(deck_outline, 'prompt', '') or ''
+        topic = analysis.get('topic', '')
+        style_keywords = analysis.get('style_keywords', [])
+
+        system_prompt = """You are a creative design director. Generate a unique design style description for a presentation.
+
+Your style description should:
+- Be 1-2 sentences (concise!)
+- Describe the overall visual approach
+- Consider the content and audience
+- Be creative and specific (not generic)
+- Include layout philosophy, typography approach, visual elements
+
+Examples of good styles:
+- "Minimalist with generous whitespace, left-aligned layouts, and subtle geometric accents"
+- "Bold and playful with rotated elements, vibrant colors, and dynamic asymmetry"
+- "Editorial magazine style with large imagery, elegant typography, and dramatic contrasts"
+- "Tech-forward with clean grids, sans-serif precision, and floating UI elements"
+- "Organic and flowing with curved shapes, warm tones, and natural spacing"
+
+DO NOT use the examples above - create your own unique style!"""
+
+        user_prompt = f"""Create a design style for this presentation:
+
+Title: {title}
+Topic: {topic}
+Keywords: {', '.join(style_keywords[:5]) if style_keywords else 'general'}
+Context: {prompt[:200] if prompt else 'general presentation'}
+
+Generate a creative, specific design style description (1-2 sentences):"""
+
+        try:
+            response = await invoke(
+                system_prompt,
+                user_prompt,
+                model="haiku",
+                temperature=0.8  # Higher temperature for creativity
+            )
+            style = response.strip()
+
+            # Ensure it's not too long
+            if len(style) > 300:
+                style = style[:297] + "..."
+
+            logger.info(f"[THEME DIRECTOR] Generated design style: {style}")
+            return style
+        except Exception as e:
+            logger.warning(f"[THEME DIRECTOR] Error generating design style: {e}")
+            # Fallback to a simple style
+            return "Clean and professional with balanced typography and thoughtful spacing"
+
     async def _upload_brand_assets(
         self,
         color_result: Dict[str, Any],

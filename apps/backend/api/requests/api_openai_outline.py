@@ -980,6 +980,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
             if hasattr(generator, 'stream_generation'):
                 async for update in generator.stream_generation(options):
                     # Forward agent-based research events explicitly for frontend streaming UI
+                    # BUT DO NOT send research findings to frontend - they're only used internally for slide content
                     if update.stage in {
                         "research_started",
                         "research_plan",
@@ -994,8 +995,15 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             'message': update.message,
                             'progress': update.progress,
                         }
+                        # CRITICAL: DO NOT send 'findings' to frontend
+                        # Research findings are only for internal use in slide generation
+                        # Sources will appear on slides only when content actually cites them
                         if update.metadata:
-                            research_payload.update(update.metadata)
+                            metadata_copy = update.metadata.copy()
+                            # Remove findings from metadata before sending to frontend
+                            if 'findings' in metadata_copy:
+                                del metadata_copy['findings']
+                            research_payload.update(metadata_copy)
                         yield _sse(research_payload)
                         await asyncio.sleep(0)  # ensure flush
                         continue

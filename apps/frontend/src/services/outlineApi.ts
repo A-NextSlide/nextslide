@@ -775,7 +775,7 @@ export class OutlineAPI {
         const request: CreateDeckFromOutlineRequest = {
           outline,
           style_preferences: stylePreferences,
-          async_images: autoApplyImages !== undefined ? !autoApplyImages : true  // If autoApplyImages is true, async_images should be false. Default to TRUE (placeholders)
+          async_images: autoApplyImages !== undefined ? autoApplyImages : true  // 🔥 FIXED: Removed negation operator (was !autoApplyImages)
         };
         
         // For now, use the streaming approach directly since EventSource endpoint doesn't exist yet
@@ -1095,7 +1095,7 @@ export class OutlineAPI {
         slideCount: typeof options.slideCount === 'number' ? options.slideCount : undefined,
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
         enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
-        async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : true, // Default to TRUE (placeholders) when unspecified
+        async_images: options.autoSelectImages !== undefined ? options.autoSelectImages : true, // 🔥 FIXED: Removed negation operator (was !options.autoSelectImages)
       };
 
       console.warn('='.repeat(100));

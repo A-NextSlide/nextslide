@@ -1667,10 +1667,10 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
         {/* --- End Add Media Hub --- */}
 
         {/* Divider */}
-        <div className="h-6 w-px bg-border/50 mx-0.5"></div>
+        {/* <div className="h-6 w-px bg-border/50 mx-0.5"></div> */}
 
         {/* ReactBits Dynamic Components */}
-        <ReactBitsButton onComponentAdded={onComponentSelected} />
+        {/* <ReactBitsButton onComponentAdded={onComponentSelected} /> */}
 
       </TooltipProvider>
     </div>

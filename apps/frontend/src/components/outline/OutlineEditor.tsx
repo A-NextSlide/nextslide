@@ -191,11 +191,33 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [initialIdea, setInitialIdea] = useState('');
   const [styleVibeText, setStyleVibeText] = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
+
+  // Clear referenceLinks when outline is generated (they're only for input, not display)
+  useEffect(() => {
+    if (currentOutline && currentOutline.slides && currentOutline.slides.length > 0) {
+      // Once we have an outline with slides, clear the reference links
+      // They were used for generation and shouldn't be displayed
+      setReferenceLinks([]);
+
+      // Also remove referenceLinks from outline stylePreferences if they exist (from old saved outlines)
+      if ((currentOutline as any).stylePreferences?.referenceLinks) {
+        setCurrentOutline(prev => {
+          if (!prev) return prev;
+          const cleanedPrefs = { ...(prev as any).stylePreferences };
+          delete cleanedPrefs.referenceLinks;
+          return {
+            ...prev,
+            stylePreferences: cleanedPrefs
+          } as any;
+        });
+      }
+    }
+  }, [currentOutline?.slides?.length, setCurrentOutline]);
   const [selectedFont, setSelectedFont] = useState<string | null>(null);
   const [colorConfig, setColorConfig] = useState<ColorConfig | null>(null);
   const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('standard');
   const [slideCount, setSlideCount] = useState<number | null>(null);
-  const [autoSelectImages, setAutoSelectImages] = useState<boolean>(false);
+  const [autoSelectImages, setAutoSelectImages] = useState<boolean>(false); // Default to false - user must explicitly enable
   const [enableResearch, setEnableResearch] = useState<boolean>(false);
   const [partialOutline, setPartialOutline] = useState<Partial<FrontendDeckOutline> | null>(null);
   const [completedSlides, setCompletedSlides] = useState<Set<number>>(() => {
@@ -748,19 +770,23 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   const handleInitiateOutline = async (detailLevel: 'quick' | 'standard' | 'detailed', slideCount?: number) => {
     try {
-      console.log('[OutlineEditor] handleInitiateOutline called with slideCount:', slideCount);
-      
       // Use flushSync to ensure state updates are applied synchronously
       flushSync(() => {
         setDetailLevel(detailLevel);
         setSlideCount(slideCount !== undefined ? slideCount : null);
       });
-      
+
       // Clear prior thinking/research events and sync toggle to global for left panel
+      // IMPORTANT: Also set the autoSelectImages preference BEFORE starting generation
       try {
         if (typeof window !== 'undefined') {
           (window as any).__DEBUG_RESEARCH_EVENTS__ = [];
           (window as any).__outlineEnableResearch = !!enableResearch;
+          // Set autoSelectImages preference immediately so it's available when images arrive
+          (window as any).__slideGenerationPreferences = {
+            ...(window as any).__slideGenerationPreferences,
+            autoSelectImages: !!autoSelectImages
+          };
         }
       } catch {}
       
@@ -934,19 +960,24 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   }, [initialIdea, styleVibeText, selectedFont, colorConfig, autoSelectImages, enableResearch, onStylePreferencesUpdate]);
 
   // Keep global generation preferences in sync for auto-apply images
+  // IMPORTANT: Don't overwrite an existing TRUE preference with FALSE
   useEffect(() => {
-    console.log('[OutlineEditor] 🔵 autoSelectImages state changed:', autoSelectImages);
-    console.log('[OutlineEditor] 🔵 typeof autoSelectImages:', typeof autoSelectImages);
-    console.log('[OutlineEditor] 🔵 !!autoSelectImages:', !!autoSelectImages);
-
     if (typeof window !== 'undefined') {
-      (window as any).__slideGenerationPreferences = {
-        ...(window as any).__slideGenerationPreferences,
-        autoSelectImages: !!autoSelectImages
-      };
-      (window as any).__outlineEnableResearch = !!enableResearch;
+      const existingPref = (window as any).__slideGenerationPreferences?.autoSelectImages;
+      const newValue = !!autoSelectImages;
 
-      console.log('[OutlineEditor] 🔵 Set window.__slideGenerationPreferences:', (window as any).__slideGenerationPreferences);
+      // Only update window preference if:
+      // 1. New value is TRUE (always honor TRUE from toggle)
+      // 2. OR there's no existing preference (first initialization)
+      // Don't overwrite existing TRUE with FALSE!
+      if (newValue === true || existingPref === undefined) {
+        (window as any).__slideGenerationPreferences = {
+          ...(window as any).__slideGenerationPreferences,
+          autoSelectImages: newValue
+        };
+      }
+
+      (window as any).__outlineEnableResearch = !!enableResearch;
     }
   }, [autoSelectImages, enableResearch]);
 

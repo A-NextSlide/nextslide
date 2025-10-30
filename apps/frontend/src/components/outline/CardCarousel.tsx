@@ -1008,9 +1008,30 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                         )}
                         {/* Citations Panel on slide card in carousel */}
                         {(() => {
+                          // Extract referenced citation indices from content
+                          const content = slide.content || '';
+                          const referencedIndices = new Set<number>();
+                          const citationPattern = /\[(\d+)\]/g;
+                          let match;
+                          while ((match = citationPattern.exec(content)) !== null) {
+                            referencedIndices.add(parseInt(match[1], 10));
+                          }
+
+                          // If no citation tags [1], [2] exist in content, don't show citations panel
+                          if (referencedIndices.size === 0) {
+                            return null;
+                          }
+
                           // Prefer backend-provided footnotes if present on the slide
                           const providedFootnotes = (slide as any)?.footnotes as Array<{ index: number; label: string; url?: string }> | undefined;
                           if (providedFootnotes && providedFootnotes.length > 0) {
+                            // Filter to only show footnotes that are actually referenced
+                            const filteredFootnotes = providedFootnotes.filter(f => referencedIndices.has(f.index));
+
+                            if (filteredFootnotes.length === 0) {
+                              return null;
+                            }
+
                             const meta = slide.extractedData?.metadata?.citations || [];
                             const combined: Array<{ title?: string; source?: string; url?: string }> = [...meta];
                             return (
@@ -1018,7 +1039,7 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                                 citations={combined}
                                 editable={true}
                                 className="mt-3"
-                                footnotes={providedFootnotes as any}
+                                footnotes={filteredFootnotes as any}
                                 onChange={(next) => {
                                   if (!setCurrentOutline) return;
                                   setCurrentOutline(prev => {
@@ -1114,6 +1135,20 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                           ) : null;
                         })()}
                         {(!slide.extractedData?.metadata?.citations || slide.extractedData?.metadata?.citations.length === 0) && (() => {
+                          // Check for citation tags [1], [2] in content first
+                          const content = slide.content || '';
+                          const referencedIndices = new Set<number>();
+                          const citationPattern = /\[(\d+)\]/g;
+                          let match;
+                          while ((match = citationPattern.exec(content)) !== null) {
+                            referencedIndices.add(parseInt(match[1], 10));
+                          }
+
+                          // Only show citations panel if content has citation tags
+                          if (referencedIndices.size === 0) {
+                            return null;
+                          }
+
                           // Derive footnotes from content if citations are missing
                           const tokenRegex = /\[(.+?)\]/g;
                           const map = new Map<string, { index: number; label: string; url?: string }>();

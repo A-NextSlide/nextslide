@@ -1630,14 +1630,20 @@ const SlideEditorContent: React.FC = () => {
   }, [deckData.slides.length, deckId]);
   
   // Restore autoSelectImages preference from deck data
+  // IMPORTANT: Only restore if window preference is NOT already set (don't overwrite what the toggle just set!)
   useEffect(() => {
-    if (deckData.data?.outline?.stylePreferences?.autoSelectImages !== undefined) {
-      if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
+      const existingPref = (window as any).__slideGenerationPreferences?.autoSelectImages;
+      const outlinePref = deckData.data?.outline?.stylePreferences?.autoSelectImages;
+
+      // Only restore from outline if:
+      // 1. Window preference is NOT already set (undefined)
+      // 2. AND outline has an explicit preference
+      if (existingPref === undefined && outlinePref !== undefined) {
         (window as any).__slideGenerationPreferences = {
           ...(window as any).__slideGenerationPreferences,
-          autoSelectImages: deckData.data.outline.stylePreferences.autoSelectImages
+          autoSelectImages: outlinePref
         };
-        console.log('[SlideEditor] Restored autoSelectImages preference:', deckData.data.outline.stylePreferences.autoSelectImages);
       }
     }
   }, [deckData.data?.outline?.stylePreferences?.autoSelectImages]);
@@ -1651,19 +1657,37 @@ const SlideEditorContent: React.FC = () => {
     if (deckData.slides.length > 0) {
       const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
       if (autoSelectImages) {
-        console.log('[SlideEditor] Auto-select images is enabled, checking for cached images...');
         const imageUpdater = SlideImageUpdater.getInstance();
-        
+
         // Apply any cached images to slides
         setTimeout(() => {
-          console.log('[SlideEditor] Applying cached images...');
           imageUpdater.applyAllCachedImages();
         }, 500); // Small delay to ensure images are cached
-      } else {
-        console.log('[SlideEditor] Auto-select images is disabled, skipping cached image application');
       }
     }
   }, [deckData.slides.length, deckStatus?.state]);
+
+  // Apply cached images when slides are already loaded (initial mount or preference changes)
+  useEffect(() => {
+    // Check if we have slides with Image components that need images
+    if (deckData.slides.length === 0) return;
+
+    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+    if (!autoSelectImages) return;
+
+    // Check if we have cached images
+    const imageCache = (window as any).__slideImageCache;
+    if (!imageCache || Object.keys(imageCache).length === 0) return;
+
+    const imageUpdater = SlideImageUpdater.getInstance();
+
+    // Apply images after a brief delay to ensure DOM is ready
+    const timeoutId = setTimeout(() => {
+      imageUpdater.applyAllCachedImages();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [deckData.slides.length, deckData.data?.outline?.stylePreferences?.autoSelectImages]); // Re-run when slides load or preference changes
 
   // Also listen for slide_images_available events directly
   useEffect(() => {
