@@ -51,24 +51,28 @@ const AuthCallback: React.FC = () => {
         const accessToken = hashParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token');
         const type = urlParams.get('type') || hashParams.get('type');
-        
-        console.log('[AuthCallback] Auth params:', { 
-          hasCode: !!code, 
+
+        console.log('[AuthCallback] Auth params:', {
+          hasCode: !!code,
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
-          type 
+          type
         });
-        
+
         let session;
         let sessionError;
-        
-        if (code) {
-          // PKCE flow - exchange code for session
+
+        // Recovery flows (password reset, email confirmation) should not use PKCE
+        // They use hash-based tokens instead
+        const isRecoveryFlow = type === 'recovery' || type === 'email_confirmation';
+
+        if (code && !isRecoveryFlow) {
+          // PKCE flow - exchange code for session (OAuth only)
           console.log('[AuthCallback] Attempting PKCE code exchange...');
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           session = data?.session;
           sessionError = error;
-          
+
           if (error) {
             console.error('[AuthCallback] Code exchange error:', error);
             // Log the full error for debugging
@@ -128,7 +132,14 @@ const AuthCallback: React.FC = () => {
             userId: session.user?.id,
             email: session.user?.email
           });
-          
+
+          // For recovery flows, redirect to password reset page
+          if (isRecoveryFlow) {
+            console.log('[AuthCallback] Recovery flow detected, redirecting to password reset');
+            navigate('/reset-password');
+            return;
+          }
+
           // Successfully authenticated
           toast({
             title: "Welcome!",

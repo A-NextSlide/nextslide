@@ -17,6 +17,7 @@ import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import ResetPassword from "./pages/ResetPassword";
 import Profile from "./pages/Profile";
 import TeamSettings from "./pages/TeamSettings";
 import EmailVerification from "./pages/EmailVerification";
@@ -307,9 +308,18 @@ const AppContent = () => {
               element={<EmailVerification />}
             />
             {/* Auth Callback route */}
-            <Route 
-              path="/auth-callback" 
+            <Route
+              path="/auth-callback"
               element={<AuthCallback />}
+            />
+            {/* Reset Password route */}
+            <Route
+              path="/reset-password"
+              element={
+                <ProtectedRoute>
+                  <ResetPassword />
+                </ProtectedRoute>
+              }
             />
             {/* Admin routes */}
             <Route
