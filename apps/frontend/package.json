@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' vite build",
     "experiments:all": "tsx evaluation/src/experiment/run-experiments.ts --experiments evaluation/experiments -r -p -c 10",
     "experiment": "tsx evaluation/src/experiment/run-experiments.ts --experiments evaluation/experiments -f",
     "test": "vitest",
