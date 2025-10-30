@@ -254,13 +254,19 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      console.log('[Auth] Attempting sign-in with email:', email);
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Auth] Sign-in error:', error);
+        throw error;
+      }
 
+      console.log('[Auth] Sign-in successful for user:', data.user?.id);
+      
       toast({
         title: "Welcome back!",
         description: "Successfully signed in.",
@@ -268,10 +274,23 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       // Navigation will be handled by onAuthStateChange
     } catch (error: any) {
+      console.error('[Auth] Sign-in failed:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = error.message || "Invalid email or password";
+      
+      if (error.message?.includes('Invalid login credentials')) {
+        errorMessage = "Invalid email or password. Please check your credentials and try again.";
+      } else if (error.message?.includes('Email not confirmed')) {
+        errorMessage = "Please verify your email address before signing in. Check your inbox for the verification link.";
+      } else if (error.message?.includes('Too many requests')) {
+        errorMessage = "Too many login attempts. Please wait a few minutes and try again.";
+      }
+      
       toast({
         variant: "destructive",
         title: "Sign in failed",
-        description: error.message || "Invalid email or password",
+        description: errorMessage,
       });
       throw error;
     }
@@ -279,25 +298,35 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const signInWithGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      console.log('[Auth] Initiating Google OAuth sign-in...');
+      const redirectUrl = `${window.location.origin}/auth-callback`;
+      console.log('[Auth] Redirect URL:', redirectUrl);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth-callback`,
+          redirectTo: redirectUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-          }
+          },
+          skipBrowserRedirect: false,
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Auth] Google OAuth error:', error);
+        throw error;
+      }
 
+      console.log('[Auth] OAuth initiated successfully, redirecting to Google...');
       // User will be redirected to Google
     } catch (error: any) {
+      console.error('[Auth] Google sign-in failed:', error);
       toast({
         variant: "destructive",
         title: "Google sign in failed",
-        description: error.message || "An error occurred",
+        description: error.message || "An error occurred. Please check your internet connection and try again.",
       });
       throw error;
     }

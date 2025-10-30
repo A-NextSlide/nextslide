@@ -10,6 +10,7 @@ import { configureLogging, enableRegistryLogsOnly, LogLevel } from '@/utils/logg
 import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
+import { setupDiagnostics } from '@/utils/authDiagnostics'
 
 // Configure logging to suppress all logs as early as possible
 configureLogging({
@@ -58,6 +59,11 @@ try {
 
 // Initialize Supabase storage bucket (if needed)
 initializeStorage()
+
+// Setup authentication diagnostics (development only)
+if (import.meta.env.DEV) {
+  setupDiagnostics();
+}
 
 // console.log('Rendering app...');
 
