@@ -126,11 +126,30 @@ export class SlideImageUpdater {
     }
 
     // Update components with images
+    // Use images sequentially from the recommended list (same order as Recommended tab)
+    let imageAssignmentIndex = 0;
+    const usedUrls = new Set<string>();
+    
     const updatedComponents = slide.components.map(component => {
       if (component.type === 'Image' && this.needsImage(component)) {
-        // Get the next image for this slide
-        const imageIndex = this.getNextImageIndex(imageData.slideId, imageData.images.length);
-        const selectedImage = this.selectBestImage(imageData, component, imageIndex);
+        // Simple sequential assignment from the flat images array
+        // This matches exactly what the user sees in the Recommended tab
+        let selectedImage = null;
+        
+        // Try to find next unused image
+        while (imageAssignmentIndex < imageData.images.length) {
+          const candidate = imageData.images[imageAssignmentIndex];
+          imageAssignmentIndex++;
+          
+          // Skip if already used on this slide
+          if (usedUrls.has(candidate.url)) {
+            continue;
+          }
+          
+          selectedImage = candidate;
+          usedUrls.add(candidate.url);
+          break;
+        }
 
         if (selectedImage) {
           return {
@@ -138,7 +157,7 @@ export class SlideImageUpdater {
             props: {
               ...component.props,
               src: selectedImage.url,
-              alt: selectedImage.description || component.props.alt || 'Slide image',
+              alt: selectedImage.description || selectedImage.alt || component.props.alt || 'Slide image',
               // Remove placeholder/generating states
               isGenerating: false,
               isPlaceholder: false
