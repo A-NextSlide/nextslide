@@ -191,8 +191,8 @@ export function transformMyFormatToTiptap(customDocInput: CustomDoc | SimpleCust
         if (style.subscript) marks.push({ type: 'subscript' });
         if (style.superscript) marks.push({ type: 'superscript' });
         
-        // Link mark
-        if (style.link) {
+        // Link mark - ensure href is a valid string to prevent "uri.replace is not a function" error
+        if (style.link && typeof style.link === 'string' && style.link.length > 0) {
           marks.push({ 
             type: 'link', 
             attrs: { 
@@ -353,10 +353,13 @@ export function transformTiptapToMyFormat(tiptapDoc: JSONContent | null | undefi
               case 'subscript': style.subscript = true; break;
               case 'superscript': style.superscript = true; break;
               
-              // Link
+              // Link - store href in style.link for consistency with transform direction
               case 'link': 
-                style.link = true; 
-                style.href = mark.attrs?.href || ''; 
+                const href = mark.attrs?.href;
+                // Only store valid string hrefs to prevent errors
+                if (typeof href === 'string' && href.length > 0) {
+                  style.link = href;
+                }
                 break;
                 
               // Text color

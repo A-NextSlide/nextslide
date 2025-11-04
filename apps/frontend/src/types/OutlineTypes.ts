@@ -26,6 +26,10 @@ export interface SlideOutline {
   deepResearch?: boolean;
   taggedMedia?: TaggedMediaItem[];
   extractedData?: ExtractedDataItem;
+  tableData?: {
+    headers: string[];
+    data: string[][];
+  };
 }
 
 export interface DeckOutline {

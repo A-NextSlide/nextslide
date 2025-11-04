@@ -1,4 +1,4 @@
-export type CommentAnchorType = 'component' | 'region';
+export type CommentAnchorType = 'component' | 'region' | 'component_group';
 
 export interface NormalizedRect {
   x: number; // 0..1 relative to slide width
@@ -10,8 +10,9 @@ export interface NormalizedRect {
 export interface CommentAnchor {
   type: CommentAnchorType;
   slideId: string;
-  componentId?: string;
-  rect?: NormalizedRect; // if region
+  componentId?: string;      // For single component
+  componentIds?: string[];    // For component group
+  rect?: NormalizedRect;      // For region
 }
 
 export interface CommentEntity {
@@ -51,4 +52,5 @@ export interface CommentsListResponse {
   threads: CommentThread[];
 }
 
-
+// Alias for backward compatibility
+export type Comment = CommentEntity;

@@ -141,7 +141,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
     supabase = get_supabase_client()
     
     try:
-        logger.info(f"🔄 Uploading deck {deck_uuid} - {len(deck_data.get('slides', []))} slides, status: {deck_data.get('status', {}).get('state', 'unknown')}, user: {user_id or 'anonymous'}")
+        logger.debug(f"Uploading deck {deck_uuid} - {len(deck_data.get('slides', []))} slides, status: {deck_data.get('status', {}).get('state', 'unknown')}, user: {user_id or 'anonymous'}")
         
         # Debug: Log the actual slide data being uploaded
         for i, slide in enumerate(deck_data.get('slides', [])[:3]):  # First 3 slides
@@ -157,10 +157,10 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         data_field = dict(provided_data)
         if "theme" in deck_data:
             data_field["theme"] = deck_data["theme"]
-            logger.info(f"Found theme data to save: {len(str(deck_data['theme']))} chars")
+            logger.debug(f"Found theme data to save: {len(str(deck_data['theme']))} chars")
         if "style_spec" in deck_data:
             data_field["style_spec"] = deck_data["style_spec"]
-            logger.info(f"Found style_spec data to save: {len(str(deck_data['style_spec']))} chars")
+            logger.debug(f"Found style_spec data to save: {len(str(deck_data['style_spec']))} chars")
 
         # Prepare the deck data for upload (partial fields only)
         deck_record = {"uuid": deck_uuid}
@@ -188,7 +188,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         # Add user_id if provided
         if user_id:
             deck_record["user_id"] = user_id
-            logger.info(f"Associating deck {deck_uuid} with user {user_id}")
+            logger.debug(f"Associating deck {deck_uuid} with user {user_id}")
         
         # Check if deck already exists before upserting
         existing = perform_supabase_operation_with_retry(
@@ -220,11 +220,11 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         # Log final intent for data column
         if data_field:
             try:
-                logger.info(f"Saving theme/style data to data field: {list(data_field.keys())}")
+                logger.debug(f"Saving theme/style data to data field: {list(data_field.keys())}")
             except Exception:
-                logger.info("Saving theme/style data to data field (keys not listed)")
+                logger.debug("Saving theme/style data to data field (keys not listed)")
         else:
-            logger.info("No theme/style data found to save in data field")
+            logger.debug("No theme/style data found to save in data field")
         
         # Use upsert to handle both insert and update cases
         # This prevents timing issues when the frontend expects immediate availability
@@ -242,7 +242,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             logger.error(f"❌ Failed to upload deck {deck_uuid}")
             raise Exception("Failed to upload deck to Supabase")
         
-        logger.info(f"✅ Successfully uploaded deck {deck_uuid} for user {user_id or 'anonymous'}")
+        logger.debug(f"Successfully uploaded deck {deck_uuid} for user {user_id or 'anonymous'}")
         return response.data[0]
     except Exception as e:
         logger.error(f"Error uploading deck: {e}")
@@ -333,7 +333,7 @@ def get_deck(deck_uuid: str) -> Optional[Dict[str, Any]]:
         
         # Log deck retrieval details
         slide_count = len(deck.get('slides', []))
-        logger.info(f"📥 Retrieved deck {deck_uuid}: {slide_count} slides")
+        logger.debug(f"Retrieved deck {deck_uuid}: {slide_count} slides")
         
         # Check visual fixes status
         visual_fixed_count = 0
@@ -345,7 +345,7 @@ def get_deck(deck_uuid: str) -> Optional[Dict[str, Any]]:
             logger.debug(f"  Slide {i+1}: {component_count} components, visual_fixes={has_fixes}")
         
         if visual_fixed_count > 0:
-            logger.info(f"  ✅ {visual_fixed_count} slides have visual fixes applied")
+            logger.debug(f"  {visual_fixed_count} slides have visual fixes applied")
         
         # Extract theme and style_spec from data field to root level for compatibility
         if 'data' in deck and isinstance(deck['data'], dict):
@@ -403,8 +403,8 @@ def update_deck_notes(deck_uuid: str, notes: Dict[str, Any]) -> bool:
     supabase = get_supabase_client()
     
     try:
-        logger.info(f"📝 Updating notes for deck {deck_uuid}")
-        logger.info(f"📝 Notes data type: {type(notes)}, size: {len(str(notes))}")
+        logger.debug(f"Updating notes for deck {deck_uuid}")
+        logger.debug(f"Notes data type: {type(notes)}, size: {len(str(notes))}")
         
         # Update only the notes field
         response = perform_supabase_operation_with_retry(
@@ -417,8 +417,8 @@ def update_deck_notes(deck_uuid: str, notes: Dict[str, Any]) -> bool:
         )
         
         if response.data:
-            logger.info(f"✅ Successfully updated notes for deck {deck_uuid}")
-            logger.info(f"✅ Response data: {response.data[0].get('uuid') if response.data else 'No data'}")
+            logger.debug(f"Successfully updated notes for deck {deck_uuid}")
+            logger.debug(f"Response data: {response.data[0].get('uuid') if response.data else 'No data'}")
             
             # Verify the update
             verify_response = perform_supabase_operation_with_retry(
@@ -429,7 +429,7 @@ def update_deck_notes(deck_uuid: str, notes: Dict[str, Any]) -> bool:
             )
             if verify_response.data:
                 saved_notes = verify_response.data[0].get('notes')
-                logger.info(f"✅ Verification: Notes field is {'present' if saved_notes else 'NULL'}")
+                logger.debug(f"Verification: Notes field is {'present' if saved_notes else 'NULL'}")
             
             return True
         else:

@@ -41,6 +41,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminUserDetail from './pages/admin/AdminUserDetail';
 import AdminDecks from './pages/admin/AdminDecks';
+import AdminBrands from './pages/admin/AdminBrands';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
@@ -351,6 +352,14 @@ const AppContent = () => {
               element={
                 <AdminProtectedRoute>
                   <AdminDecks />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/brands"
+              element={
+                <AdminProtectedRoute>
+                  <AdminBrands />
                 </AdminProtectedRoute>
               }
             />

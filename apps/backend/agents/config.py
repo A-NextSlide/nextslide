@@ -28,12 +28,16 @@ OUTLINE_OPENAI_SEARCH_MODEL = "gpt-4o-mini"
 #==============================================================================
 
 # Toggle to enable Perplexity for single-pass outline generation (no env dependency)
-# NOTE: Only used for DETAILED mode - presentation mode uses lighter model
+# NOTE: Only used for DETAILED mode - presentation mode uses Haiku for narrative structure
 USE_PERPLEXITY_FOR_OUTLINE = True
-PERPLEXITY_OUTLINE_MODEL = 'perplexity-sonar-pro'  # Pro model for detailed mode only
+PERPLEXITY_OUTLINE_MODEL = 'perplexity-sonar-pro'  # Pro model for detailed mode research
 
-# Lighter model for presentation mode (quick, visual-focused outlines)
-PRESENTATION_OUTLINE_MODEL = 'perplexity-sonar'  # Fast with minimal research for presentation mode
+# Haiku 4.5 for presentation mode (excellent narrative structure, digestible content)
+# Perplexity is great for research but poor at creating presentation-friendly narratives
+PRESENTATION_OUTLINE_MODEL = 'claude-haiku-4-5'  # Fast, visual-focused, digestible outlines for presentation mode
+
+# Enable hybrid mode for detailed presentations: Perplexity research + Haiku structuring
+USE_HYBRID_RESEARCH_MODE = True  # When True, uses Perplexity for data, Haiku for structure
 
 # Toggle to prefer Perplexity for research/search (no env dependency)
 USE_PERPLEXITY_FOR_RESEARCH = True

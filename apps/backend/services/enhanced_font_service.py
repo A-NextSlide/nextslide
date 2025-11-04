@@ -195,8 +195,15 @@ class EnhancedFontService:
         """Guess font category from name when metadata unavailable"""
         name_lower = font_name.lower()
         
+        # Editorial/Magazine fonts (Oranienbaum, Bodoni Moda, Rozha One, etc.)
+        if any(kw in name_lower for kw in [
+            'oranienbaum', 'bodoni', 'rozha', 'arvo', 'slabo', 'faustina', 
+            'noticia', 'frank ruhl', 'libre baskerville', 'crimson', 
+            'spectral', 'cormorant', 'italiana', 'gilda'
+        ]):
+            return 'editorial-serif'
         # Playful/Fun fonts
-        if any(kw in name_lower for kw in ['fredoka', 'baloo', 'chewy', 'bubblegum', 'bungee', 'bangers', 'comic', 'righteous', 'titan']):
+        elif any(kw in name_lower for kw in ['fredoka', 'baloo', 'chewy', 'bubblegum', 'bungee', 'bangers', 'comic', 'righteous', 'titan']):
             return 'playful'
         # Display/Bold fonts
         elif any(kw in name_lower for kw in ['bebas', 'anton', 'oswald', 'impact', 'black', 'bold']):
@@ -207,7 +214,7 @@ class EnhancedFontService:
         # Mono/Code
         elif any(kw in name_lower for kw in ['mono', 'code', 'jetbrains', 'fira', 'consolas']):
             return 'mono'
-        # Serif
+        # Serif (general)
         elif any(kw in name_lower for kw in ['serif', 'times', 'garamond', 'playfair', 'merriweather']):
             return 'serif'
         # Default to sans
@@ -290,8 +297,8 @@ class EnhancedFontService:
         # Format response with metadata
         return {
             'context': context,
-            'hero': self._format_font_recommendations(hero_fonts[:12]),
-            'body': self._format_font_recommendations(body_fonts[:8]),
+            'hero': self._format_font_recommendations(hero_fonts[:20]),  # Increased from 12
+            'body': self._format_font_recommendations(body_fonts[:25]),  # Increased from 8
             'variety_seed': variety_seed
         }
     
@@ -322,6 +329,8 @@ class EnhancedFontService:
             context['preferred_tags'].update(['creative', 'artistic', 'unique', 'display', 'playful', 'fun', 'bold', 'expressive'])
             # Avoid overly corporate/boring fonts for creative contexts
             context['avoid_tags'].update(['corporate', 'formal', 'conservative'])
+            # Prefer bold/fat fonts for creative contexts
+            context['prefer_bold_body'] = True
         elif vibe in ['modern', 'minimal', 'clean']:
             context['style'] = 'modern'
             context['required_tags'].update(['modern', 'minimal', 'clean'])
@@ -331,6 +340,8 @@ class EnhancedFontService:
         elif vibe in ['retro', 'vintage', 'nostalgic']:
             context['style'] = 'retro'
             context['required_tags'].update(['retro', 'vintage', '60s', '70s', '80s'])
+            # Bold fonts work great for retro
+            context['prefer_bold_body'] = True
         
         # Analyze keywords for additional context
         all_text = ' '.join([deck_title] + (content_keywords or []))
@@ -338,15 +349,19 @@ class EnhancedFontService:
         if any(word in all_text.lower() for word in ['gaming', 'game', 'arcade', 'pixel', '8bit', '8-bit', 'retro game']):
             context['type'] = 'gaming'
             context['preferred_tags'].update(['pixel', 'arcade', '8bit', '8-bit', 'retro', 'game'])
+            context['prefer_bold_body'] = True  # Bold fonts great for gaming
         elif any(word in all_text.lower() for word in ['80s', '70s', '60s', 'disco', 'groovy', 'vintage', 'throwback']):
             context['type'] = 'retro'
             context['preferred_tags'].update(['retro', 'vintage', '80s', '70s', '60s', 'disco', 'groovy'])
+            context['prefer_bold_body'] = True  # Bold fonts great for retro
         elif any(word in all_text.lower() for word in ['music', 'concert', 'festival', 'band', 'artist']):
             context['type'] = 'music'
             context['preferred_tags'].update(['bold', 'creative', 'artistic', 'display'])
+            context['prefer_bold_body'] = True  # Bold fonts great for music
         elif any(word in all_text.lower() for word in ['kids', 'children', 'playful', 'fun']):
             context['type'] = 'kids'
             context['preferred_tags'].update(['playful', 'fun', 'cute', 'friendly', 'rounded'])
+            context['prefer_bold_body'] = True  # Bold fonts great for kids
         elif any(word in all_text.lower() for word in ['tech', 'software', 'digital', 'ai', 'data']):
             context['type'] = 'tech'
             context['preferred_tags'].update(['geometric', 'futuristic', 'tech'])
@@ -434,7 +449,7 @@ class EnhancedFontService:
     def _get_hero_fonts_with_scoring(self, context: Dict) -> List[Tuple[str, float]]:
         """
         Get hero fonts with intelligent scoring based on metadata.
-        Uses Designer and Google fonts only (PixelBuddha disabled).
+        Balanced scoring across Designer, PixelBuddha, and Google fonts.
         Prioritize distinctive, eye-catching fonts that make titles pop.
         """
         scored_fonts = []
@@ -442,9 +457,33 @@ class EnhancedFontService:
         for font_id, font_data in self.all_fonts.items():
             score = self._score_font_for_context(font_id, context, for_body=False)
 
-            # Boost Designer fonts for hero text - they're designed for display
-            if font_data.get('source') == 'designer' and score > 0:
-                score *= 1.15  # 15% boost for decorative designer fonts in hero position
+            # HUGE boost for Designer fonts - they're our premium, unique fonts!
+            source = font_data.get('source', '').lower()
+            category = font_data.get('category', '').lower()
+            
+            if 'designer' in source or font_data.get('category') == 'designer':
+                score *= 2.5  # 150% boost for Designer fonts - USE THESE FIRST!
+                logger.debug(f"Designer font boosted: {font_id} (source: {source})")
+            
+            # Balanced boost for PixelBuddha fonts - excellent display fonts
+            elif source == 'pixelbuddha':
+                score *= 1.35  # 35% boost for PixelBuddha fonts (reduced from 1.8x to balance with Google)
+                logger.debug(f"PixelBuddha font boosted: {font_id}")
+            
+            # Boost for Google fonts - includes great Editorial/Serif fonts
+            elif source == 'google':
+                # Extra boost for Editorial/Serif fonts (Oranienbaum, Bodoni Moda, Rozha One, etc.)
+                # These are excellent for hero/display text
+                if any(keyword in category for keyword in ['editorial', 'serif', 'display']) or 'editorial' in font_id:
+                    score *= 1.45  # 45% boost for Editorial/Serif Google fonts
+                    logger.debug(f"Google Editorial/Serif font boosted: {font_id} (category: {category})")
+                else:
+                    score *= 1.35  # 35% boost for other Google fonts (balanced with PixelBuddha)
+            
+            # Penalize boring defaults even if they score well
+            boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'times-new-roman', 'lato']
+            if any(boring in font_id.lower() for boring in boring_fonts):
+                score *= 0.3  # Heavy penalty for boring fonts
 
             if score > 0:
                 scored_fonts.append((font_id, score))
@@ -457,17 +496,48 @@ class EnhancedFontService:
     def _get_body_fonts_with_scoring(self, context: Dict) -> List[Tuple[str, float]]:
         """
         Get body fonts with intelligent scoring based on metadata.
-        Uses clean, readable fonts (Google Fonts, Designer fonts).
-        PixelBuddha fonts are disabled entirely.
+        Uses clean, readable fonts (Google Fonts, Designer sans-serif fonts).
+        Prefers Designer fonts when they're readable and clean.
+        NOW INCLUDES BOLD/FAT FONTS FOR BODY TEXT!
         """
         scored_fonts = []
 
         for font_id, font_data in self.all_fonts.items():
             score = self._score_font_for_context(font_id, context, for_body=True)
 
+            # Prioritize clean Designer sans-serif fonts for body text
+            source = font_data.get('source', '').lower()
+            category = font_data.get('category', '').lower()
+            font_name = font_data.get('name', '').lower()
+            
+            # BOOST for BOLD/FAT fonts - check for bold/heavy/black in name
+            is_bold_font = any(keyword in font_name for keyword in [
+                'bold', 'black', 'heavy', 'extra bold', 'ultra', 'fat', 
+                'thick', 'bebas', 'oswald', 'impact', 'anton', 'archivo black'
+            ])
+            
+            if is_bold_font:
+                # Extra boost for bold body fonts - they make great impact!
+                base_bold_boost = 1.4  # 40% boost for bold/fat fonts
+                # EXTRA boost if context prefers bold fonts
+                if context.get('prefer_bold_body', False):
+                    base_bold_boost = 1.8  # 80% boost when context wants bold!
+                score *= base_bold_boost
+                logger.debug(f"Bold/Fat body font boosted: {font_id} (boost: {base_bold_boost}x)")
+            
+            if 'designer' in source and 'sans' in category:
+                # Designer sans-serif fonts are great for body text!
+                score *= 1.5  # 50% boost for clean Designer sans-serif fonts
+                logger.debug(f"Designer sans-serif font boosted for body: {font_id}")
+            
             # Boost Google fonts for body text - they're optimized for readability
-            if font_data.get('source') == 'google' and score > 0:
-                score *= 1.1  # 10% boost for Google fonts in body text
+            elif source == 'google' and score > 0:
+                score *= 1.2  # 20% boost for Google fonts in body text
+            
+            # Slight penalty for boring defaults to encourage variety
+            boring_fonts = ['inter', 'arial', 'helvetica', 'times-new-roman']
+            if any(boring in font_id.lower() for boring in boring_fonts):
+                score *= 0.5  # Moderate penalty for boring fonts
 
             if score > 0:
                 scored_fonts.append((font_id, score))
@@ -481,6 +551,7 @@ class EnhancedFontService:
         """
         Apply variety penalties to avoid repetitive font selections.
         Recent fonts get penalized, heavily used fonts get penalized.
+        AGGRESSIVE penalties to ensure real variety!
         """
         recent_fonts = self._recent_hero_fonts if is_hero else self._recent_body_fonts
         
@@ -488,19 +559,20 @@ class EnhancedFontService:
         for font_id, base_score in scored_fonts:
             penalty = 0.0
             
-            # Recency penalty - recently used fonts are penalized
+            # Recency penalty - recently used fonts are penalized HEAVILY
             if font_id in recent_fonts:
                 # More recent = higher penalty
                 recency_position = list(recent_fonts).index(font_id)
                 # 0 = most recent, maxlen-1 = oldest
-                recency_penalty = (1.0 - (recency_position / len(recent_fonts))) * 0.6
+                # Increased from 0.6 to 0.85 for more aggressive variety
+                recency_penalty = (1.0 - (recency_position / len(recent_fonts))) * 0.85
                 penalty += recency_penalty
             
-            # Usage frequency penalty - overused fonts get penalized
+            # Usage frequency penalty - overused fonts get penalized MORE
             usage_count = self._font_usage_count.get(font_id, 0)
             if usage_count > 0:
-                # Cap penalty at 0.3 for very frequently used fonts
-                frequency_penalty = min(usage_count * 0.05, 0.3)
+                # Increased from 0.05 to 0.08, cap at 0.5 instead of 0.3
+                frequency_penalty = min(usage_count * 0.08, 0.5)
                 penalty += frequency_penalty
             
             # Apply penalty (score can't go below 0)
@@ -799,10 +871,10 @@ class EnhancedFontService:
         # Use variety_seed for deterministic rotation through top candidates
         if variety_seed:
             seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
-            # Rotate through top 5 hero fonts
-            hero_idx = seed_hash % min(5, len(hero_fonts))
-            # Use different offset for body to avoid same font
-            body_idx = (seed_hash + 3) % min(8, len(body_fonts))
+            # Rotate through top 15 hero fonts (increased from 5 for more variety)
+            hero_idx = seed_hash % min(15, len(hero_fonts))
+            # Use different offset for body to avoid same font (increased from 8 to 20)
+            body_idx = (seed_hash + 3) % min(20, len(body_fonts))
         else:
             # No seed, pick top choice
             hero_idx = 0

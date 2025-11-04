@@ -559,6 +559,81 @@ class AdminApi {
       message: 'Deck deleted successfully',
     };
   }
+
+  // ==================== Brand Management ====================
+
+  async getBrands(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<{ brands: Brand[]; total: number; page: number; totalPages: number }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.search) queryParams.append('search', params.search);
+
+      const response = await this.request<any>(`/admin/brands?${queryParams.toString()}`);
+
+      return {
+        brands: response.brands,
+        total: response.total || 0,
+        page: response.page || params?.page || 1,
+        totalPages: response.totalPages || 0,
+      };
+    } catch (error) {
+      console.error('Error fetching brands:', error);
+      return { brands: [], total: 0, page: 1, totalPages: 0 };
+    }
+  }
+
+  async updateBrand(brandId: string, apiResponse: any): Promise<{ success: boolean; message: string; brand: Brand }> {
+    try {
+      const response = await this.request<any>(`/admin/brands/${brandId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ api_response: apiResponse }),
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Error updating brand:', error);
+      throw error;
+    }
+  }
+
+  async deleteBrand(brandId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.request<any>(`/admin/brands/${brandId}`, {
+        method: 'DELETE',
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Error deleting brand:', error);
+      throw error;
+    }
+  }
+}
+
+export interface Brand {
+  id: string;
+  identifier: string;
+  normalized_identifier: string;
+  api_response: {
+    brand_name?: string;
+    domain?: string;
+    logos?: any;
+    colors?: {
+      primary?: Array<{ hex: string; type?: string }>;
+      [key: string]: any;
+    };
+    fonts?: any;
+    [key: string]: any;
+  };
+  success: boolean;
+  created_at: string;
+  hit_count: number;
+  last_accessed_at: string;
 }
 
 export const adminApi = new AdminApi();

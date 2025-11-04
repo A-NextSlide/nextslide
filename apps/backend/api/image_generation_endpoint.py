@@ -75,7 +75,7 @@ async def generate_image(request: ImageGenerationRequest):
         # Use the user's prompt as-is (no augmentation)
         enhanced_prompt = request.prompt
         
-        logger.info(f"Generating image with prompt: {enhanced_prompt[:100]}...")
+        logger.debug(f"Generating image with prompt: {enhanced_prompt[:100]}...")
         
         # Generate the image
         result = await image_service.generate_image(

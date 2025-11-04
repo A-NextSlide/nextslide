@@ -35,19 +35,19 @@ class ParallelSlideOrchestrator:
         """Generate slides in parallel with proper orchestration."""
         
         # Debug logging for taggedMedia in deck_outline
-        logger.info(f"[PARALLEL_ORCH] Starting parallel generation for {len(deck_state.deck_outline.slides)} slides")
+        logger.info(f"Starting parallel generation for {len(deck_state.deck_outline.slides)} slides")
         for i, slide in enumerate(deck_state.deck_outline.slides):
             tm_count = 0
             if hasattr(slide, 'taggedMedia') and slide.taggedMedia:
                 tm_count = len(slide.taggedMedia)
-                logger.info(f"[PARALLEL_ORCH] Slide {i+1} '{slide.title}' has {tm_count} taggedMedia items")
+                logger.debug(f"Slide {i+1} '{slide.title}' has {tm_count} taggedMedia items")
                 for j, media in enumerate(slide.taggedMedia[:2]):  # First 2
                     media_dict = media.model_dump() if hasattr(media, 'model_dump') else media
-                    logger.info(f"[PARALLEL_ORCH]   Media {j+1}: {media_dict.get('filename', 'unknown')} - URL: {media_dict.get('previewUrl', '')[:100]}")
+                    logger.debug(f"  Media {j+1}: {media_dict.get('filename', 'unknown')} - URL: {media_dict.get('previewUrl', '')[:100]}")
             else:
-                logger.info(f"[PARALLEL_ORCH] Slide {i+1} '{slide.title}' has NO taggedMedia")
-        
-        logger.info(f"[PARALLEL_ORCH] Creating semaphore with max_parallel_slides={options.max_parallel_slides}")
+                logger.debug(f"Slide {i+1} '{slide.title}' has NO taggedMedia")
+
+        logger.debug(f"Creating semaphore with max_parallel_slides={options.max_parallel_slides}")
         semaphore = asyncio.Semaphore(options.max_parallel_slides)
         completed_slides = 0
         slides_in_progress = set()
@@ -120,7 +120,7 @@ class ParallelSlideOrchestrator:
                             deck_uuid=deck_state.deck_uuid,
                             slide_generation=False
                         )
-                        logger.info("[PREWARM] Anthropic prompt cache prewarmed successfully")
+                        logger.debug("[PREWARM] Anthropic prompt cache prewarmed successfully")
                         yield {
                             'type': 'info',
                             'message': 'Prewarmed prompt cache'
@@ -132,15 +132,15 @@ class ParallelSlideOrchestrator:
         
         # Create tasks for all slides with minimal delay
         tasks = []
-        logger.info(f"[PARALLEL_ORCH] Creating tasks for {len(deck_state.deck_outline.slides)} slides")
+        logger.debug(f"Creating tasks for {len(deck_state.deck_outline.slides)} slides")
         for i, slide_outline in enumerate(deck_state.deck_outline.slides):
             # Add small delay between starting slides to avoid overwhelming the system
             if i > 0 and options.delay_between_slides > 0:
                 delay = min(options.delay_between_slides * 0.1, 0.1)
-                logger.info(f"[PARALLEL_ORCH] Adding {delay}s delay before starting slide {i+1}")
+                logger.debug(f"Adding {delay}s delay before starting slide {i+1}")
                 await asyncio.sleep(delay)
-            
-            logger.info(f"[PARALLEL_ORCH] Creating task for slide {i+1}: {slide_outline.title}")
+
+            logger.debug(f"Creating task for slide {i+1}: {slide_outline.title}")
             task = asyncio.create_task(
                 self._generate_slide_with_streaming(
                     deck_state, i, slide_outline, semaphore,
@@ -148,7 +148,7 @@ class ParallelSlideOrchestrator:
                 )
             )
             tasks.append(task)
-        logger.info(f"[PARALLEL_ORCH] All {len(tasks)} slide tasks created")
+        logger.debug(f"All {len(tasks)} slide tasks created")
         
         # Process events from queue as they arrive
         async def process_events():
@@ -166,9 +166,9 @@ class ParallelSlideOrchestrator:
                         event['progress'] = progress
                         event['slides_in_progress'] = len(slides_in_progress)
                         event['slides_completed'] = completed_slides
-                        logger.info(f"[PARALLEL] slide_started: slide {event.get('slide_index')+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
+                        logger.debug(f"slide_started: slide {event.get('slide_index')+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
                         if len(slides_in_progress) > 1:
-                            logger.info(f"[PARALLEL] 🎉 {len(slides_in_progress)} slides generating in parallel!")
+                            logger.debug(f"{len(slides_in_progress)} slides generating in parallel")
                     
                     elif event.get('type') == 'slide_generated':
                         completed_slides += 1
@@ -179,7 +179,7 @@ class ParallelSlideOrchestrator:
                         )
                         event['progress'] = progress
                         event['slides_completed'] = completed_slides
-                        logger.info(f"[PARALLEL] slide_generated: slide {slide_idx+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
+                        logger.debug(f"slide_generated: slide {slide_idx+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
                         event['slides_total'] = total_slides
                         
                         # Add force_update flag to trigger immediate frontend update
@@ -190,7 +190,7 @@ class ParallelSlideOrchestrator:
                         # Update deck state
                         deck_state.mark_slide_complete(slide_idx, slide_data)
                         
-                        logger.info(f"[PARALLEL_ORCH] Slide {slide_idx + 1} completed")
+                        logger.debug(f"Slide {slide_idx + 1} completed")
                     
                     elif event.get('type') == 'slide_error':
                         slide_idx = event.get('slide_index', -1)
@@ -203,7 +203,7 @@ class ParallelSlideOrchestrator:
                         event['progress'] = progress
                         event['slides_completed'] = completed_slides
                         event['slides_total'] = total_slides
-                        logger.warning(f"[PARALLEL] slide_error: slide {slide_idx+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
+                        logger.warning(f"slide_error: slide {slide_idx+1}, in_progress={len(slides_in_progress)}, completed={completed_slides}")
                     
                     yield event
                     
@@ -317,30 +317,30 @@ class ParallelSlideOrchestrator:
     ):
         """Generate a single slide with streaming events."""
         
-        logger.info(f"[PARALLEL_ORCH] Slide {slide_index + 1} waiting for semaphore...")
+        logger.debug(f"Slide {slide_index + 1} waiting for semaphore...")
         async with semaphore:
-            logger.info(f"[PARALLEL_ORCH] ✅ Acquired semaphore for slide {slide_index + 1}/{len(deck_state.deck_outline.slides)}")
+            logger.debug(f"Acquired semaphore for slide {slide_index + 1}/{len(deck_state.deck_outline.slides)}")
             slides_in_progress.add(slide_index)
-            logger.info(f"[PARALLEL_ORCH] Slides in progress: {sorted(list(slides_in_progress))}")
+            logger.debug(f"Slides in progress: {sorted(list(slides_in_progress))}")
             
             try:
                 # Log what we're working with
-                logger.info(f"[SLIDE GENERATION] Processing slide {slide_index + 1}: {slide_outline.title}")
+                logger.debug(f"[SLIDE GENERATION] Processing slide {slide_index + 1}: {slide_outline.title}")
                 
                 # Check if slide_outline has taggedMedia
                 tagged_media_count = 0
                 if hasattr(slide_outline, 'taggedMedia'):
                     if slide_outline.taggedMedia is not None:
                         tagged_media_count = len(slide_outline.taggedMedia)
-                        logger.info(f"[SLIDE GENERATION] Slide has {tagged_media_count} tagged media items")
+                        logger.debug(f"[SLIDE GENERATION] Slide has {tagged_media_count} tagged media items")
                         for i, media in enumerate(slide_outline.taggedMedia[:3]):  # Log first 3
                             if hasattr(media, 'model_dump'):
                                 media_dict = media.model_dump()
                             else:
                                 media_dict = media
-                            logger.info(f"[SLIDE GENERATION] Media {i+1}: {media_dict.get('filename')} - URL: {media_dict.get('previewUrl', '')[:100]}")
+                            logger.debug(f"[SLIDE GENERATION] Media {i+1}: {media_dict.get('filename')} - URL: {media_dict.get('previewUrl', '')[:100]}")
                     else:
-                        logger.info(f"[SLIDE GENERATION] Slide has taggedMedia attribute but it's None")
+                        logger.debug(f"[SLIDE GENERATION] Slide has taggedMedia attribute but it's None")
                 else:
                     logger.warning(f"[SLIDE GENERATION] Slide outline missing taggedMedia attribute!")
                 
@@ -353,7 +353,7 @@ class ParallelSlideOrchestrator:
                     print(f"\n[SLIDE GENERATION] Checking pending images for slide {slide_index + 1} (ID: {slide_id})")
                     pending_images = self.image_manager.get_pending_images_for_slide(slide_id) if slide_id else []
                     if pending_images:
-                        logger.info(f"[SLIDE GENERATION] Found {len(pending_images)} pending images for slide {slide_index + 1}")
+                        logger.debug(f"[SLIDE GENERATION] Found {len(pending_images)} pending images for slide {slide_index + 1}")
                         print(f"[SLIDE GENERATION] ✓ Found {len(pending_images)} pending images for slide {slide_index + 1}")
                         available_images = pending_images
                     else:
@@ -362,13 +362,13 @@ class ParallelSlideOrchestrator:
                     print(f"[SLIDE GENERATION] Skipping image check - async_images: {options.async_images}, has image_manager: {self.image_manager is not None}")
                 
                 # Log theme information before creating context
-                logger.info(f"[SLIDE {slide_index + 1}] deck_state.theme exists: {deck_state.theme is not None}")
+                logger.debug(f"[SLIDE {slide_index + 1}] deck_state.theme exists: {deck_state.theme is not None}")
                 if deck_state.theme:
-                    logger.info(f"[SLIDE {slide_index + 1}] Theme type: {type(deck_state.theme)}")
+                    logger.debug(f"[SLIDE {slide_index + 1}] Theme type: {type(deck_state.theme)}")
                     if hasattr(deck_state.theme, 'theme_name'):
-                        logger.info(f"[SLIDE {slide_index + 1}] Theme name: {deck_state.theme.theme_name}")
+                        logger.debug(f"[SLIDE {slide_index + 1}] Theme name: {deck_state.theme.theme_name}")
                     if hasattr(deck_state.theme, 'color_palette'):
-                        logger.info(f"[SLIDE {slide_index + 1}] Theme has color_palette: {deck_state.theme.color_palette is not None}")
+                        logger.debug(f"[SLIDE {slide_index + 1}] Theme has color_palette: {deck_state.theme.color_palette is not None}")
                 
                 # Get user_id from deck_state or persistence
                 user_id = None
@@ -383,12 +383,12 @@ class ParallelSlideOrchestrator:
                 # ✅ DEBUG: Log if extractedData exists on slide_outline
                 has_extracted = hasattr(slide_outline, 'extractedData') and slide_outline.extractedData is not None
                 has_manual_charts = hasattr(slide_outline, 'manualCharts') and slide_outline.manualCharts is not None
-                logger.info(f"[CHART DEBUG] Slide {slide_index + 1} '{slide_outline.title}' - extractedData: {has_extracted}, manualCharts: {has_manual_charts}")
+                logger.debug(f"[CHART DEBUG] Slide {slide_index + 1} '{slide_outline.title}' - extractedData: {has_extracted}, manualCharts: {has_manual_charts}")
                 if has_extracted:
                     try:
                         chart_type = slide_outline.extractedData.chartType if hasattr(slide_outline.extractedData, 'chartType') else slide_outline.extractedData.get('chartType', 'unknown')
                         data_count = len(slide_outline.extractedData.data) if hasattr(slide_outline.extractedData, 'data') else len(slide_outline.extractedData.get('data', []))
-                        logger.info(f"[CHART DEBUG] Slide {slide_index + 1} extractedData: {chart_type} with {data_count} points")
+                        logger.debug(f"[CHART DEBUG] Slide {slide_index + 1} extractedData: {chart_type} with {data_count} points")
                     except Exception as e:
                         logger.warning(f"[CHART DEBUG] Error accessing extractedData details: {e}")
                 
@@ -411,8 +411,8 @@ class ParallelSlideOrchestrator:
                     user_id=user_id
                 )
                 
-                logger.info(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
-                logger.info(f"[SLIDE GENERATION] Context has_chart_data property: {context.has_chart_data}")
+                logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
+                logger.debug(f"[SLIDE GENERATION] Context has_chart_data property: {context.has_chart_data}")
                 
                 # Immediately emit slide_started event
                 await event_queue.put({
@@ -434,10 +434,10 @@ class ParallelSlideOrchestrator:
                 
                 # Skip saving deck status here to avoid lock contention
                 # Status will be saved after slide completion
-                logger.info(f"[PARALLEL_ORCH] Skipping pre-generation save for slide {slide_index + 1} to enable parallelism")
-                
+                logger.debug(f"Skipping pre-generation save for slide {slide_index + 1} to enable parallelism")
+
                 # Generate slide with timeout
-                logger.info(f"  Starting generation for slide {slide_index + 1} with 300s timeout...")
+                logger.debug(f"Starting generation for slide {slide_index + 1} with 300s timeout...")
                 start_time = datetime.now()
                 
                 # Stream updates directly from slide generator
@@ -456,7 +456,7 @@ class ParallelSlideOrchestrator:
                                 update['duration'] = elapsed
                                 update['slide_title'] = slide_outline.title
                                 update['message'] = f'Slide {slide_index + 1} generated successfully'
-                                logger.info(f"  ✅ Slide {slide_index + 1} generated in {elapsed:.2f}s")
+                                logger.debug(f"  Slide {slide_index + 1} generated in {elapsed:.2f}s")
                             
                             # Stream the update immediately
                             await event_queue.put(update)
@@ -487,7 +487,7 @@ class ParallelSlideOrchestrator:
                     
                     # Save the updated deck with new status
                     await self.persistence.save_deck(deck_state.to_dict())
-                    logger.info(f"  📊 Updated deck status: {completed_count}/{len(deck_state.slides)} slides")
+                    logger.debug(f"  Updated deck status: {completed_count}/{len(deck_state.slides)} slides")
                     
                     # Emit slide saved event
                     await self.event_bus.emit(Events.SLIDE_SAVED, {
@@ -546,7 +546,7 @@ class ParallelSlideOrchestrator:
                 })
                 
             finally:
-                logger.info(f"  Slide {slide_index + 1} releasing semaphore")
+                logger.debug(f"  Slide {slide_index + 1} releasing semaphore")
                 slides_in_progress.discard(slide_index)
 
     def _infer_visual_density(self, deck_state: DeckState, slide_outline: Any) -> str:

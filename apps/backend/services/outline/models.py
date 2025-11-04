@@ -118,8 +118,61 @@ class ChartDataPoint(BaseModel):
     id: str = Field(default="", description="Unique identifier")
 
 
+class StructuredSlideOutput(BaseModel):
+    """Structured output from Perplexity with clean chart data"""
+    content: str = Field(description="Clean bullet points only, no metadata headers")
+    chartData: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="""OPTIONAL: Provide ONLY when you have numerical data that benefits from axis-based comparison.
+
+WHEN TO PROVIDE chartData:
+✅ You have quantitative data from research/search results
+✅ Values are in consistent units (all $, all %, all counts)
+✅ Data shows patterns better visualized on axes than as text
+
+WHEN TO OMIT chartData:
+❌ Content is about people/roles/hierarchies (use text/CustomComponent instead)
+❌ Content is event timeline/roadmap (use text/CustomComponent instead)
+❌ Less than 5 data points
+❌ Mixed units that can't be dual-axis
+
+FORMAT: [{"name": "Category", "value": 123.45}, ...]
+For dual-axis: [{"name": "Q1", "value": 2500, "series": "Revenue ($M)"}, {"name": "Q1", "value": 35, "series": "Growth (%)"}]
+
+CRITICAL RULES:
+- ALL values in same series MUST be same unit
+- Maximum 2 different units (dual-axis)
+- Minimum 5 data points
+- Use REAL research data only"""
+    )
+    chartType: Optional[str] = Field(
+        default=None,
+        description="""Chart type to match your data pattern. Available types:
+        
+COMMON TYPES (use most often):
+- "bar" or "column": Numerical comparisons across categories
+- "line" or "area": Numerical trends over time  
+- "pie": Percentage distribution totaling ~100%
+
+SPECIALIZED TYPES (use for variety and specific patterns):
+- "waterfall": Sequential numerical changes/cumulative flow
+- "sankey": Quantitative flows between stages
+- "radar": Multi-dimensional numerical comparison
+- "treemap": Numerical hierarchies (market cap by sector/company, storage by folder/file)
+- "sunburst": Multi-level numerical breakdown (budget by dept/subdept/category)
+- "scatter": Correlation between two numerical variables
+- "bubble": 3D numerical data (x, y, size)
+
+Choose the type that best reveals the pattern. Use variety across presentation!"""
+    )
+    dualAxis: Optional[bool] = Field(
+        default=False,
+        description="True if using 2 series with different units (creates dual Y-axes)"
+    )
+
+
 class TypedSlideResponse(BaseModel):
-    """Slide response adapted for different slide types"""
+    """Slide response adapted for different slide types (legacy - for non-Perplexity models)"""
     content: str = Field(description="Slide content appropriate for the slide type")
     slide_type: str = Field(description="Type of slide: title, transition, content, or conclusion")
     has_statistics: bool = Field(description="True if content mentions quantitative data that would benefit from visualization")

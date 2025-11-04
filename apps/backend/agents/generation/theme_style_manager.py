@@ -1090,24 +1090,38 @@ Available fonts by category (installable):
 🚨 BRAND PRIORITY:
 - If this is a brand deck and brand fonts are known/scraped, USE those fonts (match to available list). Otherwise, pick creative fonts below.
 
+🎯 FONT SELECTION PRIORITY (CRITICAL - FOLLOW THIS ORDER!):
+1. **LOCAL DESIGNER FONTS** (Check "Designer" and "Designer Local" categories FIRST!)
+   - These are premium, unique fonts perfect for headers and impact
+   - Examples: Hyperion, Marine Elmoure Sans Serif, Hiluna, Alerio Sans Serif, Glorida, HKGroteskWide
+   - Use these for hero text to make presentations stand out!
+
+2. **PIXELBUDDHA FONTS** (Creative, professional display fonts)
+   - Excellent for hero text and distinctive titles
+   - Check the PixelBuddha category for unique options
+
+3. **GOOGLE FONTS** (Only as fallback for body text if Designer/PixelBuddha don't fit)
+   - Use for highly readable body content when needed
+
 🚫 AVOID OVERUSED / DEFAULT PAIRS:
 - Do NOT use: Inter, Roboto+Roboto, Montserrat+Montserrat, Poppins+Poppins, Open Sans+Open Sans, Lato+Lato
 - Do NOT repeat the same 3 pairings across decks. Prefer variety when context allows.
+- NEVER use Arial, Helvetica, or Times New Roman!
 
-🎨 CREATIVE CATEGORIES (MIX BOLDLY):
-- Editorial & Magazine: Bodoni Moda, Rozha One, Arvo, Tenor Sans
-- Geometric & Neo-grotesque: Questrial, Dosis, Poiret One, Satoshi, Space Grotesk, Cabinet Grotesk
-- Tech & Startup: IBM Plex (Sans/Mono), Oxanium, Tomorrow, Orbitron
-- Luxury & Fashion: Cormorant (Garamond/Infant/SC), Italiana, Gilda Display
-- Retro & Unique: Bungee (Inline/Hairline), Monoton, Fascinate, Audiowide, Press Start 2P
-- Branding & Corporate: Prompt, Radio Canada, M PLUS, Noto Sans/Serif
+🎨 CREATIVE CATEGORIES (MIX BOLDLY WITH DESIGNER FONTS!):
+- Editorial & Magazine: Oranienbaum, Bodoni Moda, Rozha One, Arvo, Slabo, Faustina, Noticia Text, Tenor Sans + Designer fonts from serif category
+- Geometric & Neo-grotesque: Questrial, Dosis, Poiret One, Satoshi, Space Grotesk, Cabinet Grotesk + Designer geometric fonts
+- Tech & Startup: IBM Plex (Sans/Mono), Oxanium, Tomorrow, Orbitron + Hyperion, Synthetika
+- Luxury & Fashion: Cormorant, Italiana, Gilda Display + AV Galveria, Qitella Modern Stylist Font
+- Retro & Unique: Bungee, Monoton, Fascinate, Audiowide + Vintage Brunch, Binary Groove, Nebula Swirl
+- Branding & Corporate: Prompt, Radio Canada, M PLUS + Marine Elmoure, Hiluna, Glorida
 
 PAIR BY DECK TYPE (GUIDANCE, NOT LIMITS):
 - Investor/Startup: Display (Orbitron, Tomorrow) + Workhorse Sans (Satoshi, Space Grotesk)
-- Corporate/Enterprise: Editorial Serif (Bodoni Moda) + Corporate Sans (Prompt, Radio Canada)
+- Corporate/Enterprise: Editorial Serif (Oranienbaum, Bodoni Moda) + Corporate Sans (Prompt, Radio Canada)
 - Product/Tech Demo: Tech Display (Oxanium) + Geometric Sans (Questrial, Dosis)
 - Luxury/Fashion: Elegant Serif (Cormorant, Italiana) + Refined Sans (Tenor Sans)
-- Editorial/Magazine: Serif Display (Rozha One) + Contemporary Sans (Instrument Sans, Bricolage)
+- Editorial/Magazine: Serif Display (Oranienbaum, Rozha One, Bodoni Moda) + Contemporary Sans (Instrument Sans, Bricolage)
 - Playful/Kids/Games: BOLD Playful (Fredoka, Bebas Neue, Bungee, Bangers, Righteous) + Friendly Sans (Nunito, Quicksand, Comfortaa, Comic Neue)
 - Retro Gaming: Pixel/Retro (Press Start 2P, VT323, Monoton) + Tech Sans (Space Mono, Orbitron)
 - Scientific/Data: Editorial Serif (Faustina, Noticia) + Monospace (JetBrains Mono, Fira Code)
@@ -1128,7 +1142,7 @@ Hero Font: [exact name from available list]
 Body Font: [different exact name from available list]
 
 Example:
-Hero Font: Rozha One
+Hero Font: Oranienbaum
 Body Font: Space Grotesk
 """
             

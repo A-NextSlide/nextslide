@@ -924,12 +924,20 @@
       "NEVER BORING: Every background should enhance the visual story"
     ],
     "chart_enforcement": [
-      "CRITICAL: Include charts on EVERY slide with ANY quantitative data",
-      "Look for: percentages, growth rates, metrics, comparisons, trends",
-      "If slide mentions numbers, CREATE A CHART",
-      "Chart MUST use the exact data from content/extractedData",
-      "Charts should be LARGE (1000x800 min) and DOMINATE the slide",
-      "NO EXCEPTIONS - every data point needs visualization"
+      "📊 CHART COMPONENT CAPABILITIES:",
+      "- Strength: Axis-based numerical comparison and pattern visualization",
+      "- Requires: Quantitative values in consistent units",
+      "- Best for: Statistical/research data that benefits from visual comparison",
+      "- Variety: Don't default to bar/line - use pie, waterfall, radar, treemap, scatter based on data pattern",
+      "",
+      "🎨 CUSTOM COMPONENT CAPABILITIES:",
+      "- Strength: Structured layouts, hierarchies, interactions, qualitative relationships", 
+      "- Can create: Org structures, timelines, comparison cards, decision flows, interactive elements",
+      "- Best for: Non-numerical content (people, events, processes, before/after)",
+      "",
+      "Let content guide your choice. Numbers on axes? Chart. Structure/relationships? CustomComponent.",
+      "Chart size: 880x600-800px (half-slide width) for data-focused slides",
+      "Chart MUST use exact data from search results when available"
     ],
     "creative_usage": {
       "background": "Choose gradient from theme colors OR solid colors based on content needs",

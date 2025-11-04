@@ -401,24 +401,44 @@ export function convertBumpData(data: ChartSeries[], colors?: string[]): Highcha
  * Get common Highcharts options based on our chart props
  */
 export function getCommonHighchartsOptions(props: any): Partial<Highcharts.Options> {
+  // Only show axis titles if showAxisLegends is true
+  const showAxisTitles = props.showAxisLegends !== false;
+  
+  // Check if we have axis titles that need space
+  const hasBottomTitle = showAxisTitles && props.axisBottom?.legend;
+  const hasLeftTitle = showAxisTitles && props.axisLeft?.legend;
+  
+  // Calculate margins - ensure enough space for axis titles
+  let chartMargins: any = {};
+  if (props.margin) {
+    chartMargins = {
+      marginTop: props.margin.top,
+      marginRight: props.margin.right,
+      marginBottom: props.margin.bottom,
+      marginLeft: props.margin.left
+    };
+    
+    // Add extra space for axis titles if they're shown
+    if (hasBottomTitle && chartMargins.marginBottom < 50) {
+      chartMargins.marginBottom = 50;
+    }
+    if (hasLeftTitle && chartMargins.marginLeft < 65) {
+      chartMargins.marginLeft = 65;
+    }
+  }
+  
   return {
     chart: {
       animation: props.animate !== false,
-      // Let Highcharts use its default margins and spacing
-      // Only set margins if explicitly provided in props
-      ...(props.margin ? {
-        marginTop: props.margin.top,
-        marginRight: props.margin.right,
-        marginBottom: props.margin.bottom,
-        marginLeft: props.margin.left
-      } : {})
+      ...chartMargins
     },
     title: {
       text: undefined // We don't use titles in our charts
     },
     xAxis: {
       title: {
-        text: props.axisBottom?.legend || '',
+        text: showAxisTitles ? (props.axisBottom?.legend || '') : '',
+        margin: 10, // Closer to axis
         // Don't override style - let it inherit from theme
       },
       labels: {
@@ -427,7 +447,8 @@ export function getCommonHighchartsOptions(props: any): Partial<Highcharts.Optio
     },
     yAxis: {
       title: {
-        text: props.axisLeft?.legend || '',
+        text: showAxisTitles ? (props.axisLeft?.legend || '') : '',
+        margin: 10, // Closer to axis
         // Don't override style - let it inherit from theme
       },
       labels: {

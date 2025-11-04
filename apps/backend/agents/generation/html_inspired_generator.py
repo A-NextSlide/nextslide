@@ -24,10 +24,10 @@ from agents.prompts.generation.html_inspired_system_prompt_enhanced import (
 )
 from agents.prompts.generation.html_inspired_system_prompt_v2 import (
     get_html_inspired_system_prompt_v2,
-    get_condensed_component_schemas,
     get_mode_specific_guidance
 )
 from agents.generation.design_pattern_examples import get_pattern_examples_text
+from agents.rag.schema_extractor import SchemaExtractor
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -55,6 +55,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         """
         self.base_generator = base_generator
         self._component_schemas_cache = None  # Lazy load component schemas
+        self._schema_extractor = SchemaExtractor()  # Initialize schema extractor
         logger.info("✅ HTMLInspiredSlideGenerator initialized with Claude caching")
 
     async def generate_slide(
@@ -249,9 +250,41 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
 
         # Use V2 prompt (mode-specific design philosophy)
         v2_prompt = get_html_inspired_system_prompt_v2()
-        schema_section = get_condensed_component_schemas()
+        
+        # Get COMPLETE schemas from typebox using SchemaExtractor
+        # Include all commonly used components
+        component_list = [
+            'Background', 'TiptapTextBlock', 'Image', 'Lines', 'Line',
+            'Icon', 'Shape', 'ShapeWithText', 'Chart', 'Table',
+            'CustomComponent', 'ReactBits', 'Group', 'Video', 'Math', 'Diagram'
+        ]
+        schema_section = self._schema_extractor.format_for_prompt(component_list)
+        
+        # Add header and usage instructions
+        schema_section = f"""
+═══════════════════════════════════════════════════════════════════════════════
+📋 COMPLETE COMPONENT SCHEMAS - USE ALL AVAILABLE PROPERTIES
+═══════════════════════════════════════════════════════════════════════════════
 
-        # Build cached part: V2 prompt + condensed schemas
+🚨 CRITICAL: These are the COMPLETE schemas with ALL available properties.
+✅ USE all relevant properties for each component
+✅ Don't skip optional properties that improve design (opacity, rotation, zIndex, etc.)
+✅ All properties shown below are available and should be used when appropriate
+
+{schema_section}
+
+🎯 IMPORTANT REMINDERS:
+• TiptapTextBlock: ALWAYS include alignment, verticalAlignment, padding (0), textColor, fontSize, fontFamily
+• Image: ALWAYS set objectFit ("contain" for logos, "cover" for photos)
+• Shape: When hasText=true, MUST include texts, fontSize, textColor, alignment, verticalAlignment
+• Lines: ALWAYS use startPoint/endPoint with {{x, y}} coordinates
+• CustomComponent: ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds
+• All components: Consider opacity, rotation, zIndex for visual effects
+
+═══════════════════════════════════════════════════════════════════════════════
+"""
+
+        # Build cached part: V2 prompt + complete schemas
         cached_part = f"""{v2_prompt}
 
 {schema_section}"""
@@ -283,8 +316,30 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
                 if data and len(data) > 0:
                     import json
                     chart_info += f"\nCOMPLETE DATA:\n{json.dumps(data, indent=2)}\n"
-                    chart_info += f"\n🚨 CRITICAL: Use Chart component positioned left (x=80, width=880) OR right (x=960, width=880)!"
-                    chart_info += f"\nChart props: chartType='{chart_type}', data=[use exact data above], showLegend=false"
+                    chart_info += f"\n🚨 CRITICAL CHART POSITIONING - CALCULATE FROM CONTENT START:\n"
+                    chart_info += f"\n**STEP 1: Calculate contentStartY**"
+                    chart_info += f"\n  • If slide has title: slideTitle ends at ~234, line ends at ~254"
+                    chart_info += f"\n  • contentStartY = 254 + 26 = 280 (minimum)"
+                    chart_info += f"\n  • NEVER use fixed y=180 or y=240!"
+                    chart_info += f"\n\n**STEP 2: Position Chart Title**"
+                    chart_info += f"\n  • chartTitleY = contentStartY (e.g., 280)"
+                    chart_info += f"\n  • Chart title: x=80, y=280, width=800, fontSize=28, height=32"
+                    chart_info += f"\n\n**STEP 3: Position Chart**"
+                    chart_info += f"\n  • chartY = chartTitleY + 32 + 18 = 330"
+                    chart_info += f"\n  • Chart: x=80, y=330, width=800, height=540"
+                    chart_info += f"\n  • Verify ends at: 330 + 540 = 870 ✅ (< 1000)"
+                    chart_info += f"\n\n**STEP 4: Position Insights Right**"
+                    chart_info += f"\n  • Text insights: x=960, y=280 (same as chart title), width=760"
+                    chart_info += f"\n  • Stack with 50px gaps: y=280, 350, 420, 490"
+                    chart_info += f"\n\n**NEVER**: Chart + Image on same slide = overlaps! Choose chart OR image, not both!"
+                    chart_info += f"\n\nChart props REQUIRED:"
+                    chart_info += f"\n  • chartType='{chart_type}'"
+                    chart_info += f"\n  • data=[use exact data above]"
+                    chart_info += f"\n  • margin: {{top: 20, right: 20, bottom: 60, left: 80}}"
+                    chart_info += f"\n  • axisBottom: {{legend: 'Category', legendOffset: 36}}"
+                    chart_info += f"\n  • axisLeft: {{legend: 'Value', legendOffset: -60}}"
+                    chart_info += f"\n  • showLegend: false"
+                    chart_info += f"\n  • backgroundColor: '#00000000'"
                 
                 logger.info(f"✅ [CHART] Added {data_count} data points to prompt for slide {context.slide_index + 1}")
             except Exception as e:
@@ -297,43 +352,50 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         # 🚨 Detect multi-item content for special guidance
         multi_item_guidance = ""
         try:
-            # Simple detection: Look for lists, bullets, multiple capitalized names
-            content_lower = context.slide_outline.content.lower()
-            title_lower = context.slide_outline.title.lower()
-            
-            # Count list indicators
-            list_indicators = content_lower.count('\n-') + content_lower.count('\n•') + content_lower.count('\n*')
-            
-            # Count capitalized words (potential item names)
-            import re
-            capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b', context.slide_outline.content)
-            unique_caps = len(set(capitalized_words))
-            
-            # Detect multi-item scenarios
-            is_multi_item = (
-                list_indicators >= 2 or  # Has 2+ list items
-                unique_caps >= 3 or  # Has 3+ different capitalized names
-                any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries']) or
-                any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'])  # Common multi-item examples
-            )
-            
-            if is_multi_item:
-                # Extract item names for logging
-                item_names = []
-                lines = context.slide_outline.content.split('\n')
-                for line in lines:
-                    line = line.strip().lstrip('-•*0123456789. ')
-                    if line and len(line) > 2 and line[0].isupper():
-                        # Get first 1-2 words
-                        words = line.split()[:2]
-                        item_name = ' '.join(words)
-                        if len(item_name) > 2:
-                            item_names.append(item_name)
+            # SKIP multi-item image guidance if slide has chart data (chart takes priority!)
+            if context.has_chart_data:
+                logger.info(f"⚠️ [MULTI-ITEM] Skipping multi-item image guidance for slide {context.slide_index + 1} - has chart data")
+                multi_item_guidance = ""
+            else:
+                # Simple detection: Look for lists, bullets, multiple capitalized names
+                content_lower = context.slide_outline.content.lower()
+                title_lower = context.slide_outline.title.lower()
                 
-                if len(item_names) >= 2:
-                    logger.info(f"🎯 [MULTI-ITEM DETECTED] Slide {context.slide_index + 1} has {len(item_names)} items: {item_names}")
+                # Count list indicators
+                list_indicators = content_lower.count('\n-') + content_lower.count('\n•') + content_lower.count('\n*')
+                
+                # Count capitalized words (potential item names)
+                import re
+                capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b', context.slide_outline.content)
+                unique_caps = len(set(capitalized_words))
+                
+                # Detect multi-item scenarios
+                is_multi_item = (
+                    list_indicators >= 2 or  # Has 2+ list items
+                    unique_caps >= 3 or  # Has 3+ different capitalized names
+                    any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries']) or
+                    any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'])  # Common multi-item examples
+                )
+                
+                if not is_multi_item:
+                    multi_item_guidance = ""
+                elif is_multi_item:
+                    # Extract item names for logging
+                    item_names = []
+                    lines = context.slide_outline.content.split('\n')
+                    for line in lines:
+                        line = line.strip().lstrip('-•*0123456789. ')
+                        if line and len(line) > 2 and line[0].isupper():
+                            # Get first 1-2 words
+                            words = line.split()[:2]
+                            item_name = ' '.join(words)
+                            if len(item_name) > 2:
+                                item_names.append(item_name)
                     
-                    multi_item_guidance = f"""
+                    if len(item_names) >= 2:
+                        logger.info(f"🎯 [MULTI-ITEM DETECTED] Slide {context.slide_index + 1} has {len(item_names)} items: {item_names}")
+                        
+                        multi_item_guidance = f"""
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 MULTI-ITEM SLIDE DETECTED - BREAK APART INTO SECTIONS!
@@ -461,8 +523,40 @@ Line/Lines:
 {mode_guidance}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 SLIDE-SPECIFIC INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚨 CRITICAL LAYOUT RULE - CHART OR IMAGE, NEVER BOTH:
+• If slide has Chart data → NO Image component (chart is the visual!)
+• Use PATTERN 4 (Chart + Insights) from system prompt
+• Chart left + text insights right OR chart bottom + text top
+• Verify no overlaps: chart and text must have 80px gap minimum
+
+🚨 BREAK THIS CONTENT INTO MULTIPLE TIPTAPTEXTBLOCK COMPONENTS:
+• Each section/topic = separate TiptapTextBlock
+• Each bullet point = separate TiptapTextBlock  
+• Different importance levels = different font sizes in separate blocks
+• NEVER use \\n newlines - that creates tiny unreadable text!
+
+📏 FONT SIZE REQUIREMENTS:
+• Headers/topics: 48-72pt (large, bold)
+• Body/details: 32-42pt (readable)
+• Minimum: NEVER go below 28pt for any body text!
+
+📐 POSITIONING STRATEGY:
+1. Choose layout pattern from V2 (Split-screen, Grid, Single-column)
+2. Calculate positions: nextY = currentY + currentHeight + gap
+3. Verify no overlaps before outputting
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 CRITICAL VALIDATION CHECKLIST - VERIFY BEFORE OUTPUTTING!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔴 TEXT STRUCTURE (CHECK FIRST):
+✅ Content broken into MULTIPLE TiptapTextBlock components (one per section/bullet)
+✅ NO \\n newlines in any text (that causes tiny fonts!)
+✅ Each TiptapTextBlock has proper fontSize: ≥28pt for body, ≥48pt for headers
+✅ Font sizes are READABLE (not 10-15pt!)
 
 🔴 COLOR VALIDATION (CHECK EVERY COMPONENT):
 ✅ Background: backgroundColor="{theme_colors['background']}" ← EXACTLY THIS VALUE
@@ -498,16 +592,35 @@ Generate palette from ACCENT color {theme_colors['accent']} by varying brightnes
 📚 When absolutely needed: 5000+ icons available (Lucide default) - Use kebab-case: "dollar-sign", "trending-up"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ EXAMPLE SLIDE WITH CORRECT COLORS:
+🎯 TEXT ALIGNMENT - CRITICAL RULES (ALWAYS INCLUDE THESE PROPS!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚨 EVERY TiptapTextBlock MUST HAVE alignment AND verticalAlignment props!
+
+**ALIGNMENT RULES BY SLIDE TYPE:**
+✅ TITLE/COVER slides: alignment="left", verticalAlignment="top" (NEVER center!)
+✅ STAT slides: alignment="center", verticalAlignment="middle"
+✅ CONTENT slides: alignment="left", verticalAlignment="top" (body text)
+✅ COMPARISON slides: alignment="center" (for side-by-side items)
+
+**AVAILABLE VALUES:**
+- alignment: "left" | "center" | "right" | "justify"
+- verticalAlignment: "top" | "middle" | "bottom"
+
+**DEFAULT (when in doubt):**
+- alignment="left", verticalAlignment="top"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ EXAMPLE SLIDE WITH CORRECT COLORS & ALIGNMENT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [
   {{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color"}}}},
-  {{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "x": 100, "y": 100, "content": "Title"}}}},
-  {{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "x": 100, "y": 200, "width": 100, "height": 100}}}}
+  {{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "position": {{"x": 100, "y": 100}}, "width": 800, "height": 92, "texts": [{{"text": "Title"}}], "fontSize": 72, "alignment": "left", "verticalAlignment": "top", "padding": 0}}}},
+  {{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "position": {{"x": 100, "y": 200}}, "width": 100, "height": 100}}}}
 ]
-↑ THIS IS CORRECT - Background={theme_colors['background']}, Text={theme_colors['text']}, Shape={theme_colors['accent']}
+↑ THIS IS CORRECT - Background={theme_colors['background']}, Text={theme_colors['text']}, Shape={theme_colors['accent']}, PLUS alignment props!
 
-Output valid JSON component array now (using the 3 colors above EXACTLY):"""
+Output valid JSON component array now (using the 3 colors above EXACTLY + alignment props):"""
         
         # Combine with cache delimiter for Claude caching
         full_prompt = cached_part + CACHE_DELIM + dynamic_part
@@ -524,22 +637,22 @@ Output valid JSON component array now (using the 3 colors above EXACTLY):"""
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: ABSOLUTELY MASSIVE TiptapTextBlock (450-650pt, fontWeight=900, width=1700-1800) + clean solid Background (NO images, NO gradients!). BLOW UP THE TEXT - TAKE UP THE PAGE!"
+            return "TITLE: ABSOLUTELY MASSIVE TiptapTextBlock (450-650pt, fontWeight=900, width=1700-1800, alignment='left', verticalAlignment='top') + clean solid Background (NO images, NO gradients!). 🚨 CRITICAL: ALWAYS use alignment='left' for title slides - NEVER center!"
         
         elif 'stat' in slide_type:
-            return "STAT: ReactBits count-up OR CustomComponent dashboard (theme colors ONLY!). Clean layout, minimal boxes. Add Image for visual impact!"
+            return "STAT: ReactBits count-up OR CustomComponent dashboard (theme colors ONLY!). For TiptapTextBlock stats: alignment='center', verticalAlignment='middle'. Clean layout, minimal boxes. Add Image for visual impact!"
         
         elif 'comparison' in slide_type:
-            return "COMPARISON: CustomComponent (theme colors!) OR split + Lines divider + TiptapTextBlock (NO boxes). Add Image for context!"
+            return "COMPARISON: CustomComponent (theme colors!) OR split + Lines divider + TiptapTextBlock (alignment='center' for side-by-side items). Add Image for context!"
         
         elif 'process' in slide_type or 'timeline' in slide_type:
-            return "PROCESS: CustomComponent timeline (theme colors!) OR Lines + minimal Shapes + TiptapTextBlock. Add Image (diagram/illustration)!"
+            return "PROCESS: CustomComponent timeline (theme colors!) OR Lines + minimal Shapes + TiptapTextBlock (alignment='left', verticalAlignment='top'). Add Image (diagram/illustration)!"
         
         elif 'data' in slide_type or 'chart' in slide_type:
-            return "DATA: Include Chart component with provided data OR CustomComponent visualization. Position chart left/right (x=80 width=880 OR x=960 width=880). Add TiptapTextBlock insights."
+            return "DATA: Include Chart component with provided data OR CustomComponent visualization. Position chart left/right (x=80 width=880 OR x=960 width=880). Add TiptapTextBlock insights (alignment='left', verticalAlignment='top')."
         
         else:
-            return "CONTENT: TiptapTextBlock directly on background (NO boxes!) + Image (LARGE, 50-60% of slide). Shape ONLY for key highlights. Use theme colors!"
+            return "CONTENT: TiptapTextBlock directly on background (alignment='left', verticalAlignment='top' for body text, NO boxes!) + Image (LARGE, 50-60% of slide). Shape ONLY for key highlights. Use theme colors!"
     
     async def complete_generation(self, context: SlideGenerationContext) -> None:
         """Pass through to base generator"""

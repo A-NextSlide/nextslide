@@ -83,25 +83,31 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
     if (open && groups) {
       // Load system fonts and common fonts immediately
       const systemFonts = groups['System & Web Safe'] || [];
-      const sansFonts = (groups['Sans-Serif'] || []).slice(0, 5); // Only first 5
+      const awwwardsFonts = (groups['Awwwards Picks'] || []).slice(0, 10); // First 10 Awwwards fonts
+      const sansFonts = (groups['Sans-Serif'] || []).slice(0, 10); // First 10 sans-serif
       
-      // Load high priority fonts immediately
-      const highPriorityFonts = [...systemFonts, ...sansFonts];
+      // Load high priority fonts immediately (these appear first in dropdown)
+      const highPriorityFonts = [...systemFonts, ...awwwardsFonts, ...sansFonts];
       highPriorityFonts.forEach(font => {
         if (!FontLoadingService.isFontLoaded(font)) {
           FontLoadingService.loadFont(font);
         }
       });
       
-      // Load other categories progressively with delay
+      // Load the currently selected value immediately to ensure it displays
+      if (value && !FontLoadingService.isFontLoaded(value)) {
+        FontLoadingService.loadFont(value);
+      }
+      
+      // Load other categories progressively with shorter delays
       const categoryOrder = [
-        'Awwwards Picks', 'Designer', 'PixelBuddha', 'Designer Local', 'Pixel & Retro Display', 'Premium', 'Serif', 'Monospace', 'Design', 
-        'Bold', 'Elegant', 'Contemporary', 'Sans-Serif', 'Variable', 'Modern',
-        'Unique'
+        'Designer', 'Premium', 'Serif', 'Monospace', 'Design', 
+        'Bold', 'Elegant', 'Contemporary', 'Variable', 'Modern',
+        'PixelBuddha', 'Designer Local', 'Pixel & Retro Display', 'Unique'
       ];
       const orderedCategories = [
         ...categoryOrder,
-        ...Object.keys(groups).filter(cat => !categoryOrder.includes(cat))
+        ...Object.keys(groups).filter(cat => !categoryOrder.includes(cat) && cat !== 'System & Web Safe' && cat !== 'Awwwards Picks' && cat !== 'Sans-Serif')
       ];
       
       orderedCategories.forEach((category, index) => {
@@ -110,11 +116,11 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
             if (open) { // Only load if dropdown is still open
               loadFontsForCategory(category);
             }
-          }, (index + 1) * 500); // Stagger loading by 500ms
+          }, (index + 1) * 100); // Reduced from 500ms to 100ms for faster loading
         }
       });
     }
-  }, [open, groups]);
+  }, [open, groups, value]);
 
   // Ensure the search input retains focus while typing
   useEffect(() => {
@@ -249,22 +255,25 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
     const [fontLoaded, setFontLoaded] = useState(FontLoadingService.isFontLoaded(option));
     const elementRef = useRef<HTMLDivElement>(null);
     
-    // Intersection observer for lazy loading
+    // Intersection observer for lazy loading - use the scroll container as root
     useEffect(() => {
       if (!elementRef.current) return;
+      
+      // Find the Radix scroll viewport as the root
+      const scrollViewport = elementRef.current.closest('[data-radix-scroll-area-viewport]');
       
       const observer = new IntersectionObserver(
         (entries) => {
           const [entry] = entries;
           if (entry.isIntersecting) {
             setIsVisible(true);
-            observer.disconnect(); // Stop observing once visible
+            // Don't disconnect - keep observing for scroll performance
           }
         },
         {
-          root: null,
-          rootMargin: '50px', // Load 50px before becoming visible
-          threshold: 0.1
+          root: scrollViewport, // Use the scroll container as root
+          rootMargin: '100px', // Load 100px before/after visible area
+          threshold: 0
         }
       );
       
@@ -278,13 +287,18 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
       if ((isVisible || isActive) && !fontLoaded) {
         FontLoadingService.loadFont(option).then(() => {
           setFontLoaded(true);
+        }).catch(() => {
+          // Font failed to load, still mark as loaded to prevent retries
+          setFontLoaded(true);
         });
       }
     }, [isVisible, isActive, option, fontLoaded]);
 
-    const handleSelect = () => {
+    const handleSelect = (e?: Event) => {
+      console.log('[GroupedDropdown] Font option clicked:', option, 'loaded:', fontLoaded);
       // Ensure font is loaded before selecting
       FontLoadingService.loadFont(option).finally(() => {
+        console.log('[GroupedDropdown] Calling onChange with:', option);
         onChange(option);       
         setInputValue(option); 
         setOpen(false);         
@@ -298,16 +312,24 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
         key={option}
         data-font-option={option}
         onSelect={(e) => { 
-          e.preventDefault(); 
-          handleSelect(); 
+          e.preventDefault();
+          e.stopPropagation();
+          handleSelect(e); 
         }}
         style={{ 
           fontFamily: fontLoaded ? getFontFamilyWithFallback(option) : 'system-ui, sans-serif',
-          minHeight: '32px' // Prevent layout shift
+          height: '32px', // Fixed height to prevent layout shift
+          lineHeight: '32px',
+          opacity: fontLoaded ? 1 : 0.6, // Subtle visual indicator for loading fonts
+          cursor: 'pointer',
+          position: 'relative',
+          zIndex: 1
         }} 
-        className="text-xs h-8 flex items-center justify-between pr-2"
+        className="text-xs flex items-center justify-between pr-2 hover:bg-accent hover:text-accent-foreground"
       >
-         <span className="truncate">{option}</span>
+         <span className="truncate" style={{ fontFamily: fontLoaded ? getFontFamilyWithFallback(option) : 'system-ui, sans-serif' }}>
+           {option}
+         </span>
          {isActive && <Check className="ml-2 h-3 w-3 shrink-0" />}
       </DropdownMenuItem>
     );
@@ -521,7 +543,8 @@ const GroupedDropdown = forwardRef<HTMLButtonElement, GroupedDropdownProps>(({
                           {/* Category Header */}
                           <div 
                             id={`category-${categoryName}`}
-                            className="sticky top-0 bg-background px-2 py-1.5 mb-1 text-xs font-medium text-muted-foreground border-b border-border shadow-sm z-10"
+                            className="sticky top-0 bg-background px-2 py-1.5 mb-1 text-xs font-medium text-muted-foreground border-b border-border shadow-sm"
+                            style={{ zIndex: 5, pointerEvents: 'none' }}
                           >
                             {categoryName} ({categoryFonts.length})
                           </div>

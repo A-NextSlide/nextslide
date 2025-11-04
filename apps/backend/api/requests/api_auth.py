@@ -309,7 +309,7 @@ async def get_user_decks(
     - offset: Number of decks to skip for pagination
     """
     # Debug logging
-    logger.info(f"Getting user decks - Token present: {token is not None}, Token length: {len(token) if token else 0}")
+    logger.debug(f"Getting user decks - Token present: {token is not None}, Token length: {len(token) if token else 0}")
     
     # Check authentication first
     if not token:
@@ -324,7 +324,7 @@ async def get_user_decks(
         from services.session_manager import validate_token
         user = validate_token(token)
         
-        logger.info(f"User retrieved: {user is not None}, User ID: {user.get('id') if user else 'None'}")
+        logger.debug(f"User retrieved: {user is not None}, User ID: {user.get('id') if user else 'None'}")
         
         if not user:
             logger.error("No user found for token - returning 401")
@@ -541,11 +541,11 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
-                logger.info(f"Getting deck {deck_uuid} for user {user_id}")
+                logger.debug(f"Getting deck {deck_uuid} for user {user_id}")
             else:
                 logger.warning(f"Invalid token when fetching deck {deck_uuid}")
         else:
-            logger.info(f"Getting deck {deck_uuid} without authentication")
+            logger.debug(f"Getting deck {deck_uuid} without authentication")
         
         # Get deck from database
         deck = get_deck(deck_uuid)
@@ -563,10 +563,10 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
         # 3. User has access through collaboration
         if deck_user_id is None:
             # Anonymous deck - allow access
-            logger.info(f"Allowing access to anonymous deck {deck_uuid}")
+            logger.debug(f"Allowing access to anonymous deck {deck_uuid}")
         elif user_id and deck_user_id == user_id:
             # User owns the deck
-            logger.info(f"User {user_id} owns deck {deck_uuid}")
+            logger.debug(f"User {user_id} owns deck {deck_uuid}")
         elif user_id:
             # Check if user has collaboration access
             from services.deck_sharing_service import DeckSharingService
@@ -619,7 +619,7 @@ async def create_deck(
     try:
         # Get raw body to debug
         body = await request.json()
-        logger.info(f"Deck creation request for: {body.get('name', 'Unknown')}")
+        logger.debug(f"Deck creation request for: {body.get('name', 'Unknown')}")
         
         # Manually validate
         try:
@@ -628,7 +628,7 @@ async def create_deck(
             logger.error(f"Validation failed: {e.json()}")
             raise HTTPException(status_code=422, detail=e.errors())
         
-        logger.info(f"Deck creation request received: uuid={deck_request.uuid}, name={deck_request.name}")
+        logger.debug(f"Deck creation request received: uuid={deck_request.uuid}, name={deck_request.name}")
         
         if not token:
             raise HTTPException(status_code=401, detail="Authentication required")
@@ -675,7 +675,7 @@ async def create_deck(
         result = supabase.table("decks").insert(deck_data).execute()
         
         if result.data:
-            logger.info(f"Deck {deck_request.uuid} created by user {user['id']}")
+            logger.debug(f"Deck {deck_request.uuid} created by user {user['id']}")
             
             # Also create user_decks association
             try:
@@ -789,7 +789,7 @@ async def update_deck(
         )
         
         if result.data:
-            logger.info(f"Deck {deck_uuid} updated by user {user['id']}")
+            logger.debug(f"Deck {deck_uuid} updated by user {user['id']}")
             return result.data[0]
         else:
             raise HTTPException(status_code=400, detail="Failed to update deck")
@@ -1180,7 +1180,7 @@ async def get_user_decks_optional(
     TEMPORARY: Get decks with optional authentication
     Returns empty list if not authenticated instead of 401 error
     """
-    logger.info(f"Getting user decks (optional auth) - Token present: {token is not None}")
+    logger.debug(f"Getting user decks (optional auth) - Token present: {token is not None}")
     
     # If no token, return empty results
     if not token:

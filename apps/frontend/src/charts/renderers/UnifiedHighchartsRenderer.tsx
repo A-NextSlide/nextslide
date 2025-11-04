@@ -1099,6 +1099,7 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           colors: rawColors,
           enableGrid,
           showLegend,
+          showAxisLegends,
           tickSpacing,
           tickSpacingY,
           axisBottom,
@@ -1339,7 +1340,8 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
               labels: {
                 ...(highchartsOptions.xAxis as any)?.labels,
                 ...(chartSpecificOptions.xAxis as any)?.labels,
-                rotation: 0, // Flat labels (no slant)
+                // Respect tick rotation from axisBottom config
+                rotation: (axisBottom as any)?.tickRotation ?? 0,
                 y: Math.round(40 * containerScale), // Moved down even more (was 35, now 40)
                 style: {
                   ...(highchartsOptions.xAxis as any)?.labels?.style,
@@ -1354,6 +1356,8 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
               title: {
                 ...(highchartsOptions.xAxis as any)?.title,
                 ...(chartSpecificOptions.xAxis as any)?.title,
+                // Respect showAxisLegends toggle
+                text: showAxisLegends !== false ? ((highchartsOptions.xAxis as any)?.title?.text || (chartSpecificOptions.xAxis as any)?.title?.text) : '',
                 style: {
                   ...(highchartsOptions.xAxis as any)?.title?.style,
                   ...(chartSpecificOptions.xAxis as any)?.title?.style,
@@ -1364,14 +1368,19 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
             yAxis: {
               ...highchartsOptions.yAxis,
               ...chartSpecificOptions.yAxis,
-              // Do not auto-adjust Y tick spacing; leave to Highcharts defaults or explicit props
-              tickInterval: undefined,
+              // Apply Y tick spacing if specified (higher values = fewer ticks)
+              tickInterval: typeof tickSpacingY === 'number' && tickSpacingY > 1 ? undefined : undefined,
+              // Use tickAmount to control number of ticks based on tickSpacingY
+              ...(typeof tickSpacingY === 'number' && tickSpacingY > 1 ? {
+                tickAmount: Math.max(2, Math.ceil(10 / tickSpacingY))
+              } : {}),
               gridLineWidth: enableGrid ? 1 : 0,
               // Ensure labels style is preserved from theme
               labels: {
                 ...(highchartsOptions.yAxis as any)?.labels,
                 ...(chartSpecificOptions.yAxis as any)?.labels,
-                rotation: 0, // Flat labels
+                // Respect tick rotation from axisLeft config
+                rotation: (axisLeft as any)?.tickRotation ?? 0,
                 x: Math.round(-8 * containerScale), // Position away from axis for more space
                 style: {
                   ...(highchartsOptions.yAxis as any)?.labels?.style,
@@ -1386,6 +1395,8 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
               title: {
                 ...(highchartsOptions.yAxis as any)?.title,
                 ...(chartSpecificOptions.yAxis as any)?.title,
+                // Respect showAxisLegends toggle
+                text: showAxisLegends !== false ? ((highchartsOptions.yAxis as any)?.title?.text || (chartSpecificOptions.yAxis as any)?.title?.text) : '',
                 style: {
                   ...(highchartsOptions.yAxis as any)?.title?.style,
                   ...(chartSpecificOptions.yAxis as any)?.title?.style,
@@ -1453,11 +1464,24 @@ const UnifiedHighchartsRenderer: React.FC<UnifiedHighchartsRendererProps> = ({
           // Scale default margins with container size so charts keep similar proportions
           if ((props as any).margin && baseChartOptions.chart) {
             const m = (props as any).margin as { top?: number; right?: number; bottom?: number; left?: number };
+            
+            // Check if we have axis titles that need minimum space
+            const hasBottomTitle = showAxisLegends !== false && axisBottom?.legend;
+            const hasLeftTitle = showAxisLegends !== false && axisLeft?.legend;
+            
             const scaled = {
               marginTop: Math.max(0, Math.round((m.top ?? 0) * containerScale)),
               marginRight: Math.max(0, Math.round((m.right ?? 0) * containerScale)),
-              marginBottom: Math.max(0, Math.round((m.bottom ?? 0) * containerScale)),
-              marginLeft: Math.max(0, Math.round((m.left ?? 0) * containerScale)),
+              // Ensure bottom margin is at least 40px if we have a bottom axis title
+              marginBottom: Math.max(
+                hasBottomTitle ? 40 : 0, 
+                Math.round((m.bottom ?? 0) * containerScale)
+              ),
+              // Ensure left margin is at least 50px if we have a left axis title
+              marginLeft: Math.max(
+                hasLeftTitle ? 50 : 0, 
+                Math.round((m.left ?? 0) * containerScale)
+              ),
             };
             baseChartOptions = {
               ...baseChartOptions,

@@ -1,10 +1,10 @@
 """
 Curated PixelBuddha Font List
-Top 80 fonts selected for quality, versatility, and performance.
+Top 79 fonts selected for quality, versatility, and performance.
 These fonts are used for hero/title text only (never body text).
 """
 
-# Curated list of 80 best PixelBuddha fonts for hero/title text
+# Curated list of 79 best PixelBuddha fonts for hero/title text
 # Selected based on: design quality, versatility, metadata scoring, and usability
 # These are the ACTUAL font IDs from the registry
 CURATED_PIXELBUDDHA_FONTS = [
@@ -83,7 +83,6 @@ CURATED_PIXELBUDDHA_FONTS = [
     "4726-bodywork-modern-blackletter",
     "4749-kindly-season-3-font",
     "4753-valor-forge-bold-masculine-typeface",
-    "4774-akshita-display-font",
     "4776-fernaria-elegant-art-nouveau-typeface",
     "4791-bionca-stylistic-sans-serif",
     "4792-shinier-sans-serif-font",

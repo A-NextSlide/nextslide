@@ -65,6 +65,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ensure dropdown menus appear above all other content */
+[data-radix-popper-content-wrapper] {
+  z-index: 99999 !important;
+}
+
+/* Prevent layout shifts during font loading in dropdowns */
+[data-radix-scroll-area-viewport] {
+  overflow-anchor: none; /* Disable scroll anchoring to prevent jumps */
+}
+
+/* Smooth scrolling for font dropdowns */
+[data-radix-scroll-area-viewport]:has([data-font-option]) {
+  scroll-behavior: auto; /* Instant scrolling for better control */
+  will-change: scroll-position; /* Optimize for scrolling */
+}
+
+/* Ensure consistent sizing for font options */
+[data-font-option] {
+  contain: layout; /* Isolate layout calculations */
+}
+
 /* Slide progressive loading animations */
 @keyframes slideContentFadeIn {
   from {

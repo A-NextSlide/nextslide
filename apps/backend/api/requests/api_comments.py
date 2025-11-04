@@ -102,7 +102,23 @@ async def create_comment(deck_id: str, request: CreateCommentRequest, token: Opt
     if request.mentions is not None:
         payload["mention_user_ids"] = request.mentions
     res = supabase.table("comments").insert(payload).execute()
-    return res.data[0] if res.data else {"deck_id": deck_id, "body": request.body}
+    
+    if not res.data:
+        raise HTTPException(status_code=500, detail="Failed to create comment")
+    
+    comment = res.data[0]
+    
+    # Fetch author name for the response
+    author_res = supabase.table("users").select("email, full_name, metadata").eq("id", user["id"]).single().execute()
+    if author_res.data:
+        # Use full_name directly from users table, or fall back to metadata or email
+        full_name = author_res.data.get("full_name")
+        if not full_name:
+            metadata = author_res.data.get("metadata") or {}
+            full_name = metadata.get("full_name") or metadata.get("name")
+        comment["author_name"] = full_name or author_res.data.get("email", "").split("@")[0]
+    
+    return comment
 
 
 @router.get("/{deck_id}/comments")
@@ -115,7 +131,14 @@ async def list_comments(
     user = _require_user(token)
     _assert_can_comment(deck_id, user["id"])  # any commenter/editor can read
     supabase = _get_supabase()
-    query = supabase.table("comments").select("*").eq("deck_id", deck_id)
+    
+    # Join with users table to get author names
+    query = supabase.table("comments").select("""
+        *,
+        author:users!author_id(id, email, full_name, metadata),
+        resolver:users!resolved_by_user_id(id, email, full_name, metadata)
+    """).eq("deck_id", deck_id)
+    
     if slideId:
         if _is_valid_uuid(slideId):
             query = query.eq("slide_id", slideId)
@@ -126,8 +149,34 @@ async def list_comments(
         query = query.is_("resolved_at", None)
     elif status == "resolved":
         query = query.not_.is_("resolved_at", None)
+    
     res = query.order("created_at", desc=False).execute()
-    return res.data or []
+    comments = res.data or []
+    
+    # Enrich with author names
+    for comment in comments:
+        if comment.get("author"):
+            author_data = comment["author"]
+            # Use full_name from users table, fall back to metadata or email
+            full_name = author_data.get("full_name")
+            if not full_name:
+                metadata = author_data.get("metadata") or {}
+                full_name = metadata.get("full_name") or metadata.get("name")
+            comment["author_name"] = full_name or author_data.get("email", "").split("@")[0]
+            # Clean up nested author object to avoid confusion
+            del comment["author"]
+        
+        if comment.get("resolver"):
+            resolver_data = comment["resolver"]
+            # Use full_name from users table, fall back to metadata or email
+            full_name = resolver_data.get("full_name")
+            if not full_name:
+                metadata = resolver_data.get("metadata") or {}
+                full_name = metadata.get("full_name") or metadata.get("name")
+            comment["resolver_name"] = full_name or resolver_data.get("email", "").split("@")[0]
+            del comment["resolver"]
+    
+    return comments
 
 
 @router.patch("/{deck_id}/comments/{id}")

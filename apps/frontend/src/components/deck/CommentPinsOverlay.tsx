@@ -10,21 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { useEditorStore } from '@/stores/editorStore';
-
-// Deterministic per-user shading based on author identifier
-const colorForUser = (idOrName: string) => {
-  const key = idOrName || '';
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash << 5) - hash + key.charCodeAt(i);
-    hash |= 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  return {
-    backgroundColor: `hsl(${hue} 85% 96%)`,
-    borderColor: `hsl(${hue} 70% 80%)`
-  } as React.CSSProperties;
-};
+import {
+  useCollaboratorMap,
+  useCommentThreads,
+  useEnrichedThreads,
+  useMentions,
+  colorForUser
+} from '@/hooks/useComments';
 
 interface CommentPinsOverlayProps {
   deckId: string;
@@ -36,87 +28,25 @@ interface CommentPinsOverlayProps {
 
 export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, slideId, containerRef, zoomLevel = 100, getCollaborators }) => {
   const { toast } = useToast();
-  const [threads, setThreads] = useState<CommentThread[]>([]);
   const [newBody, setNewBody] = useState('');
-  const [mentionQuery, setMentionQuery] = useState('');
-  const [mentionList, setMentionList] = useState<Array<{ user_id: string; email: string }>>([]);
-  const [mentions, setMentions] = useState<string[]>([]);
   const [visible, setVisible] = useState<boolean>(true);
   const [quickOpen, setQuickOpen] = useState<boolean>(false);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
-  const [collaboratorMap, setCollaboratorMap] = useState<Map<string, string>>(new Map());
   const [highlightedRegion, setHighlightedRegion] = useState<NormalizedRect | null>(null);
   const [highlightedComponents, setHighlightedComponents] = useState<string[]>([]);
 
-  // Load collaborators for name mapping
-  useEffect(() => {
-    const loadCollaborators = async () => {
-      const map = new Map<string, string>();
-      
-      // Add current user
-      try {
-        const { supabase } = await import('@/integrations/supabase/client');
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
-          map.set(user.id, name);
-        }
-      } catch {}
-      
-      // Add collaborators
-      if (getCollaborators) {
-        try {
-          const list = await getCollaborators();
-          list.forEach(c => {
-            // Use full_name if available, otherwise email prefix
-            const name = (c as any).full_name || (c as any).name || c.email.split('@')[0];
-            map.set(c.user_id, name);
-          });
-        } catch {}
-      }
-      
-      setCollaboratorMap(map);
-    };
-    
-    loadCollaborators();
-  }, [getCollaborators]);
-
-  // Separate raw threads from enriched threads
-  const [rawThreads, setRawThreads] = useState<CommentThread[]>([]);
+  // Use shared hooks
+  const collaboratorMap = useCollaboratorMap(getCollaborators);
+  const { threads: rawThreads, refresh: refreshThreads, setThreads: setRawThreads } = useCommentThreads(deckId, slideId, 'open');
+  const threads = useEnrichedThreads(rawThreads, collaboratorMap);
+  const mentionHook = useMentions(getCollaborators);
   
-  const refreshThreads = React.useCallback(async () => {
-    try {
-      const ts = await CommentsService.list(deckId, { slideId, status: 'open' });
-      setRawThreads(ts || []);
-      if (ts && ts.length > 0) setVisible(true);
-    } catch (err) {
-      toast({ title: 'Failed to load comments', description: String(err), variant: 'destructive' });
+  // Auto-show overlay when threads are loaded
+  useEffect(() => {
+    if (rawThreads && rawThreads.length > 0) {
+      setVisible(true);
     }
-  }, [deckId, slideId, toast]);
-
-  // Only refresh on mount and when slideId changes
-  useEffect(() => {
-    refreshThreads();
-  }, [refreshThreads]);
-  
-  // Enrich threads with author names when collaboratorMap or rawThreads change
-  useEffect(() => {
-    const enriched = rawThreads.map(t => ({ 
-      ...t, 
-      comments: Array.isArray(t.comments) ? t.comments.map(c => ({
-        ...c,
-        authorName: collaboratorMap.get(c.authorId) || c.authorName || c.authorId?.split('@')[0] || 'User'
-      })) : [] 
-    }));
-    setThreads(enriched);
-  }, [rawThreads, collaboratorMap]);
-
-  // Listen for comment creation events to refresh
-  useEffect(() => {
-    const handleCommentCreated = () => refreshThreads();
-    window.addEventListener('comments:created', handleCommentCreated);
-    return () => window.removeEventListener('comments:created', handleCommentCreated);
-  }, [refreshThreads]);
+  }, [rawThreads]);
 
   // Listen for requests to open a specific thread bubble from the comments panel
   useEffect(() => {
@@ -157,14 +87,14 @@ export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, 
         anchor = { type: 'component', slideId, componentId: selectedArray[0] };
       } else if (selectedArray.length > 1) {
         // Multiple components
-        anchor = { type: 'component_group' as any, slideId, componentIds: selectedArray } as any;
+        anchor = { type: 'component_group', slideId, componentIds: selectedArray };
       }
     } catch {}
     try {
-      const { thread } = await CommentsService.create(deckId, { slideId, anchor, body: newBody, mentions });
-      setThreads(prev => [thread, ...prev]);
+      const { thread } = await CommentsService.create(deckId, { slideId, anchor, body: newBody, mentions: mentionHook.mentions });
+      setRawThreads(prev => [thread, ...prev]);
       setNewBody('');
-      setMentions([]);
+      mentionHook.clearMentions();
       toast({ title: 'Comment added' });
     } catch (e: any) {
       toast({ title: 'Failed to add comment', description: e.message, variant: 'destructive' });
@@ -187,40 +117,6 @@ export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, 
     }
   };
 
-  const refreshMentions = async (query: string) => {
-    try {
-      if (!getCollaborators) return setMentionList([]);
-      const list = await getCollaborators();
-      const q = (query || '').toLowerCase();
-      const filtered = q ? list.filter(c => c.email.toLowerCase().includes(q)) : list;
-      setMentionList(filtered);
-    } catch {
-      setMentionList([]);
-    }
-  };
-
-  const onBodyChange = (val: string) => {
-    setNewBody(val);
-    const m = val.match(/@([A-Za-z0-9_.+-]*)$/);
-    if (m) {
-      const q = m[1] || '';
-      setMentionQuery(q);
-      // If only '@' typed, show full list
-      refreshMentions(q);
-      if (q === '') refreshMentions('');
-    } else {
-      setMentionQuery('');
-      setMentionList([]);
-    }
-  };
-
-  const pickMention = (userId: string, email: string) => {
-    setMentions(prev => Array.from(new Set([...prev, userId])));
-    // Allow tagging self too by not filtering out current user
-    setNewBody(prev => prev.replace(/@([A-Za-z0-9_.+-]*)$/, `@${email} `));
-    setMentionQuery('');
-    setMentionList([]);
-  };
 
   // Global controls from header
   useEffect(() => {
@@ -364,11 +260,11 @@ export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, 
                     ))}
                   </div>
                   <div className="space-y-2">
-                    <Textarea value={newBody} onChange={(e) => onBodyChange(e.target.value)} placeholder="Reply… Use @ to mention" className="h-16" />
-                    {!!mentionQuery && mentionList.length > 0 && (
+                    <Textarea value={newBody} onChange={(e) => mentionHook.handleTextChange(e.target.value, setNewBody)} placeholder="Reply… Use @ to mention" className="h-16" />
+                    {!!mentionHook.mentionQuery && mentionHook.mentionList.length > 0 && (
                       <div className="border rounded p-1 max-h-28 overflow-auto">
-                        {mentionList.map(m => (
-                          <button key={m.user_id} className="w-full text-left text-xs px-2 py-1 hover:bg-accent rounded" onClick={() => pickMention(m.user_id, m.email)}>
+                        {mentionHook.mentionList.map(m => (
+                          <button key={m.user_id} className="w-full text-left text-xs px-2 py-1 hover:bg-accent rounded" onClick={() => mentionHook.pickMention(m.user_id, m.email, newBody, setNewBody)}>
                             <AtSign size={12} className="inline mr-1" /> {m.email}
                           </button>
                         ))}
@@ -384,13 +280,13 @@ export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, 
                           try {
                             await CommentsService.create(deckId, {
                               slideId,
-                              body: newBody,
-                              thread_id: t.id,
-                              mentions
-                            });
-                            setNewBody('');
-                            setMentions([]);
-                            // Refresh immediately to show new comment
+                            body: newBody,
+                            thread_id: t.id,
+                            mentions: mentionHook.mentions
+                          });
+                          setNewBody('');
+                          mentionHook.clearMentions();
+                          // Refresh immediately to show new comment
                             await refreshThreads();
                           } catch (err: any) {
                             console.error('Failed to add reply:', err);
@@ -432,11 +328,11 @@ export const CommentPinsOverlay: React.FC<CommentPinsOverlayProps> = ({ deckId, 
             </PopoverTrigger>
             <PopoverContent className="w-80 p-3" side="bottom" align="end">
               <div className="space-y-2">
-                <Textarea value={newBody} onChange={(e) => onBodyChange(e.target.value)} placeholder="Comment or add others with @" className="h-20" />
-                {!!mentionList.length && (
+                <Textarea value={newBody} onChange={(e) => mentionHook.handleTextChange(e.target.value, setNewBody)} placeholder="Comment or add others with @" className="h-20" />
+                {!!mentionHook.mentionList.length && (
                   <div className="border rounded p-1 max-h-28 overflow-auto">
-                    {mentionList.map(m => (
-                      <button key={m.user_id} className="w-full text-left text-xs px-2 py-1 hover:bg-accent rounded" onClick={() => pickMention(m.user_id, m.email)}>
+                    {mentionHook.mentionList.map(m => (
+                      <button key={m.user_id} className="w-full text-left text-xs px-2 py-1 hover:bg-accent rounded" onClick={() => mentionHook.pickMention(m.user_id, m.email, newBody, setNewBody)}>
                         <AtSign size={12} className="inline mr-1" /> {m.email}
                       </button>
                     ))}

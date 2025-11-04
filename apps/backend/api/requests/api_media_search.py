@@ -91,7 +91,7 @@ async def process_media_search(request: MediaSearchRequest) -> MediaSearchRespon
             results = []
             total = 0
 
-        logger.info(f"Media search completed: {request.type} query='{request.query}' found {len(results)} results")
+        logger.debug(f"Media search completed: {request.type} query='{request.query}' found {len(results)} results")
 
         return MediaSearchResponse(
             results=results,

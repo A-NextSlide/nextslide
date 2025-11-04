@@ -208,13 +208,13 @@ class DeckState:
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[DECK_STATE] mark_slide_complete called for slide {index}")
-        logger.info(f"[DECK_STATE] Slide data has {len(slide_data.get('components', []))} components")
+        logger.debug(f"[DECK_STATE] mark_slide_complete called for slide {index}")
+        logger.debug(f"[DECK_STATE] Slide data has {len(slide_data.get('components', []))} components")
         
         if index < len(self.slides):
             # Log what we're replacing
             old_components = len(self.slides[index].get('components', []))
-            logger.info(f"[DECK_STATE] Replacing slide {index} (had {old_components} components)")
+            logger.debug(f"[DECK_STATE] Replacing slide {index} (had {old_components} components)")
             
             # Replace the entire slide data instead of updating
             # This ensures components array is properly replaced
@@ -222,7 +222,7 @@ class DeckState:
             # Ensure status is set to completed
             self.slides[index]['status'] = SlideStatus.COMPLETED.value
             
-            logger.info(f"[DECK_STATE] Slide {index} now has {len(self.slides[index].get('components', []))} components")
+            logger.debug(f"[DECK_STATE] Slide {index} now has {len(self.slides[index].get('components', []))} components")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for persistence."""

@@ -3,6 +3,7 @@
  */
 
 import { ComponentInstance } from '../types/components';
+import { standardizeFontSize } from './fontOverflowDetection';
 
 /**
  * Calculate if text content overflows its container
@@ -71,16 +72,16 @@ export function calculateOptimalFontSize(
 ): number {
   if (!element) return Math.round(currentFontSize);
 
-  // Binary search for optimal font size
-  let low = minFontSize;
-  let high = Math.min(maxFontSize, currentFontSize);
-  let optimal = minFontSize; // Start with minimum as fallback
+  // Binary search for optimal font size using standard sizes
+  let low = standardizeFontSize(minFontSize, false);
+  let high = standardizeFontSize(Math.min(maxFontSize, currentFontSize), true);
+  let optimal = low; // Start with minimum as fallback
 
   // Store original font size
   const originalFontSize = element.style.fontSize;
 
   while (low <= high) {
-    const mid = Math.round((low + high) / 2); // Round to whole number
+    const mid = standardizeFontSize((low + high) / 2, false);
     element.style.fontSize = `${mid}px`;
 
     // Force layout recalculation
@@ -88,22 +89,21 @@ export function calculateOptimalFontSize(
 
     if (isTextOverflowing(element)) {
       // Text overflows at this size, try smaller
-      high = mid - 1;
+      high = standardizeFontSize(mid - 1, true);
       // Don't update optimal - we haven't found a size that fits yet
     } else {
       // Text fits at this size! Update optimal and try larger
       optimal = mid;
-      low = mid + 1;
+      low = standardizeFontSize(mid + 1, false);
     }
   }
 
   // Restore original font size
   element.style.fontSize = originalFontSize;
 
-  // CRITICAL FIX: Don't apply additional padding factor reduction
-  // The binary search already found the optimal size that fits
-  // Only round to whole number for consistency
-  const finalOptimal = Math.round(optimal);
+  // Standardize to standard font sizes (e.g., 24 instead of 21.4)
+  // This ensures bullet points group at the same size
+  const finalOptimal = standardizeFontSize(optimal, false);
 
   console.log('[calculateOptimalFontSize] Result:', {
     currentFontSize,

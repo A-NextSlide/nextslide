@@ -20,6 +20,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  Palette,
 } from 'lucide-react';
 
 interface AdminLayoutV2Props {
@@ -52,6 +53,12 @@ const navItems: NavItem[] = [
     href: '/admin/decks',
     icon: FileStack,
     description: 'View all decks'
+  },
+  {
+    title: 'Brands',
+    href: '/admin/brands',
+    icon: Palette,
+    description: 'Manage brand cache'
   },
   {
     title: 'Analytics',

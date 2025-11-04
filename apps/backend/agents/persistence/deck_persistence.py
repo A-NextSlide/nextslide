@@ -150,7 +150,7 @@ class DeckPersistence:
         
         component_count = len(slide_data.get("components", []))
         has_visual_fixes = slide_data.get("_visual_fixes_saved", False)
-        logger.info(f"📝 Updating slide {slide_index + 1} for deck {deck_uuid}: {component_count} components, visual_fixes={has_visual_fixes}, force_immediate={force_immediate}")
+        logger.debug(f"Updating slide {slide_index + 1} for deck {deck_uuid}: {component_count} components, visual_fixes={has_visual_fixes}, force_immediate={force_immediate}")
         
         # Log component details for debugging
         if has_visual_fixes:
@@ -164,7 +164,7 @@ class DeckPersistence:
         # The slide_data already contains visual fixes if they were applied
         # If force_immediate is True, skip any throttling
         if force_immediate:
-            logger.info(f"🚀 Force immediate update for slide {slide_index + 1}")
+            logger.debug(f"Force immediate update for slide {slide_index + 1}")
             # Temporarily clear throttle for this deck
             if deck_uuid in self._last_save_times:
                 del self._last_save_times[deck_uuid]
@@ -208,8 +208,8 @@ class DeckPersistence:
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[PERSISTENCE] _do_update_slide called for deck {deck_uuid}, slide {slide_index}")
-        logger.info(f"[PERSISTENCE] Slide data has {len(slide_data.get('components', []))} components")
+        logger.debug(f"[PERSISTENCE] _do_update_slide called for deck {deck_uuid}, slide {slide_index}")
+        logger.debug(f"[PERSISTENCE] Slide data has {len(slide_data.get('components', []))} components")
         
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"[PERSISTENCE] _do_update_slide details:")
@@ -259,16 +259,16 @@ class DeckPersistence:
             # ✅ DEBUG: Log if extractedData/manualCharts are in slide_data before saving
             has_extracted = 'extractedData' in slide_data and slide_data['extractedData'] is not None
             has_manual = 'manualCharts' in slide_data and slide_data['manualCharts'] is not None
-            logger.info(f"🔍 [PERSISTENCE] Slide {slide_index + 1} before save - extractedData: {has_extracted}, manualCharts: {has_manual}")
+            logger.debug(f"[PERSISTENCE] Slide {slide_index + 1} before save - extractedData: {has_extracted}, manualCharts: {has_manual}")
             if has_extracted:
                 try:
                     chart_type = slide_data['extractedData'].get('chartType', 'unknown')
                     data_len = len(slide_data['extractedData'].get('data', []))
-                    logger.info(f"🔍 [PERSISTENCE] extractedData: {chart_type} with {data_len} points")
+                    logger.debug(f"[PERSISTENCE] extractedData: {chart_type} with {data_len} points")
                 except Exception as e:
                     logger.warning(f"🔍 [PERSISTENCE] Error reading extractedData: {e}")
             if has_manual:
-                logger.info(f"🔍 [PERSISTENCE] manualCharts: {len(slide_data['manualCharts'])} charts")
+                logger.debug(f"[PERSISTENCE] manualCharts: {len(slide_data['manualCharts'])} charts")
             
             # Update the slide
             slides[slide_index] = slide_data
@@ -286,11 +286,11 @@ class DeckPersistence:
                 )
             except Exception:
                 pass
-            logger.info(f"[PERSISTENCE] Updated slide {slide_index} in deck, now has {len(slide_data.get('components', []))} components")
+            logger.debug(f"[PERSISTENCE] Updated slide {slide_index} in deck, now has {len(slide_data.get('components', []))} components")
             
             # Update cache FIRST - this ensures other parallel updates see the latest data
             self._deck_cache[deck_uuid] = copy.deepcopy(deck)
-            logger.info(f"[PERSISTENCE] Updated deck cache for {deck_uuid}")
+            logger.debug(f"[PERSISTENCE] Updated deck cache for {deck_uuid}")
             
             # Then save to database
             try:
@@ -304,13 +304,13 @@ class DeckPersistence:
                 deck['version'] = str(uuid.uuid4())
                 
                 # Log for debugging
-                logger.info(f"Setting last_modified to {deck['last_modified']} for realtime update")
+                logger.debug(f"Setting last_modified to {deck['last_modified']} for realtime update")
                 
                 # Run upload_deck in executor
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     loop = asyncio.get_event_loop()
                     await loop.run_in_executor(executor, upload_deck, deck, deck_uuid)
-                logger.info(f"[PERSISTENCE] Successfully uploaded deck {deck_uuid} to database")
+                logger.debug(f"[PERSISTENCE] Successfully uploaded deck {deck_uuid} to database")
                 
                 # Verify the update
                 with ThreadPoolExecutor(max_workers=1) as executor:
@@ -318,7 +318,7 @@ class DeckPersistence:
                     verify_deck = await loop.run_in_executor(executor, get_deck, deck_uuid)
                 if verify_deck and verify_deck.get('slides') and slide_index < len(verify_deck['slides']):
                     verify_components = len(verify_deck['slides'][slide_index].get('components', []))
-                    logger.info(f"[PERSISTENCE] Verification: Slide {slide_index} in DB now has {verify_components} components")
+                    logger.debug(f"[PERSISTENCE] Verification: Slide {slide_index} in DB now has {verify_components} components")
                     print(f"🔍 [PERSISTENCE] VERIFICATION:")
                     print(f"  - Slide {slide_index} in database has {verify_components} components")
                     if verify_components == 0:

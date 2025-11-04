@@ -105,11 +105,11 @@ class SlideGeneratorAdapter:
                 for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
             ]
 
-            print(f"\n📋 [IMAGE FLOW 2/4] Creating context for slide {slide_index + 1}")
-            print(f"   - async_images: {async_images} (False=auto-apply ON)")
-            print(f"   - tagged_media count: {len(tagged_media_for_context)}")
+            logger.debug(f"[IMAGE FLOW 2/4] Creating context for slide {slide_index + 1}")
+            logger.debug(f"  async_images: {async_images} (False=auto-apply ON)")
+            logger.debug(f"  tagged_media count: {len(tagged_media_for_context)}")
             if tagged_media_for_context:
-                print(f"   - First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
+                logger.debug(f"  First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
             logger.info(f"[IMAGE FLOW 2/4] Creating context for slide {slide_index + 1}")
             logger.info(f"   - async_images: {async_images} (False=auto-apply ON)")
             logger.info(f"   - tagged_media count: {len(tagged_media_for_context)}")
@@ -351,7 +351,7 @@ class SimpleDeckComposer(IDeckComposer):
         # Remove any remaining common words that slipped through
         search_query = search_query.replace('  ', ' ').strip()
 
-        print(f"🔍 [QUERY GEN] Slide: '{slide_title}' → Query: '{search_query}'")
+        logger.debug(f"[QUERY GEN] Slide: '{slide_title}' → Query: '{search_query}'")
 
         # Fallback if extraction failed
         if not search_query or len(search_query) < 3:
@@ -395,20 +395,7 @@ class SimpleDeckComposer(IDeckComposer):
         **options
     ) -> AsyncIterator[Dict[str, Any]]:
         """Compose a deck using the refactored architecture."""
-        print(f"\n🔴🔴🔴 [SimpleDeckComposer] compose_deck CALLED!")
-        print(f"[SimpleDeckComposer] deck_uuid: {deck_uuid}")
-        print(f"[SimpleDeckComposer] slides: {len(deck_outline.slides)}")
-        print(f"\n🎯 CRITICAL: async_images value = {options.get('async_images', 'NOT SET (defaults to True)')}")
-        print(f"   - If False: Will search BEFORE slides generate (auto-apply ON)")
-        print(f"   - If True: Will search DURING slides generate (auto-apply OFF)")
-        print(f"   - All options: {list(options.keys())}")
-        
-        logger.info(f"🎬 SimpleDeckComposer.compose_deck called!")
-        logger.info(f"🎬 deck_uuid: {deck_uuid}")
-        logger.info(f"🎬 deck title: {deck_outline.title}")
-        logger.info(f"🎬 options: {options}")
-        logger.info(f"🎬 async_images: {options.get('async_images', 'NOT SET')}")
-        logger.info(f"🎬 image_manager available: {self.image_manager is not None}")
+        logger.info(f"Starting deck composition: {deck_outline.title} ({len(deck_outline.slides)} slides)")
         
         # Initialize progress manager
         progress = DeckGenerationProgress()
@@ -523,10 +510,10 @@ class SimpleDeckComposer(IDeckComposer):
                         has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                         
                         if is_fun_topic and has_boring_fonts:
-                            print(f"\n🎮🎮🎮 FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES! 🎮🎮🎮")
-                            print(f"   Title: '{deck_outline.title}'")
-                            print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
-                            print(f"   ✅ CLEARING outline.notes.theme to force regeneration!\n")
+                            logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES! 🎮🎮🎮")
+                            logger.debug(f"  Title: '{deck_outline.title}'")
+                            logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
+                            logger.debug(f"  CLEARING outline.notes.theme to force regeneration!\n")
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
                             outline_theme = None  # Clear it!
                         
@@ -637,23 +624,23 @@ class SimpleDeckComposer(IDeckComposer):
                     has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                     
                     if is_fun_topic and has_boring_fonts:
-                        print(f"\n🎮 FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
-                        print(f"   Title: {deck_outline.title}")
-                        print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
-                        print(f"   ✅ FORCING theme regeneration to get playful fonts!")
-                        print(f"   Ignoring cached theme...\n")
+                        logger.debug(f"FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
+                        logger.debug(f"  Title: {deck_outline.title}")
+                        logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
+                        logger.debug(f"  FORCING theme regeneration to get playful fonts!")
+                        logger.debug(f"  Ignoring cached theme...\n")
                         logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' has boring cached fonts - forcing regeneration")
                         existing_theme_data = None  # Skip cached theme!
                     else:
-                        print(f"\n⚠️  FOUND EXISTING THEME IN DATABASE")
-                        print(f"   Deck: {deck_outline.title}")
-                        print(f"   Theme has cached fonts - NOT regenerating!")
-                        print(f"   Hero font: {current_hero}")
-                        print(f"   Body font: {current_body}")
+                        logger.debug(f"FOUND EXISTING THEME IN DATABASE")
+                        logger.debug(f"  Deck: {deck_outline.title}")
+                        logger.debug(f"  Theme has cached fonts - NOT regenerating!")
+                        logger.debug(f"  Hero font: {current_hero}")
+                        logger.debug(f"  Body font: {current_body}")
                         if is_fun_topic and not has_boring_fonts:
-                            print(f"   ✅ Fun topic already has good fonts - keeping them!\n")
+                            logger.debug(f"  Fun topic already has good fonts - keeping them!\n")
                         else:
-                            print(f"   Using cached theme...\n")
+                            logger.debug(f"  Using cached theme...\n")
                         
                         logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
                         theme = ThemeSpec.from_dict(existing_theme_data)
@@ -744,10 +731,10 @@ class SimpleDeckComposer(IDeckComposer):
                             has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                             
                             if is_fun_topic and has_boring_fonts:
-                                print(f"\n🎮🎮🎮 FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
-                                print(f"   Title: '{deck_outline.title}'")
-                                print(f"   Cached fonts: {current_hero} + {current_body} (BORING!)")
-                                print(f"   ✅ CLEARING outline theme to force regeneration!\n")
+                                logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
+                                logger.debug(f"  Title: '{deck_outline.title}'")
+                                logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
+                                logger.debug(f"  CLEARING outline theme to force regeneration!\n")
                                 logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
                                 outline_theme = None  # Clear it!
                             
@@ -1091,7 +1078,7 @@ class SimpleDeckComposer(IDeckComposer):
                     if brand_text_colors and isinstance(brand_text_colors, dict):
                         # Use brand text colors from theme (already set by theme_director)
                         pd.setdefault('text_colors', brand_text_colors)
-                        print(f"🎨 [PALETTE NORM] Using brand text colors: {brand_text_colors}")
+                        logger.debug(f"[PALETTE NORM] Using brand text colors: {brand_text_colors}")
                     else:
                         # Use computed text colors
                         pd.setdefault('text_colors', {
@@ -1099,7 +1086,7 @@ class SimpleDeckComposer(IDeckComposer):
                             'on_accent_1': '#FFFFFF',
                             'on_accent_2': '#FFFFFF'
                         })
-                        print(f"🎨 [PALETTE NORM] Using computed text colors: {primary_text}")
+                        logger.debug(f"[PALETTE NORM] Using computed text colors: {primary_text}")
                     # Enrich emitted palette colors with non-neutral backgrounds while preserving any existing list
                     try:
                         col_list = [c for c in (pd.get('colors') or []) if isinstance(c, str)]
@@ -1344,13 +1331,13 @@ class SimpleDeckComposer(IDeckComposer):
             # When async_images=True (auto-apply OFF/placeholders), we search in background during slide generation
             # CRITICAL: Default must match compose_deck_stream signature (True = async/placeholders)
             async_images_mode = options.get('async_images', True)
-            print(f"\n🔍 [SEARCH MODE CHECK] async_images={async_images_mode}, image_manager={self.image_manager is not None}")
-            print(f"   - AUTO-APPLY MODE (sync search): {not async_images_mode and self.image_manager}")
-            print(f"   - PLACEHOLDER MODE (async search): {async_images_mode and self.image_manager}")
+            logger.debug(f"[SEARCH MODE CHECK] async_images={async_images_mode}, image_manager={self.image_manager is not None}")
+            logger.debug(f"  AUTO-APPLY MODE (sync search): {not async_images_mode and self.image_manager}")
+            logger.debug(f"  PLACEHOLDER MODE (async search): {async_images_mode and self.image_manager}")
 
             if not async_images_mode and self.image_manager:
                 # AUTO-APPLY MODE: Search for images synchronously BEFORE slide generation
-                print(f"\n🎯 AUTO-APPLY MODE: Searching for images synchronously BEFORE slide generation...")
+                logger.debug(f"AUTO-APPLY MODE: Searching for images synchronously BEFORE slide generation...")
                 logger.info("🎯 AUTO-APPLY MODE: Searching for images synchronously before slide generation...")
                 logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
                 logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
@@ -1371,16 +1358,16 @@ class SimpleDeckComposer(IDeckComposer):
                     pass
 
                     # EMIT slide_images_found events with images grouped by search term
-                    print(f"\n📤 EMITTING slide_images_found events for {len(all_images)} slides")
+                    logger.debug(f"EMITTING slide_images_found events for {len(all_images)} slides")
                     for slide_idx, slide in enumerate(deck_outline.slides):
                         if slide.id in all_images:
                             images_by_term = all_images[slide.id]  # Dict: {term: [images]}
                             slide_terms = slide_search_queries.get(slide.id, [])
                             
-                            print(f"   📤 Preparing event for slide {slide_idx + 1}: {slide.title}")
-                            print(f"      - slide.id: {slide.id}")
-                            print(f"      - terms: {slide_terms}")
-                            print(f"      - images by term: {list(images_by_term.keys())}")
+                            logger.debug(f"  Preparing event for slide {slide_idx + 1}: {slide.title}")
+                            logger.debug(f"    slide.id: {slide.id}")
+                            logger.debug(f"    terms: {slide_terms}")
+                            logger.debug(f"    images by term: {list(images_by_term.keys())}")
                             
                             # Format images grouped by search term
                             formatted_images_by_term = {}
@@ -1418,7 +1405,7 @@ class SimpleDeckComposer(IDeckComposer):
                                 }
                             }
                             logger.info(f"📤 Emitted slide_images_found for slide {slide_idx + 1}: {total_images} images across {len(slide_terms)} terms")
-                            print(f"📤 Emitted slide_images_found event for slide {slide_idx + 1}: {total_images} images, {len(slide_terms)} terms")
+                            logger.debug(f"Emitted slide_images_found event for slide {slide_idx + 1}: {total_images} images, {len(slide_terms)} terms")
 
                     yield {
                         "type": "image_search_complete",
@@ -1434,7 +1421,7 @@ class SimpleDeckComposer(IDeckComposer):
                     if slides_with_media < len(deck_outline.slides):
                         logger.warning(f"⚠️ Only {slides_with_media}/{len(deck_outline.slides)} slides have images after sync search; waiting a bit more...")
                         await asyncio.sleep(0.75)
-                    print(f"✅ Proceeding to slide generation with tagged images...")
+                    logger.debug(f"Proceeding to slide generation with tagged images...")
 
                 except Exception as e:
                     logger.error(f"Error in synchronous image search: {e}")
@@ -1446,7 +1433,7 @@ class SimpleDeckComposer(IDeckComposer):
                 if not needs_media_processing:
                     yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)
 
-                print(f"\n📌 PLACEHOLDER MODE: Starting ASYNC background image search...")
+                logger.debug(f"PLACEHOLDER MODE: Starting ASYNC background image search...")
                 logger.info("Starting background image search...")
                 logger.info(f"🔍 IMAGE SEARCH CONFIG: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
                 logger.info(f"🔍 Deck has {len(deck_outline.slides)} slides to search images for")
@@ -1493,7 +1480,7 @@ class SimpleDeckComposer(IDeckComposer):
                 )
                 
                 logger.info(f"🔍 Background image search task created: {image_search_task}")
-                print(f"🔍 Background image search task created!")
+                logger.debug(f"Background image search task created!")
                 
                 yield {
                     "type": "image_search_started",
@@ -1502,16 +1489,16 @@ class SimpleDeckComposer(IDeckComposer):
                 }
             else:
                 logger.warning(f"⚠️ IMAGE SEARCH SKIPPED: async_images={async_images_mode}, image_manager={self.image_manager is not None}")
-                print(f"\n⚠️ IMAGE SEARCH SKIPPED:")
-                print(f"  - async_images: {async_images_mode}")
-                print(f"  - image_manager: {self.image_manager is not None}")
+                logger.debug(f"IMAGE SEARCH SKIPPED:")
+                logger.debug(f"  async_images: {async_images_mode}")
+                logger.debug(f"  image_manager: {self.image_manager is not None}")
             
             # Theme is already generated above, no need to check or generate again
             logger.info("[DECK COMPOSER] Theme is ready, proceeding to slide generation phase")
 
             # Phase 2: Slide generation
-            print(f"\n🎯🎯🎯 [ADAPTERS] STARTING SLIDE GENERATION PHASE")
-            print(f"⏰ TIMING CHECK: About to generate {len(deck_outline.slides)} slides")
+            logger.debug(f"[ADAPTERS] STARTING SLIDE GENERATION PHASE")
+            logger.debug(f"TIMING CHECK: About to generate {len(deck_outline.slides)} slides")
 
             # Debug: Check how many slides have taggedMedia NOW (before generation starts)
             slides_with_tagged_media = 0
@@ -1519,47 +1506,8 @@ class SimpleDeckComposer(IDeckComposer):
                 if hasattr(slide, 'taggedMedia') and slide.taggedMedia:
                     slides_with_tagged_media += 1
 
-            print(f"📊 PRE-GENERATION CHECK: {slides_with_tagged_media}/{len(deck_outline.slides)} slides have tagged media")
-            if slides_with_tagged_media > 0:
-                print(f"   ✅ Good! Images were tagged BEFORE slide generation")
-            else:
-                print(f"   ⚠️ WARNING: No slides have tagged media yet - images will be added later (async mode)")
-
+            logger.debug(f"PRE-GENERATION CHECK: {slides_with_tagged_media}/{len(deck_outline.slides)} slides have tagged media")
             yield progress.start_phase(GenerationPhase.SLIDE_GENERATION)
-            
-            # Log taggedMedia before creating deck state
-            logger.info(f"Creating DeckState for deck: {deck_outline.title}")
-            for i, slide in enumerate(deck_outline.slides):
-                tm_count = len(slide.taggedMedia) if hasattr(slide, 'taggedMedia') and slide.taggedMedia else 0
-                logger.info(f"  Slide {i+1} '{slide.title}' has {tm_count} taggedMedia items")
-                if tm_count > 0 and hasattr(slide, 'taggedMedia'):
-                    # Log details of first tagged media
-                    for j, media in enumerate(slide.taggedMedia[:2]):  # First 2 media items
-                        if hasattr(media, 'model_dump'):
-                            media_dict = media.model_dump()
-                        elif isinstance(media, dict):
-                            media_dict = media
-                        else:
-                            media_dict = {'error': 'Unknown media type'}
-                        logger.info(f"    Media {j+1}: {media_dict.get('filename', 'unknown')} - URL: {media_dict.get('previewUrl', 'none')[:100]}")
-            
-            # No need for duplicate theme generation - it's already done above
-            
-            # Log the theme that will be used
-            if theme and hasattr(theme, 'color_palette'):
-                logger.info(f"[DECK COMPOSER] Using theme colors:")
-                logger.info(f"  - Primary BG: {theme.color_palette.get('primary_background', 'NOT SET')}")
-                logger.info(f"  - Accent 1: {theme.color_palette.get('accent_1', 'NOT SET')}")
-                logger.info(f"  - Accent 2: {theme.color_palette.get('accent_2', 'NOT SET')}")
-                if hasattr(theme, 'typography'):
-                    logger.info(f"  - Hero Font: {theme.typography.get('hero_title', {}).get('family', 'NOT SET')}")
-                    logger.info(f"  - Body Font: {theme.typography.get('body_text', {}).get('family', 'NOT SET')}")
-            else:
-                logger.warning("[DECK COMPOSER] ⚠️  No theme available - slides will use defaults!")
-            
-            # Create deck state
-            logger.info(f"[DECK COMPOSER] Creating deck_state with theme: {theme is not None}")
-            logger.info(f"[DECK COMPOSER] Theme type: {type(theme)}")
             logger.info(f"[DECK COMPOSER] Is default theme: {theme == default_theme}")
             
             deck_state = DeckState(
@@ -1614,9 +1562,9 @@ class SimpleDeckComposer(IDeckComposer):
             )
             
             # Process slides and image updates together
-            print(f"\n🎯🎯🎯 [ADAPTERS] About to call orchestrator.generate_slides_parallel")
-            print(f"[ADAPTERS] orchestrator type: {type(self.orchestrator)}")
-            print(f"[ADAPTERS] deck_state slides: {len(deck_state.slides)}")
+            logger.debug(f"[ADAPTERS] About to call orchestrator.generate_slides_parallel")
+            logger.debug(f"[ADAPTERS] orchestrator type: {type(self.orchestrator)}")
+            logger.debug(f"[ADAPTERS] deck_state slides: {len(deck_state.slides)}")
             
             slide_generator = self.orchestrator.generate_slides_parallel(
                 deck_state=deck_state,

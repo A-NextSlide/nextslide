@@ -3,6 +3,7 @@ import re
 import asyncio
 import aiohttp
 import urllib.parse
+import logging
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from serpapi import GoogleSearch
@@ -10,6 +11,8 @@ from services.image_validator import ImageValidator
 
 # Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class SerpAPIService:
     """Service for interacting with SerpAPI for Google Images search."""
@@ -247,24 +250,20 @@ class SerpAPIService:
             async with session.get(url) as response:
                 if response.status == 200:
                     results = await response.json()
-                    print(f"\n🔍 SERPAPI API RESPONSE for '{query}':")
-                    print(f"  - Status: 200 OK")
-                    print(f"  - Has images_results: {'images_results' in results}")
-                    if 'images_results' in results:
-                        print(f"  - Number of images_results: {len(results.get('images_results', []))}")
+                    logger.debug(f"SERPAPI response for '{query}': {len(results.get('images_results', []))} images")
                     if 'error' in results:
-                        print(f"  - API ERROR: {results.get('error')}")
+                        logger.error(f"SERPAPI API ERROR: {results.get('error')}")
                     return self._process_image_results(results)
                 else:
                     error_text = await response.text()
-                    print(f"SerpAPI HTTP error {response.status}: {error_text}")
+                    logger.error(f"SerpAPI HTTP error {response.status}: {error_text}")
                     return {"photos": [], "total_results": 0}
             
         except asyncio.TimeoutError:
-            print(f"Timeout searching Google Images via SerpAPI ({query=})")
+            logger.warning(f"Timeout searching Google Images via SerpAPI (query={query})")
             return {"photos": [], "total_results": 0}
         except Exception as e:
-            print(f"Error searching Google Images via SerpAPI ({query=}): {str(e)}")
+            logger.error(f"Error searching Google Images via SerpAPI (query={query}): {str(e)}")
             return {"photos": [], "total_results": 0}
 
     async def search_videos(

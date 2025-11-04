@@ -58,29 +58,29 @@ class ChartGenerator:
         chart_types = self._get_chart_types_from_registry()
         
         descriptions = {
-            "bar": "BAR: Compare categories side-by-side (horizontal bars)",
-            "column": "COLUMN: Compare categories vertically (vertical bars)", 
-            "pie": "PIE: Show parts of a whole, percentages, distributions",
-            "line": "LINE: Show trends over time, continuous data",
-            "area": "AREA: Show cumulative totals over time, filled line chart",
-            "spline": "SPLINE: Smooth curved line for trends, elegant time series",
-            "areaspline": "AREASPLINE: Smooth curved area chart, filled spline",
-            "streamgraph": "STREAMGRAPH: Multiple flowing layers over time, organic look",
-            "scatter": "SCATTER: Show correlations between two variables, data points",
-            "bubble": "BUBBLE: Three-dimensional data (x, y, size), enhanced scatter",
-            "packedbubble": "PACKEDBUBBLE: Circular packed bubbles, hierarchical grouping",
-            "boxplot": "BOXPLOT: Statistical distribution, quartiles, outliers",
-            "errorbar": "ERRORBAR: Data with uncertainty ranges, error margins",
-            "gauge": "GAUGE: Single metric display, dashboard-style meter",
-            "waterfall": "WATERFALL: Step-by-step changes, cumulative flow",
-            "sankey": "SANKEY: Flow between categories, process visualization",
-            "pyramid": "PYRAMID: Hierarchical data, population demographics",
-            "treemap": "TREEMAP: Hierarchical data as nested rectangles, proportional sizes",
-            "sunburst": "SUNBURST: Multi-level hierarchical data, radial tree",
-            "networkgraph": "NETWORKGRAPH: Relationships between entities, node connections",
-            "dependencywheel": "DEPENDENCYWHEEL: Circular network, interconnected relationships",
-            "radar": "RADAR: Multi-dimensional comparison, spider/web chart",
-            "heatmap": "HEATMAP: Two-dimensional data intensity, color-coded matrix"
+            "bar": "BAR: Compare numerical values across categories (horizontal bars)",
+            "column": "COLUMN: Compare numerical values across categories (vertical bars)", 
+            "pie": "PIE: Show numerical percentages/distributions that total 100%",
+            "line": "LINE: Show numerical trends over time, continuous data series",
+            "area": "AREA: Show cumulative numerical totals over time, filled area",
+            "spline": "SPLINE: Smooth curved line for numerical trends, elegant time series",
+            "areaspline": "AREASPLINE: Smooth curved area for numerical data over time",
+            "streamgraph": "STREAMGRAPH: Multiple numerical layers flowing over time",
+            "scatter": "SCATTER: Show correlation between two numerical variables",
+            "bubble": "BUBBLE: Three-dimensional numerical data (x, y, size)",
+            "packedbubble": "PACKEDBUBBLE: Grouped numerical values as packed circles",
+            "boxplot": "BOXPLOT: Statistical distribution of numerical data, quartiles",
+            "errorbar": "ERRORBAR: Numerical data with uncertainty ranges",
+            "gauge": "GAUGE: Single numerical metric as progress meter",
+            "waterfall": "WATERFALL: Sequential numerical changes showing cumulative effect",
+            "sankey": "SANKEY: Quantitative flows with numerical values (e.g., traffic with visitor counts)",
+            "pyramid": "PYRAMID: Numerical hierarchical data, population demographics",
+            "treemap": "TREEMAP: Numerical hierarchical data as proportional rectangles (market cap, file sizes)",
+            "sunburst": "SUNBURST: Multi-level numerical hierarchical data, radial visualization (budget breakdowns)",
+            "networkgraph": "NETWORKGRAPH: Weighted relationships with numerical connections",
+            "dependencywheel": "DEPENDENCYWHEEL: Circular network with numerical flow values",
+            "radar": "RADAR: Multi-dimensional numerical comparison, spider chart (feature scores)",
+            "heatmap": "HEATMAP: Two-dimensional numerical intensity, color-coded matrix"
         }
         
         available_descriptions = []
@@ -146,111 +146,58 @@ class ChartGenerator:
     def _determine_chart_type_from_data(
         self, data: List[Dict[str, Any]], title: str, content: str, context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Determine best chart type based on AI-generated data and context
+        """Lightweight fallback for chart type selection
         
-        IMPORTANT: This should RARELY override the AI model's choice.
-        The AI model should specify chart_type in the response.
-        This is only a fallback for legacy or edge cases.
+        IMPORTANT: The AI model should specify chart_type in the response.
+        This is only a simple fallback when the AI doesn't provide one.
+        We keep it minimal to avoid overriding the AI's intelligent choices.
         """
         
-        # Get previously used chart types from context
+        # Get available chart types and previously used ones
+        available_types = self._get_chart_types_from_registry()
         used_charts = []
         if context and context.get('used_charts'):
             used_charts = [chart['type'] for chart in context['used_charts']]
         
-        # Get available chart types
-        available_types = self._get_chart_types_from_registry()
-        
-        # Analyze the data structure
+        # Simple heuristics for fallback only
         data_count = len(data)
-        
-        # Check if data has multi-series grouping
-        has_series_key = any(d.get('series') or d.get('group') or d.get('dataset') for d in data)
-        
-        # Analyze slide title and content for chart type hints
         title_content_lower = (title + ' ' + content).lower()
         
-        # 1. PARTS OF WHOLE - Use pie/donut for distributions
-        if data_count <= 10:
-            values = [d.get('value', 0) for d in data]
+        # Check if it looks like a distribution (values sum to ~100%)
+        values = [d.get('value', 0) for d in data]
+        if data_count <= 8 and values:
             total = sum(values)
-            # Check if it's a percentage breakdown or distribution
-            is_distribution = (
-                any(word in title_content_lower for word in ['breakdown', 'distribution', 'share', 'composition', 'mix']) or
-                (all(0 <= v <= 100 for v in values) and 90 <= total <= 110)  # Percentages
-            )
-            if is_distribution and not has_series_key:
-                if 'pie' in available_types and 'pie' not in used_charts:
+            if all(0 <= v <= 100 for v in values) and 90 <= total <= 110:
+                # Likely percentage distribution
+                if 'pie' in available_types and used_charts.count('pie') < 2:
                     return 'pie'
-                elif 'donut' in available_types:
-                    return 'donut'
         
-        # 2. FLOW/PROCESS - Use waterfall for sequential changes
-        if any(word in title_content_lower for word in ['bridge', 'waterfall', 'flow', 'process', 'funnel', 'stages']):
-            if 'waterfall' in available_types and 'waterfall' not in used_charts:
-                return 'waterfall'
-        
-        # 3. TIME SERIES - Use line/area ONLY when clearly temporal
-        # Be more strict about time detection - need multiple consecutive time periods
-        time_patterns = {
-            'quarters': ['q1', 'q2', 'q3', 'q4'],
-            'months': ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'],
-            'years': ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']
-        }
-        
+        # Check for time series indicators
         names_lower = [d.get('name', '').lower() for d in data]
+        time_indicators = ['q1', 'q2', 'q3', 'q4', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                          'jul', 'aug', 'sep', 'oct', 'nov', 'dec', '2020', '2021', '2022', '2023', '2024']
+        has_time_data = sum(1 for name in names_lower if any(t in name for t in time_indicators)) >= 3
         
-        # Check for sequential time periods (not just ANY time mention)
-        is_time_series = False
-        for pattern_type, patterns in time_patterns.items():
-            matches = sum(1 for name in names_lower if any(p in name for p in patterns))
-            # Need at least 3 consecutive time periods to be a time series
-            if matches >= 3 and data_count >= 3:
-                is_time_series = True
-                break
+        if has_time_data or 'trend' in title_content_lower or 'over time' in title_content_lower:
+            # Time series - vary between available types
+            time_series_types = [t for t in ['line', 'area', 'spline'] if t in available_types]
+            for chart_type in time_series_types:
+                if used_charts.count(chart_type) < 2:
+                    return chart_type
+            return time_series_types[0] if time_series_types else 'line'
         
-        # Also check if title/content explicitly mentions trends or time progression
-        has_trend_language = any(word in title_content_lower for word in 
-            ['trend', 'over time', 'evolution', 'growth over', 'historical', 'projection', 'forecast'])
-        
-        if (is_time_series or has_trend_language) and data_count >= 4:
-            # Vary between line, area, spline based on usage
-            if 'line' in available_types and used_charts.count('line') < 2:
-                return 'line'
-            elif 'area' in available_types and used_charts.count('area') == 0:
-                return 'area'
-            elif 'spline' in available_types and used_charts.count('spline') == 0:
-                return 'spline'
-        
-        # 4. COMPARISONS - Use bar/column for categorical comparisons
-        # This should be the DEFAULT for most data, not line charts!
-        comparison_words = ['compare', 'comparison', 'versus', 'vs', 'by region', 'by product', 'by category', 
-                          'performance', 'analysis', 'ranking', 'top', 'leading']
-        is_comparison = any(word in title_content_lower for word in comparison_words)
-        
-        if is_comparison or not is_time_series:
-            # Use column/bar for comparisons
-            # Vary to avoid repetition
-            if 'column' in available_types and used_charts.count('column') < 2:
-                return 'column'
-            elif 'bar' in available_types and used_charts.count('bar') < 2:
-                return 'bar'
-            # If both used, use radar for multi-dimensional comparisons
-            elif data_count >= 5 and has_series_key and 'radar' in available_types and 'radar' not in used_charts:
-                return 'radar'
-        
-        # 5. ADVANCED CHART TYPES based on content
-        if 'correlation' in title_content_lower or 'relationship' in title_content_lower:
-            if 'scatter' in available_types and 'scatter' not in used_charts:
-                return 'scatter'
-        
-        # 6. Default to column for general comparisons (NOT line!)
-        if 'column' in available_types and used_charts.count('column') < 3:
+        # Default to column/bar, with variety
+        if 'column' in available_types and used_charts.count('column') < 2:
             return 'column'
-        elif 'bar' in available_types and used_charts.count('bar') < 3:
+        elif 'bar' in available_types and used_charts.count('bar') < 2:
             return 'bar'
         
-        # 7. Fallback to first available or column
+        # If column/bar overused, try other types
+        varied_types = [t for t in available_types if t not in ['column', 'bar', 'line'] and used_charts.count(t) == 0]
+        if varied_types:
+            return varied_types[0]
+        
+        # Ultimate fallback
         return 'column' if 'column' in available_types else (available_types[0] if available_types else 'bar')
     
     async def generate_chart_title(
@@ -411,32 +358,58 @@ class ChartGenerator:
             return self._validate_single_series_units(data_points)
     
     def _validate_single_series_units(self, data_points: List[Dict[str, Any]]) -> bool:
-        """Validate unit consistency within a single series"""
+        """Validate unit consistency within a single series - STRICT"""
         if len(data_points) < 2:
             return True
             
-        # Extract potential unit indicators from names/labels
+        # Enhanced unit patterns - be MORE specific
         unit_patterns = {
-            'currency': ['$', '€', '£', 'usd', 'eur', 'dollars', 'million', 'billion', 'revenue', 'sales', 'price', 'cost'],
-            'percentage': ['%', 'percent', 'rate', 'share', 'portion', 'growth'],
-            'count': ['count', 'number', 'units', 'quantity', 'items'],
-            'time': ['hours', 'days', 'months', 'years', 'minutes', 'seconds'],
+            'currency': ['$', '€', '£', 'usd', 'eur', 'dollar', 'million', 'billion', 'revenue', 'sales', 'price', 'cost', 'profit', 'income'],
+            'percentage': ['%', 'percent', 'rate', 'ratio', 'share', 'portion', 'growth', 'margin'],
+            'count': ['count', 'number', 'units', 'quantity', 'items', 'establishments', 'locations', 'stores', 'shops'],
+            'time': ['hours', 'days', 'months', 'years', 'minutes', 'seconds', 'weeks'],
+            'space': ['sq', 'square', 'feet', 'meters', 'acres', 'space'],
+            'employees': ['employees', 'staff', 'workers', 'jobs', 'team'],
             'bytes': ['kb', 'mb', 'gb', 'tb', 'ram', 'memory', 'storage'],
-            'physical': ['colors', 'palette', 'weight', 'height', 'length', 'size'],
-            'other': ['users', 'customers', 'employees', 'downloads', 'views']
+            'customers': ['users', 'customers', 'clients', 'visitors', 'members']
         }
         
         detected_units = set()
+        unit_details = []
+        
         for point in data_points:
             label = str(point.get('name', '') + ' ' + point.get('label', '')).lower()
+            value = point.get('value', 0)
+            
+            # Also check value magnitude to detect mixed scales
+            point_units = set()
             for unit_type, patterns in unit_patterns.items():
                 if any(pattern in label for pattern in patterns):
-                    detected_units.add(unit_type)
-                    break
+                    point_units.add(unit_type)
+                    unit_details.append(f"{label[:30]}: {unit_type}")
+            
+            detected_units.update(point_units)
         
-        # If multiple unit types detected in a SINGLE series, that's problematic
-        if len(detected_units) > 1:
+        # Allow up to 2 units for dual-axis charts, reject 3+
+        if len(detected_units) > 2:
+            logger.warning(f"[CHART VALIDATION] REJECTED - Too many units ({len(detected_units)}): {detected_units}")
+            logger.warning(f"[CHART VALIDATION] Details: {unit_details[:5]}")
+            logger.warning(f"[CHART VALIDATION] Maximum 2 units allowed for dual-axis charts")
             return False
+        
+        if len(detected_units) == 2:
+            logger.info(f"[CHART VALIDATION] Dual-axis chart detected with 2 units: {detected_units}")
+            # This is OK for dual Y-axis charts
+            return True
+        
+        # Also check value magnitudes - if one value is 100x another, likely mixed units
+        values = [float(p.get('value', 0)) for p in data_points if p.get('value')]
+        if values:
+            max_val = max(values)
+            min_val = min([v for v in values if v > 0], default=1)
+            if max_val / min_val > 100:  # More than 100x difference
+                logger.warning(f"[CHART VALIDATION] REJECTED - Suspicious value range: {min_val} to {max_val} (100x+ difference suggests mixed units)")
+                return False
             
         return True
 

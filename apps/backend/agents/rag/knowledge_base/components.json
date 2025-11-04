@@ -8,12 +8,37 @@
       "height",
       "texts"
     ],
+    "all_props": [
+      "position",
+      "width",
+      "height",
+      "texts",
+      "fontFamily",
+      "fontSize",
+      "fontWeight",
+      "fontStyle",
+      "textColor",
+      "backgroundColor",
+      "letterSpacing",
+      "lineHeight",
+      "alignment",
+      "verticalAlignment",
+      "padding"
+    ],
     "critical_rules": {
       "padding": "Must always be 0 (numeric, not string)",
       "texts": "Array of text objects. Each item may include 'text', 'fontSize', and a 'style' object.",
       "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor", "highlight"],
       "height": "Calculate as fontSize x 1.15 for single line (TIGHT!)",
-      "multiple_blocks": "CRITICAL: BREAK content into MULTIPLE TiptapTextBlock components - DON'T cram everything into one!"
+      "multiple_blocks": "CRITICAL: BREAK content into MULTIPLE TiptapTextBlock components - DON'T cram everything into one!",
+      "alignment": "ALWAYS set alignment prop: 'left' | 'center' | 'right' | 'justify'",
+      "verticalAlignment": "ALWAYS set verticalAlignment prop: 'top' | 'middle' | 'bottom'"
+    },
+    "alignment_rules": {
+      "title_slides": "ALWAYS use alignment='left', verticalAlignment='top' for title/cover slides",
+      "content_slides": "Use alignment='left' for body text, 'center' for stats/callouts, 'right' for captions",
+      "vertical": "Use verticalAlignment='top' for titles, 'middle' for centered content, 'bottom' for footers",
+      "default": "When in doubt, use alignment='left', verticalAlignment='top'"
     },
     "best_practices": [
       "BREAK content into multiple TiptapTextBlock components - separate blocks for title, subtitle, each bullet point",
@@ -141,7 +166,8 @@
               "texts": [{"text": "$964M", "style": {"bold": true, "textColor": "{{accent}}"}}],
               "fontSize": 72,
               "fontFamily": "{{heroFont}}",
-              "textAlign": "center"
+              "alignment": "center",
+              "verticalAlignment": "middle"
             }
           },
           {
@@ -153,7 +179,8 @@
               "texts": [{"text": "1961 Budget", "style": {"textColor": "{{secondary}}"}}],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
-              "textAlign": "center"
+              "alignment": "center",
+              "verticalAlignment": "middle"
             }
           },
           {
@@ -165,7 +192,8 @@
               "texts": [{"text": "$35B+", "style": {"bold": true, "textColor": "{{accent}}"}}],
               "fontSize": 72,
               "fontFamily": "{{heroFont}}",
-              "textAlign": "center"
+              "alignment": "center",
+              "verticalAlignment": "middle"
             }
           },
           {
@@ -177,7 +205,8 @@
               "texts": [{"text": "Artemis 2025", "style": {"textColor": "{{secondary}}"}}],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
-              "textAlign": "center"
+              "alignment": "center",
+              "verticalAlignment": "middle"
             }
           }
         ]
@@ -194,7 +223,9 @@
               "texts": [{"text": "NASA Budget Evolution", "style": {"bold": true, "textColor": "{{primary}}"}}],
               "fontSize": 64,
               "fontFamily": "{{heroFont}}",
-              "fontWeight": 900
+              "fontWeight": 900,
+              "alignment": "left",
+              "verticalAlignment": "top"
             }
           },
           {
@@ -212,7 +243,9 @@
               ],
               "fontSize": 44,
               "fontFamily": "{{bodyFont}}",
-              "fontWeight": 600
+              "fontWeight": 600,
+              "alignment": "left",
+              "verticalAlignment": "top"
             }
           },
           {
@@ -224,7 +257,9 @@
               "texts": [{"text": "KEY MILESTONES", "style": {"bold": true, "textColor": "{{secondary}}", "uppercase": true}}],
               "fontSize": 36,
               "fontFamily": "{{bodyFont}}",
-              "fontWeight": 700
+              "fontWeight": 700,
+              "alignment": "left",
+              "verticalAlignment": "top"
             }
           },
           {
@@ -238,7 +273,9 @@
                 {"text": "$0.1B", "style": {"bold": true, "textColor": "{{accent}}"}}
               ],
               "fontSize": 32,
-              "fontFamily": "{{bodyFont}}"
+              "fontFamily": "{{bodyFont}}",
+              "alignment": "left",
+              "verticalAlignment": "top"
             }
           },
           {
@@ -252,7 +289,9 @@
                 {"text": "$0.96B", "style": {"bold": true, "textColor": "{{accent}}"}}
               ],
               "fontSize": 32,
-              "fontFamily": "{{bodyFont}}"
+              "fontFamily": "{{bodyFont}}",
+              "alignment": "left",
+              "verticalAlignment": "top"
             }
           }
         ]
@@ -303,20 +342,16 @@
   },
   "CustomComponent": {
     "description": "POWERFUL component for creating infographics, data visualizations, and interactive elements - USE FREQUENTLY IN PRESENTATION MODE!",
-    "when_to_use": {
-      "minimal_content": "PRESENTATION MODE: Use three_card_grid, two_card_comparison, or hero_stat_card for 1-3 points",
-      "single_stat": "Use hero_stat_card for ONE BIG NUMBER - dramatic and beautiful",
-      "two_three_stats": "Use three_card_grid for 2-3 metrics - perfect for presentation mode",
-      "before_after": "Use two_card_comparison for comparisons and transformations",
-      "statistics": "Use animated_progress_rings or kpi_cards for metrics",
-      "comparisons": "Use comparison_bars or feature_toggle for before/after",
-      "timelines": "Use interactive_timeline for roadmaps and journeys",
-      "processes": "Use decision_tree for flows and frameworks",
-      "engagement": "Use quiz_component or interactive_poll for audience interaction",
-      "calculations": "Use interactive_slider for ROI/budget scenarios",
-      "countdowns": "Use countdown_timer for launches and deadlines",
-      "visual_interest": "Use morphing_blob or floating_icons for modern aesthetics"
+    "capabilities": {
+      "structured_layouts": "Create cards, grids, comparisons when content doesn't need axis-based visualization",
+      "hierarchies_and_flows": "Build org structures, decision trees, process flows with decision_tree",
+      "time_and_events": "Show event sequences, roadmaps, milestones with interactive_timeline",
+      "metrics_display": "Present numbers with hero_stat_card, kpi_cards, animated_progress_rings",
+      "comparisons": "Show before/after, feature toggles with comparison_bars, two_card_comparison",
+      "interaction": "Engage with quiz_component, interactive_poll, interactive_slider",
+      "visual_appeal": "Add modern aesthetics with morphing_blob, floating_icons, countdown_timer"
     },
+    "when_to_use": "When content needs structured layout, qualitative relationships, or interactions rather than numerical axis comparison",
     "presentation_mode_priority": {
       "philosophy": "In PRESENTATION MODE, prefer CustomComponents over plain text - make it VISUAL!",
       "card_layouts": "Use card-based components (three_card_grid, two_card_comparison, hero_stat_card) for 70% of content slides",

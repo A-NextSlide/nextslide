@@ -466,13 +466,15 @@ class SlidePromptBuilder:
                     end = divider_pos.get('endPoint', {})
                     style = divider_pos.get('style', {})
                     
-                    # Use smart line color resolution
-                    from agents.generation.components.smart_line_styler import SmartLineStyler
-                    line_styler = SmartLineStyler()
-                    divider_color = line_styler.resolve_line_color(
-                        divider_pos, 
-                        fallback_color='#2563EB'  # Blue fallback instead of grey
-                    )
+                    # Resolve line color from theme
+                    theme_colors = divider_pos.get('theme_colors', {})
+                    color_priority = divider_pos.get('color_priority', ['accent_1'])
+                    
+                    divider_color = '#2563EB'  # Default fallback
+                    for color_key in color_priority:
+                        if color_key in theme_colors and theme_colors[color_key]:
+                            divider_color = theme_colors[color_key]
+                            break
                     
                     sections.extend([
                         f"\n⚠️ THEME-REQUIRED DIVIDER LINE:",
@@ -1199,11 +1201,15 @@ class SlidePromptBuilder:
             "4. Position the chart prominently on the slide (800-1200px wide, 600-900px tall)",
             "5. Set showLegend: false for cleaner design",
             "",
-            "CHART COLORS - USE THEME ACCENT COLORS:",
-            f"- Set props.colors to use theme accent colors: ['{primary_accent}', '{secondary_accent}', ...]",
-            f"- For multi-series charts, generate color variations from {primary_accent} and {secondary_accent}",
-            "- For shades, add opacity suffixes (e.g., '#FF430180' for 50% opacity)",
-            "- DO NOT use generic/hardcoded chart colors",
+            "CHART COLORS - CRITICAL RULES:",
+            f"- Set props.colors: ['{primary_accent}', '{secondary_accent}'] - use theme accents ONLY",
+            f"- NEVER use chart color same as background ({bg_color}) - system will auto-filter conflicts",
+            "- For multi-series: generate variations by adjusting brightness/opacity of theme colors",
+            "- HIGHLIGHTING: Only use distinct color for KEY OUTLIERS or stats you want to emphasize",
+            "  * Most data points: use primary accent color",
+            "  * ONE special data point (highest/lowest/key metric): use secondary accent",
+            "  * DO NOT color every bar/point differently - use consistent colors for normal data",
+            "- Example: Revenue chart with 8 quarters - 7 bars in primary accent, 1 standout quarter in secondary",
             "",
             "EXAMPLE CHART COMPONENT STRUCTURE:",
             "{",
@@ -1212,8 +1218,11 @@ class SlidePromptBuilder:
             f'    "chartType": "{self._get_chart_type(context)}",',
             '    "data": [...use exact data from above...],',
             f'    "colors": ["{primary_accent}", "{secondary_accent}"],',
+            f'    "fontFamily": "{body_font}",',
             f'    "title": "{context.slide_outline.title}",',
             '    "showLegend": false,',
+            '    "axisBottom": {"tickRotation": 0, "legend": "X Axis Label"},',
+            '    "axisLeft": {"tickRotation": 0, "legend": "Y Axis Label"},',
             '    "position": {"x": 100, "y": 300},',
             '    "width": 1000,',
             '    "height": 600',
@@ -1223,10 +1232,11 @@ class SlidePromptBuilder:
             "🎨 CHART VISUALIZATION REQUIREMENTS:",
             "- SIZE: Make charts LARGE (minimum 800px wide × 600px tall)",
             "- POSITION: Place chart where it dominates the slide (60-80% of space)",
-            "- STYLING: Use gradient fills from theme colors, add subtle depth",
-            "- ANIMATIONS: Enable enter animations (bars grow, lines draw, pies rotate)",
+            f"- FONTS: fontFamily: '{body_font}' for all labels and text",
+            "- COLORS: Use theme accents consistently - don't randomly color each data point",
+            "- ROTATION: tickRotation: 0 for both axes - keep labels horizontal and readable",
             "- LABELS: Keep axis labels readable but not too large (12-16px)",
-            "- COLORS: Use theme accent colors for visual cohesion",
+            "- ANIMATIONS: Enable enter animations (bars grow, lines draw, pies rotate)",
             "",
             "⚠️ CRITICAL: If you do NOT include a Chart component, the data will be wasted!",
             "The outline generation already created this data - YOU MUST visualize it!",
@@ -1320,8 +1330,9 @@ class SlidePromptBuilder:
             " CRITICAL CHART DESIGN - LARGE & IMPACTFUL:",
             "SIZE: Charts should be 800-1200px wide, 600-900px tall minimum",
             "POSITION: Charts must NOT overlap other components (titles/text/images)",
-            "LABELS: Keep axis labels SMALL (12-16px) to emphasize data; rotate bottom axis labels 30–45° when long to avoid overlap/cropping",
-            "AXIS CONFIG: Set axisBottom.tickRotation appropriately and increase margins.bottom as needed (Highcharts: xAxis.labels.rotation and chart.marginBottom; allow xAxis.labels.autoRotation for dense labels)",
+            f"FONTS: Set fontFamily: '{body_font}' (use theme body font for consistency)",
+            "LABELS: Keep axis labels readable; ALWAYS keep tickRotation: 0 (horizontal, no rotation)",
+            "AXIS CONFIG: axisBottom.tickRotation: 0 and axisLeft.tickRotation: 0 - NEVER rotate ticks",
             "DATA: Make bars/lines THICK and BOLD with vibrant colors",
             "LAYOUT: Position charts to dominate 60-80% of slide space without collisions",
             "NO OVERLAP: Maintain 60px gap around charts; 40px for text blocks",

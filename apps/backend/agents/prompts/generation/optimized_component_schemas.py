@@ -25,11 +25,13 @@ def get_optimized_component_schemas() -> str:
   • Use "color" for solid backgrounds (most common)
   • Use "gradient" for visual interest (angle: 135, stops with color/opacity)
 
-**TiptapTextBlock** { position: {x, y}, width, height, texts: [{text, style}], fontSize, fontFamily, textAlign }
+**TiptapTextBlock** { position: {x, y}, width, height, texts: [{text, style}], fontSize, fontFamily, alignment, verticalAlignment, padding }
   • Main text component for ALL text content
   • texts array allows multi-color formatting: [{ text: "Revenue: ", style: {textColor: "{{primary}}"}}, { text: "$2.5M", style: {bold: true, textColor: "{{accent}}"}}]
-  • Required: position, texts, fontSize
+  • Required: position, texts, fontSize, alignment, verticalAlignment
   • Heights: fontSize × 1.15 (tight fit)
+  • ALWAYS set alignment ('left'|'center'|'right') and verticalAlignment ('top'|'middle'|'bottom')
+  • padding: Always 0 (numeric)
 
 **Image** { position, width, height, src: "placeholder", objectFit: "cover"|"contain", borderRadius, opacity }
   • Use src="placeholder" (system fills images)

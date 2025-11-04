@@ -6,6 +6,7 @@ def setup_logging(level: str = "INFO") -> None:
 
     - Sets root logger level
     - Ensures a basic StreamHandler is attached once
+    - Silences noisy third-party loggers
     """
     root = logging.getLogger()
     if not root.handlers:
@@ -19,6 +20,11 @@ def setup_logging(level: str = "INFO") -> None:
         root.setLevel(getattr(logging, level.upper()))
     except Exception:
         root.setLevel(logging.INFO)
+
+    # Silence noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

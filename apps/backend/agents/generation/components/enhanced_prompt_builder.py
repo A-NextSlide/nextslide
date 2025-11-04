@@ -398,9 +398,8 @@ class EnhancedPromptBuilder(SlidePromptBuilder):
                 "- Position with 80px gap from other components",
                 "- Use actual data from slide content",
                 "- Set showLegend: false for cleaner look",
-                "- Rotate bottom axis labels 30–45° when names are long to avoid overlap/cropping",
-                "- Axis config: set axisBottom.tickRotation and increase margins.bottom as needed",
-                "  (Highcharts: use xAxis.labels.rotation or autoRotation; adjust chart.marginBottom)",
+                "- Keep axis labels horizontal (tickRotation: 0) to prevent cutoff",
+                "- Axis config: ALWAYS set axisBottom.tickRotation: 0 and axisLeft.tickRotation: 0",
                 ""
             ])
         

@@ -122,6 +122,11 @@ export interface SlideOutline {
   research_notes?: string;
   // AI-suggested image prompt extracted from [IMAGE: ...] tags in outline
   suggestedImagePrompt?: string;
+  // Optional table data for table editor
+  tableData?: {
+    headers: string[];
+    data: string[][];
+  };
 }
 
 /**

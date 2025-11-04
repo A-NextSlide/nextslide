@@ -10,6 +10,16 @@ import math
 
 logger = logging.getLogger(__name__)
 
+# Import font size standardizer
+try:
+    from services.font_size_standardizer import standardize_font_size
+    STANDARDIZER_AVAILABLE = True
+except ImportError:
+    STANDARDIZER_AVAILABLE = False
+    logger.debug("Font size standardizer not available, using simple rounding")
+    def standardize_font_size(size: float, prefer_round_down: bool = False) -> int:
+        return round(size)
+
 
 @dataclass
 class SizingResult:
@@ -157,13 +167,16 @@ class AdaptiveFontSizer:
         space_utilization = (width_used * height_used) / (available_width * available_height)
         confidence = min(1.0, space_utilization)
 
+        # Standardize to standard font sizes (e.g., 24 instead of 21.4)
+        standardized_size = standardize_font_size(optimal_size, prefer_round_down=False)
+        
         logger.debug(
-            f"Sized '{text[:30]}...' to {optimal_size:.1f}px in {iterations} iterations "
+            f"Sized '{text[:30]}...' to {optimal_size:.1f}px → {standardized_size}px (standardized) in {iterations} iterations "
             f"(container={available_width:.0f}x{available_height:.0f}, lines={lines}, confidence={confidence:.2f})"
         )
 
         return SizingResult(
-            font_size=round(optimal_size, 1),
+            font_size=float(standardized_size),
             iterations=iterations,
             fits=fits,
             estimated_lines=lines,
@@ -276,8 +289,14 @@ class AdaptiveFontSizer:
             # Titles should ideally be 1-2 lines, but we don't force it
             logger.debug(f"Title has {result.estimated_lines} lines, may need content adjustment")
 
+        # Standardize font size to standard values (e.g., 24 instead of 21.4)
+        # This ensures bullet points group at the same size
+        standardized_size = standardize_font_size(result.font_size, prefer_round_down=False)
+        
+        logger.debug(f"Font size: {result.font_size:.1f} → {standardized_size} (standardized)")
+
         return {
-            "fontSize": result.font_size,
+            "fontSize": standardized_size,
             "estimatedLines": result.estimated_lines,
             "iterations": result.iterations,
             "confidence": result.confidence,

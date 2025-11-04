@@ -48,7 +48,7 @@ class SlideGeneratorV2(ISlideGenerator):
         self.layout_integrator = None
         self._enhanced_layout_cache = {}
         
-        logger.info("✅ SlideGeneratorV2 initialized - improved architecture")
+        logger.debug("SlideGeneratorV2 initialized - improved architecture")
     
     async def generate_slide(
         self,
@@ -122,10 +122,8 @@ class SlideGeneratorV2(ISlideGenerator):
             # Debug: Log what AI generated BEFORE post-processing
             image_components_count = sum(1 for c in slide_data.get('components', []) if c.get('type') == 'Image')
             placeholder_count = sum(1 for c in slide_data.get('components', []) if c.get('type') == 'Image' and c.get('props', {}).get('src') in ['placeholder', ''])
-            print(f"\n🤖 [AI OUTPUT] Slide {context.slide_index + 1} - AI generated {len(slide_data.get('components', []))} components")
-            print(f"   - Image components: {image_components_count}, with placeholder src: {placeholder_count}")
-            logger.info(f"[AI OUTPUT] Slide {context.slide_index + 1} - AI generated {len(slide_data.get('components', []))} components")
-            logger.info(f"[AI OUTPUT]   - Image components: {image_components_count}, with placeholder src: {placeholder_count}")
+            logger.debug(f"Slide {context.slide_index + 1} - AI generated {len(slide_data.get('components', []))} components")
+            logger.debug(f"  Image components: {image_components_count}, with placeholder src: {placeholder_count}")
 
             slide_data = await self._post_process_slide(slide_data, context)
             
@@ -168,7 +166,7 @@ class SlideGeneratorV2(ISlideGenerator):
     
     async def _retrieve_rag_context(self, context: SlideGenerationContext) -> Dict[str, Any]:
         """Retrieve relevant context using RAG."""
-        logger.info(f"  [Step 1/4] Retrieving RAG context for slide {context.slide_index + 1}...")
+        logger.debug(f"  [Step 1/4] Retrieving RAG context for slide {context.slide_index + 1}...")
         rag_start = datetime.now()
         
         # Run synchronous RAG retrieval in executor to avoid blocking
@@ -201,13 +199,13 @@ class SlideGeneratorV2(ISlideGenerator):
         rag_context: Dict[str, Any]
     ) -> tuple[str, str]:
         """Build system and user prompts."""
-        logger.info(f"  [Step 2/4] Building prompts for slide {context.slide_index + 1}...")
+        logger.debug(f"  [Step 2/4] Building prompts for slide {context.slide_index + 1}...")
         prompt_start = datetime.now()
         
         # Extract brand logo URL from context
         brand_logo_url = self._get_brand_logo_url(context)
         if brand_logo_url:
-            logger.info(f"  [Step 2/4] Brand logo found: {brand_logo_url}")
+            logger.debug(f"  [Step 2/4] Brand logo found: {brand_logo_url}")
         
         system_prompt = self.prompt_builder.build_system_prompt()
         # Build split user prompt blocks (deck-static vs per-slide)
@@ -275,7 +273,7 @@ class SlideGeneratorV2(ISlideGenerator):
         rag_context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate slide with AI."""
-        logger.info(f"  [Step 3/4] Calling AI for slide {context.slide_index + 1}...")
+        logger.debug(f"  [Step 3/4] Calling AI for slide {context.slide_index + 1}...")
         ai_start = datetime.now()
         
         predicted_components = rag_context.get('predicted_components', [])
@@ -289,7 +287,7 @@ class SlideGeneratorV2(ISlideGenerator):
         )
         
         ai_elapsed = (datetime.now() - ai_start).total_seconds()
-        logger.info(f"  [Step 3/4] ✓ AI generation completed in {ai_elapsed:.1f}s")
+        logger.debug(f"  [Step 3/4] ✓ AI generation completed in {ai_elapsed:.1f}s")
         
         return slide_data
     
@@ -308,7 +306,7 @@ class SlideGeneratorV2(ISlideGenerator):
         - Theme consistency enforcement
         - Component validation
         """
-        logger.info(f"  [Step 4/4] Post-processing slide {context.slide_index + 1}...")
+        logger.debug(f"  [Step 4/4] Post-processing slide {context.slide_index + 1}...")
         try:
             for component in slide_data.get('components', []):
                 if not component.get('id'):
@@ -362,7 +360,7 @@ class SlideGeneratorV2(ISlideGenerator):
                     }
                 })
                 slide_data['components'] = components
-                logger.info("[SLIDE GENERATOR] Injected fallback Background component")
+                logger.debug("[SLIDE GENERATOR] Injected fallback Background component")
             else:
                 for comp in components:
                     if comp.get('type') == 'Background':
@@ -551,26 +549,26 @@ class SlideGeneratorV2(ISlideGenerator):
                     elif isinstance(theme_obj, dict):
                         slide_themes = theme_obj.get('slide_themes', {})
                     
-                    logger.info(f"Theme object type: {type(theme_obj)}, has slide_themes: {bool(slide_themes)}")
+                    logger.debug(f"Theme object type: {type(theme_obj)}, has slide_themes: {bool(slide_themes)}")
                     if slide_themes:
-                        logger.info(f"Available slide theme keys: {list(slide_themes.keys())}")
+                        logger.debug(f"Available slide theme keys: {list(slide_themes.keys())}")
                     
                     if not slide_themes:
                         logger.warning("No slide_themes found in theme object")
                         return {}
                     
                     slide_id = getattr(context.slide_outline, 'id', str(context.slide_index))
-                    logger.info(f"Looking for slide_id: '{slide_id}' (slide_index: {context.slide_index})")
+                    logger.debug(f"Looking for slide_id: '{slide_id}' (slide_index: {context.slide_index})")
                     
                     if slide_id in slide_themes:
                         structure = slide_themes[slide_id].get('structure') or {}
-                        logger.info(f"Found structure for slide_id '{slide_id}': {structure.keys() if structure else 'empty'}")
+                        logger.debug(f"Found structure for slide_id '{slide_id}': {structure.keys() if structure else 'empty'}")
                         return structure
                     
                     slide_index_str = str(context.slide_index)
                     if slide_index_str in slide_themes:
                         structure = slide_themes[slide_index_str].get('structure') or {}
-                        logger.info(f"Found structure for slide_index_str '{slide_index_str}': {structure.keys() if structure else 'empty'}")
+                        logger.debug(f"Found structure for slide_index_str '{slide_index_str}': {structure.keys() if structure else 'empty'}")
                         return structure
                     
                     logger.warning(f"No theme structure found for slide_id '{slide_id}' or index '{slide_index_str}'")
@@ -580,9 +578,9 @@ class SlideGeneratorV2(ISlideGenerator):
                 return {}
 
             theme_structure = _get_slide_structure_from_theme_local()
-            logger.info(f"Slide {context.slide_index} theme_structure: {theme_structure.keys() if theme_structure else 'None'}")
+            logger.debug(f"Slide {context.slide_index} theme_structure: {theme_structure.keys() if theme_structure else 'None'}")
             if theme_structure and 'elements_to_include' in theme_structure:
-                logger.info(f"Slide {context.slide_index} elements_to_include: {theme_structure['elements_to_include']}")
+                logger.debug(f"Slide {context.slide_index} elements_to_include: {theme_structure['elements_to_include']}")
 
             theme_panel = slide_data.get('theme_panel')
             if not theme_panel and context.theme:
@@ -681,44 +679,44 @@ class SlideGeneratorV2(ISlideGenerator):
 
         # Handle images - either apply tagged media or attach available images for frontend selection
         # Apply tagged media when auto-apply is ON (async_images=False)
-        print(f"\n🔍 [IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
-        print(f"   - async_images: {context.async_images} (False=auto-apply ON)")
-        print(f"   - tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
-        print(f"   - available_images count: {len(context.available_images) if context.available_images else 0}")
-        logger.info(f"[IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
-        logger.info(f"   - async_images: {context.async_images} (False=auto-apply ON)")
-        logger.info(f"   - tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
-        logger.info(f"   - available_images count: {len(context.available_images) if context.available_images else 0}")
+        logger.debug(f"[IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
+        logger.debug(f"  - async_images: {context.async_images} (False=auto-apply ON)")
+        logger.debug(f"  - tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
+        logger.debug(f"  - available_images count: {len(context.available_images) if context.available_images else 0}")
+        logger.debug(f"[IMAGE FLOW 3/4] Post-processing image replacement check for slide {context.slide_index + 1}")
+        logger.debug(f"   async_images: {context.async_images} (False=auto-apply ON)")
+        logger.debug(f"   tagged_media count: {len(context.tagged_media) if context.tagged_media else 0}")
+        logger.debug(f"   available_images count: {len(context.available_images) if context.available_images else 0}")
 
         if context.tagged_media and not context.async_images:
-            print(f"\n✅ [IMAGE FLOW 4/4] APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
+            logger.debug(f"[IMAGE FLOW 4/4] APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
             for idx, media in enumerate(context.tagged_media):
-                print(f"   - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
-            logger.info(f"[IMAGE FLOW 4/4] ✅ APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
+                logger.debug(f"  - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
+            logger.debug(f"[IMAGE FLOW 4/4] ✅ APPLYING TAGGED MEDIA - replacing placeholders with {len(context.tagged_media)} tagged media items")
             for idx, media in enumerate(context.tagged_media):
-                logger.info(f"   - Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
+                logger.debug(f"   Tagged media {idx + 1}: {media.get('filename', 'unknown')} - URL: {media.get('previewUrl', 'none')[:100]}")
             self._apply_tagged_media_to_images(slide_data, context.tagged_media)
         elif context.async_images:
             # PLACEHOLDER MODE: DO NOT apply images, keep them as placeholders for manual selection
-            print(f"\n📌 [IMAGE FLOW 4/4] PLACEHOLDER MODE - keeping images as placeholders (NOT auto-applying)")
-            print(f"   - async_images=True → Images stay as placeholders")
-            print(f"   - Available images: {len(context.available_images or [])} (stored for manual selection)")
-            logger.info(f"[IMAGE FLOW 4/4] 📌 PLACEHOLDER MODE - NOT applying images")
-            logger.info(f"   - async_images=True → User will manually select from recommendations")
+            logger.debug(f"[IMAGE FLOW 4/4] PLACEHOLDER MODE - keeping images as placeholders (NOT auto-applying)")
+            logger.debug(f"  - async_images=True → Images stay as placeholders")
+            logger.debug(f"  - Available images: {len(context.available_images or [])} (stored for manual selection)")
+            logger.debug(f"[IMAGE FLOW 4/4] 📌 PLACEHOLDER MODE - NOT applying images")
+            logger.debug(f"   async_images=True → User will manually select from recommendations")
             
             # Store available images in slide_data but DON'T apply them to components
             if context.available_images:
                 slide_data['availableImages'] = context.available_images
-                logger.info(f"[IMAGE FLOW 4/4] ✅ Stored {len(context.available_images)} available images (not applied to components)")
+                logger.debug(f"[IMAGE FLOW 4/4] ✅ Stored {len(context.available_images)} available images (not applied to components)")
         else:
-            print(f"\n❌ [IMAGE FLOW 4/4] NO IMAGE REPLACEMENT:")
-            print(f"   - async_images={context.async_images}")
-            print(f"   - tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
-            print(f"   - available_images={len(context.available_images) if context.available_images else 0}")
-            logger.info(f"[IMAGE FLOW 4/4] ❌ NO IMAGE REPLACEMENT:")
-            logger.info(f"   - async_images={context.async_images}")
-            logger.info(f"   - tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
-            logger.info(f"   - available_images={len(context.available_images) if context.available_images else 0}")
+            logger.debug(f"[IMAGE FLOW 4/4] NO IMAGE REPLACEMENT:")
+            logger.debug(f"  - async_images={context.async_images}")
+            logger.debug(f"  - tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
+            logger.debug(f"  - available_images={len(context.available_images) if context.available_images else 0}")
+            logger.debug(f"[IMAGE FLOW 4/4] ❌ NO IMAGE REPLACEMENT:")
+            logger.debug(f"   async_images={context.async_images}")
+            logger.debug(f"   tagged_media={len(context.tagged_media) if context.tagged_media else 0}")
+            logger.debug(f"   available_images={len(context.available_images) if context.available_images else 0}")
 
         # Construct slide_info from context for logo injection
         slide_info = {
@@ -772,7 +770,7 @@ class SlideGeneratorV2(ISlideGenerator):
         theme_dict = None
         if context.theme:
             theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else context.theme
-            logger.info(f"[FONT SIZING] Applying adaptive font sizing to slide {context.slide_index + 1}")
+            logger.debug(f"[FONT SIZING] Applying adaptive font sizing to slide {context.slide_index + 1}")
 
         components = slide_data.get('components', [])
         validated_components = self.component_validator.validate_components(
@@ -782,25 +780,25 @@ class SlideGeneratorV2(ISlideGenerator):
         )
 
         slide_data['components'] = validated_components
-        logger.info(f"✅ Validated {len(validated_components)} components")
+        logger.debug(f"Validated {len(validated_components)} components")
         slide_data['generated_at'] = datetime.now().isoformat()
         
         # ✅ CRITICAL: Preserve extractedData from outline (charts)
-        logger.info(f"🔍 [CHART PRESERVATION CHECK] Slide {context.slide_index + 1} - Starting preservation check")
-        logger.info(f"🔍 [CHART PRESERVATION CHECK] slide_outline type: {type(context.slide_outline)}")
-        logger.info(f"🔍 [CHART PRESERVATION CHECK] hasattr extractedData: {hasattr(context.slide_outline, 'extractedData')}")
+        logger.debug(f"[CHART PRESERVATION CHECK] Slide {context.slide_index + 1} - Starting preservation check")
+        logger.debug(f"[CHART PRESERVATION CHECK] slide_outline type: {type(context.slide_outline)}")
+        logger.debug(f"[CHART PRESERVATION CHECK] hasattr extractedData: {hasattr(context.slide_outline, 'extractedData')}")
         
         if hasattr(context.slide_outline, 'extractedData') and context.slide_outline.extractedData:
-            logger.info(f"🔍 [CHART PRESERVATION CHECK] extractedData exists! Type: {type(context.slide_outline.extractedData)}")
+            logger.debug(f"[CHART PRESERVATION CHECK] extractedData exists! Type: {type(context.slide_outline.extractedData)}")
             slide_data['extractedData'] = (
                 context.slide_outline.extractedData.model_dump() 
                 if hasattr(context.slide_outline.extractedData, 'model_dump') 
                 else context.slide_outline.extractedData
             )
-            logger.info(f"✅✅✅ [CHART PRESERVATION] Added extractedData to slide {context.slide_index + 1}: {slide_data['extractedData'].get('chartType', 'unknown')} chart")
-            logger.info(f"✅ [CHART PRESERVATION] Data has {len(slide_data['extractedData'].get('data', []))} points")
+            logger.debug(f"[CHART PRESERVATION] Added extractedData to slide {context.slide_index + 1}: {slide_data['extractedData'].get('chartType', 'unknown')} chart")
+            logger.debug(f"[CHART PRESERVATION] Data has {len(slide_data['extractedData'].get('data', []))} points")
         else:
-            logger.warning(f"⚠️⚠️⚠️ [CHART PRESERVATION] NO extractedData in outline for slide {context.slide_index + 1}")
+            logger.debug(f"[CHART PRESERVATION] NO extractedData in outline for slide {context.slide_index + 1}")
             logger.warning(f"⚠️ slide_outline attributes: {dir(context.slide_outline)}")
         
         # ✅ CRITICAL: Preserve manualCharts array (multiple charts per slide)
@@ -809,9 +807,9 @@ class SlideGeneratorV2(ISlideGenerator):
                 c.model_dump() if hasattr(c, 'model_dump') else c 
                 for c in context.slide_outline.manualCharts
             ]
-            logger.info(f"✅ [CHART PRESERVATION] Added {len(slide_data['manualCharts'])} manual charts to slide {context.slide_index + 1}")
+            logger.debug(f"[CHART PRESERVATION] Added {len(slide_data['manualCharts'])} manual charts to slide {context.slide_index + 1}")
         else:
-            logger.info(f"[CHART PRESERVATION] No manualCharts in outline for slide {context.slide_index + 1}")
+            logger.debug(f"[CHART PRESERVATION] No manualCharts in outline for slide {context.slide_index + 1}")
         
         # Add theme data to slide
         if context.theme:
@@ -823,14 +821,14 @@ class SlideGeneratorV2(ISlideGenerator):
                 slide_data['theme_panel'] = theme_panel
             except Exception:
                 theme_panel = None
-            logger.info(f"[SLIDE GENERATOR] Added theme data to slide {context.slide_index + 1}")
+            logger.debug(f"[SLIDE GENERATOR] Added theme data to slide {context.slide_index + 1}")
         else:
             logger.warning(f"[SLIDE GENERATOR] No theme available for slide {context.slide_index + 1}")
         
         # Add palette data to slide
         if context.palette:
             slide_data['palette'] = context.palette
-            logger.info(f"[SLIDE GENERATOR] Added palette data to slide {context.slide_index + 1}")
+            logger.debug(f"[SLIDE GENERATOR] Added palette data to slide {context.slide_index + 1}")
         
         # Enforce theme consistency and fonts (only if theme exists)
         if context.theme:
@@ -865,9 +863,9 @@ class SlideGeneratorV2(ISlideGenerator):
         
         if image_search_terms:
             slide_data['imageSearchTerms'] = image_search_terms
-            logger.info(f"[SLIDE GEN] ✅ Stored {len(image_search_terms)} image search terms in slide data")
+            logger.debug(f"[SLIDE GEN] ✅ Stored {len(image_search_terms)} image search terms in slide data")
             for key, term in list(image_search_terms.items())[:3]:
-                logger.info(f"   {key}: '{term}'")
+                logger.debug(f"   {key}: '{term}'")
         
         logger.info(
             f"  [Step 4/4] ✓ Post-processing complete - "
@@ -1304,7 +1302,7 @@ class SlideGeneratorV2(ISlideGenerator):
         elements: List[str] = []
         try:
             elements = list(theme_structure.get('elements_to_include', []) or [])
-            logger.info(f"Theme structure elements_to_include: {elements}")
+            logger.debug(f"Theme structure elements_to_include: {elements}")
         except Exception as e:
             logger.warning(f"Failed to get elements_to_include: {e}")
             elements = []
@@ -1805,7 +1803,7 @@ class SlideGeneratorV2(ISlideGenerator):
             return
 
         posn = (theme_structure.get('positioning') or {}) if isinstance(theme_structure, dict) else {}
-        logger.info(f"_normalize_dividers_and_lines called with {len(components)} components")
+        logger.debug(f"_normalize_dividers_and_lines called with {len(components)} components")
         styling = (theme_structure.get('styling') or {}) if isinstance(theme_structure, dict) else {}
         style_colors = (styling.get('colors') or {}) if isinstance(styling, dict) else {}
         theme_divider_color = style_colors.get('divider_color') if isinstance(style_colors, dict) else None
@@ -1875,12 +1873,12 @@ class SlideGeneratorV2(ISlideGenerator):
         try:
             # Check if theme explicitly includes divider_line in elements_to_include
             elements_to_include = (theme_structure.get('elements_to_include') or []) if isinstance(theme_structure, dict) else []
-            logger.info(f"Checking divider_line in elements_to_include: {elements_to_include}")
+            logger.debug(f"Checking divider_line in elements_to_include: {elements_to_include}")
             if 'divider_line' in elements_to_include:
                 requests_divider = True
                 logger.info(f"✅ Theme requests divider line for slide")
             else:
-                logger.info(f"❌ Theme does NOT request divider line for slide (elements: {elements_to_include})")
+                logger.debug(f"Theme does NOT request divider line for slide (elements: {elements_to_include})")
         except Exception as e:
             logger.warning(f"Error checking divider_line: {e}")
             requests_divider = False
@@ -1983,24 +1981,22 @@ class SlideGeneratorV2(ISlideGenerator):
                         props['strokeWidth'] = 2
                 if 'opacity' in div_conf:
                     props['opacity'] = float(div_conf.get('opacity') or 0.3)
-            # Use smart line color resolution for proper theming
+            # Resolve line color from theme
             try:
                 # Try theme structure color first
                 if isinstance(theme_divider_color, str) and theme_divider_color:
                     props['stroke'] = theme_divider_color
                 else:
-                    # Use smart color resolution as fallback
-                    from agents.generation.components.smart_line_styler import SmartLineStyler
-                    line_styler = SmartLineStyler()
+                    # Resolve from theme colors
+                    theme_colors = div_conf.get('theme_colors', {})
+                    color_priority = div_conf.get('color_priority', ['accent_1'])
                     
-                    # Create style config from positioning data
-                    style_config = {
-                        'theme_colors': div_conf.get('theme_colors', {}),
-                        'color_priority': div_conf.get('color_priority', ['accent_1'])
-                    }
+                    resolved_color = '#2563EB'  # Default fallback
+                    for color_key in color_priority:
+                        if color_key in theme_colors and theme_colors[color_key]:
+                            resolved_color = theme_colors[color_key]
+                            break
                     
-                    # Resolve color using smart styler
-                    resolved_color = line_styler.resolve_line_color(style_config, fallback_color='#2563EB')
                     props['stroke'] = resolved_color
             except Exception as e:
                 # Final fallback to blue instead of leaving unset
@@ -2371,8 +2367,8 @@ class SlideGeneratorV2(ISlideGenerator):
         accent_1 = color_palette.get('accent_1', '#0066CC')
         accent_2 = color_palette.get('accent_2', '#FF6B6B')
         
-        logger.info(f"[FONT ENFORCEMENT] ✅ Using theme fonts: Hero={hero_font}, Body={body_font}")
-        logger.info(f"[FONT ENFORCEMENT] ✅ Using theme accents: accent_1={accent_1}, accent_2={accent_2}, primary_text={primary_text}")
+        logger.debug(f"[FONT ENFORCEMENT] ✅ Using theme fonts: Hero={hero_font}, Body={body_font}")
+        logger.debug(f"[FONT ENFORCEMENT] ✅ Using theme accents: accent_1={accent_1}, accent_2={accent_2}, primary_text={primary_text}")
         
         for component in slide_data.get('components', []):
             if component.get('type') in ('TiptapTextBlock', 'TextBlock', 'Title'):
@@ -2390,7 +2386,7 @@ class SlideGeneratorV2(ISlideGenerator):
                 # ALWAYS set the font from theme, don't check for Inter
                 new_font = hero_font if is_title else body_font
                 if current_font != new_font:
-                    logger.info(f"[FONT ENFORCEMENT] Updating font from '{current_font}' to '{new_font}'")
+                    logger.debug(f"[FONT ENFORCEMENT] Updating font from '{current_font}' to '{new_font}'")
                 props['fontFamily'] = new_font
                 
                 # Ensure padding defaults
@@ -2488,7 +2484,7 @@ class SlideGeneratorV2(ISlideGenerator):
             font_normalized = str(font_name).lower().strip()
             for available_font in all_available:
                 if str(available_font).lower().strip() == font_normalized:
-                    logger.info(f"[FONT FALLBACK] ✅ Font '{font_name}' is available")
+                    logger.debug(f"[FONT FALLBACK] ✅ Font '{font_name}' is available")
                     return font_name
             
             # Font not available - find similar fallback
@@ -2507,18 +2503,18 @@ class SlideGeneratorV2(ISlideGenerator):
                 category_fonts = available_fonts_dict.get(category, [])
                 if category_fonts:
                     fallback = category_fonts[0]
-                    logger.info(f"[FONT FALLBACK] ✅ Using '{fallback}' ({category}) as fallback for '{font_name}'")
+                    logger.debug(f"[FONT FALLBACK] ✅ Using '{fallback}' ({category}) as fallback for '{font_name}'")
                     return fallback
             
             # Last resort: use Inter
             if 'Inter' in all_available:
-                logger.info(f"[FONT FALLBACK] Using 'Inter' as last resort fallback for '{font_name}'")
+                logger.debug(f"[FONT FALLBACK] Using 'Inter' as last resort fallback for '{font_name}'")
                 return 'Inter'
             
             # Absolute last resort: use first available font
             if all_available:
                 fallback = all_available[0]
-                logger.info(f"[FONT FALLBACK] Using '{fallback}' as absolute fallback for '{font_name}'")
+                logger.debug(f"[FONT FALLBACK] Using '{fallback}' as absolute fallback for '{font_name}'")
                 return fallback
             
             # If all else fails, return original and let frontend handle it
@@ -2563,7 +2559,7 @@ class SlideGeneratorV2(ISlideGenerator):
                        '#FF5722')
             
             # ✅ PRESERVE brand theme colors - DO NOT override with database palette!
-            logger.info(f"[THEME ENFORCEMENT] ✅ Preserving brand colors: primary_bg={primary_bg}, accent_1={accent_1}, accent_2={accent_2}, text={primary_text}")
+            logger.debug(f"[THEME ENFORCEMENT] Preserving brand colors: primary_bg={primary_bg}, accent_1={accent_1}, accent_2={accent_2}, text={primary_text}")
             
             hero_font = (typography.get('hero_title', {}) or {}).get('family', 'Montserrat')
 
@@ -3293,7 +3289,7 @@ class SlideGeneratorV2(ISlideGenerator):
 
     def _apply_tagged_media_to_images(self, slide_data: Dict[str, Any], tagged_media: List[Dict[str, Any]]):
         """Replace placeholder images with actual tagged media URLs."""
-        print(f"\n🔧 [IMAGE REPLACEMENT] ========== Starting image replacement process ==========")
+        logger.debug(f"[IMAGE REPLACEMENT] ========== Starting image replacement process ==========")
         print(f"   Tagged media count: {len(tagged_media)}")
         print(f"   Total components in slide: {len(slide_data.get('components', []))}")
         logger.info(f"[IMAGE REPLACEMENT] ========== Starting image replacement process ==========")

@@ -188,11 +188,24 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
 
    FONT SELECTION GUIDANCE:
    - 🚨 CRITICAL: NEVER USE INTER! It's boring and overused!
-   - DO NOT default to Inter, Helvetica, or Arial! Be creative with font choices!
+   - DO NOT default to Inter, Helvetica, Arial, or Times New Roman! Be creative with font choices!
    - Inter is FORBIDDEN - choose literally any other font!
+   - 🎨 PRIORITIZE LOCAL DESIGNER FONTS: We have amazing custom fonts in our "Designer" and "PixelBuddha" categories!
+   - ✨ BE BOLD: Choose unique, expressive fonts that make the presentation MEMORABLE!
+   - 🌟 EXPLORE CATEGORIES: Don't just use the first font you see - explore all categories!
+   - 🔥 MIX & MATCH: Pair bold display fonts with clean body fonts for maximum impact!
    - Choose from these ACTUALLY AVAILABLE fonts in the system:
 
    {available_fonts_str}
+
+   🎯 FONT SELECTION PRIORITY (USE THIS ORDER):
+   1. LOCAL DESIGNER FONTS (highest priority - unique, premium quality)
+      - Check "Designer" category FIRST for headers and titles
+      - These are custom fonts specifically curated for impact
+   2. PIXELBUDDHA FONTS (high priority - creative, professional)
+      - Excellent for hero text and display purposes
+   3. GOOGLE FONTS (only as fallback for body text)
+      - Use only when Designer/PixelBuddha don't fit the vibe
 
    🎭 PRESENTATION TYPE DETECTION (CRITICAL FOR FONT CHOICE!):
 

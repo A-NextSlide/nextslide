@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS comments (
 	author_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	body text NOT NULL,
 	thread_id uuid NULL,
+	anchor jsonb NULL,  -- Stores comment anchor info (component, region, etc.)
+	mention_user_ids uuid[] NULL,  -- Array of mentioned user IDs
 	resolved_by_user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
 	resolved_at timestamptz NULL,
 	created_at timestamptz NOT NULL DEFAULT now(),

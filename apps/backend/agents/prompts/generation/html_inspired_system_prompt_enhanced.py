@@ -213,7 +213,8 @@ BEST PRACTICE: Subtle gradients using same theme color with varying opacity
     ],
     "fontSize": 36,
     "fontFamily": "Inter",
-    "textAlign": "left",
+    "alignment": "left",
+    "verticalAlignment": "top",
     "lineHeight": 1.5
   }
 }
@@ -344,14 +345,20 @@ EFFECTS:
       { "name": "Q3", "value": 78 },
       { "name": "Q4", "value": 91 }
     ],
+    "fontFamily": "{{bodyFont}}",
     "theme": "light",
     "showLegend": false,
-    "colors": ["{{primary}}", "{{secondary}}", "{{accent}}"]
+    "colors": ["{{primary}}", "{{secondary}}"],
+    "axisBottom": { "tickRotation": 0, "legend": "Quarter" },
+    "axisLeft": { "tickRotation": 0, "legend": "Revenue ($M)" }
   }
 }
 
 CHART TYPES: bar, line, pie, area, scatter, waterfall, radar, heatmap
 POSITIONING: Left half (x=80, width=880) OR Right half (x=960, width=880)
+COLORS: Use theme colors - most data in primary, only highlight key outliers in secondary
+FONTS: Always set fontFamily to {{bodyFont}} for consistency
+ROTATION: Always set tickRotation: 0 on both axes - keep labels horizontal
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 7. CUSTOM COMPONENT - Interactive data viz, dashboards

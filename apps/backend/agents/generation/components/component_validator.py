@@ -31,7 +31,7 @@ class ComponentValidator:
 
         # Apply font sizing to all text components if theme provided
         if theme:
-            logger.info(f"[FONT SIZING] Applying adaptive font sizing to {len(components)} components")
+            logger.debug(f"[FONT SIZING] Applying adaptive font sizing to {len(components)} components")
             components = self.apply_slide_font_sizing(components, theme)
         else:
             logger.warning("[FONT SIZING] No theme provided, skipping font sizing")
@@ -100,7 +100,9 @@ class ComponentValidator:
                     validated.append(component)
                     
             except Exception as e:
-                logger.warning(f"Component validation failed for {comp_type}: {e}")
+                # Truncate error message to first line to avoid Pydantic spam
+                error_msg = str(e).split('\n')[0]
+                logger.debug(f"Component validation failed for {comp_type}: {error_msg}")
                 # Last-chance sanitation for Chart and Lines components before keeping
                 try:
                     if comp_type == 'Chart':
@@ -158,10 +160,10 @@ class ComponentValidator:
                 typography = theme.get('typography', {})
                 # Try to get body font from theme
                 props['fontFamily'] = typography.get('body_text', {}).get('family', 'Inter')
-                logger.info(f"[FONT FIX] Replaced invalid font '{props.get('fontFamily')}' with theme font: {props['fontFamily']}")
+                logger.debug(f"[FONT FIX] Replaced invalid font '{props.get('fontFamily')}' with theme font: {props['fontFamily']}")
             else:
                 props['fontFamily'] = 'Inter'
-                logger.info(f"[FONT FIX] Replaced invalid font with default: Inter")
+                logger.debug(f"[FONT FIX] Replaced invalid font with default: Inter")
 
         # Get default text color from theme if available, otherwise use black
         default_text_color = '#000000ff'
@@ -174,11 +176,11 @@ class ComponentValidator:
                 palette_source = color_palette.get('source') or theme.get('palette_source')
                 is_branded_theme = palette_source in ['brandfetch_cache', 'brand', 'brandfetch']
                 if is_branded_theme:
-                    print(f"🎨 [VALIDATOR] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
+                    logger.debug(f"[VALIDATOR] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
                 else:
-                    print(f"🎨 [VALIDATOR] Using theme text color: {default_text_color}")
+                    logger.debug(f"[VALIDATOR] Using theme text color: {default_text_color}")
         else:
-            print(f"🎨 [VALIDATOR] No theme provided, using default black: {default_text_color}")
+            logger.debug(f"[VALIDATOR] No theme provided, using default black: {default_text_color}")
 
         # Base visual defaults often required by schema
         props.setdefault('opacity', 1)
@@ -252,14 +254,14 @@ class ComponentValidator:
         if is_branded_theme:
             # For branded themes, ALWAYS use the brand text color (ignore AI-generated colors)
             props['textColor'] = default_text_color
-            print(f"🎨 [VALIDATOR] Branded theme: forcing brand text color {default_text_color}")
+            logger.debug(f"[VALIDATOR] Branded theme: forcing brand text color {default_text_color}")
         elif dominant_color and isinstance(dominant_color, str):
             # Use dominant color from text segments
             props['textColor'] = dominant_color
         elif not props.get('textColor') or props.get('textColor') in ['#000000', '#000000ff']:
             # If no textColor set, or if it's black, use theme color
             props['textColor'] = default_text_color
-            print(f"🎨 [VALIDATOR] Setting textColor to theme default: {default_text_color}")
+            logger.debug(f"[VALIDATOR] Setting textColor to theme default: {default_text_color}")
         # Otherwise keep whatever textColor was already set
 
         # Compute root fontSize/fontWeight heuristics if missing
@@ -299,11 +301,11 @@ class ComponentValidator:
             if is_branded_theme:
                 # For branded themes, always use brand text color
                 style['textColor'] = default_text_color
-                print(f"🎨 [SEGMENT] Branded theme: forcing brand text color {default_text_color}")
+                logger.debug(f"[SEGMENT] Branded theme: forcing brand text color {default_text_color}")
             elif not color or color in ['#000000', '#000000ff']:
                 # Replace black with theme color
                 style['textColor'] = default_text_color
-                print(f"🎨 [SEGMENT] Replaced black with theme color: {default_text_color}")
+                logger.debug(f"[SEGMENT] Replaced black with theme color: {default_text_color}")
             else:
                 style.setdefault('textColor', color)
             style.setdefault('backgroundColor', '#00000000')
@@ -332,7 +334,7 @@ class ComponentValidator:
             props['texts'] = normalized_texts
 
         # Debug: Log final textColor
-        print(f"🎨 [FINAL] Component {component.get('type')} textColor: {props.get('textColor')}, fontWeight: {props.get('fontWeight')}")
+        logger.debug(f"[FINAL] Component {component.get('type')} textColor: {props.get('textColor')}, fontWeight: {props.get('fontWeight')}")
 
         component['props'] = props
         return component
@@ -530,7 +532,7 @@ class ComponentValidator:
             # CRITICAL: Normalize font sizes for text points at the same x position
             components = self._normalize_font_sizes_by_x_position(components)
 
-            logger.info(f"[FONT SIZING] ✅ Applied adaptive font sizing to {sized_count} text components")
+            logger.debug(f"[FONT SIZING] ✅ Applied adaptive font sizing to {sized_count} text components")
             return components
 
         except Exception as e:
@@ -646,7 +648,7 @@ class ComponentValidator:
                             )
 
             if normalized_count > 0:
-                logger.info(f"[FONT NORMALIZATION] ✅ Normalized {normalized_count} text components for consistency")
+                logger.debug(f"[FONT NORMALIZATION] ✅ Normalized {normalized_count} text components for consistency")
 
             return components
 
@@ -675,11 +677,11 @@ class ComponentValidator:
                     palette_source = color_palette.get('source') or theme.get('palette_source')
                     is_branded_theme = palette_source in ['brandfetch_cache', 'brand', 'brandfetch']
                     if is_branded_theme:
-                        print(f"🎨 [TIPTAP PROMOTE] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
+                        logger.debug(f"[TIPTAP PROMOTE] Branded theme detected ({palette_source}), using brand text color: {default_text_color}")
                     else:
-                        print(f"🎨 [TIPTAP PROMOTE] Using theme text color: {default_text_color}")
+                        logger.debug(f"[TIPTAP PROMOTE] Using theme text color: {default_text_color}")
             else:
-                print(f"🎨 [TIPTAP PROMOTE] No theme provided, using default black")
+                logger.debug(f"[TIPTAP PROMOTE] No theme provided, using default black")
             if comp_type not in ['TiptapTextBlock', 'TextBlock', 'Title']:
                 return component
             # If texts already present and properly structured, keep as-is but ensure style subkeys
@@ -839,7 +841,7 @@ class ComponentValidator:
                 "stops": stops
             }
             
-            logger.info(f"Converted legacy gradient to new format: {props['gradient']}")
+            logger.debug(f"Converted legacy gradient to new format: {props['gradient']}")
         
         # Check if patternType is set to 'none' or other invalid values
         pattern_type = props.get('patternType')
@@ -859,7 +861,7 @@ class ComponentValidator:
                 # Ensure we have a valid backgroundType
                 if 'backgroundType' not in props:
                     props['backgroundType'] = 'gradient'
-                    logger.info("Added missing backgroundType: 'gradient' to Background component")
+                    logger.debug("Added missing backgroundType: 'gradient' to Background component")
         
         # Ensure required base and schema props exist for Background
         try:
@@ -993,7 +995,7 @@ class ComponentValidator:
             new_x = CANVAS_WIDTH - width - MARGIN
             if new_x >= MARGIN:
                 position['x'] = new_x
-                logger.info(f"Repositioned {comp_type} to x={new_x} to prevent right overflow")
+                logger.debug(f"Repositioned {comp_type} to x={new_x} to prevent right overflow")
             else:
                 # Component is too wide, resize it
                 new_width = CANVAS_WIDTH - max(x, MARGIN) - MARGIN
@@ -1003,12 +1005,12 @@ class ComponentValidator:
                     if comp_type == 'Image' and height > 0:
                         scale = new_width / width
                         props['height'] = int(height * scale)
-                    logger.info(f"Resized {comp_type} to width={new_width} to fit canvas")
+                    logger.debug(f"Resized {comp_type} to width={new_width} to fit canvas")
                 else:
                     # Force safe position and size
                     position['x'] = MARGIN
                     props['width'] = CANVAS_WIDTH - (2 * MARGIN)
-                    logger.info(f"Force repositioned {comp_type} to safe position")
+                    logger.debug(f"Force repositioned {comp_type} to safe position")
         
         # Fix vertical overflow (top-left clamping with margin-based resize fallback)
         if y + height > CANVAS_HEIGHT:
@@ -1016,7 +1018,7 @@ class ComponentValidator:
             new_y = CANVAS_HEIGHT - height - MARGIN
             if new_y >= MARGIN:
                 position['y'] = new_y
-                logger.info(f"Repositioned {comp_type} to y={new_y} to prevent bottom overflow")
+                logger.debug(f"Repositioned {comp_type} to y={new_y} to prevent bottom overflow")
             else:
                 # Component is too tall, resize it
                 new_height = CANVAS_HEIGHT - max(y, MARGIN) - MARGIN
@@ -1026,20 +1028,20 @@ class ComponentValidator:
                     if comp_type == 'Image' and width > 0:
                         scale = new_height / height
                         props['width'] = int(width * scale)
-                    logger.info(f"Resized {comp_type} to height={new_height} to fit canvas")
+                    logger.debug(f"Resized {comp_type} to height={new_height} to fit canvas")
                 else:
                     # Force safe position and size
                     position['y'] = MARGIN
                     props['height'] = CANVAS_HEIGHT - (2 * MARGIN)
-                    logger.info(f"Force repositioned {comp_type} to safe position")
+                    logger.debug(f"Force repositioned {comp_type} to safe position")
         
         # Ensure minimum position constraints
         if position.get('x', 0) < 0:
             position['x'] = 0
-            logger.info(f"Fixed negative x position for {comp_type}")
+            logger.debug(f"Fixed negative x position for {comp_type}")
         if position.get('y', 0) < 0:
             position['y'] = 0
-            logger.info(f"Fixed negative y position for {comp_type}")
+            logger.debug(f"Fixed negative y position for {comp_type}")
         
         # Update component with validated values
         component['props']['position'] = position
@@ -1147,34 +1149,26 @@ class ComponentValidator:
         return component
 
     def _ensure_axis_label_rotation(self, component: Dict[str, Any]) -> Dict[str, Any]:
-        """Conservatively set bottom axis label rotation and margin when labels are long/dense.
-        - If props.data has many items (>=8) or label strings are long (>=12 chars median), set:
-          - axisBottom.tickRotation = 30 (or keep existing if already set)
-          - margins.bottom >= 60
-        Schema keys align with our registry (Nivo-style); frontend can map to Highcharts (xAxis.labels.rotation, chart.marginBottom).
+        """Ensure axis rotation is set to 0 by default to prevent label cutoff.
+        Users can manually adjust rotation if needed via the UI.
         """
         try:
             props = component.get('props', {}) or {}
-            data = props.get('data') or []
-            if not isinstance(data, list) or not data:
-                return component
-            # Heuristics: count and median label length
-            labels = [str((d or {}).get('name') or '') for d in data if isinstance(d, dict)]
-            if not labels:
-                return component
-            long_count = sum(1 for s in labels if len(s) >= 12)
-            need_rotation = len(labels) >= 8 or long_count >= max(1, len(labels) // 3)
-            if not need_rotation:
-                return component
-            axis_bottom = props.setdefault('axisBottom', {}) if isinstance(props.get('axisBottom'), dict) else props.setdefault('axisBottom', {})
-            if 'tickRotation' not in axis_bottom or axis_bottom.get('tickRotation') in (None, 0):
-                axis_bottom['tickRotation'] = 30
-            props['axisBottom'] = axis_bottom
-            margins = props.setdefault('margins', {}) if isinstance(props.get('margins'), dict) else props.setdefault('margins', {})
-            bottom = int(margins.get('bottom', 0) or 0)
-            if bottom < 60:
-                margins['bottom'] = 60
-            props['margins'] = margins
+            
+            # Ensure axisBottom has tickRotation set to 0 if not already specified
+            axis_bottom = props.get('axisBottom')
+            if isinstance(axis_bottom, dict):
+                if 'tickRotation' not in axis_bottom:
+                    axis_bottom['tickRotation'] = 0
+                    props['axisBottom'] = axis_bottom
+            
+            # Ensure axisLeft has tickRotation set to 0 if not already specified
+            axis_left = props.get('axisLeft')
+            if isinstance(axis_left, dict):
+                if 'tickRotation' not in axis_left:
+                    axis_left['tickRotation'] = 0
+                    props['axisLeft'] = axis_left
+            
             component['props'] = props
         except Exception as e:
             logger.debug(f"_ensure_axis_label_rotation skipped: {e}")
@@ -1221,7 +1215,7 @@ class ComponentValidator:
             if modified:
                 props['data'] = data
                 component['props'] = props
-                logger.info(f"[CHART FIX] Added missing color fields to {sum(1 for p in data if isinstance(p, dict) and p.get('color'))} data points")
+                logger.debug(f"[CHART FIX] Added missing color fields to {sum(1 for p in data if isinstance(p, dict) and p.get('color'))} data points")
                 
         except Exception as e:
             logger.warning(f"_ensure_chart_data_colors failed: {e}")
@@ -1280,7 +1274,7 @@ class ComponentValidator:
                 props.pop('width', None)
                 props.pop('height', None)
                 
-                logger.info(f"[LINES FIX] Converted Lines from box-based to coordinate-based positioning")
+                logger.debug(f"[LINES FIX] Converted Lines from box-based to coordinate-based positioning")
             
             # Fix stroke if it's an object instead of a color string
             stroke = props.get('stroke')
@@ -1298,7 +1292,7 @@ class ComponentValidator:
                         opacity_hex = format(int(stroke['opacity'] * 255), '02x')
                         props['stroke'] = color + opacity_hex
                 
-                logger.info(f"[LINES FIX] Converted stroke from object to color string")
+                logger.debug(f"[LINES FIX] Converted stroke from object to color string")
             
             component['props'] = props
             
@@ -1328,7 +1322,7 @@ class ComponentValidator:
             if matches and 'const padding' in render:
                 # Replace hardcoded values with padding * 2
                 render = re.sub(pattern, 'props.width - padding * 2', render)
-                logger.info("[CustomComponent Fix] Fixed hardcoded padding values to use padding variable")
+                logger.debug("[CustomComponent Fix] Fixed hardcoded padding values to use padding variable")
         
         # Sanitize any text content within nested props to remove emojis and normalize whitespace
         try:
@@ -1340,7 +1334,7 @@ class ComponentValidator:
         
         # Log the original render for debugging
         if render:
-            logger.info(f"[CustomComponent Fix] Processing render function (length: {len(render)})")
+            logger.debug(f"[CustomComponent Fix] Processing render function (length: {len(render)})")
         
         # FIRST: Fix bracket mismatches (extra/missing parens/braces)
         # This is critical and should run before other transformations
@@ -1350,7 +1344,7 @@ class ComponentValidator:
                 if fixed_render != render:
                     props['render'] = fixed_render
                     render = fixed_render
-                    logger.info(f"[CustomComponent Fix] Fixed bracket mismatch in render")
+                    logger.debug(f"[CustomComponent Fix] Fixed bracket mismatch in render")
         except Exception as e:
             logger.warning(f"[CustomComponent Fix] Failed to fix bracket mismatch: {e}")
         
@@ -1364,7 +1358,7 @@ class ComponentValidator:
                 render = re.sub(r"\$\{([^}]+)\}", r"' + \1 + '", render)
                 # Replace backticks with single quotes
                 render = render.replace('`', "'")
-                logger.info(
+                logger.debug(
                     f"[CustomComponent Fix] Sanitized template literals/backticks in render (len {original_len} -> {len(render)})"
                 )
                 props['render'] = render
@@ -1419,12 +1413,12 @@ class ComponentValidator:
             open_braces = render.count('{')
             close_braces = render.count('}')
             if open_braces == close_braces and open_braces > 0 and not self._needs_overlay_safety_fixes(render):
-                logger.info("[CustomComponent Fix] Render function appears valid, keeping as-is")
+                logger.debug("[CustomComponent Fix] Render function appears valid, keeping as-is")
                 return component
         
         # If render looks like raw JavaScript or is incomplete
         if isinstance(render, str) and render:
-            logger.info(f"[CustomComponent Fix] Fixing render function")
+            logger.debug(f"[CustomComponent Fix] Fixing render function")
             
             # First, check if it's truncated with // or incomplete
             if render.strip().endswith('//') or render.strip().endswith('/'):
@@ -1457,7 +1451,7 @@ class ComponentValidator:
             
             # Check if it's missing proper escaping
             if '\n' in render and '\\n' not in render:
-                logger.info("[CustomComponent Fix] Adding proper escaping to render function")
+                logger.debug("[CustomComponent Fix] Adding proper escaping to render function")
                 # Escape the render function
                 escaped_render = render.replace('\\', '\\\\').replace('\n', '\\n').replace('"', '\\"')
                 
@@ -1515,7 +1509,7 @@ class ComponentValidator:
 
         # Enforce correct function signature if present (do not return early; allow further safety fixes)
         if isinstance(render, str) and 'function render(' in render and '{ props }' in render:
-            logger.info("[CustomComponent Fix] Updating render signature to include state/updateState/id/isThumbnail")
+            logger.debug("[CustomComponent Fix] Updating render signature to include state/updateState/id/isThumbnail")
             render = render.replace('function render({ props }', 'function render({ props, state, updateState, id, isThumbnail }')
             # Force single-argument signature by stripping any trailing params (e.g., ", instanceId")
             try:
@@ -1564,7 +1558,7 @@ class ComponentValidator:
 
         # If no render function provided, add a simple one
         if not render:
-            logger.info("[CustomComponent Fix] No render function provided, adding default")
+            logger.debug("[CustomComponent Fix] No render function provided, adding default")
             props['render'] = self._get_simple_render_function()
         
         # Final safety: ensure container styles on any existing render

@@ -1761,15 +1761,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create an engaging presentation about the solar system. Include an intro to space exploration, overview of the Sun, inner planets (Mercury, Venus, Earth, Mars) with key facts, outer planets (Jupiter, Saturn, Uranus, Neptune), dwarf planets and asteroids, moons worth knowing, fascinating space phenomena, timeline of space missions, and future of space exploration. Use stunning space visuals. 10–12 slides."
+                            "Create a fascinating presentation about legendary lost civilizations. Include introduction to archaeological mysteries, Atlantis legends and theories, Ancient Egypt's hidden secrets, Machu Picchu and the Inca Empire, Easter Island and the Moai statues, Angkor Wat and Khmer civilization, Pompeii before the eruption, the mysterious Nazca Lines, modern discoveries and technology in archaeology, and ongoing expeditions. Use dramatic historical imagery. 10–12 slides."
                           )
                         }
                       >
-                        Journey Through the Solar System
+                        Legendary Lost Civilizations
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">Planets, moons, phenomena, missions</p>
+                      <p className="text-xs">Atlantis, Egypt, Machu Picchu, mysteries</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1780,15 +1780,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a pitch deck for a fantasy movie trilogy. Include the magical world overview, main hero's journey, villain and their dark motivation, supporting cast of quirky characters, visual style and cinematography inspiration, epic battle sequences, plot arcs for all three films, merchandising opportunities, target audience demographics, and box office projections. Make it cinematic! 10–12 slides."
+                            "Create a business plan presentation for launching a coffee shop empire. Include the perfect location strategy, interior design and atmosphere, signature drink menu creation, sourcing premium beans globally, barista training program, customer loyalty and rewards, social media marketing tactics, expansion plan from one shop to franchise, financial projections and break-even analysis, and community building initiatives. Use warm, inviting coffee shop imagery. 10–12 slides."
                           )
                         }
                       >
-                        Epic Fantasy Film Trilogy Pitch
+                        Starting a Coffee Shop Empire
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">World, hero, villain, visual style, box office</p>
+                      <p className="text-xs">Location, menu, design, expansion, profits</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1799,15 +1799,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a vibrant cookbook presentation for street food from around the world. Include introduction to street food culture, Asia section (tacos, dumplings, satay), Europe section (crepes, currywurst, arancini), Americas section (hot dogs, arepas, elote), Africa & Middle East (shawarma, bunny chow, falafel), cooking tips and techniques, ingredient sourcing guide, and a final feast photo spread. Use mouth-watering food photography. 8–10 slides."
+                            "Create an adrenaline-pumping presentation about extreme sports around the world. Include introduction to extreme sports culture, surfing the biggest waves in Hawaii and Portugal, skydiving and BASE jumping hotspots, rock climbing and bouldering destinations, snowboarding and skiing extreme terrain, parkour and freerunning in urban jungles, wingsuit flying through mountains, kitesurfing and windsurfing, safety gear and preparation, and athlete profiles and epic moments. Use action-packed photography. 10–12 slides."
                           )
                         }
                       >
-                        Global Street Food Adventure
+                        Extreme Sports Around the World
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">Recipes, cultures, photos, cooking tips</p>
+                      <p className="text-xs">Surfing, skydiving, climbing, adrenaline</p>
                     </TooltipContent>
                   </Tooltip>
 
@@ -1818,15 +1818,15 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         className="rounded-full border-[#383636] text-white bg-[#383636] hover:bg-[#383636]/90 py-1 px-3 h-auto text-sm"
                         onClick={() =>
                           setChatInput(
-                            "Create a presentation about the history and evolution of video games. Include the arcade golden age (Pac-Man, Space Invaders), console wars (Nintendo vs Sega), rise of 3D graphics, online multiplayer revolution, mobile gaming explosion, indie game renaissance, esports phenomenon, VR/AR gaming, gaming culture and communities, and the future of interactive entertainment. Include nostalgic visuals and timelines. 10–12 slides."
+                            "Create a comprehensive guide to building your own smart home. Include introduction to home automation benefits, smart lighting systems (Philips Hue, smart switches), voice assistants and smart speakers (Alexa, Google Home), security cameras and smart locks, thermostat automation for energy savings, smart appliances and kitchen tech, entertainment systems and streaming, integration platforms (HomeKit, SmartThings), budget breakdown and ROI, and future smart home trends. Use sleek tech photography. 10–12 slides."
                           )
                         }
                       >
-                        The Evolution of Gaming
+                        Building Your Own Smart Home
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs backdrop-blur-2xl bg-white/40 dark:bg-neutral-800/40 border border-white/30 dark:border-neutral-700/30">
-                      <p className="text-xs">Arcade, consoles, online, esports, future</p>
+                      <p className="text-xs">Automation, security, voice control, savings</p>
                     </TooltipContent>
                   </Tooltip>
                 </div>

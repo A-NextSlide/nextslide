@@ -73,165 +73,38 @@ class ThemeDirector:
         if color_result.get('metadata', {}).get('logo_url'):
             await self._upload_brand_assets(color_result, deck_outline)
         
-        # Per-slide theming with AI-driven structural guidance
+        # Per-slide theming (simplified)
         slide_themes: Dict[str, Dict[str, Any]] = {}
         if opts.per_slide_theming:
-            # Use AI to determine deck formality and generate per-slide structural instructions
-            await self._emit_tool_call(
-                "AI.analyze_deck_formality",
-                {"deck_title": getattr(deck_outline, 'title', ''), "slides_count": len(getattr(deck_outline, 'slides', []))}
-            )
-            
-            formality_analysis = await self._determine_deck_formality_with_ai(deck_outline, analysis)
-            
-            await self._emit_tool_result(
-                "AI.analyze_deck_formality", 
-                [f"Formality: {formality_analysis['formality_level']} (confidence: {formality_analysis['confidence']:.1%})", 
-                 f"Audience: {formality_analysis['intended_audience']}", 
-                 f"Context: {formality_analysis['presentation_context']}"]
-            )
-            
-            # Log AI reasoning
-            logger.info(f"AI formality analysis: {formality_analysis['formality_level']} - {formality_analysis['reasoning']}")
-            
             for i, slide in enumerate(getattr(deck_outline, 'slides', []) or []):
                 slide_id = getattr(slide, 'id', None) or getattr(slide, 'uuid', None) or str(i)
-                slide_title = getattr(slide, 'title', '')
-                slide_content = getattr(slide, 'content', '')
-                slide_type = getattr(slide, 'slide_type', 'content')  # Get the actual slide type
+                slide_type = getattr(slide, 'slide_type', 'content')
                 
-                # Find matching AI instruction for this slide
-                ai_instruction = None
-                for instr in formality_analysis.get('slide_instructions', []):
-                    if instr['slide_index'] == i + 1:
-                        ai_instruction = instr
-                        break
-                
-                # Use AI instruction if available, otherwise fallback to basic structure
-                if ai_instruction:
-                    slide_structure = {
-                        "slide_type": slide_type,  # Use the actual slide type
-                        "elements_to_include": [],
-                        "positioning": {},
-                        "styling": {
-                            "colors": {
-                                "title_color": deck_theme.get('title_color', '#1A1A1A'),
-                                "subtitle_color": deck_theme.get('subtitle_color', '#4A5568'),
-                                "number_color": deck_theme.get('accent_colors', ['#6B7280'])[0] if deck_theme.get('accent_colors') else '#6B7280'
-                            }
-                        },
-                        "ai_reasoning": ai_instruction.get('reasoning', '')
-                    }
-                    
-                    # Add elements based on AI decision
-                    slide_structure["elements_to_include"] = ["title"]
-                    
-                    if ai_instruction['show_slide_number']:
-                        slide_structure["elements_to_include"].append("slide_number")
-                        slide_structure["positioning"]["slide_number"] = {
-                            "position": ai_instruction['slide_number_position'],
-                            "text": f"{i+1:02d}",
-                            "style": ai_instruction['slide_number_style']
+                slide_structure = {
+                    "slide_type": slide_type,
+                    "elements_to_include": ["title"],
+                    "positioning": {
+                        "content_area": {
+                            "x": 80, 
+                            "y": 220, 
+                            "width": 1760, 
+                            "height": 640,
+                            "spacing": "relaxed"
                         }
-                    
-                    # Note: Logo positioning is now handled by AI model through prompts, not forced positioning
-                    
-                    if ai_instruction['show_subtitle']:
-                        slide_structure["elements_to_include"].append("subtitle")
-                        slide_structure["positioning"]["subtitle"] = {
-                            "gap_below_title": 30,
-                            "style": {"fontSize": 20, "opacity": 0.8}
+                    },
+                    "styling": {
+                        "colors": {
+                            "title_color": deck_theme.get('title_color', '#1A1A1A'),
+                            "subtitle_color": deck_theme.get('subtitle_color', '#4A5568')
                         }
-                    
-                    # Use smart line styler for contextual divider lines
-                    if ai_instruction['show_divider_line']:
-                        from agents.generation.components.smart_line_styler import SmartLineStyler
-                        line_styler = SmartLineStyler()
-                        
-                        # Get contextual line style
-                        line_style = line_styler.get_line_style(
-                            formality_level=formality_analysis['formality_level'],
-                            slide_type=slide_type,
-                            theme_colors=deck_theme.get('color_palette', {}),
-                            variety_seed=opts.variety_seed
-                        )
-                        
-                        if line_style:  # Only add line if style is returned (not None for excluded types)
-                            slide_structure["elements_to_include"].append("divider_line")
-                            
-                            # Calculate position based on content area
-                            content_y = ai_instruction['content_area_start_y']
-                            divider_y = content_y - 30  # Position above content area
-                            
-                            # Calculate line positioning based on span and alignment
-                            line_width = int(1760 * line_style.get('span_fraction', 0.8))
-                            align = line_style.get('align', 'center')
-                            
-                            if align == 'left':
-                                start_x = 80
-                                end_x = 80 + line_width
-                            elif align == 'right':
-                                start_x = 1840 - line_width
-                                end_x = 1840
-                            else:  # center or stretch
-                                if line_style.get('span_fraction', 0.8) >= 1.0:
-                                    start_x = 80
-                                    end_x = 1840
-                                else:
-                                    start_x = 80 + (1760 - line_width) // 2
-                                    end_x = start_x + line_width
-                            
-                            slide_structure["positioning"]["divider_line"] = {
-                                "below_title": True,
-                                "stroke_width": line_style.get('stroke_width', 2),
-                                "opacity": line_style.get('opacity', 0.3),
-                                "span_fraction": line_style.get('span_fraction', 0.8),
-                                "align": align,
-                                "startPoint": {"x": start_x, "y": divider_y},
-                                "endPoint": {"x": end_x, "y": divider_y},
-                                "style": {
-                                    "strokeWidth": line_style.get('stroke_width', 2),
-                                    "opacity": line_style.get('opacity', 0.3)
-                                },
-                                # Pass theme colors for color resolution
-                                "theme_colors": line_style.get('theme_colors', {}),
-                                "color_priority": line_style.get('color_priority', ['accent_1'])
-                            }
-                    
-                    # Content area positioning
-                    slide_structure["positioning"]["content_area"] = {
-                        "x": 80,
-                        "y": ai_instruction['content_area_start_y'],
-                        "width": 1760,
-                        "height": 1080 - ai_instruction['content_area_start_y'] - 120,
-                        "spacing": ai_instruction['spacing_mode']
                     }
-                else:
-                    # Fallback structure for slides without AI instruction
-                    slide_structure = {
-                        "slide_type": slide_type,  # Use the actual slide type
-                        "elements_to_include": ["title"],
-                        "positioning": {
-                            "content_area": {
-                                "x": 80, "y": 220, "width": 1760, "height": 640,
-                                "spacing": "relaxed"
-                            }
-                        },
-                        "styling": {
-                            "colors": {
-                                "title_color": deck_theme.get('title_color', '#1A1A1A'),
-                                "subtitle_color": deck_theme.get('subtitle_color', '#4A5568')
-                            }
-                        },
-                        "ai_reasoning": "Fallback structure - no AI instruction available"
-                    }
+                }
                 
                 slide_themes[slide_id] = {
                     "structure": slide_structure,
                     "instructions": [
                         "Apply deck palette with high contrast",
-                        "Scale typography based on content density",
-                        "Follow structural guidance provided"
+                        "Scale typography based on content density"
                     ]
                 }
 
@@ -621,155 +494,6 @@ Brand name:"""
                 analysis['explicit_colors'] = [c for c in colors if isinstance(c, str) and c.startswith('#')]
         
         return analysis
-    
-    async def _determine_deck_formality_with_ai(self, deck_outline: Any, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Use AI model to determine deck formality and generate per-slide structural instructions."""
-        
-        from pydantic import BaseModel, Field
-        from typing import List, Dict, Any
-        
-        # Collect deck content
-        title = getattr(deck_outline, 'title', '')
-        prompt = getattr(deck_outline, 'prompt', '')
-        
-        slides_info = []
-        if hasattr(deck_outline, 'slides'):
-            for i, slide in enumerate(deck_outline.slides):
-                slide_title = getattr(slide, 'title', '')
-                slide_content = getattr(slide, 'content', '')
-                slides_info.append({
-                    'index': i + 1,
-                    'title': slide_title,
-                    'content': slide_content[:200] + '...' if len(slide_content) > 200 else slide_content
-                })
-        
-        class SlideStructureInstruction(BaseModel):
-            slide_index: int = Field(..., description="Slide number (1-based)")
-            show_slide_number: bool = Field(..., description="Whether to show slide number")
-            slide_number_position: Dict[str, int] = Field(default={'x': 80, 'y': 1020}, description="Position for slide number")
-            slide_number_style: Dict[str, Any] = Field(default={'fontSize': 20, 'opacity': 0.6}, description="Style for slide number")
-            show_subtitle: bool = Field(..., description="Whether this slide should have a subtitle")
-            show_divider_line: bool = Field(..., description="Whether to show divider line below title")
-            content_area_start_y: int = Field(default=220, description="Y position where main content should start")
-            spacing_mode: str = Field(default='relaxed', description="'formal' or 'relaxed' spacing")
-            reasoning: str = Field(..., description="Brief explanation for structural choices")
-        
-        class DeckFormalityAnalysis(BaseModel):
-            formality_level: str = Field(..., description="One of: 'formal', 'business', 'creative', 'casual'")
-            confidence: float = Field(..., description="Confidence score 0-1")
-            reasoning: str = Field(..., description="Detailed reasoning for formality classification")
-            intended_audience: str = Field(..., description="Who is this presentation for?")
-            presentation_context: str = Field(..., description="When/where would this be presented?")
-            slide_instructions: List[SlideStructureInstruction] = Field(..., description="Per-slide structural guidance")
-        
-        # Create system prompt
-        system_prompt = '''You are an expert presentation designer who analyzes deck content to determine the appropriate formality level and structural requirements.
-
-Formality Levels:
-- FORMAL: Board meetings, investor presentations, quarterly reports, compliance, audit reports
-  * Structure: Slide numbers (24pt, bottom-left), logos (120×40px to right of numbers), subtitles, divider lines
-  * Positioning: Numbers at (80,1000), logos at (140,990), content starts at y:240
-  
-- BUSINESS: Strategy presentations, proposals, market analysis, performance reviews  
-  * Structure: Slide numbers (20pt, bottom-left), logos when available (100×30px), subtitles
-  * Positioning: Numbers at (80,1020), logos at (120,1010), content starts at y:220
-  
-- CREATIVE: Brand campaigns, artistic presentations, vision statements, marketing creative
-  * Structure: Minimal - no forced slide numbers or logos, creative freedom
-  * Positioning: Flexible, content starts at y:320
-  
-- CASUAL: Tutorials, how-to guides, personal presentations, educational basics
-  * Structure: Clean and minimal, no structural elements
-  * Positioning: Simple, content starts at y:200
-
-Analyze the deck content and context to determine appropriate formality. Consider:
-- Who is the audience? (executives, team members, students, general public)
-- What is the purpose? (reporting, presenting, teaching, inspiring)
-- What is the tone? (professional, creative, casual, educational)
-- When/where would this be presented? (boardroom, conference, workshop, online)
-
-For each slide, determine if it needs:
-- Slide numbers (formal/business only)
-- Logo placement (when appropriate for context) 
-- Subtitles (for complex slides in structured presentations)
-- Divider lines (formal presentations only, never on stat or quote slides)
-- Appropriate content spacing
-
-Base decisions on content meaning and intent, not just keywords.'''
-        
-        # Create user prompt
-        user_prompt = f'''Analyze this presentation and determine the appropriate formality level and per-slide structural requirements:
-
-**Deck Title:** {title}
-
-**User Request/Context:** {prompt}
-
-**Slides ({len(slides_info)} total):**
-'''
-        
-        for slide_info in slides_info:
-            user_prompt += f'''\nSlide {slide_info['index']}: {slide_info['title']}
-{slide_info['content']}
-'''
-        
-        user_prompt += '''
-
-Provide:
-1. Overall formality assessment with reasoning
-2. Intended audience and presentation context
-3. Per-slide structural instructions matching the formality level
-
-Ensure structural elements match the deck's maturity and intended use.'''
-        
-        # Get AI client and invoke
-        client, model_name = get_client(COMPOSER_MODEL)
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
-        try:
-            response = invoke(
-                client=client,
-                model=model_name,
-                messages=messages,
-                response_model=DeckFormalityAnalysis,
-                max_tokens=4000,
-                temperature=0.3  # Low temperature for consistent structural decisions
-            )
-            
-            return {
-                'formality_level': response.formality_level,
-                'confidence': response.confidence,
-                'reasoning': response.reasoning,
-                'intended_audience': response.intended_audience,
-                'presentation_context': response.presentation_context,
-                'slide_instructions': [
-                    {
-                        'slide_index': instr.slide_index,
-                        'show_slide_number': instr.show_slide_number,
-                        'slide_number_position': instr.slide_number_position,
-                        'slide_number_style': instr.slide_number_style,
-                        'show_subtitle': instr.show_subtitle,
-                        'show_divider_line': instr.show_divider_line,
-                        'content_area_start_y': instr.content_area_start_y,
-                        'spacing_mode': instr.spacing_mode,
-                        'reasoning': instr.reasoning
-                    } for instr in response.slide_instructions
-                ]
-            }
-        except Exception as e:
-            logger.error(f"AI formality detection failed: {e}")
-            # Fallback to business formality with basic structure
-            return {
-                'formality_level': 'business',
-                'confidence': 0.5,
-                'reasoning': 'Fallback due to AI detection error',
-                'intended_audience': 'Business audience',
-                'presentation_context': 'Professional setting',
-                'slide_instructions': []
-            }
     
     def _select_optimal_logo_for_background(
         self, 

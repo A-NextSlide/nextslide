@@ -49,9 +49,32 @@ export function HighchartsChartFrame<T extends Record<string, any>>({
   const props = useMemo(() => {
     const componentProps = getComponentProps<T & BaseChartProps>(component, defaultProps);
     
+    // Backward compatibility: convert old xAxisLabel/yAxisLabel to new axisBottom/axisLeft format
+    let axisBottom = componentProps.axisBottom;
+    let axisLeft = componentProps.axisLeft;
+    
+    // If old properties exist and new ones don't, convert them
+    if ((componentProps as any).xAxisLabel && !axisBottom) {
+      axisBottom = {
+        legend: (componentProps as any).xAxisLabel,
+        legendOffset: 36,
+        tickRotation: 0
+      };
+    }
+    
+    if ((componentProps as any).yAxisLabel && !axisLeft) {
+      axisLeft = {
+        legend: (componentProps as any).yAxisLabel,
+        legendOffset: -40,
+        tickRotation: 0
+      };
+    }
+    
     return {
       ...componentProps,
-      backgroundColor
+      backgroundColor,
+      ...(axisBottom ? { axisBottom } : {}),
+      ...(axisLeft ? { axisLeft } : {})
     };
   }, [component, defaultProps, backgroundColor]);
 

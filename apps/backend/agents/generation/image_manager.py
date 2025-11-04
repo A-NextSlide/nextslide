@@ -32,9 +32,9 @@ class ImageManager:
         search_queries: Optional[Dict] = None
     ) -> asyncio.Task:
         """Start background image search."""
-        logger.info(f"🎯 IMAGE MANAGER: Starting background search for deck {deck_uuid}")
-        logger.info(f"🎯 Deck title: {deck_outline.title if hasattr(deck_outline, 'title') else 'Unknown'}")
-        logger.info(f"🎯 Number of slides: {len(deck_outline.slides) if hasattr(deck_outline, 'slides') else 0}")
+        logger.debug(f"IMAGE MANAGER: Starting background search for deck {deck_uuid}")
+        logger.debug(f"Deck title: {deck_outline.title if hasattr(deck_outline, 'title') else 'Unknown'}")
+        logger.debug(f"Number of slides: {len(deck_outline.slides) if hasattr(deck_outline, 'slides') else 0}")
         
         async def image_update_callback(update):
             logger.debug(f"🎯 IMAGE MANAGER CALLBACK: {update.get('type')} - {update.get('message', '')}")
@@ -46,7 +46,7 @@ class ImageManager:
                 images = data.get('images', [])
                 if slide_id and images:
                     self.pending_images[slide_id] = images
-                    logger.info(f"Stored {len(images)} pending images for slide {slide_id}")
+                    logger.debug(f"Stored {len(images)} pending images for slide {slide_id}")
             
             # Also handle the old event type just in case
             elif update.get('type') == 'slide_images_ready':
@@ -54,7 +54,7 @@ class ImageManager:
                 images = update.get('images', [])
                 if slide_id and images:
                     self.pending_images[slide_id] = images
-                    logger.info(f"Stored {len(images)} pending images for slide {slide_id}")
+                    logger.debug(f"Stored {len(images)} pending images for slide {slide_id}")
             
             if callback:
                 await callback(update)

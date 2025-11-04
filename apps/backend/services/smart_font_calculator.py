@@ -15,6 +15,7 @@ from services.font_metrics_service import (
     FitStrategy
 )
 from services.text_measurement_engine import TextMeasurementEngine
+from services.font_size_standardizer import standardize_font_size
 
 logger = logging.getLogger(__name__)
 
@@ -176,10 +177,16 @@ class SmartFontCalculator:
             optimal_size, target_size, estimated_lines, constraints
         )
 
+        # Standardize font sizes to standard values (e.g., 24 instead of 21.4)
+        # This ensures bullet points group at the same size
+        standardized_size = standardize_font_size(optimal_size, prefer_round_down=False)
+        standardized_min = standardize_font_size(min_size, prefer_round_down=False)
+        standardized_max = standardize_font_size(max_size, prefer_round_down=False)
+        
         return SizingResult(
-            font_size=round(optimal_size, 1),
-            font_size_min=round(min_size, 1),
-            font_size_max=round(max_size, 1),
+            font_size=float(standardized_size),
+            font_size_min=float(standardized_min),
+            font_size_max=float(standardized_max),
             font_weight=font_weight,
             line_height=round(line_height, 2),
             letter_spacing=round(letter_spacing, 2),

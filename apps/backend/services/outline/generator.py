@@ -22,7 +22,7 @@ from agents.config import (
     OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL, 
     OUTLINE_RESEARCH_MODEL,
     USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL
+    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
 )
 from agents.research import OutlineResearchAgent
 from agents import config as agents_config
@@ -55,7 +55,7 @@ def extract_image_prompt_from_content(content: str) -> Tuple[str, Optional[str]]
         cleaned_content = re.sub(pattern, '', content, flags=re.IGNORECASE).strip()
         # Clean up any extra newlines that might be left
         cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
-        logger.info(f"[IMAGE EXTRACT] Extracted image prompt: '{image_prompt}'")
+        logger.debug(f"[IMAGE EXTRACT] Extracted image prompt: '{image_prompt}'")
         return cleaned_content, image_prompt
     
     return content, None
@@ -96,7 +96,7 @@ class OutlineGenerator:
                 USE_PERPLEXITY_FOR_OUTLINE or
                 (options.model and isinstance(options.model, str) and (options.model.startswith("perplexity-") or options.model.startswith("claude-")))
             )
-            logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_fast_path={use_pplx}")
+            logger.debug(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, detail_level={options.detail_level}, use_fast_path={use_pplx}")
         except Exception as e:
             logger.warning(f"[DEBUG] Exception in fast-path check: {e}")
             use_pplx = USE_PERPLEXITY_FOR_OUTLINE
@@ -290,7 +290,7 @@ class OutlineGenerator:
             # Decide on Perplexity fast-path early (respects explicit model)
             try:
                 use_pplx_stream = USE_PERPLEXITY_FOR_OUTLINE or (options.model and options.model.startswith("perplexity-"))
-                logger.info(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, options.model={options.model}, use_pplx_stream={use_pplx_stream}")
+                logger.debug(f"[DEBUG] USE_PERPLEXITY_FOR_OUTLINE={USE_PERPLEXITY_FOR_OUTLINE}, options.model={options.model}, use_pplx_stream={use_pplx_stream}")
             except Exception as e:
                 logger.warning(f"[DEBUG] Exception in Perplexity check: {e}")
                 use_pplx_stream = USE_PERPLEXITY_FOR_OUTLINE
@@ -340,18 +340,18 @@ class OutlineGenerator:
                     logger.error(f"Error checking PPTX preservation: {e}")
             
             # If Perplexity is enabled, generate the full outline in one pass and stream synthesized updates
-            logger.info(f"[DEBUG] About to check use_pplx_stream={use_pplx_stream}")
+            logger.debug(f"[DEBUG] About to check use_pplx_stream={use_pplx_stream}")
             if use_pplx_stream:
                 try:
-                    logger.info(f"[DEBUG] Using Perplexity for TRUE streaming generation")
+                    logger.debug(f"[DEBUG] Using Perplexity for TRUE streaming generation")
                     yield ProgressUpdate(stage="planning", message="Creating structure (Perplexity)...", progress=15)
                     
                     # Generate slides one-by-one with Perplexity instead of generating complete outline
                     async for slide_update in self._generate_slides_streaming_with_perplexity(options):
-                        logger.info(f"[DEBUG] Yielding slide update immediately: {slide_update.stage}")
+                        logger.debug(f"[DEBUG] Yielding slide update immediately: {slide_update.stage}")
                         yield slide_update
                     
-                    logger.info(f"[DEBUG] Perplexity streaming completed successfully - RETURNING EARLY")
+                    logger.debug(f"[DEBUG] Perplexity streaming completed successfully - RETURNING EARLY")
                     return  # Exit after streaming generation is complete
                 except Exception as e:
                     logger.error(f"[DEBUG] Perplexity streaming failed with exception: {e}", exc_info=True)
@@ -361,7 +361,7 @@ class OutlineGenerator:
             # Fall back to the old batch method for compatibility
             if use_pplx_stream:
                 try:
-                    logger.info(f"[DEBUG] Falling back to Perplexity batch generation")
+                    logger.debug(f"[DEBUG] Falling back to Perplexity batch generation")
                     yield ProgressUpdate(stage="planning", message="Creating structure (Perplexity batch)...", progress=15)
                     pplx_result = await self._generate_with_perplexity(options)
                     if pplx_result:
@@ -561,21 +561,21 @@ class OutlineGenerator:
                     yield slide_update
             
             # Process media and charts after all slides are generated
-            logger.info(f"[DEBUG] Before process_media_and_charts:")
+            logger.debug(f"[DEBUG] Before process_media_and_charts:")
             for i, slide in enumerate(slides):
                 has_extracted = slide.extractedData is not None
-                logger.info(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
+                logger.debug(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
                 if has_extracted:
-                    logger.info(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
+                    logger.debug(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
             
             slides = await self._process_media_and_charts(slides, processed_files, options)
             
-            logger.info(f"[DEBUG] After process_media_and_charts:")
+            logger.debug(f"[DEBUG] After process_media_and_charts:")
             for i, slide in enumerate(slides):
                 has_extracted = slide.extractedData is not None
-                logger.info(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
+                logger.debug(f"[DEBUG] Slide {i+1} '{slide.title}' - extractedData: {has_extracted}")
                 if has_extracted:
-                    logger.info(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
+                    logger.debug(f"[DEBUG]   Chart type: {slide.extractedData.get('chart_type', 'unknown')}")
             
             # Research enhancement
             if options.enable_research:
@@ -1764,10 +1764,11 @@ class OutlineGenerator:
     
     def _slide_to_dict(self, slide: SlideContent) -> dict:
         """Convert slide to dictionary format"""
-        # Debug log taggedMedia
+        # Debug log taggedMedia and citations
         tm_count = len(slide.taggedMedia) if hasattr(slide, 'taggedMedia') and slide.taggedMedia else 0
-        logger.info(f"[SLIDE_TO_DICT] Converting slide '{slide.title}' - has {tm_count} taggedMedia items")
-        print(f"[SLIDE_TO_DICT] Converting slide '{slide.title}' - has {tm_count} taggedMedia items")
+        cit_count = len(slide.citations) if hasattr(slide, 'citations') and slide.citations else 0
+        fn_count = len(slide.footnotes) if hasattr(slide, 'footnotes') and slide.footnotes else 0
+        logger.debug(f"[SLIDE_TO_DICT] Converting slide '{slide.title}' - taggedMedia={tm_count}, citations={cit_count}, footnotes={fn_count}")
         
         # Convert taggedMedia to ensure it's properly serialized
         tagged_media_list = []
@@ -1796,7 +1797,7 @@ class OutlineGenerator:
         
         # Debug extractedData
         if slide.extractedData:
-            logger.info(f"[SLIDE_TO_DICT] Slide '{slide.title}' has extractedData: {slide.extractedData.get('chart_type', 'unknown')} chart")
+            logger.debug(f"[SLIDE_TO_DICT] Slide '{slide.title}' has extractedData: {slide.extractedData.get('chart_type', 'unknown')} chart")
         
         # Include chart_data for API processing
         if slide.chart_data:
@@ -1855,14 +1856,14 @@ class OutlineGenerator:
 
     async def _generate_slides_streaming_with_perplexity(self, options: OutlineOptions):
         """Generate slides one-by-one with Perplexity for true streaming"""
-        logger.info(f"[STREAMING] ⚠️⚠️⚠️ STARTING STREAMING GENERATION ⚠️⚠️⚠️")
-        logger.info(f"[STREAMING] detail_level = {options.detail_level}")
-        logger.info(f"[STREAMING] Expected: 'detailed' for detailed mode, 'standard' for presentation")
+        logger.debug(f"[STREAMING] ⚠️⚠️⚠️ STARTING STREAMING GENERATION ⚠️⚠️⚠️")
+        logger.debug(f"[STREAMING] detail_level = {options.detail_level}")
+        logger.debug(f"[STREAMING] Expected: 'detailed' for detailed mode, 'standard' for presentation")
         
         if options.detail_level == 'detailed':
-            logger.info(f"[STREAMING] ✅ DETAILED MODE ACTIVE - will generate 250-500+ words per slide")
+            logger.debug(f"[STREAMING] ✅ DETAILED MODE ACTIVE - will generate 250-500+ words per slide")
         else:
-            logger.info(f"[STREAMING] ✅ PRESENTATION MODE ACTIVE - will generate MAX 50 words per slide")
+            logger.debug(f"[STREAMING] ✅ PRESENTATION MODE ACTIVE - will generate MAX 50 words per slide")
         
         # First, generate a simple outline structure (titles + types) quickly
         slide_count = options.slide_count
@@ -1939,7 +1940,7 @@ Requirements:
             # Get quick outline structure - use mode-appropriate model
             from agents.ai.clients import get_client
             outline_model = PRESENTATION_OUTLINE_MODEL if options.detail_level != 'detailed' else PERPLEXITY_OUTLINE_MODEL
-            logger.info(f"[STREAMING] Using {outline_model} for outline structure (detail_level={options.detail_level})")
+            logger.debug(f"[STREAMING] Using {outline_model} for outline structure (detail_level={options.detail_level})")
             client, model_name = get_client(outline_model, wrap_with_instructor=False)
             
             # Use asyncio to run the synchronous API call in a thread executor
@@ -1963,18 +1964,24 @@ Requirements:
                 }
             
             loop = asyncio.get_event_loop()
-            outline_response = await loop.run_in_executor(
-                None,  # Use default thread pool
-                lambda: client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": outline_prompt}],
-                    temperature=0.2,
-                    max_tokens=1000,
-                    extra_body=search_params
-                )
-            )
+            # Use invoke to support both OpenAI and Anthropic clients
+            # Only pass extra_body for Perplexity models (not Claude/Anthropic)
+            invoke_kwargs = {
+                "client": client,
+                "model": model_name,
+                "messages": [{"role": "user", "content": outline_prompt}],
+                "response_model": None,  # Free-form text response
+                "temperature": 0.2,
+                "max_tokens": 1000
+            }
+            # Only add extra_body for Perplexity models
+            if model_name.startswith("perplexity-") or "sonar" in model_name:
+                invoke_kwargs["extra_body"] = search_params
             
-            outline_text = outline_response.choices[0].message.content
+            outline_text = await loop.run_in_executor(
+                None,  # Use default thread pool
+                lambda: invoke(**invoke_kwargs)
+            )
             
             # Parse the outline
             import json
@@ -2001,7 +2008,7 @@ Requirements:
             slide_titles = [f"Slide {i+1}" for i in range(slide_count)]
             slide_types = ["title"] + ["content"] * max(0, slide_count - 2) + (["conclusion"] if slide_count >= 2 else [])
         
-        logger.info(f"[STREAMING] Got outline: {len(slide_titles)} slides")
+        logger.debug(f"[STREAMING] Got outline: {len(slide_titles)} slides")
         
         # Emit the outline structure
         yield ProgressUpdate(
@@ -2032,8 +2039,18 @@ Requirements:
         generation_start_time = time.time()
         
         async def generate_single_slide(idx, slide_title, slide_type):
-            """Generate a single slide - can run in parallel"""
+            """Generate a single slide with hybrid approach: Perplexity research → Haiku narrative"""
             try:
+                # Import dependencies at function start
+                import asyncio
+                from agents.ai.clients import get_client, invoke
+                from .models import SlideContent
+                import uuid
+                import re
+                
+                # Get event loop for async operations
+                loop = asyncio.get_event_loop()
+                
                 # Define detail_mode at the start for use throughout this function
                 detail_mode = options.detail_level or 'standard'
                 
@@ -2042,9 +2059,50 @@ Requirements:
                 if stagger_delay > 0:
                     await asyncio.sleep(stagger_delay)
                 
-                logger.info(f"[PARALLEL] Starting slide {idx+1}: {slide_title} (type={slide_type}, mode={detail_mode}) at {time.time()}")
+                logger.debug(f"[PARALLEL] Starting slide {idx+1}: {slide_title} (type={slide_type}, mode={detail_mode}) at {time.time()}")
                 
-                # Generate individual slide content with Perplexity (with citations)
+                # PHASE 1: Research with Perplexity (get facts + citations)
+                perplexity_research = None
+                research_citations = []
+                
+                if slide_type not in ["title", "quote", "stat", "divider", "transition"]:
+                    # Research content slides with Perplexity
+                    perplexity_client, perplexity_model = get_client('perplexity-sonar', wrap_with_instructor=False)
+                    
+                    research_prompt = f"""Research this slide topic and provide key facts with sources:
+
+Presentation: {presentation_title}
+Slide: {slide_title}
+Context: {options.prompt}
+
+Provide 3-5 key facts with specific data, numbers, and sources."""
+
+                    research_result = await loop.run_in_executor(
+                        None,
+                        lambda: invoke(
+                            perplexity_client,
+                            perplexity_model,
+                            [{"role": "user", "content": research_prompt}],
+                            response_model=None,
+                            temperature=0.2,
+                            max_tokens=1000,
+                            extra_body={
+                                "return_citations": True,
+                                "search_recency_filter": "week",
+                                "num_search_results": 5
+                            }
+                        )
+                    )
+                    
+                    # Extract research and citations
+                    if isinstance(research_result, dict):
+                        perplexity_research = research_result.get("content", "")
+                        research_citations = research_result.get("citations", [])
+                        print(f"✅ PHASE 1: Got {len(research_citations)} citations from Perplexity for slide {idx+1}")
+                    else:
+                        perplexity_research = research_result
+                
+                # PHASE 2: Generate slide content with Haiku (using Perplexity research)
                 if slide_type == "title":
                     slide_prompt = f"""Create a MINIMAL TITLE SLIDE for a presentation.
 
@@ -2097,7 +2155,7 @@ Output 2–3 lines only:
 No bullets, no paragraphs, no extra commentary."""
                 else:
                     # detail_mode already defined at function start
-                    logger.info(f"[STREAMING] Generating content slide {idx+1} in {detail_mode} mode")
+                    logger.debug(f"[STREAMING] Generating content slide {idx+1} in {detail_mode} mode")
                     
                     # Pitch-aware bullet limits
                     bullet_guidance = "3–5"  # default
@@ -2108,13 +2166,17 @@ No bullets, no paragraphs, no extra commentary."""
                     
                     # ✅ USE COMPREHENSIVE, RESEARCH-BACKED PROMPTS FOR DETAILED CONTENT
                     if detail_mode == 'detailed':
-                        logger.info(f"[STREAMING] Slide {idx+1}: Using DETAILED mode prompt (250-500+ words)")
+                        logger.debug(f"[STREAMING] Slide {idx+1}: Using DETAILED mode prompt (250-500+ words)")
                         # INVESTMENT BANKING-GRADE COMPREHENSIVE CONTENT
                         slide_prompt = f"""Create COMPREHENSIVE, INVESTMENT-GRADE content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {options.prompt}
+
+OUTPUT FORMAT: Return ONLY the slide content. Do NOT add metadata headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'.
+DO NOT include IMAGE tags in your response - those will be added separately.
+Citations go inline as [1], [2].
 
 🔬 RESEARCH-BACKED CONTENT REQUIREMENTS:
 YOU MUST INCLUDE SPECIFIC, VERIFIABLE FACTS:
@@ -2132,9 +2194,10 @@ CONTENT REQUIREMENTS (NO UPPER LIMIT - BE COMPREHENSIVE!):
 - Include metrics, percentages, calculations, and numbers throughout EVERY bullet
 - Explain WHY and HOW, not just WHAT - provide complete reasoning and implications
 - Include background, analysis, evidence, implications, and forward-looking insights
+- Bold key numbers and metrics with **
 
-FORMAT:
-## Section Header
+STRUCTURED FORMAT WITH SECTION HEADERS:
+## Section Header (2-5 words)
 • Main comprehensive point with full context and specific data
   • Sub-point with supporting evidence or detailed breakdown
   • Additional sub-point with metrics and analysis
@@ -2142,49 +2205,70 @@ FORMAT:
   • Sub-bullet explaining implications and reasoning
   • Sub-bullet with comparison, benchmark, or calculation
 
-CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research."""
+## Next Section Header
+• Comprehensive point with data
+  • Supporting details
+
+CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research.
+REMEMBER: NO IMAGE tags in content."""
                     else:
-                        # PRESENTATION MODE - Flexible, educational
-                        logger.info(f"[STREAMING] Slide {idx+1}: Using FLEXIBLE presentation mode")
-                        slide_prompt = f"""Create effective presentation content for this slide:
+                        # PRESENTATION MODE - FLEXIBLE MINIMAL  
+                        logger.debug(f"[STREAMING] Slide {idx+1}: Using FLEXIBLE MINIMAL presentation mode")
+                        
+                        research_data_section = ""
+                        if perplexity_research:
+                            research_data_section = f"RESEARCH DATA from Perplexity:\n{perplexity_research}\n\n"
+                        
+                        citation_instruction = "Use inline citation numbers matching the research sources above." if research_citations else "Include facts and data."
+                        
+                        slide_prompt = f"""Create presentation content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {options.prompt}
 
-🎯 FLEXIBLE PRESENTATION MODE:
+{research_data_section}OUTPUT FORMAT: Return ONLY the slide content. DO NOT include metadata headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'. 
+DO NOT include IMAGE tags in your response - those will be added separately.
+{citation_instruction}
 
-GOAL: Audience LEARNS and UNDERSTANDS the topic.
+🎯 STRUCTURED CONTENT REQUIREMENTS:
 
-CONTENT APPROACH:
-- Use what's needed to TEACH the topic effectively
-- Mix bullets, sub-bullets (2-space indent), inline metrics
-- Include section headers (##) if they help organize
-- Ask: "Does this TEACH the topic?" NOT "How many bullets?"
+ORGANIZATION:
+- Group related points under section headers using ## for main topics
+- Use clear, descriptive section titles (2-5 words)
+- Organize content logically with proper hierarchy
 
-❌ TOO SHALLOW (DON'T DO THIS):
-• Supreme Court ruling
-• Charter authority
-• Protects rights
+FORMAT:
+## Section Title
+• Main point with specific data (8-12 words)
+• Related point with details (8-12 words)
+  • Sub-point if needed (indented with 2 spaces)
 
-✅ TEACHES TOPIC (DO THIS):
-• Supreme Court ruled 9-0 Quebec had no veto over Charter
-  Context: Quebec sought special status but federal proceeded
+## Another Section
+• Key fact or metric
+• Supporting information
 
-• Charter shifted power to federal government and courts
-  Provinces lost autonomy over rights legislation
-  Created judicial review framework
+CONTENT RULES:
+- Business/investor content: 3-5 bullets per section, 8-12 words each
+- Simple topics: 2-3 bullets per section, 5-7 words each
+- Test: Can you SPEAK this while presenting? If no, cut it
+- Bold key numbers and metrics with **
 
-• Fundamental freedoms and minority protections
-  Language rights for English/French in each province
-  Indigenous rights Section 35, multiculturalism Section 27
+GOOD examples:
+## Discovery
+• Howard Carter found tomb in **1922**, sealed **3,200 years**[1]
+• Hidden staircase **13 feet** below Valley of the Kings[1]
 
-FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
-- Metrics inline: "Revenue grew 40% from $10M to $14M"
-- Include [IMAGE: specific visual description] tag
-- CITE ALL FACTS with [1], [2], [3] etc."""
+## Artifacts  
+• King Tut's meteoritic iron dagger—rare divine material[3]
+• Thonis-Heracleion revealed **132 artifacts** near Alexandria[3][4]
 
-                logger.info(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
+BAD examples:
+• Long paragraph explanations - DELETE
+• Unorganized random bullets without grouping - DELETE
+• IMAGE: [description here] - NEVER include this"""
+
+                logger.debug(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
                 
                 # Mode-specific generation parameters
                 if detail_mode == 'detailed':
@@ -2196,113 +2280,73 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                         "num_search_results": 10
                     }
                 else:
-                    max_tokens_for_slide = 800  # Concise presentation mode
+                    max_tokens_for_slide = 600  # Flexible minimal (allows business content)
                     slide_search_params = {
                         "return_citations": True,
                         "search_recency_filter": "week",
                         "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
                         "num_search_results": 5
                     }
-                    logger.info(f"[PRESENTATION] Slide {idx+1}: Using minimal tokens (800) and search (5 results, 1 week)")
+                    logger.debug(f"[PRESENTATION] Slide {idx+1}: Using MINIMAL tokens (300) and search (5 results, 1 week)")
                 
                 # Use asyncio to run the synchronous API call in a thread executor
                 loop = asyncio.get_event_loop()
-                slide_response = await loop.run_in_executor(
+                # Use invoke to support both OpenAI and Anthropic clients
+                # Only pass extra_body for Perplexity models (not Claude/Anthropic)
+                # Use temperature 0.0 for presentation mode to strictly enforce rules
+                slide_temperature = 0.0 if detail_mode != 'detailed' else 0.3
+                
+                invoke_kwargs = {
+                    "client": client,
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": slide_prompt}],
+                    "response_model": None,  # Free-form text response
+                    "temperature": slide_temperature,
+                    "max_tokens": max_tokens_for_slide
+                }
+                # Only add extra_body for Perplexity models
+                if model_name.startswith("perplexity-") or "sonar" in model_name:
+                    invoke_kwargs["extra_body"] = slide_search_params
+                
+                result = await loop.run_in_executor(
                     None,  # Use default thread pool
-                    lambda: client.chat.completions.create(
-                        model=model_name,
-                        messages=[{"role": "user", "content": slide_prompt}],
-                        temperature=0.3,
-                        max_tokens=max_tokens_for_slide,
-                        extra_body=slide_search_params
-                    )
+                    lambda: invoke(**invoke_kwargs)
                 )
-                logger.info(f"[PARALLEL] Perplexity API call completed for slide {idx+1}")
-                
-                slide_content = slide_response.choices[0].message.content
-                
-                # Add [IMAGE: ] tags if missing (no bullet trimming - content is flexible)
-                if detail_mode != 'detailed':
-                    try:
-                        if slide_type not in ['title', 'stat', 'quote', 'divider', 'transition']:
-                            # Add [IMAGE: ] tag if missing for content slides
-                            if '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
-                                image_desc = slide_title.lower().replace(':', '').replace('-', '').strip()
-                                slide_content += f"\n[IMAGE: {image_desc}]"
-                                logger.info(f"[PRESENTATION STREAM] Added image tag to slide {idx+1} '{slide_title}'")
+                logger.debug(f"[PARALLEL] API call completed for slide {idx+1}")
 
-                        # For title slides, also add image
-                        elif slide_type == 'title' and '[IMAGE:' not in slide_content and '[image:' not in slide_content.lower():
-                            slide_content += f"\n[IMAGE: {presentation_title.lower()}]"
-                            logger.info(f"[PRESENTATION STREAM] Added hero image tag to title slide")
-
-                    except Exception as e:
-                        logger.warning(f"[PRESENTATION STREAM] Failed to add image tags for slide {idx+1}: {e}")
-                
-                # Extract citations from Perplexity response
+                # Extract content and citations from invoke response
+                # invoke() returns dict {"content": ..., "citations": [...]} when citations found
                 citations = []
-                try:
-                    # Check if response has citations attribute
-                    if hasattr(slide_response, 'citations') and slide_response.citations:
-                        for citation in slide_response.citations:
-                            if isinstance(citation, dict):
-                                citations.append({
-                                    "title": citation.get('title', ''),
-                                    "url": citation.get('url', ''),
-                                    "source": citation.get('source', citation.get('url', ''))
-                                })
-                            elif isinstance(citation, str):
-                                # Handle string citations (likely URLs)
-                                citations.append({
-                                    "title": citation,
-                                    "url": citation,
-                                    "source": citation
-                                })
-                            else:
-                                # Handle other types (objects with attributes)
-                                citations.append({
-                                    "title": getattr(citation, 'title', str(citation)),
-                                    "url": getattr(citation, 'url', str(citation)),
-                                    "source": getattr(citation, 'source', getattr(citation, 'url', str(citation)))
-                                })
-                        logger.info(f"[CITATIONS] Found {len(citations)} citations for slide {idx+1}")
-                    elif hasattr(slide_response.choices[0], 'citations') and slide_response.choices[0].citations:
-                        for citation in slide_response.choices[0].citations:
-                            if isinstance(citation, dict):
-                                citations.append({
-                                    "title": citation.get('title', ''),
-                                    "url": citation.get('url', ''),
-                                    "source": citation.get('source', citation.get('url', ''))
-                                })
-                            elif isinstance(citation, str):
-                                citations.append({
-                                    "title": citation,
-                                    "url": citation,
-                                    "source": citation
-                                })
-                            else:
-                                citations.append({
-                                    "title": getattr(citation, 'title', str(citation)),
-                                    "url": getattr(citation, 'url', str(citation)),
-                                    "source": getattr(citation, 'source', getattr(citation, 'url', str(citation)))
-                                })
-                        logger.info(f"[CITATIONS] Found {len(citations)} citations from choice for slide {idx+1}")
-                except Exception as e:
-                    logger.warning(f"[CITATIONS] Failed to extract citations for slide {idx+1}: {e}")
-                    # Debug: log the actual response structure
-                    logger.info(f"[CITATIONS DEBUG] Response type: {type(slide_response)}")
-                    if hasattr(slide_response, 'citations'):
-                        logger.info(f"[CITATIONS DEBUG] Citations type: {type(slide_response.citations)}")
-                        if slide_response.citations:
-                            logger.info(f"[CITATIONS DEBUG] First citation type: {type(slide_response.citations[0])}")
-                            logger.info(f"[CITATIONS DEBUG] First citation value: {slide_response.citations[0]}")
+                slide_content = result
                 
-                # Create slide object
-                from .models import SlideContent
-                import uuid
+                print(f"\n{'='*80}")
+                print(f"🔍 STREAMING SLIDE {idx+1} - RESULT DEBUG")
+                print(f"{'='*80}")
+                print(f"Result type: {type(result)}")
+                print(f"Is dict: {isinstance(result, dict)}")
+                print(f"Is str: {isinstance(result, str)}")
+                
+                # Haiku returns string - use Perplexity citations from research phase
+                if isinstance(result, dict):
+                    slide_content = result.get("content", "")
+                    citations = result.get("citations", [])
+                elif isinstance(result, str):
+                    slide_content = result
+                    citations = research_citations  # Use citations from Perplexity research phase
+                else:
+                    slide_content = str(result)
+                    citations = research_citations
+                
+                print(f"\n✅ HYBRID SLIDE {idx+1}: {len(citations)} citations from Perplexity research phase\n")
                 
                 # Extract [IMAGE: ...] tag if present
                 cleaned_content, image_prompt = extract_image_prompt_from_content(slide_content)
+                
+                # Clean up any metadata headers that slipped through
+                cleaned_content = re.sub(r'^Slide\s+\d+:\s*[^\n]+\n*', '', cleaned_content, flags=re.IGNORECASE)
+                cleaned_content = re.sub(r'[\s\n]*---[\s\n]*(?:SPEAKABLE CONTENT|SPEAKER NOTES?|SPEAKING NOTES?):[\s\S]*?(?=\n---|$)', '', cleaned_content, flags=re.IGNORECASE)
+                cleaned_content = re.sub(r'[\s\n]*---[\s\n]*\n*', '\n', cleaned_content)
+                cleaned_content = cleaned_content.strip()
                 
                 slide = SlideContent(
                     id=str(uuid.uuid4()),
@@ -2326,7 +2370,7 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                         })
                     slide.footnotes = footnotes
                     
-                    logger.info(f"[CITATIONS] Added {len(citations)} citations and {len(footnotes)} footnotes to slide {idx+1}")
+                    logger.debug(f"[CITATIONS] Added {len(citations)} citations and {len(footnotes)} footnotes to slide {idx+1}")
                 
                 # Check if slide needs data/charts based on title and content  
                 if (slide_type or "content") in ("quote", "stat", "divider", "transition"):
@@ -2335,7 +2379,7 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                     needs_data = self._slide_needs_data(slide_title, slide_content)
                 if needs_data:
                     try:
-                        logger.info(f"[DATA] Generating chart data for slide {idx+1}: {slide_title}")
+                        logger.debug(f"[DATA] Generating chart data for slide {idx+1}: {slide_title}")
                         chart_data = await self._generate_chart_data_for_slide(slide_title, slide_content, presentation_title)
                         if chart_data:
                             # Add citations to chart metadata for citation panel
@@ -2353,10 +2397,10 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                                     })
                                 chart_data['metadata']['footnotes'] = footnotes
                                 
-                                logger.info(f"[DATA] Added {len(citations)} citations and {len(footnotes)} footnotes to chart metadata for slide {idx+1}")
+                                logger.debug(f"[DATA] Added {len(citations)} citations and {len(footnotes)} footnotes to chart metadata for slide {idx+1}")
                             
                             slide.extractedData = chart_data
-                            logger.info(f"[DATA] Added {chart_data['chartType']} chart with {len(chart_data.get('data', []))} data points to slide {idx+1}")
+                            logger.debug(f"[DATA] Added {chart_data['chartType']} chart with {len(chart_data.get('data', []))} data points to slide {idx+1}")
                     except Exception as e:
                         logger.warning(f"[DATA] Failed to generate chart data for slide {idx+1}: {e}")
                 elif citations:
@@ -2381,11 +2425,11 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                             },
                             "source": "Research citations"
                         }
-                        logger.info(f"[CITATIONS] Added citations-only payload with {len(footnotes)} footnotes to slide {idx+1} for citation panel")
+                        logger.debug(f"[CITATIONS] Added citations-only payload with {len(footnotes)} footnotes to slide {idx+1} for citation panel")
                     except Exception as e:
                         logger.warning(f"[CITATIONS] Failed to add citations payload for slide {idx+1}: {e}")
                 
-                logger.info(f"[PARALLEL] Completed slide {idx+1}: {slide_title}")
+                logger.debug(f"[PARALLEL] Completed slide {idx+1}: {slide_title}")
                 return idx, slide
                 
             except Exception as e:
@@ -2435,8 +2479,8 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                 
                 # Stream the slide immediately
                 slide_dict = self._slide_to_dict(slide)
-                logger.info(f"[REAL-TIME] Yielding slide {idx+1}: {slide.title} (completed at {time.time()})")
-                logger.info(f"[TIMING] Slide {idx+1} generation took {time.time() - generation_start_time:.2f}s from slide generation start")
+                logger.debug(f"[REAL-TIME] Yielding slide {idx+1}: {slide.title} (completed at {time.time()})")
+                logger.debug(f"[TIMING] Slide {idx+1} generation took {time.time() - generation_start_time:.2f}s from slide generation start")
                 
                 yield ProgressUpdate(
                     stage="slide_ready",
@@ -2449,7 +2493,7 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                     }
                 )
                 
-                logger.info(f"[REAL-TIME] Successfully yielded slide {idx+1} to frontend at {time.time()}!")
+                logger.debug(f"[REAL-TIME] Successfully yielded slide {idx+1} to frontend at {time.time()}!")
                 
                 # Force immediate flush to ensure real-time streaming
                 await asyncio.sleep(0.1)  # Small delay to make streaming more visible
@@ -2478,8 +2522,8 @@ FLEXIBLE: Use explanatory/tutorial/code/descriptive/comparison formats as needed
                 }
             )
         finally:
-            logger.info(f"[STREAMING] True streaming generation complete: {len(slides)} slides at {time.time()}")
-            logger.info(f"[STREAMING] Perplexity method finishing - should trigger early return")
+            logger.debug(f"[STREAMING] True streaming generation complete: {len(slides)} slides at {time.time()}")
+            logger.debug(f"[STREAMING] Perplexity method finishing - should trigger early return")
             return
 
     def _slide_needs_data(self, title: str, content: str) -> bool:
@@ -2521,18 +2565,36 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
 
             # Use asyncio to run the synchronous API call in a thread executor
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
+            # Use invoke to support both OpenAI and Anthropic clients
+            # Only pass extra_body for Perplexity models (not Claude/Anthropic)
+            invoke_kwargs = {
+                "client": client,
+                "model": model_name,
+                "messages": [{"role": "user", "content": data_prompt}],
+                "response_model": None,  # Free-form text response
+                "temperature": 0.1,
+                "max_tokens": 400
+            }
+            # Only add extra_body for Perplexity models
+            if model_name.startswith("perplexity-") or "sonar" in model_name:
+                invoke_kwargs["extra_body"] = {
+                    "return_citations": True,
+                    "search_recency_filter": "month",
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 10
+                }
+            
+            response_result = await loop.run_in_executor(
                 None,  # Use default thread pool
-                lambda: client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": data_prompt}],
-                    temperature=0.1,
-                    max_tokens=400,
-                    extra_body={"return_citations": True, "search_recency_filter": "month", "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"], "num_search_results": 10}
-                )
+                lambda: invoke(**invoke_kwargs)
             )
             
-            response_text = response.choices[0].message.content.strip()
+            # Handle dict return from invoke
+            response_text = response_result
+            if isinstance(response_result, dict):
+                response_text = response_result.get("content", "")
+            
+            response_text = str(response_text).strip()
             
             # Extract JSON from response
             import re
@@ -2560,28 +2622,228 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
             "source": "Sample data"
         }
 
+    def _enforce_word_limits_presentation(self, content: str, slide_title: str, slide_type: str = 'content') -> str:
+        """Enforce minimal, concept-teaching limits for presentation mode.
+
+        Defaults (concept/content slides):
+        - MAX 9 words per bullet
+        - MAX 3 bullets
+        - MAX 45 words total
+
+        Special cases:
+        - team: do not trim (team slides are intentionally text-dense: names/roles/credentials)
+        - agenda/transition/divider: allow up to 7 short bullets (≤6 words), 60 words total
+        """
+        if not content:
+            return content
+        
+        # Team slides are intentionally text-dense (names, roles, short creds)
+        if (slide_type or '').lower() == 'team':
+            return content
+
+        lines = content.split('\n')
+        processed_lines = []
+        bullet_count = 0
+        total_words = 0
+        st = (slide_type or '').lower()
+        if st in ['agenda', 'transition', 'divider']:
+            MAX_BULLETS = 7
+            MAX_WORDS_PER_BULLET = 6
+            MAX_WORDS_TOTAL = 60
+        else:
+            # Concept-teaching baseline
+            MAX_BULLETS = 3
+            MAX_WORDS_PER_BULLET = 9
+            MAX_WORDS_TOTAL = 45
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Keep image tags but REMOVE section headers
+            if line.startswith('[IMAGE:'):
+                processed_lines.append(line)
+                continue
+            
+            # DELETE section headers in presentation mode
+            if line.startswith('##'):
+                logger.debug(f"[WORD LIMIT] Removing section header: {line}")
+                continue
+            
+            # Check if it's a bullet
+            if line.startswith('•') or line.startswith('-'):
+                bullet_count += 1
+                if bullet_count > MAX_BULLETS:
+                    logger.debug(f"[WORD LIMIT] Skipping bullet {bullet_count} (exceeds max {MAX_BULLETS})")
+                    continue
+                
+                # Extract bullet text (remove bullet marker)
+                bullet_text = line.lstrip('•-* ').strip()
+                words = bullet_text.split()
+                word_count = len(words)
+                
+                # If bullet is too long, trim it
+                if word_count > MAX_WORDS_PER_BULLET:
+                    logger.warning(f"[WORD LIMIT] Bullet too long ({word_count} words): '{bullet_text[:60]}...' - trimming to {MAX_WORDS_PER_BULLET} words")
+                    bullet_text = ' '.join(words[:MAX_WORDS_PER_BULLET]) + '...'
+                    word_count = MAX_WORDS_PER_BULLET
+                
+                # Check total word count
+                if total_words + word_count > MAX_WORDS_TOTAL:
+                    logger.debug(f"[WORD LIMIT] Would exceed total limit ({total_words + word_count} > {MAX_WORDS_TOTAL}) - stopping")
+                    break
+                
+                total_words += word_count
+                processed_lines.append(f"• {bullet_text}")
+            else:
+                # Non-bullet lines (probably shouldn't be there in presentation mode)
+                processed_lines.append(line)
+        
+        result = '\n'.join(processed_lines)
+        logger.info(f"[WORD LIMIT] Slide '{slide_title}' ({slide_type}): {bullet_count} bullets, {total_words} total words")
+        return result
+
+    async def _generate_with_hybrid_research(self, options: OutlineOptions) -> Optional[OutlineResult]:
+        """Two-phase outline generation: Perplexity for research + Haiku for presentation structure.
+        
+        Phase 1: Use Perplexity to gather comprehensive research and data
+        Phase 2: Use Haiku 4.5 to structure it into a digestible presentation
+        
+        This approach combines Perplexity's research capabilities with Haiku's narrative structuring.
+        """
+        logger.info("[OUTLINE] Using HYBRID mode: Perplexity research → Haiku structuring")
+        
+        try:
+            # PHASE 1: Research with Perplexity Pro
+            logger.info("[HYBRID PHASE 1] Gathering research data with Perplexity Pro...")
+            
+            research_client, research_model = get_client(PERPLEXITY_OUTLINE_MODEL)
+            research_prompt = f"""You are a research assistant. Gather comprehensive, fact-based information about the following topic.
+Focus on:
+- Key statistics, numbers, and data points
+- Recent developments and trends
+- Important facts and figures
+- Real-world examples and case studies
+- Quantifiable metrics and measurements
+
+Topic: {options.prompt}
+
+Provide detailed research findings with specific data, numbers, and sources. Include charts where numerical data is available.
+Return research in structured format with citations."""
+
+            research_invoke_params = {
+                "response_model": None,
+                "max_tokens": 16000,
+                "temperature": 0.1,
+                "extra_body": {
+                    "return_citations": True,
+                    "search_recency_filter": "month",
+                    "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
+                    "num_search_results": 10
+                }
+            }
+            
+            research_data = invoke(
+                research_client,
+                research_model,
+                [{"role": "user", "content": research_prompt}],
+                **research_invoke_params
+            )
+            
+            logger.info(f"[HYBRID PHASE 1] Research complete: {len(research_data)} chars")
+            logger.debug(f"[HYBRID PHASE 1] Research preview: {research_data[:500]}")
+            
+            # Validate research data
+            if not research_data or len(research_data) < 50:
+                logger.error(f"[HYBRID PHASE 1] Research data is too short or empty: {research_data}")
+                return None
+            
+            # PHASE 2: Structure with Haiku 4.5
+            logger.info("[HYBRID PHASE 2] Structuring presentation with Haiku 4.5...")
+            
+            # Create enriched prompt with research context
+            enriched_prompt = f"""{options.prompt}
+
+RESEARCH CONTEXT (use this data to create a digestible, presentation-ready outline):
+{research_data}
+
+CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
+- Transform the research into DIGESTIBLE presentation format
+- AVOID long paragraphs - use short, punchy bullet points (8-15 words each)
+- Each slide should be easy to present (not read verbatim)
+- Break complex information into multiple simple slides
+- Use visual hierarchy: main bullets (•) + sub-bullets (  •)
+- Emphasize key numbers and data points with **bold**
+- Add charts for numerical data from the research
+- Include [IMAGE: description] tags for visual slides (70% of content slides)
+- Maintain all citations from the research
+- Total: 40-80 words per content slide (concise, presentation-ready content)"""
+            
+            # Create new options for Haiku with 'standard' detail level to avoid recursion
+            # This prevents the hybrid mode check from triggering again
+            haiku_options = OutlineOptions(
+                prompt=enriched_prompt,
+                detail_level='standard',  # Use 'standard' to avoid hybrid recursion
+                enable_research=False,  # Already have research
+                style_context=options.style_context,
+                font_preference=options.font_preference,
+                color_scheme=options.color_scheme,
+                files=options.files,
+                slide_count=options.slide_count,
+                visual_density=options.visual_density,
+                async_images=options.async_images,
+                model='claude-haiku-4-5'  # Force Haiku
+            )
+            
+            # Call the standard generation with Haiku (will use standard mode logic)
+            result = await self._generate_with_perplexity(haiku_options)
+            
+            if result:
+                logger.info("[HYBRID] Successfully generated hybrid outline (Perplexity research + Haiku structure)")
+                logger.info(f"[HYBRID] Generated {len(result.slides)} slides")
+                # Log first slide for debugging
+                if result.slides:
+                    first_slide = result.slides[0]
+                    logger.debug(f"[HYBRID] First slide: title='{first_slide.title}', content_len={len(first_slide.content)}")
+            else:
+                logger.error("[HYBRID] Hybrid generation returned None!")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[HYBRID] Hybrid research mode failed: {e}", exc_info=True)
+            return None
+
     async def _generate_with_perplexity(self, options: OutlineOptions) -> Optional[OutlineResult]:
-        """Single-pass outline generation using Perplexity Sonar that also embeds citations.
+        """Single-pass outline generation using Perplexity or Claude.
         Returns OutlineResult on success, or None to fall back.
         
-        NOTE: For detailed mode, uses Perplexity Pro for deep research.
-        For presentation mode (standard/quick), uses lightweight Claude for fast, visual-focused outlines.
+        NOTE: For detailed mode with hybrid enabled, uses Perplexity Pro for research + Haiku for structure.
+        For detailed mode without hybrid, uses Perplexity Pro directly.
+        For presentation mode (standard/quick), uses Haiku 4.5 for narrative structure.
         """
         try:
-            # Choose model based on detail level
+            # Check if we should use hybrid mode for detailed presentations
             detail_level = options.detail_level or 'standard'
             
+            if detail_level == 'detailed' and USE_HYBRID_RESEARCH_MODE:
+                # Use hybrid mode: Perplexity research + Haiku structuring
+                logger.info("[OUTLINE] Detail level is 'detailed' with hybrid mode enabled")
+                return await self._generate_with_hybrid_research(options)
+            
+            # Choose model based on detail level
             if detail_level == 'detailed':
-                # Detailed mode: Use Perplexity Pro for comprehensive research
+                # Detailed mode without hybrid: Use Perplexity Pro directly
                 model = getattr(options, 'planning_model', None) or getattr(options, 'model', None) or PERPLEXITY_OUTLINE_MODEL
                 if not isinstance(model, str) or not model.startswith('perplexity-'):
                     model = PERPLEXITY_OUTLINE_MODEL
-                logger.info(f"[OUTLINE] Using {model} for DETAILED mode (heavy research)")
+                logger.info(f"[OUTLINE] Using {model} for DETAILED mode (heavy research, direct)")
             else:
-                # Presentation mode (standard/quick): Use perplexity-sonar for fast, minimal research
+                # Presentation mode (standard/quick): Use Haiku 4.5 for narrative structure
                 model = PRESENTATION_OUTLINE_MODEL
-                logger.info(f"[OUTLINE] Using {model} for PRESENTATION mode (visual-focused, MINIMAL content)")
-                # Add search limits for presentation mode
+                logger.info(f"[OUTLINE] Using {model} for PRESENTATION mode (visual-focused, digestible content)")
+                # Add search limits for presentation mode if using Perplexity
                 if model.startswith('perplexity'):
                     logger.info("[OUTLINE] Presentation mode will use minimal search (limited research depth)")
             
@@ -2715,69 +2977,11 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
             ) if is_pitch else ""
 
             maturity_rules = (
-                "- FACT-FIRST APPROACH: Every bullet must contain specific researched facts, statistics, or data points.\n"
-                "- RESEARCH DEPTH: Include exact numbers, percentages, dollar amounts, dates, study names, company data.\n"
-                "- CONCRETE EVIDENCE: Reference real companies, specific markets, named studies, measurable outcomes.\n"
-                "- SOURCE-BACKED: Use current data from your web research - no generic statements or assumptions.\n"
-                "- QUANTIFIED INSIGHTS: Transform vague statements into specific, measurable facts with numbers.\n"
-                "- Align to the user's intent; reflect their topic language.\n"
-                "- No disclaimers or meta talk. Slide-ready tone."
+                "Include numbers, dates, names. 1 big number→STAT slide. 5+ numbers→CHART. Else→bullets (8-15 words, **bold** data). No fluff.\n"
             )
 
             chart_rules = (
-                "- When a slide lends itself to visualization (categories, timelines, rankings, shares, trends, comparisons), include a chart with REAL, NUMERIC data.\n"
-                "- CHART DATA SCHEMA:\n"
-                "  SINGLE-SERIES: { chartType: 'column'|'bar'|'line'|'pie', title: string, data: [{name: string, value: number}] }\n"
-                "  MULTI-SERIES: { chartType: 'column'|'bar'|'line'|'area', title: string, data: [{name: string, value: number, series: string}] }\n"
-                "  Example multi-series: [{name: 'Q1', value: 450, series: 'Revenue'}, {name: 'Q1', value: 320, series: 'Cost'}, {name: 'Q2', value: 480, series: 'Revenue'}, ...]\n"
-                "\n"
-                "- USE MULTI-SERIES CHARTS when comparing:\n"
-                "  * Multiple time periods: Actual vs Budget, This Year vs Last Year\n"
-                "  * Multiple metrics: Revenue vs Profit, Sales vs Targets\n"
-                "  * Multiple segments: Product A vs Product B vs Product C\n"
-                "  * Multiple scenarios: Best Case vs Base Case vs Worst Case\n"
-                "\n"
-                "- MULTI-SERIES EXAMPLES:\n"
-                "  ✅ Revenue vs Cost by Region (column chart, 2 series × 8 regions):\n"
-                "     [{name: 'North', value: 450, series: 'Revenue'}, {name: 'North', value: 320, series: 'Cost'}, {name: 'South', value: 380, series: 'Revenue'}, ...]\n"
-                "  ✅ Quarterly Trends: Actual vs Budget (line chart, 2 series × 12 quarters):\n"
-                "     [{x: 'Q1 2023', y: 450, series: 'Actual'}, {x: 'Q1 2023', y: 420, series: 'Budget'}, {x: 'Q2 2023', y: 480, series: 'Actual'}, ...]\n"
-                "  ✅ Product Performance Over Time (area chart, 3 series × 16 months):\n"
-                "     [{x: 'Jan 2023', y: 150, series: 'Product A'}, {x: 'Jan 2023', y: 120, series: 'Product B'}, {x: 'Jan 2023', y: 90, series: 'Product C'}, ...]\n"
-                "\n"
-                "- Use real category names (e.g., 'North America', 'Q1 2024', 'Chrome'). NEVER use generic labels like 'Category A' or 'Item 1'.\n"
-                "- Values MUST be numbers (no '%' sign, no strings).\n"
-                "\n"
-                "- UNIT CONSISTENCY RULES:\n"
-                "  * SINGLE-SERIES: All values MUST share ONE unit (all % OR all USD OR all counts)\n"
-                "  * MULTI-SERIES: Values within EACH series must be consistent, but DIFFERENT series CAN have different units when it makes sense\n"
-                "    ✅ OK: Revenue (USD millions) vs Growth Rate (%) - different series, different units\n"
-                "    ✅ OK: Sales (units) vs Market Share (%) - complementary metrics\n"
-                "    ❌ NEVER within same series: [{name: 'Revenue', value: 2500000, series: 'Metrics'}, {name: 'Employees', value: 45, series: 'Metrics'}]\n"
-                "\n"
-                "- FORBIDDEN MIXED UNITS (within single series):\n"
-                "  ❌ [{name: 'Sales ($M)', value: 150}, {name: 'RAM (KB)', value: 64}, {name: 'Colors', value: 256}] // Mixing incompatible units\n"
-                "  ❌ [{name: 'Revenue', value: 2500000}, {name: 'Employees', value: 45}, {name: 'Market Share %', value: 12}] // Not comparable\n"
-                "\n"
-                "- CORRECT EXAMPLES:\n"
-                "  ✅ Single-series: [{name: 'Q1 Sales', value: 150}, {name: 'Q2 Sales', value: 180}, {name: 'Q3 Sales', value: 200}] // All millions USD\n"
-                "  ✅ Multi-series: [{name: 'North', value: 450, series: 'Revenue'}, {name: 'North', value: 15, series: 'Growth %'}, ...] // Different units in different series\n"
-                "\n"
-                "- DATA DENSITY:\n"
-                "  * Single-series: 8-15 points typical\n"
-                "  * Multi-series: 2-5 series with 8-20 points each\n"
-                "  * Time series: 12-24 months or 8-12 quarters per series\n"
-                "\n"
-                "- Chart type selection - MATCH TYPE TO DATA STRUCTURE:\n"
-                "  * 'column' or 'bar' for COMPARISONS of categories (products, regions, departments) - DEFAULT CHOICE!\n"
-                "  * 'line' or 'area' ONLY for TIME SERIES showing progression (Q1→Q2→Q3, Jan→Feb→Mar)\n"
-                "  * 'pie' only for parts-of-whole distributions that sum to ~100%\n"
-                "  * 'waterfall' for sequential changes and bridges\n"
-                "  * 'radar' for multi-dimensional competitive comparisons\n"
-                "  * DO NOT use 'line' for static category comparisons - use 'column' instead!\n"
-                "  * VARY chart types across slides - don't use the same type repeatedly\n"
-                "\n"
-                "- Omit chart only if not clearly beneficial or impossible to create with consistent data."
+                "CHARTS: OPTIONAL. Only if data clearly benefits from visualization. ONE number→STAT slide (not chart). 5+ numbers→maybe chart. Types: column,bar,line,area,pie,waterfall,radar,scatter,treemap,sankey,gauge. Don't force charts.\n"
             )
 
             # Dynamic callout (quote/stat) plan based on slide count
@@ -2804,11 +3008,7 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 callout_distribution_note = "Space them 3–6 slides apart; avoid back-to-back."
 
             callout_rules = (
-                f"- Deck size detected: {slide_hint} slides.\n"
-                f"- Target dedicated callout slides (type 'quote' or 'stat'): {min_callouts}–{max_callouts} total ({callout_frequency_range} of slides).\n"
-                "- Only include when a fact or quote is truly standout and visual.\n"
-                f"- Distribution: {callout_distribution_note}\n"
-                "- Keep callouts minimal: 1–2 short lines; include citation/source when possible.\n"
+                f"STAT/QUOTE slides: {min_callouts}–{max_callouts} total. Format: giant number + 2-5 words (e.g. '$2.5B market size'). No bullets.\n"
             )
 
             # Mode-specific system prompt
@@ -2825,65 +3025,74 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     "CITATION POLICY: Do NOT use YouTube (youtube.com, youtu.be) as a source; prefer reputable articles, reports, company sites, documentation."
                 )
             else:
+                # PRESENTATION MODE: FLEXIBLE MINIMAL
                 system = (
-                    "You are a FLEXIBLE PRESENTATION outliner. Create effective, educational slide content. "
-                    "⚠️ KEY PRINCIPLES: "
-                    "1. FLEXIBLE content structure - use what's needed to TEACH effectively "
-                    "2. Mix bullets, sub-bullets (2-space indent), section headers (##), inline metrics "
-                    "3. Include [IMAGE: description] on 70% of content slides "
-                    "4. Ask: 'Does this TEACH?' NOT 'How many bullets?' "
-                    "5. Return STRICT JSON only "
-                    "FOCUS: Educational clarity with data. Use explanatory/tutorial/descriptive formats as needed. "
-                    "CITATION POLICY: Do NOT use YouTube as a source."
+                    "Create presentation slides. CORE: Visual-first, minimal text that supports speaking.\n"
+                    "\n"
+                    "OUTPUT FORMAT: Return ONLY clean bullet points. NO headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'. Citations go inline as [1], [2].\n"
+                    "\n"
+                    "CONTENT ADAPTATION:\n"
+                    "• Concept/teaching slides: 2-3 bullets, 6-9 words each (baseline)\n"
+                    "• Business/investor slides: 3-5 bullets, 8-12 words each (concise facts)\n"
+                    "• Team slides: list members (Name — Role — 3–7 word credential). Multiple lines allowed.\n"
+                    "• Rule: Can you speak this while presenting? If no, cut it\n"
+                    "\n"
+                    "✅ GOOD: 'Revenue **$2.5B**, up **42%** YoY' (7 words)\n"
+                    "❌ BAD: 'Our company experienced significant growth...' (paragraph)\n"
+                    "\n"
+                    "NO paragraphs. NO section headers. ONLY bullets with **bold** numbers. JSON only."
                 )
-            # Dynamic bullet guidance for 'content' slides - FLEXIBLE approach
+            # Dynamic bullet guidance for 'content' slides
             if options.detail_level == 'detailed':
                 content_bullet_limits = "150-250 words with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms."
             else:
-                content_bullet_limits = "Flexible content structure - use what's needed to TEACH the topic effectively. Mix of bullets, sub-bullets (2-space indent), inline metrics. Ask: 'Does this teach the topic?' NOT 'How many bullets?' Use explanatory/tutorial/code/descriptive formats as appropriate."
+                # PRESENTATION MODE: FLEXIBLE MINIMAL
+                content_bullet_limits = (
+                    "Concept/teaching: 2-3 bullets, 6-9 words (~45 words cap).\n"
+                    "Business/investor: 3-5 bullets, 8-12 words (~60 words).\n"
+                    "Team: list members (Name — Role — short credential).\n"
+                    "Adapt to context. **Bold** numbers. NO paragraphs."
+                )
 
+            # Add flexible but minimal content guidance for presentation mode
+            brevity_enforcement = ""
+            if options.detail_level != 'detailed':
+                brevity_enforcement = (
+                    "🎯 PRESENTATION MODE - FLEXIBLE MINIMAL STYLE:\n"
+                    "\n"
+                    "CORE PRINCIPLE: Slides support speaking, not reading. Visual + minimal text.\n"
+                    "\n"
+                    "CONTENT RULES (adapt to context):\n"
+                    "• Concept/teaching: 2-3 bullets, 6-9 words each (~45 words max/slide)\n"
+                    "• Business/investor: 3-5 bullets, 8-12 words each (~60 words max/slide)\n"
+                    "• Team slide: list 6–12 members, 'Name — Role — credential (3–7 words)'; allowed to exceed bullet/word caps.\n"
+                    "• Key rule: NO paragraphs, NO long explanations\n"
+                    "• Test: Can you speak this while presenting? If no, it's too much text\n"
+                    "\n"
+                    "FORMAT:\n"
+                    "✅ Punchy bullets with **bold** data/numbers\n"
+                    "✅ 'Q3 revenue: **$2.5B**, up **42%** YoY' (8 words, brief)\n"
+                    "✅ 'Launched in **5 markets**, **12M users** in 6 months' (9 words, data-rich)\n"
+                    "❌ 'Our company experienced significant revenue growth over the quarter...' (paragraph - DELETE)\n"
+                    "❌ Section headers like '## Key Metrics' (unnecessary - DELETE)\n"
+                    "\n"
+                    "OUTPUT: Return ONLY bullet points. NO metadata headers. NO 'SPEAKABLE CONTENT' or 'SPEAKER NOTES' sections.\n"
+                    "FLEXIBILITY: Match content to presentation type. Investor pitch can have more substance than casual topic, but always concise bullets, never paragraphs.\n\n"
+                )
+            
             user = (
-                f"Topic: {options.prompt}\n\n"
-                f"Style: {options.style_context or 'Professional'}\n"
-                f"Detail: {options.detail_level}\n"
-                f"Slides: EXACTLY {slide_hint}\n"
-                f"Visual Density:\n{density_rules}\n\n"
+                f"{brevity_enforcement}"
+                f"Topic: {options.prompt}\n"
+                f"Slides: {slide_hint}\n"
+                f"{density_rules}\n"
                 f"{pitch_visual_rules}"
-                f"Maturity:\n{maturity_rules}\n\n"
-                f"Charts:\n{chart_rules}\n\n"
-                f"CALLOUT STRATEGY:\n{callout_rules}\n"
-                "PRESENTATION MODE (CRITICAL):\n"
-                "- This is for SLIDES. Output must be slide-ready headlines and STRUCTURED bullets.\n"
-                "- Use section headers (## Header) to organize content into logical groups.\n"
-                "- Use main bullets (•) and indented sub-bullets (  •) for hierarchy.\n"
-                "- Use **bold** formatting for emphasis on key data, numbers, and terms.\n"
-                "- No narrative paragraphs anywhere (including outside the JSON).\n"
-                "- No disclaimers, no meta talk, no prefaces.\n\n"
-                "- CITATIONS: Exclude YouTube sources. Do not cite youtube.com or youtu.be. Prefer reputable written sources.\n"
-                "- SOURCES FORMAT: Use numeric [n] markers in bullets and DO NOT include full source lines inside content. A single consolidated 'Sources' footer will list [1][2][3] once. Do not create multiple sources blocks per slide.\n\n"
-                "STRICT COMPLIANCE — FOLLOW USER INSTRUCTIONS EXACTLY:\n"
-                "- If the user specifies an exact slide count (e.g., '2 slides'), generate EXACTLY that many slides.\n"
-                "- If the user provides per-slide directives (e.g., 'Slide 1: …', 'Slides 2–5: …'), follow those directives PRECISELY for the specified slides (ordering, titles, types, and focus).\n"
-                "- Do NOT add, remove, or reorder slides unless the user explicitly instructs you to.\n"
-                "- When a range like 'Slides 2–5' is given, apply the described structure consistently to each slide in that range.\n"
-                "- If general best‑practice rules conflict with explicit user instructions, PRIORITIZE the user's instructions.\n"
-                "- Output slide content as STRUCTURED bullets with proper hierarchy (no paragraphs).\n"
-                "- Use section headers (## Header Name) to organize content into logical groups.\n"
-                "- Use main bullets (•) for primary points and indented sub-bullets (  •) for supporting details.\n"
-                "- Use **bold** formatting for emphasis on key numbers, companies, and important terms.\n"
+                f"{maturity_rules}\n"
+                f"{chart_rules}\n"
+                f"{callout_rules}\n"
+                "Bullets (•), **bold** numbers, NO paragraphs. [n] citations, no YouTube.\n"
             )
 
-            # Add mode-specific content guidance
-            if options.detail_level == 'detailed':
-                user += "- DETAILED MODE: Structure content with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms.\n"
-            else:
-                user += '- FLEXIBLE MODE: Use the structure that best TEACHES the topic. Mix bullets, sub-bullets (2-space indent), section headers (##), and inline metrics. Ask: "Does this teach?" NOT "How many bullets?"\n'
-
-            user += (
-                "- FACT-FIRST: Prefer numbers, dates, names, and concrete outcomes over adjectives.\n\n"
-                "DETAIL LEVEL GUIDANCE (CRITICAL):\n"
-                f"- Current detail level: {options.detail_level}\n"
-            )
+            user += f"\nFacts+numbers. Adapt bullets to content type (business=more substance, simple=minimal). **Bold** data.\n"
             
             # Add detail level specific guidance
             if options.detail_level == 'detailed':
@@ -2906,93 +3115,27 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     "  • COMPARISONS: Year-over-year, before/after, benchmarks, competitor data\n\n"
                 )
             else:
-                # PRESENTATION MODE (standard/quick): Flexible, educational
+                # PRESENTATION MODE: ENFORCE BREVITY
                 user += (
-                    "🎯 FLEXIBLE PRESENTATION MODE - TEACH EFFECTIVELY:\n\n"
-                    "KEY PRINCIPLES:\n"
-                    "  • GOAL: Audience LEARNS and UNDERSTANDS the topic\n"
-                    "  • Use structure that TEACHES effectively (not rigid bullet counts)\n"
-                    "  • Mix bullets, sub-bullets (2-space indent), section headers (##)\n"
-                    "  • Ask: 'Does this TEACH the topic?' NOT 'How many bullets?'\n"
-                    "  • Title slide: concise title + metadata\n\n"
-                    "🖼️ IMAGE TAGS - MANDATORY ON 70% OF SLIDES!\n"
-                    "  • Add [IMAGE: specific visual description] to content field\n"
-                    "  • Title slide: [IMAGE: hero visual for topic]\n"
-                    "  • Content slides: [IMAGE: contextual scene]\n"
-                    "  • Examples:\n"
-                    "    [IMAGE: healthcare AI robot scanning patient data]\n"
-                    "    [IMAGE: futuristic medical dashboard with charts]\n"
-                    "    [IMAGE: doctor using AI diagnostic tools]\n\n"
-                    "✅ GOOD EXAMPLE - TEACHES TOPIC:\n"
-                    "{\n"
-                    "  \"title\": \"Charter Impact\",\n"
-                    "  \"content\": \"• Supreme Court ruled 9-0 Quebec had no veto over Charter\\n  Context: Quebec sought special status but federal proceeded\\n\\n• Charter shifted power to federal government and courts\\n  Provinces lost autonomy over rights legislation\\n  Created judicial review framework\\n\\n• Fundamental freedoms and minority protections\\n  Language rights for English/French in each province\\n  Indigenous rights Section 35, multiculturalism Section 27\\n[IMAGE: Canadian Charter document with key sections highlighted]\"\n"
-                    "}\n\n"
-                    "❌ BAD EXAMPLE - TOO SHALLOW:\n"
-                    "• Supreme Court ruling\n"
-                    "• Charter authority\n"
-                    "• Protects rights\n"
-                    "(This doesn't teach anything!)\n\n"
-                    "📊 CHARTS:\n"
-                    "  • Use when appropriate for quantitative business/financial/research data\n"
-                    "  • NOT for educational/explanatory content (concepts, processes, tutorials)\n\n"
+                    "ADAPT content to context. Business: 3-5 bullets, 8-12 words. Simple: 2-3 bullets, 5-7 words. **Bold** numbers.\n"
+                    "✅ 'Revenue **$2.5B**, grew **42%** in Q3' (7 words, data-rich)\n"
+                    "❌ 'Our company experienced significant revenue growth during the past quarter...' (paragraph - DELETE)\n\n"
                 )
             
             user += (
-                "SLIDE TYPES & STRUCTURE RULES:\n"
-                "- Slide 1 MUST be a Title slide with hero title and brief metadata (subtitle/kicker, presenter, organization, date).\n"
-                "- Agenda: Include only for business/professional decks; for educational topics, prefer a 'Learning Objectives' slide instead.\n"
-                "- Team: Allowed when the user's topic or instructions imply presenters or a group; otherwise omit.\n"
-                "- Callouts: Use dedicated Quote/Stat slides for the most impactful lines; keep them minimal (1–2 short lines).\n"
-                "- Dividers/Transitions: Use to mark section changes and show progress; keep text minimal.\n"
-                "- Keep some slides intentionally minimal (quote/stat/divider/transition) and avoid verbosity on those.\n"
-                "- Educational topics (e.g., Solar System): prefer Learning Objectives, Core Concepts, Fun Facts, Activities, and Conclusion; avoid business‑specific slides like Team.\n\n"
-                "TITLE SLIDE CONTENT (STRICT):\n"
-                "- The title slide's content must include ONLY metadata placeholders (no body content): [Subtitle], [Presenter], [Organization], [Date], [Optional Tagline/Logo].\n"
-                "- Do NOT include regular bullets or narrative text on the title slide.\n\n"
-                "BULLET LIMITS BY SLIDE TYPE (guidance):\n"
-                "- title: 0–3 metadata placeholders (subtitle/presenter/organization/date). No body bullets.\n"
-                "- quote/stat: 1 short line only.\n"
-                "- divider/transition: 1 short line.\n"
-                "- agenda/learning objectives: 3–4 bullets.\n"
-                f"- content/team: {content_bullet_limits}\n\n"
-                "QUALITY CHECKLIST & SELF‑REFINEMENT (perform before finalizing):\n"
-                "1) SLIDE COUNT: Matches the exact requested count or user's explicit per‑slide plan.\n"
-                "2) STRUCTURE: Slide 1 is Title (hero + brief metadata). Title slide has ONLY metadata placeholders; no body bullets. For educational topics: include 'Learning Objectives' early; include 'Core Concepts/Overview', 'Fun Facts' or 'Key Facts', 'Activities', and 'Conclusion/Questions'. Team slide only if explicitly warranted.\n"
-                "3) CHART UNITS: Each chart uses ONE measurement unit; no mixed units. If mixed, omit the chart and summarize as text bullets.\n"
-                "4) CALLOUTS: Include at least one dedicated Quote slide and one dedicated Stat slide when strong facts/quotes exist; keep them short (≤ 24 words).\n"
-                f"5) CONTENT QUALITY: {'DETAILED MODE: Content slides use section headers, main bullets, and sub-bullets; each main bullet 15-25 words with data. Pack in information!' if options.detail_level == 'detailed' else 'FLEXIBLE MODE: Content slides use the structure needed to TEACH the topic effectively. Mix bullets, sub-bullets, section headers, and inline metrics. Focus on clarity and teaching, not bullet count.'} Minimal slides (quote/stat/divider/transition) use 1 line.\n"
-                "6) VALIDATION: If any checklist item fails, internally revise and regenerate the outline; repeat up to 2 times before responding. Return only the final JSON.\n\n"
-                "Return JSON object (STRICT JSON, no prose):\n"
-                "{\n"
-                "  title: string,\n"
-                "  slides: Array<{\n"
-                "    title: string,\n"
-                "    type?: 'title'|'agenda'|'content'|'team'|'transition'|'divider'|'quote'|'stat'|'conclusion',\n"
-                "    content: string,   // PRESENTATION MODE: 3-4 bullets + [IMAGE: description] tag\n"
-                "                       // Example: \"• AI reduces errors by 42%\\n• 85% satisfaction\\n• $187B by 2030\\n[IMAGE: doctor using AI interface]\"\n"
-                "    // OPTIONAL: if a short QUOTE or STAT is especially impactful, declare it here\n"
-                "    callouts?: { quotes?: string[], stats?: string[] },\n"
-                "    citations?: Array<{ title?: string, source?: string, url: string }>,\n"
-                "    chart?: { chartType: 'column'|'bar'|'line'|'pie', title: string, data: Array<{ name: string, value: number }> }\n"
-                "  }>\n"
-                "}\n"
-                "⚠️ PRESENTATION MODE REMINDER: Include [IMAGE: description] in content field for 70% of slides!\n"
-                "IMPACTFUL FACT CALLOUTS (use strategically):\n"
-                "- Identify the most shocking, surprising, or compelling facts from your research\n"
-                "- Extract standout statistics that would grab audience attention\n"
-                "- Quotes: Powerful statements from executives, experts, studies (< 24 words)\n"
-                "- Stats: Jaw-dropping numbers that tell a story ('500% growth', '$50B market disruption', '9 out of 10 companies')\n"
-                f"- Target count: {min_callouts}–{max_callouts} total callout slides (~{callout_frequency_range} of slides)\n"
-                "- Small decks (≤ 5): Prefer 0; max 1 only if truly exceptional\n"
-                "- Distribution: Sprinkle across the deck, never back-to-back; prefer one early hook and one mid‑deck driver\n"
-                "- Each callout must be backed by your web research with specific sources\n\n"
+                f"STRUCTURE: Slide 1=title (metadata only). Quote/stat/divider=1 line. Content={content_bullet_limits}\n\n"
+                f"FINAL: Adapt to content. Concepts: ≤3 bullets × 9 words. Investor/business: ≤5 bullets × 12 words. Team slide can be longer with member lines. NO paragraphs. NO headers. {f'MAX 45 words/slide (non-team).' if options.detail_level != 'detailed' else 'Pack data.'}\n\n"
+                "OUTPUT FORMAT: Return ONLY bullet points. NO metadata headers like 'SPEAKABLE CONTENT', 'SPEAKER NOTES', or 'CITATIONS'. Put citations inline as [1], [2].\n\n"
+                "JSON: {title:str, slides:[{title:str, type:'title'|'content'|'stat'|'quote'|'chart'|'team'|'agenda'|'divider'|'transition', content:str, chart?:{chartType:str,data:[{name:str,value:num}]}}]}\n"
             )
             # Call raw text generation with mode-specific parameters
+            # Use lower temperature for presentation mode to enforce strict rules
+            temperature = 0.0 if options.detail_level != 'detailed' else 0.2
+            
             invoke_params = {
                 "response_model": None,
                 "max_tokens": max_tokens,
-                "temperature": 0.2
+                "temperature": temperature
             }
             
             # For presentation mode with perplexity, limit search depth
@@ -3027,17 +3170,23 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                 import re, json as _json
                 m = re.search(r"\{[\s\S]*\}", text)
                 payload = _json.loads(m.group(0) if m else text)
-            except Exception:
+            except Exception as e:
+                logger.error(f"[OUTLINE] Failed to parse JSON from model response: {e}")
+                logger.debug(f"[OUTLINE] Model response text: {text[:500]}")
                 return None
             # Validate shape
             title = payload.get('title') or 'Untitled Presentation'
             slides_in = payload.get('slides') or []
             if not isinstance(slides_in, list) or not slides_in:
+                logger.error(f"[OUTLINE] Invalid payload structure. Title: {title}, Slides: {type(slides_in)}")
                 return None
+            
+            logger.info(f"[OUTLINE] Parsed {len(slides_in)} slides from model response")
             # Build SlideContent list preserving citations and optional chart -> extractedData
             slides: List[SlideContent] = []
             for s in slides_in:
                 s_title = (s or {}).get('title') or 'Slide'
+                slide_type = (s or {}).get('type') or 'content'
                 # Accept bullets array or content string
                 if isinstance((s or {}).get('bullets'), list) and (s or {}).get('bullets'):
                     try:
@@ -3046,6 +3195,20 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                         s_content = (s or {}).get('content') or ''
                 else:
                     s_content = (s or {}).get('content') or ''
+                
+                # DEBUG: Log if content is empty
+                if not s_content or not s_content.strip():
+                    logger.warning(f"[OUTLINE] Slide '{s_title}' has empty content!")
+                    logger.debug(f"[OUTLINE] Raw slide data: {s}")
+                    # Provide minimal fallback content
+                    s_content = f"• {s_title}\n• Key points\n• Supporting details"
+                    logger.info(f"[OUTLINE] Using fallback content for slide '{s_title}'")
+                
+                # ENFORCE WORD LIMITS for presentation mode (standard/quick)
+                if options.detail_level != 'detailed' and slide_type not in ['title', 'quote', 'stat', 'divider']:
+                    s_content = self._enforce_word_limits_presentation(s_content, s_title, slide_type)
+                
+                
                 # Normalize content into concise bullets if Perplexity returned paragraphs
                 try:
                     from .slide_generator import SlideGenerator as _SG
@@ -3059,19 +3222,11 @@ Make the data realistic and relevant to the topic. Use 4-8 data points."""
                     # Best effort; if anything fails, keep original
                     pass
                 
-                # PRESENTATION MODE: Add image tags (content is flexible, no truncation)
-                slide_type = (s or {}).get('type') or 'content'
-                if options.detail_level != 'detailed':
-                    try:
-                        # Add [IMAGE: ] tag if missing for content slides (no bullet trimming - content is flexible)
-                        if slide_type in ['content'] and '[IMAGE:' not in s_content and '[image:' not in s_content.lower():
-                            # Generate image description based on slide title
-                            image_desc = s_title.lower().replace(':', '').replace('-', '').strip()
-                            s_content += f"\n[IMAGE: {image_desc}]"
-                            logger.info(f"[PRESENTATION] Added image tag to slide '{s_title}'")
-                    except Exception as e:
-                        logger.warning(f"[PRESENTATION] Failed to add image tags: {e}")
-                        pass
+                # NOTE: IMAGE tags are NO LONGER added automatically to content
+                # The model has been instructed not to include them in the prompt
+                # If image generation is needed, it should be handled separately
+                # from the content output to keep content clean and structured
+                
                 citations = (s or {}).get('citations') or []
                 # Optional callouts supplied by Perplexity (quotes/stats)
                 supplied_callouts = (s or {}).get('callouts') or {}

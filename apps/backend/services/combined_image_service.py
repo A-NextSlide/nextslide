@@ -794,8 +794,8 @@ class CombinedImageService:
         color: Optional[str] = None,
         locale: Optional[str] = None,
     ) -> Dict[str, Any]:
-        print(f"🔍 [CombinedImageService] search_images called with query: '{query}', per_page: {per_page}")
         """Web image search disabled (no backend aggregation)."""
+        logger.debug(f"search_images called with query: '{query}', per_page: {per_page}")
         return {"photos": [], "total_results": 0}
         if provider == 'perplexity' and (getattr(self.perplexity, 'is_available', False) or getattr(self.serpapi, 'is_available', False)):
             tasks = []
@@ -871,12 +871,12 @@ class CombinedImageService:
 
             # Cap to an expanded size (favor more Perplexity)
             cap = max(per_page * 3, per_page + 20)
-            print(f"   ✅ [CombinedImageService] Returning {len(ordered[:cap])} images (perplexity: {len(pplx_imgs)}, serpapi: {len(serp_imgs)})")
+            logger.debug(f"Returning {len(ordered[:cap])} images (perplexity: {len(pplx_imgs)}, serpapi: {len(serp_imgs)})")
             return {"photos": ordered[:cap], "total_results": len(ordered)}
 
         # Non-aggregation path
         if getattr(self.serpapi, 'is_available', False):
-            print(f"   📡 [CombinedImageService] Using SerpAPI only (non-aggregation path)")
+            logger.debug(f"Using SerpAPI only (non-aggregation path)")
             results = await self.serpapi.search_images(
                 query=query,
                 per_page=per_page,
@@ -886,13 +886,10 @@ class CombinedImageService:
                 color=color,
                 locale=locale
             )
-            print(f"   ✅ [CombinedImageService] SerpAPI returned {len(results.get('photos', []))} images")
+            logger.debug(f"SerpAPI returned {len(results.get('photos', []))} images")
             return results
 
         logger.warning(f"No web image provider available for query: {query}")
-        print(f"   ❌ [CombinedImageService] WARNING: No web image provider available for query: {query}")
-        print(f"   - SerpAPI is_available: {getattr(self.serpapi, 'is_available', False)}")
-        print(f"   - Perplexity is_available: {getattr(self.perplexity, 'is_available', False)}")
         return {"photos": [], "total_results": 0}
     
     def _extract_topics_from_text(self, text: str) -> List[str]:
@@ -1265,24 +1262,19 @@ class CombinedImageService:
         
         provider = (IMAGE_SEARCH_PROVIDER or 'serpapi').lower()
         if provider == 'perplexity' and getattr(self.perplexity, 'is_available', False):
-            logger.info(f"Using Perplexity for topic: {topic}")
-            print(f"🔍 [IMAGE SEARCH] Using Perplexity for topic: {topic}")
+            logger.debug(f"Searching for topic: '{topic}' (optimized, {num_images} images)")
             search_results = await self.perplexity.search_images(
                 query=topic,
                 per_page=num_images * 3,
                 orientation='landscape'
             )
         elif getattr(self.serpapi, 'is_available', False):
-            logger.info(f"Using Google Images (SerpAPI) for topic: {topic}")
-            print(f"🔍 [IMAGE SEARCH] Using Google Images (SerpAPI) for topic: {topic}")
-            print(f"   - SerpAPI is_available: {self.serpapi.is_available}")
-            print(f"   - Requesting {num_images * 3} images")
+            logger.debug(f"Searching for topic: '{topic}' (optimized, {num_images} images)")
             search_results = await self.serpapi.search_images(
                 query=topic,
                 per_page=num_images * 3,
                 orientation='landscape'
             )
-            print(f"   - SerpAPI returned {len(search_results.get('photos', []))} images")
             
             if search_results and search_results.get('photos'):
                 google_results = search_results['photos']
@@ -1352,13 +1344,7 @@ class CombinedImageService:
         Returns:
             Task that can be awaited for final results
         """
-        logger.info(f"🖼️ COMBINED IMAGE SERVICE: Starting background search")
-        logger.info(f"🖼️ Deck UUID: {deck_uuid}")
-        logger.info(f"🖼️ Deck title: {getattr(deck_outline, 'title', 'Unknown')}")
-        logger.info(f"🖼️ Number of slides: {len(getattr(deck_outline, 'slides', []))}")
-        logger.info(f"🖼️ Max images per slide: {max_images_per_slide}")
-        logger.info(f"🖼️ Has callback: {callback is not None}")
-        logger.info(f"🖼️ Has search queries: {search_queries is not None}")
+        logger.debug(f"Starting image search for deck {deck_uuid}: {len(getattr(deck_outline, 'slides', []))} slides")
         
         logger.debug(f"🖼️ COMBINED IMAGE SERVICE START (deck_uuid={deck_uuid}, title={getattr(deck_outline, 'title', 'Unknown')}, slides={len(getattr(deck_outline, 'slides', []))}, has_callback={callback is not None})")
         
@@ -1376,7 +1362,7 @@ class CombinedImageService:
             if "deck_wide" in search_queries:
                 deck_wide_data = search_queries["deck_wide"]
                 deck_wide_topics = deck_wide_data.get("selected_searches", [])
-                logger.info(f"Using deck-wide search topics from search_queries: {deck_wide_topics}")
+                logger.debug(f"Using deck-wide search topics from search_queries: {deck_wide_topics}")
         
         # If not found in search_queries, check if deck_outline has image_search_topics attribute
         if not deck_wide_topics:
@@ -1387,7 +1373,7 @@ class CombinedImageService:
             logger.info("No deck-wide topics provided, extracting from outline...")
             deck_wide_topics = self._extract_topics_from_deck_outline(deck_outline)
         
-        logger.info(f"🖼️ Deck-wide topics: {deck_wide_topics}")
+        logger.debug(f"Deck-wide topics: {deck_wide_topics}")
         
         if deck_wide_topics:
             # Handle both list (old format) and dict (new per-slide format)
@@ -1398,12 +1384,12 @@ class CombinedImageService:
                     if isinstance(slide_terms, list):
                         all_terms.extend(slide_terms)
                 deck_wide_topics = all_terms[:10]  # Limit to 10 topics
-                logger.info(f"🖼️ Converted per-slide dict to flat list: {deck_wide_topics}")
+                logger.debug(f"Converted per-slide dict to flat list: {deck_wide_topics}")
             elif isinstance(deck_wide_topics, list):
                 deck_wide_topics = deck_wide_topics[:10]  # Limit to 10 topics
-                logger.info(f"🖼️ Using flat list of topics: {deck_wide_topics}")
+                logger.debug(f"Using flat list of topics: {deck_wide_topics}")
             
-            logger.info(f"Using {len(deck_wide_topics)} deck-wide topics from theme extraction")
+            logger.debug(f"Using {len(deck_wide_topics)} deck-wide topics from theme extraction")
             
             # First, identify which slides need images
             slides_needing_images = []
@@ -1459,7 +1445,7 @@ class CombinedImageService:
             for slide_idx, slide in enumerate(deck_outline.slides):
                 # Check if slide needs images
                 if not self._slide_needs_images(slide, slide_idx):
-                    logger.info(f"🖼️ Skipping slide {slide_idx + 1} '{getattr(slide, 'title', '')}' - doesn't need images")
+                    logger.debug(f"Skipping slide {slide_idx + 1} '{getattr(slide, 'title', '')}' - doesn't need images")
                     continue
                 
                 slide_id = slide.id
@@ -1477,29 +1463,29 @@ class CombinedImageService:
                     
                     # From title
                     if slide.title:
-                        logger.info(f"🖼️ Slide {slide_id} title: {slide.title}")
+                        logger.debug(f"Slide {slide_id} title: {slide.title}")
                         title_topics = self._extract_topics_from_text(slide.title)
                         if title_topics:
                             topics.extend(title_topics)
-                            logger.info(f"🖼️ Title topics: {title_topics}")
+                            logger.debug(f"Title topics: {title_topics}")
                     
                     # From content (if we don't have enough topics)
                     if len(topics) < 2 and slide.content:
                         content_topics = self._extract_topics_from_text(slide.content[:300])  # First 300 chars
                         if content_topics:
                             topics.extend(content_topics)
-                            logger.info(f"🖼️ Content topics: {content_topics}")
-                    
+                            logger.debug(f"Content topics: {content_topics}")
+
                     # Use deck title as context if we still need topics
                     if len(topics) < 1:
                         deck_title_topics = self._extract_topics_from_text(deck_outline.title)
                         if deck_title_topics:
                             topics.extend(deck_title_topics)
-                            logger.info(f"🖼️ Deck title topics: {deck_title_topics}")
+                            logger.debug(f"Deck title topics: {deck_title_topics}")
                     
                     slide_topic_list = list(dict.fromkeys(topics))[:3]  # Deduplicate and limit to 3
                 
-                logger.info(f"🖼️ Slide {slide_idx + 1} '{slide.title}' final topics: {slide_topic_list}")
+                logger.debug(f"Slide {slide_idx + 1} '{slide.title}' final topics: {slide_topic_list}")
                 
                 # Store topics
                 if slide_topic_list:
@@ -1510,16 +1496,10 @@ class CombinedImageService:
                             topics_to_search[topic] = []
                         topics_to_search[topic].append(slide_id)
         
-        logger.info(f"🖼️ Total unique topics to search: {len(topics_to_search)}")
-        if len(topics_to_search) <= 10:
-            logger.info(f"🖼️ Topics: {list(topics_to_search.keys())}")
-        else:
-            logger.info(f"🖼️ Topics: {list(topics_to_search.keys())[:10]}... (and {len(topics_to_search) - 10} more)")
-        
-        logger.info(f"🔍 Background image search task created!")
-        
+        logger.debug(f"Searching {len(topics_to_search)} unique topics")
+
         if not topics_to_search:
-            logger.warning("🖼️ NO TOPICS FOUND FOR IMAGE SEARCH!")
+            logger.warning("No topics found for image search")
             return
         
         # Process results as they complete
@@ -1547,7 +1527,7 @@ class CombinedImageService:
                 
                 # Store topic info with coroutine
                 search_tasks.append((topic, slide_ids, coro))
-                logger.info(f"Created search coroutine for topic: '{topic}'")
+                logger.debug(f"Created search coroutine for topic: '{topic}'")
             
             # OPTIMIZATION 2: Process results in order while tracking which topic each belongs to
             topic_images = {}
@@ -1560,11 +1540,9 @@ class CombinedImageService:
             
             # Track accumulated images per slide WITH their topics
             slide_accumulated_images = {}  # slide_id -> list of (topic, images)
-            
-            logger.info(f"Processing {len(search_tasks)} search tasks")
-            
+
             # Process all tasks concurrently using gather
-            logger.debug(f"Processing {len(search_tasks)} search tasks...")
+            logger.debug(f"Processing {len(search_tasks)} search tasks")
             
             # Create list of coroutines paired with their metadata
             task_metadata = []
@@ -1619,7 +1597,7 @@ class CombinedImageService:
                         logger.debug("No images in result")
                         continue
                     
-                    logger.info(f"Topic '{topic}' returned {len(images)} images for {len(slide_ids)} slides")
+                    logger.debug(f"Topic '{topic}' returned {len(images)} images for {len(slide_ids)} slides")
                     
                     # Store topic images for caching
                     topic_images[topic] = images
@@ -1653,7 +1631,7 @@ class CombinedImageService:
                         # Store under the topic
                         slide_accumulated_images[slide_id][topic] = topic_slide_images
 
-                        logger.info(f"Added ALL {len(topic_slide_images)} images from topic '{topic}' to slide {slide_id}")
+                        logger.debug(f"Added ALL {len(topic_slide_images)} images from topic '{topic}' to slide {slide_id}")
 
                         # 🚀 IMMEDIATE SEND: Check if this slide has all its topics ready and send immediately
                         slide_expected_topics = set(slide_topics.get(slide_id, []))
@@ -1676,7 +1654,7 @@ class CombinedImageService:
 
                                 total_images_sent += len(all_images)
 
-                                logger.info(f"🚀 STREAMING: Sending slide {slide_index + 1} immediately with {len(all_images)} images")
+                                logger.debug(f"Sending slide {slide_index + 1} with {len(all_images)} images")
 
                                 # Send slide_images_ready for internal tracking
                                 if callback:
@@ -1733,9 +1711,7 @@ class CombinedImageService:
                     logger.error(f"Error processing search result: {e}", exc_info=True)
             
             # Now send accumulated images for each slide (only ONE update per slide)
-            logger.info(f"Sending accumulated images for {len(slide_accumulated_images)} slides")
-            logger.debug(f"Accumulated images check")
-            logger.debug(f"Total slides with images: {len(slide_accumulated_images)}")
+            logger.debug(f"Sending accumulated images for {len(slide_accumulated_images)} slides")
             for sid, topics in slide_accumulated_images.items():
                 logger.debug(f"Slide {sid}: {len(topics)} topics, {sum(len(imgs) for imgs in topics.values())} total images")
             
@@ -1757,7 +1733,7 @@ class CombinedImageService:
                     slides_with_images.add(slide_id)
                     total_images_sent += len(all_images)
                     
-                    logger.info(f"Sending update for slide {slide_index + 1} with {len(all_images)} total images across {len(images_by_topic)} topics")
+                    logger.debug(f"Sending update for slide {slide_index + 1} with {len(all_images)} total images across {len(images_by_topic)} topics")
                     
                     # Send slide_images_ready for internal tracking
                     logger.debug(f"Calling callback slide_images_ready (slide_id={slide_id}, images={len(all_images)})")
@@ -1829,7 +1805,7 @@ class CombinedImageService:
                     })
             
             # Final pass - only handle slides that didn't get any images
-            logger.info(f"Final pass - checking {len(slide_topics)} slides, {len(slides_with_images)} already have images")
+            logger.debug(f"Final pass - checking {len(slide_topics)} slides, {len(slides_with_images)} already have images")
             
             for slide_id, topics in slide_topics.items():
                 # Skip slides that already got images
@@ -1882,7 +1858,7 @@ class CombinedImageService:
             # Count total images collected from slides that got images
             total_images_collected = total_images_sent
             slides_with_images_count = len(slides_with_images)
-            logger.info(f"Final totals: {total_images_collected} images sent to {slides_with_images_count} slides")
+            logger.debug(f"Final totals: {total_images_collected} images sent to {slides_with_images_count} slides")
             
             # Stream completion event
             if callback:
@@ -1940,7 +1916,7 @@ class CombinedImageService:
             return []
         
         try:
-            logger.info(f"Searching for topic: '{topic}' (optimized, {num_images} images)")
+            logger.debug(f"Searching for topic: '{topic}' (optimized, {num_images} images)")
             provider = (IMAGE_SEARCH_PROVIDER or 'serpapi').lower()
             if provider == 'perplexity' and getattr(self.perplexity, 'is_available', False):
                 search_task = self.perplexity.search_images(
@@ -1962,13 +1938,11 @@ class CombinedImageService:
                 return []
             
             google_results = search_results['photos']
-            logger.info(f"Found {len(google_results)} images for topic: '{topic}'")
-            logger.debug(f"SERPAPI results for '{topic}': total_raw={len(google_results)}")
-            
+            logger.debug(f"Found {len(google_results)} images for topic: '{topic}'")
+
             # Use _select_diverse_images to avoid duplicates
             selected_images = await self._select_diverse_images(google_results, num_images, deck_id)
-            logger.info(f"Selected {len(selected_images)} diverse images for topic: '{topic}')")
-            logger.debug(f"Selected {len(selected_images)} images after diversity filter")
+            logger.debug(f"Selected {len(selected_images)} diverse images for topic: '{topic}')")
             
             # Ensure images have required fields
             formatted_images = []
@@ -1985,8 +1959,7 @@ class CombinedImageService:
                 if formatted_img['url']:
                     formatted_images.append(formatted_img)
             
-            logger.info(f"Returning {len(formatted_images)} formatted images for topic: '{topic}'")
-            logger.debug(f"Returning {len(formatted_images)} formatted images")
+            logger.debug(f"Returning {len(formatted_images)} formatted images for topic: '{topic}'")
             
             return formatted_images
 

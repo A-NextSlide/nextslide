@@ -107,6 +107,15 @@ class SlideOutline(BaseModel):
         default=None,
         description="Suggested image description extracted from outline, to be used in AI image generation tab."
     )
+    # Citations and footnotes for Sources panel
+    citations: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Citations from research/Perplexity"
+    )
+    footnotes: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Numbered footnotes for citation panel dropdown"
+    )
 
 class DiscardedFileItem(BaseModel):
     file_id: str = Field(description="Unique ID of the discarded file.")

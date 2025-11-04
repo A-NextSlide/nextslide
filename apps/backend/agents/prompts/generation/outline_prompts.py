@@ -176,43 +176,82 @@ Section title + optional 3-5 word tagline"""
 Progress indicator: "Section ✓ | >> Current | Upcoming"
 Use >> for current section, ✓ for completed"""
 
+    if slide_type == 'team':
+        return f"""{base}
+
+TEAM SLIDE (text-dense is OK):
+- List 6–12 members, each as one line
+- Format: Name — Role — credential/achievement (3–7 words)
+- Keep credentials short (e.g., ex-Company, exited $XM, PhD AI)
+- No full bios, no paragraphs
+"""
+
     # CONTENT SLIDES
     data_note = "\n\nUSE REAL DATA from files!" if has_data else ""
 
     if detail == 'detailed':
         mode = """DETAILED MODE:
-Write 150-250 words. Use headers (##) and sub-bullets (2-space indent).
+Write 150-250 words. Use section headers (##) to organize content logically.
+Use sub-bullets (2-space indent) for hierarchy.
 Be SPECIFIC: exact numbers, companies, dates.
-✅ "Uber (2010 seed, $510K → $2.5B exit)"
+Bold key metrics with **
+✅ "Uber (2010 seed, **$510K** → **$2.5B** exit)"
 ❌ "strong performance"
+
+FORMAT:
+## Section Header (2-5 words)
+• Detailed point with specific data
+  • Sub-point with evidence
+• Another detailed point
+  • Supporting details
+
+DO NOT include IMAGE tags - those are added separately.
 
 CHARTS: For quantitative business data (8-15+ points)"""
     else:
         mode = """PRESENTATION MODE:
 
-GOAL: Audience LEARNS the topic.
+GOAL: Audience LEARNS the topic with clear organization.
+
+STRUCTURE: Use section headers (##) to group related points
+
+FORMAT:
+## Section Title
+• Main point with specific data (8-12 words)
+• Related point (8-12 words)
+  • Sub-point if needed (indented with 2 spaces)
+
+## Another Section
+• Key information
+• Supporting details
 
 ❌ TOO SHALLOW (DON'T DO THIS):
 • Supreme Court ruling
 • Charter authority
 • Protects rights
 
-✅ PRESENTS TOPIC (DO THIS):
-• Supreme Court ruled 9-0 Quebec had no veto over Charter
-  Context: Quebec sought status but federal proceeded
+✅ ORGANIZED & INFORMATIVE (DO THIS):
+## Supreme Court Decision
+• Supreme Court ruled **9-0** Quebec had no veto over Charter[1]
+  • Quebec sought special status but federal proceeded
 
+## Constitutional Impact
 • Charter shifted power to federal/courts
-  Provinces lost autonomy over rights
-  Created judicial review framework
+  • Provinces lost autonomy over rights
+  • Created judicial review framework
 
+## Protected Rights
 • Fundamental freedoms + minority protections
-  Language rights English/French each province
-  Indigenous Section 35, multiculturalism Section 27
+  • Language rights English/French each province
+  • Indigenous Section 35, multiculturalism Section 27
 
-ASK: "Does this TEACH the topic?" NOT "How many bullets?"
-
-FLEXIBLE: Explanatory/tutorial/code/descriptive/comparison - use what's needed
-Metrics inline: "Revenue grew 40% from $10M to $14M"
+CONTENT RULES:
+- Bold key numbers and metrics with **
+- Group related points under section headers
+- Business/investor: 3-5 bullets per section, 8-12 words each
+- Simple topics: 2-3 bullets per section, 5-7 words each
+- Test: "Can you SPEAK this while presenting?"
+- DO NOT include IMAGE tags - those are added separately
 
 CHARTS:
 🚫 NO for educational/explanatory (concepts/processes/history/tutorials)

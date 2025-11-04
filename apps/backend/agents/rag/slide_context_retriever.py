@@ -103,40 +103,40 @@ class SlideContextRetriever:
     ) -> Dict[str, Any]:
         """Get relevant context for a slide based on its characteristics."""
         
-        logger.info(f"🔍 Starting context retrieval for slide {slide_index + 1}: {slide_outline.title}")
+        logger.debug(f"Starting context retrieval for slide {slide_index + 1}: {slide_outline.title}")
         start_time = datetime.now()
-        
+
         # Predict components based on content
         predicted_components = self._predict_components(slide_outline, slide_index, deck_outline)
-        logger.info(f"  Predicted {len(predicted_components)} components: {predicted_components}")
+        logger.debug(f"Predicted {len(predicted_components)} components: {predicted_components}")
         
         # Get relevant critical rules
         critical_rules = self._get_relevant_critical_rules(predicted_components, slide_outline)
-        logger.info(f"  Retrieved {len(critical_rules)} critical rules")
+        logger.debug(f"Retrieved {len(critical_rules)} critical rules")
         
         # Get examples and schemas
         component_examples = self._get_component_examples(predicted_components, slide_outline)
         component_schemas = self._get_component_schemas(predicted_components)
-        logger.info(f"  Retrieved {len(component_examples)} examples and {len(component_schemas)} schemas")
-        
+        logger.debug(f"Retrieved {len(component_examples)} examples and {len(component_schemas)} schemas")
+
         # Get layout patterns
         layout_patterns = self._get_layout_patterns(predicted_components, slide_outline)
-        logger.info(f"  Retrieved {len(layout_patterns)} layout patterns")
-        
+        logger.debug(f"Retrieved {len(layout_patterns)} layout patterns")
+
         # Get typography rules
         typography_rules = self._get_typography_rules(slide_outline, predicted_components)
-        logger.info(f"  Retrieved {len(typography_rules)} typography rules")
-        
+        logger.debug(f"Retrieved {len(typography_rules)} typography rules")
+
         # Get best practices
         best_practices = self._get_best_practices(predicted_components)
-        logger.info(f"  Retrieved {len(best_practices)} best practices")
-        
+        logger.debug(f"Retrieved {len(best_practices)} best practices")
+
         # Get design philosophy
         design_philosophy = self._get_design_philosophy()
-        
+
         # Get creative content based on slide type
         creative_guidance = self._get_creative_guidance(slide_outline, slide_index, deck_outline)
-        logger.info(f"  🎨 Retrieved {len(creative_guidance)} creative guidelines")
+        logger.debug(f"Retrieved {len(creative_guidance)} creative guidelines")
         
         # Extract theme fonts correctly from typography
         theme_fonts = {}
@@ -169,7 +169,7 @@ class SlideContextRetriever:
         # Calculate context size
         context_size = len(str(context))
         elapsed = (datetime.now() - start_time).total_seconds()
-        logger.info(f"✅ Context retrieval completed in {elapsed:.1f}s - Size: {context_size} chars (~{context_size // 4} tokens)")
+        logger.debug(f"Context retrieval completed in {elapsed:.1f}s - Size: {context_size} chars (~{context_size // 4} tokens)")
         
         return context
     
@@ -263,28 +263,28 @@ class SlideContextRetriever:
         # ALWAYS add for multi-item slides (each item needs an image)
         if is_multi_item:
             should_add_image = True
-            logger.info("  🖼️ Image component added (multi-item slide)")
+            logger.debug("  🖼️ Image component added (multi-item slide)")
         # Add for process/timeline slides (visual context helps)
         elif 'process' in slide_type or 'timeline' in slide_type or 'history' in title_lower:
             should_add_image = True
-            logger.info("  🖼️ Image component added (process/timeline)")
+            logger.debug("  🖼️ Image component added (process/timeline)")
         # Add for product/feature showcases
         elif any(word in title_lower or word in content_lower for word in ['product', 'feature', 'showcase', 'demo']):
             should_add_image = True
-            logger.info("  🖼️ Image component added (product/feature)")
+            logger.debug("  🖼️ Image component added (product/feature)")
         # Add for educational/learning content
         elif any(word in title_lower for word in ['how', 'what', 'why', 'learn', 'understand']):
             should_add_image = True
-            logger.info("  🖼️ Image component added (educational)")
+            logger.debug("  🖼️ Image component added (educational)")
         # SKIP for stats, metrics, data-heavy, text-heavy slides
         elif any(word in slide_type for word in ['stat', 'metric', 'data', 'comparison']):
-            logger.info("  ⏭️  Image skipped (stats/metrics - use charts instead)")
+            logger.debug("  ⏭️  Image skipped (stats/metrics - use charts instead)")
         # SKIP for conclusion/thank you slides
         elif slide_type in ['title', 'cover', 'conclusion', 'thank_you', 'table_of_contents']:
-            logger.info("  ⏭️  Image skipped (title/conclusion)")
+            logger.debug("  ⏭️  Image skipped (title/conclusion)")
         # SKIP by default for regular content slides (let design breathe)
         else:
-            logger.info("  ⏭️  Image skipped (regular content - focus on design)")
+            logger.debug("  ⏭️  Image skipped (regular content - focus on design)")
         
         if should_add_image:
             components.append("Image")
@@ -347,16 +347,16 @@ class SlideContextRetriever:
         # Include CustomComponent when there is a strong visual/data reason
         if custom_component_reasons or characteristics["has_statistics"]:
             components.append("CustomComponent")
-            logger.info(f"  🎨 CustomComponent included for: {', '.join(custom_component_reasons) if custom_component_reasons else 'statistics emphasis'}")
+            logger.debug(f"  🎨 CustomComponent included for: {', '.join(custom_component_reasons) if custom_component_reasons else 'statistics emphasis'}")
 
         # Prefer CustomComponent more often on minimal-content and title/closing slides for visual impact
         try:
             if characteristics.get("is_minimal"):
                 components.append("CustomComponent")
-                logger.info("  ✨ CustomComponent added for minimal content (visual, centered, large)")
+                logger.debug("  ✨ CustomComponent added for minimal content (visual, centered, large)")
             if characteristics.get("is_title_slide") or characteristics.get("is_closing_slide"):
                 components.append("CustomComponent")
-                logger.info("  ✨ CustomComponent added for title/closing slide (hero visual)")
+                logger.debug("  ✨ CustomComponent added for title/closing slide (hero visual)")
         except Exception:
             pass
         
@@ -367,12 +367,12 @@ class SlideContextRetriever:
             components.append("Line")
             # Include Lines for diagrams and connections
             components.append("Lines")
-            logger.info("  🔷 Shape added for containers; Line+Lines added for dividers/connectors (DON'T use thin rectangles!)")
+            logger.debug("  🔷 Shape added for containers; Line+Lines added for dividers/connectors (DON'T use thin rectangles!)")
         
         # Icons only when paired with text (bullets/headers/process labels)
         if characteristics["has_list"] or "header" in slide_outline.title.lower():
             components.append("Icon")
-            logger.info("  🎯 Icon component added for bullets/headers only (no decorative usage)")
+            logger.debug("  🎯 Icon component added for bullets/headers only (no decorative usage)")
         
         # ReactBits for interactive/animated pre-built components
         # EXPANDED USAGE: Add ReactBits more frequently for visual impact
@@ -381,28 +381,28 @@ class SlideContextRetriever:
         # Title slides should almost always have ReactBits for visual impact
         if characteristics["is_title_slide"] or characteristics["is_closing_slide"]:
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits added for title/closing slide visual impact")
+            logger.debug("  ✨ ReactBits added for title/closing slide visual impact")
         # Modern/tech/future themes benefit from ReactBits
         elif any(keyword in txt_lower for keyword in ["modern", "future", "innovation", "digital", "tech", "transform", "disruption"]):
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits added for modern/tech theme")
+            logger.debug("  ✨ ReactBits added for modern/tech theme")
         # Interactive content keywords
         elif any(keyword in txt_lower for keyword in ["interactive", "animated", "engage", "explore", "click", "hover", "dynamic"]):
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits added for interactive/animated elements")
+            logger.debug("  ✨ ReactBits added for interactive/animated elements")
         # Visual emphasis keywords
         elif any(keyword in txt_lower for keyword in ["stunning", "beautiful", "eye-catching", "impressive", "showcase", "highlight"]):
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits added for visual emphasis")
+            logger.debug("  ✨ ReactBits added for visual emphasis")
         # Otherwise, add ReactBits to ~30% of content slides for variety
         elif not characteristics["has_chart"] and slide_index % 3 == 0:
             components.append("ReactBits")
-            logger.info("  ✨ ReactBits added for visual variety (every 3rd slide)")
+            logger.debug("  ✨ ReactBits added for visual variety (every 3rd slide)")
         
         # 🚨 CRITICAL: Chart if has data - MUST BE INCLUDED
         if characteristics["has_chart"]:
             components.append("Chart")
-            logger.info(f"  📊 Chart component added - valid chart data detected!")
+            logger.debug(f"  📊 Chart component added - valid chart data detected!")
         
         # Prefer Table when we have structured/tabular data; otherwise do not bias by default
         try:
@@ -426,7 +426,7 @@ class SlideContextRetriever:
                 has_tabular = True or has_tabular
             if has_tabular:
                 components.append("Table")
-                logger.info("  📋 Table component added - tabular data detected")
+                logger.debug("  📋 Table component added - tabular data detected")
         except Exception:
             # Stay silent if heuristic fails
             pass
@@ -434,25 +434,25 @@ class SlideContextRetriever:
         # Additional Images for rich layouts
         if characteristics["is_title_slide"] or characteristics["is_closing_slide"]:
             # Title/closing slides often benefit from multiple images
-            logger.info(f"  🖼️ Extra images suggested for title/closing slide")
+            logger.debug(f"  🖼️ Extra images suggested for title/closing slide")
         
         # Extra CustomComponents for statistics
         if characteristics["has_statistics"]:
-            logger.info(f"  💯 CustomComponent emphasized for animated statistics")
+            logger.debug(f"  💯 CustomComponent emphasized for animated statistics")
         
         # Shape for lists and comparisons
         if characteristics["has_comparison"] or characteristics["has_list"]:
-            logger.info(f"  🔷 Shape emphasized for structure/comparison")
+            logger.debug(f"  🔷 Shape emphasized for structure/comparison")
         
         # Group/ShapeWithText hints for certain layout patterns
         try:
             txt = (slide_outline.content or "").lower() + " " + (slide_outline.title or "").lower()
             if any(k in txt for k in ["framework", "stack", "pillar", "layers", "modules"]):
                 components.append("Group")
-                logger.info("  🧩 Group suggested for clustered layout (framework/pillars/layers)")
+                logger.debug("  🧩 Group suggested for clustered layout (framework/pillars/layers)")
             if any(k in txt for k in ["callout", "badge", "highlight", "tip", "note"]):
                 components.append("ShapeWithText")
-                logger.info("  🏷️ ShapeWithText suggested for callouts/badges/highlights")
+                logger.debug("  🏷️ ShapeWithText suggested for callouts/badges/highlights")
         except Exception:
             pass
         
@@ -617,7 +617,7 @@ class SlideContextRetriever:
                 }
             }
             
-            logger.info(f"  🎯 Added {len([k for k in examples if k.startswith('Icon_')])} Icon examples based on content")
+            logger.debug(f"  🎯 Added {len([k for k in examples if k.startswith('Icon_')])} Icon examples based on content")
         
         # Load advanced examples. For CustomComponent, prefer bespoke guidance over library examples
         if "CustomComponent" in predicted_components:
@@ -627,7 +627,7 @@ class SlideContextRetriever:
                     if self.themed_components:
                         themed = self.themed_components.get("themed_custom_components", {})
                         if themed:
-                            logger.info("  🎨 Loading THEMED CustomComponents for consistency (env enabled)")
+                            logger.debug("  🎨 Loading THEMED CustomComponents for consistency (env enabled)")
                             if self._contains_statistics(slide_outline.content):
                                 hero_stats = themed.get("hero_statistics", {})
                                 if hero_stats:
@@ -733,7 +733,7 @@ class SlideContextRetriever:
                     ]
                 }
                             
-                logger.info(f"  ✨ Added {len(examples) - len(predicted_components)} CustomComponent helpers (bespoke-first; library={'on' if self.use_component_library else 'off'})")
+                logger.debug(f"  ✨ Added {len(examples) - len(predicted_components)} CustomComponent helpers (bespoke-first; library={'on' if self.use_component_library else 'off'})")
             except Exception as e:
                 logger.warning(f"Failed to load custom component library: {e}")
             
@@ -741,7 +741,7 @@ class SlideContextRetriever:
             # This is outside the custom library try-except to ensure it always runs
             # NOTE: Icons should use the native Icon component, NOT CustomComponent
             # The Icon component is properly defined in our schema
-            logger.info("  🎯 Icon component is available for use - AI should use native Icon, not CustomComponent")
+            logger.debug("  🎯 Icon component is available for use - AI should use native Icon, not CustomComponent")
                         
         return examples
     
@@ -1127,7 +1127,7 @@ class SlideContextRetriever:
                     rules["emotional_design_triggers"] = visual_storytelling.get("emotional_design_triggers", {})
                     rules["content_extraction_rules"] = visual_storytelling.get("content_extraction_rules", {})
                     rules["mood_based_transformations"] = visual_storytelling.get("mood_based_transformations", {})
-                    logger.info("  🎨 Visual storytelling rules loaded - TOP PRIORITY")
+                    logger.debug("  🎨 Visual storytelling rules loaded - TOP PRIORITY")
         except Exception as e:
             logger.warning(f"Failed to load visual storytelling: {e}")
         
@@ -1142,7 +1142,7 @@ class SlideContextRetriever:
                     if content_type:
                         rules["content_transformation"] = content_transforms.get("transformation_rules", {}).get(content_type, {})
                         rules["universal_principles"] = content_transforms.get("universal_principles", {})
-                        logger.info(f"  🎯 Content transformation rules loaded for: {content_type}")
+                        logger.debug(f"  🎯 Content transformation rules loaded for: {content_type}")
         except Exception as e:
             logger.warning(f"Failed to load content transformations: {e}")
         
@@ -1199,12 +1199,12 @@ class SlideContextRetriever:
         # Data slide specific - CRITICAL CHECK
         if slide_outline.extractedData or "Chart" in components:
             rules["data_slide"] = self.critical_rules.get("data_slide_requirements", {})
-            logger.info(f"  📊 Added data slide rules - chart detected")
+            logger.debug(f"  📊 Added data slide rules - chart detected")
         
         # Stats emphasis - ENHANCED CHECK
         if self._contains_statistics(slide_outline.content):
             rules["stat_emphasis"] = self.critical_rules.get("stat_emphasis", {})
-            logger.info(f"  💯 Added stat emphasis rules - statistics detected")
+            logger.debug(f"  💯 Added stat emphasis rules - statistics detected")
         
         # Content approach
         word_count = len(slide_outline.content.split())

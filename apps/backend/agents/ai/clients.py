@@ -733,6 +733,94 @@ def invoke(
                         **invoke_kwargs
                     )
                     content = result.choices[0].message.content
+                    
+                    # Extract citations from response (works for Perplexity API and text-based citations)
+                    raw_citations = []
+                    # Check ALL models for citations, not just Perplexity (Haiku might format citations in text)
+                    if True:  # Always try to extract citations
+                        try:
+                            # Try different locations where Perplexity might return citations
+                            # 1) Top-level
+                            if hasattr(result, 'citations') and isinstance(result.citations, list):
+                                raw_citations = result.citations
+                                logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations at top level")
+                            # 2) First choice level
+                            elif hasattr(result.choices[0], 'citations') and isinstance(result.choices[0].citations, list):
+                                raw_citations = result.choices[0].citations
+                                logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations at choice level")
+                            # 3) Message level
+                            elif hasattr(result.choices[0].message, 'citations') and isinstance(result.choices[0].message.citations, list):
+                                raw_citations = result.choices[0].message.citations
+                                logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations at message level")
+                            # 4) Try dict access patterns (for non-pydantic responses)
+                            elif hasattr(result, 'model_dump'):
+                                result_dict = result.model_dump()
+                                if isinstance(result_dict.get("citations"), list):
+                                    raw_citations = result_dict["citations"]
+                                    logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations in model_dump top level")
+                                elif result_dict.get("choices") and len(result_dict["choices"]) > 0:
+                                    first_choice = result_dict["choices"][0]
+                                    if isinstance(first_choice.get("citations"), list):
+                                        raw_citations = first_choice["citations"]
+                                        logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations in model_dump choice level")
+                                    elif first_choice.get("message") and isinstance(first_choice["message"].get("citations"), list):
+                                        raw_citations = first_choice["message"]["citations"]
+                                        logger.info(f"[PERPLEXITY] Found {len(raw_citations)} citations in model_dump message level")
+                            
+                            # Normalize citations - Perplexity returns URLs as strings, convert to dicts
+                            citations = []
+                            for cit in raw_citations:
+                                if isinstance(cit, dict):
+                                    # Already a dict, use as-is
+                                    citations.append(cit)
+                                elif isinstance(cit, str):
+                                    # URL string - extract domain as title
+                                    try:
+                                        from urllib.parse import urlparse
+                                        parsed = urlparse(cit)
+                                        domain = parsed.netloc.replace('www.', '')
+                                        citations.append({
+                                            "title": domain,
+                                            "url": cit,
+                                            "source": domain
+                                        })
+                                    except:
+                                        citations.append({
+                                            "title": "Source",
+                                            "url": cit if cit.startswith('http') else "",
+                                            "source": cit
+                                        })
+                            
+                            if citations:
+                                logger.info(f"[PERPLEXITY] Normalized {len(citations)} citations to dict format")
+                            
+                            # 5) Fallback: Parse from CITATION/CITATIONS section in text if API doesn't provide metadata
+                            if not citations and content:
+                                import re
+                                # Match both "CITATION:" and "CITATIONS:"
+                                citation_section_match = re.search(r'---[\s\n]*CITATIONS?:[\s\n]*([\s\S]+?)(?:$|---)', content, re.IGNORECASE)
+                                if citation_section_match:
+                                    citation_text = citation_section_match.group(1)
+                                    # Parse lines like "[1] Instacart corporate data, 2024" or "[2] Source name, url"
+                                    citation_lines = re.findall(r'\[(\d+)\]\s*(.+?)(?:\n|$)', citation_text)
+                                    for idx, title in citation_lines:
+                                        citations.append({
+                                            "title": title.strip(),
+                                            "url": "",  # No URL in text format (could enhance to parse URLs)
+                                            "source": title.strip()
+                                        })
+                                    if citations:
+                                        logger.info(f"[PERPLEXITY] Parsed {len(citations)} citations from CITATIONS section in text")
+                        except Exception as e:
+                            logger.debug(f"Failed to extract citations from Perplexity response: {e}")
+                    
+                    # Return dict with content and citations for Perplexity models
+                    if citations:
+                        logger.info(f"[PERPLEXITY] Extracted {len(citations)} citations from response")
+                        return_value = {"content": content, "citations": citations}
+                        rt.end(outputs={"output": str(return_value)})
+                        return return_value
+                    
                 # Anthropic-style
                 elif hasattr(freeform_client, 'messages') and hasattr(freeform_client.messages, 'create'):
                     # Handle system message for Anthropic (support prompt caching)
@@ -773,6 +861,42 @@ def invoke(
                         content = result.content[0].text
                     except Exception:
                         content = str(result)
+                    
+                    print(f"\n🔍 HAIKU/CLAUDE CITATION EXTRACTION")
+                    print(f"Content length: {len(content)}")
+                    print(f"Has '---': {'---' in content}")
+                    print(f"Has 'CITATION': {'CITATION' in content.upper()}")
+                    
+                    # Extract citations from text (Haiku/Claude might include CITATIONS section)
+                    citations = []
+                    if content:
+                        import re
+                        citation_section_match = re.search(r'---[\s\n]*CITATIONS?:[\s\n]*([\s\S]+?)(?:$|---)', content, re.IGNORECASE)
+                        
+                        print(f"Citation section match: {citation_section_match is not None}")
+                        
+                        if citation_section_match:
+                            citation_text = citation_section_match.group(1)
+                            citation_lines = re.findall(r'\[(\d+)\]\s*(.+?)(?:\n|$)', citation_text)
+                            
+                            print(f"Found {len(citation_lines)} citation lines")
+                            
+                            for idx, title in citation_lines:
+                                citations.append({
+                                    "title": title.strip(),
+                                    "url": "",
+                                    "source": title.strip()
+                                })
+                            if citations:
+                                print(f"✅ Extracted {len(citations)} citations from text!")
+                                logger.info(f"[CLAUDE] Parsed {len(citations)} citations from CITATIONS section in text")
+                                return_value = {"content": content, "citations": citations}
+                                rt.end(outputs={"output": str(return_value)})
+                                return return_value
+                        else:
+                            print(f"❌ No CITATIONS section found in Haiku response")
+                            print(f"Content preview: {content[:200]}")
+                    
                 # Gemini-style
                 elif hasattr(freeform_client, 'models') and hasattr(freeform_client.models, 'generate_content'):
                     prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_messages])
@@ -831,6 +955,39 @@ def invoke(
                     messages=filtered_messages,
                     **std_kwargs
                 )
+                
+                # Extract citations from Perplexity (for structured outputs)
+                structured_citations = []
+                try:
+                    raw_citations = []
+                    if hasattr(result, 'citations') and isinstance(result.citations, list):
+                        raw_citations = result.citations
+                    elif hasattr(result, 'model_dump'):
+                        result_dict = result.model_dump()
+                        raw_citations = result_dict.get("citations", [])
+                    
+                    # Normalize citations
+                    for cit in raw_citations:
+                        if isinstance(cit, dict):
+                            structured_citations.append(cit)
+                        elif isinstance(cit, str):
+                            try:
+                                from urllib.parse import urlparse
+                                parsed = urlparse(cit)
+                                domain = parsed.netloc.replace('www.', '')
+                                structured_citations.append({
+                                    "title": domain,
+                                    "url": cit,
+                                    "source": domain
+                                })
+                            except:
+                                structured_citations.append({"title": "Source", "url": cit, "source": cit})
+                    
+                    if structured_citations:
+                        logger.info(f"[PERPLEXITY STRUCTURED] Extracted {len(structured_citations)} citations")
+                except Exception as e:
+                    logger.debug(f"[PERPLEXITY STRUCTURED] Citation extraction failed: {e}")
+                
                 # Parse JSON into the requested Pydantic model
                 try:
                     content_text = result.choices[0].message.content
@@ -855,6 +1012,11 @@ def invoke(
                             rt.end(outputs={"output": json.dumps(model_obj.model_dump())})
                         except Exception:
                             rt.end(outputs={"output": "<pydantic_model>"})
+                
+                # Return dict with model and citations
+                if structured_citations:
+                    return {"model": model_obj, "citations": structured_citations}
+                
                 return model_obj
 
             # Get the results with validation

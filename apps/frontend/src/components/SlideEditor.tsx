@@ -1648,8 +1648,17 @@ const SlideEditorContent: React.FC = () => {
     }
   }, [deckData.data?.outline?.stylePreferences?.autoSelectImages]);
 
+  // Track if we're currently applying images to prevent infinite loops
+  const applyingImagesRef = useRef(false);
+  const lastAppliedSlidesLengthRef = useRef(0);
+
   // Apply cached images to slides when available
   useEffect(() => {
+    // Prevent infinite loop: skip if already applying or if slides length hasn't changed
+    if (applyingImagesRef.current || deckData.slides.length === lastAppliedSlidesLengthRef.current) {
+      return;
+    }
+
     // Apply images when:
     // 1. Deck has slides
     // 2. Either generation is complete or slides are being updated
@@ -1659,9 +1668,20 @@ const SlideEditorContent: React.FC = () => {
       if (autoSelectImages) {
         const imageUpdater = SlideImageUpdater.getInstance();
 
+        // Mark as applying and update the last applied length
+        applyingImagesRef.current = true;
+        lastAppliedSlidesLengthRef.current = deckData.slides.length;
+
         // Apply any cached images to slides
-        setTimeout(() => {
-          imageUpdater.applyAllCachedImages();
+        setTimeout(async () => {
+          try {
+            await imageUpdater.applyAllCachedImages();
+          } finally {
+            // Reset the flag after a delay to allow for new changes
+            setTimeout(() => {
+              applyingImagesRef.current = false;
+            }, 2000);
+          }
         }, 500); // Small delay to ensure images are cached
       }
     }
@@ -1679,20 +1699,36 @@ const SlideEditorContent: React.FC = () => {
     const imageCache = (window as any).__slideImageCache;
     if (!imageCache || Object.keys(imageCache).length === 0) return;
 
+    // Prevent infinite loop
+    if (applyingImagesRef.current) return;
+
     const imageUpdater = SlideImageUpdater.getInstance();
 
     // Apply images after a brief delay to ensure DOM is ready
-    const timeoutId = setTimeout(() => {
-      imageUpdater.applyAllCachedImages();
+    const timeoutId = setTimeout(async () => {
+      applyingImagesRef.current = true;
+      try {
+        await imageUpdater.applyAllCachedImages();
+      } finally {
+        setTimeout(() => {
+          applyingImagesRef.current = false;
+        }, 2000);
+      }
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [deckData.slides.length, deckData.data?.outline?.stylePreferences?.autoSelectImages]); // Re-run when slides load or preference changes
+  }, [deckData.data?.outline?.stylePreferences?.autoSelectImages]); // Only re-run when preference changes, not slides length
 
   // Also listen for slide_images_available events directly
   useEffect(() => {
     const handleImagesAvailable = (event: CustomEvent) => {
       console.log('[SlideEditor] slide_images_available event received:', event.detail);
+      
+      // Prevent infinite loop
+      if (applyingImagesRef.current) {
+        console.log('[SlideEditor] Already applying images, skipping to prevent loop');
+        return;
+      }
       
       // Check if auto-select images is enabled before applying
       const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
@@ -1700,8 +1736,15 @@ const SlideEditorContent: React.FC = () => {
         console.log('[SlideEditor] Auto-select images is enabled, applying cached images');
         // Apply images immediately when they become available
         const imageUpdater = SlideImageUpdater.getInstance();
-        setTimeout(() => {
-          imageUpdater.applyAllCachedImages();
+        setTimeout(async () => {
+          applyingImagesRef.current = true;
+          try {
+            await imageUpdater.applyAllCachedImages();
+          } finally {
+            setTimeout(() => {
+              applyingImagesRef.current = false;
+            }, 2000);
+          }
         }, 100);
       } else {
         console.log('[SlideEditor] Auto-select images is disabled, skipping automatic application');
@@ -1895,7 +1938,7 @@ const SlideEditorContent: React.FC = () => {
             onCollapse={() => setIsChatCollapsed(true)}
             onExpand={() => setIsChatCollapsed(false)}
           >
-            <div className="flex flex-col gap-4 h-full min-w-0">
+            <div className="flex flex-col gap-4 h-full min-w-0 overflow-y-auto">
               <ChatPanel
                 onCollapseChange={handleCollapseChange}
                 opacity={chatOpacity}

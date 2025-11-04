@@ -642,9 +642,12 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                           }}
                         />
                       </div>
-                      {slide.extractedData?.metadata?.citations && (() => {
-                        // Check for citation tags [1], [2] in content first
+                      {(() => {
+                        // ALWAYS check for citation tags [1], [2] in content first - regardless of extractedData
                         const content = slide.content || '';
+                        console.error('🔍 [MANUAL SOURCES] Slide:', slide.title?.substring(0, 50));
+                        console.error('🔍 [MANUAL SOURCES] Content preview:', content.substring(0, 200));
+                        
                         const referencedIndices = new Set<number>();
                         const citationPattern = /\[(\d+)\]/g;
                         let match;
@@ -652,40 +655,44 @@ const ManualSlideCard: React.FC<ManualSlideCardProps> = ({
                           referencedIndices.add(parseInt(match[1], 10));
                         }
 
+                        console.error('🔍 [MANUAL SOURCES] Found citation markers:', Array.from(referencedIndices));
+
                         // Only show citations panel if content has citation tags
                         if (referencedIndices.size === 0) {
+                          console.error('🔍 [MANUAL SOURCES] No citation markers - hiding panel');
                           return null;
                         }
 
                         // Prefer backend-provided footnotes when available
                         const providedFootnotes = (slide as any)?.footnotes as Array<{ index: number; label: string; url?: string }> | undefined;
                         const cits = slide.extractedData?.metadata?.citations || [];
+                        
+                        console.error('🔍 [MANUAL SOURCES] Backend footnotes:', providedFootnotes);
+                        console.error('🔍 [MANUAL SOURCES] Citations:', cits);
+                        
                         if (providedFootnotes && providedFootnotes.length > 0) {
                           // Filter to only show footnotes that are actually referenced
                           const filteredFootnotes = providedFootnotes.filter(f => referencedIndices.has(f.index));
                           if (filteredFootnotes.length === 0) {
+                            console.error('🔍 [MANUAL SOURCES] Backend footnotes exist but none match markers');
                             return null;
                           }
+                          console.error('🔍 [MANUAL SOURCES] ✅ Using backend footnotes:', filteredFootnotes.length);
                           return <CitationsPanel citations={cits} editable={true} footnotes={filteredFootnotes as any} />;
                         }
-                        const foots: Array<{ index: number; label: string; url: string }> = [];
-                        let i = 0;
-                        cits.forEach((c, idx) => {
-                          const baseLabel = (c.title || c.source || '').trim();
-                          const label = baseLabel || `Source ${idx + 1}`;
-                          const rawUrl = (c.url || '').trim();
-                          if (rawUrl) {
-                            let host = rawUrl;
-                            try { host = new URL(rawUrl).hostname; } catch { /* ignore */ }
-                            const exists = foots.find(f => {
-                              try { return new URL(f.url || '').hostname === host; } catch { return (f.url || '') === rawUrl; }
-                            });
-                            if (!exists) foots.push({ index: ++i, label, url: rawUrl });
-                          } else {
-                            foots.push({ index: ++i, label, url: '' });
-                          }
-                        });
-                        return <CitationsPanel citations={cits} editable={true} footnotes={foots} />;
+                        
+                        // No backend footnotes - create placeholders for the citation markers we found
+                        console.error('🔍 [MANUAL SOURCES] Creating placeholders for', referencedIndices.size, 'markers');
+                        const placeholderFootnotes = Array.from(referencedIndices)
+                          .sort((a, b) => a - b)
+                          .map(index => ({
+                            index,
+                            label: `Source ${index}`,
+                            url: ''
+                          }));
+                        
+                        console.error('🔍 [MANUAL SOURCES] ✅ Created placeholder footnotes:', placeholderFootnotes);
+                        return <CitationsPanel citations={cits} editable={true} footnotes={placeholderFootnotes as any} />;
                       })()}
                     </div>
                   )}

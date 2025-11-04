@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -6,21 +6,12 @@ import { CommentsService } from '@/services/CommentsService';
 import { useEditorStore } from '@/stores/editorStore';
 import { AtSign, X } from 'lucide-react';
 import type { CommentThread, CommentAnchor, Comment } from '@/types/Comments';
-
-// Deterministic per-user shading based on author identifier
-const colorForUser = (idOrName: string) => {
-  const key = idOrName || '';
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash << 5) - hash + key.charCodeAt(i);
-    hash |= 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  return {
-    backgroundColor: `hsl(${hue} 85% 96%)`,
-    borderColor: `hsl(${hue} 70% 80%)`
-  } as React.CSSProperties;
-};
+import { 
+  useCollaboratorMap, 
+  useCommentThreads, 
+  useMentions,
+  colorForUser 
+} from '@/hooks/useComments';
 
 interface CommentsPanelProps {
   deckId: string;
@@ -31,11 +22,7 @@ interface CommentsPanelProps {
 
 export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, getCollaborators, onClose }) => {
   const [body, setBody] = useState('');
-  const [mentionQuery, setMentionQuery] = useState('');
-  const [mentions, setMentions] = useState<string[]>([]);
-  const [mentionList, setMentionList] = useState<any[]>([]);
-  const [collaboratorMap, setCollaboratorMap] = useState<Map<string, string>>(new Map());
-
+  
   // Extended comment type to include thread info
   interface ExtendedComment extends Comment {
     threadId: string;
@@ -47,59 +34,11 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
 
   const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
   const allSelectedIds = selectedComponentIds || new Set();
-  const selectedComponent = React.useMemo(() => {
-    if (!selectedComponentIds || selectedComponentIds.size === 0) return undefined;
-    try {
-      const arr = typeof selectedComponentIds.values === 'function' ? Array.from(selectedComponentIds.values()) : Array.from(selectedComponentIds as any);
-      return arr[0];
-    } catch { return undefined; }
-  }, [selectedComponentIds]);
 
-  // Load collaborators for name mapping
-  useEffect(() => {
-    const loadCollaborators = async () => {
-      const map = new Map<string, string>();
-      
-      // Add current user
-      try {
-        const { supabase } = await import('@/integrations/supabase/client');
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
-          map.set(user.id, name);
-        }
-      } catch {}
-      
-      // Add collaborators
-      if (getCollaborators) {
-        try {
-          const list = await getCollaborators();
-          list.forEach(c => {
-            // Use full_name if available, otherwise email prefix
-            const name = (c as any).full_name || (c as any).name || c.email.split('@')[0];
-            map.set(c.user_id, name);
-          });
-        } catch {}
-      }
-      
-      setCollaboratorMap(map);
-    };
-    
-    loadCollaborators();
-  }, [getCollaborators]);
-
-  // Separate raw threads from enriched comments
-  const [rawThreads, setRawThreads] = useState<CommentThread[]>([]);
-  
-  const refresh = React.useCallback(async () => {
-    try {
-      const threads = await CommentsService.list(deckId, { slideId });
-      setRawThreads(threads || []);
-    } catch (err) {
-      console.error('Failed to load comments:', err);
-      setRawThreads([]);
-    }
-  }, [deckId, slideId]);
+  // Use shared hooks
+  const collaboratorMap = useCollaboratorMap(getCollaborators);
+  const { threads: rawThreads, refresh, setThreads: setRawThreads } = useCommentThreads(deckId, slideId);
+  const mentionHook = useMentions(getCollaborators);
 
   // Enrich comments with author names when collaboratorMap or rawThreads change
   useEffect(() => {
@@ -123,56 +62,6 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
     setComments(allComments);
   }, [rawThreads, collaboratorMap]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // Listen for new comments to refresh immediately across views
-  useEffect(() => {
-    const onCreated = () => refresh();
-    window.addEventListener('comments:created', onCreated);
-    return () => window.removeEventListener('comments:created', onCreated);
-  }, [refresh]);
-
-  const refreshMentions = async (query: string) => {
-    try {
-      if (!getCollaborators) return setMentionList([]);
-      const list = await getCollaborators();
-      const filtered = query 
-        ? list.filter(c => c.email.toLowerCase().includes(query.toLowerCase()))
-        : list;
-      setMentionList(filtered);
-    } catch (e) {
-      console.error('Failed to load mentions:', e);
-      setMentionList([]);
-    }
-  };
-
-  const onBodyChange = (text: string) => {
-    setBody(text);
-    const lastAt = text.lastIndexOf('@');
-    if (lastAt >= 0 && (lastAt === text.length - 1 || text.charAt(lastAt + 1) !== ' ')) {
-      const query = text.slice(lastAt + 1);
-      setMentionQuery(query);
-      refreshMentions(query);
-    } else {
-      setMentionQuery('');
-      setMentionList([]);
-    }
-  };
-
-  const pickMention = (userId: string, email: string) => {
-    const lastAt = body.lastIndexOf('@');
-    if (lastAt >= 0) {
-      const beforeAt = body.slice(0, lastAt);
-      const username = email.split('@')[0];
-      setBody(`${beforeAt}@${username} `);
-      setMentions([...mentions, userId]);
-      setMentionQuery('');
-      setMentionList([]);
-    }
-  };
-
   const addForSelected = async () => {
     if (!body.trim() || allSelectedIds.size === 0) return;
     
@@ -184,7 +73,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
       anchor = { type: 'component', slideId, componentId: selectedArray[0] };
     } else {
       // Multiple components - use component_group
-      anchor = { type: 'component_group' as any, slideId, componentIds: selectedArray } as any;
+      anchor = { type: 'component_group', slideId, componentIds: selectedArray };
     }
     
     try {
@@ -192,10 +81,10 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
         slideId, 
         anchor,
         body, 
-        mentions 
+        mentions: mentionHook.mentions 
       });
       setBody('');
-      setMentions([]);
+      mentionHook.clearMentions();
       refresh();
     } catch (err: any) {
       console.error('Failed to create comment:', err);
@@ -291,17 +180,17 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ deckId, slideId, g
       <div className="p-2 border-t space-y-1.5">
         <Textarea
           value={body}
-          onChange={(e) => onBodyChange(e.target.value)}
+          onChange={(e) => mentionHook.handleTextChange(e.target.value, setBody)}
           placeholder="Comment or add others with @"
           className="h-16 text-[12px]"
         />
-        {!!mentionList.length && (
+        {!!mentionHook.mentionList.length && (
           <div className="border rounded p-1 max-h-24 overflow-auto">
-            {mentionList.map(m => (
+            {mentionHook.mentionList.map(m => (
               <button
                 key={m.user_id}
                 className="w-full text-left text-[11px] px-2 py-1 hover:bg-accent rounded"
-                onClick={() => pickMention(m.user_id, m.email)}
+                onClick={() => mentionHook.pickMention(m.user_id, m.email, body, setBody)}
               >
                 <AtSign size={10} className="inline mr-1" />
                 {m.email}

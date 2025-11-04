@@ -189,10 +189,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState<boolean>(false);
-  const workspaceTheme = useThemeStore(state => state.getWorkspaceTheme());
   const isThemeReadyGlobal = useThemeStore(state => state.isThemeReady);
   const availableThemes = useThemeStore(state => state.availableThemes);
   const workspaceThemeId = useThemeStore(state => state.workspaceThemeId);
+  // Reactive workspace theme - subscribe to both ID and themes to ensure updates
+  const workspaceTheme = useThemeStore(state => {
+    const id = state.workspaceThemeId;
+    return state.availableThemes.find(t => t.id === id) || initialWorkspaceTheme;
+  });
   const [generatedThemes, setGeneratedThemes] = useState<Theme[]>([]);
   const [initialTheme, setInitialTheme] = useState<Theme | null>(null);
   const [currentThemeIndex, setCurrentThemeIndex] = useState<number>(0);
@@ -206,9 +210,27 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const [fontEditor, setFontEditor] = useState<{ open: boolean; type: 'heading' | 'body'; x: number; y: number } | null>(null);
   const [colorEditor, setColorEditor] = useState<{ open: boolean; swatchIndex: number; x: number; y: number } | null>(null);
   const [draggedExtraIndex, setDraggedExtraIndex] = useState<number | null>(null);
+  
+  // Dynamic font groups that update when fonts are synced (like ChatInputView)
+  const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
+  
+  // Static font groups as fallback
   const fontGroups = React.useMemo<Record<string, string[]>>(() => {
     try {
-      return Object.fromEntries(Object.entries(FONT_CATEGORIES).map(([k, arr]) => [k, arr.map(f => f.name)]));
+      // Prefer deduped groups if available (same as ChatInputView)
+      if (FontLoadingService?.getDedupedFontGroups) {
+        return FontLoadingService.getDedupedFontGroups();
+      }
+      // Fallback to manual construction
+      const groups: Record<string, string[]> = {};
+      for (const [category, fonts] of Object.entries(FONT_CATEGORIES)) {
+        if (Array.isArray(fonts)) {
+          groups[category] = fonts.map(font => font.name);
+        } else {
+          groups[category] = [];
+        }
+      }
+      return groups;
     } catch {
       return {} as Record<string, string[]>;
     }
@@ -217,6 +239,43 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   // Track current font value from theme store for dropdown
   const currentHeadingFont = workspaceTheme?.typography?.heading?.fontFamily || '';
   const currentBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily || '';
+
+  // Initial font sync on component mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await FontLoadingService.syncDesignerFonts?.();
+        if (!cancelled) {
+          const groups = FontLoadingService.getDedupedFontGroups?.();
+          if (groups) {
+            setDynamicFontGroups(groups);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to sync designer fonts on mount:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // Run once on mount
+
+  // Sync designer fonts when font editor opens (like ChatInputView)
+  useEffect(() => {
+    let cancelled = false;
+    if (fontEditor?.open) {
+      (async () => {
+        try {
+          await FontLoadingService.syncDesignerFonts?.();
+        } catch {}
+        if (!cancelled) {
+          try {
+            setDynamicFontGroups(FontLoadingService.getDedupedFontGroups?.() || null);
+          } catch {}
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, [fontEditor?.open]);
 
   // Load fonts when theme changes - with loading state to prevent FOUC
   useEffect(() => {
@@ -729,11 +788,19 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         const target = ev.target as Node;
         if (fontEditor?.open) {
           const inside = fontEditorRef.current && fontEditorRef.current.contains(target);
-          if (!inside) setFontEditor(null);
+          // Check if click is inside a Radix dropdown menu (portaled content)
+          const insideDropdown = (target as Element).closest('[data-radix-popper-content-wrapper]') !== null ||
+                                 (target as Element).closest('[role="menu"]') !== null ||
+                                 (target as Element).closest('[role="menuitem"]') !== null;
+          if (!inside && !insideDropdown) setFontEditor(null);
         }
         if (colorEditor?.open) {
           const inside = colorEditorRef.current && colorEditorRef.current.contains(target);
-          if (!inside) setColorEditor(null);
+          // Check if click is inside a color picker or dropdown
+          const insideDropdown = (target as Element).closest('[data-radix-popper-content-wrapper]') !== null ||
+                                 (target as Element).closest('[role="menu"]') !== null ||
+                                 (target as Element).closest('[role="dialog"]') !== null;
+          if (!inside && !insideDropdown) setColorEditor(null);
         }
       } catch {}
     };
@@ -1886,45 +1953,61 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               )}
                             </div>
                             {/* Floating editors */}
-                            {fontEditor?.open && (
-                              <div
-                                ref={fontEditorRef}
-                                className="absolute z-50 p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
-                                style={{ left: Math.max(8, Math.min((fontEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)), top: Math.max(8, Math.min((fontEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 200)), width: 240 }}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div className="text-[10px] mb-1 opacity-70">
-                                  {fontEditor.type === 'heading' ? 'Heading Font' : 'Body Font'}
-                                </div>
-                                <GroupedDropdown
-                                  value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
-                                  options={ALL_FONT_NAMES}
-                                  groups={fontGroups}
-                                  onChange={async (value) => {
-                                    const fontName = String(value);
-                                    
-                                    // Load font FIRST before applying to theme
-                                    try {
-                                      await FontLoadingService.syncDesignerFonts?.();
-                                      await FontLoadingService.loadFont(fontName);
-                                      // Small delay to ensure font is rendered
-                                      await new Promise(resolve => setTimeout(resolve, 100));
-                                    } catch (err) {
-                                      console.warn('Font loading error:', err);
-                                    }
-                                    
-                                    // Now apply the theme update
-                                    if (fontEditor.type === 'heading') {
-                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, heading: { ...(t.typography?.heading || {}), fontFamily: fontName } } } as any));
-                                    } else {
-                                      applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, paragraph: { ...(t.typography?.paragraph || {}), fontFamily: fontName } } } as any));
-                                    }
-                                    setFontEditor(null);
+                            {fontEditor?.open && (() => {
+                              const groups = dynamicFontGroups || fontGroups;
+                              const groupsCount = Object.keys(groups).length;
+                              console.log('[OutlineDisplayView] Font editor opened', {
+                                currentFont: fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont,
+                                groupsCount,
+                                hasDynamicGroups: !!dynamicFontGroups,
+                                firstFewGroups: Object.keys(groups).slice(0, 5)
+                              });
+                              return (
+                                <div
+                                  ref={fontEditorRef}
+                                  className="absolute p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
+                                  style={{ 
+                                    left: Math.max(8, Math.min((fontEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)), 
+                                    top: Math.max(8, Math.min((fontEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 200)), 
+                                    width: 240,
+                                    zIndex: 9999 // Very high z-index to ensure dropdown content appears above everything
                                   }}
-                                  placeholder="Select font"
-                                />
-                              </div>
-                            )}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <div className="text-[10px] mb-1 opacity-70">
+                                    {fontEditor.type === 'heading' ? 'Heading Font' : 'Body Font'}
+                                  </div>
+                                  <GroupedDropdown
+                                    value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
+                                    options={ALL_FONT_NAMES}
+                                    groups={groups}
+                                    onChange={async (value) => {
+                                      const fontName = String(value);
+                                      console.log('[OutlineDisplayView] Font selected:', fontName);
+                                      
+                                      // Load font FIRST before applying to theme
+                                      try {
+                                        await FontLoadingService.syncDesignerFonts?.();
+                                        await FontLoadingService.loadFont(fontName);
+                                        // Small delay to ensure font is rendered
+                                        await new Promise(resolve => setTimeout(resolve, 100));
+                                      } catch (err) {
+                                        console.warn('Font loading error:', err);
+                                      }
+                                      
+                                      // Now apply the theme update
+                                      if (fontEditor.type === 'heading') {
+                                        applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, heading: { ...(t.typography?.heading || {}), fontFamily: fontName } } } as any));
+                                      } else {
+                                        applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, paragraph: { ...(t.typography?.paragraph || {}), fontFamily: fontName } } } as any));
+                                      }
+                                      setFontEditor(null);
+                                    }}
+                                    placeholder="Select font"
+                                  />
+                                </div>
+                              );
+                            })()}
                             {colorEditor?.open && (
                               <div
                                 ref={colorEditorRef}

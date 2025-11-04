@@ -244,10 +244,35 @@ export const renderTable: RendererFunction = (props) => {
       Highlight.configure({
         multicolor: true,
       }),
-      Link.configure({
+      Link.extend({
+        parseHTML() {
+          return [
+            {
+              tag: 'a[href]',
+              getAttrs: (dom) => {
+                const href = (dom as HTMLElement).getAttribute('href');
+                // Only accept valid string hrefs
+                if (typeof href === 'string' && href.length > 0) {
+                  return { href };
+                }
+                return false; // Reject invalid links
+              },
+            },
+          ];
+        },
+        renderHTML({ HTMLAttributes }) {
+          // Ensure href is always a string before rendering
+          const href = HTMLAttributes.href;
+          if (typeof href !== 'string' || !href) {
+            return ['span', { class: 'text-blue-600' }, 0];
+          }
+          return ['a', { ...HTMLAttributes, class: 'text-blue-600 underline' }, 0];
+        },
+      }).configure({
         openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-blue-600 underline',
+        validate: href => {
+          // Ensure href is a string to prevent "uri.replace is not a function" error
+          return typeof href === 'string' && href.length > 0;
         },
       }),
       TextAlign.configure({

@@ -23,6 +23,10 @@ interface SlideImageData {
 export class SlideImageUpdater {
   private static instance: SlideImageUpdater;
   private imageAssignmentMap = new Map<string, number>(); // Track which image index to use for each slide
+  private appliedImages = new Map<string, string>(); // Track component -> image URL to prevent swapping
+  private searchCache = new Map<string, any>(); // Cache search results to avoid duplicate API calls
+  private processingSlides = new Set<string>(); // Track which slides are currently being processed
+  private isPreloading = false; // Flag to prevent concurrent preloading
 
   static getInstance(): SlideImageUpdater {
     if (!SlideImageUpdater.instance) {
@@ -59,11 +63,65 @@ export class SlideImageUpdater {
       return;
     }
 
-    // Apply images to the slide
-    this.applyImagesToSlide(imageData);
+    // Apply images to the slide (now async)
+    this.applyImagesToSlide(imageData).catch(err => {
+      console.error('[SlideImageUpdater] Error applying images:', err);
+    });
   }
 
-  private applyImagesToSlide(imageData: SlideImageData) {
+  /**
+   * Search for an image using the same API that SearchTab uses
+   * Fetches first 10 results and picks one randomly for variety
+   * Results are cached to avoid duplicate API calls
+   */
+  private async searchForImage(query: string): Promise<any | null> {
+    // Check cache first
+    if (this.searchCache.has(query)) {
+      const cached = this.searchCache.get(query);
+      console.log(`[SlideImageUpdater] Using cached result for "${query}"`);
+      return cached;
+    }
+
+    try {
+      const response = await fetch('/api/media/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          type: 'images',
+          limit: 10, // Fetch first 10 results
+          page: 1
+        })
+      });
+
+      if (!response.ok) {
+        console.warn(`[SlideImageUpdater] Search failed for "${query}":`, response.statusText);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0) {
+        // Pick a random result from the first 10 for variety
+        const randomIndex = Math.floor(Math.random() * data.results.length);
+        const selected = data.results[randomIndex];
+
+        // Cache the result
+        this.searchCache.set(query, selected);
+
+        return selected;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[SlideImageUpdater] Search error:', error);
+      return null;
+    }
+  }
+
+  private async applyImagesToSlide(imageData: SlideImageData) {
     // Check if auto-select images is enabled
     const preferences = (window as any).__slideGenerationPreferences;
     // Only apply if EXPLICITLY set to TRUE
@@ -93,80 +151,101 @@ export class SlideImageUpdater {
       return;
     }
 
-    // Find Image components that need images
-    const allImageComponents = slide.components.filter(c => c.type === 'Image');
-
-    // Check for duplicate images (same src on multiple components)
-    const srcCounts = new Map<string, number>();
-    allImageComponents.forEach(c => {
-      const src = c.props.src;
-      if (src && !this.needsImage(c)) {
-        srcCounts.set(src, (srcCounts.get(src) || 0) + 1);
-      }
-    });
-
-    // Find components with duplicate srcs or that need images
-    const imageComponents = slide.components.filter(c => {
-      if (c.type !== 'Image') return false;
-
-      // If it needs an image (placeholder), include it
-      if (this.needsImage(c)) return true;
-
-      // If its src is used by multiple components (duplicates), include it
-      const src = c.props.src;
-      if (src && srcCounts.has(src) && (srcCounts.get(src) || 0) > 1) {
-        return true;
-      }
-
-      return false;
-    });
-
-    if (imageComponents.length === 0) {
+    // Check if this slide is already being processed
+    if (this.processingSlides.has(slide.id)) {
+      console.log(`[SlideImageUpdater] ⏭️ Slide ${slide.id} already being processed, skipping...`);
       return;
     }
 
-    // Update components with images
-    // Use images sequentially from the recommended list (same order as Recommended tab)
-    let imageAssignmentIndex = 0;
-    const usedUrls = new Set<string>();
-    
-    const updatedComponents = slide.components.map(component => {
-      if (component.type === 'Image' && this.needsImage(component)) {
-        // Simple sequential assignment from the flat images array
-        // This matches exactly what the user sees in the Recommended tab
-        let selectedImage = null;
-        
-        // Try to find next unused image
-        while (imageAssignmentIndex < imageData.images.length) {
-          const candidate = imageData.images[imageAssignmentIndex];
-          imageAssignmentIndex++;
-          
-          // Skip if already used on this slide
-          if (usedUrls.has(candidate.url)) {
-            continue;
-          }
-          
-          selectedImage = candidate;
-          usedUrls.add(candidate.url);
-          break;
-        }
+    // Mark as processing
+    this.processingSlides.add(slide.id);
+    console.log(`[SlideImageUpdater] 🎨 Processing slide ${slide.id}...`);
 
-        if (selectedImage) {
-          return {
-            ...component,
-            props: {
-              ...component.props,
-              src: selectedImage.url,
-              alt: selectedImage.description || selectedImage.alt || component.props.alt || 'Slide image',
-              // Remove placeholder/generating states
-              isGenerating: false,
-              isPlaceholder: false
-            }
-          };
-        }
+    // Find Image components that need images
+    // Check appliedImages map first to avoid processing already-applied components
+    const imageComponents = slide.components.filter(c => {
+      if (c.type !== 'Image') return false;
+
+      const componentKey = `${slide.id}-${c.id}`;
+
+      // Skip if already applied (check map first)
+      if (this.appliedImages.has(componentKey)) {
+        console.log(`[SlideImageUpdater] ⏭️ Skipping ${componentKey} - already in appliedImages map`);
+        return false;
       }
-      return component;
+
+      return this.needsImage(c);
     });
+
+    if (imageComponents.length === 0) {
+      console.log(`[SlideImageUpdater] ℹ️ No images needed for slide ${slide.id}`);
+      this.processingSlides.delete(slide.id);
+      return;
+    }
+
+    console.log(`[SlideImageUpdater] 🖼️ Found ${imageComponents.length} components needing images in slide ${slide.id}`);
+
+    // Update components with images using FRESH SEARCH (same as SearchTab)
+    const usedUrls = new Set<string>();
+
+    const updatedComponents = await Promise.all(
+      slide.components.map(async (component) => {
+        if (component.type === 'Image' && this.needsImage(component)) {
+          const componentKey = `${slide.id}-${component.id}`;
+
+          // Check if we've already applied an image to this component
+          if (this.appliedImages.has(componentKey)) {
+            const appliedUrl = this.appliedImages.get(componentKey);
+            console.log(`[SlideImageUpdater] 🔒 Already applied to ${componentKey}, keeping: ${appliedUrl?.substring(0, 50)}...`);
+            return {
+              ...component,
+              props: {
+                ...component.props,
+                src: appliedUrl,
+                autoApplied: true,
+                isGenerating: false,
+                isPlaceholder: false
+              }
+            };
+          }
+
+          // Get search query from component metadata (same priority as ImagePicker)
+          const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+
+          if (searchQuery) {
+            console.log(`[SlideImageUpdater] 🔍 Searching for "${searchQuery}" for component ${component.id}...`);
+
+            // Do a fresh search using the same API as SearchTab
+            const searchResult = await this.searchForImage(searchQuery);
+
+            if (searchResult && !usedUrls.has(searchResult.link)) {
+              usedUrls.add(searchResult.link);
+
+              // Mark this image as applied IMMEDIATELY to prevent future swaps
+              this.appliedImages.set(componentKey, searchResult.link);
+
+              console.log(`[SlideImageUpdater] ✅ Applied "${searchQuery}" → ${searchResult.link.substring(0, 50)}... to ${componentKey}`);
+
+              return {
+                ...component,
+                props: {
+                  ...component.props,
+                  src: searchResult.link,
+                  alt: searchResult.title || searchResult.alt || component.props.alt || 'Slide image',
+                  autoApplied: true, // Mark as auto-applied
+                  // Remove placeholder/generating states
+                  isGenerating: false,
+                  isPlaceholder: false
+                }
+              };
+            } else {
+              console.log(`[SlideImageUpdater] ⚠️ No result for "${searchQuery}" or URL already used`);
+            }
+          }
+        }
+        return component;
+      })
+    );
     
     // Update the slide with new components
     const { batchUpdateSlideComponents } = useDeckStore.getState();
@@ -175,7 +254,10 @@ export class SlideImageUpdater {
       components: updatedComponents
     }]);
 
-    console.log(`[SlideImageUpdater] ✅ COMPLETED: Updated slide ${slide.id} with images`);
+    // Remove from processing set
+    this.processingSlides.delete(slide.id);
+
+    console.log(`[SlideImageUpdater] ✅ COMPLETED: Updated slide ${slide.id} with fresh search results`);
   }
 
   private needsImage(component: ComponentInstance): boolean {
@@ -183,6 +265,11 @@ export class SlideImageUpdater {
     
     // Never overwrite if user explicitly selected/applied an image
     if ((component.props as any).userSetSrc) {
+      return false;
+    }
+
+    // Never overwrite if we've already auto-applied an image
+    if ((component.props as any).autoApplied) {
       return false;
     }
 
@@ -203,90 +290,55 @@ export class SlideImageUpdater {
     return isPlaceholderSrc || !!component.props.isGenerating;
   }
 
-  private getNextImageIndex(slideId: string, totalImages: number): number {
-    // Get current index for this slide, or start at 0
-    const currentIndex = this.imageAssignmentMap.get(slideId) || 0;
-    
-    // Update to next index (with wraparound)
-    const nextIndex = (currentIndex + 1) % totalImages;
-    this.imageAssignmentMap.set(slideId, nextIndex);
-    
-    return currentIndex;
-  }
+  /**
+   * Preload images for all slides by searching in parallel
+   * This should be called during slide generation to have images ready on load
+   */
+  public async preloadImagesForSlides(slides: SlideData[]) {
+    if (this.isPreloading) {
+      console.log('[SlideImageUpdater] Already preloading, skipping...');
+      return;
+    }
 
-  private selectBestImage(
-    imageData: SlideImageData,
-    component: ComponentInstance,
-    fallbackIndex: number
-  ): any {
-    const { images, images_by_topic, topics } = imageData;
+    this.isPreloading = true;
+    console.log('[SlideImageUpdater] 🔍 Starting preload for', slides.length, 'slides...');
 
-    // PRIORITY 1: Check component metadata for specific topic/searchQuery
-    // This is used for multi-item slides where each image has a specific topic
-    if (component.props.metadata) {
-      const metadata = component.props.metadata;
+    const searchPromises: Promise<void>[] = [];
+    const queriesFound = new Set<string>();
 
-      // Try metadata.topic first (exact match)
-      if (metadata.topic && images_by_topic?.[metadata.topic]) {
-        const topicImages = images_by_topic[metadata.topic];
-        if (topicImages.length > 0) {
-          return topicImages[0]; // Use first image for this topic
-        }
-      }
+    for (const slide of slides) {
+      const imageComponents = slide.components.filter(c => c.type === 'Image');
 
-      // Try metadata.searchQuery (fuzzy match)
-      if (metadata.searchQuery) {
-        const searchTerms = metadata.searchQuery.toLowerCase().split(' ');
-        const matchedImage = images.find(img => {
-          if (!img.topic && !img.description) return false;
-          const imgText = `${img.topic || ''} ${img.description || ''}`.toLowerCase();
-          return searchTerms.some(term => imgText.includes(term));
-        });
-        if (matchedImage) {
-          return matchedImage;
+      for (const component of imageComponents) {
+        const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+
+        if (searchQuery && !this.searchCache.has(searchQuery) && !queriesFound.has(searchQuery)) {
+          queriesFound.add(searchQuery);
+          console.log(`[SlideImageUpdater] 🔍 Queueing search for: "${searchQuery}"`);
+
+          // Start search in parallel (don't await here)
+          const searchPromise = this.searchForImage(searchQuery).then(result => {
+            if (result) {
+              console.log(`[SlideImageUpdater] ✅ Preloaded image for "${searchQuery}": ${result.link}`);
+            }
+          }).catch(err => {
+            console.error(`[SlideImageUpdater] ❌ Failed to preload image for "${searchQuery}":`, err);
+          });
+
+          searchPromises.push(searchPromise);
         }
       }
     }
-    
-    // 2. If component has a preferred topic prop (legacy support)
-    if (component.props.topic && images_by_topic?.[component.props.topic]) {
-      const topicImages = images_by_topic[component.props.topic];
-      if (topicImages.length > 0) {
-        return topicImages[fallbackIndex % topicImages.length];
-      }
-    }
 
-    // 3. If component has keywords that match image descriptions
-    if (component.props.keywords) {
-      const keywords = component.props.keywords.toLowerCase().split(',').map((k: string) => k.trim());
-      const matchedImage = images.find(img =>
-        img.description && keywords.some(keyword =>
-          img.description!.toLowerCase().includes(keyword)
-        )
-      );
-      if (matchedImage) {
-        return matchedImage;
-      }
-    }
-
-    // 4. Try to match based on the slide's primary topic
-    if (topics && topics.length > 0 && images_by_topic) {
-      const primaryTopic = topics[0];
-      if (images_by_topic[primaryTopic] && images_by_topic[primaryTopic].length > 0) {
-        return images_by_topic[primaryTopic][fallbackIndex % images_by_topic[primaryTopic].length];
-      }
-    }
-
-    // 5. Fall back to using images in order
-    if (images.length > 0) {
-      return images[fallbackIndex % images.length];
-    }
-
-    return null;
+    // Wait for all searches to complete
+    await Promise.all(searchPromises);
+    this.isPreloading = false;
+    console.log(`[SlideImageUpdater] ✅ Preload complete! Loaded ${searchPromises.length} unique images`);
   }
 
   /**
    * Manually trigger image application for a specific slide
+   * Note: This now performs fresh searches instead of using cached images
    */
   public async applyImagesFromCache(slideId: string) {
     // Check if auto-select images is enabled (default to TRUE)
@@ -301,8 +353,8 @@ export class SlideImageUpdater {
     const cachedImages = (window as any).__slideImageCache?.[slideId];
     
     if (cachedImages && cachedImages.images && cachedImages.images.length > 0) {
-      console.log(`[SlideImageUpdater] Applying cached images to slide ${slideId}`);
-      this.applyImagesToSlide({
+      console.log(`[SlideImageUpdater] Applying fresh search results to slide ${slideId}`);
+      await this.applyImagesToSlide({
         slideId,
         slideIndex: cachedImages.slideIndex,
         images: cachedImages.images,
@@ -314,8 +366,9 @@ export class SlideImageUpdater {
 
   /**
    * Apply images to all slides that have cached images
+   * Note: This now performs fresh searches instead of using cached images
    */
-  public applyAllCachedImages() {
+  public async applyAllCachedImages() {
     // Check if auto-select images is enabled (default to TRUE)
     const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
 
@@ -344,15 +397,13 @@ export class SlideImageUpdater {
 
     // PRIORITIZE INDEX-BASED KEYS for backend generation
     // First, process all slide_index_ keys
-    Object.entries(imageCache).forEach(([key, cachedData]: [string, any]) => {
+    for (const [key, cachedData] of Object.entries(imageCache) as [string, any][]) {
       if (key.startsWith('slide_index_') && cachedData && cachedData.images && cachedData.images.length > 0) {
         const slideIndex = cachedData.slideIndex;
         if (slideIndex !== undefined && !processedIndices.has(slideIndex)) {
-          console.log(`[SlideImageUpdater] Applying cached images for slide index ${slideIndex}`, {
-            imageCount: cachedData.images.length
-          });
+          console.log(`[SlideImageUpdater] Applying fresh search results for slide index ${slideIndex}`);
           
-          this.applyImagesToSlide({
+          await this.applyImagesToSlide({
             slideId: cachedData.slideId,
             slideIndex: slideIndex,
             images: cachedData.images,
@@ -363,20 +414,16 @@ export class SlideImageUpdater {
           processedIndices.add(slideIndex);
         }
       }
-    });
+    }
 
     // Then process any remaining non-index keys that haven't been processed
-    Object.entries(imageCache).forEach(([key, cachedData]: [string, any]) => {
+    for (const [key, cachedData] of Object.entries(imageCache) as [string, any][]) {
       if (!key.startsWith('slide_index_') && cachedData && cachedData.images && cachedData.images.length > 0) {
         const slideIndex = cachedData.slideIndex;
         if (slideIndex === undefined || !processedIndices.has(slideIndex)) {
-          console.log(`[SlideImageUpdater] Applying cached images for key: ${key}`, {
-            slideId: cachedData.slideId,
-            slideIndex: cachedData.slideIndex,
-            imageCount: cachedData.images.length
-          });
+          console.log(`[SlideImageUpdater] Applying fresh search results for key: ${key}`);
           
-          this.applyImagesToSlide({
+          await this.applyImagesToSlide({
             slideId: key,
             slideIndex: cachedData.slideIndex,
             images: cachedData.images,
@@ -389,7 +436,7 @@ export class SlideImageUpdater {
           }
         }
       }
-    });
+    }
   }
 }
 
@@ -397,11 +444,20 @@ export class SlideImageUpdater {
 if (typeof window !== 'undefined') {
   SlideImageUpdater.getInstance();
   
-  // Add debug helper
-  (window as any).__applyImagesNow = () => {
-    console.log('[DEBUG] Manually triggering image application...');
+  // Add debug helpers
+  (window as any).__applyImagesNow = async () => {
+    console.log('[DEBUG] Manually triggering image application with fresh searches...');
     const updater = SlideImageUpdater.getInstance();
-    updater.applyAllCachedImages();
+    await updater.applyAllCachedImages();
+    console.log('[DEBUG] Image application complete!');
+  };
+
+  (window as any).__clearImageCache = () => {
+    console.log('[DEBUG] Clearing image search cache...');
+    const updater = SlideImageUpdater.getInstance();
+    (updater as any).searchCache.clear();
+    (updater as any).appliedImages.clear();
+    console.log('[DEBUG] Cache cleared!');
   };
   
   (window as any).__checkImageCache = () => {

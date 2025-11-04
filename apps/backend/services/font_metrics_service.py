@@ -30,6 +30,17 @@ except ImportError:
     FONT_REGISTRY_AVAILABLE = False
     logger.debug("Font registry not available")
 
+# Import font size standardizer
+try:
+    from services.font_size_standardizer import standardize_font_size
+    STANDARDIZER_AVAILABLE = True
+except ImportError:
+    STANDARDIZER_AVAILABLE = False
+    logger.debug("Font size standardizer not available")
+    # Fallback to simple rounding
+    def standardize_font_size(size: float, prefer_round_down: bool = False) -> int:
+        return round(size)
+
 
 class TextAlignment(Enum):
     LEFT = "left"
@@ -416,7 +427,8 @@ class FontMetricsService:
             else:
                 high = mid
 
-        return round(optimal_size, 1)
+        # Standardize to standard font sizes (e.g., 24 instead of 21.4)
+        return standardize_font_size(optimal_size, prefer_round_down=False)
 
     def calculate_size_with_strategy(self,
                                     text: str,
@@ -460,10 +472,15 @@ class FontMetricsService:
         metrics = self.get_font_metrics(font_family)
         line_count = self.estimate_text_lines(text, optimal_size, font_family, container.content_width)
 
+        # Standardize all sizes to standard values
+        standardized_size = standardize_font_size(optimal_size, prefer_round_down=False)
+        standardized_min = standardize_font_size(constraints["min"], prefer_round_down=False)
+        standardized_max = standardize_font_size(constraints["max"], prefer_round_down=False)
+
         return {
-            "fontSize": optimal_size,
-            "fontSizeMin": constraints["min"],
-            "fontSizeMax": constraints["max"],
+            "fontSize": standardized_size,
+            "fontSizeMin": standardized_min,
+            "fontSizeMax": standardized_max,
             "lineClamp": constraints["max_lines"],
             "estimatedLines": line_count,
             "fitStrategy": fit_strategy.value,

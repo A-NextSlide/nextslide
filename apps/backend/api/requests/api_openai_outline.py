@@ -602,19 +602,10 @@ class OutlineRequest(BaseModel):
 
     @validator('async_images', pre=True, always=True)
     def debug_async_images(cls, v):
-        """Debug validator to log exactly what value is received"""
-        print("=" * 100)
-        print(f"[PYDANTIC VALIDATOR] 🔴🔴🔴 async_images RECEIVED VALUE: {v}")
-        print(f"[PYDANTIC VALIDATOR] 🔴 Type: {type(v)}")
-        print(f"[PYDANTIC VALIDATOR] 🔴 Is None: {v is None}")
-        print(f"[PYDANTIC VALIDATOR] 🔴 Is True: {v is True}")
-        print(f"[PYDANTIC VALIDATOR] 🔴 Is False: {v is False}")
-        print("=" * 100)
+        """Validate async_images field - defaults to True (placeholder mode)"""
         # If None, default to True (placeholder mode - safer default)
         if v is None:
-            print(f"[PYDANTIC VALIDATOR] 🔴 Value is None, defaulting to True (placeholder mode)")
             return True
-        print(f"[PYDANTIC VALIDATOR] ✅ Returning value as-is: {v}")
         return v
 
     # Workaround: Also accept slide_count (snake_case)
@@ -748,7 +739,9 @@ def _convert_to_api_format(result) -> DeckOutline:
             content=slide.content,
             deepResearch=bool(slide.research_notes) if hasattr(slide, 'research_notes') else slide.deepResearch,
             taggedMedia=tagged_media,
-            extractedData=extracted_data
+            extractedData=extracted_data,
+            citations=getattr(slide, 'citations', None),
+            footnotes=getattr(slide, 'footnotes', None)
         ))
     
     return DeckOutline(
@@ -886,36 +879,9 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
             user_id = getattr(request, '_user_id', None)
             if user_id:
                 logger.info(f"Processing outline for authenticated user: {user_id}")
-            
-            # Debug log the incoming request
-            logger.info(f"[OUTLINE DEBUG] ⚠️ RECEIVED REQUEST")
-            logger.info(f"[OUTLINE DEBUG] Request detail level: {request.detailLevel}")
-            logger.info(f"[OUTLINE DEBUG] Request slideCount: {request.slideCount}")
-            logger.info(f"[OUTLINE DEBUG] Request prompt: {request.prompt[:100]}")
-            logger.info(f"[OUTLINE DEBUG] colorPreference type: {type(request.colorPreference)}")
-            logger.info(f"[OUTLINE DEBUG] colorPreference value: {request.colorPreference}")
-            logger.info(f"[OUTLINE DEBUG] 🔴 request.async_images: {request.async_images}")
-            logger.info(f"[OUTLINE DEBUG] 🔴 type(request.async_images): {type(request.async_images)}")
-            print(f"[OUTLINE DEBUG] 🔴🔴🔴 BACKEND RECEIVED async_images = {request.async_images}")
-            
-            # Enhanced style preference logging
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"[STYLE PREFERENCES] 📋 Frontend Request Received:")
-                logger.debug(f"  - Style Context: {request.styleContext}")
-                logger.debug(f"  - Font Preference: {request.fontPreference}")
-                logger.debug(f"  - Color Preference: {request.colorPreference}")
-                logger.debug(f"  - Detail Level: {request.detailLevel}")
-                if request.colorPreference:
-                    if isinstance(request.colorPreference, dict):
-                        logger.debug(f"  - Color Type: {request.colorPreference.get('type')}")
-                        logger.debug(f"  - Specific Colors: {request.colorPreference.get('specificColors')}")
-                        logger.debug(f"  - Brand Colors: {request.colorPreference.get('brandColors')}")
-                    elif isinstance(request.colorPreference, str):
-                        logger.debug(f"  - Color String: '{request.colorPreference}'")
-            
-            # Add sanitized request debug
-            sanitized_request = _sanitize_request_for_logging(request.dict())
-            logger.info(f"[OUTLINE DEBUG] Request (sanitized): {sanitized_request}")
+
+            # Log basic request info
+            logger.info(f"Outline generation started (detail={request.detailLevel}, slides={request.slideCount}, async_images={request.async_images})")
             
             generator = OutlineGenerator(registry)
             
@@ -959,20 +925,6 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 async_images=request.async_images if request.async_images is not None else False
             )
 
-            # CRITICAL DEBUG LOG
-            logger.info(f"[OUTLINE DEBUG] ⚠️ CREATED OutlineOptions")
-            logger.info(f"[OUTLINE DEBUG] options.detail_level = {options.detail_level}")
-            logger.info(f"[OUTLINE DEBUG] options.prompt = {options.prompt[:100]}")
-            logger.info(f"[OUTLINE DEBUG] 🔴 options.async_images = {options.async_images}")
-            logger.info(f"[OUTLINE DEBUG] 🔴 Mapping: request.async_images={request.async_images} → options.async_images={options.async_images}")
-            print(f"[OUTLINE DEBUG] 🔴🔴🔴 CREATED OutlineOptions with async_images = {options.async_images}")
-            
-            # Debug log the options being passed
-            print(f"[OUTLINE OPTIONS] Created with:")
-            print(f"  - style_context: {options.style_context}")
-            print(f"  - font_preference: {options.font_preference}")
-            print(f"  - color_scheme: {options.color_scheme}")
-            print("")
             
             outline = None  # Store the outline for deck creation
             
@@ -1028,9 +980,9 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         
                         # Debug log tagged media
                         tm_count = len(slide_data.get('taggedMedia', []))
-                        logger.info(f"[API] Slide {update.metadata['slide_index'] + 1} has {tm_count} taggedMedia items in slide_data")
+                        logger.debug(f"[API] Slide {update.metadata['slide_index'] + 1} has {tm_count} taggedMedia items in slide_data")
                         if tm_count > 0:
-                            logger.info(f"[API] First tagged media: {slide_data['taggedMedia'][0].get('filename', 'unknown')}")
+                            logger.debug(f"[API] First tagged media: {slide_data['taggedMedia'][0].get('filename', 'unknown')}")
                         
                         # Convert chart data to proper format for frontend
                         chart_data = None
@@ -1102,7 +1054,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         # Build response data separately to avoid multi-line f-string issues
                         # Prepare taggedMedia with debug logging
                         tagged_media = slide_data.get('taggedMedia', [])
-                        logger.info(f"[API] Building slide_complete for slide {update.metadata['slide_index'] + 1} with {len(tagged_media)} taggedMedia items")
+                        logger.debug(f"[API] Building slide_complete for slide {update.metadata['slide_index'] + 1} with {len(tagged_media)} taggedMedia items")
                         
                         # Sanitize extractedData before sending
                         sanitized_ed = _sanitize_extracted_data(slide_data.get('extractedData'))
@@ -1116,14 +1068,17 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                 'chartData': chart_data,  # Changed from 'extractedData' to 'chartData'
                                 'extractedData': sanitized_ed,  # Include sanitized extractedData
                                 'taggedMedia': tagged_media,  # Include taggedMedia
-                                'deepResearch': slide_data.get('deepResearch', False)  # Include deepResearch flag
+                                'deepResearch': slide_data.get('deepResearch', False),  # Include deepResearch flag
+                                'citations': slide_data.get('citations', []),  # Include citations for frontend
+                                'footnotes': slide_data.get('footnotes', [])  # Include footnotes for Sources panel
                             },
                             'progress': update.progress,
                             'message': f"Generated slide {update.metadata['slide_index'] + 1}: {slide_data['title']}"
                         }
                         
                         # Final debug log before sending
-                        logger.info(f"[API] Sending slide_complete with taggedMedia count: {len(response_data['slide']['taggedMedia'])}")
+                        logger.debug(f"[API] Sending slide_complete with taggedMedia count: {len(response_data['slide']['taggedMedia'])}")
+                        logger.info(f"[API STREAM] Slide {update.metadata['slide_index'] + 1}: citations={len(response_data['slide'].get('citations', []))}, footnotes={len(response_data['slide'].get('footnotes', []))}")
                         
                         yield _sse(response_data)
                         # No artificial delay - we want real streaming timing
@@ -1139,7 +1094,11 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                     id=s.get('id'),
                                     title=s.get('title'),
                                     content=s.get('content', ''),
-                                    deepResearch=False
+                                    deepResearch=False,
+                                    citations=s.get('citations', []),
+                                    footnotes=s.get('footnotes', []),
+                                    extractedData=s.get('extractedData'),
+                                    taggedMedia=s.get('taggedMedia', [])
                                 ))
                         except Exception:
                             simple_slides = []
@@ -1336,18 +1295,22 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         tagged_media_count = len(slide_data.get('taggedMedia', []))
                         logger.info(f"[API OUTLINE] slide_complete stage - Slide {update.metadata['slide_index'] + 1} has {tagged_media_count} taggedMedia items")
                         
-                        # Accumulate slides for early narrative flow generation
+                        # Accumulate slides for early narrative flow generation AND final outline
                         accumulated_slides.append({
                             'id': slide_data['id'],
                             'title': slide_data['title'],
                             'content': slide_data['content'],
-                            'speaker_notes': slide_data.get('speaker_notes', '')
+                            'speaker_notes': slide_data.get('speaker_notes', ''),
+                            'citations': slide_data.get('citations', []),
+                            'footnotes': slide_data.get('footnotes', []),
+                            'extractedData': slide_data.get('extractedData'),
+                            'taggedMedia': slide_data.get('taggedMedia', [])
                         })
                         
                         # Build response data separately to avoid multi-line f-string issues
                         # Prepare taggedMedia with debug logging
                         tagged_media = slide_data.get('taggedMedia', [])
-                        logger.info(f"[API] Building slide_complete for slide {update.metadata['slide_index'] + 1} with {len(tagged_media)} taggedMedia items")
+                        logger.debug(f"[API] Building slide_complete for slide {update.metadata['slide_index'] + 1} with {len(tagged_media)} taggedMedia items")
                         
                         response_data = {
                             'type': 'slide_complete',
@@ -1366,7 +1329,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         }
                         
                         # Final debug log before sending
-                        logger.info(f"[API] Sending slide_complete with taggedMedia count: {len(response_data['slide']['taggedMedia'])}")
+                        logger.debug(f"[API] Sending slide_complete with taggedMedia count: {len(response_data['slide']['taggedMedia'])}")
                         
                         yield _sse(response_data)
                         # No artificial delay - we want real streaming timing

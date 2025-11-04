@@ -13,7 +13,7 @@ from agents.prompts.generation.outline_prompts import (
     get_fallback_content,
     get_smart_content_guidance
 )
-from .models import SlideContent, OutlineOptions, ChartData, TypedSlideResponse
+from .models import SlideContent, OutlineOptions, ChartData, TypedSlideResponse, StructuredSlideOutput
 from .chart_generator import ChartGenerator
 from setup_logging_optimized import get_logger
 from agents import config as agents_config
@@ -45,6 +45,78 @@ def extract_image_prompt_from_content(content: str) -> Tuple[str, Optional[str]]
         return cleaned_content, image_prompt
     
     return content, None
+
+
+def extract_citations_from_content(content: str) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """
+    Extract citations from content that has [1], [2], [3] markers and a SOURCES section.
+    
+    Args:
+        content: The slide content potentially containing citation markers and sources
+        
+    Returns:
+        Tuple of (citations_list, marker_to_index_map)
+    """
+    citations = []
+    marker_map = {}
+    
+    # Check if content has citation markers like [1], [2], [3]
+    citation_markers = set(re.findall(r'\[(\d+)\]', content))
+    if not citation_markers:
+        return citations, marker_map
+    
+    # Look for SOURCES section in content
+    sources_match = re.search(r'(?:^|\n)SOURCES?:\s*\n((?:.+\n?)+)', content, re.IGNORECASE | re.MULTILINE)
+    
+    if sources_match:
+        sources_text = sources_match.group(1)
+        lines = sources_text.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Try to match pattern: [1] Title - URL or 1. Title - URL
+            numbered_match = re.match(r'[\[\(]?(\d+)[\]\)]?\.?\s+(.+)', line)
+            if numbered_match:
+                index = int(numbered_match.group(1))
+                rest = numbered_match.group(2).strip()
+                
+                # Try to extract URL
+                url_match = re.search(r'https?://[^\s]+', rest)
+                url = url_match.group(0) if url_match else None
+                
+                # Title is everything before the URL (or everything if no URL)
+                if url:
+                    title = rest[:url_match.start()].strip().rstrip('-–—:')
+                else:
+                    title = rest
+                
+                citations.append({
+                    "title": title,
+                    "url": url or "",
+                    "source": title
+                })
+                marker_map[str(index)] = index
+        
+        logger.info(f"[CITATION EXTRACT] Found {len(citations)} citations from SOURCES section")
+    
+    # If no SOURCES section but has markers, create placeholder citations
+    elif citation_markers:
+        # Create placeholder citations for the markers found
+        sorted_markers = sorted([int(m) for m in citation_markers])
+        for idx, marker_num in enumerate(sorted_markers, 1):
+            citations.append({
+                "title": f"Source {marker_num}",
+                "url": "",
+                "source": f"Source {marker_num}"
+            })
+            marker_map[str(marker_num)] = idx
+        
+        logger.warning(f"[CITATION EXTRACT] Found {len(citation_markers)} citation markers but no SOURCES section")
+    
+    return citations, marker_map
 
 # ===== CONSTANTS =====
 # Title slide constraints (ALWAYS ENFORCED - NEVER OVERRIDE REGARDLESS OF MODE!)
@@ -372,15 +444,136 @@ class SlideGenerator:
         model = self._get_model("content", options)
         client, model_name = get_client(model)
         
+        # Use structured outputs for Perplexity to get clean chart data
+        use_structured = model_name.startswith('perplexity-') or 'sonar' in model_name
+        
         try:
-            content = invoke(
-                client=client,
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                response_model=None,
-                max_tokens=SIMPLE_SLIDE_MAX_TOKENS,
-                temperature=0.7
-            )
+            if use_structured:
+                # Request structured JSON with chartData from Perplexity
+                structured_prompt = prompt + """
+
+OUTPUT FORMAT - Return JSON with this exact structure:
+{
+  "content": "• Clean bullet points here\\n• Another bullet with data [1]",
+  "chartData": [
+    {"name": "Category 1", "value": 123.45},
+    {"name": "Category 2", "value": 234.56}
+  ],
+  "chartType": "bar"
+}
+
+CHART TYPE DECISION TREE - Follow this logic:
+
+1. Is data over TIME (months/quarters/years)? → "line" or "area"
+2. Is data PARTS OF 100% (market share/budget)? → "pie"
+3. Is data showing FLOW (funnel/conversion)? → "sankey" or "funnel"
+4. Is data SEQUENTIAL CHANGES (+/-/cumulative)? → "waterfall"
+5. Is data HIERARCHICAL (parent→child)? → "treemap"
+6. Is data comparing MULTIPLE METRICS per item? → "radar"
+7. Otherwise (category comparison)? → "bar" or "column"
+
+EXAMPLES OF WHEN TO USE EACH TYPE:
+
+"Market share by company" → PIE (parts of 100%)
+"Revenue Q1 through Q4 2024" → LINE (time series)
+"Website visitors → signups → paid" → SANKEY (funnel)
+"Starting profit $100K + Revenue $50K - Costs $30K" → WATERFALL (sequential)
+"Company performance: Speed 8/10, Quality 9/10, Price 6/10" → RADAR (multi-metric)
+"Sales by region" → BAR (static category comparison)
+
+📊 COMPONENT CAPABILITIES - Choose based on what you need to communicate:
+
+CHARTS (Chart component):
+- Strength: Visualizing numerical data on axes for comparison and pattern recognition
+- Requires: Quantitative values in consistent units (all $, all %, all counts)
+- Best for: Statistical data from research, metrics, time series, distributions
+- Limitation: Cannot effectively show text hierarchies, non-numerical relationships, or qualitative structures
+
+CUSTOM COMPONENTS (CustomComponent):
+- Strength: Structured layouts, hierarchies, interactions, qualitative relationships
+- Can create: Org trees, timelines, comparison cards, interactive elements, decision flows
+- Best for: People/roles, event sequences, before/after, processes, engagement
+- Limitation: Not ideal for quantitative data that benefits from axis-based comparison
+
+YOUR TASK: Look at the content you're presenting. Does it need axis-based numerical comparison? Use Chart. Does it need structured layout or qualitative relationships? Use CustomComponent. Let the content guide you.
+
+🚨 CHART DATA RULES (if you choose to use chartData):
+
+UNIT CONSISTENCY IS MANDATORY:
+ALL values must use the EXACT SAME measurement unit.
+
+✅ GOOD (Same Unit):
+- All revenue: 2.5M, 3.1M, 2.8M, 4.2M, 3.9M (all millions of dollars)
+- All growth: 35%, 42%, 28%, 51%, 19% (all percentages)
+- All users: 1200, 1800, 2300, 2900, 3400 (all user counts)
+
+❌ BAD (Mixed Units):
+- Establishments 20000, Growth 4.4%, Revenue 205, Locations 500
+- Traffic 30%, Rent 11%, Space 750, Years 4
+- Revenue 2.5M, Growth 35%, Users 1200
+
+For 2 different units, use series field:
+✅ [{"name": "Q1", "value": 2500000, "series": "Revenue $M"}, {"name": "Q1", "value": 35, "series": "Growth %"}]
+
+Otherwise: If you CANNOT find 5+ data points in ONE UNIT, omit chartData completely.
+
+📊 CHART TYPE VARIETY - Don't default to bar/line! Match chart type to data structure:
+""" + chart_descriptions + """
+
+Choose the chart type that best reveals the pattern in your data. Use variety across slides!"""
+
+                result = invoke(
+                    client=client,
+                    model=model_name,
+                    messages=[{"role": "user", "content": structured_prompt}],
+                    response_model=StructuredSlideOutput,
+                    max_tokens=SIMPLE_SLIDE_MAX_TOKENS,
+                    temperature=0.7,
+                    extra_body={
+                        "return_citations": True,
+                        "search_recency_filter": "week",
+                        "num_search_results": 5
+                    }
+                )
+                
+                # Handle dict return (with citations)
+                model_obj = result
+                slide_citations = []
+                if isinstance(result, dict):
+                    # invoke returned {"model": model_obj, "citations": [...]}
+                    model_obj = result.get("model", result)
+                    slide_citations = result.get("citations", [])
+                    logger.info(f"[STRUCTURED] Got {len(slide_citations)} citations from wrapper")
+                
+                # Extract structured data from model
+                content = model_obj.content if hasattr(model_obj, 'content') else str(model_obj)
+                chart_data_from_api = model_obj.chartData if hasattr(model_obj, 'chartData') else None
+                chart_type_from_api = model_obj.chartType if hasattr(model_obj, 'chartType') else None
+                
+                logger.info(f"[STRUCTURED] Got structured output, chartData: {len(chart_data_from_api) if chart_data_from_api else 0} points")
+                
+                # Add citations to context
+                if slide_citations and context:
+                    context['web_citations'] = slide_citations
+                
+            else:
+                # Non-Perplexity models: use old approach
+                result = invoke(
+                    client=client,
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_model=None,
+                    max_tokens=SIMPLE_SLIDE_MAX_TOKENS,
+                    temperature=0.7
+                )
+                
+                content = result
+                chart_data_from_api = None
+                chart_type_from_api = None
+                slide_citations = []
+            
+            # Citations already handled above for structured path
+            # For non-structured path, they would come here but we already processed them
 
             # Ensure proper formatting (with strict validation for title slides)
             if slide_type == 'title':
@@ -414,119 +607,98 @@ class SlideGenerator:
                     if self._contains_placeholders(content):
                         content = self._remove_placeholders_with_defaults(content, context)
             
-            # Check if we should generate a chart - respect detail_level
-            should_generate_chart = False
-            detail_level = context.get('detail_level', 'standard') if context else 'standard'
-            
-            # In DETAILED mode, be MUCH more aggressive with charts
-            if detail_level == 'detailed':
-                # In detailed mode, generate charts for ANY content slide with data
-                has_numbers = any(char.isdigit() for char in content)
-                has_percentage = '%' in content
-                has_data_words = any(word in content.lower() for word in ['data', 'percent', 'increase', 'decrease', 'growth', 'trend', 'revenue', 'market', 'customer', 'sales', 'cost', 'profit', 'analysis'])
-                is_content_slide = slide_type in ['content', 'chart', 'keymetrics', 'data']
-                
-                # DETAILED MODE: 60-80% chart density - be aggressive
-                should_generate_chart = is_content_slide and (has_numbers or has_percentage or has_data_words)
-                logger.info(f"[CHART DEBUG] DETAILED MODE - aggressive chart generation: {should_generate_chart}")
-            else:
-                # PRESENTATION MODE: 20-30% chart density - be selective
-                # Check appropriateness level from guidance
-                if guidance['chart_appropriateness'] == 'never':
-                    should_generate_chart = False
-                elif guidance['chart_appropriateness'] == 'always':
-                    should_generate_chart = True
-                elif guidance['chart_appropriateness'] == 'likely':
-                    # Generate chart if slide type suggests data
-                    should_generate_chart = slide_type in ['content', 'chart', 'keymetrics', 'data']
-                elif guidance['chart_appropriateness'] == 'selective':
-                    # Only generate if content has quantitative data
-                    has_numbers = any(char.isdigit() for char in content)
-                    has_percentage = '%' in content
-                    has_data_words = any(word in content.lower() for word in ['data', 'percent', 'increase', 'decrease', 'growth', 'trend'])
-                    should_generate_chart = (has_numbers or has_percentage) and has_data_words and slide_type in ['content', 'chart', 'keymetrics', 'data']
-                elif guidance['chart_appropriateness'] == 'rare':
-                    # Very selective - only if explicitly about metrics
-                    should_generate_chart = False  # Let structured output decide
-                else:  # 'let_ai_decide' or default
-                    should_generate_chart = (
-                        guidance['chart_appropriateness'] in ['high', 'essential', 'let_ai_decide'] and
-                        slide_type in ['content', 'chart', 'keymetrics', 'data']
-                    )
-                logger.info(f"[CHART DEBUG] PRESENTATION MODE - selective chart generation: {should_generate_chart}")
-
-            # Global guardrails: avoid charts on tiny decks, narrative topics, and PERSONAL/CREATIVE contexts
-            total_slides_guard = 0
-            try:
-                total_slides_guard = int((context or {}).get('total_slides', 0))
-            except Exception:
-                pass
-            
-            # 🎉 CRITICAL: Check for personal/creative context - NEVER generate charts
-            presentation_ctx = (context or {}).get('presentation_context', 'business')
-            is_personal_creative = presentation_ctx in ['personal', 'creative', 'informational']
-            
-            is_narrative_topic = _is_narrative_topic(options.prompt, slide_title)
-            
-            # Skip charts if: tiny deck, narrative topic, OR personal/creative context
-            if self._should_skip_charts_for_deck(total_slides_guard, is_narrative_topic) or is_personal_creative:
-                should_generate_chart = False
-                if is_personal_creative:
-                    logger.info(f"[CHART DEBUG] 🎉 SKIPPING CHART - Personal/Creative context detected: {presentation_ctx}")
-            
-            logger.info(f"[CHART DEBUG] Slide: {slide_title}")
-            logger.info(f"[CHART DEBUG] Presentation title: {presentation_title}")
-            logger.info(f"[CHART DEBUG] Chart appropriateness: {guidance['chart_appropriateness']}")
-            logger.info(f"[CHART DEBUG] Slide type: {slide_type}")
-            logger.info(f"[CHART DEBUG] Total slides: {total_slides_guard}")
-            logger.info(f"[CHART DEBUG] Narrative topic: {is_narrative_topic}")
-            logger.info(f"[CHART DEBUG] Should generate chart: {should_generate_chart}")
-            
+            # Use structured chart data if available (from Perplexity)
             chart_data = None
             extracted_data = None
-            if should_generate_chart:
-                # For Gemini, we need to extract chart data from the content
-                logger.info(f"[CHART DEBUG] Generating chart for Gemini model")
-
-                # Try to extract data points from the content
-                ai_chart_data = self._extract_chart_data_from_content(content, slide_title)
-                chart_data, extracted_data = await self._create_chart_from_data(
-                    slide_title, content, ai_chart_data, model_name, context, presentation_title
-                )
-
-                if not chart_data:
-                    logger.warning(f"[CHART DEBUG] Could not create chart for slide '{slide_title}'")
+            
+            if chart_data_from_api and chart_type_from_api and len(chart_data_from_api) >= 5:
+                # We have clean structured chart data from Perplexity!
+                logger.info(f"[STRUCTURED CHART] Using {len(chart_data_from_api)} data points from Perplexity")
+                
+                try:
+                    # VALIDATE UNIT CONSISTENCY BEFORE creating chart
+                    if not self.chart_generator._validate_unit_consistency(chart_data_from_api):
+                        logger.warning(f"[STRUCTURED CHART] REJECTED - Mixed units detected in chart data for '{slide_title}'")
+                        logger.warning(f"[STRUCTURED CHART] Data points: {[p.get('name', '') for p in chart_data_from_api[:5]]}")
+                        chart_data = None
+                        extracted_data = None
+                    else:
+                        # Convert to ChartData model
+                        chart_data = ChartData(
+                            chart_type=chart_type_from_api,
+                            data=chart_data_from_api,
+                            title=slide_title,
+                            metadata=None
+                        )
+                        
+                        # Convert to frontend extractedData format
+                        extracted_data = self.chart_generator.convert_chart_data_to_extracted_data(
+                            chart_data,
+                            slide_title
+                        )
+                        
+                        if extracted_data:
+                            logger.info(f"[STRUCTURED CHART] ✓ VALIDATED & Created {chart_type_from_api} chart with {len(chart_data_from_api)} points")
+                        else:
+                            logger.warning(f"[STRUCTURED CHART] Chart validation failed, skipping")
+                            chart_data = None
+                        
+                except Exception as e:
+                    logger.warning(f"[STRUCTURED CHART] Failed to create chart: {e}")
+                    chart_data = None
+                    extracted_data = None
+            else:
+                logger.info(f"[CHART] No structured chart data from API (had {len(chart_data_from_api) if chart_data_from_api else 0} points, need 5+)")
             
             # Build citations metadata and footer if available
             slide_citations = context.get('web_citations') if isinstance(context, dict) else None
+            
+            # If no web_citations but content has [1], [2], [3] markers, try to extract citations from content
+            if not slide_citations or len(slide_citations) == 0:
+                extracted_citations, marker_map = extract_citations_from_content(content)
+                if extracted_citations:
+                    slide_citations = extracted_citations
+                    logger.info(f"[SIMPLE SLIDE] Extracted {len(extracted_citations)} citations from content for '{slide_title}'")
+            
+            # Create footnotes for citation panel
+            footnotes = []
+            if slide_citations and isinstance(slide_citations, list):
+                for i, citation in enumerate(slide_citations):
+                    # Handle both dict citations and malformed ones
+                    if isinstance(citation, dict):
+                        footnotes.append({
+                            "index": i + 1,
+                            "label": citation.get("title", citation.get("source", "Unknown Source")),
+                            "url": citation.get("url", "")
+                        })
+                    elif isinstance(citation, str):
+                        # If citation is just a string
+                        footnotes.append({
+                            "index": i + 1,
+                            "label": citation,
+                            "url": ""
+                        })
+                if footnotes:
+                    logger.info(f"[SIMPLE SLIDE] Created {len(footnotes)} footnotes for '{slide_title}'")
+            
+            # Add citations to extractedData if no chart
             if slide_citations and not extracted_data:
                 extracted_data = {
                     "chartType": "annotations",
                     "data": [],
                     "title": slide_title,
-                    "metadata": {"citations": slide_citations}
+                    "metadata": {"citations": slide_citations, "footnotes": footnotes}
                 }
-            citations_footer = None
-            if slide_citations and isinstance(slide_citations, list):
-                try:
-                    sources = []
-                    for idx, c in enumerate(slide_citations, start=1):
-                        u = (c.get('url') or '').strip()
-                        t = (c.get('title') or c.get('source') or '').strip()
-                        if u:
-                            # Create source entry with title and URL for clickable links
-                            sources.append({
-                                "index": idx,
-                                "title": t if t else f"Source {idx}",
-                                "url": u
-                            })
-                    if sources:
-                        citations_footer = {"showThinDivider": True, "sources": sources}
-                except Exception:
-                    pass
 
             # Extract [IMAGE: ...] tag if present
             cleaned_content, image_prompt = extract_image_prompt_from_content(content)
+            
+            # Clean up any metadata headers
+            import re
+            cleaned_content = re.sub(r'^Slide\s+\d+:\s*[^\n]+\n*', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = re.sub(r'[\s\n]*---[\s\n]*(?:SPEAKABLE CONTENT|SPEAKER NOTES?|SPEAKING NOTES?):[\s\S]*?(?=\n---|$)', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = re.sub(r'[\s\n]*---[\s\n]*CITATIONS?:[\s\S]*$', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = cleaned_content.strip()
 
             return SlideContent(
                 id=str(uuid.uuid4()),
@@ -535,8 +707,9 @@ class SlideGenerator:
                 slide_type=slide_type,
                 chart_data=chart_data,
                 extractedData=extracted_data,
+                citations=slide_citations or [],
+                footnotes=footnotes,
                 research_notes=("Citations available" if slide_citations else None),
-                citationsFooter=citations_footer,
                 comparison=self._maybe_build_comparison(slide_title, content),
                 suggestedImagePrompt=image_prompt
             )
@@ -875,7 +1048,7 @@ class SlideGenerator:
                     local_total_slides_guard = int((context or {}).get('total_slides', 0))
                 except Exception:
                     pass
-                local_is_narrative = _is_narrative_topic(options.prompt, slide_title)
+                local_is_narrative = False  # No hardcoded narrative detection
                 has_numbers = any(ch.isdigit() for ch in content)
                 has_percentage = '%' in content
                 has_data_words = any(word in content.lower() for word in ['data', 'percent', 'increase', 'decrease', 'growth', 'trend', 'revenue', 'cost', 'users'])
@@ -891,23 +1064,47 @@ class SlideGenerator:
                         if chart_data:
                             logger.info(f"[CHART DEBUG] Opportunistic chart created successfully")
             
-            # Build a small-footnote style citations footer for the frontend
-            slide_citations = context.get('web_citations') if isinstance(context, dict) else None
-            citations_footer = None
-            if slide_citations and isinstance(slide_citations, list):
-                try:
-                    urls = []
-                    for c in slide_citations:
-                        u = (c.get('url') or '').strip()
-                        if u:
-                            urls.append(u)
-                    if urls:
-                        citations_footer = {"showThinDivider": True, "urls": urls}
-                except Exception:
-                    pass
+            # This is inside _generate_single_slide() - we don't have slide_citations here yet
+            # Get citations from context (web_citations)
+            context_citations = context.get('web_citations') if isinstance(context, dict) else None
+            final_citations = context_citations or []
+            
+            # If no web_citations but content has [1], [2], [3] markers, try to extract citations from content
+            if not final_citations or len(final_citations) == 0:
+                extracted_citations, marker_map = extract_citations_from_content(content)
+                if extracted_citations:
+                    final_citations = extracted_citations
+                    logger.info(f"[SINGLE SLIDE] Extracted {len(extracted_citations)} citations from content for '{slide_title}'")
+            
+            # Create footnotes for citation panel
+            footnotes = []
+            if final_citations:
+                for i, citation in enumerate(final_citations):
+                    # Handle both dict citations and malformed ones
+                    if isinstance(citation, dict):
+                        footnotes.append({
+                            "index": i + 1,
+                            "label": citation.get("title", citation.get("source", "Unknown Source")),
+                            "url": citation.get("url", "")
+                        })
+                    elif isinstance(citation, str):
+                        footnotes.append({
+                            "index": i + 1,
+                            "label": citation,
+                            "url": ""
+                        })
+                if footnotes:
+                    logger.info(f"[SINGLE SLIDE] Created {len(footnotes)} footnotes for '{slide_title}'")
 
             # Extract [IMAGE: ...] tag if present
             cleaned_content, image_prompt = extract_image_prompt_from_content(content)
+            
+            # Clean up any metadata headers
+            import re
+            cleaned_content = re.sub(r'^Slide\s+\d+:\s*[^\n]+\n*', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = re.sub(r'[\s\n]*---[\s\n]*(?:SPEAKABLE CONTENT|SPEAKER NOTES?|SPEAKING NOTES?):[\s\S]*?(?=\n---|$)', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = re.sub(r'[\s\n]*---[\s\n]*CITATIONS?:[\s\S]*$', '', cleaned_content, flags=re.IGNORECASE)
+            cleaned_content = cleaned_content.strip()
 
             return SlideContent(
                 id=str(uuid.uuid4()),
@@ -916,8 +1113,9 @@ class SlideGenerator:
                 slide_type=slide_type,
                 chart_data=chart_data,
                 extractedData=extracted_data,
-                research_notes=("Citations available" if slide_citations else None),
-                citationsFooter=citations_footer,
+                citations=final_citations,
+                footnotes=footnotes,
+                research_notes=("Citations available" if final_citations else None),
                 comparison=self._maybe_build_comparison(slide_title, content),
                 suggestedImagePrompt=image_prompt
             )

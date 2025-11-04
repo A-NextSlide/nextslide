@@ -1291,11 +1291,56 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         
         // Update the slide with the generated data but KEEP the original ID
         const originalId = updatedSlides[slideIndex].id;
+        
+        // CRITICAL: Preserve already-applied images to prevent overwriting
+        const existingComponents = updatedSlides[slideIndex].components || [];
+        const newComponents = slideData.components || [];
+        
+        const mergedComponents = newComponents.map((newComp: any, idx: number) => {
+          const existingComp = existingComponents[idx];
+          
+          // If this is an Image component and existing has a real image (not placeholder), preserve it
+          if (newComp.type === 'Image' && existingComp?.type === 'Image') {
+            const existingSrc = existingComp.props?.src;
+            const newSrc = newComp.props?.src;
+            
+            // Check if existing has a real image (autoApplied or userSetSrc)
+            const hasRealImage = existingSrc && 
+              existingSrc !== 'placeholder' && 
+              existingSrc !== '' &&
+              !existingSrc.includes('placeholder') &&
+              (existingComp.props?.autoApplied || existingComp.props?.userSetSrc);
+            
+            // Check if new component only has placeholder
+            const newIsPlaceholder = !newSrc || 
+              newSrc === 'placeholder' || 
+              newSrc === '' ||
+              newSrc.includes('placeholder');
+            
+            // Preserve existing real image if new is just a placeholder
+            if (hasRealImage && newIsPlaceholder) {
+              console.log(`[SlideGeneration] Preserving existing image for component ${idx}:`, existingSrc?.substring(0, 50));
+              return {
+                ...newComp,
+                props: {
+                  ...newComp.props,
+                  src: existingSrc,
+                  alt: existingComp.props.alt,
+                  autoApplied: existingComp.props.autoApplied,
+                  userSetSrc: existingComp.props.userSetSrc
+                }
+              };
+            }
+          }
+          
+          return newComp;
+        });
+        
         updatedSlides[slideIndex] = {
           ...updatedSlides[slideIndex],
           ...slideData,
           id: originalId, // ALWAYS keep the original ID to prevent re-renders
-          components: slideData.components || [],
+          components: mergedComponents,
           theme: (slideData as any).theme || (updatedSlides[slideIndex] as any).theme,
           palette: (slideData as any).palette || (updatedSlides[slideIndex] as any).palette,
           status: 'completed' as const,
@@ -1729,11 +1774,56 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         
         // Update the specific slide - KEEP the original ID to prevent issues
         const originalId = updatedSlides[slideIndex].id;
+        
+        // CRITICAL: Preserve already-applied images to prevent overwriting (duplicate handler fix)
+        const existingComponents = updatedSlides[slideIndex].components || [];
+        const newComponents = slideData.components || [];
+        
+        const mergedComponents = newComponents.map((newComp: any, idx: number) => {
+          const existingComp = existingComponents[idx];
+          
+          // If this is an Image component and existing has a real image (not placeholder), preserve it
+          if (newComp.type === 'Image' && existingComp?.type === 'Image') {
+            const existingSrc = existingComp.props?.src;
+            const newSrc = newComp.props?.src;
+            
+            // Check if existing has a real image (autoApplied or userSetSrc)
+            const hasRealImage = existingSrc && 
+              existingSrc !== 'placeholder' && 
+              existingSrc !== '' &&
+              !existingSrc.includes('placeholder') &&
+              (existingComp.props?.autoApplied || existingComp.props?.userSetSrc);
+            
+            // Check if new component only has placeholder
+            const newIsPlaceholder = !newSrc || 
+              newSrc === 'placeholder' || 
+              newSrc === '' ||
+              newSrc.includes('placeholder');
+            
+            // Preserve existing real image if new is just a placeholder
+            if (hasRealImage && newIsPlaceholder) {
+              console.log(`[SlideGeneration] Handler2: Preserving existing image for component ${idx}:`, existingSrc?.substring(0, 50));
+              return {
+                ...newComp,
+                props: {
+                  ...newComp.props,
+                  src: existingSrc,
+                  alt: existingComp.props.alt,
+                  autoApplied: existingComp.props.autoApplied,
+                  userSetSrc: existingComp.props.userSetSrc
+                }
+              };
+            }
+          }
+          
+          return newComp;
+        });
+        
         updatedSlides[slideIndex] = {
           ...updatedSlides[slideIndex],
           ...slideData,
           id: originalId, // ALWAYS keep the original ID
-          components: slideData.components || [],
+          components: mergedComponents,
           availableImages: slideData.availableImages || [],
           status: 'completed' as const,
           isGenerating: false, // Clear the generating flag when slide completes
@@ -1784,11 +1874,56 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       
       // Update the specific slide - KEEP the original ID to prevent issues
       const originalId = updatedSlides[event.slide_index].id;
+      
+      // CRITICAL: Preserve already-applied images to prevent overwriting (third handler fix)
+      const existingComponents = updatedSlides[event.slide_index].components || [];
+      const newComponents = event.slide_data.components || [];
+      
+      const mergedComponents = newComponents.map((newComp: any, idx: number) => {
+        const existingComp = existingComponents[idx];
+        
+        // If this is an Image component and existing has a real image (not placeholder), preserve it
+        if (newComp.type === 'Image' && existingComp?.type === 'Image') {
+          const existingSrc = existingComp.props?.src;
+          const newSrc = newComp.props?.src;
+          
+          // Check if existing has a real image (autoApplied or userSetSrc)
+          const hasRealImage = existingSrc && 
+            existingSrc !== 'placeholder' && 
+            existingSrc !== '' &&
+            !existingSrc.includes('placeholder') &&
+            (existingComp.props?.autoApplied || existingComp.props?.userSetSrc);
+          
+          // Check if new component only has placeholder
+          const newIsPlaceholder = !newSrc || 
+            newSrc === 'placeholder' || 
+            newSrc === '' ||
+            newSrc.includes('placeholder');
+          
+          // Preserve existing real image if new is just a placeholder
+          if (hasRealImage && newIsPlaceholder) {
+            console.log(`[SlideGeneration] Handler3: Preserving existing image for component ${idx}:`, existingSrc?.substring(0, 50));
+            return {
+              ...newComp,
+              props: {
+                ...newComp.props,
+                src: existingSrc,
+                alt: existingComp.props.alt,
+                autoApplied: existingComp.props.autoApplied,
+                userSetSrc: existingComp.props.userSetSrc
+              }
+            };
+          }
+        }
+        
+        return newComp;
+      });
+      
       updatedSlides[event.slide_index] = {
         ...updatedSlides[event.slide_index],
         ...event.slide_data,
         id: originalId, // ALWAYS keep the original ID
-        components: event.slide_data.components || [],
+        components: mergedComponents,
         availableImages: event.slide_data.availableImages || [],
         status: 'completed' as const,
         isGenerating: false, // Clear the generating flag when slide completes

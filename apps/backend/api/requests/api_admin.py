@@ -1358,18 +1358,18 @@ async def delete_deck(
     """
     try:
         supabase = get_supabase_client()
-        
+
         # Soft delete by updating status
         updates = {
             "status": "deleted",
             "updated_at": datetime.utcnow().isoformat()
         }
-        
+
         response = supabase.table("decks").update(updates).eq("uuid", deck_id).execute()
-        
+
         if not response.data:
             raise HTTPException(status_code=404, detail="Deck not found")
-        
+
         # Log the action
         await log_admin_action(
             admin_user_id=admin["id"],
@@ -1377,11 +1377,174 @@ async def delete_deck(
             request=request,
             target_deck_id=deck_id
         )
-        
+
         return {"success": True, "message": "Deck deleted successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Delete deck error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== Brand Management Endpoints ====================
+
+class Brand(BaseModel):
+    id: str
+    identifier: str
+    normalized_identifier: str
+    api_response: Dict[str, Any]
+    success: bool
+    created_at: str
+    hit_count: int
+    last_accessed_at: str
+
+class BrandsListResponse(BaseModel):
+    brands: List[Brand]
+    total: int
+    page: int
+    totalPages: int
+
+class UpdateBrandRequest(BaseModel):
+    api_response: Dict[str, Any]
+
+@router.get("/brands", response_model=BrandsListResponse)
+async def list_brands(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    List all cached brands with pagination and search
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Build query
+        query = supabase.table("brandfetch_cache").select("*", count="exact")
+
+        # Apply search
+        if search:
+            query = query.or_(f"identifier.ilike.%{search}%,normalized_identifier.ilike.%{search}%")
+
+        # Apply pagination
+        offset = (page - 1) * limit
+        query = query.range(offset, offset + limit - 1)
+
+        # Apply sorting (most recently accessed first)
+        query = query.order("last_accessed_at", desc=True)
+
+        # Execute query
+        response = query.execute()
+
+        # Format brands
+        brands = []
+        for brand in response.data:
+            brands.append(Brand(
+                id=brand["id"],
+                identifier=brand["identifier"],
+                normalized_identifier=brand["normalized_identifier"],
+                api_response=brand.get("api_response", {}),
+                success=brand.get("success", False),
+                created_at=brand["created_at"],
+                hit_count=brand.get("hit_count", 0),
+                last_accessed_at=brand.get("last_accessed_at", brand["created_at"])
+            ))
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="view_brands",
+            request=request,
+            details={"page": page, "search": search}
+        )
+
+        return BrandsListResponse(
+            brands=brands,
+            total=response.count or 0,
+            page=page,
+            totalPages=max(1, (response.count or 0) // limit + (1 if (response.count or 0) % limit > 0 else 0))
+        )
+
+    except Exception as e:
+        logger.error(f"List brands error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/brands/{brand_id}")
+async def update_brand(
+    brand_id: str,
+    request: Request,
+    update_request: UpdateBrandRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Update a brand's data
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Update brand
+        updates = {
+            "api_response": update_request.api_response
+        }
+
+        response = supabase.table("brandfetch_cache").update(updates).eq("id", brand_id).execute()
+
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="update_brand",
+            request=request,
+            details={"brand_id": brand_id}
+        )
+
+        return {"success": True, "message": "Brand updated successfully", "brand": response.data[0]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update brand error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/brands/{brand_id}")
+async def delete_brand(
+    brand_id: str,
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Delete a brand from the cache
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # First check if brand exists
+        check_response = supabase.table("brandfetch_cache").select("id").eq("id", brand_id).execute()
+        logger.info(f"Delete brand check: {brand_id}, found: {len(check_response.data) if check_response.data else 0}")
+
+        if not check_response.data or len(check_response.data) == 0:
+            raise HTTPException(status_code=404, detail=f"Brand not found: {brand_id}")
+
+        # Delete brand
+        response = supabase.table("brandfetch_cache").delete().eq("id", brand_id).execute()
+        logger.info(f"Delete brand response: {response.data}")
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="delete_brand",
+            request=request,
+            details={"brand_id": brand_id}
+        )
+
+        return {"success": True, "message": "Brand deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete brand error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -55,6 +55,7 @@ interface SlideCardProps {
   isGenerating?: boolean; // Flag to indicate if this slide is currently being generated
 }
 
+// FORCE RELOAD: Sources panel fix with citation detection
 const SlideCard: React.FC<SlideCardProps> = ({
   slide,
   index,
@@ -192,24 +193,32 @@ const SlideCard: React.FC<SlideCardProps> = ({
   const footnotes = React.useMemo(() => {
     // Extract referenced indices from content to see what's actually tagged
     const content = slide.content || '';
+    console.error('🔍 [SOURCES DEBUG] Slide ID:', slide.id, 'Title:', slide.title?.substring(0, 50));
+    console.error('🔍 [SOURCES DEBUG] Content preview:', content.substring(0, 200));
+    
     const referencedIndices = new Set<number>();
     const citationPattern = /\[(\d+)\]/g;
     let match;
     while ((match = citationPattern.exec(content)) !== null) {
       referencedIndices.add(parseInt(match[1], 10));
     }
+    
+    console.error('🔍 [SOURCES DEBUG] Found citation markers:', Array.from(referencedIndices));
 
     // If no citation tags [1], [2], etc. exist in content, return empty array
     // This ensures we ONLY show sources that are explicitly tagged
     if (referencedIndices.size === 0) {
+      console.error('🔍 [SOURCES DEBUG] No citation markers - returning empty array');
       domainToIndexRef.current = new Map();
       return [];
     }
 
     // We have citation tags, so filter backend footnotes to match them
     const backendFootnotes = Array.isArray((slide as any)?.footnotes) ? (slide as any).footnotes : [];
+    console.error('🔍 [SOURCES DEBUG] Backend footnotes:', JSON.stringify(backendFootnotes));
 
     if (backendFootnotes.length > 0) {
+      console.error('🔍 [SOURCES DEBUG] Using backend footnotes (count:', backendFootnotes.length, ')');
       const map = new Map<string, number>();
       const sanitized = backendFootnotes
         .slice()
@@ -229,13 +238,24 @@ const SlideCard: React.FC<SlideCardProps> = ({
         });
 
       domainToIndexRef.current = map;
+      console.error('🔍 [SOURCES DEBUG] Returning sanitized backend footnotes:', sanitized.length, 'items');
       return sanitized;
     }
 
-    // No backend footnotes, but we have citation tags - return empty for now
-    // (citations should have been provided by backend if they were tagged)
+    // No backend footnotes, but we have citation tags - create placeholder footnotes
+    // This handles manually edited content or content that wasn't processed by backend
+    console.error('🔍 [SOURCES DEBUG] NO BACKEND FOOTNOTES - CREATING PLACEHOLDERS FOR', referencedIndices.size, 'MARKERS');
+    const placeholderFootnotes = Array.from(referencedIndices)
+      .sort((a, b) => a - b)
+      .map(index => ({
+        index,
+        label: `Source ${index}`,
+        url: ''
+      }));
+    
+    console.error('🔍 [SOURCES DEBUG] ✅ Created placeholder footnotes:', placeholderFootnotes);
     domainToIndexRef.current = new Map();
-    return [];
+    return placeholderFootnotes;
   }, [combinedCitations, (slide as any)?.footnotes, slide.content]);
 
   const sourcesFooter = React.useMemo(() => {
@@ -675,6 +695,15 @@ const SlideCard: React.FC<SlideCardProps> = ({
       {slide.extractedData && <SlideChartViewer extractedData={slide.extractedData} />}
       {slide.tableData && <TableDataEditor slide={slide} setCurrentOutline={setCurrentOutline} />}
       {/* Citations Panel - ONLY show when footnotes exist (i.e., when content has citation tags [1], [2]) */}
+      {(() => {
+        console.log('[SOURCES DEBUG] Checking if CitationsPanel should render:', {
+          footnotesExists: !!footnotes,
+          footnotesLength: footnotes?.length || 0,
+          footnotes: footnotes,
+          combinedCitations: combinedCitations
+        });
+        return null;
+      })()}
       {footnotes && footnotes.length > 0 && (
         <CitationsPanel
           citations={combinedCitations}
