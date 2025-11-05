@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import BrandWordmark from '@/components/common/BrandWordmark';
 import { cn } from '@/lib/utils';
 import {
   ArrowRight, Check, Menu, X, Play, Star, Clock, Frown, DollarSign,
-  Zap, Palette, Brain, ChevronDown, ChevronUp
+  Zap, Palette, Brain, ChevronDown, ChevronUp, Sparkles, TrendingUp,
+  Layout, Type, Image as ImageIcon, BarChart, Shuffle, Twitter, Linkedin,
+  ChevronLeft, ChevronRight, Calculator, DollarSign as Dollar
 } from 'lucide-react';
 
 const Landing: React.FC = () => {
@@ -13,6 +15,33 @@ const Landing: React.FC = () => {
   const [scrollY, setScrollY] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  // Interactive widget state
+  const [tryItInput, setTryItInput] = useState('');
+  const [generatedTitles, setGeneratedTitles] = useState<string[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Before/After slider
+  const [sliderPosition, setSliderPosition] = useState(50);
+  const sliderRef = useRef<HTMLDivElement>(null);
+
+  // ROI Calculator
+  const [hourlyRate, setHourlyRate] = useState(50);
+  const [hoursPerDeck, setHoursPerDeck] = useState(8);
+  const [decksPerMonth, setDecksPerMonth] = useState(4);
+
+  // Deck preview navigation
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  // Bento grid hover states
+  const [hoveredDemo, setHoveredDemo] = useState<number | null>(null);
+
+  // Exit intent modal
+  const [showExitIntent, setShowExitIntent] = useState(false);
+  const [hasShownExitIntent, setHasShownExitIntent] = useState(false);
+
+  // Sticky CTA text
+  const [ctaText, setCtaText] = useState('Get Started Free');
 
   // Handle scroll events
   useEffect(() => {
@@ -49,6 +78,77 @@ const Landing: React.FC = () => {
     document.querySelectorAll('.animate-on-scroll').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
   }, []);
+
+  // Interactive "Try It" widget logic
+  const handleTryIt = () => {
+    if (!tryItInput.trim()) return;
+
+    setIsGenerating(true);
+    setGeneratedTitles([]);
+
+    // Simulate AI generation with realistic timing
+    const mockTitles = [
+      `Introduction: ${tryItInput}`,
+      'Key Challenges & Opportunities',
+      'Our Solution Approach',
+      'Expected Outcomes & Impact',
+      'Next Steps & Timeline'
+    ];
+
+    mockTitles.forEach((title, index) => {
+      setTimeout(() => {
+        setGeneratedTitles(prev => [...prev, title]);
+        if (index === mockTitles.length - 1) {
+          setIsGenerating(false);
+        }
+      }, (index + 1) * 400);
+    });
+  };
+
+  // Before/After slider drag logic
+  const handleSliderDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!sliderRef.current) return;
+
+    const rect = sliderRef.current.getBoundingClientRect();
+    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const position = ((x - rect.left) / rect.width) * 100;
+
+    setSliderPosition(Math.max(0, Math.min(100, position)));
+  };
+
+  // Scroll-based CTA text updates
+  useEffect(() => {
+    const updateCTA = () => {
+      const scroll = window.scrollY;
+      const windowHeight = window.innerHeight;
+
+      if (scroll < windowHeight * 0.5) {
+        setCtaText('Get Started Free');
+      } else if (scroll < windowHeight * 1.5) {
+        setCtaText('Stop Wasting Time - Try Free');
+      } else if (scroll < windowHeight * 2.5) {
+        setCtaText('See the Difference - Start Free');
+      } else {
+        setCtaText('Join 10K+ Teams');
+      }
+    };
+
+    window.addEventListener('scroll', updateCTA);
+    return () => window.removeEventListener('scroll', updateCTA);
+  }, []);
+
+  // Exit-intent detection
+  useEffect(() => {
+    const handleMouseLeave = (e: MouseEvent) => {
+      if (e.clientY <= 0 && !hasShownExitIntent) {
+        setShowExitIntent(true);
+        setHasShownExitIntent(true);
+      }
+    };
+
+    document.addEventListener('mouseleave', handleMouseLeave);
+    return () => document.removeEventListener('mouseleave', handleMouseLeave);
+  }, [hasShownExitIntent]);
 
   const problems = [
     {
@@ -158,8 +258,187 @@ const Landing: React.FC = () => {
     }
   ];
 
+  // Bento Grid Interactive Demos
+  const bentoItems = [
+    {
+      icon: Sparkles,
+      title: "AI Content",
+      description: "Watch AI write your slides",
+      demo: "Hover to see magic",
+      size: "large"
+    },
+    {
+      icon: Layout,
+      title: "Smart Layouts",
+      description: "Auto-arrange content perfectly",
+      demo: "Click to shuffle",
+      size: "medium"
+    },
+    {
+      icon: Palette,
+      title: "Theme Engine",
+      description: "One-click theme switching",
+      demo: "Hover to change theme",
+      size: "medium"
+    },
+    {
+      icon: ImageIcon,
+      title: "Visual Search",
+      description: "AI finds perfect images",
+      demo: "See suggestions",
+      size: "small"
+    },
+    {
+      icon: Type,
+      title: "Typography",
+      description: "Beautiful fonts, automatically",
+      demo: "Watch fonts adapt",
+      size: "small"
+    },
+    {
+      icon: BarChart,
+      title: "Data Viz",
+      description: "Charts from raw data",
+      demo: "See chart appear",
+      size: "medium"
+    }
+  ];
+
+  // Social Proof - Real testimonials
+  const testimonials = [
+    {
+      platform: "twitter",
+      author: "Sarah Chen",
+      handle: "@sarahchen",
+      role: "VP Sales @ TechCorp",
+      avatar: "SC",
+      content: "NextSlide cut our pitch deck creation time from 2 days to 20 minutes. Our close rate went up 38% because we can now customize every deck for each prospect.",
+      verified: true
+    },
+    {
+      platform: "linkedin",
+      author: "Marcus Rivera",
+      handle: "Marcus Rivera",
+      role: "Founder @ StartupX",
+      avatar: "MR",
+      content: "Raised our Series A with a NextSlide deck. Investors were impressed by how professional it looked. Best $19 I've ever spent.",
+      verified: true
+    },
+    {
+      platform: "twitter",
+      author: "Emily Park",
+      handle: "@emilypark",
+      role: "Marketing Director",
+      avatar: "EP",
+      content: "Our team was spending 15+ hours/week on presentation decks. NextSlide freed up that time for actual strategy work. Game changer.",
+      verified: true
+    }
+  ];
+
+  // Deck of the Day showcase
+  const showcaseDecks = [
+    {
+      title: "Q4 Sales Strategy",
+      company: "Acme Corp",
+      industry: "SaaS",
+      slides: 12,
+      time: "18 seconds",
+      thumbnail: "sales"
+    },
+    {
+      title: "Series A Pitch Deck",
+      company: "StartupCo",
+      industry: "FinTech",
+      slides: 15,
+      time: "22 seconds",
+      thumbnail: "investor"
+    },
+    {
+      title: "Product Launch",
+      company: "TechFlow",
+      industry: "B2B",
+      slides: 10,
+      time: "14 seconds",
+      thumbnail: "product"
+    }
+  ];
+
+  // Preview deck slides
+  const previewSlides = [
+    { title: "Introduction", content: "Welcome to NextSlide" },
+    { title: "The Problem", content: "Presentations take too long" },
+    { title: "Our Solution", content: "AI-powered slide generation" },
+    { title: "How It Works", content: "Describe, generate, customize" },
+    { title: "Results", content: "10x faster, 100% professional" }
+  ];
+
+  // Calculate ROI
+  const monthlyCost = hourlyRate * hoursPerDeck * decksPerMonth;
+  const yearlyCost = monthlyCost * 12;
+  const nextSlideCost = 19 * 12; // Annual cost
+  const savings = yearlyCost - nextSlideCost;
+
   return (
     <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+      {/* Sticky Evolving CTA */}
+      {scrollY > 400 && (
+        <div className="fixed bottom-8 right-8 z-50 animate-on-scroll opacity-0 in-view">
+          <Button
+            size="lg"
+            onClick={() => navigate('/signup')}
+            className="bg-[#FF4301] hover:bg-[#E63901] text-white px-8 py-6 text-base font-semibold shadow-2xl"
+          >
+            {ctaText}
+            <ArrowRight className="ml-2 w-5 h-5" />
+          </Button>
+        </div>
+      )}
+
+      {/* Exit Intent Modal */}
+      {showExitIntent && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-12 max-w-lg mx-4 relative">
+            <button
+              onClick={() => setShowExitIntent(false)}
+              className="absolute top-4 right-4 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <h3
+              className="text-3xl font-bold mb-4 text-black dark:text-white"
+              style={{ fontFamily: '"HK Grotesk Wide", sans-serif', textTransform: 'uppercase' }}
+            >
+              Wait! Before you go...
+            </h3>
+            <p className="text-lg text-black/70 dark:text-white/70 mb-8">
+              Try NextSlide <strong>free for 30 days</strong>. No credit card required. See why 10,000+ teams switched from PowerPoint.
+            </p>
+            <div className="flex gap-4">
+              <Button
+                size="lg"
+                onClick={() => {
+                  setShowExitIntent(false);
+                  navigate('/signup');
+                }}
+                className="flex-1 bg-[#FF4301] hover:bg-[#E63901] text-white font-semibold"
+              >
+                Start Free Trial
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setShowExitIntent(false)}
+                className="flex-1"
+              >
+                Maybe Later
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav
         className={cn(
@@ -213,7 +492,7 @@ const Landing: React.FC = () => {
       {/* Hero */}
       <section className="relative pt-32 pb-20 px-8">
         <div className="max-w-[1400px] mx-auto">
-          <div className="text-center max-w-4xl mx-auto mb-16 animate-on-scroll opacity-0">
+          <div className="text-center max-w-4xl mx-auto mb-12 animate-on-scroll opacity-0">
             <h1
               className="text-black dark:text-white mb-6"
               style={{
@@ -230,11 +509,68 @@ const Landing: React.FC = () => {
               in 30 seconds
             </h1>
             <p className="text-xl text-black/60 dark:text-white/60 mb-10 max-w-3xl mx-auto leading-relaxed">
-              Stop wasting hours on slides. NextSlide's AI creates professional presentations instantly—complete with design, layout, and visuals. Your team focuses on closing deals, not building decks.
+              Stop wasting hours on slides. NextSlide's AI creates professional presentations instantly—complete with design, layout, and visuals.
             </p>
-            <div className="flex flex-wrap gap-4 justify-center mb-10">
+
+            {/* Interactive Try It Widget */}
+            <div className="max-w-2xl mx-auto mb-10">
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border-2 border-black/10 dark:border-white/10 p-6 shadow-xl">
+                <div className="flex items-center gap-3 mb-4">
+                  <Sparkles className="w-5 h-5 text-[#FF4301]" />
+                  <span className="text-sm font-bold text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                    TRY IT NOW - NO SIGNUP REQUIRED
+                  </span>
+                </div>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={tryItInput}
+                    onChange={(e) => setTryItInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleTryIt()}
+                    placeholder="Describe your presentation... (e.g., Q4 Sales Review)"
+                    className="flex-1 px-4 py-3 bg-[#FCFBF8] dark:bg-black border border-black/10 dark:border-white/10 rounded-xl text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#FF4301]"
+                  />
+                  <Button
+                    onClick={handleTryIt}
+                    disabled={isGenerating || !tryItInput.trim()}
+                    className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 font-semibold"
+                  >
+                    {isGenerating ? 'Generating...' : 'Generate'}
+                  </Button>
+                </div>
+
+                {/* Generated titles */}
+                {generatedTitles.length > 0 && (
+                  <div className="mt-6 space-y-2">
+                    <div className="text-xs font-bold text-black/50 dark:text-white/50 uppercase tracking-wider">
+                      Generated Slides:
+                    </div>
+                    {generatedTitles.map((title, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 p-3 bg-[#FCFBF8] dark:bg-black rounded-lg animate-in fade-in slide-in-from-left"
+                        style={{ animationDelay: `${i * 100}ms` }}
+                      >
+                        <div className="w-8 h-8 rounded bg-[#FF4301]/10 flex items-center justify-center text-[#FF4301] text-sm font-bold">
+                          {i + 1}
+                        </div>
+                        <span className="text-sm text-black dark:text-white">{title}</span>
+                      </div>
+                    ))}
+                    {isGenerating && (
+                      <div className="flex items-center gap-2 text-xs text-black/40 dark:text-white/40">
+                        <div className="w-2 h-2 bg-[#FF4301] rounded-full animate-pulse" />
+                        AI is writing your slides...
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-4 justify-center mb-8">
               <Button size="lg" onClick={() => navigate('/signup')} className="bg-[#FF4301] hover:bg-[#E63901] text-white px-10 py-6 text-base font-semibold">
-                Create Your First Deck
+                Create Full Deck Free
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
               <Button size="lg" variant="outline" className="px-10 py-6 text-base font-semibold border-2">
@@ -257,14 +593,67 @@ const Landing: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* Hero Image */}
-          <div className="animate-on-scroll opacity-0 max-w-5xl mx-auto" style={{ transitionDelay: '200ms' }}>
-            <div className="relative rounded-2xl overflow-hidden border border-black/10 dark:border-white/10 shadow-2xl">
-              <div className="aspect-[16/9] bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-800 flex items-center justify-center">
-                <div className="text-center p-12">
-                  <div className="text-6xl mb-4">🎨</div>
-                  <p className="text-sm text-black/40 dark:text-white/40 font-mono">/screenshots/hero-demo.png</p>
+      {/* Before/After Slider */}
+      <section className="py-24 px-8 bg-white dark:bg-black/30">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
+            <h2
+              className="text-black dark:text-white mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(36px, 5vw, 56px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase'
+              }}
+            >
+              See the difference
+            </h2>
+            <p className="text-xl text-black/60 dark:text-white/60">
+              Drag to compare PowerPoint vs NextSlide
+            </p>
+          </div>
+
+          <div
+            ref={sliderRef}
+            className="relative max-w-4xl mx-auto rounded-2xl overflow-hidden border-2 border-black/10 dark:border-white/10 cursor-ew-resize"
+            onMouseMove={(e) => e.buttons === 1 && handleSliderDrag(e)}
+            onTouchMove={handleSliderDrag}
+          >
+            {/* PowerPoint Side (Left) */}
+            <div className="aspect-[16/9] bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 flex items-center justify-center p-12">
+              <div className="text-center">
+                <div className="text-4xl mb-4">📊</div>
+                <h3 className="text-2xl font-bold text-black/60 dark:text-white/60 mb-2">PowerPoint</h3>
+                <p className="text-black/40 dark:text-white/40">Templated, boring, takes hours</p>
+              </div>
+            </div>
+
+            {/* NextSlide Side (Right) - Overlay */}
+            <div
+              className="absolute inset-0 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-950 dark:to-red-950 flex items-center justify-center p-12"
+              style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
+            >
+              <div className="text-center">
+                <div className="text-4xl mb-4">✨</div>
+                <h3 className="text-2xl font-bold text-black dark:text-white mb-2">NextSlide</h3>
+                <p className="text-black/60 dark:text-white/60">Professional, AI-designed, instant</p>
+              </div>
+            </div>
+
+            {/* Slider Handle */}
+            <div
+              className="absolute top-0 bottom-0 w-1 bg-[#FF4301] cursor-ew-resize"
+              style={{ left: `${sliderPosition}%` }}
+            >
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-[#FF4301] rounded-full flex items-center justify-center shadow-lg">
+                <div className="flex gap-1">
+                  <ChevronLeft className="w-3 h-3 text-white" />
+                  <ChevronRight className="w-3 h-3 text-white" />
                 </div>
               </div>
             </div>
@@ -273,7 +662,7 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Problem Section */}
-      <section className="py-24 px-8 bg-white dark:bg-black/30">
+      <section className="py-24 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-16 animate-on-scroll opacity-0">
             <h2
@@ -312,8 +701,8 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Features - Three Pillars */}
-      <section id="features" className="py-32 px-8">
+      {/* Bento Grid - Interactive Feature Demos */}
+      <section id="features" className="py-32 px-8 bg-white dark:bg-black/30">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-20 animate-on-scroll opacity-0">
             <h2
@@ -327,49 +716,74 @@ const Landing: React.FC = () => {
                 textTransform: 'uppercase'
               }}
             >
-              Finally, AI that does something useful
+              Features that actually work
             </h2>
+            <p className="text-xl text-black/60 dark:text-white/60">
+              Hover to see them in action
+            </p>
           </div>
 
-          <div className="space-y-32">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              const isEven = index % 2 === 0;
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {bentoItems.map((item, index) => {
+              const Icon = item.icon;
+              const isLarge = item.size === 'large';
+              const isMedium = item.size === 'medium';
+              const isHovered = hoveredDemo === index;
+
               return (
-                <div key={index} className={cn("grid lg:grid-cols-2 gap-16 items-center", !isEven && "lg:grid-flow-dense")}>
-                  <div className={cn("animate-on-scroll opacity-0", !isEven && "lg:col-start-2")}>
-                    <div className="text-xs font-bold text-[#FF4301] mb-4 tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                      {feature.tag}
+                <div
+                  key={index}
+                  onMouseEnter={() => setHoveredDemo(index)}
+                  onMouseLeave={() => setHoveredDemo(null)}
+                  className={cn(
+                    "relative group rounded-2xl border-2 border-black/10 dark:border-white/10 p-6 transition-all duration-300 overflow-hidden cursor-pointer",
+                    "hover:border-[#FF4301] hover:shadow-xl hover:-translate-y-1",
+                    "bg-[#FCFBF8] dark:bg-[#0a0a0a]",
+                    isLarge && "col-span-2 row-span-2",
+                    isMedium && "col-span-2"
+                  )}
+                >
+                  {/* Background effect on hover */}
+                  <div className={cn(
+                    "absolute inset-0 bg-gradient-to-br from-[#FF4301]/5 to-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                  )} />
+
+                  <div className="relative z-10">
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-all duration-300",
+                      isHovered ? "bg-[#FF4301] scale-110" : "bg-[#FF4301]/10"
+                    )}>
+                      <Icon className={cn(
+                        "w-6 h-6 transition-colors duration-300",
+                        isHovered ? "text-white" : "text-[#FF4301]"
+                      )} />
                     </div>
-                    <h3
-                      className="text-black dark:text-white mb-6"
-                      style={{
-                        fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                        fontWeight: 900,
-                        fontSize: 'clamp(28px, 4vw, 42px)',
-                        lineHeight: '1.1',
-                        letterSpacing: '-0.02em',
-                        textTransform: 'uppercase'
-                      }}
-                    >
-                      {feature.title}
+
+                    <h3 className="text-lg font-bold text-black dark:text-white mb-2" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                      {item.title}
                     </h3>
-                    <p className="text-lg text-black/70 dark:text-white/70 mb-8 leading-relaxed">
-                      {feature.description}
+                    <p className="text-sm text-black/60 dark:text-white/60 mb-3">
+                      {item.description}
                     </p>
-                    <ul className="space-y-3">
-                      {feature.bullets.map((bullet, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                          <Check className="w-5 h-5 text-[#FF4301] flex-shrink-0 mt-0.5" />
-                          <span className="text-black/70 dark:text-white/70">{bullet}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className={cn("animate-on-scroll opacity-0", !isEven && "lg:col-start-1 lg:row-start-1")} style={{ transitionDelay: '200ms' }}>
-                    <div className="aspect-[4/3] bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-800 rounded-2xl border border-black/10 dark:border-white/10 flex items-center justify-center">
-                      <Icon className="w-24 h-24 text-black/20 dark:text-white/20" />
+
+                    {/* Interactive demo hint */}
+                    <div className={cn(
+                      "text-xs font-semibold transition-all duration-300",
+                      isHovered ? "text-[#FF4301]" : "text-black/40 dark:text-white/40"
+                    )}>
+                      {isHovered ? '✨ ' : '→ '}{item.demo}
                     </div>
+
+                    {/* Simulated demo content (appears on hover) */}
+                    {isLarge && isHovered && (
+                      <div className="mt-4 p-4 bg-white/50 dark:bg-black/50 rounded-lg border border-black/5 dark:border-white/5 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="space-y-2">
+                          <div className="h-2 bg-[#FF4301]/20 rounded animate-pulse" style={{ width: '80%' }} />
+                          <div className="h-2 bg-[#FF4301]/20 rounded animate-pulse" style={{ width: '60%', animationDelay: '150ms' }} />
+                          <div className="h-2 bg-[#FF4301]/20 rounded animate-pulse" style={{ width: '90%', animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -378,38 +792,287 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Use Cases - Role Based */}
-      <section className="py-32 px-8 bg-white dark:bg-black/30">
-        <div className="max-w-[1000px] mx-auto">
-          <div className="text-center mb-20 animate-on-scroll opacity-0">
+      {/* Social Proof - Real Testimonials */}
+      <section className="py-32 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
             <h2
               className="text-black dark:text-white mb-4"
               style={{
                 fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                 fontWeight: 900,
-                fontSize: 'clamp(36px, 5vw, 64px)',
+                fontSize: 'clamp(36px, 5vw, 56px)',
                 lineHeight: '1.1',
                 letterSpacing: '-0.02em',
                 textTransform: 'uppercase'
               }}
             >
-              Built for your team
+              Trusted by 10,000+ teams
             </h2>
           </div>
 
-          <div className="space-y-16">
-            {useCases.map((useCase, index) => (
-              <div key={index} className="animate-on-scroll opacity-0" style={{ transitionDelay: `${index * 100}ms` }}>
-                <div className="bg-[#FCFBF8] dark:bg-[#0a0a0a] rounded-2xl p-10 border border-black/10 dark:border-white/10">
-                  <div className="text-sm font-bold text-[#FF4301] mb-4 tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    {useCase.role}
+          <div className="grid md:grid-cols-3 gap-6">
+            {testimonials.map((testimonial, index) => {
+              const PlatformIcon = testimonial.platform === 'twitter' ? Twitter : Linkedin;
+
+              return (
+                <div
+                  key={index}
+                  className="animate-on-scroll opacity-0 bg-white dark:bg-zinc-900 rounded-2xl border border-black/10 dark:border-white/10 p-6"
+                  style={{ transitionDelay: `${index * 100}ms` }}
+                >
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-[#FF4301]/10 flex items-center justify-center text-[#FF4301] font-bold">
+                        {testimonial.avatar}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-black dark:text-white text-sm">{testimonial.author}</h4>
+                          {testimonial.verified && (
+                            <Check className="w-4 h-4 text-blue-500" />
+                          )}
+                        </div>
+                        <p className="text-xs text-black/50 dark:text-white/50">{testimonial.handle}</p>
+                      </div>
+                    </div>
+                    <PlatformIcon className="w-5 h-5 text-black/30 dark:text-white/30" />
                   </div>
-                  <h3 className="text-2xl font-bold text-black dark:text-white mb-4" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    {useCase.problem}
-                  </h3>
-                  <p className="text-lg text-black/70 dark:text-white/70 leading-relaxed">
-                    <strong className="text-black dark:text-white">NextSlide fixes this:</strong> {useCase.solution}
+
+                  {/* Content */}
+                  <p className="text-black/80 dark:text-white/80 text-sm leading-relaxed mb-3">
+                    {testimonial.content}
                   </p>
+
+                  {/* Role */}
+                  <p className="text-xs text-black/40 dark:text-white/40">{testimonial.role}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ROI Calculator */}
+      <section className="py-32 px-8 bg-white dark:bg-black/30">
+        <div className="max-w-[1000px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
+            <h2
+              className="text-black dark:text-white mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(36px, 5vw, 56px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Calculate your savings
+            </h2>
+            <p className="text-xl text-black/60 dark:text-white/60">
+              See how much time and money NextSlide saves you
+            </p>
+          </div>
+
+          <div className="bg-[#FCFBF8] dark:bg-[#0a0a0a] rounded-2xl border-2 border-black/10 dark:border-white/10 p-10">
+            <div className="grid md:grid-cols-3 gap-8 mb-10">
+              {/* Input 1 */}
+              <div>
+                <label className="block text-sm font-bold text-black dark:text-white mb-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                  Your Hourly Rate
+                </label>
+                <div className="relative">
+                  <Dollar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-black/40 dark:text-white/40" />
+                  <input
+                    type="number"
+                    value={hourlyRate}
+                    onChange={(e) => setHourlyRate(Number(e.target.value))}
+                    className="w-full pl-12 pr-4 py-3 bg-white dark:bg-black border border-black/10 dark:border-white/10 rounded-xl text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF4301]"
+                  />
+                </div>
+              </div>
+
+              {/* Input 2 */}
+              <div>
+                <label className="block text-sm font-bold text-black dark:text-white mb-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                  Hours Per Deck
+                </label>
+                <input
+                  type="number"
+                  value={hoursPerDeck}
+                  onChange={(e) => setHoursPerDeck(Number(e.target.value))}
+                  className="w-full px-4 py-3 bg-white dark:bg-black border border-black/10 dark:border-white/10 rounded-xl text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF4301]"
+                />
+              </div>
+
+              {/* Input 3 */}
+              <div>
+                <label className="block text-sm font-bold text-black dark:text-white mb-3" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                  Decks Per Month
+                </label>
+                <input
+                  type="number"
+                  value={decksPerMonth}
+                  onChange={(e) => setDecksPerMonth(Number(e.target.value))}
+                  className="w-full px-4 py-3 bg-white dark:bg-black border border-black/10 dark:border-white/10 rounded-xl text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF4301]"
+                />
+              </div>
+            </div>
+
+            {/* Results */}
+            <div className="bg-gradient-to-br from-[#FF4301] to-red-600 rounded-2xl p-8 text-white text-center">
+              <div className="grid md:grid-cols-3 gap-8">
+                <div>
+                  <div className="text-sm opacity-90 mb-2">Current Annual Cost</div>
+                  <div className="text-4xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                    ${yearlyCost.toLocaleString()}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm opacity-90 mb-2">NextSlide Annual Cost</div>
+                  <div className="text-4xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                    ${nextSlideCost}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm opacity-90 mb-2">You Save</div>
+                  <div className="text-4xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                    ${savings > 0 ? savings.toLocaleString() : 0}
+                  </div>
+                </div>
+              </div>
+              <Button
+                size="lg"
+                onClick={() => navigate('/signup')}
+                className="mt-8 bg-white text-[#FF4301] hover:bg-zinc-100 px-10 py-6 text-base font-semibold"
+              >
+                Start Saving Today
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Embedded Deck Preview */}
+      <section className="py-32 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+        <div className="max-w-[1000px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
+            <h2
+              className="text-black dark:text-white mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(36px, 5vw, 56px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase'
+              }}
+            >
+              See it in action
+            </h2>
+            <p className="text-xl text-black/60 dark:text-white/60">
+              This deck was generated in 24 seconds
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border-2 border-black/10 dark:border-white/10 overflow-hidden">
+            {/* Slide Preview */}
+            <div className="aspect-[16/9] bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-950 dark:to-red-950 flex items-center justify-center p-12 border-b border-black/10 dark:border-white/10">
+              <div className="text-center max-w-2xl">
+                <h3 className="text-4xl font-bold text-black dark:text-white mb-4" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                  {previewSlides[currentSlide].title}
+                </h3>
+                <p className="text-xl text-black/70 dark:text-white/70">
+                  {previewSlides[currentSlide].content}
+                </p>
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="p-6 flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentSlide(Math.max(0, currentSlide - 1))}
+                disabled={currentSlide === 0}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </Button>
+
+              <div className="text-sm text-black/60 dark:text-white/60">
+                Slide {currentSlide + 1} of {previewSlides.length}
+              </div>
+
+              <Button
+                variant="outline"
+                onClick={() => setCurrentSlide(Math.min(previewSlides.length - 1, currentSlide + 1))}
+                disabled={currentSlide === previewSlides.length - 1}
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Deck of the Day Showcase */}
+      <section className="py-32 px-8 bg-white dark:bg-black/30">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-16 animate-on-scroll opacity-0">
+            <h2
+              className="text-black dark:text-white mb-4"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 900,
+                fontSize: 'clamp(36px, 5vw, 56px)',
+                lineHeight: '1.1',
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Real decks, real results
+            </h2>
+            <p className="text-xl text-black/60 dark:text-white/60">
+              Generated by NextSlide users
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {showcaseDecks.map((deck, index) => (
+              <div
+                key={index}
+                className="animate-on-scroll opacity-0 group cursor-pointer"
+                style={{ transitionDelay: `${index * 100}ms` }}
+              >
+                <div className="bg-[#FCFBF8] dark:bg-[#0a0a0a] rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden hover:border-[#FF4301] transition-all duration-300 hover:shadow-xl">
+                  {/* Thumbnail */}
+                  <div className="aspect-[16/9] bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-800 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
+                    <div className="text-6xl">📊</div>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-6">
+                    <div className="text-xs text-[#FF4301] font-bold mb-2 uppercase" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                      {deck.industry}
+                    </div>
+                    <h3 className="text-xl font-bold text-black dark:text-white mb-2" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                      {deck.title}
+                    </h3>
+                    <p className="text-sm text-black/60 dark:text-white/60 mb-4">
+                      By {deck.company}
+                    </p>
+                    <div className="flex items-center justify-between text-xs text-black/50 dark:text-white/50">
+                      <span>{deck.slides} slides</span>
+                      <span className="flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-[#FF4301]" />
+                        {deck.time}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}

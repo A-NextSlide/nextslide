@@ -296,7 +296,10 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         # ═══════════════════════════════════════════════════════════
         # PART 2: DYNAMIC CONTENT (SLIDE-SPECIFIC - NOT CACHED)
         # ═══════════════════════════════════════════════════════════
-        
+
+        # CHECK FOR LAYOUT ARCHITECT BLUEPRINT
+        blueprint_section = self._get_blueprint_from_theme(context)
+
         guidance = self._get_concise_slide_guidance(slide_type)
         
         # Check for chart data
@@ -461,6 +464,20 @@ Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} 
 """
             logger.info(f"🎨 Design style for slide {context.slide_index + 1}: {design_style}")
 
+        # Determine if this is a chart-appropriate slide
+        is_chart_slide = context.has_chart_data
+        chart_reminder = ""
+        if not is_chart_slide:
+            chart_reminder = f"""
+
+🚨 CRITICAL VISUAL STRATEGY:
+• This slide should use IMAGES, not charts!
+• Think: What photo/illustration would help the audience understand this?
+• Charts are ONLY for exceptional quantitative data (this slide doesn't have that)
+• Use Image component with specific, relevant searchQuery
+• Examples: product screenshots, concept illustrations, relevant photography
+"""
+
         dynamic_part = f"""
 ═══════════════════════════════════════════════════════════
 🎯 SLIDE {context.slide_index + 1} OF {context.total_slides} - CREATE NOW
@@ -471,7 +488,7 @@ Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} 
 **CONTENT:**
 {context.slide_outline.content}{citations_info}
 
-**SLIDE TYPE:** {slide_type}{chart_info}{multi_item_guidance}
+**SLIDE TYPE:** {slide_type}{chart_info}{multi_item_guidance}{chart_reminder}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎨 THEME COLORS - CONCRETE JSON EXAMPLES (COPY THESE EXACTLY!)
@@ -526,15 +543,24 @@ Line/Lines:
 📋 SLIDE-SPECIFIC INSTRUCTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+🎯 DESIGN PHILOSOPHY - SIMPLE, VISUAL, IMPACTFUL:
+**THINK LIKE A PITCH DECK:**
+• Each slide = ONE core idea, delivered visually
+• Less text = more impact (audience reads slides in 5 seconds!)
+• Images tell stories, charts show exceptional data ONLY
+• 2-3 sections MAX per slide, 2-3 bullets per section
+• Each bullet = 5-10 words (a headline, not a paragraph)
+
 🚨 CRITICAL LAYOUT RULE - CHART OR IMAGE, NEVER BOTH:
 • If slide has Chart data → NO Image component (chart is the visual!)
-• Use PATTERN 4 (Chart + Insights) from system prompt
+• If slide has NO chart data → Consider adding Image for visual impact
+• Use PATTERN 4 (Chart + Insights) from system prompt for charts
 • Chart left + text insights right OR chart bottom + text top
 • Verify no overlaps: chart and text must have 80px gap minimum
 
 🚨 BREAK THIS CONTENT INTO MULTIPLE TIPTAPTEXTBLOCK COMPONENTS:
 • Each section/topic = separate TiptapTextBlock
-• Each bullet point = separate TiptapTextBlock  
+• Each bullet point = separate TiptapTextBlock
 • Different importance levels = different font sizes in separate blocks
 • NEVER use \\n newlines - that creates tiny unreadable text!
 
@@ -621,7 +647,11 @@ Generate palette from ACCENT color {theme_colors['accent']} by varying brightnes
 ↑ THIS IS CORRECT - Background={theme_colors['background']}, Text={theme_colors['text']}, Shape={theme_colors['accent']}, PLUS alignment props!
 
 Output valid JSON component array now (using the 3 colors above EXACTLY + alignment props):"""
-        
+
+        # INJECT BLUEPRINT IF AVAILABLE
+        if blueprint_section:
+            dynamic_part = blueprint_section + "\n\n" + dynamic_part
+
         # Combine with cache delimiter for Claude caching
         full_prompt = cached_part + CACHE_DELIM + dynamic_part
         
@@ -654,6 +684,184 @@ Output valid JSON component array now (using the 3 colors above EXACTLY + alignm
         else:
             return "CONTENT: TiptapTextBlock directly on background (alignment='left', verticalAlignment='top' for body text, NO boxes!) + Image (LARGE, 50-60% of slide). Shape ONLY for key highlights. Use theme colors!"
     
+    def _get_blueprint_from_theme(self, context: SlideGenerationContext) -> str:
+        """Extract and format LayoutArchitect blueprint if available"""
+        try:
+            # Get theme
+            theme = context.theme
+            slide_themes = None
+
+            print(f"🔍 [BLUEPRINT] Checking for blueprint for slide {context.slide_index + 1}")
+            print(f"   Theme type: {type(theme)}")
+            print(f"   Has slide_themes attr: {hasattr(theme, 'slide_themes')}")
+
+            if hasattr(theme, 'slide_themes'):
+                slide_themes = theme.slide_themes
+                print(f"   slide_themes from attr: {type(slide_themes)}, len={len(slide_themes) if slide_themes else 0}")
+            elif isinstance(theme, dict):
+                slide_themes = theme.get('slide_themes', {})
+                print(f"   slide_themes from dict: {type(slide_themes)}, len={len(slide_themes) if slide_themes else 0}")
+
+            if not slide_themes:
+                print(f"   ❌ No slide_themes found")
+                return ""
+
+            # Find blueprint for this slide
+            slide_id = f"slide-{context.slide_index}"
+            print(f"   Looking for slide_id: {slide_id}")
+            print(f"   Available slide_ids: {list(slide_themes.keys())[:5]}")
+
+            if slide_id not in slide_themes:
+                print(f"   ❌ slide_id {slide_id} not in slide_themes")
+                return ""
+
+            blueprint = slide_themes[slide_id]
+
+            # Check if this is a LayoutArchitect blueprint
+            if not isinstance(blueprint, dict) or 'components' not in blueprint:
+                return ""
+
+            print(f"✅ Blueprint found for slide {context.slide_index + 1}!")
+
+            # Format blueprint into prompt section
+            reasoning = blueprint.get('layout_reasoning', 'Editorial layout')
+            components = blueprint.get('components', [])
+
+            if not components:
+                return ""
+
+            section = "\n" + "="*80 + "\n"
+            section += "🎨 EDITORIAL LAYOUT BLUEPRINT - YOU MUST FOLLOW THIS EXACTLY!\n"
+            section += "="*80 + "\n\n"
+            section += "🚨 CRITICAL: This is a pre-designed editorial layout by a professional designer.\n"
+            section += "DO NOT improvise, simplify, or skip components. Implement EXACTLY as specified.\n"
+            section += "Use these EXACT positions, sizes, colors, and component types.\n\n"
+            section += f"DESIGN CONCEPT: {reasoning}\n\n"
+            section += f"REQUIRED COMPONENTS ({len(components)} total):\n"
+            section += "Implement ALL components below with these EXACT specifications:\n\n"
+
+            # Include ALL components, not just first 10!
+            for i, comp in enumerate(components, 1):
+                comp_type = comp.get('type', 'Unknown')
+                props = comp.get('props', {})
+
+                section += f"[{i}] {comp_type}\n"
+
+                # Background
+                if comp_type == 'Background':
+                    if 'gradient' in props:
+                        grad = props['gradient']
+                        section += f"    gradient: {grad.get('type')} at {grad.get('angle')}°\n"
+                        section += f"    colors: {grad.get('colors')}\n"
+                    elif 'backgroundColor' in props:
+                        section += f"    backgroundColor: {props['backgroundColor']}\n"
+                    elif 'color' in props:
+                        section += f"    color: {props['color']}\n"
+
+                # TiptapTextBlock
+                elif comp_type == 'TiptapTextBlock':
+                    # Check if position is nested or direct
+                    if 'position' in props and isinstance(props['position'], dict):
+                        x = props['position'].get('x')
+                        y = props['position'].get('y')
+                    else:
+                        x = props.get('x')
+                        y = props.get('y')
+
+                    section += f"    position: x={x}, y={y}\n"
+                    section += f"    size: {props.get('width')}×{props.get('height')}\n"
+                    section += f"    font: {props.get('fontSize')}pt {props.get('fontFamily', 'inherit')}\n"
+                    if 'textAlign' in props:
+                        section += f"    align: {props['textAlign']}\n"
+                    if 'textColor' in props:
+                        section += f"    color: {props['textColor']}\n"
+
+                # Shape
+                elif comp_type == 'Shape':
+                    # Check if position is nested or direct
+                    if 'position' in props and isinstance(props['position'], dict):
+                        x = props['position'].get('x')
+                        y = props['position'].get('y')
+                    else:
+                        x = props.get('x')
+                        y = props.get('y')
+
+                    section += f"    position: x={x}, y={y}\n"
+                    section += f"    size: {props.get('width')}×{props.get('height')}\n"
+                    if 'fill' in props:
+                        section += f"    fill: {props['fill']}\n"
+                    if 'borderRadius' in props:
+                        section += f"    borderRadius: {props['borderRadius']}px\n"
+
+                # Image
+                elif comp_type == 'Image':
+                    # Check if position is nested or direct
+                    if 'position' in props and isinstance(props['position'], dict):
+                        x = props['position'].get('x')
+                        y = props['position'].get('y')
+                    else:
+                        x = props.get('x')
+                        y = props.get('y')
+
+                    section += f"    position: x={x}, y={y}\n"
+                    section += f"    size: {props.get('width')}×{props.get('height')}\n"
+                    if 'borderRadius' in props:
+                        section += f"    borderRadius: {props['borderRadius']}px\n"
+
+                # Chart
+                elif comp_type == 'Chart':
+                    # Check if position is nested or direct
+                    if 'position' in props and isinstance(props['position'], dict):
+                        x = props['position'].get('x')
+                        y = props['position'].get('y')
+                    else:
+                        x = props.get('x')
+                        y = props.get('y')
+
+                    section += f"    position: x={x}, y={y}\n"
+                    section += f"    size: {props.get('width')}×{props.get('height')}\n"
+                    if 'chartType' in props:
+                        section += f"    chartType: {props['chartType']}\n"
+
+                # CustomComponent
+                elif comp_type == 'CustomComponent':
+                    # Check if position is nested or direct
+                    if 'position' in props and isinstance(props['position'], dict):
+                        x = props['position'].get('x')
+                        y = props['position'].get('y')
+                    else:
+                        x = props.get('x')
+                        y = props.get('y')
+
+                    section += f"    position: x={x}, y={y}\n"
+                    section += f"    size: {props.get('width')}×{props.get('height')}\n"
+                    if 'variant' in props:
+                        section += f"    variant: {props['variant']}\n"
+
+                # Lines
+                elif comp_type == 'Lines':
+                    if 'lines' in props:
+                        lines = props['lines']
+                        if lines and len(lines) > 0:
+                            line = lines[0]
+                            section += f"    x1={line.get('x1')}, y1={line.get('y1')}, x2={line.get('x2')}, y2={line.get('y2')}\n"
+
+            section += "\n" + "="*80 + "\n"
+            section += "⚠️  CRITICAL REQUIREMENTS:\n"
+            section += "="*80 + "\n"
+            section += "1. USE THESE EXACT POSITIONS AND SIZES - Do not adjust or round!\n"
+            section += "2. INCLUDE ALL COMPONENTS LISTED ABOVE - Do not skip or simplify!\n"
+            section += "3. USE THE SPECIFIED COLORS, FONTS, AND STYLES - Do not substitute!\n"
+            section += "4. MAINTAIN THE DESIGN CONCEPT - This is an editorial layout, not generic!\n"
+            section += "5. OUTPUT EXACTLY WHAT IS SPECIFIED - No improvisation!\n"
+            section += "="*80 + "\n"
+
+            return section
+
+        except Exception as e:
+            print(f"⚠️  Error extracting blueprint: {e}")
+            return ""
+
     async def complete_generation(self, context: SlideGenerationContext) -> None:
         """Pass through to base generator"""
         if hasattr(self.base_generator, 'complete_generation'):

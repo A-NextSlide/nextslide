@@ -409,11 +409,9 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto w-full">
-          <div className="p-6 lg:p-8 w-full">
-            <div className="w-full">
-              {children}
-            </div>
+        <main className="flex-1 overflow-auto">
+          <div className="p-6 lg:p-8 max-w-[1800px] mx-auto">
+            {children}
           </div>
         </main>
       </div>

@@ -196,7 +196,7 @@ const AdminDashboardV2: React.FC = () => {
   };
 
   const renderSkeletons = (count: number) => (
-    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {[...Array(count)].map((_, i) => (
         <Card key={i} className="border-gray-200 dark:border-gray-800">
           <CardHeader className="pb-2">
@@ -270,7 +270,7 @@ const AdminDashboardV2: React.FC = () => {
             {isLoading ? renderSkeletons(8) : metrics && (
               <>
                 {/* Primary Metrics */}
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   <MetricCard
                     title="Total Users"
                     value={animateNumbers ? metrics.users.total.toLocaleString() : '0'}
@@ -305,7 +305,7 @@ const AdminDashboardV2: React.FC = () => {
                 </div>
 
                 {/* Secondary Metrics */}
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   <MetricCard
                     title="New Users Today"
                     value={animateNumbers ? metrics.users.newToday : '0'}
@@ -448,7 +448,7 @@ const AdminDashboardV2: React.FC = () => {
                 <CardDescription>Real-time operational status of key services</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {[
                     { name: 'API Server', icon: Server, status: 'operational' },
                     { name: 'Database', icon: HardDrive, status: 'operational' },

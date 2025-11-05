@@ -191,8 +191,8 @@ TEAM SLIDE (text-dense is OK):
 
     if detail == 'detailed':
         mode = """DETAILED MODE:
-Write 150-250 words. Use section headers (##) to organize content logically.
-Use sub-bullets (2-space indent) for hierarchy.
+Write 100-150 words. Use section headers (##) to organize content logically.
+Keep it concise - audience should grasp each point in 3-5 seconds.
 Be SPECIFIC: exact numbers, companies, dates.
 Bold key metrics with **
 ✅ "Uber (2010 seed, **$510K** → **$2.5B** exit)"
@@ -200,62 +200,56 @@ Bold key metrics with **
 
 FORMAT:
 ## Section Header (2-5 words)
-• Detailed point with specific data
-  • Sub-point with evidence
-• Another detailed point
-  • Supporting details
+• Detailed point with specific data (8-12 words)
+• Another detailed point (8-12 words)
 
 DO NOT include IMAGE tags - those are added separately.
 
-CHARTS: For quantitative business data (8-15+ points)"""
+CHARTS: ONLY for exceptional quantitative data (8-15+ points) where visualization is ESSENTIAL"""
     else:
         mode = """PRESENTATION MODE:
 
-GOAL: Audience LEARNS the topic with clear organization.
+GOAL: Simple, visual-first slides the audience can absorb in seconds.
 
-STRUCTURE: Use section headers (##) to group related points
+APPROACH: Think like the example slides shown - clean sections with minimal text.
 
 FORMAT:
-## Section Title
-• Main point with specific data (8-12 words)
-• Related point (8-12 words)
-  • Sub-point if needed (indented with 2 spaces)
+## Section Title (2-5 words)
+• Concise point (5-10 words max)
+• Another key point (5-10 words max)
 
-## Another Section
-• Key information
-• Supporting details
+## Another Section (if needed)
+• Supporting insight (5-10 words max)
 
-❌ TOO SHALLOW (DON'T DO THIS):
-• Supreme Court ruling
-• Charter authority
-• Protects rights
+EXAMPLE - PITCH DECK SLIDE:
+## Sector Insights
 
-✅ ORGANIZED & INFORMATIVE (DO THIS):
-## Supreme Court Decision
-• Supreme Court ruled **9-0** Quebec had no veto over Charter[1]
-  • Quebec sought special status but federal proceeded
+## Fintech
+Fintech has shown **notable growth** with higher mega outcome incidence
 
-## Constitutional Impact
-• Charter shifted power to federal/courts
-  • Provinces lost autonomy over rights
-  • Created judicial review framework
+## SaaS
+The SaaS sector has maintained **steady outcomes**, demonstrating resilience
 
-## Protected Rights
-• Fundamental freedoms + minority protections
-  • Language rights English/French each province
-  • Indigenous Section 35, multiculturalism Section 27
+## Consumer
+Consumer sectors exhibit **high variance** in returns
 
 CONTENT RULES:
+- BREVITY: Each bullet is a headline, not a paragraph
+- 2-3 sections max per slide (don't cram!)
+- 2-3 bullets per section
 - Bold key numbers and metrics with **
-- Group related points under section headers
-- Business/investor: 3-5 bullets per section, 8-12 words each
-- Simple topics: 2-3 bullets per section, 5-7 words each
-- Test: "Can you SPEAK this while presenting?"
+- Test: "Can you READ this in 5 seconds?"
 - DO NOT include IMAGE tags - those are added separately
 
+VISUALS:
+🎨 Images/Icons: PRIMARY visual element (50-70% of slides should have images)
+📊 Charts: RARE (only 10-20% of slides, and ONLY for truly exceptional data stories)
+
 CHARTS:
-🚫 NO for educational/explanatory (concepts/processes/history/tutorials)
-✅ ONLY for quantitative business/financial/research data"""
+🚫 NO for: educational/explanatory/concepts/processes/history/tutorials/comparisons
+🚫 NO for: simple lists of features/benefits/stats that work as text
+✅ YES for: Time-series trends, large datasets (15+ points), complex multi-dimensional data
+✅ YES for: When a visual pattern tells the story better than words"""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):

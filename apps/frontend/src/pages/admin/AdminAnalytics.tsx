@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import AdminLayout from '@/components/admin/AdminLayout';
+import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -202,7 +202,7 @@ const AdminAnalytics: React.FC = () => {
   );
 
   return (
-    <AdminLayout>
+    <AdminLayoutV2>
       <div className="w-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -273,7 +273,7 @@ const AdminAnalytics: React.FC = () => {
 
           <TabsContent value="overview" className="space-y-6">
             {/* Key Metrics */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {isLoading ? (
                 <>
                   {[...Array(8)].map((_, i) => (
@@ -462,7 +462,7 @@ const AdminAnalytics: React.FC = () => {
 
           <TabsContent value="performance" className="space-y-6">
             {/* System Performance Metrics */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">API Response Time</CardTitle>
@@ -521,7 +521,7 @@ const AdminAnalytics: React.FC = () => {
           </TabsContent>
         </Tabs>
       </div>
-    </AdminLayout>
+    </AdminLayoutV2>
   );
 };
 

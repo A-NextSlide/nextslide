@@ -613,6 +613,57 @@ class AdminApi {
       throw error;
     }
   }
+
+  async uploadBrandFont(
+    brandId: string,
+    fontName: string,
+    variant: string,
+    file: File
+  ): Promise<{ success: boolean; message: string; font: any }> {
+    try {
+      const formData = new FormData();
+      formData.append('font_name', fontName);
+      formData.append('variant', variant);
+      formData.append('file', file);
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/brands/${brandId}/fonts/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error uploading brand font:', error);
+      throw error;
+    }
+  }
+
+  async deleteBrandFont(
+    brandId: string,
+    fontName: string,
+    variant: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const encodedFontName = encodeURIComponent(fontName);
+      const encodedVariant = encodeURIComponent(variant);
+      const response = await this.request<any>(
+        `/admin/brands/${brandId}/fonts/${encodedFontName}/${encodedVariant}`,
+        { method: 'DELETE' }
+      );
+
+      return response;
+    } catch (error) {
+      console.error('Error deleting brand font:', error);
+      throw error;
+    }
+  }
 }
 
 export interface Brand {

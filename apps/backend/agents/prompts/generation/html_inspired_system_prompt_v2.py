@@ -1285,15 +1285,16 @@ def get_mode_specific_guidance(mode: str) -> str:
 
 **FOCUS:**
 • Data-rich, structured layouts with tight spacing
-• Charts on 60-80% of content slides
-• Multiple charts per slide when comparing metrics
-• Grid-based organization
+• Charts on 40-50% of content slides (ONLY when data is essential!)
+• Grid-based organization with clean sections
+• Tabular data uses Tables, not Charts
 
 **CHARTS:**
+• Use ONLY when visualization is clearly superior to text/table
 • Single: 500-650px width, adaptive height (typically 450-600px)
-• Multiple: 2-3 charts side-by-side, each 500-600px wide
 • Titles: 22-24pt, {{text}}, positioned 36px above
 • Data density: 12-20+ points, multi-series comparisons
+• AVOID: Simple comparisons (use text instead), lists (use bullets)
 
 **LAYOUT:**
 • Tight gaps: 24-32px between elements
@@ -1308,15 +1309,15 @@ def get_mode_specific_guidance(mode: str) -> str:
 
 **RESTRICTIONS:**
 • Icons: 0-2 max per slide
-• Images: Minimal, only when essential
+• Images: Only when essential for context
 • No decorative shapes"""
     else:
         return """PRESENTATION MODE - "Design-First Storytelling"
 
 **FOCUS:**
 • Bold visual hierarchy with dramatic typography
-• Strategic image usage (30-40% of slides)
-• Minimal charts (20-30% density, high-impact only)
+• Image-driven design (50-70% of slides should have images, NOT charts!)
+• RARE charts (10-20% density, exceptional data stories ONLY)
 • Creative layouts with generous whitespace
 
 **TYPOGRAPHY:**
@@ -1327,31 +1328,42 @@ def get_mode_specific_guidance(mode: str) -> str:
 • Generous gaps: 60-80px
 
 **IMAGES:**
+• PRIMARY visual element - think of images FIRST, charts LAST
 • Large feature images: 800-1200px
 • Creative treatments: borderRadius, opacity, layering
-• Only when they add value (teaching, showcasing, impact)
+• Use for: storytelling, context, emotional impact, examples
+• searchQuery should be specific to the slide content
 
 **CHARTS:**
-• Sparingly: 1-2 key data slides max
+• EXTREMELY RARE: Only 1-2 slides in entire deck should have charts
+• Use ONLY when: Time-series trends, large datasets (15+ points), multi-dimensional data
+• NEVER use for: Simple comparisons, lists, feature descriptions, educational concepts
 • Single chart: 700-850px wide, 500-650px tall
 • Titles: 28-32pt, bold, positioned 40-50px above
-• Focus on story, not exhaustive data
+
+**CHART ALTERNATIVES (USE THESE INSTEAD):**
+• Simple stats → Bold text with icons/shapes
+• Comparisons → Side-by-side text sections with images
+• Lists → Clean bullets with section headers and images
+• Process/timeline → CustomComponent or Icons + Lines
 
 **TEXT:**
 • Break content into separate blocks with different fonts/sizes
 • Highlight key numbers: bold + {{accent}} + backgroundColor
 • Bucket horizontally/vertically for 2-5 items
+• Keep it CONCISE - slides should be readable in 5 seconds
 
 **CREATIVITY:**
-• Use CustomComponent for unique visualizations
+• Use CustomComponent for unique visualizations (dashboards, timelines, comparisons)
 • Layer elements with zIndex
 • Vary opacity for depth (0.3-1.0)
 • Mix font families for character
 
 **RESTRICTIONS:**
-• Icons: 0-1 per slide
+• Icons: 0-1 per slide (semantic meaning only)
 • No decorative shapes
-• No busy layouts"""
+• No busy layouts
+• Charts are the EXCEPTION, not the rule"""
 
 
 def get_title_slide_guidance() -> str:

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Palette, Trash2, Edit, Save, X, CheckCircle, XCircle, Plus, Code } from 'lucide-react';
+import { Search, Palette, Trash2, Edit, Save, X, CheckCircle, XCircle, Plus, Code, Upload, Download, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const AdminBrands: React.FC = () => {
@@ -26,6 +26,10 @@ const AdminBrands: React.FC = () => {
   const [editedFonts, setEditedFonts] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Brand | null>(null);
+  const [uploadingBrand, setUploadingBrand] = useState<Brand | null>(null);
+  const [fontFiles, setFontFiles] = useState<File[]>([]);
+  const [fontFamilyName, setFontFamilyName] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const pageSize = 50;
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -210,6 +214,98 @@ const AdminBrands: React.FC = () => {
     return fonts;
   };
 
+  const getUploadedFontFiles = (brand: Brand): Array<{ name: string; variants: Record<string, string> }> => {
+    const apiResponse = brand.api_response;
+    return apiResponse?.fonts?.files || [];
+  };
+
+  const hasUploadedFonts = (brand: Brand): boolean => {
+    const files = getUploadedFontFiles(brand);
+    return files.length > 0 && Object.keys(files[0]?.variants || {}).length > 0;
+  };
+
+  const detectVariantFromFilename = (filename: string): string => {
+    const lower = filename.toLowerCase();
+
+    // Check for combined variants first
+    if (lower.includes('bolditalic') || lower.includes('bold-italic') || lower.includes('bold_italic')) {
+      return 'bold-italic';
+    }
+
+    // Then check for individual variants
+    if (lower.includes('bold') || lower.includes('bd')) return 'bold';
+    if (lower.includes('italic') || lower.includes('it') || lower.includes('oblique')) return 'italic';
+    if (lower.includes('light') || lower.includes('lt')) return 'light';
+    if (lower.includes('thin')) return 'thin';
+    if (lower.includes('medium') || lower.includes('md')) return 'medium';
+    if (lower.includes('semibold') || lower.includes('semi-bold')) return 'semibold';
+    if (lower.includes('extrabold') || lower.includes('extra-bold')) return 'extrabold';
+    if (lower.includes('black')) return 'black';
+    if (lower.includes('regular') || lower.includes('normal') || lower.includes('book')) return 'regular';
+
+    // Default to regular if no variant detected
+    return 'regular';
+  };
+
+  const handleFontUpload = async () => {
+    if (!uploadingBrand || fontFiles.length === 0 || !fontFamilyName.trim()) {
+      alert('Please provide font family name and select files');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      let successCount = 0;
+      for (const file of fontFiles) {
+        const variant = detectVariantFromFilename(file.name);
+        try {
+          await adminApi.uploadBrandFont(uploadingBrand.id, fontFamilyName, variant, file);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to upload ${file.name}:`, error);
+        }
+      }
+
+      alert(`Successfully uploaded ${successCount} of ${fontFiles.length} font files`);
+      setUploadingBrand(null);
+      setFontFiles([]);
+      setFontFamilyName('');
+      loadBrands(1);
+    } catch (error) {
+      console.error('Error uploading fonts:', error);
+      alert('Error uploading fonts');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteFontVariant = async (brand: Brand, fontName: string, variant: string) => {
+    if (!confirm(`Delete ${fontName} - ${variant}?`)) return;
+
+    try {
+      await adminApi.deleteBrandFont(brand.id, fontName, variant);
+      // Update local state
+      setBrands(prev => prev.map(b => {
+        if (b.id === brand.id) {
+          const updated = { ...b };
+          const files = updated.api_response?.fonts?.files || [];
+          const fontEntry = files.find((f: any) => f.name === fontName);
+          if (fontEntry?.variants) {
+            delete fontEntry.variants[variant];
+            if (Object.keys(fontEntry.variants).length === 0) {
+              updated.api_response.fonts.files = files.filter((f: any) => f.name !== fontName);
+            }
+          }
+          return updated;
+        }
+        return b;
+      }));
+    } catch (error) {
+      console.error('Error deleting font variant:', error);
+      alert('Error deleting font variant');
+    }
+  };
+
   return (
     <AdminLayoutV2>
       <div className="space-y-6">
@@ -242,12 +338,12 @@ const AdminBrands: React.FC = () => {
         </div>
 
         {/* Brands Table */}
-        <Card>
+        <Card className="overflow-hidden">
           <ScrollArea className="h-[calc(100vh-280px)]" onScrollCapture={handleScroll}>
-            <div className="min-w-full">
+            <div className="min-w-[1000px]">
               {/* Header */}
               <div className="sticky top-0 z-10 bg-muted/50 backdrop-blur border-b">
-                <div className="grid grid-cols-[200px_150px_1fr_200px_120px_100px] gap-4 px-4 py-3 text-sm font-semibold">
+                <div className="grid grid-cols-[minmax(180px,200px)_minmax(130px,150px)_minmax(200px,1fr)_minmax(180px,200px)_minmax(100px,120px)_100px] gap-4 px-4 py-3 text-sm font-semibold">
                   <div>Brand</div>
                   <div>Domain</div>
                   <div>Colors</div>
@@ -277,7 +373,7 @@ const AdminBrands: React.FC = () => {
                     return (
                       <div
                         key={brand.id}
-                        className="grid grid-cols-[200px_150px_1fr_200px_120px_100px] gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
+                        className="grid grid-cols-[minmax(180px,200px)_minmax(130px,150px)_minmax(200px,1fr)_minmax(180px,200px)_minmax(100px,120px)_100px] gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
                       >
                         {/* Brand Name */}
                         <div className="flex items-center gap-2">
@@ -320,23 +416,61 @@ const AdminBrands: React.FC = () => {
                         </div>
 
                         {/* Fonts */}
-                        <div className="flex flex-wrap gap-1">
-                          {fonts.length > 0 ? (
-                            <>
-                              {fonts.slice(0, 2).map((font, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">
-                                  {font}
-                                </Badge>
-                              ))}
-                              {fonts.length > 2 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{fonts.length - 2}
-                                </Badge>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No fonts</span>
-                          )}
+                        <div className="space-y-1">
+                          {(() => {
+                            const uploadedFonts = getUploadedFontFiles(brand);
+                            const fontNames = getFonts(brand);
+
+                            if (uploadedFonts.length > 0) {
+                              return (
+                                <div className="space-y-1">
+                                  {uploadedFonts.map((font, idx) => (
+                                    <div key={idx} className="flex items-center gap-1">
+                                      <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/20 border border-green-300 dark:border-green-700">
+                                        <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
+                                        <span className="text-xs font-medium text-green-900 dark:text-green-100">
+                                          {font.name}
+                                        </span>
+                                      </div>
+                                      <Badge variant="outline" className="text-xs">
+                                        {Object.keys(font.variants).length} files
+                                      </Badge>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            } else if (fontNames.length > 0) {
+                              return (
+                                <div className="space-y-1">
+                                  {fontNames.slice(0, 2).map((fontName, idx) => (
+                                    <div key={idx} className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
+                                      <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                      <span className="text-xs font-medium text-amber-900 dark:text-amber-100">
+                                        {fontName}
+                                      </span>
+                                      <span className="text-xs text-amber-600 dark:text-amber-400">
+                                        (no files)
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {fontNames.length > 2 && (
+                                    <span className="text-xs text-muted-foreground">
+                                      +{fontNames.length - 2} more
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                  <XCircle className="h-3 w-3 text-gray-400" />
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 italic">
+                                    No fonts defined
+                                  </span>
+                                </div>
+                              );
+                            }
+                          })()}
                         </div>
 
                         {/* Usage Stats */}
@@ -350,8 +484,21 @@ const AdminBrands: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => {
+                              setUploadingBrand(brand);
+                              setFontFamilyName(brand.api_response?.brand_name || '');
+                            }}
+                            className="h-8 px-2"
+                            title="Upload fonts"
+                          >
+                            <Upload className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleEdit(brand)}
                             className="h-8 px-2"
+                            title="Edit brand"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
@@ -364,6 +511,7 @@ const AdminBrands: React.FC = () => {
                               setDeleteConfirm(brand);
                             }}
                             className="h-8 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="Delete brand"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -470,8 +618,7 @@ const AdminBrands: React.FC = () => {
                             value={font}
                             onChange={(e) => handleFontChange(index, e.target.value)}
                             placeholder="Font name"
-                            className="flex-1"
-                            style={{ fontFamily: font }}
+                            className="flex-1 font-mono"
                           />
                           <Button
                             size="sm"
@@ -556,6 +703,156 @@ const AdminBrands: React.FC = () => {
               onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Font Upload Dialog */}
+      <Dialog open={!!uploadingBrand} onOpenChange={() => {
+        setUploadingBrand(null);
+        setFontFiles([]);
+        setFontFamilyName('');
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Upload Brand Fonts</DialogTitle>
+            <DialogDescription>
+              Upload font files for {uploadingBrand?.api_response?.brand_name || uploadingBrand?.identifier}.
+              Select multiple files for batch upload - variants will be auto-detected.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Font Family Name */}
+            <div>
+              <Label htmlFor="font-family-name">Font Family Name</Label>
+              <Input
+                id="font-family-name"
+                value={fontFamilyName}
+                onChange={(e) => setFontFamilyName(e.target.value)}
+                placeholder="e.g., Proxima Nova"
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                The name of the font family (all variants should share this name)
+              </p>
+            </div>
+
+            {/* File Upload */}
+            <div>
+              <Label>Font Files</Label>
+              <div
+                className="mt-1 border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-gray-400 transition-colors cursor-pointer"
+                onClick={() => document.getElementById('font-file-input')?.click()}
+              >
+                <input
+                  id="font-file-input"
+                  type="file"
+                  multiple
+                  accept=".ttf,.otf,.woff,.woff2"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setFontFiles(Array.from(e.target.files));
+                    }
+                  }}
+                />
+                <div className="text-center">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                  <p className="mt-2 text-sm font-medium">
+                    {fontFiles.length > 0
+                      ? `${fontFiles.length} file(s) selected`
+                      : 'Click to select font files or drag and drop'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    TTF, OTF, WOFF, WOFF2 up to 10MB each
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* File List with Auto-Detected Variants */}
+            {fontFiles.length > 0 && (
+              <div>
+                <Label>Selected Files & Detected Variants</Label>
+                <ScrollArea className="h-48 border rounded-md mt-1">
+                  <div className="p-2 space-y-1">
+                    {fontFiles.map((file, idx) => {
+                      const variant = detectVariantFromFilename(file.name);
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{file.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(0)} KB
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className="ml-2">
+                            {variant}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-2 h-6 w-6 p-0"
+                            onClick={() => setFontFiles(prev => prev.filter((_, i) => i !== idx))}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Existing Uploaded Fonts */}
+            {uploadingBrand && getUploadedFontFiles(uploadingBrand).length > 0 && (
+              <div>
+                <Label>Currently Uploaded Fonts</Label>
+                <div className="mt-1 space-y-2">
+                  {getUploadedFontFiles(uploadingBrand).map((font, idx) => (
+                    <div key={idx} className="border rounded p-2">
+                      <div className="font-medium text-sm mb-2">{font.name}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(font.variants).map(([variant, url]) => (
+                          <div key={variant} className="flex items-center gap-1">
+                            <Badge variant="outline" className="text-xs">
+                              {variant}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 text-red-500 hover:text-red-700"
+                              onClick={() => handleDeleteFontVariant(uploadingBrand, font.name, variant)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUploadingBrand(null);
+                setFontFiles([]);
+                setFontFamilyName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleFontUpload} disabled={uploading || fontFiles.length === 0 || !fontFamilyName.trim()}>
+              <Upload className="h-4 w-4 mr-2" />
+              {uploading ? `Uploading ${fontFiles.length} file(s)...` : 'Upload Fonts'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AdminLayout from '@/components/admin/AdminLayout';
+import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -223,10 +223,10 @@ const AdminUsersV2: React.FC = () => {
   );
 
   return (
-    <AdminLayout>
+    <AdminLayoutV2>
       <div className="space-y-6 w-full">
         {/* Stats Cards */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 w-full">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -518,7 +518,7 @@ const AdminUsersV2: React.FC = () => {
           </CardContent>
         </Card>
       </div>
-    </AdminLayout>
+    </AdminLayoutV2>
   );
 };
 

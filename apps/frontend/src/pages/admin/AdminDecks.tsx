@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import AdminLayout from '@/components/admin/AdminLayout';
+import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -347,7 +347,7 @@ const AdminDecks: React.FC = () => {
   );
 
   return (
-    <AdminLayout>
+    <AdminLayoutV2>
       <div className="w-full">
         {/* Header */}
         <div className="mb-8 w-full">
@@ -409,7 +409,7 @@ const AdminDecks: React.FC = () => {
           <CardContent className="p-6 w-full">
             {isLoading && !isTransitioning ? (
               viewMode === 'grid' ? (
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 w-full">
+                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {[...Array(24)].map((_, i) => (
                     <Card key={i} className="overflow-hidden h-full">
                       <Skeleton className="aspect-video w-full" />
@@ -471,7 +471,7 @@ const AdminDecks: React.FC = () => {
                 isTransitioning ? "opacity-50" : "opacity-100"
               )}>
                 {viewMode === 'grid' ? (
-                  <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 w-full">
+                  <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {decks.map((deck, index) => (
                       <DeckGridItem key={deck.id} deck={deck} index={index} />
                     ))}
@@ -576,7 +576,7 @@ const AdminDecks: React.FC = () => {
           onNavigate={setPreviewDeckIndex}
         />
       </div>
-    </AdminLayout>
+    </AdminLayoutV2>
   );
 };
 

@@ -34,6 +34,7 @@ class ThemeSpec:
     background_variations: List[Dict[str, Any]] = field(default_factory=list)
     slide_templates: Dict[str, Any] = field(default_factory=dict)
     design_rules: Dict[str, Any] = field(default_factory=dict)
+    slide_themes: Dict[str, Any] = field(default_factory=dict)  # LayoutArchitect blueprints
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ThemeSpec':
@@ -49,7 +50,8 @@ class ThemeSpec:
             visual_style=data.get('visual_style', {}),
             background_variations=data.get('background_variations', []),
             slide_templates=data.get('slide_templates', {}),
-            design_rules=data.get('design_rules', {})
+            design_rules=data.get('design_rules', {}),
+            slide_themes=data.get('slide_themes', {})
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -65,7 +67,8 @@ class ThemeSpec:
             'visual_style': self.visual_style,
             'background_variations': self.background_variations,
             'slide_templates': self.slide_templates,
-            'design_rules': self.design_rules
+            'design_rules': self.design_rules,
+            'slide_themes': self.slide_themes
         }
 
 

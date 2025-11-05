@@ -383,10 +383,10 @@ class SlidePromptBuilder:
 
     def _add_theme_structural_guidance(self, sections: List[str], context: SlideGenerationContext) -> None:
         """Add structural guidance based on theme instructions."""
-        
+
         # Get slide-specific structure from theme
         slide_structure = self._get_slide_structure_from_theme(context)
-        
+
         if not slide_structure:
             # Fallback for title slides
             if getattr(context, 'is_title_slide', False):
@@ -407,6 +407,11 @@ class SlidePromptBuilder:
                 ])
             except Exception:
                 pass
+            return
+
+        # Check if this is a LayoutArchitect blueprint (new format)
+        if 'components' in slide_structure and 'layout_reasoning' in slide_structure:
+            self._add_layout_architect_blueprint(sections, slide_structure, context)
             return
         
         slide_type = slide_structure.get('slide_type', 'content')
@@ -550,9 +555,104 @@ class SlidePromptBuilder:
         except Exception:
             pass
     
+    def _add_layout_architect_blueprint(self, sections: List[str], blueprint: Dict[str, Any], context: SlideGenerationContext) -> None:
+        """Add layout instructions from LayoutArchitect blueprint."""
+
+        sections.append("\n" + "="*80)
+        sections.append("🎨 EDITORIAL LAYOUT BLUEPRINT (Follow this EXACT design)")
+        sections.append("="*80)
+
+        # Add layout reasoning
+        reasoning = blueprint.get('layout_reasoning', 'Professional editorial layout')
+        sections.append(f"\n📐 DESIGN CONCEPT:")
+        sections.append(f"   {reasoning}")
+
+        # Add component instructions
+        components = blueprint.get('components', [])
+        if components:
+            sections.append(f"\n🔧 REQUIRED COMPONENTS ({len(components)} total):")
+            sections.append("   You MUST implement these components with the EXACT specifications below.\n")
+
+            for i, comp in enumerate(components, 1):
+                comp_type = comp.get('type', 'Unknown')
+                comp_id = comp.get('id', f'comp-{i}')
+                props = comp.get('props', {})
+                z_index = comp.get('zIndex', i)
+
+                sections.append(f"\n   [{i}] {comp_type} (id: {comp_id}, zIndex: {z_index})")
+
+                # Format properties based on component type
+                if comp_type == 'Background':
+                    if 'gradient' in props:
+                        grad = props['gradient']
+                        sections.append(f"      - gradient: type={grad.get('type')}, angle={grad.get('angle')}°")
+                        sections.append(f"      - colors: {grad.get('colors')}")
+                    elif 'color' in props:
+                        sections.append(f"      - color: {props['color']}")
+                    if 'image' in props:
+                        sections.append(f"      - image: {props['image']}")
+
+                elif comp_type == 'TiptapTextBlock':
+                    sections.append(f"      - Position: x={props.get('x')}, y={props.get('y')}")
+                    sections.append(f"      - Size: width={props.get('width')}, height={props.get('height')}")
+                    sections.append(f"      - Font: {props.get('fontFamily', 'inherit')}, {props.get('fontSize')}pt, weight={props.get('fontWeight', '400')}")
+                    sections.append(f"      - Color: {props.get('color', 'inherit')}")
+                    if 'textAlign' in props:
+                        sections.append(f"      - Alignment: {props['textAlign']}")
+                    if 'content' in props:
+                        # Show template content
+                        content_preview = props['content'][:100] if len(props['content']) > 100 else props['content']
+                        sections.append(f"      - Content template: {content_preview}...")
+
+                elif comp_type == 'Image':
+                    sections.append(f"      - Position: x={props.get('x')}, y={props.get('y')}")
+                    sections.append(f"      - Size: width={props.get('width')}, height={props.get('height')}")
+                    if 'borderRadius' in props:
+                        sections.append(f"      - Border radius: {props['borderRadius']}px")
+                    sections.append(f"      - Object fit: {props.get('objectFit', 'cover')}")
+                    if props.get('alt'):
+                        sections.append(f"      - Alt: {props['alt']}")
+
+                elif comp_type == 'Shape':
+                    sections.append(f"      - Position: x={props.get('x')}, y={props.get('y')}")
+                    sections.append(f"      - Size: width={props.get('width')}, height={props.get('height')}")
+                    if 'fill' in props:
+                        sections.append(f"      - Fill: {props['fill']}")
+                    if 'stroke' in props:
+                        sections.append(f"      - Stroke: {props['stroke']}, width={props.get('strokeWidth', 1)}px")
+                    if 'borderRadius' in props:
+                        sections.append(f"      - Border radius: {props['borderRadius']}px")
+                    if 'opacity' in props:
+                        sections.append(f"      - Opacity: {props['opacity']}")
+
+                elif comp_type == 'Chart':
+                    sections.append(f"      - Position: x={props.get('x')}, y={props.get('y')}")
+                    sections.append(f"      - Size: width={props.get('width')}, height={props.get('height')}")
+                    sections.append(f"      - Type: {props.get('type', 'bar')}")
+                    sections.append(f"      - Show legend: {props.get('showLegend', False)}")
+                    if 'colors' in props:
+                        sections.append(f"      - Colors: {props['colors']}")
+
+                elif comp_type == 'CustomComponent':
+                    sections.append(f"      - Position: x={props.get('x')}, y={props.get('y')}")
+                    sections.append(f"      - Size: width={props.get('width')}, height={props.get('height')}")
+                    sections.append(f"      - Variant: {props.get('variant', 'default')}")
+                    if 'data' in props:
+                        sections.append(f"      - Data: {props['data']}")
+
+                elif comp_type == 'Lines':
+                    sections.append(f"      - Start: x={props.get('x1')}, y={props.get('y1')}")
+                    sections.append(f"      - End: x={props.get('x2')}, y={props.get('y2')}")
+                    sections.append(f"      - Stroke: {props.get('stroke', '#000')}, width={props.get('strokeWidth', 2)}px")
+
+        sections.append("\n" + "="*80)
+        sections.append("⚠️  CRITICAL: Follow this blueprint EXACTLY - positions, sizes, and styling.")
+        sections.append("    Only modify content text to match the slide's actual data.")
+        sections.append("="*80 + "\n")
+
     def _get_slide_structure_from_theme(self, context: SlideGenerationContext) -> Optional[Dict[str, Any]]:
         """Extract slide structure instructions from theme."""
-        
+
         try:
             # Get theme document
             theme = context.theme
@@ -561,22 +661,37 @@ class SlidePromptBuilder:
             elif isinstance(theme, dict):
                 slide_themes = theme.get('slide_themes', {})
             else:
+                print(f"⚠️  No slide_themes in theme for slide {context.slide_index}")
                 return None
-            
+
+            print(f"🔍 Looking for blueprints for slide {context.slide_index}")
+            print(f"   Available slide_theme keys: {list(slide_themes.keys()) if slide_themes else 'None'}")
+
             # Find structure for current slide
-            slide_id = getattr(context.slide_outline, 'id', str(context.slide_index))
-            
+            slide_id = getattr(context.slide_outline, 'id', f"slide-{context.slide_index}")
+
+            # Check if we have a LayoutArchitect blueprint (new format)
             if slide_id in slide_themes:
-                return slide_themes[slide_id].get('structure')
-            
+                blueprint = slide_themes[slide_id]
+                # Check if this is a LayoutArchitect blueprint (has 'components' and 'layout_reasoning')
+                if isinstance(blueprint, dict) and 'components' in blueprint:
+                    return blueprint  # Return the entire blueprint
+                # Otherwise, try legacy format
+                elif isinstance(blueprint, dict) and 'structure' in blueprint:
+                    return blueprint.get('structure')
+
             # Fallback to index-based lookup
             slide_index_str = str(context.slide_index)
             if slide_index_str in slide_themes:
-                return slide_themes[slide_index_str].get('structure')
-            
+                blueprint = slide_themes[slide_index_str]
+                if isinstance(blueprint, dict) and 'components' in blueprint:
+                    return blueprint
+                elif isinstance(blueprint, dict) and 'structure' in blueprint:
+                    return blueprint.get('structure')
+
         except Exception as e:
             logger.warning(f"Failed to get slide structure from theme: {e}")
-        
+
         return None
 
     

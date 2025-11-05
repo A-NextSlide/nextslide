@@ -1295,7 +1295,68 @@ class SimpleDeckComposer(IDeckComposer):
             logger.info(f"  - Theme name: {theme_dict.get('theme_name', 'Unknown')}")
             if 'color_palette' in theme_dict:
                 logger.info(f"  - Primary color: {theme_dict['color_palette'].get('primary', 'Not set')}")
-            
+
+            # Generate editorial layouts using LayoutArchitect
+            print("\n" + "="*80)
+            print("🎨 LAYOUT ARCHITECT V2 - Starting...")
+            print("="*80 + "\n")
+            logger.info("[DECK COMPOSER] Generating editorial layouts with LayoutArchitect...")
+            try:
+                from agents.generation.layout_architect import LayoutArchitect
+                from agents.prompts.generation.optimized_component_schemas import get_optimized_component_schemas
+
+                print("✅ LayoutArchitect imported successfully")
+
+                # Initialize LayoutArchitect
+                component_schemas = get_optimized_component_schemas()
+                layout_architect = LayoutArchitect(component_schemas=component_schemas)
+                print(f"✅ LayoutArchitect initialized with {len(component_schemas)} component schemas")
+
+                # Generate per-slide layouts
+                print(f"🎨 Designing layouts for {len(deck_outline.slides)} slides...")
+                slide_blueprints = await layout_architect.design_layouts(
+                    deck_outline=deck_outline,
+                    existing_theme=theme_dict,
+                    progress_callback=lambda phase, msg: print(f"[LAYOUT ARCHITECT] {phase}: {msg}")
+                )
+
+                print(f"✅ Generated {len(slide_blueprints)} layout blueprints")
+
+                # Store blueprints in theme for access by SlidePromptBuilder
+                if isinstance(theme, ThemeSpec):
+                    if not hasattr(theme, 'slide_themes'):
+                        theme.slide_themes = {}
+                    theme.slide_themes = slide_blueprints
+                    logger.info(f"[DECK COMPOSER] ✅ Added {len(slide_blueprints)} layout blueprints to ThemeSpec")
+                    print(f"✅ Stored blueprints in ThemeSpec.slide_themes")
+
+                # Also add to theme_dict for serialization
+                theme_dict['slide_themes'] = slide_blueprints
+                print(f"✅ Stored blueprints in theme_dict")
+
+                print("\n" + "="*80)
+                print(f"🎉 LAYOUT ARCHITECT COMPLETE - {len(slide_blueprints)} slides designed!")
+                print("="*80 + "\n")
+
+                yield {
+                    "type": "progress",
+                    "data": {
+                        "phase": "layout_design",
+                        "progress": 35,
+                        "message": f"Designed layouts for {len(slide_blueprints)} slides",
+                        "substep": "layouts_complete"
+                    }
+                }
+            except Exception as e:
+                print(f"\n❌ ERROR in LayoutArchitect: {e}")
+                logger.error(f"[DECK COMPOSER] Error generating layouts: {e}")
+                import traceback
+                error_trace = traceback.format_exc()
+                print(error_trace)
+                logger.error(f"Traceback: {error_trace}")
+                print("⚠️  Continuing without layouts - will use default system\n")
+                # Continue without layouts - generation will use defaults
+
             # Process tagged media to upload base64 images to Supabase
             # Check if any media needs processing
             needs_media_processing = False
