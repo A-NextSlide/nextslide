@@ -15,10 +15,10 @@ import { cn } from '@/lib/utils';
 
 const AdminBrands: React.FC = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [editedData, setEditedData] = useState<string>('');
@@ -27,27 +27,49 @@ const AdminBrands: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Brand | null>(null);
 
-  const pageSize = 20;
+  const pageSize = 50;
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadBrands();
-  }, [currentPage, searchQuery]);
+    // Reset when search changes
+    setBrands([]);
+    setCurrentPage(1);
+    setHasMore(true);
+    loadBrands(1);
+  }, [searchQuery]);
 
-  const loadBrands = async () => {
+  const loadBrands = async (page: number = currentPage) => {
+    if (loading) return;
+
     setLoading(true);
     try {
       const response = await adminApi.getBrands({
-        page: currentPage,
+        page,
         limit: pageSize,
         search: searchQuery || undefined,
       });
-      setBrands(response.brands);
-      setTotalPages(response.totalPages);
+
+      if (page === 1) {
+        setBrands(response.brands);
+      } else {
+        setBrands(prev => [...prev, ...response.brands]);
+      }
+
       setTotal(response.total);
+      setHasMore(response.brands.length === pageSize);
     } catch (error) {
       console.error('Error loading brands:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop <= clientHeight * 1.5 && hasMore && !loading) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      loadBrands(nextPage);
     }
   };
 
@@ -118,7 +140,9 @@ const AdminBrands: React.FC = () => {
     try {
       await adminApi.deleteBrand(brand.id);
       setDeleteConfirm(null);
-      loadBrands();
+      // Remove from local state instead of reloading
+      setBrands(prev => prev.filter(b => b.id !== brand.id));
+      setTotal(prev => prev - 1);
     } catch (error) {
       console.error('Error deleting brand:', error);
       alert('Error deleting brand');
@@ -211,175 +235,154 @@ const AdminBrands: React.FC = () => {
             <Input
               placeholder="Search brands by name or domain..."
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
         </div>
 
-        {/* Brands Grid */}
-        {loading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <CardHeader>
-                  <div className="h-6 bg-gray-200 rounded w-3/4" />
-                  <div className="h-4 bg-gray-200 rounded w-1/2 mt-2" />
-                </CardHeader>
-                <CardContent>
-                  <div className="h-16 bg-gray-200 rounded" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : brands.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Palette className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold">No brands found</h3>
-              <p className="text-sm text-muted-foreground">
-                {searchQuery ? 'Try adjusting your search query' : 'No brands cached yet'}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {brands.map((brand) => {
-                const colors = getColorArray(brand);
-                const fonts = getFonts(brand);
-                const brandName = brand.api_response?.brand_name || brand.identifier;
-                const domain = brand.api_response?.domain || brand.normalized_identifier;
+        {/* Brands Table */}
+        <Card>
+          <ScrollArea className="h-[calc(100vh-280px)]" onScrollCapture={handleScroll}>
+            <div className="min-w-full">
+              {/* Header */}
+              <div className="sticky top-0 z-10 bg-muted/50 backdrop-blur border-b">
+                <div className="grid grid-cols-[200px_150px_1fr_200px_120px_100px] gap-4 px-4 py-3 text-sm font-semibold">
+                  <div>Brand</div>
+                  <div>Domain</div>
+                  <div>Colors</div>
+                  <div>Fonts</div>
+                  <div>Usage</div>
+                  <div className="text-right">Actions</div>
+                </div>
+              </div>
 
-                return (
-                  <Card key={brand.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <CardTitle className="text-lg truncate">{brandName}</CardTitle>
-                          <CardDescription className="text-xs truncate">{domain}</CardDescription>
+              {/* Rows */}
+              <div className="divide-y">
+                {brands.length === 0 && !loading ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Palette className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold">No brands found</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {searchQuery ? 'Try adjusting your search query' : 'No brands cached yet'}
+                    </p>
+                  </div>
+                ) : (
+                  brands.map((brand) => {
+                    const colors = getColorArray(brand);
+                    const fonts = getFonts(brand);
+                    const brandName = brand.api_response?.brand_name || brand.identifier;
+                    const domain = brand.api_response?.domain || brand.normalized_identifier;
+
+                    return (
+                      <div
+                        key={brand.id}
+                        className="grid grid-cols-[200px_150px_1fr_200px_120px_100px] gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
+                      >
+                        {/* Brand Name */}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{brandName}</div>
+                            <Badge variant={brand.success ? 'outline' : 'destructive'} className="text-xs mt-1">
+                              {brand.success ? (
+                                <CheckCircle className="h-2 w-2 mr-1" />
+                              ) : (
+                                <XCircle className="h-2 w-2 mr-1" />
+                              )}
+                              {brand.success ? 'Active' : 'Failed'}
+                            </Badge>
+                          </div>
                         </div>
-                        <Badge variant={brand.success ? 'default' : 'destructive'} className="ml-2">
-                          {brand.success ? (
-                            <CheckCircle className="h-3 w-3" />
-                          ) : (
-                            <XCircle className="h-3 w-3" />
-                          )}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Color Palette */}
-                      {colors.length > 0 && (
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-2 block">
-                            Colors ({colors.length})
-                          </Label>
-                          <div className="flex flex-wrap gap-2">
-                            {colors.map((color, idx) => (
+
+                        {/* Domain */}
+                        <div className="text-sm text-muted-foreground truncate" title={domain}>
+                          {domain}
+                        </div>
+
+                        {/* Colors */}
+                        <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin py-1">
+                          {colors.length > 0 ? (
+                            colors.map((color, idx) => (
                               <div
                                 key={idx}
-                                className="group relative"
+                                className="group relative flex-shrink-0"
                                 title={color}
                               >
                                 <div
-                                  className="w-10 h-10 rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:scale-110 transition-transform"
+                                  className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:scale-125 transition-transform"
                                   style={{ backgroundColor: color }}
                                 />
-                                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                  <span className="text-xs bg-black text-white px-2 py-1 rounded whitespace-nowrap">
-                                    {color}
-                                  </span>
-                                </div>
                               </div>
-                            ))}
-                          </div>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No colors</span>
+                          )}
                         </div>
-                      )}
 
-                      {/* Fonts */}
-                      {fonts.length > 0 && (
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-2 block">
-                            Fonts ({fonts.length})
-                          </Label>
-                          <div className="flex flex-wrap gap-1">
-                            {fonts.slice(0, 3).map((font, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                {font}
-                              </Badge>
-                            ))}
-                            {fonts.length > 3 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{fonts.length - 3} more
-                              </Badge>
-                            )}
-                          </div>
+                        {/* Fonts */}
+                        <div className="flex flex-wrap gap-1">
+                          {fonts.length > 0 ? (
+                            <>
+                              {fonts.slice(0, 2).map((font, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">
+                                  {font}
+                                </Badge>
+                              ))}
+                              {fonts.length > 2 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{fonts.length - 2}
+                                </Badge>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No fonts</span>
+                          )}
                         </div>
-                      )}
 
-                      {/* Stats */}
-                      <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                        <span>Used {brand.hit_count} times</span>
-                        <span>
-                          {new Date(brand.last_accessed_at).toLocaleDateString()}
-                        </span>
+                        {/* Usage Stats */}
+                        <div className="text-xs text-muted-foreground">
+                          <div>{brand.hit_count} hits</div>
+                          <div>{new Date(brand.last_accessed_at).toLocaleDateString()}</div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(brand)}
+                            className="h-8 px-2"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDeleteConfirm(brand);
+                            }}
+                            className="h-8 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
+                    );
+                  })
+                )}
 
-                      {/* Actions */}
-                      <div className="flex gap-2 pt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleEdit(brand)}
-                        >
-                          <Edit className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteConfirm(brand)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-6">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </Button>
+                {/* Loading indicator */}
+                {loading && (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    Loading more brands...
+                  </div>
+                )}
               </div>
-            )}
-          </>
-        )}
+            </div>
+          </ScrollArea>
+        </Card>
       </div>
 
       {/* Edit Dialog */}

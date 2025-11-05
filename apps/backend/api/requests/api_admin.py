@@ -4,10 +4,11 @@ Admin API endpoints for the admin dashboard
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Depends, Query, Header, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Header, Request, UploadFile, File, Form
 from pydantic import BaseModel
 import jwt
 from services.supabase import get_supabase_client
+from services.brand_font_storage import BrandFontStorageService
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -1547,4 +1548,187 @@ async def delete_brand(
         raise
     except Exception as e:
         logger.error(f"Delete brand error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/brands/{brand_id}/fonts/upload")
+async def upload_brand_font(
+    brand_id: str,
+    request: Request,
+    font_name: str = Form(...),
+    variant: str = Form(...),
+    file: UploadFile = File(...),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Upload a font file for a brand
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Verify brand exists
+        brand_response = supabase.table("brandfetch_cache").select("*").eq("id", brand_id).execute()
+        if not brand_response.data:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+        brand = brand_response.data[0]
+
+        # Read file bytes
+        file_bytes = await file.read()
+
+        # Upload font using storage service
+        font_storage = BrandFontStorageService()
+        upload_result = await font_storage.upload_font_file(
+            brand_id=brand_id,
+            font_name=font_name,
+            variant=variant,
+            file_bytes=file_bytes,
+            filename=file.filename
+        )
+
+        # Update brand api_response with font file info
+        api_response = brand.get("api_response", {})
+        if not api_response.get("fonts"):
+            api_response["fonts"] = {"names": [], "files": []}
+
+        # Ensure fonts structure exists
+        if "files" not in api_response["fonts"]:
+            api_response["fonts"]["files"] = []
+
+        # Find or create font entry
+        font_entry = next(
+            (f for f in api_response["fonts"]["files"] if f["name"] == font_name),
+            None
+        )
+
+        if not font_entry:
+            font_entry = {
+                "name": font_name,
+                "variants": {},
+                "uploaded_at": datetime.utcnow().isoformat(),
+                "uploaded_by": admin["id"]
+            }
+            api_response["fonts"]["files"].append(font_entry)
+
+        # Add variant URL
+        font_entry["variants"][variant] = upload_result["url"]
+
+        # Add font name to names list if not present
+        if font_name not in api_response["fonts"].get("names", []):
+            if "names" not in api_response["fonts"]:
+                api_response["fonts"]["names"] = []
+            api_response["fonts"]["names"].append(font_name)
+
+        # Update brand in database
+        supabase.table("brandfetch_cache").update({
+            "api_response": api_response
+        }).eq("id", brand_id).execute()
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="upload_brand_font",
+            request=request,
+            details={
+                "brand_id": brand_id,
+                "font_name": font_name,
+                "variant": variant,
+                "file_size": len(file_bytes)
+            }
+        )
+
+        return {
+            "success": True,
+            "message": "Font uploaded successfully",
+            "font": {
+                "name": font_name,
+                "variant": variant,
+                "url": upload_result["url"],
+                "size": upload_result["size"]
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Upload brand font error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/brands/{brand_id}/fonts/{font_name}/{variant}")
+async def delete_brand_font(
+    brand_id: str,
+    font_name: str,
+    variant: str,
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Delete a specific font variant from a brand
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get brand
+        brand_response = supabase.table("brandfetch_cache").select("*").eq("id", brand_id).execute()
+        if not brand_response.data:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+        brand = brand_response.data[0]
+        api_response = brand.get("api_response", {})
+
+        # Find and remove font variant
+        fonts_files = api_response.get("fonts", {}).get("files", [])
+        font_entry = next((f for f in fonts_files if f["name"] == font_name), None)
+
+        if not font_entry or variant not in font_entry.get("variants", {}):
+            raise HTTPException(status_code=404, detail="Font variant not found")
+
+        # Delete from storage
+        font_storage = BrandFontStorageService()
+        safe_font_name = font_name.lower().replace(' ', '-').replace('_', '-')
+        safe_variant = variant.lower().replace(' ', '-')
+        file_path = f"fonts/brands/{brand_id}/{safe_font_name}-{safe_variant}"
+
+        # Try to delete with common extensions
+        deleted = False
+        for ext in ['.woff2', '.woff', '.ttf', '.otf']:
+            try:
+                await font_storage.delete_font_file(brand_id, file_path + ext)
+                deleted = True
+                break
+            except:
+                continue
+
+        # Remove variant from API response
+        del font_entry["variants"][variant]
+
+        # If no variants left, remove the font entry
+        if not font_entry["variants"]:
+            fonts_files.remove(font_entry)
+            # Also remove from names list
+            if "names" in api_response.get("fonts", {}) and font_name in api_response["fonts"]["names"]:
+                api_response["fonts"]["names"].remove(font_name)
+
+        # Update brand
+        supabase.table("brandfetch_cache").update({
+            "api_response": api_response
+        }).eq("id", brand_id).execute()
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="delete_brand_font",
+            request=request,
+            details={
+                "brand_id": brand_id,
+                "font_name": font_name,
+                "variant": variant
+            }
+        )
+
+        return {"success": True, "message": "Font variant deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete brand font error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
