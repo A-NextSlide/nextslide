@@ -6,7 +6,6 @@ import ssrDebugLogger from '@ssr/ssrDebugLogger';
 import '@/styles/chart.css';
 import UnifiedHighchartsRenderer from './UnifiedHighchartsRenderer';
 import { getDefaultData } from '@/types/DataTransformers';
-import { CustomComponentOptimizationService } from '@/services/CustomComponentOptimizationService';
 import { useChartAnimation } from '@/charts/hooks/useChartAnimation';
 
 const isBrowser = typeof window !== 'undefined';
@@ -135,10 +134,10 @@ const BaseChartRenderer: FC<ChartRendererProps> = ({
   });
   
   const themeObj = getChartTheme(chartProps.theme || 'light');
-  
-  // Get optimized styles if any
-  const optimizedStyles = CustomComponentOptimizationService.getOptimizedStyles(component);
-  
+
+  // No optimized styles needed - backend handles font sizing
+  const optimizedStyles = {};
+
   const containerStyle: React.CSSProperties = useMemo(
     () => ({
       width: '100%', 

@@ -895,7 +895,8 @@ def invoke(
                                 return return_value
                         else:
                             print(f"❌ No CITATIONS section found in Haiku response")
-                            print(f"Content preview: {content[:200]}")
+                            # Print full content to debug
+                            print(f"Full content:\n{content}")
                     
                 # Gemini-style
                 elif hasattr(freeform_client, 'models') and hasattr(freeform_client.models, 'generate_content'):

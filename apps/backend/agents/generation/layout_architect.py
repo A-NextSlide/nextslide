@@ -507,7 +507,7 @@ CRITICAL SPACING & ALIGNMENT RULES:
      * Top third or bottom third
      * Inset within content area with border frame
 
-9. CHARTS (GIVE THEM PROPER HEIGHT):
+9. CHARTS (GIVE THEM PROPER HEIGHT AND PROPER PLACEMENT):
    - Charts need MINIMUM height to be readable
    - Bar/Column charts: height >= 400px (better: 500-600px)
    - Line charts: height >= 400px
@@ -515,6 +515,8 @@ CRITICAL SPACING & ALIGNMENT RULES:
    - NO SHORT/SQUISHED CHARTS - they're unreadable
    - Chart position: give them prominent space (not squeezed in corners)
    - Leave 40px margin around charts for labels/legends
+   - CRITICAL: Charts MUST NOT overlap text blocks - check bounding boxes!
+   - Calculate chart bounds [x, y, x+width, y+height] and ensure no text is inside those bounds
 
 COMPONENT EXAMPLES WITH PROPER SPACING AND POSITIONING:
 
@@ -570,6 +572,8 @@ VALIDATION CHECKLIST (before finalizing - CHECK EVERYTHING):
 ✓ Images positioned purposefully (not overlapping text unless background)
 ✓ Charts have proper height (minimum 400px, better 500-600px)
 ✓ Charts are not squished or too short to read
+✓ **CRITICAL: Charts do NOT overlap any text blocks - verify bounding boxes!**
+✓ **Text must be fully readable and NOT covered by charts or other elements**
 
 Return ONLY JSON.
 """

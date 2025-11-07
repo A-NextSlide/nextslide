@@ -36,6 +36,9 @@ const Landing: React.FC = () => {
   // Bento grid hover states
   const [hoveredDemo, setHoveredDemo] = useState<number | null>(null);
 
+  // Multi-audience tabs
+  const [activeAudience, setActiveAudience] = useState('education');
+
   // Exit intent modal
   const [showExitIntent, setShowExitIntent] = useState(false);
   const [hasShownExitIntent, setHasShownExitIntent] = useState(false);
@@ -378,6 +381,122 @@ const Landing: React.FC = () => {
   const nextSlideCost = 19 * 12; // Annual cost
   const savings = yearlyCost - nextSlideCost;
 
+  // Multi-audience use cases
+  const audiences = [
+    {
+      id: 'education',
+      label: 'Education',
+      tagline: 'Transform how you teach',
+      useCases: [
+        {
+          title: 'Lecture Slides',
+          description: 'Complete course material in minutes. AI generates structured content with visuals, examples, and learning objectives.',
+          gradient: 'from-blue-500 to-indigo-600'
+        },
+        {
+          title: 'Student Projects',
+          description: 'Students create professional presentations for assignments, research papers, and group projects—no design skills needed.',
+          gradient: 'from-cyan-500 to-blue-600'
+        },
+        {
+          title: 'Training Materials',
+          description: 'Onboarding guides, workshop content, and certification courses. Consistent branding, professional quality.',
+          gradient: 'from-indigo-500 to-purple-600'
+        }
+      ]
+    },
+    {
+      id: 'business',
+      label: 'Business',
+      tagline: 'Professional decks, zero design time',
+      useCases: [
+        {
+          title: 'Quarterly Reviews',
+          description: 'Board presentations, stakeholder updates, and OKR reviews. Data visualization, executive summaries, action plans.',
+          gradient: 'from-orange-500 to-red-600'
+        },
+        {
+          title: 'Client Proposals',
+          description: 'Win more business with tailored proposals. Customize for each client in minutes, not days.',
+          gradient: 'from-red-500 to-pink-600'
+        },
+        {
+          title: 'Internal Communications',
+          description: 'All-hands meetings, policy updates, team announcements. Keep everyone aligned with clear, visual communication.',
+          gradient: 'from-pink-500 to-rose-600'
+        }
+      ]
+    },
+    {
+      id: 'sales',
+      label: 'Sales',
+      tagline: 'Close deals faster',
+      useCases: [
+        {
+          title: 'Pitch Decks',
+          description: 'Adaptive sales decks customized per prospect. Update data, messaging, and case studies in real-time during calls.',
+          gradient: 'from-green-500 to-emerald-600'
+        },
+        {
+          title: 'Product Demos',
+          description: 'Showcase features, benefits, and ROI with stunning visuals. Non-technical team members create demo decks instantly.',
+          gradient: 'from-emerald-500 to-teal-600'
+        },
+        {
+          title: 'Case Studies',
+          description: 'Turn customer success into sales collateral. Before/after comparisons, metrics, testimonials—all beautifully designed.',
+          gradient: 'from-teal-500 to-cyan-600'
+        }
+      ]
+    },
+    {
+      id: 'founders',
+      label: 'Founders',
+      tagline: 'Investor-ready in 30 seconds',
+      useCases: [
+        {
+          title: 'Investor Pitches',
+          description: 'Raise capital with pitch decks that look like you hired an agency. Problem, solution, market, traction—perfectly structured.',
+          gradient: 'from-purple-500 to-violet-600'
+        },
+        {
+          title: 'Product Launches',
+          description: 'Announce new features, products, or company milestones. Press-ready presentations that build excitement.',
+          gradient: 'from-violet-500 to-purple-600'
+        },
+        {
+          title: 'Team Updates',
+          description: 'Keep your startup aligned. Sprint planning, roadmap reviews, culture decks—all in your brand voice.',
+          gradient: 'from-fuchsia-500 to-pink-600'
+        }
+      ]
+    },
+    {
+      id: 'enterprise',
+      label: 'Enterprise',
+      tagline: 'Scale presentation excellence',
+      useCases: [
+        {
+          title: 'Brand Compliance',
+          description: 'Every team creates on-brand presentations automatically. No more off-brand decks from different departments.',
+          gradient: 'from-slate-600 to-zinc-700'
+        },
+        {
+          title: 'Executive Briefings',
+          description: 'C-suite presentations with enterprise-grade polish. Strategic planning, M&A presentations, board decks.',
+          gradient: 'from-zinc-600 to-stone-700'
+        },
+        {
+          title: 'Global Training',
+          description: 'Standardized training materials across offices, languages, and time zones. Update once, deploy everywhere.',
+          gradient: 'from-stone-600 to-neutral-700'
+        }
+      ]
+    }
+  ];
+
+  const activeAudienceData = audiences.find(a => a.id === activeAudience) || audiences[0];
+
   return (
     <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a]">
       {/* Sticky Evolving CTA */}
@@ -509,63 +628,14 @@ const Landing: React.FC = () => {
               in 30 seconds
             </h1>
             <p className="text-xl text-black/60 dark:text-white/60 mb-10 max-w-3xl mx-auto leading-relaxed">
-              Stop wasting hours on slides. NextSlide's AI creates professional presentations instantly—complete with design, layout, and visuals.
+              The only AI presentation tool with a full editor. Generate complete decks instantly, then customize everything—layouts, themes, content, charts. From classroom lectures to investor pitches.
             </p>
 
-            {/* Interactive Try It Widget */}
-            <div className="max-w-2xl mx-auto mb-10">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border-2 border-black/10 dark:border-white/10 p-6 shadow-xl">
-                <div className="flex items-center gap-3 mb-4">
-                  <Sparkles className="w-5 h-5 text-[#FF4301]" />
-                  <span className="text-sm font-bold text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    TRY IT NOW - NO SIGNUP REQUIRED
-                  </span>
-                </div>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={tryItInput}
-                    onChange={(e) => setTryItInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleTryIt()}
-                    placeholder="Describe your presentation... (e.g., Q4 Sales Review)"
-                    className="flex-1 px-4 py-3 bg-[#FCFBF8] dark:bg-black border border-black/10 dark:border-white/10 rounded-xl text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#FF4301]"
-                  />
-                  <Button
-                    onClick={handleTryIt}
-                    disabled={isGenerating || !tryItInput.trim()}
-                    className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 font-semibold"
-                  >
-                    {isGenerating ? 'Generating...' : 'Generate'}
-                  </Button>
-                </div>
-
-                {/* Generated titles */}
-                {generatedTitles.length > 0 && (
-                  <div className="mt-6 space-y-2">
-                    <div className="text-xs font-bold text-black/50 dark:text-white/50 uppercase tracking-wider">
-                      Generated Slides:
-                    </div>
-                    {generatedTitles.map((title, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 p-3 bg-[#FCFBF8] dark:bg-black rounded-lg animate-in fade-in slide-in-from-left"
-                        style={{ animationDelay: `${i * 100}ms` }}
-                      >
-                        <div className="w-8 h-8 rounded bg-[#FF4301]/10 flex items-center justify-center text-[#FF4301] text-sm font-bold">
-                          {i + 1}
-                        </div>
-                        <span className="text-sm text-black dark:text-white">{title}</span>
-                      </div>
-                    ))}
-                    {isGenerating && (
-                      <div className="flex items-center gap-2 text-xs text-black/40 dark:text-white/40">
-                        <div className="w-2 h-2 bg-[#FF4301] rounded-full animate-pulse" />
-                        AI is writing your slides...
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+            <div className="inline-flex items-center gap-2 bg-[#FF4301]/10 border border-[#FF4301]/20 rounded-full px-6 py-3 mb-10">
+              <div className="w-2 h-2 bg-[#FF4301] rounded-full animate-pulse" />
+              <span className="text-sm font-bold text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                FULL EDITOR • NOT JUST A GENERATOR
+              </span>
             </div>
 
             <div className="flex flex-wrap gap-4 justify-center mb-8">
@@ -596,66 +666,95 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Before/After Slider */}
-      <section className="py-24 px-8 bg-white dark:bg-black/30">
-        <div className="max-w-[1200px] mx-auto">
-          <div className="text-center mb-16 animate-on-scroll opacity-0">
+      {/* Multi-Audience Showcase with Tabs */}
+      <section className="py-32 px-8 bg-white dark:bg-black/30">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center mb-12 animate-on-scroll opacity-0">
             <h2
               className="text-black dark:text-white mb-4"
               style={{
                 fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                 fontWeight: 900,
-                fontSize: 'clamp(36px, 5vw, 56px)',
+                fontSize: 'clamp(36px, 5vw, 64px)',
                 lineHeight: '1.1',
                 letterSpacing: '-0.02em',
                 textTransform: 'uppercase'
               }}
             >
-              See the difference
+              Built for everyone
             </h2>
-            <p className="text-xl text-black/60 dark:text-white/60">
-              Drag to compare PowerPoint vs NextSlide
+            <p className="text-xl text-black/60 dark:text-white/60 mb-8">
+              From classrooms to boardrooms, NextSlide adapts to your needs
             </p>
+
+            {/* Tabs */}
+            <div className="flex flex-wrap justify-center gap-3 mb-12">
+              {audiences.map((audience) => (
+                <button
+                  key={audience.id}
+                  onClick={() => setActiveAudience(audience.id)}
+                  className={cn(
+                    "px-6 py-3 rounded-full font-bold text-sm transition-all duration-300",
+                    activeAudience === audience.id
+                      ? "bg-[#FF4301] text-white shadow-lg scale-105"
+                      : "bg-white dark:bg-zinc-900 text-black dark:text-white border-2 border-black/10 dark:border-white/10 hover:border-[#FF4301]"
+                  )}
+                  style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
+                >
+                  {audience.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div
-            ref={sliderRef}
-            className="relative max-w-4xl mx-auto rounded-2xl overflow-hidden border-2 border-black/10 dark:border-white/10 cursor-ew-resize"
-            onMouseMove={(e) => e.buttons === 1 && handleSliderDrag(e)}
-            onTouchMove={handleSliderDrag}
-          >
-            {/* PowerPoint Side (Left) */}
-            <div className="aspect-[16/9] bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 flex items-center justify-center p-12">
-              <div className="text-center">
-                <div className="text-4xl mb-4">📊</div>
-                <h3 className="text-2xl font-bold text-black/60 dark:text-white/60 mb-2">PowerPoint</h3>
-                <p className="text-black/40 dark:text-white/40">Templated, boring, takes hours</p>
-              </div>
+          {/* Active Content */}
+          <div className="animate-on-scroll opacity-0">
+            <div className="text-center mb-12">
+              <h3 className="text-3xl font-bold text-black dark:text-white mb-2" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                {activeAudienceData.tagline}
+              </h3>
             </div>
 
-            {/* NextSlide Side (Right) - Overlay */}
-            <div
-              className="absolute inset-0 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-950 dark:to-red-950 flex items-center justify-center p-12"
-              style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
-            >
-              <div className="text-center">
-                <div className="text-4xl mb-4">✨</div>
-                <h3 className="text-2xl font-bold text-black dark:text-white mb-2">NextSlide</h3>
-                <p className="text-black/60 dark:text-white/60">Professional, AI-designed, instant</p>
-              </div>
-            </div>
+            {/* Use Case Cards */}
+            <div className="grid md:grid-cols-3 gap-6">
+              {activeAudienceData.useCases.map((useCase, index) => (
+                <div
+                  key={index}
+                  className="group cursor-pointer"
+                  onClick={() => navigate('/signup')}
+                >
+                  <div className="h-full bg-[#FCFBF8] dark:bg-[#0a0a0a] rounded-2xl border-2 border-black/10 dark:border-white/10 overflow-hidden hover:border-[#FF4301] hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                    {/* Visual Header */}
+                    <div className={`aspect-[16/9] bg-gradient-to-br ${useCase.gradient} p-8 flex items-center justify-center relative overflow-hidden`}>
+                      <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors duration-300" />
+                      <div className="relative text-center text-white">
+                        <h4
+                          className="text-2xl md:text-3xl font-bold"
+                          style={{ fontFamily: '"HK Grotesk Wide", sans-serif', textTransform: 'uppercase' }}
+                        >
+                          {useCase.title}
+                        </h4>
+                      </div>
+                      {/* Subtle grid pattern */}
+                      <div className="absolute inset-0 opacity-10" style={{
+                        backgroundImage: 'linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)',
+                        backgroundSize: '20px 20px'
+                      }} />
+                    </div>
 
-            {/* Slider Handle */}
-            <div
-              className="absolute top-0 bottom-0 w-1 bg-[#FF4301] cursor-ew-resize"
-              style={{ left: `${sliderPosition}%` }}
-            >
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-[#FF4301] rounded-full flex items-center justify-center shadow-lg">
-                <div className="flex gap-1">
-                  <ChevronLeft className="w-3 h-3 text-white" />
-                  <ChevronRight className="w-3 h-3 text-white" />
+                    {/* Description */}
+                    <div className="p-6">
+                      <p className="text-black/70 dark:text-white/70 leading-relaxed">
+                        {useCase.description}
+                      </p>
+                      <div className="mt-4 flex items-center text-[#FF4301] font-semibold text-sm group-hover:gap-2 transition-all">
+                        <span>Create Now</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -771,7 +870,7 @@ const Landing: React.FC = () => {
                       "text-xs font-semibold transition-all duration-300",
                       isHovered ? "text-[#FF4301]" : "text-black/40 dark:text-white/40"
                     )}>
-                      {isHovered ? '✨ ' : '→ '}{item.demo}
+                      {isHovered ? '→ ' : '→ '}{item.demo}
                     </div>
 
                     {/* Simulated demo content (appears on hover) */}
@@ -1051,7 +1150,7 @@ const Landing: React.FC = () => {
                 <div className="bg-[#FCFBF8] dark:bg-[#0a0a0a] rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden hover:border-[#FF4301] transition-all duration-300 hover:shadow-xl">
                   {/* Thumbnail */}
                   <div className="aspect-[16/9] bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-800 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
-                    <div className="text-6xl">📊</div>
+                    <Layout className="w-20 h-20 text-black/20 dark:text-white/20" />
                   </div>
 
                   {/* Info */}

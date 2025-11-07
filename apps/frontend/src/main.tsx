@@ -36,26 +36,11 @@ if (import.meta.env.DEV) {
   import('./utils/quickAuthCheck');
   import('./utils/testDeckLoading');
   import('./utils/testImageCaching');
-  import('./utils/testCustomComponentOptimization');
 }
 
-// Remove font optimization; keep slide completion handler if used for other flows
+// Initialize slide completion handler for status updates
 import { SlideCompletionHandler } from './services/SlideCompletionHandler';
-import { CustomComponentOptimizationService } from './services/CustomComponentOptimizationService';
-
-// Initialize slide completion handler FIRST to ensure status updates
 SlideCompletionHandler.getInstance().initialize();
-
-// Font optimization removed
-
-// Set up custom component optimization
-try {
-  // console.warn('[Main] Setting up custom component optimization...');
-  CustomComponentOptimizationService.setupAutoOptimization();
-  // console.warn('[Main] Custom component optimization setup complete');
-} catch (error) {
-  console.error('[Main] Failed to setup custom component optimization:', error);
-}
 
 // Initialize Supabase storage bucket (if needed)
 initializeStorage()

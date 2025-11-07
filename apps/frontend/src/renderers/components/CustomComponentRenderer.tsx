@@ -4,7 +4,6 @@ import { useComponentInstance } from "../../context/CustomComponentStateContext"
 import { DEFAULT_SLIDE_WIDTH } from '../../utils/deckUtils';
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
-import { CustomComponentOptimizationService } from '@/services/CustomComponentOptimizationService';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 
 // Escape raw newlines that appear inside single/double quoted string literals.
@@ -773,9 +772,9 @@ export const CustomComponentRenderer: React.FC<{
     };
   }, [component.id, computeFit]);
   
-  // Get optimized styles if any
+  // No optimized styles needed - backend handles font sizing
   const optimizedStyles = useMemo(() => {
-    return CustomComponentOptimizationService.getOptimizedStyles(component);
+    return {};
   }, [component]);
   
   // Render the component

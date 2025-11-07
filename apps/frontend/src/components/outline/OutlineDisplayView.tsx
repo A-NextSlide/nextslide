@@ -759,6 +759,38 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     } catch {}
   };
 
+  // Measure font character width ratio by rendering sample text
+  const measureFontCharWidthRatio = (fontFamily: string, fontSize: number = 24): number => {
+    try {
+      // Create temporary element
+      const tempEl = document.createElement('div');
+      tempEl.style.position = 'absolute';
+      tempEl.style.visibility = 'hidden';
+      tempEl.style.whiteSpace = 'nowrap';
+      tempEl.style.fontSize = `${fontSize}px`;
+      tempEl.style.fontFamily = fontFamily;
+
+      // Use a representative sample text
+      const sampleText = 'The quick brown fox jumps over the lazy dog 0123456789';
+      tempEl.textContent = sampleText;
+
+      document.body.appendChild(tempEl);
+      const rect = tempEl.getBoundingClientRect();
+      document.body.removeChild(tempEl);
+
+      // Calculate character width ratio
+      const charCount = sampleText.length;
+      const charWidthRatio = (rect.width / charCount) / fontSize;
+
+      console.log(`📏 MEASURED [${fontFamily}]: ratio=${charWidthRatio.toFixed(3)} | width=${rect.width.toFixed(1)}px @ ${fontSize}px`);
+
+      return charWidthRatio;
+    } catch (error) {
+      console.warn('Failed to measure font:', error);
+      return 0.55; // Default fallback
+    }
+  };
+
   const openFontPanelAt = (e: React.MouseEvent, type: 'heading' | 'body') => {
     try {
       const rect = themePanelRef.current?.getBoundingClientRect();
@@ -1860,11 +1892,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   </button>
                                 </div>
                               </div>
-                              <div className="flex flex-col">
+                              <div className="flex flex-col gap-1">
                                 <div
                                   className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
-                                  style={{ 
-                                    fontFamily: workspaceTheme.typography.heading?.fontFamily || 'Inter', 
+                                  style={{
+                                    fontFamily: workspaceTheme.typography.heading?.fontFamily || 'Inter',
                                     color: workspaceTheme.typography.heading?.color || '#1f2937',
                                     borderBottom: `2px solid ${workspaceTheme.accent1 || '#FF4301'}`
                                   }}
@@ -1955,13 +1987,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                             {/* Floating editors */}
                             {fontEditor?.open && (() => {
                               const groups = dynamicFontGroups || fontGroups;
-                              const groupsCount = Object.keys(groups).length;
-                              console.log('[OutlineDisplayView] Font editor opened', {
-                                currentFont: fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont,
-                                groupsCount,
-                                hasDynamicGroups: !!dynamicFontGroups,
-                                firstFewGroups: Object.keys(groups).slice(0, 5)
-                              });
                               return (
                                 <div
                                   ref={fontEditorRef}
@@ -1984,7 +2009,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                     onChange={async (value) => {
                                       const fontName = String(value);
                                       console.log('[OutlineDisplayView] Font selected:', fontName);
-                                      
+
                                       // Load font FIRST before applying to theme
                                       try {
                                         await FontLoadingService.syncDesignerFonts?.();
@@ -1994,12 +2019,35 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                       } catch (err) {
                                         console.warn('Font loading error:', err);
                                       }
-                                      
-                                      // Now apply the theme update
+
+                                      // Measure the actual font character width ratio
+                                      const charWidthRatio = measureFontCharWidthRatio(fontName);
+
+                                      // Now apply the theme update with the measured ratio
                                       if (fontEditor.type === 'heading') {
-                                        applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, heading: { ...(t.typography?.heading || {}), fontFamily: fontName } } } as any));
+                                        applyThemeUpdate((t) => ({
+                                          ...t,
+                                          typography: {
+                                            ...t.typography,
+                                            heading: {
+                                              ...(t.typography?.heading || {}),
+                                              fontFamily: fontName,
+                                              charWidthRatio
+                                            }
+                                          }
+                                        } as any));
                                       } else {
-                                        applyThemeUpdate((t) => ({ ...t, typography: { ...t.typography, paragraph: { ...(t.typography?.paragraph || {}), fontFamily: fontName } } } as any));
+                                        applyThemeUpdate((t) => ({
+                                          ...t,
+                                          typography: {
+                                            ...t.typography,
+                                            paragraph: {
+                                              ...(t.typography?.paragraph || {}),
+                                              fontFamily: fontName,
+                                              charWidthRatio
+                                            }
+                                          }
+                                        } as any));
                                       }
                                       setFontEditor(null);
                                     }}

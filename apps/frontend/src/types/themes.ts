@@ -5,12 +5,14 @@ export interface Typography {
     fontSize?: string;
     fontWeight?: number;
     lineHeight?: number;
+    charWidthRatio?: number; // Actual measured character width ratio for this font
   };
   heading?: {
     fontFamily: string;
     color: string;
     fontSize?: string;
     fontWeight?: number;
+    charWidthRatio?: number; // Actual measured character width ratio for this font
   };
 }
 
