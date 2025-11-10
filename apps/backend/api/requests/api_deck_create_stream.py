@@ -98,13 +98,22 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             try:
                 # Initialize outline_dict here where it's used
                 outline_dict = request.outline
-                if 'id' not in outline_dict: outline_dict['id'] = str(uuid.uuid4())
+
+                # CRITICAL: NEVER generate a new UUID if one exists in the outline
+                # The outline.id is the source of truth for the deck UUID
+                if 'id' not in outline_dict or not outline_dict['id']:
+                    logger.error("[UUID_FIX] ERROR: Outline is missing 'id' field! This should never happen.")
+                    raise ValueError("Outline must have an 'id' field. This ID should be generated when the outline is created.")
+
+                deck_uuid = outline_dict['id']
+                logger.info(f"[UUID_FIX] Using outline.id as deck UUID: {deck_uuid}")
+
                 if 'title' not in outline_dict: outline_dict['title'] = 'Untitled Presentation'
                 if 'stylePreferences' not in outline_dict and request.stylePreferences:
                     outline_dict['stylePreferences'] = request.stylePreferences
-                
+
                 for i, slide in enumerate(outline_dict.get('slides', [])):
-                    if 'id' not in slide: slide['id'] = f"slide-{outline_dict['id']}-{i}"
+                    if 'id' not in slide: slide['id'] = f"slide-{deck_uuid}-{i}"
                     # Ensure other essential slide fields have defaults if missing
                     slide.setdefault('title', f"Slide {i + 1}")
                     slide.setdefault('content', "")
@@ -113,7 +122,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     slide.setdefault('manualCharts', None)  # ✅ Support multiple charts per slide
                     slide.setdefault('speaker_notes', "")
                     slide.setdefault('media_items', [])
-                
+
                 deck_outline = DeckOutline(**outline_dict)
                 
                 # Debug logging for taggedMedia
@@ -187,17 +196,26 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 })
                 return
             
-            deck_uuid = deck_outline.id
-            
+            # deck_uuid was already set above from outline_dict['id']
+            # DO NOT reassign or validate - outline.id is the source of truth
+
             # Validate that deck_uuid is a valid UUID format
             try:
                 # Try to parse as UUID to validate format
                 uuid.UUID(deck_uuid)
+                logger.info(f"[UUID_FIX] Validated deck UUID format: {deck_uuid}")
             except ValueError:
-                # If deck_uuid is not a valid UUID (e.g., "outline-1234567890"), generate a new one
-                logger.warning(f"Invalid UUID format in outline.id: {deck_uuid}, generating new UUID")
-                deck_uuid = str(uuid.uuid4())
-                logger.info(f"Generated new deck UUID: {deck_uuid}")
+                # CRITICAL: Do NOT generate a new UUID - this breaks the frontend flow!
+                # Instead, raise an error so the outline agent can fix it
+                error_msg = f"Invalid UUID format in outline.id: {deck_uuid}. Outline must be created with a valid UUID."
+                logger.error(f"[UUID_FIX] {error_msg}")
+                yield _sse({
+                    'type': 'error',
+                    'error': error_msg,
+                    'deck_id': deck_uuid,
+                    'validation_error': True
+                })
+                return
             
             # CRITICAL: Check if deck already exists in database before proceeding
             from utils.supabase import get_deck

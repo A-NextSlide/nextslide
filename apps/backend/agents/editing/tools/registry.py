@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 from models.registry import ComponentRegistry
 
@@ -59,7 +59,7 @@ from utils.deck import get_all_component_ids, get_all_slide_ids
 def get_tools_and_call_map(
     deck_data: Dict[str, Any],
     registry: ComponentRegistry,
-    current_slide_id: str | None,
+    current_slide_id: Optional[str],
 ) -> Tuple[List[Any], Dict[str, Any]]:
     tools = [
         get_edit_component_model(

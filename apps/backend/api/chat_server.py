@@ -141,6 +141,7 @@ from api.requests.api_teams import router as teams_router
 from api.requests.api_deck_access import router as deck_access_router
 from api.requests.api_comments import router as comments_router
 from api.requests.api_outline_chat import router as outline_chat_router
+from api.requests.api_outline_agent import router as outline_agent_router
 from api.requests.api_slide_research import router as slide_research_router
 from api.requests.api_slide_reorder import router as slide_reorder_router
 # Make narrative test optional if module was removed during cleanup
@@ -239,6 +240,7 @@ app.include_router(teams_router)
 app.include_router(deck_access_router)
 app.include_router(comments_router)
 app.include_router(outline_chat_router)
+app.include_router(outline_agent_router)
 app.include_router(slide_research_router)
 app.include_router(slide_reorder_router)
 if narrative_test_router is not None:
@@ -654,6 +656,7 @@ async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: O
     logger.info(f"🔴 async_images: {request.async_images}")
 
     # Extract user from token if available and associate deck
+    user_id = None
     if token:
         try:
             from services.supabase_auth_service import get_auth_service
@@ -700,7 +703,7 @@ async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: O
             force_restart=request.force_restart,
             async_images=getattr(request, 'async_images', True)  # Support async image selection
         )
-        generator = create_deck_compose_stream(stream_request, REGISTRY)
+        generator = create_deck_compose_stream(stream_request, REGISTRY, user_id=user_id)
         
         return StreamingResponse(
             generator,

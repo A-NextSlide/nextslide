@@ -438,7 +438,7 @@ async def get_timeline(session_id: str, token: Optional[str] = Depends(get_auth_
 
 
 @router.post("/sessions/{session_id}/clear")
-async def clear_session(session_id: str, body: Dict[str, Any] | None = None, token: Optional[str] = Depends(get_auth_header)):
+async def clear_session(session_id: str, body: Optional[Dict[str, Any]] = None, token: Optional[str] = Depends(get_auth_header)):
     """Clear button behavior.
     modes:
       - { mode: "end" } -> mark session ended

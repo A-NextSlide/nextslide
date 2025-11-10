@@ -85,7 +85,7 @@ def _copy_slide_style(source_slide: Dict[str, Any], new_title: str, new_content:
 
 def create_slide(args: CreateSlideArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff) -> DeckDiff:
     # Default: lightweight slide with Background + Text, then rely on style_slide later
-    new_slide: Dict[str, Any] | None = None
+    new_slide: Optional[Dict[str, Any]] = None
 
     # Try style copy within current deck
     if args.style_from_slide_id:
@@ -196,7 +196,7 @@ class InsertImageArgs(ToolModel):
 
 def insert_image(args: InsertImageArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff) -> DeckDiff:
     # Prefer typed component to avoid pydantic serialization warnings
-    comp: Dict[str, Any] | Any = {
+    comp: Any = {
         "id": args.id,
         "type": "Image",
         "props": {

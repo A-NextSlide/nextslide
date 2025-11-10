@@ -28,7 +28,7 @@ class ImageGenerationPromptBuilder:
     # Color used for chroma-key background. Pick a vivid, unlikely color.
     DEFAULT_CHROMA_COLOR = "#00FD00"  # sharp green
 
-    def __init__(self, theme: Dict[str, Any] | None = None) -> None:
+    def __init__(self, theme: Optional[Dict[str, Any]] = None) -> None:
         self.theme = theme or {}
 
     def build_for_slide(

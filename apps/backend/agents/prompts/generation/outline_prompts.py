@@ -205,6 +205,12 @@ FORMAT:
 
 DO NOT include IMAGE tags - those are added separately.
 
+** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
+- Output EXACTLY what they wrote - word for word
+- DO NOT add research, examples, or additional information
+- DO NOT expand or elaborate on their content
+- Your role is to format and structure their exact words, not to add content
+
 CHARTS: ONLY for exceptional quantitative data (8-15+ points) where visualization is ESSENTIAL"""
     else:
         mode = """PRESENTATION MODE:
@@ -240,6 +246,12 @@ CONTENT RULES:
 - Bold key numbers and metrics with **
 - Test: "Can you READ this in 5 seconds?"
 - DO NOT include IMAGE tags - those are added separately
+
+** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
+- Output EXACTLY what they wrote - word for word
+- DO NOT add research, examples, or additional information
+- DO NOT expand or elaborate on their content
+- Your role is to format and structure their exact words, not to add content
 
 VISUALS:
 🎨 Images/Icons: PRIMARY visual element (50-70% of slides should have images)

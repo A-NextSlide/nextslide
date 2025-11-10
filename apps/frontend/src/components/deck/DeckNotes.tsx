@@ -15,7 +15,6 @@ import { NotepadText, Save, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { NarrativeFlow } from '@/types/SlideTypes';
-import { useDeckWithNarrativeFlow } from '@/hooks/useDeckWithNarrativeFlow';
 import { useDeckStore } from '@/stores/deckStore';
 
 interface DeckNotesProps {
@@ -32,9 +31,10 @@ const DeckNotes: React.FC<DeckNotesProps> = ({ deckId, className, isGenerating, 
   const [originalNotes, setOriginalNotes] = useState('');
   const updateDeckData = useDeckStore.getState().updateDeckData;
   const { toast } = useToast();
-  
-  // Use the new hook for progressive narrative flow loading
-  const { narrativeFlow, isPollingForNarrative } = useDeckWithNarrativeFlow(deckId);
+
+  // Narrative flow removed - using ChatPanel instead
+  const narrativeFlow: NarrativeFlow | null = null;
+  const isPollingForNarrative = false;
 
   // Load initial user notes from deck.data when deck changes
   useEffect(() => {

@@ -263,7 +263,7 @@ class AISlideGenerator:
                 return t[1:-1]
             return t
 
-        def _extract_balanced_object(text: str) -> str | None:
+        def _extract_balanced_object(text: str) -> Optional[str]:
             start = text.find('{')
             if start < 0:
                 return None
@@ -316,7 +316,7 @@ class AISlideGenerator:
                     title = None
 
                 # Helper to extract a balanced array after a key like "components": [ ... ]
-                def _extract_balanced_array(text: str, key: str) -> str | None:
+                def _extract_balanced_array(text: str, key: str) -> Optional[str]:
                     try:
                         key_match = re.search(rf'"{key}"\s*:\s*\[', text)
                         if not key_match:

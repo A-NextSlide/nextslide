@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from models.deck import DeckBase, DeckDiffBase
@@ -154,7 +154,18 @@ class DeckOutlineResponse(BaseModel):
 
 class DeckComposeRequest(BaseModel):
     """Request for streaming deck composition"""
-    deck_id: str = Field(description="UUID of the deck to compose")
+    deck_id: Optional[str] = Field(default=None, description="UUID of the deck to compose. If not provided, uses outline.id")
     outline: DeckOutline = Field(description="The deck outline with slide information")
     force_restart: bool = Field(default=False, description="Force restart even if generation is in progress")
     async_images: bool = Field(default=False, description="If False, images are auto-applied; if True, placeholders are used")
+
+    @model_validator(mode='after')
+    def extract_deck_id_from_outline(self):
+        """If deck_id is not provided, extract it from outline.id"""
+        if self.deck_id is None:
+            # Get outline id
+            if hasattr(self.outline, 'id') and self.outline.id:
+                self.deck_id = self.outline.id
+            else:
+                raise ValueError("deck_id must be provided either directly or via outline.id")
+        return self

@@ -289,14 +289,24 @@ def style_slide(slide_style_args: StyleSlideArgs, registry: ComponentRegistry, d
     - Keep coherence with theme across all edits.
     """
     
+    # Build context sections without backslashes in f-strings
+    theme_section = f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""
+
+    if rag_context_str:
+        context_section = f"<rag_context>\n{rag_context_str}\n</rag_context>"
+    else:
+        layout_section = f"<layout_guidelines>\n{layout_guidelines}\n</layout_guidelines>"
+        style_section = f"<style_guidelines>\n{style_guidelines}\n</style_guidelines>"
+        context_section = f"{layout_section}\n\n{style_section}"
+
     prompt = f"""
     <editor_notes>
     {editor_notes}
     </editor_notes>
 
-    {f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""}
+    {theme_section}
 
-    {f"<rag_context>\n{rag_context_str}\n</rag_context>" if rag_context_str else f"<layout_guidelines>\n{layout_guidelines}\n</layout_guidelines>\n\n<style_guidelines>\n{style_guidelines}\n</style_guidelines>"}
+    {context_section}
 
     <slide_summary_compact>
     {compact_summary}

@@ -705,19 +705,40 @@ class SlidePromptBuilder:
     
     def _add_mandatory_content(self, sections: List[str], context: SlideGenerationContext):
         """Add mandatory content requirements."""
-        sections.extend([
-            "\n** CRITICAL: PRESENTATIONS MUST BE PUNCHY BUT SUBSTANTIVE!",
-            "- Target 80-120 words per slide - not too sparse, not too dense",
-            "- Use impactful bullet points (8-15 words each) with specifics",
-            "- NO PARAGRAPHS - use structured bullet points",
-            "- Use charts SELECTIVELY only when quantitative data exists AND it's appropriate for the topic",
-            "- For PERSONAL/CREATIVE and GENERAL/HOW-TO topics, avoid charts unless explicitly requested; keep content fun and practical",
-            "",
-            "** MANDATORY: You MUST include ALL text from the outline content verbatim on the slide.",
-            "- The title should be prominently displayed",
-            "- You may add additional text/UI, but do NOT remove, paraphrase, or omit any original sentences.",
-            "- Split the original text across multiple TiptapTextBlocks and adjust sizes so everything fits visibly."
-        ])
+
+        # Detect if user has provided specific content (more than just a title/topic)
+        has_user_content = False
+        if context.slide_outline.content:
+            content_words = context.slide_outline.content.strip().split()
+            # If content has more than 10 words, likely user-provided specific content
+            has_user_content = len(content_words) > 10
+
+        if has_user_content:
+            sections.extend([
+                "\n** CRITICAL: USER HAS PROVIDED SPECIFIC CONTENT FOR THIS SLIDE!",
+                "- Use the EXACT content provided in the outline - DO NOT add research or additional information",
+                "- DO NOT expand, elaborate, or add extra details beyond what the user specified",
+                "- DO NOT add examples, statistics, or research unless explicitly in the provided content",
+                "- Your job is to DESIGN and LAYOUT the provided content beautifully, not to add to it",
+                "- You MUST include ALL text from the outline content verbatim on the slide",
+                "- The title should be prominently displayed",
+                "- Split the content across TiptapTextBlocks for optimal layout and readability",
+                "- Focus on visual design, typography, and spacing - NOT on adding content"
+            ])
+        else:
+            sections.extend([
+                "\n** CRITICAL: PRESENTATIONS MUST BE PUNCHY BUT SUBSTANTIVE!",
+                "- Target 80-120 words per slide - not too sparse, not too dense",
+                "- Use impactful bullet points (8-15 words each) with specifics",
+                "- NO PARAGRAPHS - use structured bullet points",
+                "- Use charts SELECTIVELY only when quantitative data exists AND it's appropriate for the topic",
+                "- For PERSONAL/CREATIVE and GENERAL/HOW-TO topics, avoid charts unless explicitly requested; keep content fun and practical",
+                "",
+                "** MANDATORY: You MUST include ALL text from the outline content verbatim on the slide.",
+                "- The title should be prominently displayed",
+                "- You may add additional text/UI, but do NOT remove, paraphrase, or omit any original sentences.",
+                "- Split the original text across multiple TiptapTextBlocks and adjust sizes so everything fits visibly."
+            ])
     
     def _add_extracted_data_context(self, sections: List[str], context: SlideGenerationContext):
         """Add extracted Excel/data file content if available."""

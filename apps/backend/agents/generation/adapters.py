@@ -467,7 +467,31 @@ class SimpleDeckComposer(IDeckComposer):
             
             # Phase 1: Initialization
             yield progress.start_phase(GenerationPhase.INITIALIZATION)
-            
+
+            # CRITICAL: Create empty deck skeleton immediately to prevent 404s during generation
+            # This allows frontend to poll for the deck while we're generating slides
+            logger.info(f"💾 [DECK COMPOSER] Creating initial deck skeleton for {deck_uuid}")
+            initial_deck = {
+                'uuid': deck_uuid,
+                'name': deck_outline.title,
+                'slides': [],
+                'status': {
+                    'state': 'generating',
+                    'progress': 0,
+                    'phase': GenerationPhase.INITIALIZATION.value,
+                    'message': 'Starting deck generation...'
+                },
+                'version': '1.0',
+                'lastModified': datetime.now().isoformat()
+            }
+
+            # Save initial skeleton to database
+            try:
+                await self.persistence.save_deck_with_user(deck_uuid, initial_deck, user_id)
+                logger.info(f"✅ [DECK COMPOSER] Initial deck skeleton created in database")
+            except Exception as e:
+                logger.warning(f"⚠️ [DECK COMPOSER] Failed to create initial deck skeleton: {e}")
+
             # Phase 2: Theme Generation - This MUST complete before slides
             yield progress.start_phase(GenerationPhase.THEME_GENERATION)
             
@@ -835,9 +859,9 @@ class SimpleDeckComposer(IDeckComposer):
                             accent2 = getattr(colors_config, 'accent2', None)
                             accent3 = getattr(colors_config, 'accent3', None)
                             text = getattr(colors_config, 'text', None)
-                        
+
                             logger.info(f"[DECK COMPOSER] DEBUG: Raw colors - background: {background}, accent1: {accent1}, accent2: {accent2}, accent3: {accent3}, text: {text}")
-                        
+
                             # Build brand_colors array using the EXACT SAME logic as the working theme API
                             if accent1:
                                 brand_colors.append(accent1)
@@ -845,14 +869,14 @@ class SimpleDeckComposer(IDeckComposer):
                                 brand_colors.append(accent2)
                             if accent3:
                                 brand_colors.append(accent3)
-                        if background and background.upper() != '#FFFFFF':  # Don't include white initially
-                            brand_colors.append(background)
-                        if text and text.upper() != '#000000':  # Don't include black
-                            brand_colors.append(text)
-                            
-                        # For brand palettes like McDonald's, we need the white background too 
-                        if background and background.upper() == '#FFFFFF' and len(brand_colors) > 0:
-                            brand_colors.append(background)  # Include white as part of brand palette - THE FIX!
+                            if background and background.upper() != '#FFFFFF':  # Don't include white initially
+                                brand_colors.append(background)
+                            if text and text.upper() != '#000000':  # Don't include black
+                                brand_colors.append(text)
+
+                            # For brand palettes like McDonald's, we need the white background too
+                            if background and background.upper() == '#FFFFFF' and len(brand_colors) > 0:
+                                brand_colors.append(background)  # Include white as part of brand palette - THE FIX!
                             
                     logger.info(f"[DECK COMPOSER] DEBUG: Extracted brand data - colors: {brand_colors}, fonts: {brand_fonts}, logo: {logo_url[:60] if logo_url else None}...")
                 

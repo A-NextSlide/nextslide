@@ -1103,8 +1103,12 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         except Exception:
                             simple_slides = []
 
+                        # CRITICAL: Generate UUID for outline - this becomes the deck UUID
+                        outline_id = result_data.get('id') or str(uuid.uuid4())
+                        logger.info(f"[UUID_FIX] Creating outline with ID: {outline_id}")
+
                         outline = DeckOutline(
-                            id=result_data.get('id', str(uuid.uuid4())),
+                            id=outline_id,
                             title=result_data.get('title', 'Untitled Presentation'),
                             slides=simple_slides,
                             stylePreferences=None,

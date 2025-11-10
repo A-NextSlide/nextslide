@@ -121,12 +121,15 @@ def update_background(update_args: UpdateBackgroundArgs, registry: ComponentRegi
     Note that your goal is to only produce a background component, that will be applied to all slides, do not concern yourself with the id
     """
     
+    # Build theme section without backslashes in f-string
+    theme_section = f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""
+
     prompt = f"""
     <editor_notes>
     {editor_notes}
     </editor_notes>
 
-    {f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""}
+    {theme_section}
 
     <background_request>
     {update_args.background_request}

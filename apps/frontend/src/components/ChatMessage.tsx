@@ -65,6 +65,19 @@ const getStageIcon = (stage?: string, type?: string) => {
 };
 
 /**
+ * Helper function to render text with **bold** markdown
+ */
+const renderMarkdown = (text: string) => {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
+/**
  * Chat message component that displays messages from AI or user
  */
 const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -465,7 +478,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     {message}
                   </div>
                 ) : (
-                  <>{primaryMessage}</>
+                  <>{renderMarkdown(primaryMessage)}</>
                 )}
               </div>
             )}

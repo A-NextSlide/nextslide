@@ -109,12 +109,6 @@ export class GenerationCoordinator extends EventTarget {
       throw new Error('Generation already in progress for this deck');
     }
 
-    // Defensive: if DeckList has already initiated generation for this deck in this session, avoid duplicate
-    if (typeof window !== 'undefined' && (window as any).__activeGenerationDeckId === deckId) {
-      console.log(`[GenerationCoordinator] Skipping duplicate start for ${deckId} (active in window flag)`);
-      throw new Error('Generation already in progress for this deck');
-    }
-
     // Check if generation is allowed
     const canStart = this.canStartGeneration(deckId);
     if (!canStart.allowed) {
@@ -150,11 +144,6 @@ export class GenerationCoordinator extends EventTarget {
     try { this.progressTracker.resume(); } catch {}
 
     // Mark as active in this browser session to coordinate across pages/routes
-    if (typeof window !== 'undefined') {
-      (window as any).__activeGenerationDeckId = deckId;
-    }
-
-    // Mark active generation on window so other entry points can honor it
     if (typeof window !== 'undefined') {
       (window as any).__activeGenerationDeckId = deckId;
     }

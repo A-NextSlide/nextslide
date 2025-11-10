@@ -405,7 +405,8 @@ class GoogleApiClient:
         base = "https://www.googleapis.com/drive/v3/files"
         q = ["mimeType = 'application/vnd.google-apps.presentation'", "trashed = false"]
         if query:
-            q.append(f"name contains '{query.replace("'", "\\'")}'")
+            escaped_query = query.replace("'", "\\'")
+            q.append(f"name contains '{escaped_query}'")
         # Scope filter: mine | shared | all(default)
         scope_norm = (scope or "").strip().lower()
         if scope_norm == "mine":
@@ -435,7 +436,8 @@ class GoogleApiClient:
         base = "https://www.googleapis.com/drive/v3/files"
         q = ["mimeType = 'application/vnd.google-apps.spreadsheet'", "trashed = false"]
         if query:
-            q.append(f"name contains '{query.replace("'", "\\'")}'")
+            escaped_query = query.replace("'", "\\'")
+            q.append(f"name contains '{escaped_query}'")
         scope_norm = (scope or "").strip().lower()
         if scope_norm == "mine":
             q.append("'me' in owners")

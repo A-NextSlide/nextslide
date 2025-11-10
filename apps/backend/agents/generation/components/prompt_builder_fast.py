@@ -97,6 +97,9 @@ Icon + text rules (optional, use sparingly):
         # Get key components only
         components = rag_context.get('predicted_components', [])[:5]  # Limit to 5
         
+        # Detect user-provided content
+        has_user_content = context.slide_outline.content and len(context.slide_outline.content.strip().split()) > 10
+
         # Build minimal prompt
         prompt_parts = [
             f"Create slide {slide_num} of {total_slides}:",
@@ -105,12 +108,20 @@ Icon + text rules (optional, use sparingly):
             "",
             "Colors:",
             f"- Background: {colors.get('primary_background', '#0A0E27')}",
-            f"- Text: {colors.get('primary_text', '#FFFFFF')}",  
+            f"- Text: {colors.get('primary_text', '#FFFFFF')}",
             f"- Accent: {colors.get('accent_1', '#00F0FF')}",
             "",
             f"Use components: {', '.join(components)}",
             ""
         ]
+
+        # Add content instruction
+        if has_user_content:
+            prompt_parts.extend([
+                "CRITICAL: User provided specific content - use EXACTLY as written.",
+                "DO NOT add research or additional information. Focus on design and layout.",
+                ""
+            ])
         
         # Add chart data if present (minimal)
         if context.has_chart_data and context.chart_data:

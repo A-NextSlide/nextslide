@@ -541,18 +541,33 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
-                logger.debug(f"Getting deck {deck_uuid} for user {user_id}")
+                logger.info(f"🔵 Getting deck {deck_uuid} for user {user_id}")
             else:
-                logger.warning(f"Invalid token when fetching deck {deck_uuid}")
+                logger.warning(f"⚠️ Invalid token when fetching deck {deck_uuid}")
         else:
-            logger.debug(f"Getting deck {deck_uuid} without authentication")
-        
+            logger.info(f"🔵 Getting deck {deck_uuid} without authentication")
+
         # Get deck from database
+        logger.info(f"🔍 Querying database for deck {deck_uuid}...")
         deck = get_deck(deck_uuid)
-        
+
         if not deck:
-            logger.warning(f"❌ Deck {deck_uuid} not found in database")
+            logger.error(f"❌ Deck {deck_uuid} NOT FOUND in database (user: {user_id or 'anonymous'})")
+            # Try a direct query to see if the deck exists at all
+            try:
+                from utils.supabase import get_supabase_client
+                supabase = get_supabase_client()
+                direct_check = supabase.table("decks").select("uuid,user_id,name,created_at").eq("uuid", deck_uuid).execute()
+                if direct_check.data:
+                    logger.error(f"❌ CRITICAL: Deck EXISTS in database but get_deck() returned None!")
+                    logger.error(f"   Direct query result: {direct_check.data[0]}")
+                else:
+                    logger.error(f"❌ Deck truly does not exist in database")
+            except Exception as direct_error:
+                logger.error(f"❌ Direct query also failed: {direct_error}")
             raise HTTPException(status_code=404, detail="Deck not found")
+
+        logger.info(f"✅ Deck {deck_uuid} found! User: {deck.get('user_id')}, Slides: {len(deck.get('slides', []))}")
         
         # Check access permissions
         deck_user_id = deck.get('user_id')
@@ -669,14 +684,25 @@ async def create_deck(
         }
         
         # Insert deck into database
-        from utils.supabase import get_supabase_client
+        from utils.supabase import get_supabase_client, get_deck
         supabase = get_supabase_client()
-        
+
+        logger.info(f"🔵 Creating deck {deck_request.uuid} for user {user['id']}")
         result = supabase.table("decks").insert(deck_data).execute()
-        
+
         if result.data:
-            logger.debug(f"Deck {deck_request.uuid} created by user {user['id']}")
-            
+            logger.info(f"✅ Deck {deck_request.uuid} inserted successfully")
+
+            # Verify the deck was actually created by immediately fetching it
+            try:
+                verification_deck = get_deck(deck_request.uuid)
+                if verification_deck:
+                    logger.info(f"✅ VERIFIED: Deck {deck_request.uuid} is retrievable immediately after creation")
+                else:
+                    logger.error(f"❌ CRITICAL: Deck {deck_request.uuid} was inserted but cannot be retrieved!")
+            except Exception as verify_error:
+                logger.error(f"❌ CRITICAL: Error verifying deck creation: {verify_error}")
+
             # Also create user_decks association
             try:
                 supabase.table("user_decks").upsert({
@@ -684,11 +710,13 @@ async def create_deck(
                     "deck_uuid": deck_request.uuid,
                     "last_accessed": now
                 }, on_conflict="user_id,deck_uuid").execute()
+                logger.info(f"✅ Created user_decks association for deck {deck_request.uuid}")
             except Exception as e:
                 logger.warning(f"Could not create user_decks association: {e}")
-            
+
             return result.data[0]
         else:
+            logger.error(f"❌ Failed to insert deck {deck_request.uuid}")
             raise HTTPException(status_code=400, detail="Failed to create deck")
             
     except HTTPException:

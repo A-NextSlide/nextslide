@@ -279,8 +279,8 @@ export class OutlineAPI {
   constructor() {
     // Get base URL from environment or use default
     const env = (import.meta as any).env || process.env;
-    this.baseUrl = env?.VITE_API_URL || API_CONFIG.BASE_URL || 'http://localhost:8000';
-    
+    this.baseUrl = env?.VITE_API_URL || API_CONFIG.BASE_URL;
+
     // Log the API URL being used
     // console.log('[OutlineAPI] Using API URL:', this.baseUrl);
   }
@@ -1459,4 +1459,75 @@ export class OutlineAPI {
 }
 
 // Create singleton instance
-export const outlineApi = new OutlineAPI(); 
+export const outlineApi = new OutlineAPI();
+
+/**
+ * Stream chat with the outline agent
+ */
+export async function* streamOutlineAgentChat(request: {
+  message: string;
+  chat_history: Array<{ role: string; content: string }>;
+  context?: any;
+}): AsyncGenerator<{ type: string; content?: string; data?: any; message?: string }, void, unknown> {
+  const url = `${API_CONFIG.BASE_URL}/outline-agent/chat`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Outline agent failed: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('No response body');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+
+        try {
+          const event = JSON.parse(data);
+
+          if (event.type === 'text') {
+            yield { type: 'text', content: event.content };
+          } else if (event.type === 'outline') {
+            // Parse the outline JSON
+            try {
+              const outlineData = typeof event.data === 'string'
+                ? JSON.parse(event.data)
+                : event.data;
+              yield { type: 'outline', data: outlineData };
+            } catch (e) {
+              console.error('Failed to parse outline data:', e);
+            }
+          } else if (event.type === 'error') {
+            yield { type: 'error', message: event.message };
+          } else if (event.type === 'done') {
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse SSE event:', e, line);
+        }
+      }
+    }
+  }
+}

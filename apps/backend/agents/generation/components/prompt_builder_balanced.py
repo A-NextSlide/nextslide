@@ -112,7 +112,10 @@ Output valid JSON with this structure:
         typography = theme.get('typography', {})
         hero_font = typography.get('hero_title', {}).get('family', 'Poppins')
         body_font = typography.get('body_text', {}).get('family', 'Inter')
-        
+
+        # Detect user-provided content
+        has_user_content = context.slide_outline.content and len(context.slide_outline.content.strip().split()) > 10
+
         # Build balanced prompt
         prompt_parts = [
             f"Create slide {slide_num} of {total_slides}:",
@@ -132,6 +135,15 @@ Output valid JSON with this structure:
             f"- Body font: {body_font}",
             ""
         ]
+
+        # Add content instruction early
+        if has_user_content:
+            prompt_parts.extend([
+                "** CRITICAL: USER PROVIDED SPECIFIC CONTENT **",
+                "Use the EXACT content above - DO NOT add research or additional information.",
+                "Focus on designing and laying out the provided content beautifully.",
+                ""
+            ])
         
         # Add layout-specific instructions
         if 'title' in layout:

@@ -30,7 +30,8 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
   const phases = [
     { key: 'initialization', label: 'Initializing', minProgress: 0, maxProgress: 15 },
     { key: 'theme_generation', label: 'Creating Theme', minProgress: 15, maxProgress: 30 },
-    { key: 'image_collection', label: 'Processing Media', minProgress: 30, maxProgress: 55 },
+    { key: 'layout_design', label: 'Creating Blueprint', minProgress: 30, maxProgress: 40 },
+    { key: 'image_collection', label: 'Processing Media', minProgress: 40, maxProgress: 55 },
     { key: 'slide_generation', label: 'Generating Slides', minProgress: 55, maxProgress: 95 },
     { key: 'finalization', label: 'Finalizing', minProgress: 95, maxProgress: 100 }
   ];
@@ -187,6 +188,12 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
         return 'Creating visual theme';
       case 'palette_generation':
         return 'Generating color palette';
+      case 'designing_layouts':
+        return 'Designing editorial layouts';
+      case 'designing_slide_layout':
+        return 'Creating slide structures';
+      case 'layouts_complete':
+        return 'Blueprint complete';
       case 'preparing_context':
         return 'Preparing slide context';
       case 'rag_lookup':

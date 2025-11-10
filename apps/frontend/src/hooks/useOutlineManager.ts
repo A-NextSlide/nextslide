@@ -1,9 +1,11 @@
-import { useState, useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { DeckOutline, SlideOutline } from '@/types/SlideTypes';
 import { v4 as uuidv4 } from 'uuid';
 
-export const useOutlineManager = (initialOutline: DeckOutline | null = null) => {
-  const [currentOutline, setCurrentOutline] = useState<DeckOutline | null>(initialOutline);
+export const useOutlineManager = (
+  currentOutline: DeckOutline | null,
+  setCurrentOutline: React.Dispatch<React.SetStateAction<DeckOutline | null>>
+) => {
   const isAddingSlide = useRef(false);
   
   // Add a reset function to clear the outline
@@ -136,8 +138,6 @@ export const useOutlineManager = (initialOutline: DeckOutline | null = null) => 
 
 
   return {
-    currentOutline,
-    setCurrentOutline, // Expose raw setter for flexibility (e.g., initial set from chat, research updates)
     resetOutline,
     handleAddSlide,
     handleSlideTitleChange,

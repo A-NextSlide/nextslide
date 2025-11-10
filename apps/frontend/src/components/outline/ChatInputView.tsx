@@ -445,9 +445,13 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   //   };
   // }, [interactionStage, currentSystemMessage]); // Removed setInteractionStage from dependencies
 
+  // Track if we've already initiated outline to prevent infinite loop
+  const hasInitiatedOutlineRef = useRef(false);
+
   // Auto-start outline generation when reaching showOptions, using selected controls
   useEffect(() => {
-    if (interactionStage === 'showOptions') {
+    if (interactionStage === 'showOptions' && !hasInitiatedOutlineRef.current) {
+      hasInitiatedOutlineRef.current = true;
       (async () => {
         try {
           // USE THE MODE DROPDOWN VALUE (detailLevel) - not selectedSlidePreset!
@@ -458,10 +462,12 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
           );
         } catch (error) {
           console.error('Error initiating outline:', error);
+          // Reset on error to allow retry
+          hasInitiatedOutlineRef.current = false;
         }
       })();
     }
-  }, [interactionStage, selectedSlideCount, selectedSlidePreset, handleInitiateOutline]);
+  }, [interactionStage, selectedSlideCount, selectedSlidePreset, detailLevel]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {

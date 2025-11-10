@@ -83,11 +83,37 @@ def create_deck_compose_stream(
         try:
             existing_deck = get_deck(deck_id)
             if not existing_deck:
-                yield _sse({'type': 'error', 'error': f'Deck {deck_id} not found'})
-                return
+                # Deck doesn't exist yet (common in outline agent mode)
+                # Create it now with the outline and basic structure
+                logger.info(f"[COMPOSE_STREAM] Deck {deck_id} not found in database, creating it now...")
+
+                # Build initial deck structure from outline
+                initial_deck_data = {
+                    "name": deck_outline.title or "Untitled Presentation",
+                    "slides": [],  # Will be populated during generation
+                    "size": {"width": 1920, "height": 1080},
+                    "status": {
+                        "state": "creating",
+                        "progress": 0,
+                        "message": "Starting deck composition...",
+                        "currentSlide": 0,
+                        "totalSlides": len(deck_outline.slides)
+                    },
+                    "outline": deck_outline.model_dump() if hasattr(deck_outline, 'model_dump') else deck_outline
+                }
+
+                # Upload the initial deck
+                try:
+                    upload_deck(initial_deck_data, deck_id, user_id)
+                    logger.info(f"[COMPOSE_STREAM] ✅ Successfully created deck {deck_id} in database")
+                    existing_deck = get_deck(deck_id)  # Refresh to get the created deck
+                except Exception as e:
+                    logger.error(f"[COMPOSE_STREAM] ❌ Failed to create deck {deck_id}: {e}")
+                    yield _sse({'type': 'error', 'error': f'Failed to create deck: {str(e)}'})
+                    return
             
             if not request.force_restart:
-                status = existing_deck.get('status', {})
+                status = existing_deck.get('status') or {}
                 if status.get('state') == 'completed':
                     slides = existing_deck.get('slides', [])
                     # Check if all slides are genuinely completed based on new status system

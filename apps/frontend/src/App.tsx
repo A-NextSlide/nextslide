@@ -22,6 +22,7 @@ import Profile from "./pages/Profile";
 import TeamSettings from "./pages/TeamSettings";
 import EmailVerification from "./pages/EmailVerification";
 import AuthCallback from "./pages/AuthCallback";
+// AgentOutlineView removed - using existing outline page
 import { ComponentStateProvider } from './context/CustomComponentStateContext';
 import SlideEditor from './components/SlideEditor';
 import { RegistryProvider, useRegistry } from './context/RegistryContext';
@@ -235,14 +236,15 @@ const AppContent = () => {
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/deck/:deckId" 
-              element={ 
+            <Route
+              path="/deck/:deckId"
+              element={
                 <ProtectedRoute>
                   <SlideEditor />
                 </ProtectedRoute>
               }
             />
+            {/* Outline View route - removed, using embedded outline in DeckList */}
             {/* Google Slides JSON Test route */}
             <Route 
               path="/slide-tagging" 

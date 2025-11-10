@@ -374,25 +374,48 @@ Return ONLY valid JSON.
         primary_text = colors.get('text_colors', {}).get('primary', '#000000')
         accent_color = colors.get('accents', ['#0066CC'])[0] if colors.get('accents') else '#0066CC'
 
-        prompt = f"""Create a BOLD, full-canvas layout blueprint with PROPER SPACING and ALIGNMENT.
+        prompt = f"""Create a PROFESSIONAL layout blueprint with PROPER TEXT FORMATTING, NO OVERLAPS, and PROPER CHART SIZING.
 
 SLIDE: {slide.title}
 TYPE: {slide_type}
 POSITION: {slide_index + 1}/{total_slides}
+CONTENT: {slide.content[:300] if slide.content else 'No content'}...
 
-THEME COLORS (use these creatively):
+THEME COLORS:
 - Background: {primary_bg}
 - Text: {primary_text}
 - Accent: {accent_color}
 
-CANVAS: 1920 x 1080 pixels (USE THE FULL CANVAS - be bold!)
-SAFE AREA: x=[100-1820], y=[100-980] (but shapes can go to edges: 0-1920, 0-1080)
+CANVAS: 1920 x 1080 pixels
+SAFE AREA: x=[100-1820], y=[100-920] (leave room for slide numbers/sources)
 
-REQUIRED ELEMENTS (EXACT positions - these are already positioned, DO NOT overlap them):
+REQUIRED ELEMENTS (already positioned - AVOID overlapping):
 {json.dumps(consistent, indent=2)}
 
-DESIGN PHILOSOPHY - BE BOLD AND DYNAMIC:
-Don't play it safe with centered rounded boxes. Use the FULL canvas. Create dynamic, edge-to-edge designs.
+🚨 CRITICAL TEXT FORMATTING RULES (MANDATORY):
+
+1. **ALWAYS Use Rich HTML Formatting in ALL TiptapTextBlock content:**
+   - Titles: <h1>Main Title</h1>, <h2>Section Title</h2>, <h3>Subsection</h3>
+   - Bold keywords: <strong>important term</strong>
+   - Emphasis: <em>subtle emphasis</em>
+   - Underline: <u>highlighted text</u>
+   - Bullet lists: <ul><li>First point</li><li>Second point</li></ul>
+   - Numbered lists: <ol><li>Step 1</li><li>Step 2</li></ol>
+   - Paragraphs: <p>Text content</p>
+   - Line breaks: Use </p><p> NOT \\n
+
+2. **Text Formatting Examples (FOLLOW THESE):**
+   - Title: "<h1>Revolutionary Product Launch</h1>"
+   - Bullets with bold: "<ul><li><strong>Fast:</strong> 10x performance</li><li><strong>Secure:</strong> End-to-end encryption</li></ul>"
+   - Mixed formatting: "<p>We deliver <em>exceptional quality</em> with <strong>proven results</strong></p>"
+   - Numbered steps: "<ol><li><strong>Discover:</strong> Identify needs</li><li><strong>Design:</strong> Create solutions</li></ol>"
+
+3. **NEVER use plain text:**
+   ❌ WRONG: "content": "Key Features\\nFast\\nSecure"
+   ✅ RIGHT: "content": "<h2>Key Features</h2><ul><li><strong>Fast</strong></li><li><strong>Secure</strong></li></ul>"
+
+🎨 DESIGN PHILOSOPHY:
+Clean, professional layouts with generous spacing. Quality > quantity. NO OVERLAPS.
 
 COLOR & GRADIENTS:
 - VARY opacity (0.08 to 0.95) for depth
@@ -401,87 +424,116 @@ COLOR & GRADIENTS:
 - Full-screen gradients work great
 - Color blocks that go to edges (x=0 or x+width=1920)
 
-LAYOUT PATTERNS (be bold and varied):
+📐 LAYOUT PATTERNS (choose based on content):
 
-1. SPLIT SCREEN (50/50):
-   - Left half: colored shape (x=0, width=960) for image area
-   - Right half: content with contrasting color
-   - Perfect for image + text slides
-   - Shapes go edge-to-edge (no margins)
+1. **CENTERED CONTENT** (for: title slides, quotes, simple messages)
+   - Title: x=160-360, width=1200-1600, textAlign="center"
+   - Large fonts: 80-120pt for titles
+   - Vertically centered: y=300-400
+   - Minimal decoration
 
-2. ASYMMETRIC SPLIT (60/40 or 70/30):
-   - Larger colored block on one side
-   - Content on the other
-   - Dynamic and modern
+2. **LEFT-ALIGNED VERTICAL STACK** (for: bullet lists, features, content-heavy)
+   - Everything at x=100, left-aligned
+   - Stack vertically with 60-80px gaps
+   - Title at y=100
+   - Use currentY tracking: y = previousY + previousHeight + gap
+   - Width: 1000-1400px
 
-3. FULL-WIDTH BANDS:
-   - Edge-to-edge colored sections (x=0, width=1920)
-   - NO rounded corners on full-width elements
-   - Stack multiple bands with different colors
-   - Use gradients
+3. **SPLIT SCREEN** (for: text + image, comparisons)
+   - Left column: x=100, width=760
+   - Right column: x=960, width=860
+   - 100px gap between columns
+   - Each column has independent Y tracking
+   - Good for pairing visuals with text
 
-4. DIAGONAL SPLIT:
-   - Use gradient angles (45deg, 135deg) for diagonal feels
-   - Creates dynamic energy
+4. **LARGE VISUAL** (for: charts, data, infographics)
+   - Title at top: y=100-150
+   - Large chart: y=220-260, height=550-700px (NEVER LESS THAN 500px!)
+   - Caption/insights below if space allows
+   - Give charts maximum space
 
-5. L-SHAPE or SIDE BAR:
-   - Thick colored bar along left/right edge (x=0, width=200-400)
-   - Content in remaining space
-   - Bold accent strip
+5. **GRID** (for: team slides, 4-6 feature cards)
+   - 2x2 or 3x2 grid
+   - Equal sizing and spacing
+   - 60-80px gaps between cards
 
-CRITICAL SPACING & ALIGNMENT RULES:
-1. LAYERING (zIndex):
-   - Background: zIndex=0
-   - Images: zIndex=1-3
-   - Decorative shapes/backdrops: zIndex=4-8
-   - Lines/dividers: zIndex=9
-   - Text content: zIndex=10-20
-   - UI elements (slide numbers, sources): zIndex=100+
-   - ALWAYS put shapes/backgrounds BEHIND text!
+LAYOUT SELECTION:
+- Title slide → CENTERED
+- Bullet lists → LEFT-ALIGNED STACK
+- Bullets + image → SPLIT SCREEN
+- Charts/data → LARGE VISUAL
+- Team/features (4-6) → GRID
 
-2. TEXT INSIDE SHAPES (CRITICAL):
-   - If you create a backdrop shape for text, the text MUST be positioned INSIDE it
-   - Shape bounds: [shape.x, shape.y, shape.x + shape.width, shape.y + shape.height]
-   - Text must fit: [text.x >= shape.x + 40, text.y >= shape.y + 40, text.x + text.width <= shape.x + shape.width - 40, text.y + text.height <= shape.y + shape.height - 40]
-   - CALCULATE FIRST: Determine text size, THEN create shape around it with 40px padding
-   - Example: Text at (1060, 220, 700, 100) needs shape at (1020, 180, 780, 180) minimum
+🚨 CRITICAL ANTI-OVERLAP POSITIONING SYSTEM:
 
-3. SPACING (prevent overlaps):
-   - Minimum 30px gap between adjacent text blocks
-   - Minimum 20px gap between shape and text it contains
-   - Text inside shapes: add 40px padding on all sides
-   - Stack vertically: y gaps of 40-60px between elements
-   - Stack horizontally: x gaps of 40-80px between columns
-   - NO OVERLAPPING TEXT - verify every text block has clear space
+**STEP 1: Calculate Component Heights**
+- Title (72pt): height = 100px
+- Title (48pt): height = 70px
+- Body text (36pt): height = 60px per line
+- Bullet list (3 items): height = 200px minimum
+- Bullet list (5 items): height = 340px minimum
+- Chart: height = 550-700px (NEVER LESS THAN 500px!)
+- Image: calculate based on aspect ratio
 
-4. ALIGNMENT (clean organization):
-   - Align tops: multiple elements should share same y coordinate
-   - Align bottoms: y + height should match for row elements
-   - Align left edges: multiple elements share same x coordinate
-   - Align right edges: x + width should match
-   - Center alignment: use x = (1920 - width) / 2
-   - Text inside containers: center within the container bounds
+**STEP 2: Use currentY Tracking (MANDATORY - NO FIXED POSITIONS)**
+```
+currentY = 100  // Start at safe area top
 
-5. HEIGHT CALCULATION (adequate space):
-   - Title (72px font): height >= 100px
-   - Subtitle (48px font): height >= 80px
-   - Body text (36px font): height >= 60px per line
-   - Multi-line text: calculate height = lineHeight * numberOfLines + 20px padding
-   - Content blocks: ensure height fits all contained elements + padding
+// Component 1: Title
+title.y = currentY
+title.height = 100
+currentY = title.y + title.height + 80  // Add gap
+// currentY is now 280
 
-6. POSITIONING BEST PRACTICES:
-   - Use multiples of 20 for x/y coordinates (grid alignment)
-   - Title area: y=120-200 (top zone)
-   - Main content: y=250-850 (middle zone)
-   - Footer area: y=900-980 (bottom zone, but avoid required elements)
-   - Check that x + width <= 1920 and y + height <= 1080
+// Component 2: Content
+content.y = currentY
+content.height = 300
+currentY = content.y + content.height + 80
+// currentY is now 660
 
-7. NO OVERLAPS:
-   - Calculate bounding boxes: [x, y, x+width, y+height]
-   - Ensure no text overlaps with other text
-   - Shapes can overlap (backgrounds behind foregrounds)
-   - Text must be fully visible above all shapes
-   - Images must not overlap text unless intentional background image
+// Component 3: Chart (check if fits)
+if (currentY + 550 <= 920):  // Verify fits in safe area
+  chart.y = currentY
+  chart.height = 550
+else:
+  // Use split-screen instead!
+```
+
+**STEP 3: Spacing Requirements (ENFORCE)**
+- Vertical gap between text: 60-80px MINIMUM
+- Vertical gap before/after charts: 80-100px MINIMUM
+- Horizontal gap (split-screen): 100px MINIMUM
+- Text inside shapes: 40px padding all sides
+- Edge margins: 100px from all edges
+
+**STEP 4: Layering (zIndex)**
+- Background: zIndex=0
+- Background images: zIndex=1
+- Decorative shapes: zIndex=5
+- Accent lines: zIndex=9
+- Text/Charts: zIndex=10
+- UI elements: zIndex=100
+
+**STEP 5: Bounds Validation**
+For EVERY component verify:
+- x >= 100
+- x + width <= 1820
+- y >= 100
+- y + height <= 920 (leaves room for slide numbers)
+- If fails: RECALCULATE or use different layout
+
+**STEP 6: Text Inside Shapes**
+If using backdrop shape:
+- Option A: Define text first, create shape with padding:
+  * shape.x = text.x - 40
+  * shape.y = text.y - 40
+  * shape.width = text.width + 80
+  * shape.height = text.height + 80
+- Option B: Define shape first, position text inside:
+  * text.x = shape.x + 40
+  * text.y = shape.y + 40
+  * text.width = shape.width - 80
+  * text.height = shape.height - 80
 
 8. IMAGES (USE THEM STYLISTICALLY):
    - ALWAYS include images when available - they add visual interest
@@ -507,38 +559,105 @@ CRITICAL SPACING & ALIGNMENT RULES:
      * Top third or bottom third
      * Inset within content area with border frame
 
-9. CHARTS (GIVE THEM PROPER HEIGHT AND PROPER PLACEMENT):
-   - Charts need MINIMUM height to be readable
-   - Bar/Column charts: height >= 400px (better: 500-600px)
-   - Line charts: height >= 400px
-   - Pie/Donut charts: width=height (square), minimum 400x400px
-   - NO SHORT/SQUISHED CHARTS - they're unreadable
-   - Chart position: give them prominent space (not squeezed in corners)
-   - Leave 40px margin around charts for labels/legends
-   - CRITICAL: Charts MUST NOT overlap text blocks - check bounding boxes!
-   - Calculate chart bounds [x, y, x+width, y+height] and ensure no text is inside those bounds
+🚨 CHARTS - NO SHORT CHARTS ALLOWED (CRITICAL):
 
-COMPONENT EXAMPLES WITH PROPER SPACING AND POSITIONING:
+**ABSOLUTE MINIMUM CHART HEIGHTS (NEVER GO BELOW):**
+- Bar/Column charts: height >= 550px (NEVER less than 500px!)
+- Line charts: height >= 550px (NEVER less than 500px!)
+- Pie/Donut charts: width=height (square), minimum 500x500px
+- Area charts: height >= 550px
 
-Example 1 - Text properly inside backdrop shape:
-- Backdrop shape: {{"type": "Shape", "zIndex": 5, "props": {{"x": 1020, "y": 180, "width": 780, "height": 720, "fill": "#FFFFFF", "borderRadius": 20, "opacity": 0.95}}}}
-- Title INSIDE (40px padding): {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1060, "y": 220, "width": 700, "height": 100, "fontSize": 72, "content": "<h1>Title</h1>", "color": "{primary_text}"}}}}
-- Body INSIDE (60px below title): {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1060, "y": 360, "width": 700, "height": 500, "fontSize": 36, "content": "<p>Content</p>", "color": "{primary_text}"}}}}
+**PREFERRED CHART SIZING:**
+- Optimal height: 600-700px (use whenever possible)
+- Optimal width: 1200-1720px (as wide as layout allows)
+- Give charts MAXIMUM space - they are the focal point!
 
-Example 2 - Image with border frame (NOT rounded):
-- Image with sharp border: {{"type": "Image", "zIndex": 2, "props": {{"x": 100, "y": 200, "width": 800, "height": 600, "src": "placeholder", "borderRadius": 0, "stroke": "{accent_color}", "strokeWidth": 6, "objectFit": "cover"}}}}
+**CHART POSITIONING:**
+- Use LARGE VISUAL layout pattern for chart slides
+- Position prominently, NOT squeezed in corners
+- Leave 40-60px margin around charts for labels/legends
+- If chart + text won't fit vertically → use SPLIT SCREEN layout
 
-Example 3 - Image as half-screen with color overlay (CORRECT WAY):
-- Left half image with overlay using Image props: {{"type": "Image", "zIndex": 2, "props": {{"x": 0, "y": 0, "width": 960, "height": 1080, "src": "placeholder", "borderRadius": 0, "objectFit": "cover", "overlayColor": "{accent_color}30", "overlayBlendMode": "multiply"}}}}
+**ANTI-OVERLAP FOR CHARTS:**
+- Charts MUST NOT overlap ANY text
+- Calculate chart bounds: [x, y, x+width, y+height]
+- Verify NO text components fall within these bounds
+- Use currentY tracking to ensure proper spacing
+- Minimum 80-100px gap before and after charts
 
-Example 4 - Image as background with overlay (CORRECT WAY):
-- Background image with built-in overlay: {{"type": "Image", "zIndex": 1, "props": {{"x": 0, "y": 0, "width": 1920, "height": 1080, "src": "placeholder", "opacity": 0.5, "objectFit": "cover", "borderRadius": 0, "overlayColor": "{primary_bg}60", "overlayBlendMode": "soft-light"}}}}
+**IF CHART WON'T FIT:**
+- DON'T make it shorter (NO 300px or 400px charts!)
+- Instead: Use split-screen (chart left, text right OR vice versa)
+- Or: Reduce text content above chart
+- Or: Remove non-essential elements
+- NEVER compromise on chart height!
 
-Example 5 - Chart with proper height:
-- Bar chart (NOT short): {{"type": "Chart", "zIndex": 10, "props": {{"x": 200, "y": 300, "width": 1520, "height": 550, "chartType": "bar", "data": [], "colors": ["{accent_color}"]}}}}
+✅ COMPLETE EXAMPLES WITH PROPER HTML & POSITIONING:
 
-Example 6 - Accent line properly positioned:
-- Accent line above content: {{"type": "Shape", "zIndex": 9, "props": {{"x": 1020, "y": 160, "width": 200, "height": 4, "fill": "{accent_color}", "borderRadius": 0, "opacity": 1}}}}
+**Example 1: Bullet List (Left-Aligned Stack with HTML)**
+```
+currentY = 100
+// Title
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 100, "y": 100, "width": 1200, "height": 100,
+  "fontSize": 72, "content": "<h1>Key Benefits</h1>", "color": "{primary_text}"
+}}}}
+currentY = 100 + 100 + 80 = 280
+
+// Bullet list with HTML formatting
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 100, "y": 280, "width": 1200, "height": 340,
+  "fontSize": 36,
+  "content": "<ul><li><strong>Fast Performance:</strong> 10x faster than competitors</li><li><strong>Secure by Design:</strong> End-to-end encryption</li><li><strong>Scalable:</strong> Handles millions of users</li><li><strong>Easy to Use:</strong> Intuitive interface</li><li><strong>24/7 Support:</strong> Always here to help</li></ul>",
+  "color": "{primary_text}"
+}}}}
+```
+
+**Example 2: Chart Slide (Large Visual Pattern)**
+```
+// Title at top
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 100, "y": 100, "width": 1720, "height": 80,
+  "fontSize": 64, "content": "<h1>Revenue Growth</h1>", "color": "{primary_text}"
+}}}}
+
+// Large chart (PROPER HEIGHT - 600px)
+{{"type": "Chart", "zIndex": 10, "props": {{
+  "x": 100, "y": 260, "width": 1720, "height": 600,
+  "chartType": "line", "data": [...], "colors": ["{accent_color}"]
+}}}}
+
+// Optional: Insights below (if space allows)
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 100, "y": 880, "width": 1720, "height": 40,
+  "fontSize": 24,
+  "content": "<p><strong>Key Insight:</strong> Revenue increased by <u>340%</u> in Q4</p>",
+  "color": "{primary_text}"
+}}}}
+```
+
+**Example 3: Split-Screen (Image + Formatted Text)**
+```
+// Left: Image
+{{"type": "Image", "zIndex": 2, "props": {{
+  "x": 100, "y": 100, "width": 760, "height": 800,
+  "src": "image_url", "borderRadius": 12, "objectFit": "cover"
+}}}}
+
+// Right: Content with HTML
+rightY = 100
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 960, "y": 100, "width": 860, "height": 100,
+  "fontSize": 64, "content": "<h1>Product Launch</h1>", "color": "{primary_text}"
+}}}}
+rightY = 260
+{{"type": "TiptapTextBlock", "zIndex": 10, "props": {{
+  "x": 960, "y": 260, "width": 860, "height": 400,
+  "fontSize": 32,
+  "content": "<p>Introducing our <strong>revolutionary</strong> product.</p><h3>Features:</h3><ul><li>AI-powered</li><li>Real-time analytics</li><li>24/7 support</li></ul>",
+  "color": "{primary_text}"
+}}}}
+```
 
 OUTPUT (JSON):
 {{
@@ -555,27 +674,71 @@ OUTPUT (JSON):
   ]
 }}
 
-VALIDATION CHECKLIST (before finalizing - CHECK EVERYTHING):
-✓ Background at zIndex=0
-✓ Images at zIndex=1-3
-✓ All decorative shapes/backdrops have zIndex=4-9
-✓ All text has zIndex >= 10
-✓ UI elements at zIndex >= 100
-✓ If shape is backdrop for text: text coordinates are INSIDE shape with 40px padding
-✓ No text blocks overlap each other (check x/y/width/height bounds)
-✓ All elements within canvas (x+width <= 1920, y+height <= 1080)
-✓ Minimum 30px gaps between adjacent text elements
-✓ Heights are adequate for font sizes (title>=100px, body>=60px per line)
-✓ Coordinates use multiples of 20 for alignment
-✓ Images use overlayColor and overlayBlendMode props (NOT separate shapes for overlays)
-✓ Images are included and styled (borderRadius variation, borders, opacity)
-✓ Images positioned purposefully (not overlapping text unless background)
-✓ Charts have proper height (minimum 400px, better 500-600px)
-✓ Charts are not squished or too short to read
-✓ **CRITICAL: Charts do NOT overlap any text blocks - verify bounding boxes!**
-✓ **Text must be fully readable and NOT covered by charts or other elements**
+🔍 MANDATORY VALIDATION CHECKLIST - VERIFY ALL BEFORE RETURNING:
 
-Return ONLY JSON.
+**TEXT FORMATTING (CRITICAL - CHECK EVERY TiptapTextBlock):**
+✓ ALL content uses proper HTML tags (NO plain text!)
+✓ Titles use <h1>, <h2>, or <h3>
+✓ Bullet lists use <ul><li>...</li></ul>
+✓ Numbered lists use <ol><li>...</li></ol>
+✓ Important keywords wrapped in <strong>...</strong>
+✓ Emphasis added with <em>...</em> or <u>...</u>
+✓ Paragraphs separated with </p><p>, NOT \\n
+✓ NO plain newlines (\\n) anywhere in content
+
+**POSITIONING & OVERLAPS (CRITICAL):**
+✓ Used currentY tracking (NOT fixed Y positions like y=200, y=300)
+✓ Calculated each component height before positioning
+✓ Minimum 60-80px vertical gaps between text elements
+✓ Minimum 80-100px vertical gaps around charts
+✓ Split-screen: left x <= 860, right x >= 960 (100px gap)
+✓ Final currentY <= 920 (everything fits in safe area)
+✓ NO overlapping bounding boxes for any text pair
+✓ Charts do NOT overlap ANY text - verified bounding boxes
+
+**CHART SIZING (CRITICAL - NO SHORT CHARTS):**
+✓ ALL charts have height >= 550px (NEVER less than 500px!)
+✓ Bar/column charts: height >= 550px
+✓ Line/area charts: height >= 550px
+✓ Pie/donut charts: width=height, both >= 500px
+✓ Charts are properly sized and readable (NOT squished)
+✓ Used LARGE VISUAL or SPLIT SCREEN layout for chart slides
+
+**BOUNDS CHECKING:**
+✓ Every component: x >= 100
+✓ Every component: x + width <= 1820
+✓ Every component: y >= 100
+✓ Every component: y + height <= 920
+✓ Avoided slide number area (y > 920)
+✓ Avoided source citation area (y > 920)
+
+**LAYERING:**
+✓ Background: zIndex=0
+✓ Background images: zIndex=1
+✓ Decorative shapes: zIndex=5
+✓ Accent lines: zIndex=9
+✓ All text: zIndex=10
+✓ All charts: zIndex=10
+✓ UI elements: zIndex=100
+
+**DESIGN QUALITY:**
+✓ Layout pattern matches slide type (centered for titles, stacked for bullets, etc.)
+✓ Coordinates use multiples of 20
+✓ Colors use theme variables ({primary_bg}, {primary_text}, {accent_color})
+✓ Text inside shapes has 40px padding verified
+✓ Images included when available
+✓ Clean, professional appearance
+✓ Generous spacing (60-100px gaps)
+
+**CONTENT ACCURACY:**
+✓ Content matches slide outline
+✓ Slide title used appropriately
+✓ Key points formatted with HTML
+✓ Added structure but preserved meaning
+
+🚨 IF ANY CHECK FAILS → FIX IT IMMEDIATELY!
+
+Return ONLY valid JSON (no markdown code blocks).
 """
         return prompt
 

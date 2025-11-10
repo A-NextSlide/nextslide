@@ -546,6 +546,8 @@ export class GenerationStateManager {
         return '🚀 Initializing deck creation...';
       case 'theme_generation':
         return '🎨 Creating theme and design system...';
+      case 'layout_design':
+        return '📐 Creating blueprint...';
       case 'image_collection':
         return '🖼️ Processing media assets...';
       case 'slide_generation':
@@ -597,13 +599,15 @@ export class GenerationStateManager {
       case 'initialization':
         return 0;
       case 'theme_generation':
-        return 15;  // Changed from 5
+        return 15;
+      case 'layout_design':
+        return 30;
       case 'image_collection':
-        return 30;  // Changed from 10
+        return 40;
       case 'slide_generation':
-        return 55;  // Changed from 15
+        return 55;
       case 'finalization':
-        return 95;  // Unchanged
+        return 95;
       default:
         return this.currentProgress; // Don't change if phase unknown
     }

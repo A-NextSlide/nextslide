@@ -71,8 +71,8 @@ const OutlineHeader: React.FC<OutlineHeaderProps> = ({
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h2 className="text-2xl font-bold text-foreground truncate">
-            {isProcessingFiles ? 'Processing your files...' : currentOutline.title}
+          <h2 className="text-lg font-semibold text-foreground truncate">
+            {isProcessingFiles ? 'Processing your files...' : (currentOutline?.title || 'New Presentation')}
           </h2>
         </div>
         <div className="flex items-center gap-2">

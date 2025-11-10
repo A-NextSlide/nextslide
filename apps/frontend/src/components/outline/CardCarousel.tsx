@@ -29,6 +29,7 @@ interface CardCarouselProps {
   setCurrentOutline?: React.Dispatch<React.SetStateAction<DeckOutline | null>>;
   editingSlides?: string[]; // New prop for slides being edited via chat
   editTarget?: number | 'all'; // Target for editing
+  updatedSlideIds?: Set<string>; // Slides that were recently updated (for glow animation)
 }
 
 const CardCarousel: React.FC<CardCarouselProps> = ({
@@ -46,7 +47,8 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
   completedSlides = new Set(),
   setCurrentOutline,
   editingSlides = [],
-  editTarget
+  editTarget,
+  updatedSlideIds = new Set()
 }) => {
   // Debug logging - only log meaningful changes
   React.useEffect(() => {
@@ -562,7 +564,7 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
             <div
               key={slide?.id || 'add-slide'}
               className={cn(
-                "absolute top-1/2 left-1/2 w-[75%] max-w-[700px]", // Reduced width from 95% to 75%
+                "absolute top-1/2 left-1/2 w-[85%] max-w-[700px]",
                 // Glass effect styling
                 "bg-white/95 dark:bg-zinc-900/95",
                 "rounded-xl shadow-md",
@@ -571,6 +573,8 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
                 isActive && "shadow-xl border-[#FF4301] dark:border-[#FF4301]",
                 !isActive && "border-[#FF4301]/40 dark:border-[#FF4301]/40",
                 !isAddSlide && researchingSlides.includes(slide.id) && "animate-pulse-border",
+                // Updated slide glow animation
+                !isAddSlide && updatedSlideIds.has(slide.id) && "ring-2 ring-[#FF4301] ring-opacity-50 animate-pulse",
                 // Drag over state
                 !isAddSlide && dragOverSlideIndex === index && "ring-4 ring-[#FF4301] ring-offset-2",
                 // Being dragged state

@@ -204,7 +204,16 @@ class ThemeDirector:
             colors = style_dict['colors']
             if isinstance(colors, list):
                 analysis['explicit_colors'] = [c for c in colors if isinstance(c, str) and c.startswith('#')]
-        
+            elif isinstance(colors, dict):
+                # Handle ColorConfig object format
+                color_list = []
+                for key in ['background', 'text', 'accent1', 'accent2', 'accent3']:
+                    val = colors.get(key)
+                    if val and isinstance(val, str) and val.startswith('#'):
+                        color_list.append(val)
+                if color_list:
+                    analysis['explicit_colors'] = color_list
+
         return analysis
 
     def _check_wants_gradients(self, text: str) -> bool:
@@ -492,7 +501,16 @@ Brand name:"""
             colors = style_dict['colors']
             if isinstance(colors, list):
                 analysis['explicit_colors'] = [c for c in colors if isinstance(c, str) and c.startswith('#')]
-        
+            elif isinstance(colors, dict):
+                # Handle ColorConfig object format
+                color_list = []
+                for key in ['background', 'text', 'accent1', 'accent2', 'accent3']:
+                    val = colors.get(key)
+                    if val and isinstance(val, str) and val.startswith('#'):
+                        color_list.append(val)
+                if color_list:
+                    analysis['explicit_colors'] = color_list
+
         return analysis
     
     def _select_optimal_logo_for_background(
@@ -665,8 +683,42 @@ Brand name:"""
         variety_seed: str
     ) -> Dict[str, Any]:
         """Fast AI-driven color acquisition."""
-        
-        # 1. Custom hex colors (highest priority)
+
+        # 0. HIGHEST PRIORITY: Explicit colors from ColorConfig (user selected colors)
+        explicit_colors = analysis.get('explicit_colors', [])
+        if explicit_colors and len(explicit_colors) > 0:
+            logger.info(f"[THEME DIRECTOR] Using explicit colors from ColorConfig: {explicit_colors}")
+            # Determine which colors are backgrounds vs accents based on brightness
+            backgrounds = []
+            accents = []
+            for color in explicit_colors:
+                # Simple brightness check: if color is light, it's likely a background
+                if color.upper() in ['#FFFFFF', '#F5F5F5', '#FAFAFA', '#FFF', '#FFFFFFFF']:
+                    backgrounds.append(color)
+                elif len(color) == 7:  # Valid hex
+                    # Check brightness
+                    try:
+                        r = int(color[1:3], 16)
+                        g = int(color[3:5], 16)
+                        b = int(color[5:7], 16)
+                        brightness = (r * 299 + g * 587 + b * 114) / 1000
+                        if brightness > 200:  # Light color, likely background
+                            backgrounds.append(color)
+                        else:  # Dark/saturated color, likely accent
+                            accents.append(color)
+                    except:
+                        accents.append(color)
+
+            return {
+                'colors': explicit_colors[:8],
+                'source': 'user_explicit_colors',
+                'palette_name': 'Selected Colors',
+                'backgrounds': backgrounds if backgrounds else ['#FFFFFF'],
+                'accents': accents if accents else explicit_colors[:2],
+                'metadata': {'user_selected': True, 'explicit_colors': explicit_colors}
+            }
+
+        # 1. Custom hex colors from vibeContext (high priority)
         if style_dict and style_dict.get('vibeContext'):
             vibe_context = style_dict.get('vibeContext', '')
             hex_pattern = r'#[0-9A-Fa-f]{6}\b'

@@ -23,6 +23,7 @@ interface UseOutlineChatProps {
   onOutlineStructure?: (title: string, slideTitles: string[]) => void;
   onSlideComplete?: (slideIndex: number, slide: any) => void;
   setNarrativeFlow?: React.Dispatch<React.SetStateAction<any>>;
+  deckId?: string; // CRITICAL: Deck ID to use for outline.id (ensures UUID consistency)
 }
 
 export const useOutlineChat = ({
@@ -41,6 +42,7 @@ export const useOutlineChat = ({
   onOutlineStructure,
   onSlideComplete,
   setNarrativeFlow,
+  deckId, // CRITICAL: Deck ID to use for outline.id
 }: UseOutlineChatProps) => {
   // This chatInput state is primarily for the temporary input field in ChatInputView if OutlineEditor
   // doesn't directly control ChatInputView's input field prop for each step.
@@ -138,8 +140,11 @@ export const useOutlineChat = ({
                 deepResearch: false,
                 taggedMedia: []
               }));
+              console.log('[useOutlineChat] research_plan - Creating placeholder outline');
+              console.log('[useOutlineChat] research_plan - deckId provided:', deckId);
+              console.log('[useOutlineChat] research_plan - Will use ID:', deckId || uuidv4());
               const newOutline: DeckOutline = {
-                id: uuidv4(),
+                id: deckId || uuidv4(), // CRITICAL: Use deckId for UUID consistency
                 title: 'Generating your outline…',
                 slides: placeholderSlides
               };
@@ -257,17 +262,17 @@ export const useOutlineChat = ({
 
           // **NEW: Initialize outline with placeholder slides immediately**
           if (event.title && event.slideTitles && event.slideCount > 0) {
-            console.warn('[useOutlineChat] Creating placeholder outline with', event.slideCount, 'slides');
+            console.warn('[useOutlineChat] outline_structure - Creating placeholder outline with', event.slideCount, 'slides');
             setCurrentOutline(prev => {
               // If we already have an outline, preserve it (e.g., during re-generation)
               if (prev && prev.slides.length > 0) return prev;
 
               // Create initial outline with placeholder slides
               const placeholderSlides: SlideOutline[] = event.slideTitles.map((slideTitle: any, idx: number) => {
-                const title = typeof slideTitle === 'string' 
-                  ? slideTitle 
+                const title = typeof slideTitle === 'string'
+                  ? slideTitle
                   : (slideTitle?.slide_title || slideTitle?.title || `Slide ${idx + 1}`);
-                
+
                 return {
                   id: uuidv4(),
                   title,
@@ -277,8 +282,10 @@ export const useOutlineChat = ({
                 };
               });
 
+              console.log('[useOutlineChat] outline_structure - deckId provided:', deckId);
+              console.log('[useOutlineChat] outline_structure - Will use ID:', deckId || uuidv4());
               const newOutline: DeckOutline = {
-                id: uuidv4(),
+                id: deckId || uuidv4(), // CRITICAL: Use deckId for UUID consistency
                 title: event.title,
                 slides: placeholderSlides
               };
@@ -318,9 +325,12 @@ export const useOutlineChat = ({
               
               if (!prev) {
                 console.log('[useOutlineChat] No previous outline, creating new one');
+                console.log('[useOutlineChat] deckId provided:', deckId);
+                console.log('[useOutlineChat] Will use ID:', deckId || (outlineStructureInfo?.title ? uuidv4() : ''));
                 // If no outline exists yet, create one with structure info
+                // CRITICAL: Use deckId if provided, otherwise fallback to uuidv4() for UUID consistency
                 const newOutline: DeckOutline = {
-                  id: outlineStructureInfo?.title ? uuidv4() : '',
+                  id: deckId || (outlineStructureInfo?.title ? uuidv4() : ''),
                   title: outlineStructureInfo?.title || 'Untitled Presentation',
                   slides: Array(totalSlides || event.slideIndex + 1).fill(null).map((_, idx) => ({
                     id: uuidv4(),
@@ -381,8 +391,10 @@ export const useOutlineChat = ({
           
         case 'outline_complete':
           // Merge final outline data to avoid remounting cards and losing edit state
-          // Ensure research visually completes
-          setResearchEvents(prev => ([...prev, { type: 'research_complete', findings: [], progress: 100 }]));
+          // Clear research events now that outline is complete
+          setResearchEvents([]);
+          // Set isGenerating to false when outline is complete
+          setIsGenerating(false);
           if (event.outline && setCurrentOutline) {
             const finalOutline = event.outline as any;
             setCurrentOutline(prev => {
@@ -519,7 +531,7 @@ export const useOutlineChat = ({
               const colorCount = Array.isArray(palette.colors) ? palette.colors.length : 0;
               if (colorCount < 3 && outline) {
                 try {
-                  void outlineApi.generateThemeFromOutline(outline, undefined, (evt) => {
+                  void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
                     try {
                       let d: any = null;
                       if ((evt as any).type === 'artifact' && String((evt as any).kind).toLowerCase() === 'theme_json') {
@@ -551,7 +563,7 @@ export const useOutlineChat = ({
             if (needsTheme && outline) {
               try {
                 // Kick off client-side theme generation without blocking
-                void outlineApi.generateThemeFromOutline(outline, undefined, (evt) => {
+                void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
                   try {
                     let d: any = null;
                     if ((evt as any).type === 'artifact' && String((evt as any).kind).toLowerCase() === 'theme_json') {
@@ -995,7 +1007,7 @@ export const useOutlineChat = ({
       setLoadingStatus(null);
       setProgress(null);
     }
-  }, [initialIdea, styleVibeText, selectedFont, colorConfig, uploadedFiles, setCurrentOutline, setUploadedFiles, toast, handleProgressUpdate, detailLevel, slideCount]);
+  }, [initialIdea, styleVibeText, selectedFont, colorConfig, uploadedFiles, setCurrentOutline, setUploadedFiles, toast, handleProgressUpdate, detailLevel, slideCount, deckId]);
 
   // NEW: Two-step deck generation
   const handleTwoStepGeneration = useCallback(async (

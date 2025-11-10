@@ -55,14 +55,14 @@ class RegistryFonts:
         # Return a basic set if nothing else works
         pixelbuddha_fonts = cls._load_pixelbuddha_fonts()
         fallback_groups = {
-            "Sans-Serif": ["Inter", "Poppins", "Montserrat", "Roboto", "Open Sans"],
-            "Serif": ["Playfair Display", "Merriweather", "Lora", "Source Serif Pro"],
-            "Script": ["Caveat", "Dancing Script", "Pacifico"],
-            "Bold": ["Bebas Neue", "Oswald", "Anton"],
+            # IMPORTANT: Only include fonts that exist locally in /assets/fonts
+            # DO NOT include Google Fonts (Inter, Poppins, etc.) unless they're downloaded
+            "Sans-Serif": [],  # Empty - use PixelBuddha/Designer fonts instead
+            "Serif": [],  # Empty - use PixelBuddha/Designer fonts instead
+            "Script": [],  # Empty - use PixelBuddha/Designer fonts instead
+            "Bold": [],  # Empty - use PixelBuddha/Designer fonts instead
             "Designer": [
-                # Curated (Google)
-                "Baloo 2", "Eudoxus Sans", "Gloock", "Prata", "Staatliches",
-                # Local Designer Fonts (cleaned names)
+                # Local Designer Fonts (cleaned names) - these exist in /assets/fonts/designer/
                 "AV Galveria — Display Serif Font", "Acrona Display Font", "Acure - Display Font", "Alerio Sans Serif",
                 "Delamot", "ElMariachi", "Felicidade", "Floriena Ligatures Sans", "Glorida — Sans Serif Family",
                 "HFPensional", "HKGroteskWide", "Hiluna — Clean Sans Serif", "Marine Elmoure Sans Serif", "Maxmillion",
@@ -128,8 +128,10 @@ class RegistryFonts:
     @classmethod
     def _merge_designer_fonts(cls, groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
         """Ensure 'Designer' group includes all curated fonts and merge 'Designer Local' if present. Load curated PixelBuddha fonts (80 instead of 701 for performance)."""
+        # IMPORTANT: Only include fonts that exist locally in /assets/fonts/designer/
+        # DO NOT include Google Fonts unless they're actually downloaded
         fallback_designer = [
-            "Baloo 2", "Eudoxus Sans", "Gloock", "Prata", "Staatliches",
+            # Local Designer Fonts (these exist in /assets/fonts/designer/)
             "AV Galveria — Display Serif Font", "Acrona Display Font", "Acure - Display Font", "Alerio Sans Serif",
             "Delamot", "ElMariachi", "Felicidade", "Floriena Ligatures Sans", "Glorida — Sans Serif Family",
             "HFPensional", "HKGroteskWide", "Hiluna — Clean Sans Serif", "Marine Elmoure Sans Serif", "Maxmillion",

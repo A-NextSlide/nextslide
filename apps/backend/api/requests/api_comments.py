@@ -67,11 +67,13 @@ def _assert_can_comment(deck_id: str, user_id: str):
     if deck.get("user_id") == user_id:
         return True
     supabase = _get_supabase()
-    res = supabase.table("deck_user_access").select("role,status").eq("deck_id", deck_id).eq("user_id", user_id).single().execute()
-    role = (res.data or {}).get("role")
-    status = (res.data or {}).get("status")
-    if status == "active" and role in ("commenter", "editor"):
-        return True
+    # Use maybe_single() instead of single() to handle cases where no access row exists
+    res = supabase.table("deck_user_access").select("role,status").eq("deck_id", deck_id).eq("user_id", user_id).maybe_single().execute()
+    if res and res.data:
+        role = res.data.get("role")
+        status = res.data.get("status")
+        if status == "active" and role in ("commenter", "editor"):
+            return True
     raise HTTPException(status_code=403, detail="Insufficient permissions to comment")
 
 

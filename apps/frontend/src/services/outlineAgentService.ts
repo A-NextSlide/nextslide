@@ -1,0 +1,171 @@
+/**
+ * Outline Agent Service
+ *
+ * Handles communication with the outline generation agent.
+ * The agent has natural conversations and uses tools to trigger outline generation.
+ */
+
+import { API_CONFIG } from '@/config/environment';
+
+const AGENT_URL = `${API_CONFIG.AGENT_BASE_URL}/api/outline-agent/chat`;
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface OutlineAgentRequest {
+  message: string;
+  chat_history: ChatMessage[];
+  context?: {
+    [key: string]: any;
+  };
+}
+
+export interface AgentTextEvent {
+  type: 'text';
+  content: string;
+}
+
+export interface OutlineSlide {
+  title: string;
+  subtitle?: string;
+  key_points?: string[];
+}
+
+export interface OutlineData {
+  action: 'generate_outline' | 'update_outline';
+  slide_count?: number;
+  topic?: string;
+  detail_level?: 'quick' | 'standard' | 'detailed';
+  tone?: string;
+  slides: OutlineSlide[];
+}
+
+export interface AgentOutlineEvent {
+  type: 'outline';
+  data: OutlineData;
+}
+
+export interface AgentErrorEvent {
+  type: 'error';
+  message: string;
+}
+
+export interface AgentDoneEvent {
+  type: 'done';
+}
+
+export type AgentEvent =
+  | AgentTextEvent
+  | AgentOutlineEvent
+  | AgentErrorEvent
+  | AgentDoneEvent;
+
+/**
+ * Extract JSON blocks from text (between ```json and ```)
+ * Returns both the parsed data and the text with JSON removed
+ */
+function extractJSONFromText(text: string): { data: OutlineData | null; textWithoutJSON: string } {
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+
+  let data: OutlineData | null = null;
+  let textWithoutJSON = text;
+
+  if (jsonMatch && jsonMatch[1]) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      // Validate it has the expected structure
+      if (parsed.action && parsed.slides && Array.isArray(parsed.slides)) {
+        data = parsed as OutlineData;
+        // Remove the JSON block from the text
+        textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+      }
+    } catch (e) {
+      console.error('[OutlineAgent] Failed to parse JSON from text:', e);
+    }
+  }
+
+  return { data, textWithoutJSON };
+}
+
+/**
+ * Stream chat with the outline agent
+ * The agent outputs JSON directly in its text response (no tool calling)
+ */
+export async function* streamOutlineAgentChat(
+  request: OutlineAgentRequest
+): AsyncGenerator<AgentEvent, void, unknown> {
+  try {
+    const response = await fetch(AGENT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedText = '';
+    let outlineEmitted = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const event = JSON.parse(data) as AgentEvent;
+
+            // If it's a text event, accumulate and check for JSON
+            if (event.type === 'text') {
+              accumulatedText += event.content;
+
+              // Check if we have a complete JSON block and haven't emitted outline yet
+              if (!outlineEmitted && accumulatedText.includes('```json') && accumulatedText.includes('```', accumulatedText.indexOf('```json') + 7)) {
+                const { data } = extractJSONFromText(accumulatedText);
+                if (data) {
+                  console.log('[OutlineAgent] Extracted outline from text:', data);
+                  yield {
+                    type: 'outline',
+                    data
+                  };
+                  outlineEmitted = true;
+                }
+              }
+
+              // Still yield text events for display (hook will strip JSON)
+              yield event;
+            } else {
+              yield event;
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE data:', data, e);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[OutlineAgent] Error:', error);
+    yield {
+      type: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}

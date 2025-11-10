@@ -133,12 +133,22 @@ export class SlideGenerationService {
   }
 
   private prepareRequestBody(
-    deckId: string, 
-    outline: any, 
-    prompt?: string, 
-    detailLevel?: string, 
+    deckId: string,
+    outline: any,
+    prompt?: string,
+    detailLevel?: string,
     slideCount?: number
   ): any {
+    // Debug logging to track outline parameter
+    console.log('[SlideGenerationService] prepareRequestBody called with:', {
+      deckId,
+      hasOutline: !!outline,
+      outlineSlides: outline?.slides?.length,
+      prompt: prompt ? '(provided)' : undefined,
+      detailLevel,
+      slideCount
+    });
+
     if (!outline && prompt) {
       return {
         prompt,
@@ -146,8 +156,35 @@ export class SlideGenerationService {
         slideCount
       };
     }
-    
+
+    // Ensure outline is valid before including in request
+    if (!outline) {
+      console.error('[SlideGenerationService] ERROR: outline is missing but no prompt provided!');
+      throw new Error('Cannot compose deck: outline is required');
+    }
+
+    if (!outline.slides || outline.slides.length === 0) {
+      console.error('[SlideGenerationService] ERROR: outline has no slides!', outline);
+      throw new Error('Cannot compose deck: outline must have at least one slide');
+    }
+
+    // CRITICAL: Ensure outline has an ID that matches the deckId
+    if (!outline.id) {
+      console.error('[SlideGenerationService] ERROR: Outline missing ID! Setting it to deckId.');
+      outline.id = deckId;
+    } else if (outline.id !== deckId) {
+      console.warn(`[SlideGenerationService] WARNING: Outline ID (${outline.id}) doesn't match deckId (${deckId}). Using outline.id.`);
+    }
+
+    console.log('[SlideGenerationService] Preparing request with valid outline:', {
+      outlineId: outline.id,
+      deckId: deckId,
+      title: outline.title,
+      slideCount: outline.slides.length
+    });
+
     return {
+      // CRITICAL: Send deck_id to backend so it knows which deck to update
       deck_id: deckId,
       outline,
       // Map toggle: ON (autoSelectImages=true) => async_images=false (auto-apply). Default false when unspecified.

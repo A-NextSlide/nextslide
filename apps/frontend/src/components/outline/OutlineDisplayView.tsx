@@ -11,9 +11,9 @@ import { DeckOutline, SlideOutline, TaggedMedia } from '@/types/SlideTypes';
 import { Info, Plus, Microscope, Trash2, Loader2, Upload, ImageIcon, BarChart3, FileText, FileIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import SlideCard from './SlideCard'; // <-- Import the new SlideCard component
 import ManualSlideCard from './ManualSlideCard'; // Import the manual mode slide card
+import OutlineHeader from './OutlineHeader';
 import TypewriterText from '@/components/common/TypewriterText';
 import CardCarousel from './CardCarousel';
-import OutlineChatBox from './OutlineChatBox';
 import CenteredProcessingLoader from '@/components/common/CenteredProcessingLoader';
 import { v4 as uuidv4 } from 'uuid';
 import MiniGameWidget from '@/components/common/MiniGameWidget';
@@ -59,88 +59,119 @@ const determineFileTypeLocal = (file: File): 'image' | 'chart' | 'data' | 'pdf' 
 
 
 interface OutlineDisplayViewProps {
-  currentOutline: DeckOutline;
-  setCurrentOutline: React.Dispatch<React.SetStateAction<DeckOutline | null>>;
-  isAiNotesExpanded: boolean;
-  setIsAiNotesExpanded: React.Dispatch<React.SetStateAction<boolean>>;
-  handleAddSlide: () => void;
-  handleSlideTitleChange: (slideId: string, title: string) => void;
-  handleSlideContentChange: (slideId: string, content: string) => void;
+  // Required props
+  outline: DeckOutline;
+  onOutlineUpdate: (outline: DeckOutline) => void;
+  onAddSlide: () => void;
+  onSlideTitleChange: (slideId: string, title: string) => void;
+  onSlideContentChange: (slideId: string, content: string) => void;
+  onToggleDeepResearch: (slideId: string, event?: React.MouseEvent) => void;
+  onDeleteSlide: (slideId: string) => void;
+
+  // Optional props with defaults
+  updatedSlideIds?: Set<string>; // Slides that were recently updated (for glow animation)
   handleSlideReorder?: (sourceIndex: number, destinationIndex: number) => void;
-  researchingSlides: string[];
-  dragOverSlideId: string | null;
-  setDragOverSlideId: React.Dispatch<React.SetStateAction<string | null>>;
-  tooltipHostSlideId: string | null;
-  setTooltipHostSlideId: React.Dispatch<React.SetStateAction<string | null>>;
-  currentTooltipAlign: 'left' | 'right';
-  setCurrentTooltipAlign: React.Dispatch<React.SetStateAction<'left' | 'right'>>;
-  outlineScrollRef: React.RefObject<HTMLDivElement>;
-  isProcessingMedia: boolean;
-  animatingOutMediaIds: Set<string>;
-  setAnimatingOutMediaIds: React.Dispatch<React.SetStateAction<Set<string>>>;
-  uploadedFiles: File[]; // Needed for the "Drag files here" hint
-  isResearching?: boolean; // Add flag for research phase
-  researchEvents?: any[]; // Research events for thinking display
-  setUploadedFiles: React.Dispatch<React.SetStateAction<File[]>>; // For file drop
-  handleDragStart: (slideId: string) => void;
-  handleDragOver: (e: React.DragEvent, slideId: string) => void;
-  handleDrop: (e: React.DragEvent, targetSlideId: string) => void;
-  handleDragEnd: () => void;
-  handleFilesDroppedOnSlide: (files: File[], targetSlideId: string) => Promise<void>;
-  toast: (options: any) => void;
-  handleToggleDeepResearch: (slideId: string, event?: React.MouseEvent) => void;
-  handleDeleteSlide: (slideId: string) => void;
-  completedSlides?: Set<number>; // Changed from Set<string> to Set<number>
-  isGeneratingOutline?: boolean; // New prop to track if outline is being generated
-  isAnalyzingFiles?: boolean; // New prop for file analysis state
-  currentAnalyzingFile?: string; // Current file being analyzed
-  analyzingFileProgress?: { current: number; total: number }; // File analysis progress
-  loadingStage?: string; // Loading stage message
-  editingSlides?: string[]; // Slides being edited via chat
-  editTarget?: number | 'all'; // Target for editing
+  isAiNotesExpanded?: boolean;
+  setIsAiNotesExpanded?: React.Dispatch<React.SetStateAction<boolean>>;
+  researchingSlides?: string[];
+  dragOverSlideId?: string | null;
+  setDragOverSlideId?: React.Dispatch<React.SetStateAction<string | null>>;
+  tooltipHostSlideId?: string | null;
+  setTooltipHostSlideId?: React.Dispatch<React.SetStateAction<string | null>>;
+  currentTooltipAlign?: 'left' | 'right';
+  setCurrentTooltipAlign?: React.Dispatch<React.SetStateAction<'left' | 'right'>>;
+  outlineScrollRef?: React.RefObject<HTMLDivElement>;
+  isProcessingMedia?: boolean;
+  animatingOutMediaIds?: Set<string>;
+  setAnimatingOutMediaIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  uploadedFiles?: File[];
+  isResearching?: boolean;
+  researchEvents?: any[];
+  setUploadedFiles?: React.Dispatch<React.SetStateAction<File[]>>;
+  handleDragStart?: (slideId: string) => void;
+  handleDragOver?: (e: React.DragEvent, slideId: string) => void;
+  handleDrop?: (e: React.DragEvent, targetSlideId: string) => void;
+  handleDragEnd?: () => void;
+  handleFilesDroppedOnSlide?: (files: File[], targetSlideId: string) => Promise<void>;
+  toast?: (options: any) => void;
+  completedSlides?: Set<number>;
+  isGeneratingOutline?: boolean;
+  isAnalyzingFiles?: boolean;
+  currentAnalyzingFile?: string;
+  analyzingFileProgress?: { current: number; total: number };
+  loadingStage?: string;
+  editingSlides?: string[];
+  editTarget?: number | 'all';
+  onGenerateDeck?: () => void;
+  isDeckGenerating?: boolean;
+  generationProgress?: { currentSlide: number; totalSlides: number; slideTitle?: string } | null;
+  onBack?: () => void;
+  onCurrentSlideIndexChange?: (index: number) => void;
 }
 
 const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
-  currentOutline,
-  setCurrentOutline,
-  isAiNotesExpanded,
-  setIsAiNotesExpanded,
-  handleAddSlide,
-  handleSlideTitleChange,
-  handleSlideContentChange,
+  // Required props
+  outline,
+  onOutlineUpdate,
+  onAddSlide,
+  onSlideTitleChange,
+  onSlideContentChange,
+  onToggleDeepResearch,
+  onDeleteSlide,
+
+  // Optional props with defaults
+  updatedSlideIds = new Set(),
   handleSlideReorder,
-  researchingSlides,
-  dragOverSlideId,
-  setDragOverSlideId,
-  tooltipHostSlideId,
-  setTooltipHostSlideId,
-  currentTooltipAlign,
-  setCurrentTooltipAlign,
+  isAiNotesExpanded = false,
+  setIsAiNotesExpanded = () => {},
+  researchingSlides = [],
+  dragOverSlideId = null,
+  setDragOverSlideId = () => {},
+  tooltipHostSlideId = null,
+  setTooltipHostSlideId = () => {},
+  currentTooltipAlign = 'left',
+  setCurrentTooltipAlign = () => {},
   outlineScrollRef,
-  isProcessingMedia,
-  animatingOutMediaIds,
-  setAnimatingOutMediaIds,
-  uploadedFiles,
-  setUploadedFiles, // Added for onDrop on slide item
-  handleDragStart,
-  handleDragOver,
-  handleDrop,
-  handleDragEnd,
-  handleFilesDroppedOnSlide, // Added for onDrop on slide item
-  toast,
-  handleToggleDeepResearch,
-  handleDeleteSlide,
-  completedSlides,
-  isGeneratingOutline,
-  isAnalyzingFiles,
+  isProcessingMedia = false,
+  animatingOutMediaIds = new Set(),
+  setAnimatingOutMediaIds = () => {},
+  uploadedFiles = [],
+  setUploadedFiles = () => {},
+  handleDragStart = () => {},
+  handleDragOver = () => {},
+  handleDrop = () => {},
+  handleDragEnd = () => {},
+  handleFilesDroppedOnSlide = async () => {},
+  toast = () => {},
+  completedSlides = new Set(),
+  isGeneratingOutline = false,
+  isAnalyzingFiles = false,
   currentAnalyzingFile,
   analyzingFileProgress,
   loadingStage,
   editingSlides = [],
   editTarget,
-  isResearching,
+  isResearching = false,
   researchEvents = [],
+  onGenerateDeck,
+  isDeckGenerating = false,
+  generationProgress,
+  onBack,
+  onCurrentSlideIndexChange,
 }) => {
+  // Map new prop names to old internal names for backwards compatibility
+  const currentOutline = outline;
+  const setCurrentOutline = onOutlineUpdate;
+  const handleAddSlide = onAddSlide;
+  const handleSlideTitleChange = onSlideTitleChange;
+  const handleSlideContentChange = onSlideContentChange;
+  const handleToggleDeepResearch = onToggleDeepResearch;
+  const handleDeleteSlide = onDeleteSlide;
+
+  // Create default ref if not provided
+  const defaultScrollRef = React.useRef<HTMLDivElement>(null);
+  const effectiveScrollRef = outlineScrollRef || defaultScrollRef;
+
   // Debug state to window for inspection (no console logging to avoid infinite loops)
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -184,7 +215,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const setThemeReady = useThemeStore(state => state.setThemeReady);
   const hasOutlineThemeRequested = useThemeStore(state => state.hasOutlineThemeRequested);
   const markOutlineThemeRequested = useThemeStore(state => state.markOutlineThemeRequested);
-  const outlineDeckTheme = useThemeStore(state => state.getOutlineDeckTheme?.(currentOutline.id));
+  const outlineDeckTheme = useThemeStore(state => currentOutline?.id ? state.getOutlineDeckTheme?.(currentOutline.id) : null);
   const [activeEditor, setActiveEditor] = useState<{ type: 'heading' | 'body' | 'color', index?: number } | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1022,6 +1053,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       const idx = e.detail?.slideIndex;
       if (typeof idx === 'number' && idx >= 0 && idx < (currentOutline?.slides?.length || 0)) {
         setCurrentSlideIndex(idx);
+        onCurrentSlideIndexChange?.(idx);
         try {
           window.dispatchEvent(new CustomEvent('navigate-to-slide', { detail: { slideIndex: idx } }));
         } catch {}
@@ -1042,11 +1074,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
   // Add debug logging
   useEffect(() => {
-    const shouldShowFileProcessing = isAnalyzingFiles || 
+    const shouldShowFileProcessing = isAnalyzingFiles ||
       (isGeneratingOutline && uploadedFiles.length > 0 && loadingStage) ||
-      (currentOutline.title === 'Processing your files...' && isGeneratingOutline);
-      
-  }, [isAnalyzingFiles, uploadedFiles.length, currentOutline.slides.length, currentAnalyzingFile, analyzingFileProgress, isGeneratingOutline, loadingStage, currentOutline.title]);
+      (currentOutline?.title === 'Processing your files...' && isGeneratingOutline);
+
+  }, [isAnalyzingFiles, uploadedFiles.length, currentOutline?.slides?.length, currentAnalyzingFile, analyzingFileProgress, isGeneratingOutline, loadingStage, currentOutline?.title]);
 
   // Track newly added slides for animation
   const [newSlideIds, setNewSlideIds] = useState<Set<string>>(new Set());
@@ -1095,15 +1127,15 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   // Track scroll position to determine if user is at bottom
   React.useEffect(() => {
     const handleScroll = () => {
-      if (outlineScrollRef.current) {
-        const { scrollTop, scrollHeight, clientHeight } = outlineScrollRef.current;
+      if (effectiveScrollRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } = effectiveScrollRef.current;
         const threshold = 50; // pixels from bottom to consider "at bottom"
         const isAtBottom = scrollHeight - scrollTop - clientHeight < threshold;
         isUserAtBottom.current = isAtBottom;
       }
     };
 
-    const scrollElement = outlineScrollRef.current;
+    const scrollElement = effectiveScrollRef.current;
     if (scrollElement) {
       scrollElement.addEventListener('scroll', handleScroll);
       // Check initial position
@@ -1119,8 +1151,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
   // When slides are completed progressively, mark them for animation
   React.useEffect(() => {
+    if (!currentOutline) return;
+
     const newlyCompleted = new Set<string>();
-    
+
     // Find slides that now have content but didn't before
     currentOutline.slides.forEach((slide, index) => {
       const hasContent = slide.content && slide.content.trim() !== '';
@@ -1128,22 +1162,22 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         newlyCompleted.add(slide.id);
       }
     });
-    
+
     if (newlyCompleted.size > 0) {
       setNewSlideIds(newlyCompleted);
-      
+
       // Add to animated slides to prevent re-animation
       setAnimatedSlides(prev => {
         const next = new Set(prev);
         newlyCompleted.forEach(id => next.add(id));
         return next;
       });
-      
+
       // Remove animation flag after animation completes
       const timeoutId = setTimeout(() => {
         setNewSlideIds(new Set());
       }, 600); // Match animation duration
-      
+
       // Update previous slides with content
       previousSlidesWithContent.current = new Set(
         currentOutline.slides
@@ -1152,10 +1186,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       );
       
       // Scroll to show the new slide
-      if (outlineScrollRef.current && isGeneratingOutline) {
+      if (effectiveScrollRef.current && isGeneratingOutline) {
         setTimeout(() => {
-          if (outlineScrollRef.current && isUserAtBottom.current) {
-            const scrollContainer = outlineScrollRef.current;
+          if (effectiveScrollRef.current && isUserAtBottom.current) {
+            const scrollContainer = effectiveScrollRef.current;
             const scrollHeight = scrollContainer.scrollHeight;
             const clientHeight = scrollContainer.clientHeight;
             const maxScroll = scrollHeight - clientHeight;
@@ -1171,7 +1205,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       
       return () => clearTimeout(timeoutId);
     }
-  }, [currentOutline.slides, animatedSlides, isGeneratingOutline]);
+  }, [currentOutline?.slides, animatedSlides, isGeneratingOutline]);
 
   // When slides are added manually (not from streaming), mark them as new for animation
   React.useEffect(() => {
@@ -1238,7 +1272,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     
     window.addEventListener('resize', updateWidgetPosition);
     window.addEventListener('scroll', updateWidgetPosition, { passive: true } as any);
-    const scrollEl = outlineScrollRef.current;
+    const scrollEl = effectiveScrollRef.current;
     if (scrollEl) scrollEl.addEventListener('scroll', updateWidgetPosition, { passive: true } as any);
     return () => {
       window.removeEventListener('resize', updateWidgetPosition);
@@ -1512,15 +1546,32 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
   return (
     <div className={cn("flex flex-col h-full relative overflow-hidden", "animate-opacity-in", "cv-auto")}>{/* DEBUG: Research Events: {researchEvents.length} | Generating: {isGeneratingOutline ? 'YES' : 'NO'} */}
-      
+
       {/* Global mini game widget for outline generation - delayed and pinned right of cards */}
       {showMiniGame && (
         <div className="block fixed pointer-events-auto" style={{ left: Math.max(widgetLeft, (typeof window !== 'undefined' ? window.innerWidth - 280 : widgetLeft)), top: widgetTop, zIndex: 20 }}>
           <MiniGameWidget title="While You Wait" active={true} />
         </div>
       )}
+
+      {/* Header with Generate Button - Removed to avoid duplicate with main page header */}
+      {/* {onGenerateDeck && (
+        <OutlineHeader
+          currentOutline={currentOutline}
+          isGenerating={isDeckGenerating}
+          isOutlineGenerating={isGeneratingOutline}
+          researchingSlides={new Set(researchingSlides)}
+          completedResearchSlides={0}
+          totalResearchSlides={researchingSlides.length}
+          onBack={onBack || (() => {})}
+          onGenerateDeck={onGenerateDeck}
+          uploadedFiles={uploadedFiles}
+          generationProgress={generationProgress}
+        />
+      )} */}
+
       {/* Typewriter Header - minimal spacing with reserved height */}
-      {currentOutline.title !== 'Processing your files...' && !(currentOutline as any).isManualMode && (
+      {currentOutline && currentOutline.title !== 'Processing your files...' && !(currentOutline as any).isManualMode && (
         <div className="px-6 pt-1 pb-0 flex-shrink-0 min-h-[3.5rem]">
           {(showTypewriter || showSubtext) && (
             <div>
@@ -1534,7 +1585,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               />
               {showSubtext && (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 animate-fade-in mt-1">
-                  Directly edit slides, or use the chat below to make content edits
+                  Click slides to edit content that will appear in your presentation
                 </p>
               )}
             </div>
@@ -1563,7 +1614,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
       {/* Removed local tabs: Thinking will be integrated into the left TabbedFlowPanel */}
 
-      {activePanelTab === 'flow' && ((currentOutline as any).isManualMode) && (
+      {activePanelTab === 'flow' && currentOutline && ((currentOutline as any).isManualMode) && (
         <div className="px-6 pt-4 pb-4 flex-shrink-0 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center justify-between">
             <div className="flex-1">
@@ -1595,7 +1646,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       )}
 
       {/* Show file processing UI only when we have the placeholder outline with no slides, and not during streaming */}
-      {(currentOutline.slides.length === 0 && currentOutline.title === 'Processing your files...' && !isGeneratingOutline) && (
+      {currentOutline && (currentOutline.slides?.length === 0 && currentOutline.title === 'Processing your files...' && !isGeneratingOutline) && (
         <div className="px-6 pt-2 pb-4 flex-shrink-0">
           <div className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-orange-50/60 to-white/30 dark:from-orange-900/20 dark:to-zinc-900/30 shadow-sm">
             <div className="flex items-center gap-3 p-3" role="status" aria-live="polite">
@@ -1619,7 +1670,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
       {/* Flex container for chat structure with variable visibility */}
       {/* Show the main section when generating, when slides exist, or when files are present */}
-      {(currentOutline.slides.length > 0 || isGeneratingOutline || uploadedFiles.length > 0) && (
+      {currentOutline && (currentOutline.slides?.length > 0 || isGeneratingOutline || uploadedFiles.length > 0) && (
         <>
           {/* AI Notes Section - using correct property names */}
           {currentOutline && 
@@ -1731,7 +1782,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             style={{ paddingTop: '2px', paddingBottom: '2px' }}
           >
             {/* Show a single loading card placeholder while waiting for the first streamed slide */}
-            {isGeneratingOutline && currentOutline.slides.length === 0 ? (
+            {isGeneratingOutline && currentOutline?.slides?.length === 0 ? (
               <div className="relative h-full flex items-center justify-center px-6">
                 <div
                   className="w-[75%] max-w-[700px] bg-white/95 dark:bg-zinc-900/95 rounded-xl shadow-md border-2 border-[#FF4301]/60 dark:border-[#FF4301]/60 flex items-center justify-center"
@@ -1743,7 +1794,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                   </div>
                 </div>
               </div>
-            ) : uploadedFiles.length > 0 && currentOutline.slides.length === 0 && !isGeneratingOutline ? (
+            ) : uploadedFiles.length > 0 && currentOutline?.slides?.length === 0 && !isGeneratingOutline ? (
               <div className="relative h-full flex items-center justify-center px-6">
                 <div
                   className="w-[75%] max-w-[700px] bg-white/95 dark:bg-zinc-900/95 rounded-xl shadow-md border-2 border-[#FF4301]/60 dark:border-[#FF4301]/60 flex items-center justify-center"
@@ -1755,7 +1806,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                   </div>
                 </div>
               </div>
-            ) : currentOutline.slides.length === 0 ? (
+            ) : currentOutline?.slides?.length === 0 ? (
               // Always show empty state when there are no slides
               <div className="flex items-center justify-center h-full px-6">
                 <div className="text-center">
@@ -1773,10 +1824,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               (currentOutline as any).isManualMode ? (
                 // Manual mode - render the manual authoring cards with charts
                 <div className={cn(
-                  "h-full transition-opacity duration-500",
-                  currentOutline.slides.length >= 0 ? "opacity-100" : "opacity-0"
+                  "h-full transition-opacity duration-500 max-w-xl mx-auto px-6 py-4",
+                  currentOutline?.slides?.length >= 0 ? "opacity-100" : "opacity-0"
                 )}>
-                  {currentOutline.slides.length === 0 ? (
+                  {currentOutline?.slides?.length === 0 ? (
                     <div className="px-6 py-6">
                       <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-8 text-center">
                         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">No slides yet</p>
@@ -1788,7 +1839,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                       </div>
                     </div>
                   ) : (
-                    currentOutline.slides.map((slide, index) => (
+                    currentOutline?.slides?.map((slide, index) => (
                       <ManualSlideCard
                         key={slide.id}
                         slide={slide}
@@ -1818,7 +1869,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                 // Normal mode - show card carousel with fade-in animation
                 <div className={cn(
                   "h-full transition-opacity duration-500",
-                  currentOutline.slides.length > 0 ? "opacity-100" : "opacity-0"
+                  currentOutline?.slides?.length > 0 ? "opacity-100" : "opacity-0"
                 )}>
                   {/* Local Flow/Theme tab switcher */}
                   <div className="px-4 py-2 flex gap-2 items-center">
@@ -2082,7 +2133,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                     <CardCarousel
                       slides={currentOutline.slides}
                       currentIndex={currentSlideIndex}
-                      onIndexChange={setCurrentSlideIndex}
+                      onIndexChange={(idx) => {
+                        setCurrentSlideIndex(idx);
+                        onCurrentSlideIndexChange?.(idx);
+                      }}
                       onDeepResearch={handleImmediateResearch}
                       onDeleteSlide={handleDeleteSlide}
                       onAddSlide={handleAddSlide}
@@ -2095,25 +2149,13 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                       setCurrentOutline={setCurrentOutline}
                       editingSlides={currentEditingSlides}
                       editTarget={currentEditTarget}
+                      updatedSlideIds={updatedSlideIds}
                     />
                   )}
                 </div>
               )
             )}
           </div>
-
-          {/* Chat Box - fixed at bottom - hide for manual mode */}
-          {!(currentOutline as any).isManualMode && (
-            <div className="px-4 pb-3 pt-1 flex-shrink-0">
-              <OutlineChatBox
-                onSendMessage={handleOutlineChatMessage}
-                isLoading={isEditingOutline}
-                currentSlideIndex={currentSlideIndex}
-                totalSlides={currentOutline.slides.length}
-                placeholder="Ask me to edit slides, adjust content, or make changes to your outline..."
-              />
-            </div>
-          )}
         </>
       )}
     </div>

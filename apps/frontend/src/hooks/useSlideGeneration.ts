@@ -1024,6 +1024,7 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       const phaseMessages = {
         'initialization': 'Initializing deck creation',
         'theme_generation': 'Creating design theme',
+        'layout_design': '📐 Creating blueprint',
         'image_collection': 'Searching for images',
         'slide_generation': 'Generating slides',
         'finalization': 'Finalizing deck'
@@ -1117,15 +1118,23 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     // For outline_structure events, we need to check if the original event data is preserved
     // The GenerationStateManager processes events and may not preserve all original properties
     if (event.stage === 'outline_structure') {
+      // IMPORTANT: Only create placeholder slides if we're actually in slide generation mode
+      // During outline generation (outline agent mode), we should NOT create slides yet
+      // Slides should only be created when the user clicks "Generate Presentation"
+      if (!isGenerating) {
+        console.log('[useSlideGeneration] Skipping placeholder creation - not in slide generation mode');
+        return;
+      }
+
       // The slideTitles and title might be in event.data or in the original event structure
       // Check multiple possible locations
       const slideTitles = event.data?.slideTitles || event.slideTitles;
       const outlineTitle = event.data?.title || event.title;
-      
+
       if (!slideTitles) {
         return;
       }
-      
+
       // Create placeholders only if we don't have the right number of slides
       const currentDeckData = useDeckStore.getState().deckData;
       
@@ -2101,7 +2110,16 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
   }, [options, toast]);
 
   const startGeneration = useCallback(async (generationOptions: any = {}) => {
-    if (!deckId) {
+    // CRITICAL: Use deckId from generationOptions if provided (for outline mode UUID consistency)
+    // Otherwise use deckId from hook closure
+    const effectiveDeckId = generationOptions.deckId || deckId;
+    console.log('[useSlideGeneration] startGeneration called with:', {
+      generationOptionsDeckId: generationOptions.deckId,
+      hookDeckId: deckId,
+      effectiveDeckId
+    });
+
+    if (!effectiveDeckId) {
       toast({
         title: 'Error',
         description: 'No deck ID available',
@@ -2109,16 +2127,16 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       });
       return;
     }
-    
+
     // Reset slide tracking but check if we should keep placeholders
     const currentDeckData = useDeckStore.getState().deckData;
     const hasExistingSlides = currentDeckData.slides && currentDeckData.slides.length > 0;
-    
+
     // Check if deck already has generated content - don't start generation
-    const hasGeneratedContent = currentDeckData.slides?.some((slide: any) => 
+    const hasGeneratedContent = currentDeckData.slides?.some((slide: any) =>
       slide.components && slide.components.length > 0
     );
-    
+
     if (hasGeneratedContent) {
       console.log('[useSlideGeneration] Deck already has generated content, skipping generation start');
       // Set status to completed if not already
@@ -2132,7 +2150,7 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       });
       return;
     }
-    
+
     slidesInProgressRef.current.clear();
     completedSlidesRef.current.clear();
     themePlanShownRef.current = false;
@@ -2148,10 +2166,13 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     try {
       // currentDeckData already retrieved above
       const outline = (currentDeckData as any).outline || generationOptions.outline;
-      
+
+      console.log('[useSlideGeneration] Starting generation with deck ID:', effectiveDeckId);
+      console.log('[useSlideGeneration] Outline ID:', outline?.id);
+
       // Start generation through coordinator - it handles all duplicate checks
       await coordinator.startGeneration({
-        deckId,
+        deckId: effectiveDeckId, // CRITICAL: Use the effective deck ID
         outline,
         prompt: generationOptions.prompt || (currentDeckData as any).prompt || currentDeckData.name,
         slideCount: generationOptions.slideCount || 6,

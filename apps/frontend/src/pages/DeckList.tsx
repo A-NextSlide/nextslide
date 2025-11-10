@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { API_CONFIG } from '@/config/environment';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OutlineEditor from '@/components/outline/OutlineEditor';
+import OutlineDisplayView from '@/components/outline/OutlineDisplayView';
 import { authService } from '@/services/authService';
 
 import { shareService } from '@/services/shareService';
@@ -39,8 +40,7 @@ import GoogleSlidesImportModal from '@/components/Import/GoogleSlidesImportModal
 import { formatDistanceToNow } from 'date-fns';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import { useOutlineManager } from '@/hooks/useOutlineManager';
-import PresentationFlowView from '@/components/flow/PresentationFlowView';
-import TabbedFlowPanel from '@/components/flow/TabbedFlowPanel';
+import ChatPanel from '@/components/ChatPanel';
 import { DeckOutline as FrontendDeckOutline, SlideOutline as FrontendSlideOutline, TaggedMedia as FrontendTaggedMedia, DiscardedFile as FrontendDiscardedFile, ColorConfig } from '@/types/SlideTypes';
 import OutlineHeader from '@/components/outline/OutlineHeader';
 import BrandWordmark from '@/components/common/BrandWordmark';
@@ -545,10 +545,13 @@ const DeckList: React.FC = () => {
   const createDefaultDeckForOutline = useDeckStore(state => state.createDefaultDeck);
   const updateDeckDataForOutline = useDeckStore(state => state.updateDeckData);
 
+  // Outline state
+  const [currentOutline, setCurrentOutline] = useState<FrontendDeckOutline | null>(null);
+  const [showOutlineView, setShowOutlineView] = useState(false);
+  const [outlineCurrentSlideIndex, setOutlineCurrentSlideIndex] = useState(0);
+
   // Initialize OutlineManager here
   const {
-    currentOutline,
-    setCurrentOutline,
     resetOutline,
     handleAddSlide,
     handleSlideTitleChange,
@@ -556,7 +559,7 @@ const DeckList: React.FC = () => {
     handleSlideReorder,
     handleToggleDeepResearch,
     handleDeleteSlide,
-  } = useOutlineManager(null);
+  } = useOutlineManager(currentOutline, setCurrentOutline);
 
   // State for uploaded files
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -600,9 +603,15 @@ const DeckList: React.FC = () => {
       }],
       isManualMode: true
     };
-    
+
     setCurrentOutline(manualOutline);
   }, [setCurrentOutline]);
+
+  // Handle "Create with AI" - show outline view without an outline
+  const handleCreateWithAI = useCallback(() => {
+    setCurrentOutline(null);
+    setShowOutlineView(true);
+  }, []);
 
   // Function to load shared decks
   const loadSharedDecks = useCallback(async () => {
@@ -1198,10 +1207,7 @@ const DeckList: React.FC = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => {
-                    // Tastefully focus the chat input area for AI creation
-                    try { window.dispatchEvent(new CustomEvent('focus-outline-chat')); } catch {}
-                  }} className="cursor-pointer">
+                  <DropdownMenuItem onClick={handleCreateWithAI} className="cursor-pointer">
                     <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
                       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M12 20v-6"/>
@@ -1272,57 +1278,88 @@ const DeckList: React.FC = () => {
               "w-full h-full",
               currentOutline ? (currentOutline as any).isManualMode ? "flex pt-2" : "flex pt-6 px-8" : "flex justify-center items-center"
             )}>
-              {currentOutline ? (
+              {(currentOutline || showOutlineView) ? (
                 <div className={cn(
                   "flex flex-row",
                   isMounted ? "animate-fade-in" : "opacity-0"
                 )} style={{ width: '100%' }}>
-                  {/* Left panel with tabs - Narrative and Presentation Flow - hide for manual mode */}
-                  {!(currentOutline as any).isManualMode && (
-                    <div style={{ width: '280px', marginLeft: '0' }} className="h-full pr-4 border-r border-border/20 flex-shrink-0">
-                      <TabbedFlowPanel
+                  {/* Left: Chat Panel (or OutlineEditor for manual mode) */}
+                  {(currentOutline as any)?.isManualMode ? (
+                    // Manual mode: Full width OutlineEditor
+                    <div className="flex-1 h-full relative overflow-visible">
+                      <OutlineEditor
+                        createDefaultDeck={createDefaultDeckForOutline}
+                        updateDeckData={updateDeckDataForOutline}
+                        navigate={navigate}
+                        toast={toast}
+                        dismiss={dismiss}
+                        setIsOutlineProcessing={setIsOutlineProcessing}
                         currentOutline={currentOutline}
-                        onReorderFlow={handleSlideReorderByIndex}
-                        showNotesTab={false}
-                        isNarrativeLoading={isOutlineChatGenerating}
-                        researchEvents={outlineResearchEvents}
-                        showThinkingTab={false}
+                        setCurrentOutline={setCurrentOutline}
+                        handleAddSlide={handleAddSlide}
+                        handleSlideTitleChange={handleSlideTitleChange}
+                        handleSlideContentChange={handleSlideContentChange}
+                        handleSlideReorder={handleSlideReorder}
+                        handleToggleDeepResearch={handleToggleDeepResearch}
+                        handleDeleteSlide={handleDeleteSlide}
+                        isDeckGenerating={isDeckGenerating}
+                        researchingSlides={researchingSlides}
+                        onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
+                        onProgressUpdate={(stage, progress) => {
+                          setOutlineProgress({ stage, progress });
+                        }}
+                        onStylePreferencesUpdate={handleStylePreferencesUpdate}
+                        onUploadedFilesChange={setUploadedFiles}
+                        isDeckListReady={showStar}
+                        onResearchEventsUpdate={handleResearchEventsUpdate}
                       />
                     </div>
+                  ) : (
+                    // AI mode: Split view with Chat on left, Outline cards on right
+                    <>
+                      {/* Left Panel: Chat */}
+                      <div style={{ width: '360px', marginLeft: '0' }} className="h-full pr-4 border-r border-border/20 flex-shrink-0">
+                        <ChatPanel
+                          outlineMode={true}
+                          useOutlineAgent={true}
+                          outline={currentOutline}
+                          deckId={currentOutline?.id}
+                          onOutlineUpdate={setCurrentOutline}
+                          outlineIsGenerating={isOutlineChatGenerating}
+                          outlineCurrentSlideIndex={outlineCurrentSlideIndex}
+                          onOutlineAgentToolCall={(params) => {
+                            console.log('[DeckList] Agent generated outline:', params);
+                            // Agent created new outline - merge with existing or create new
+                            if (!currentOutline) {
+                              const newOutline: FrontendDeckOutline = {
+                                id: uuidv4(),
+                                title: params.topic || 'Presentation',
+                                slides: []
+                              };
+                              setCurrentOutline(newOutline);
+                            }
+                          }}
+                        />
+                      </div>
+
+                      {/* Right Panel: Outline Cards */}
+                      <div className="flex-1 h-full relative overflow-visible ml-4">
+                        <OutlineDisplayView
+                          outline={currentOutline}
+                          onOutlineUpdate={setCurrentOutline}
+                          onAddSlide={handleAddSlide}
+                          onSlideTitleChange={handleSlideTitleChange}
+                          onSlideContentChange={handleSlideContentChange}
+                          onToggleDeepResearch={handleToggleDeepResearch}
+                          onDeleteSlide={handleDeleteSlide}
+                          handleSlideReorder={handleSlideReorderByIndex}
+                          researchingSlides={researchingSlides}
+                          isGeneratingOutline={isOutlineChatGenerating}
+                          onCurrentSlideIndexChange={setOutlineCurrentSlideIndex}
+                        />
+                      </div>
+                    </>
                   )}
-                  
-                  {/* OutlineEditor container - full width for manual mode */}
-                  <div className={cn(
-                    "flex-1 h-full relative overflow-visible",
-                    !(currentOutline as any).isManualMode && "ml-4"
-                  )}>
-                    <OutlineEditor
-                      createDefaultDeck={createDefaultDeckForOutline}
-                      updateDeckData={updateDeckDataForOutline}
-                      navigate={navigate}
-                      toast={toast}
-                      dismiss={dismiss}
-                      setIsOutlineProcessing={setIsOutlineProcessing}
-                      currentOutline={currentOutline}
-                      setCurrentOutline={setCurrentOutline}
-                      handleAddSlide={handleAddSlide}
-                      handleSlideTitleChange={handleSlideTitleChange}
-                      handleSlideContentChange={handleSlideContentChange}
-                      handleSlideReorder={handleSlideReorder}
-                      handleToggleDeepResearch={handleToggleDeepResearch}
-                      handleDeleteSlide={handleDeleteSlide}
-                      isDeckGenerating={isDeckGenerating}
-                      researchingSlides={researchingSlides}
-                      onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
-                      onProgressUpdate={(stage, progress) => {
-                        setOutlineProgress({ stage, progress });
-                      }}
-                      onStylePreferencesUpdate={handleStylePreferencesUpdate}
-                      onUploadedFilesChange={setUploadedFiles}
-                      isDeckListReady={showStar}
-                      onResearchEventsUpdate={handleResearchEventsUpdate}
-                    />
-                  </div>
                 </div>
               ) : (
                 <OutlineEditor 

@@ -82,11 +82,22 @@ export class GenerationProgressTracker extends EventEmitter {
         'design': 'Creating design system'
       }
     },
+    layout_design: {
+      id: 'layout_design',
+      label: 'Creating blueprint',
+      emoji: '📐',
+      progressRange: [30, 40],
+      substeps: {
+        'designing_layouts': 'Designing editorial layouts',
+        'designing_slide_layout': 'Creating slide structures',
+        'layouts_complete': 'Blueprint complete'
+      }
+    },
     image_collection: {
       id: 'image_collection',
       label: 'Finding images',
       emoji: '🖼️',
-      progressRange: [30, 55],
+      progressRange: [40, 55],
       substeps: {
         'search': 'Searching image libraries',
         'analysis': 'Analyzing relevance',

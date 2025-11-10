@@ -3,9 +3,16 @@ import { Send, Sparkles, XCircle, Plus, Image, ArrowUp, ChevronUp, ChevronDown, 
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { SlideData } from '@/types/SlideTypes';
 import { useDeckStore } from '../stores/deckStore';
 import { useNavigation } from '@/context/NavigationContext';
+import { useOutlineAgent as useOutlineAgentHook } from '@/hooks/useOutlineAgent';
 // ThemeToggle import removed
 import { IconButton } from './ui/IconButton';
 import { API_CONFIG } from '../config/environment';
@@ -20,8 +27,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import { useEditor } from '@/hooks/useEditor';
 import { useEditorStore } from '@/stores/editorStore';
+import { v4 as uuidv4 } from 'uuid';
 // Removed font optimization service
 import { BROWSER } from '@/utils/browser';
+import { streamOutlineAgentChat } from '@/services/outlineApi';
 
 
 
@@ -77,15 +86,28 @@ function sampleArray<T>(items: T[], count: number): T[] {
  * Utility function to convert UI messages to API chat history format
  */
 const convertMessagesToApiFormat = (messages: (ChatMessageProps | ExtendedChatMessageProps)[]): ChatMessageType[] => {
-  return messages.map(msg => ({
-    content: msg.message,
-    role: msg.type === 'user' ? 'user' : 'assistant',
-    timestamp: msg.timestamp?.toISOString() || new Date().toISOString(),
-    // Convert feedback type: positive -> up, negative -> down
-    ...(('feedback' in msg && msg.feedback) && { 
-      feedback: msg.feedback === 'positive' ? 'up' : msg.feedback === 'negative' ? 'down' : undefined 
-    })
-  }));
+  return messages.map(msg => {
+    // Handle timestamp - could be Date object, string, or undefined
+    let timestampStr: string;
+    if (!msg.timestamp) {
+      timestampStr = new Date().toISOString();
+    } else if (msg.timestamp instanceof Date) {
+      timestampStr = msg.timestamp.toISOString();
+    } else {
+      // Already a string
+      timestampStr = msg.timestamp as unknown as string;
+    }
+
+    return {
+      content: msg.message,
+      role: msg.type === 'user' ? 'user' : 'assistant',
+      timestamp: timestampStr,
+      // Convert feedback type: positive -> up, negative -> down
+      ...(('feedback' in msg && msg.feedback) && {
+        feedback: msg.feedback === 'positive' ? 'up' : msg.feedback === 'negative' ? 'down' : undefined
+      })
+    };
+  });
 };
 
 /**
@@ -135,30 +157,183 @@ export interface ChatPanelProps {
   outline?: any;
   deckId?: string;
   newSystemMessage?: Omit<ExtendedChatMessageProps, 'id' | 'timestamp' | 'type' | 'feedback'> & { message: string };
+  // Outline mode props
+  outlineMode?: boolean;
+  useOutlineAgent?: boolean; // Use conversational agent instead of direct generation
+  initialPromptFromURL?: { prompt: string; autoImages: boolean; autoSlides: boolean; presentationMode: boolean } | null;
+  onInitialPromptProcessed?: () => void;
+  onOutlineAgentToolCall?: (params: any) => void; // Called when agent wants to generate
+  onOutlineAgentEdit?: (params: any) => void; // Called when agent wants to edit
+  onOutlineUpdate?: (outline: any) => void; // Called when agent provides updated outline directly
+  onOutlineGenerate?: (prompt: string, preferences: any) => Promise<void>;
+  onOutlineRefine?: (message: string) => Promise<void>;
+  outlineMessages?: ExtendedChatMessageProps[]; // Messages from outline generation
+  outlineIsGenerating?: boolean; // Is outline currently generating
+  outlineCurrentSlideIndex?: number; // Current slide index in outline mode
 }
 
 /**
  * ChatPanel component that provides the AI-driven interface
  */
-const ChatPanel: React.FC<ChatPanelProps> = ({ 
-  onCollapseChange, 
-  opacity = 1, 
-  newSystemMessage 
+const ChatPanel: React.FC<ChatPanelProps> = ({
+  onCollapseChange,
+  opacity = 1,
+  newSystemMessage,
+  outline,
+  outlineMode = false,
+  useOutlineAgent = false,
+  initialPromptFromURL,
+  onInitialPromptProcessed,
+  onOutlineAgentToolCall,
+  onOutlineAgentEdit,
+  onOutlineUpdate,
+  onOutlineGenerate,
+  onOutlineRefine,
+  outlineMessages,
+  outlineIsGenerating = false,
+  outlineCurrentSlideIndex = 0
 }) => {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [messages, setMessages] = useState<ExtendedChatMessageProps[]>([{
-    id: 'welcome-message',
-    type: 'ai',
-    message: "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.",
-    timestamp: new Date(),
-    feedback: null
-  }]);
+
+  // Initialize messages based on mode
+  const getInitialMessages = (): ExtendedChatMessageProps[] => {
+    // If using outline agent, don't show any initial messages (agent hook handles it)
+    if (outlineMode && useOutlineAgent) {
+      return [];
+    }
+
+    // Use provided outline messages
+    if (outlineMode && outlineMessages && outlineMessages.length > 0) {
+      return outlineMessages;
+    }
+
+    // Default welcome message
+    return [{
+      id: 'welcome-message',
+      type: 'ai',
+      message: outlineMode
+        ? "Hi! I'll help you create your presentation. What would you like to create? Tell me about your topic, audience, or goal."
+        : "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.",
+      timestamp: new Date(),
+      feedback: null
+    }];
+  };
+
+  const [messages, setMessages] = useState<ExtendedChatMessageProps[]>(getInitialMessages());
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
+  const [outlineSlideTarget, setOutlineSlideTarget] = useState<number | 'all'>('all');
+
+  // Get deck data for slide dropdown in outline mode
+  const deckData = useDeckStore(state => state.deckData);
+
+  // Outline agent for conversational outline generation (only when enabled)
+  const outlineAgentData = useOutlineAgentHook();
+  const outlineAgent = (outlineMode && useOutlineAgent) ? outlineAgentData : null;
+
+  // Auto-send initial prompt from URL when in outline agent mode
+  const hasProcessedInitialPromptRef = useRef(false);
+  useEffect(() => {
+    if (
+      initialPromptFromURL &&
+      outlineAgent &&
+      !hasProcessedInitialPromptRef.current &&
+      !outlineAgent.isProcessing
+    ) {
+      console.log('[ChatPanel] Auto-sending initial prompt from URL:', initialPromptFromURL);
+      hasProcessedInitialPromptRef.current = true;
+
+      // Use the clean prompt - no need to add preferences to the agent message
+      const cleanPrompt = initialPromptFromURL.prompt;
+
+      // Send the message through the outline agent
+      setTimeout(async () => {
+        // Add user message to chat with full details
+        const userMessageId = `user-${Date.now()}`;
+
+        // Build detailed message showing all inputs
+        const messageLines = [`**Topic:** ${initialPromptFromURL.prompt}`];
+
+        // Add toggle values
+        const toggles = [];
+        if (initialPromptFromURL.autoImages) toggles.push('Auto-select images');
+        if (initialPromptFromURL.autoSlides) toggles.push('Auto-generate slides');
+        if (initialPromptFromURL.presentationMode) toggles.push('Presentation mode');
+
+        if (toggles.length > 0) {
+          messageLines.push(`**Options:** ${toggles.join(', ')}`);
+        }
+
+        const detailedMessage = messageLines.join('\n');
+
+        setMessages(prev => [
+          ...prev,
+          {
+            id: userMessageId,
+            type: 'user',
+            message: detailedMessage,
+            timestamp: new Date(),
+            feedback: null
+          }
+        ]);
+
+        // Prepare outline context if available
+        const context: { [key: string]: any } = {};
+        if (outline?.slides && outline.slides.length > 0) {
+          context.current_outline = {
+            title: outline.title,
+            slides: outline.slides.map((slide: any, index: number) => ({
+              index: index,
+              title: slide.title,
+              subtitle: slide.subtitle,
+              type: slide.type,
+              content: slide.content,
+              key_points: slide.key_points || []
+            }))
+          };
+        }
+
+        // Send message through outline agent
+        await outlineAgent.sendMessage(
+          cleanPrompt,
+          (outlineData) => {
+            // Agent generated/updated outline
+            console.log('[ChatPanel] Initial prompt outline data received:', outlineData);
+
+            if (outlineData.action === 'update_outline' && outline && onOutlineUpdate) {
+              const updatedSlides = outlineData.slides.map((slide, index) => ({
+                ...outline.slides[index],
+                title: slide.title || outline.slides[index]?.title || '',
+                subtitle: slide.subtitle || outline.slides[index]?.subtitle || '',
+                content: slide.key_points && slide.key_points.length > 0
+                  ? slide.key_points.join('\n')
+                  : outline.slides[index]?.content || ''
+              }));
+              onOutlineUpdate({ ...outline, slides: updatedSlides });
+            } else if (outlineData.action === 'generate_outline' && onOutlineAgentToolCall) {
+              // Trigger outline generation - the generation process will create the full outline
+              onOutlineAgentToolCall({
+                topic: outlineData.topic || initialPromptFromURL.prompt,
+                slide_count: outlineData.slide_count,
+                detail_level: outlineData.detail_level || 'standard',
+              });
+            }
+          },
+          context
+        );
+      }, 500);
+
+      // Notify parent that we processed the initial prompt
+      if (onInitialPromptProcessed) {
+        onInitialPromptProcessed();
+      }
+    }
+  }, [initialPromptFromURL, outlineAgent, onInitialPromptProcessed, outline, onOutlineUpdate, onOutlineAgentToolCall]);
+
   const [selectedElements, setSelectedElements] = useState<Array<{
     elementId: string;
     elementType?: string | null;
@@ -706,6 +881,33 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       window.removeEventListener('add_system_message', handleAddSystemMessage as EventListener);
     };
   }, []);
+
+  // Sync outline messages when in outline mode
+  useEffect(() => {
+    if (outlineMode && outlineMessages && outlineMessages.length > 0) {
+      setMessages(outlineMessages);
+    }
+  }, [outlineMode, outlineMessages]);
+
+  // Sync outline generating state
+  useEffect(() => {
+    if (outlineMode) {
+      setIsGenerating(outlineIsGenerating);
+    }
+  }, [outlineMode, outlineIsGenerating]);
+
+  // Sync outline slide target with current slide index (works in both outline and slide modes)
+  useEffect(() => {
+    console.log('[ChatPanel] outlineCurrentSlideIndex changed:', outlineCurrentSlideIndex);
+    console.log('[ChatPanel] Current outlineSlideTarget:', outlineSlideTarget);
+    if (outlineCurrentSlideIndex !== undefined && outlineCurrentSlideIndex >= 0) {
+      console.log('[ChatPanel] Setting dropdown to slide:', outlineCurrentSlideIndex + 1);
+      setOutlineSlideTarget(outlineCurrentSlideIndex);
+      console.log('[ChatPanel] Dropdown should now show: Slide', outlineCurrentSlideIndex + 1);
+    }
+  }, [outlineCurrentSlideIndex]);
+
+  // REMOVED: Complex syncing logic - we handle messages directly now
 
   // Live Theme & Assets preview updates
   useEffect(() => {
@@ -2141,10 +2343,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const sendMessage = async () => {
     if (!input.trim()) return;
 
+    console.log('[ChatPanel] sendMessage called', {
+      outlineMode,
+      useOutlineAgent,
+      hasOnOutlineAgentToolCall: !!onOutlineAgentToolCall,
+      input: input.substring(0, 50)
+    });
+
     // Create timestamp now for consistency
     const timestamp = new Date();
     const userMessageId = `user-${Date.now()}`;
-    
+
     // Snapshot current selections/attachments for tagging in the message
     const previewSelections = selectedElements.map(s => ({ id: s.elementId, label: s.label }));
     const previewAttachments = attachments.map(a => a.name);
@@ -2161,18 +2370,244 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         attachmentNames: previewAttachments
       }
     };
-    
-    // Add user message to UI state
-    setMessages(prevMessages => [...prevMessages, userMessage]);
-    
-    // Create a complete messages array for the API call that includes the new user message
-    const updatedMessages = [...messages, userMessage];
-    
-    setInput('');
-    setIsLoading(true);
-    
+
+    // Handle outline mode with conversational agent
+    if (outlineMode && useOutlineAgent && onOutlineAgentToolCall) {
+      console.log('[ChatPanel] Entering outline agent mode');
+      const currentInput = input;
+
+      // STEP 1: Add user message to UI IMMEDIATELY
+      const userMessageId = `user-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: userMessageId,
+        type: 'user',
+        message: currentInput,
+        timestamp: new Date(),
+        feedback: null
+      }]);
+
+      setInput('');
+      setIsGenerating(true);
+
+      // STEP 2: Add AI placeholder message
+      const aiMessageId = `ai-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: aiMessageId,
+        type: 'ai',
+        message: '',
+        timestamp: new Date(),
+        feedback: null,
+        metadata: { isTyping: true }
+      }]);
+
+      // STEP 3: Build context
+      const context: { [key: string]: any } = {};
+
+      if (outline?.slides && outline.slides.length > 0) {
+        context.current_outline = {
+          title: outline.title,
+          slides: outline.slides.map((slide: any, index: number) => ({
+            index: index,
+            title: slide.title,
+            subtitle: slide.subtitle,
+            type: slide.type,
+            content: slide.content,
+            key_points: slide.key_points || []
+          }))
+        };
+      }
+
+      if (outlineSlideTarget !== 'all') {
+        context.target_slide_index = outlineSlideTarget;
+      }
+
+      // STEP 4: Stream response from agent
+      try {
+        let fullResponse = '';
+        let outlineData: any = null;
+
+        console.log('[ChatPanel] Starting stream with context:', context);
+
+        for await (const event of streamOutlineAgentChat({
+          message: currentInput,
+          chat_history: convertMessagesToApiFormat(messages),
+          context: context
+        })) {
+          if (event.type === 'text') {
+            fullResponse += event.content;
+
+            // Remove JSON from display
+            let displayText = fullResponse.replace(/```json\s*[\s\S]*?\s*```/g, '');
+            displayText = displayText.replace(/^json\s*$[\s\S]*?^\}$/gm, '');
+            if (displayText.includes('"action"') && displayText.includes('"slides"')) {
+              displayText = displayText.replace(/\{[\s\S]*"action"[\s\S]*\}/g, '');
+            }
+            displayText = displayText.trim();
+
+            // Update AI message in real-time
+            setMessages(prev => prev.map(m =>
+              m.id === aiMessageId
+                ? { ...m, message: displayText, metadata: { isTyping: true } }
+                : m
+            ));
+          } else if (event.type === 'outline') {
+            outlineData = event.data;
+          }
+        }
+
+        // STEP 5: Finalize message
+        setMessages(prev => prev.map(m =>
+          m.id === aiMessageId
+            ? { ...m, metadata: { isTyping: false } }
+            : m
+        ));
+
+        // STEP 6: Handle outline updates
+        if (outlineData) {
+          if (outlineData.action === 'update_slides' && outline && onOutlineUpdate) {
+            // Diff-based update - only update specific slides
+            console.log('[ChatPanel] Applying diff-based slide updates:', outlineData.updated_slides);
+
+            const updatedSlides = [...outline.slides];
+            const updatedIndices = new Set<number>();
+
+            for (const update of outlineData.updated_slides) {
+              const idx = update.index;
+              if (idx >= 0 && idx < updatedSlides.length) {
+                // Format key_points with bullets and line breaks
+                let formattedContent = '';
+                if (update.key_points && update.key_points.length > 0) {
+                  formattedContent = update.key_points.map((point: string) => `• ${point}`).join('\n\n');
+                } else {
+                  formattedContent = updatedSlides[idx].content || '';
+                }
+
+                updatedSlides[idx] = {
+                  ...updatedSlides[idx],
+                  title: update.title || updatedSlides[idx].title,
+                  subtitle: update.subtitle || updatedSlides[idx].subtitle || '',
+                  content: formattedContent,
+                  _justUpdated: true // Mark for animation
+                };
+                updatedIndices.add(idx);
+              }
+            }
+
+            console.log(`[ChatPanel] Updated ${updatedIndices.size} slides:`, Array.from(updatedIndices).map(i => i + 1).join(', '));
+            onOutlineUpdate({ ...outline, slides: updatedSlides });
+          } else if (outlineData.action === 'update_outline' && outline && onOutlineUpdate) {
+            // Legacy full update (deprecated, but keep for backwards compatibility)
+            const updatedSlides = outlineData.slides.map((slide: any, index: number) => ({
+              ...outline.slides[index],
+              title: slide.title || outline.slides[index]?.title || '',
+              subtitle: slide.subtitle || outline.slides[index]?.subtitle || '',
+              content: slide.key_points && slide.key_points.length > 0
+                ? slide.key_points.join('\n')
+                : outline.slides[index]?.content || ''
+            }));
+            onOutlineUpdate({ ...outline, slides: updatedSlides });
+          } else if (outlineData.action === 'generate_outline' && onOutlineUpdate) {
+            const newOutline = {
+              id: outline?.id || uuidv4(),
+              title: outlineData.topic || 'Presentation',
+              slides: outlineData.slides.map((slide: any) => ({
+                id: uuidv4(),
+                title: slide.title || '',
+                subtitle: slide.subtitle || '',
+                content: slide.key_points && slide.key_points.length > 0
+                  ? slide.key_points.join('\n')
+                  : '',
+                deep_research: false
+              }))
+            };
+            onOutlineUpdate(newOutline);
+
+            onOutlineAgentToolCall({
+              topic: outlineData.topic || outline?.title || 'Presentation',
+              presentation_type: 'standard',
+              slide_count: outlineData.slides?.length || outlineData.slide_count || 5,
+              detail_level: outlineData.detail_level || 'standard',
+              tone: outlineData.tone,
+            });
+          }
+        }
+
+        setIsGenerating(false);
+      } catch (error) {
+        console.error('[ChatPanel] Error caught:', error);
+        console.error('[ChatPanel] Error stack:', (error as Error)?.stack);
+        console.error('[ChatPanel] Error message:', (error as Error)?.message);
+
+        setMessages(prev => prev.map(m =>
+          m.id === aiMessageId
+            ? {
+                ...m,
+                message: `Error: ${(error as Error)?.message || 'Unknown error'}. Check console for details.`,
+                metadata: { isTyping: false }
+              }
+            : m
+        ));
+        setIsGenerating(false);
+      }
+
+      return;
+    }
+
+    // Handle outline mode without agent (legacy/fallback)
+    if (outlineMode && onOutlineGenerate) {
+      console.log('[ChatPanel] Outline generation mode (non-agent)');
+
+      // Add user message immediately
+      setMessages(prev => [...prev, {
+        id: `user-${Date.now()}`,
+        type: 'user',
+        message: input,
+        timestamp: new Date(),
+        feedback: null
+      }]);
+
+      setInput('');
+      setIsLoading(true);
+
+      try {
+        // Call outline generation - parent will handle adding messages
+        await onOutlineGenerate(input, {});
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error generating outline:', error);
+        setMessages(prev => [...prev, {
+          id: `error-${Date.now()}`,
+          type: 'ai',
+          message: "I encountered an error while generating your outline. Please try again.",
+          timestamp: new Date(),
+          feedback: null
+        }]);
+        setIsLoading(false);
+      }
+      return;
+    }
 
     try {
+      console.log('[ChatPanel] Slide edit mode - sending message');
+
+      // STEP 1: Add user message to UI IMMEDIATELY (just like outline mode)
+      const userMsgId = `user-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: userMsgId,
+        type: 'user',
+        message: input,
+        timestamp: new Date(),
+        feedback: null,
+        metadata: {
+          selectionsPreview: previewSelections,
+          attachmentNames: previewAttachments
+        }
+      }]);
+
+      // Clear input immediately
+      setInput('');
+      setIsLoading(true);
+
       // Get current slide ID if available
       const currentSlide = slides[currentSlideIndex];
       const slideId = currentSlide?.id || null;
@@ -2249,7 +2684,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           slideId,
           currentSlideIndex,
           deckData,
-          updatedMessages,
+          messages,
           effectiveSelections,
           attachmentMeta.map(a => ({ name: a.name, type: a.mimeType, size: a.size }))
         );
@@ -2651,34 +3086,68 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       onChange={handleFileChange}
                     />
 
-                    {/* Edit/select toggle */}
-                    {!isSlideEditing && (
-                      <IconButton
-                        variant="ghost"
-                        size="xs"
-                        className={`hover:bg-transparent h-6 w-auto px-2 gap-1 flex items-center justify-center transition-opacity ${isSelecting ? 'opacity-40' : 'opacity-100'}`}
-                        style={{ color: isSelecting ? '#16a34a' : COLORS.SUGGESTION_PINK }}
-                        data-tour="chat-target"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Toggling Target: if turning off, clear all selections/highlights
-                          setIsSelecting(prev => {
-                            const next = !prev;
-                            if (next) {
-                              // Turning ON chat targeting: ensure slide editing is OFF
-                              try { setSlideEditing(false); } catch {}
-                            } else {
-                              // Turning OFF chat targeting: clear visuals
-                              clearSelections();
-                            }
-                            return next;
-                          });
-                        }}
-                        title={isSelecting ? 'Exit target mode' : 'Target elements'}
-                      >
-                        <Target size={14} />
-                        <span className="text-[11px] font-semibold">Target</span>
-                      </IconButton>
+                    {/* Outline mode: Slide/All dropdown */}
+                    {outlineMode ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[11px] font-semibold hover:bg-transparent"
+                            style={{ color: COLORS.SUGGESTION_PINK }}
+                          >
+                            {outlineSlideTarget === 'all' ? 'All' : `Slide ${outlineSlideTarget + 1}`}
+                            <ChevronDown className="h-3 w-3 ml-1" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[100px]">
+                          <DropdownMenuItem
+                            onClick={() => setOutlineSlideTarget('all')}
+                            className="text-xs"
+                          >
+                            All
+                          </DropdownMenuItem>
+                          {deckData?.slides?.map((_, index) => (
+                            <DropdownMenuItem
+                              key={index}
+                              onClick={() => setOutlineSlideTarget(index)}
+                              className="text-xs"
+                            >
+                              Slide {index + 1}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      /* Slides mode: Edit/select toggle */
+                      !isSlideEditing && (
+                        <IconButton
+                          variant="ghost"
+                          size="xs"
+                          className={`hover:bg-transparent h-6 w-auto px-2 gap-1 flex items-center justify-center transition-opacity ${isSelecting ? 'opacity-40' : 'opacity-100'}`}
+                          style={{ color: isSelecting ? '#16a34a' : COLORS.SUGGESTION_PINK }}
+                          data-tour="chat-target"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Toggling Target: if turning off, clear all selections/highlights
+                            setIsSelecting(prev => {
+                              const next = !prev;
+                              if (next) {
+                                // Turning ON chat targeting: ensure slide editing is OFF
+                                try { setSlideEditing(false); } catch {}
+                              } else {
+                                // Turning OFF chat targeting: clear visuals
+                                clearSelections();
+                              }
+                              return next;
+                            });
+                          }}
+                          title={isSelecting ? 'Exit target mode' : 'Target elements'}
+                        >
+                          <Target size={14} />
+                          <span className="text-[11px] font-semibold">Target</span>
+                        </IconButton>
+                      )
                     )}
 
                     {/* Send Button - Matching outline pink, no visual disabled state */}
