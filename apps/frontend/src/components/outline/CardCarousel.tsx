@@ -555,7 +555,8 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
           // Show generating placeholder only for auto-generated slides during generation
           // Don't show it for manually added slides or the last slide
           // Show generating state for slides that don't have content yet during generation
-          const isGeneratingSlide = !isAddSlide && isGenerating && !slide.content && !completedSlides.has(index) && !slide.isManual;
+          const hasNoContent = !slide.content || slide.content.trim() === '';
+          const isGeneratingSlide = !isAddSlide && isGenerating && hasNoContent && !completedSlides.has(index) && !slide.isManual;
           
           // Always render cards for smooth transitions to show background slides
           if (!isVisible) return null;

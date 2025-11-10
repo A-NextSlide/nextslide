@@ -198,6 +198,37 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // Initialize messages based on mode
   const getInitialMessages = (): ExtendedChatMessageProps[] => {
+    // If outline has stylePreferences, show what the user submitted
+    if (outlineMode && useOutlineAgent && outline?.stylePreferences) {
+      const prefs = outline.stylePreferences;
+      const messageLines = [];
+
+      if (prefs.initialIdea) {
+        messageLines.push(`**Topic:** ${prefs.initialIdea}`);
+      }
+
+      if (prefs.vibeContext) {
+        messageLines.push(`**Style:** ${prefs.vibeContext}`);
+      }
+
+      // Add toggles if available
+      const toggles = [];
+      if (prefs.autoSelectImages) toggles.push('Auto-select images');
+      if (toggles.length > 0) {
+        messageLines.push(`**Options:** ${toggles.join(', ')}`);
+      }
+
+      if (messageLines.length > 0) {
+        return [{
+          id: 'initial-prompt',
+          type: 'user',
+          message: messageLines.join('\n'),
+          timestamp: new Date(),
+          feedback: null
+        }];
+      }
+    }
+
     // If using outline agent, don't show any initial messages (agent hook handles it)
     if (outlineMode && useOutlineAgent) {
       return [];
@@ -881,6 +912,39 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       window.removeEventListener('add_system_message', handleAddSystemMessage as EventListener);
     };
   }, []);
+
+  // Show initial prompt message when outline with stylePreferences loads
+  useEffect(() => {
+    if (outlineMode && useOutlineAgent && outline?.stylePreferences && messages.length === 0) {
+      const prefs = outline.stylePreferences;
+      const messageLines = [];
+
+      if (prefs.initialIdea) {
+        messageLines.push(`**Topic:** ${prefs.initialIdea}`);
+      }
+
+      if (prefs.vibeContext) {
+        messageLines.push(`**Style:** ${prefs.vibeContext}`);
+      }
+
+      // Add toggles if available
+      const toggles = [];
+      if (prefs.autoSelectImages) toggles.push('Auto-select images');
+      if (toggles.length > 0) {
+        messageLines.push(`**Options:** ${toggles.join(', ')}`);
+      }
+
+      if (messageLines.length > 0) {
+        setMessages([{
+          id: 'initial-prompt',
+          type: 'user',
+          message: messageLines.join('\n'),
+          timestamp: new Date(),
+          feedback: null
+        }]);
+      }
+    }
+  }, [outlineMode, useOutlineAgent, outline?.stylePreferences, messages.length]);
 
   // Sync outline messages when in outline mode
   useEffect(() => {

@@ -1358,7 +1358,7 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
               <p className="text-xs">Theme</p>
             </TooltipContent>
           </Tooltip>
-          <PopoverContent className="w-[520px] max-w-[80vw]" align="start" data-tour="theme-popover">
+          <PopoverContent className="w-[700px] max-w-[80vw]" align="start" data-tour="theme-popover">
             <ThemePanel onClose={() => setIsThemeOpen(false)} />
           </PopoverContent>
         </Popover>
