@@ -207,6 +207,14 @@ Based on your analysis, create a COMPLETE DESIGN SYSTEM with:
    3. GOOGLE FONTS (only as fallback for body text)
       - Use only when Designer/PixelBuddha don't fit the vibe
 
+   ⚠️ CRITICAL: BODY FONT RULES (MUST FOLLOW!):
+   - NEVER use bold, thick, or heavy fonts for body text (readability is key!)
+   - AVOID: Bebas Neue, Impact, Anton, Oswald, Archivo Black for body text
+   - GOOD: Poppins, Nunito, Roboto, Lato, Open Sans, DM Sans, Work Sans
+   - Body fonts must be light, clean, and highly readable
+   - Reserve bold/thick fonts ONLY for hero/display titles
+   - Weight 400-500 maximum for body text, never 700+ unless it's a title
+
    🎭 PRESENTATION TYPE DETECTION (CRITICAL FOR FONT CHOICE!):
 
    📌 FUN/CREATIVE PRESENTATIONS (Characters, Kids, Entertainment, Playful):

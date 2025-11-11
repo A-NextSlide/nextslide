@@ -27,12 +27,13 @@
     ],
     "critical_rules": {
       "padding": "Must always be 0 (numeric, not string)",
-      "texts": "Array of text objects. Each item may include 'text', 'fontSize', and a 'style' object.",
-      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor", "highlight"],
-      "height": "Calculate as fontSize x 1.15 for single line (TIGHT!)",
+      "texts": "Tiptap document structure OR legacy array format. For lists, use proper Tiptap doc structure with bulletList/orderedList.",
+      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor", "highlight", "link"],
+      "height": "Calculate as fontSize x 1.15 for single line, fontSize x 1.5 x numItems for lists",
       "multiple_blocks": "CRITICAL: BREAK content into MULTIPLE TiptapTextBlock components - DON'T cram everything into one!",
       "alignment": "ALWAYS set alignment prop: 'left' | 'center' | 'right' | 'justify'",
-      "verticalAlignment": "ALWAYS set verticalAlignment prop: 'top' | 'middle' | 'bottom'"
+      "verticalAlignment": "ALWAYS set verticalAlignment prop: 'top' | 'middle' | 'bottom'",
+      "lists": "Use proper Tiptap structure: {type: 'doc', content: [{type: 'bulletList/orderedList', content: [listItems]}]} - NEVER manual bullets with '• '"
     },
     "alignment_rules": {
       "title_slides": "ALWAYS use alignment='left', verticalAlignment='top' for title/cover slides",
@@ -46,6 +47,8 @@
       "EMPHASIZE key numbers/terms: combine bold + textColor + highlight + backgroundColor",
       "MIX fonts in same slide: heroFont for titles, bodyFont for content",
       "BUCKET horizontally or vertically when 2-5 items (don't just stack!)",
+      "USE LISTS SPARINGLY: Only for 3-7 truly list-like items - prefer CustomComponents for stats/metrics",
+      "VARIETY IS KEY: Don't make every slide a bullet list - use cards, paragraphs, and visual components",
       "Combine multiple styles in texts array for rich formatting",
       "Use for tables with small fonts (8pt+)"
     ],
@@ -80,6 +83,16 @@
         "superscript": "For TM, R, superscript numbers, footnotes",
         "subscript": "For H2O, CO2, chemical formulas",
         "link": "{ \"link\": true, \"href\": \"https://example.com\" }"
+      },
+      "lists": {
+        "bullet_list": "Use {type: 'bulletList'} for unordered lists with bullets (•)",
+        "ordered_list": "Use {type: 'orderedList'} for numbered lists (1, 2, 3...)",
+        "structure": "Each list contains listItem objects, each listItem contains a paragraph with text objects",
+        "NEVER_USE": "NEVER use manual bullets like '• ' with \\n - always use proper bulletList/orderedList structure",
+        "use_orderedList_for": "Sequential steps/instructions, process workflows, rankings/priorities, chronological timeline events - anything where ORDER MATTERS",
+        "use_bulletList_for": "Unordered features/benefits, characteristics, multiple points where order doesn't matter, examples/options",
+        "when_to_use": "Use lists ONLY for 3-7 truly list-like items with short, parallel structure",
+        "when_NOT_to_use": "DON'T use for: single statements, stats/metrics (use CustomComponent), comparisons (use cards), body text (use paragraph)"
       }
     },
     "layout_strategies": {
@@ -153,6 +166,74 @@
           {"text": " newspapers by ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
           {"text": "early 1980s", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}"}}
         ]
+      },
+      "proper_bullet_list": {
+        "description": "CORRECT way to create bullet lists - use Tiptap structure",
+        "texts": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {"type": "text", "text": "Revenue grew ", "style": {}},
+                        {"type": "text", "text": "$2.5B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {"type": "text", "text": "Market share increased ", "style": {}},
+                        {"type": "text", "text": "42%", "style": {"bold": true, "textColor": "{{accent}}"}}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "proper_numbered_list": {
+        "description": "CORRECT way to create numbered lists - use orderedList",
+        "texts": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "orderedList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "Identify the problem", "style": {}}]}
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "Research solutions", "style": {}}]}
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "Implement and test", "style": {"bold": true}}]}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       },
       "horizontal_bucket_example": {
         "description": "Two stats side-by-side instead of stacked",

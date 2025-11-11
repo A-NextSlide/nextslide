@@ -558,22 +558,36 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
 
   // Compute whether we're actively generating
   const isActivelyGenerating = React.useMemo(() => {
-    // If localIsOutlineGenerating is true, we're definitely generating
-    if (localIsOutlineGenerating) return true;
-    
-    // If we have research events, we're in the research/generation phase
-    if (researchEvents.length > 0) return true;
-    
-    // If we're expecting a new outline and have an outline structure but not all slides completed
+    // PRIORITY 1: If we have an outline with slides that don't have content yet and aren't manually added, we're generating
+    if (currentOutline && currentOutline.slides && currentOutline.slides.length > 0) {
+      const emptyNonManualSlides = currentOutline.slides.filter((slide, index) =>
+        (!slide.content || slide.content.trim() === '') && !slide.isManual
+      );
+      if (emptyNonManualSlides.length > 0) {
+        console.log('[OutlineEditor] isActivelyGenerating=TRUE due to', emptyNonManualSlides.length, 'empty non-manual slides');
+        return true;
+      }
+    }
+
+    // PRIORITY 2: If localIsOutlineGenerating is true, we're definitely generating
+    if (localIsOutlineGenerating) {
+      console.log('[OutlineEditor] isActivelyGenerating=TRUE (localIsOutlineGenerating=true)');
+      return true;
+    }
+
+    // PRIORITY 3: If we have research events, we're in the research/generation phase
+    if (researchEvents.length > 0) {
+      console.log('[OutlineEditor] isActivelyGenerating=TRUE (research events present)');
+      return true;
+    }
+
+    // PRIORITY 4: If we're expecting a new outline and have an outline structure but not all slides completed
     if (isExpectingNewOutline && currentOutline && completedSlides.size < currentOutline.slides.length) {
+      console.log('[OutlineEditor] isActivelyGenerating=TRUE (expecting new outline)');
       return true;
     }
-    
-    // If we have an outline with empty content slides (structure but no content yet)
-    if (currentOutline && currentOutline.slides.some((slide, index) => !slide.content && !completedSlides.has(index))) {
-      return true;
-    }
-    
+
+    console.log('[OutlineEditor] isActivelyGenerating=FALSE');
     return false;
   }, [localIsOutlineGenerating, researchEvents.length, isExpectingNewOutline, currentOutline, completedSlides]);
 

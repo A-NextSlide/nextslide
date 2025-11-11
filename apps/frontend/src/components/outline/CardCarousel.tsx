@@ -555,8 +555,24 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
           // Show generating placeholder only for auto-generated slides during generation
           // Don't show it for manually added slides or the last slide
           // Show generating state for slides that don't have content yet during generation
-          const hasNoContent = !slide.content || slide.content.trim() === '';
+          const hasNoContent = !isAddSlide && (!slide.content || slide.content.trim() === '');
+          // Show spinner when generating and slide has no content AND it's not a manually added slide
+          // Manually added slides (isManual: true) should show the editor immediately
           const isGeneratingSlide = !isAddSlide && isGenerating && hasNoContent && !completedSlides.has(index) && !slide.isManual;
+
+          // Debug logging for empty cards
+          if (!isAddSlide && hasNoContent && index === currentIndex) {
+            console.log('[CardCarousel] Empty slide debug:', {
+              slideId: slide.id,
+              index,
+              isGenerating,
+              hasNoContent,
+              isCompleted: completedSlides.has(index),
+              isManual: slide.isManual,
+              isGeneratingSlide,
+              reason: isGeneratingSlide ? 'SHOWING SPINNER' : !isGenerating ? 'isGenerating=false' : 'completed'
+            });
+          }
           
           // Always render cards for smooth transitions to show background slides
           if (!isVisible) return null;

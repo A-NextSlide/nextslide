@@ -1131,19 +1131,13 @@ class ComponentValidator:
         try:
             props = component.get('props', {}) or {}
             
-            # Ensure axisBottom has tickRotation set to 0 if not already specified
-            axis_bottom = props.get('axisBottom')
-            if isinstance(axis_bottom, dict):
-                if 'tickRotation' not in axis_bottom:
-                    axis_bottom['tickRotation'] = 0
-                    props['axisBottom'] = axis_bottom
-            
-            # Ensure axisLeft has tickRotation set to 0 if not already specified
-            axis_left = props.get('axisLeft')
-            if isinstance(axis_left, dict):
-                if 'tickRotation' not in axis_left:
-                    axis_left['tickRotation'] = 0
-                    props['axisLeft'] = axis_left
+            # Ensure all axes have tickRotation set to 0 if not already specified
+            for axis_name in ['axisBottom', 'axisLeft', 'axisRight', 'axisTop']:
+                axis = props.get(axis_name)
+                if isinstance(axis, dict):
+                    if 'tickRotation' not in axis:
+                        axis['tickRotation'] = 0
+                        props[axis_name] = axis
             
             component['props'] = props
         except Exception as e:

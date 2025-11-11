@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SlideData } from '@/types/SlideTypes';
 import { useDeckStore } from '../stores/deckStore';
+import { useThemeStore } from '../stores/themeStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { useOutlineAgent as useOutlineAgentHook } from '@/hooks/useOutlineAgent';
 // ThemeToggle import removed
@@ -71,6 +72,33 @@ const ALL_SUGGESTIONS: string[] = [
   'Make text pop with 3D shadows',
   'Add a comic book style layout',
   'Create a newspaper front page vibe',
+];
+
+// Outline mode specific suggestions for slide generation
+const OUTLINE_SUGGESTIONS: string[] = [
+  'Add more detail to slide 3',
+  'Expand the introduction with key statistics',
+  'Create a conclusion slide summarizing main points',
+  'Add a slide about implementation challenges',
+  'Include more examples in the benefits section',
+  'Add a timeline slide showing the roadmap',
+  'Create a comparison table for alternatives',
+  'Add speaker notes to all slides',
+  'Rewrite slide 2 to be more concise',
+  'Add a slide about next steps',
+  'Include case studies or real-world examples',
+  'Expand on the technical architecture',
+  'Add a Q&A slide at the end',
+  'Create an agenda slide after the title',
+  'Add more context to the problem statement',
+  'Use a professional minimalist theme',
+  'Change to a dark modern theme',
+  'Apply a vibrant tech startup style',
+  'Use a corporate blue theme',
+  'Switch to a creative gradient theme',
+  'Apply a clean academic style',
+  'Use a bold high-contrast theme',
+  'Change to a warm earthy color palette',
 ];
 
 function sampleArray<T>(items: T[], count: number): T[] {
@@ -170,6 +198,7 @@ export interface ChatPanelProps {
   outlineMessages?: ExtendedChatMessageProps[]; // Messages from outline generation
   outlineIsGenerating?: boolean; // Is outline currently generating
   outlineCurrentSlideIndex?: number; // Current slide index in outline mode
+  onOutlineChatGeneratingChange?: (isGenerating: boolean) => void; // Called when outline generation state changes
 }
 
 /**
@@ -191,7 +220,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   onOutlineRefine,
   outlineMessages,
   outlineIsGenerating = false,
-  outlineCurrentSlideIndex = 0
+  outlineCurrentSlideIndex = 0,
+  onOutlineChatGeneratingChange
 }) => {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -953,12 +983,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [outlineMode, outlineMessages]);
 
-  // Sync outline generating state
+  // Notify parent when outline generation state changes (one-way only, no sync back)
   useEffect(() => {
-    if (outlineMode) {
-      setIsGenerating(outlineIsGenerating);
+    if (outlineMode && onOutlineChatGeneratingChange) {
+      console.log('[ChatPanel] Notifying parent of generation state change:', isGenerating);
+      onOutlineChatGeneratingChange(isGenerating);
     }
-  }, [outlineMode, outlineIsGenerating]);
+  }, [outlineMode, isGenerating, onOutlineChatGeneratingChange]);
+
+  // Auto-stop generating when outline slides get content
+  useEffect(() => {
+    if (outlineMode && isGenerating && outline?.slides && outline.slides.length > 0) {
+      const allSlidesHaveContent = outline.slides.every((slide: any) =>
+        slide.content && slide.content.trim() !== ''
+      );
+      if (allSlidesHaveContent) {
+        console.log('[ChatPanel] All slides now have content, stopping isGenerating');
+        setIsGenerating(false);
+      }
+    }
+  }, [outlineMode, isGenerating, outline?.slides]);
 
   // Sync outline slide target with current slide index (works in both outline and slide modes)
   useEffect(() => {
@@ -2528,7 +2572,162 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
         // STEP 6: Handle outline updates
         if (outlineData) {
-          if (outlineData.action === 'update_slides' && outline && onOutlineUpdate) {
+          if (outlineData.action === 'update_theme' && outline && outlineData.theme_changes) {
+            // Apply theme changes
+            console.log('[ChatPanel] Applying theme changes:', outlineData.theme_changes);
+
+            try {
+              // Call the backend to process theme changes
+              const response = await fetch(`${API_CONFIG.AGENT_BASE_URL}/api/outline-theme/apply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  outline_id: outline.id,
+                  theme_changes: outlineData.theme_changes
+                })
+              });
+
+              if (response.ok) {
+                const result = await response.json();
+                console.log('[ChatPanel] Theme changes applied:', result);
+
+                // Update stylePreferences if provided
+                if (result.style_preferences && onOutlineUpdate) {
+                  const updatedOutline = {
+                    ...outline,
+                    stylePreferences: {
+                      ...(outline as any).stylePreferences,
+                      ...result.style_preferences
+                    }
+                  };
+                  onOutlineUpdate(updatedOutline);
+                }
+
+                // Update deck theme if provided
+                if (result.theme_updates && outline.id) {
+                  const currentTheme = useThemeStore.getState().outlineDeckThemes?.[outline.id];
+
+                  // Handle logo removal
+                  if (result.theme_updates.remove_logo && currentTheme) {
+                    const updatedTheme = { ...currentTheme };
+
+                    // Remove logo from all locations
+                    if (updatedTheme.brandInfo) {
+                      const { logoUrl: _1, logo_url: _2, ...restBrandInfo } = updatedTheme.brandInfo as any;
+                      updatedTheme.brandInfo = Object.keys(restBrandInfo).length > 0 ? restBrandInfo : undefined;
+                    }
+
+                    if (updatedTheme.metadata) {
+                      const { logo_url: _1, logo_url_light: _2, logo_url_dark: _3, ...restMetadata } = updatedTheme.metadata as any;
+                      updatedTheme.metadata = Object.keys(restMetadata).length > 0 ? restMetadata : undefined;
+                    }
+
+                    if (updatedTheme.color_palette?.metadata) {
+                      const { logo_url: _1, logo_url_light: _2, logo_url_dark: _3, ...restCPMetadata } = (updatedTheme.color_palette as any).metadata;
+                      (updatedTheme.color_palette as any).metadata = Object.keys(restCPMetadata).length > 0 ? restCPMetadata : undefined;
+                    }
+
+                    if (updatedTheme.logo_info) updatedTheme.logo_info = undefined;
+                    if (updatedTheme.logo) updatedTheme.logo = undefined;
+
+                    useThemeStore.getState().setOutlineDeckTheme(outline.id, updatedTheme);
+                  } else {
+                    // Merge theme updates (or create new theme if none exists)
+                    const updatedTheme = currentTheme ? { ...currentTheme } : {};
+
+                    if (result.theme_updates.color_palette) {
+                      updatedTheme.color_palette = {
+                        ...(updatedTheme.color_palette || {}),
+                        ...result.theme_updates.color_palette
+                      };
+                    }
+
+                    if (result.theme_updates.typography) {
+                      updatedTheme.typography = {
+                        ...(updatedTheme.typography || {}),
+                        ...result.theme_updates.typography
+                      };
+                    }
+
+                    if (result.theme_updates.brandInfo) {
+                      updatedTheme.brandInfo = {
+                        ...(updatedTheme.brandInfo || {}),
+                        ...result.theme_updates.brandInfo
+                      };
+                    }
+
+                    useThemeStore.getState().setOutlineDeckTheme(outline.id, updatedTheme);
+
+                    // Also update the workspace theme so the font picker and preview update
+                    const currentWorkspaceTheme = useThemeStore.getState().getWorkspaceTheme();
+                    const updatedWorkspaceTheme: any = { ...currentWorkspaceTheme };
+
+                    // Apply color palette changes to workspace theme
+                    if (result.theme_updates.color_palette) {
+                      const cp = result.theme_updates.color_palette;
+                      if (cp.primary_background) {
+                        updatedWorkspaceTheme.page = {
+                          ...updatedWorkspaceTheme.page,
+                          backgroundColor: cp.primary_background
+                        };
+                      }
+                      if (cp.primary_text) {
+                        updatedWorkspaceTheme.typography = {
+                          ...updatedWorkspaceTheme.typography,
+                          heading: {
+                            ...updatedWorkspaceTheme.typography?.heading,
+                            color: cp.primary_text
+                          },
+                          paragraph: {
+                            ...updatedWorkspaceTheme.typography?.paragraph,
+                            color: cp.primary_text
+                          }
+                        };
+                      }
+                      if (cp.accent_1) {
+                        updatedWorkspaceTheme.accent1 = cp.accent_1;
+                      }
+                    }
+
+                    // Apply typography changes to workspace theme
+                    if (result.theme_updates.typography) {
+                      const typo = result.theme_updates.typography;
+                      if (typo.hero_title?.family) {
+                        updatedWorkspaceTheme.typography = {
+                          ...updatedWorkspaceTheme.typography,
+                          heading: {
+                            ...updatedWorkspaceTheme.typography?.heading,
+                            fontFamily: typo.hero_title.family
+                          }
+                        };
+                      }
+                      if (typo.body_text?.family) {
+                        updatedWorkspaceTheme.typography = {
+                          ...updatedWorkspaceTheme.typography,
+                          paragraph: {
+                            ...updatedWorkspaceTheme.typography?.paragraph,
+                            fontFamily: typo.body_text.family
+                          }
+                        };
+                      }
+                    }
+
+                    // Add the updated theme as a custom theme and set it as workspace theme
+                    const newThemeId = useThemeStore.getState().addCustomTheme(updatedWorkspaceTheme);
+                    useThemeStore.getState().setWorkspaceTheme(newThemeId);
+                    useThemeStore.getState().setOutlineTheme(outline.id, { ...updatedWorkspaceTheme, id: newThemeId, isCustom: true });
+                  }
+                }
+
+                // Show success message
+                console.log('[ChatPanel] Theme update complete:', result.message);
+              } else {
+                console.error('[ChatPanel] Failed to apply theme changes:', response.statusText);
+              }
+            } catch (error) {
+              console.error('[ChatPanel] Error applying theme changes:', error);
+            }
+          } else if (outlineData.action === 'update_slides' && outline && onOutlineUpdate) {
             // Diff-based update - only update specific slides
             console.log('[ChatPanel] Applying diff-based slide updates:', outlineData.updated_slides);
 
@@ -2584,6 +2783,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 deep_research: false
               }))
             };
+            console.log('[ChatPanel] Creating outline with slides:', newOutline.slides.map(s => ({ title: s.title, hasContent: !!s.content, content: s.content?.substring(0, 50) })));
             onOutlineUpdate(newOutline);
 
             onOutlineAgentToolCall({
@@ -2593,6 +2793,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               detail_level: outlineData.detail_level || 'standard',
               tone: outlineData.tone,
             });
+
+            // Check if created slides actually have content
+            const slidesWithoutContent = newOutline.slides.filter((s: any) => !s.content || s.content.trim() === '');
+            console.log('[ChatPanel] Created outline - slides without content:', slidesWithoutContent.length, '/', newOutline.slides.length);
+
+            // Keep isGenerating true if slides are empty (will be filled by streaming or other mechanism)
+            if (slidesWithoutContent.length > 0) {
+              console.log('[ChatPanel] Outline has empty slides, keeping isGenerating true');
+              return; // Don't set isGenerating to false yet
+            }
           }
         }
 
@@ -2836,10 +3046,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     transition: 'opacity 150ms ease-out'
   };
 
-  // Pick a random set of suggestions on mount
+  // Pick a random set of suggestions on mount and when mode changes
   useEffect(() => {
-    setSuggestions(sampleArray(ALL_SUGGESTIONS, 4));
-  }, []);
+    const suggestionsPool = (outlineMode && useOutlineAgent) ? OUTLINE_SUGGESTIONS : ALL_SUGGESTIONS;
+    setSuggestions(sampleArray(suggestionsPool, 4));
+  }, [outlineMode, useOutlineAgent]);
 
   return (
     <div 
@@ -3085,7 +3296,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Create Anything..."
+                    placeholder={(outlineMode && useOutlineAgent) ? "Refine your slides..." : "Design, edit, or enhance your deck..."}
                     className="bg-transparent border-none flex-grow text-foreground text-sm placeholder:text-muted-foreground placeholder:text-sm focus-visible:ring-0 focus-visible:ring-offset-0 pl-0 resize-none overflow-hidden"
                     data-tour="chat-input"
                   />

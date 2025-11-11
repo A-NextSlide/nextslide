@@ -69,19 +69,10 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
       phase,
       currentHighWaterMark: highWaterMark
     });
-    
-    // Calculate the actual overall progress
-    let actualProgress = progress;
-    
-    // Special handling for slide generation phase
-    if (phase === 'slide_generation' && totalSlides > 0) {
-      // Use the formula from the guide: 55 + (completedSlides / totalSlides) * 40
-      actualProgress = 55 + (completedSlides.size / totalSlides) * 40;
-    } else if (progress >= 0) {
-      // For other phases, calculate based on phase range
-      actualProgress = calculateActualProgress(progress, phase);
-    }
-    
+
+    // Use backend progress directly - backend already calculates correct percentages
+    const actualProgress = progress;
+
     // Never go backwards
     if (actualProgress >= highWaterMark) {
       setHighWaterMark(actualProgress);
@@ -107,35 +98,14 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
     }
   }, [phase, lastPhase, currentPhaseData.minProgress, highWaterMark]);
   
-  // Auto-increment progress - only for phases before slide generation
+  // No auto-increment - backend sends accurate real-time progress updates
   useEffect(() => {
-    // Only auto-increment if we're not complete
+    // Only ensure completion at 100%
     if (phase === 'generation_complete' || localProgress >= 100) {
       setLocalProgress(100);
       return;
     }
-    
-    // Only auto-increment for early phases, not during slide generation
-    if (phase === 'slide_generation') {
-      return;
-    }
-    
-    const interval = setInterval(() => {
-      setLocalProgress(current => {
-        // Determine safe increment limit based on phase
-        let safeMax = currentPhaseData.maxProgress - 2; // Stop 2% before phase end
-        
-        // Only increment if we're below the safe maximum
-        if (current < safeMax) {
-          return current + 0.5; // Slower increment
-        }
-        
-        return current;
-      });
-    }, 2000); // Increment every 2 seconds
-    
-    return () => clearInterval(interval);
-  }, [phase, currentPhaseData.maxProgress]);
+  }, [phase, localProgress]);
   
   // Smoothly animate to the local progress
   useEffect(() => {

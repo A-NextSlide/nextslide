@@ -462,7 +462,22 @@ OUTPUT FORMAT - Return JSON with this exact structure:
   "chartType": "bar"
 }
 
-CHART TYPE DECISION TREE - Follow this logic:
+⚠️ WHEN TO OMIT chartData (set to null or empty array):
+DO NOT include chartData if ANY of these are true:
+1. Slide is educational/explanatory (concepts, processes, how-to, tutorials)
+2. Slide is narrative/storytelling (history, vision, mission, case studies)
+3. Content is qualitative (features, benefits, testimonials, quotes)
+4. You have fewer than 8 quantitative data points
+5. Data points are not comparable (mixed measurement types)
+6. The content works better as text/bullets/images
+
+✅ ONLY include chartData if ALL of these are true:
+1. Slide's PRIMARY PURPOSE is data/metrics/analytics
+2. You have 8-15+ quantitative data points in ONE measurement type
+3. The data shows a clear numerical trend/pattern/distribution
+4. Visual representation is superior to text for understanding
+
+CHART TYPE DECISION TREE - Follow this logic (ONLY if you decided to include chartData):
 
 1. Is data over TIME (months/quarters/years)? → "line" or "area"
 2. Is data PARTS OF 100% (market share/budget)? → "pie"
@@ -499,23 +514,43 @@ YOUR TASK: Look at the content you're presenting. Does it need axis-based numeri
 
 🚨 CHART DATA RULES (if you choose to use chartData):
 
-UNIT CONSISTENCY IS MANDATORY:
-ALL values must use the EXACT SAME measurement unit.
+⚠️ CRITICAL: SAME MEASUREMENT TYPE REQUIRED ⚠️
+ALL data points must represent THE SAME TYPE of measurement.
+ONE chart = ONE measurement. Do NOT mix different types of data.
 
-✅ GOOD (Same Unit):
-- All revenue: 2.5M, 3.1M, 2.8M, 4.2M, 3.9M (all millions of dollars)
-- All growth: 35%, 42%, 28%, 51%, 19% (all percentages)
-- All users: 1200, 1800, 2300, 2900, 3400 (all user counts)
+✅ GOOD EXAMPLES (Same Measurement):
+1. Revenue chart: [{"name": "Q1", "value": 2500000}, {"name": "Q2", "value": 3100000}, {"name": "Q3", "value": 2800000}]
+   - All values are revenue in same unit ($)
 
-❌ BAD (Mixed Units):
-- Establishments 20000, Growth 4.4%, Revenue 205, Locations 500
-- Traffic 30%, Rent 11%, Space 750, Years 4
-- Revenue 2.5M, Growth 35%, Users 1200
+2. Growth chart: [{"name": "Jan", "value": 35}, {"name": "Feb", "value": 42}, {"name": "Mar", "value": 28}]
+   - All values are growth percentages
 
-For 2 different units, use series field:
-✅ [{"name": "Q1", "value": 2500000, "series": "Revenue $M"}, {"name": "Q1", "value": 35, "series": "Growth %"}]
+3. User count: [{"name": "Week 1", "value": 1200}, {"name": "Week 2", "value": 1800}, {"name": "Week 3", "value": 2300}]
+   - All values are user counts
 
-Otherwise: If you CANNOT find 5+ data points in ONE UNIT, omit chartData completely.
+❌ BAD EXAMPLES (Mixed Measurements) - NEVER DO THIS:
+1. [{"name": "Years Since Pyramid", "value": 4525}, {"name": "Pyramid Height (feet)", "value": 200}, {"name": "Void Distance (meters)", "value": 1.4}]
+   - ❌ WRONG: Mixing years + feet + meters (3 different measurement types!)
+
+2. [{"name": "Establishments", "value": 20000}, {"name": "Growth %", "value": 4.4}, {"name": "Revenue ($M)", "value": 205}]
+   - ❌ WRONG: Mixing counts + percentages + dollars (3 different types!)
+
+3. [{"name": "Traffic %", "value": 30}, {"name": "Rent %", "value": 11}, {"name": "Space (sq ft)", "value": 750}, {"name": "Years", "value": 4}]
+   - ❌ WRONG: Mixing percentages + area + time (3+ different types!)
+
+4. [{"name": "Revenue", "value": 2500000}, {"name": "Employees", "value": 1200}, {"name": "Growth %", "value": 35}]
+   - ❌ WRONG: Mixing dollars + people + percentages (3 different types!)
+
+🔧 SOLUTION FOR MULTI-TYPE DATA:
+If you have MULTIPLE measurements (e.g., Revenue AND Growth %), use the "series" field:
+✅ [{"name": "Q1", "value": 2500000, "series": "Revenue $M"}, {"name": "Q1", "value": 35, "series": "Growth %"}, ...]
+   - This creates a multi-series chart with SEPARATE Y-axes
+   - Maximum 2 different measurement types allowed
+
+⚠️ IF YOU CANNOT FIND 5+ DATA POINTS IN ONE MEASUREMENT TYPE:
+- DO NOT create chartData
+- Omit chartData field completely
+- Use text/bullets instead
 
 📊 CHART TYPE VARIETY - Don't default to bar/line! Match chart type to data structure:
 """ + chart_descriptions + """
@@ -1029,19 +1064,15 @@ Choose the chart type that best reveals the pattern in your data. Use variety ac
                 else:
                     logger.warning(f"[CHART DEBUG] No valid chart data available for slide '{slide_title}'")
             elif response.requires_chart:
-                logger.warning(f"[CHART DEBUG] Chart required but no data provided by AI for slide '{slide_title}'")
-                # Fallback: try to extract chart data from generated content
-                ai_chart_data = self._extract_chart_data_from_content(content, slide_title)
-                if ai_chart_data:
-                    logger.info(f"[CHART DEBUG] Fallback extracted {len(ai_chart_data)} points from content; attempting chart build")
-                    chart_data, extracted_data = await self._create_chart_from_data(
-                        slide_title, content, ai_chart_data, model_name, context, presentation_title
-                    )
-                    if chart_data:
-                        logger.info(f"[CHART DEBUG] Fallback chart created successfully")
+                # AI indicated chart needed but didn't provide data - this means it couldn't find appropriate data
+                # Don't force a chart with scraped content - respect the AI's inability to provide structured data
+                logger.warning(f"[CHART] Chart requested but no valid chartData provided by AI for '{slide_title}' - skipping chart")
+                logger.info(f"[CHART] If chart is needed, the AI would have provided structured chartData. No fallback extraction.")
                 
-            # If AI didn't request chart but content looks data-rich, opportunistically add one
-            if not chart_data and not extracted_data:
+            # DISABLED: Opportunistic chart generation is too aggressive and adds charts where they don't belong
+            # Only create charts when AI explicitly requests them via chartData field
+            # This ensures charts are only added when they genuinely enhance understanding
+            if False:  # Permanently disabled - charts must be explicitly requested
                 # Check if we should allow opportunistic chart generation
                 local_total_slides_guard = 0
                 try:

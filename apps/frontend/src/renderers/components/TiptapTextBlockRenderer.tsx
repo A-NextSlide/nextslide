@@ -16,6 +16,9 @@ import Typography from '@tiptap/extension-typography';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
 
 import { ComponentInstance } from '../../types/components';
 import { registerRenderer, RendererProps } from '../index';
@@ -178,6 +181,24 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
         types: ['paragraph', 'heading'],
         alignments: ['left', 'center', 'right', 'justify'],
         defaultAlignment: alignment,
+      }),
+      // List extensions - must come before any extensions that use them
+      BulletList.configure({
+        HTMLAttributes: {
+          class: 'list-disc',
+          style: 'margin: 0; padding-left: 1.5em;'
+        }
+      }),
+      OrderedList.configure({
+        HTMLAttributes: {
+          class: 'list-decimal',
+          style: 'margin: 0; padding-left: 1.5em;'
+        }
+      }),
+      ListItem.configure({
+        HTMLAttributes: {
+          style: 'margin: 0; padding: 0;'
+        }
       }),
       Link.extend({
         parseHTML() {

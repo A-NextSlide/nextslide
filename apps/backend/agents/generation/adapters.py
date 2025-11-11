@@ -1331,6 +1331,9 @@ class SimpleDeckComposer(IDeckComposer):
 
                 print("✅ LayoutArchitect imported successfully")
 
+                # Start layout_design phase
+                yield progress.start_phase(GenerationPhase.LAYOUT_DESIGN)
+
                 # Initialize LayoutArchitect
                 component_schemas = get_optimized_component_schemas()
                 layout_architect = LayoutArchitect(component_schemas=component_schemas)
@@ -1362,15 +1365,12 @@ class SimpleDeckComposer(IDeckComposer):
                 print(f"🎉 LAYOUT ARCHITECT COMPLETE - {len(slide_blueprints)} slides designed!")
                 print("="*80 + "\n")
 
-                yield {
-                    "type": "progress",
-                    "data": {
-                        "phase": "layout_design",
-                        "progress": 35,
-                        "message": f"Designed layouts for {len(slide_blueprints)} slides",
-                        "substep": "layouts_complete"
-                    }
-                }
+                # Complete layout_design phase
+                yield progress.update_phase_progress(
+                    GenerationPhase.LAYOUT_DESIGN,
+                    1.0,
+                    message=f"Designed layouts for {len(slide_blueprints)} slides"
+                )
             except Exception as e:
                 print(f"\n❌ ERROR in LayoutArchitect: {e}")
                 logger.error(f"[DECK COMPOSER] Error generating layouts: {e}")

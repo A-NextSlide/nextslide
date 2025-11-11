@@ -206,7 +206,7 @@ class EnhancedFontService:
         elif any(kw in name_lower for kw in ['fredoka', 'baloo', 'chewy', 'bubblegum', 'bungee', 'bangers', 'comic', 'righteous', 'titan']):
             return 'playful'
         # Display/Bold fonts
-        elif any(kw in name_lower for kw in ['bebas', 'anton', 'oswald', 'impact', 'black', 'bold']):
+        elif any(kw in name_lower for kw in ['bebas', 'anton', 'oswald', 'impact', 'black', 'bold', 'display']):
             return 'display'
         # Script/Handwritten
         elif any(kw in name_lower for kw in ['pacifico', 'kaushan', 'caveat', 'script', 'hand']):
@@ -329,8 +329,7 @@ class EnhancedFontService:
             context['preferred_tags'].update(['creative', 'artistic', 'unique', 'display', 'playful', 'fun', 'bold', 'expressive'])
             # Avoid overly corporate/boring fonts for creative contexts
             context['avoid_tags'].update(['corporate', 'formal', 'conservative'])
-            # Prefer bold/fat fonts for creative contexts
-            context['prefer_bold_body'] = True
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         elif vibe in ['modern', 'minimal', 'clean']:
             context['style'] = 'modern'
             context['required_tags'].update(['modern', 'minimal', 'clean'])
@@ -340,8 +339,7 @@ class EnhancedFontService:
         elif vibe in ['retro', 'vintage', 'nostalgic']:
             context['style'] = 'retro'
             context['required_tags'].update(['retro', 'vintage', '60s', '70s', '80s'])
-            # Bold fonts work great for retro
-            context['prefer_bold_body'] = True
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         
         # Analyze keywords for additional context
         all_text = ' '.join([deck_title] + (content_keywords or []))
@@ -349,19 +347,19 @@ class EnhancedFontService:
         if any(word in all_text.lower() for word in ['gaming', 'game', 'arcade', 'pixel', '8bit', '8-bit', 'retro game']):
             context['type'] = 'gaming'
             context['preferred_tags'].update(['pixel', 'arcade', '8bit', '8-bit', 'retro', 'game'])
-            context['prefer_bold_body'] = True  # Bold fonts great for gaming
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         elif any(word in all_text.lower() for word in ['80s', '70s', '60s', 'disco', 'groovy', 'vintage', 'throwback']):
             context['type'] = 'retro'
             context['preferred_tags'].update(['retro', 'vintage', '80s', '70s', '60s', 'disco', 'groovy'])
-            context['prefer_bold_body'] = True  # Bold fonts great for retro
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         elif any(word in all_text.lower() for word in ['music', 'concert', 'festival', 'band', 'artist']):
             context['type'] = 'music'
             context['preferred_tags'].update(['bold', 'creative', 'artistic', 'display'])
-            context['prefer_bold_body'] = True  # Bold fonts great for music
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         elif any(word in all_text.lower() for word in ['kids', 'children', 'playful', 'fun']):
             context['type'] = 'kids'
             context['preferred_tags'].update(['playful', 'fun', 'cute', 'friendly', 'rounded'])
-            context['prefer_bold_body'] = True  # Bold fonts great for kids
+            # NOTE: Bold fonts are for HERO/DISPLAY only, not body text
         elif any(word in all_text.lower() for word in ['tech', 'software', 'digital', 'ai', 'data']):
             context['type'] = 'tech'
             context['preferred_tags'].update(['geometric', 'futuristic', 'tech'])
@@ -498,7 +496,7 @@ class EnhancedFontService:
         Get body fonts with intelligent scoring based on metadata.
         Uses clean, readable fonts (Google Fonts, Designer sans-serif fonts).
         Prefers Designer fonts when they're readable and clean.
-        NOW INCLUDES BOLD/FAT FONTS FOR BODY TEXT!
+        AVOIDS BOLD/THICK FONTS FOR BODY TEXT - body text needs to be readable!
         """
         scored_fonts = []
 
@@ -509,21 +507,24 @@ class EnhancedFontService:
             source = font_data.get('source', '').lower()
             category = font_data.get('category', '').lower()
             font_name = font_data.get('name', '').lower()
-            
-            # BOOST for BOLD/FAT fonts - check for bold/heavy/black in name
+
+            # PENALTY for BOLD/FAT fonts - they're hard to read in body text!
             is_bold_font = any(keyword in font_name for keyword in [
-                'bold', 'black', 'heavy', 'extra bold', 'ultra', 'fat', 
+                'bold', 'black', 'heavy', 'extra bold', 'ultra', 'fat',
                 'thick', 'bebas', 'oswald', 'impact', 'anton', 'archivo black'
             ])
-            
-            if is_bold_font:
-                # Extra boost for bold body fonts - they make great impact!
-                base_bold_boost = 1.4  # 40% boost for bold/fat fonts
-                # EXTRA boost if context prefers bold fonts
+
+            # Also penalize fonts categorized as 'display' - they're for headlines, not body
+            is_display_font = 'display' in category
+
+            if is_bold_font or is_display_font:
+                # Penalize bold/thick/display fonts for body text - they're hard to read!
+                # Only exception: if context EXPLICITLY prefers bold (e.g., poster design)
                 if context.get('prefer_bold_body', False):
-                    base_bold_boost = 1.8  # 80% boost when context wants bold!
-                score *= base_bold_boost
-                logger.debug(f"Bold/Fat body font boosted: {font_id} (boost: {base_bold_boost}x)")
+                    score *= 0.7  # Moderate penalty even when preferred
+                else:
+                    score *= 0.3  # Heavy penalty for bold/display fonts in body text
+                logger.debug(f"Bold/Display body font penalized: {font_id} (category={category}, score reduced)")
             
             if 'designer' in source and 'sans' in category:
                 # Designer sans-serif fonts are great for body text!

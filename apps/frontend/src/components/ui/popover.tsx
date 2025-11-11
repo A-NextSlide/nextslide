@@ -21,6 +21,9 @@ type PopoverContentProps = React.ComponentPropsWithoutRef<typeof PopoverPrimitiv
   className?: string
   side?: "top" | "right" | "bottom" | "left"
   align?: "start" | "center" | "end"
+  sideOffset?: number
+  onInteractOutside?: (event: Event) => void
+  onCloseAutoFocus?: (event: Event) => void
 }
 
 const PopoverContent = React.forwardRef<

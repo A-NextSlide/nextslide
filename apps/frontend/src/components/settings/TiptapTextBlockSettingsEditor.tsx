@@ -718,18 +718,27 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
   return (
     <div className="p-2 border-b border-border sticky top-0 bg-background z-10 mb-4"> {/* Sticky styles */}
        <TooltipProvider>
-        <div className="flex flex-wrap items-center gap-1 mb-1">
+        <div className="flex flex-wrap items-center gap-1">
             {/* Basic formatting */}
             {hasBold && <FormattingButton editor={editor} commandName="bold" tooltipText="Bold" Icon={Bold} />}
             {hasItalic && <FormattingButton editor={editor} commandName="italic" tooltipText="Italic" Icon={Italic} />}
             {hasUnderline && <FormattingButton editor={editor} commandName="underline" tooltipText="Underline" Icon={Underline} />}
             {hasStrike && <FormattingButton editor={editor} commandName="strike" tooltipText="Strikethrough" Icon={Strikethrough} />}
-            
+
+            {/* Separator before lists */}
+            {(hasBulletList || hasOrderedList) && (
+              <div className="w-px h-5 bg-border mx-1"></div>
+            )}
+
+            {/* Lists - moved to first row for better visibility */}
+            {hasBulletList && <FormattingButton editor={editor} commandName="bulletList" tooltipText="Bullet List" Icon={List} />}
+            {hasOrderedList && <FormattingButton editor={editor} commandName="orderedList" tooltipText="Numbered List" Icon={ListOrdered} />}
+
             {/* Add a separator before ellipsis menu */}
             {(hasHighlight || hasSubscript || hasSuperscript || hasHeading || hasLink) && (
               <div className="w-px h-5 bg-border mx-1"></div>
             )}
-            
+
             {/* More options dropdown */}
             {(hasHighlight || hasSubscript || hasSuperscript || hasHeading || hasLink) && (
               <Popover>
@@ -747,7 +756,7 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                   </TooltipTrigger>
                   <TooltipContent><p className="text-xs">More options</p></TooltipContent>
                 </Tooltip>
-                
+
                 <PopoverContent className="w-56 p-1" align="start">
                   <div className="flex flex-col">
                     {/* Highlight */}
@@ -760,14 +769,14 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                           const { state } = editor;
                           const { selection } = state;
                           const hasSelection = selection.from < selection.to;
-                          
+
                           const chain = editor.chain().focus();
                           // If no text is selected, select all text first
                           if (!hasSelection) {
                             chain.selectAll();
                           }
                           chain.toggleHighlight().run();
-                          
+
                           // Update component
                           setTimeout(() => {
                             const updatedContent = editor.getJSON();
@@ -785,7 +794,7 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                         Highlight
                       </button>
                     )}
-                    
+
                     {/* Superscript */}
                     {hasSuperscript && (
                       <button
@@ -796,14 +805,14 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                           const { state } = editor;
                           const { selection } = state;
                           const hasSelection = selection.from < selection.to;
-                          
+
                           const chain = editor.chain().focus();
                           // If no text is selected, select all text first
                           if (!hasSelection) {
                             chain.selectAll();
                           }
                           chain.toggleSuperscript().run();
-                          
+
                           // Update component
                           setTimeout(() => {
                             const updatedContent = editor.getJSON();
@@ -821,7 +830,7 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                         Superscript
                       </button>
                     )}
-                    
+
                     {/* Subscript */}
                     {hasSubscript && (
                       <button
@@ -832,14 +841,14 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                           const { state } = editor;
                           const { selection } = state;
                           const hasSelection = selection.from < selection.to;
-                          
+
                           const chain = editor.chain().focus();
                           // If no text is selected, select all text first
                           if (!hasSelection) {
                             chain.selectAll();
                           }
                           chain.toggleSubscript().run();
-                          
+
                           // Update component
                           setTimeout(() => {
                             const updatedContent = editor.getJSON();
@@ -857,12 +866,12 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                         Subscript
                       </button>
                     )}
-                    
+
                     {/* Divider */}
                     {((hasHighlight || hasSuperscript || hasSubscript) && (hasHeading || hasLink)) && (
                       <div className="h-px bg-border my-1"></div>
                     )}
-                    
+
                     {/* Heading */}
                     {hasHeading && (
                       <Popover>
@@ -889,14 +898,14 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                                   const { state } = editor;
                                   const { selection } = state;
                                   const hasSelection = selection.from < selection.to;
-                                  
+
                                   const chain = editor.chain().focus();
                                   // If no text is selected, select all text first
                                   if (!hasSelection) {
                                     chain.selectAll();
                                   }
                                   chain.toggleHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run();
-                                  
+
                                   // Update component
                                   setTimeout(() => {
                                     const updatedContent = editor.getJSON();
@@ -921,14 +930,14 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                                 const { state } = editor;
                                 const { selection } = state;
                                 const hasSelection = selection.from < selection.to;
-                                
+
                                 const chain = editor.chain().focus();
                                 // If no text is selected, select all text first
                                 if (!hasSelection) {
                                   chain.selectAll();
                                 }
                                 chain.setParagraph().run();
-                                
+
                                 // Update component
                                 setTimeout(() => {
                                   const updatedContent = editor.getJSON();
@@ -948,7 +957,7 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                         </PopoverContent>
                       </Popover>
                     )}
-                    
+
                     {/* Link */}
                     {hasLink && (
                       <LinkButtonDropdown editor={editor} updateDraftComponent={updateDraftComponent} />
@@ -957,12 +966,6 @@ const Toolbar = ({ editor }: { editor: Editor | null }) => {
                 </PopoverContent>
               </Popover>
             )}
-        </div>
-        
-        <div className="flex items-center gap-1">
-            {/* Lists */}
-            {hasBulletList && <FormattingButton editor={editor} commandName="bulletList" tooltipText="Bullet List" Icon={List} />}
-            {hasOrderedList && <FormattingButton editor={editor} commandName="orderedList" tooltipText="Numbered List" Icon={ListOrdered} />}
         </div>
        </TooltipProvider>
     </div>

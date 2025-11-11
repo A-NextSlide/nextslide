@@ -1326,6 +1326,7 @@ const DeckList: React.FC = () => {
                           deckId={currentOutline?.id}
                           onOutlineUpdate={setCurrentOutline}
                           outlineIsGenerating={isOutlineChatGenerating}
+                          onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
                           outlineCurrentSlideIndex={outlineCurrentSlideIndex}
                           onOutlineAgentToolCall={(params) => {
                             console.log('[DeckList] Agent generated outline:', params);

@@ -14,6 +14,7 @@ class GenerationPhase(Enum):
     """Standardized phase names for deck generation."""
     INITIALIZATION = "initialization"
     THEME_GENERATION = "theme_generation"
+    LAYOUT_DESIGN = "layout_design"
     IMAGE_COLLECTION = "image_collection"
     SLIDE_GENERATION = "slide_generation"
     FINALIZATION = "finalization"
@@ -32,7 +33,8 @@ class DeckGenerationProgress:
     PHASE_PROGRESS = {
         GenerationPhase.INITIALIZATION: (0, 15),      # 0-15% (15% range)
         GenerationPhase.THEME_GENERATION: (15, 30),   # 15-30% (15% range)
-        GenerationPhase.IMAGE_COLLECTION: (30, 55),   # 30-55% (25% range)
+        GenerationPhase.LAYOUT_DESIGN: (30, 40),      # 30-40% (10% range)
+        GenerationPhase.IMAGE_COLLECTION: (40, 55),   # 40-55% (15% range)
         GenerationPhase.SLIDE_GENERATION: (55, 95),   # 55-95% (40% range)
         GenerationPhase.FINALIZATION: (95, 100),      # 95-100% (5% range)
     }
@@ -217,6 +219,7 @@ class DeckGenerationProgress:
         messages = {
             GenerationPhase.INITIALIZATION: "Initializing deck generation",
             GenerationPhase.THEME_GENERATION: "Creating design theme",
+            GenerationPhase.LAYOUT_DESIGN: "Creating blueprint",
             GenerationPhase.IMAGE_COLLECTION: "Collecting images",
             GenerationPhase.SLIDE_GENERATION: "Generating slides",
             GenerationPhase.FINALIZATION: "Finalizing your presentation"

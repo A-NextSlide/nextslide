@@ -443,7 +443,19 @@ export class OutlineAPI {
           } catch {}
         }
       }
-      if (finalTheme) return { theme: finalTheme, palette: finalPalette };
+
+      // Enrich theme with font measurements before returning
+      if (finalTheme) {
+        try {
+          const { enrichThemeWithFontMetrics } = await import('../utils/fontMeasurement');
+          finalTheme = await enrichThemeWithFontMetrics(finalTheme);
+        } catch (err) {
+          console.warn('Failed to measure fonts for theme:', err);
+          // Continue with unmeasured theme
+        }
+        return { theme: finalTheme, palette: finalPalette };
+      }
+
       throw new Error('Theme SSE completed without final theme');
     } catch (e) {
       const resp = await fetch(jsonUrl, {
@@ -457,7 +469,18 @@ export class OutlineAPI {
       if (!resp.ok) throw new Error(`Theme generation failed: ${resp.status}`);
       const data = await resp.json();
       if (!data?.success || !data?.theme) throw new Error('Theme generation failed');
-      return { theme: data.theme, palette: data.palette };
+
+      // Enrich theme with font measurements before returning
+      let theme = data.theme;
+      try {
+        const { enrichThemeWithFontMetrics } = await import('../utils/fontMeasurement');
+        theme = await enrichThemeWithFontMetrics(theme);
+      } catch (err) {
+        console.warn('Failed to measure fonts for theme:', err);
+        // Continue with unmeasured theme
+      }
+
+      return { theme, palette: data.palette };
     }
   }
   
@@ -775,7 +798,7 @@ export class OutlineAPI {
         const request: CreateDeckFromOutlineRequest = {
           outline,
           style_preferences: stylePreferences,
-          async_images: autoApplyImages !== undefined ? autoApplyImages : true  // 🔥 FIXED: Removed negation operator (was !autoApplyImages)
+          async_images: autoApplyImages !== undefined ? !autoApplyImages : true  // When autoApplyImages=true (user wants auto-apply), send async_images=false (backend auto-apply mode)
         };
         
         // For now, use the streaming approach directly since EventSource endpoint doesn't exist yet
@@ -1095,7 +1118,7 @@ export class OutlineAPI {
         slideCount: typeof options.slideCount === 'number' ? options.slideCount : undefined,
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
         enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
-        async_images: options.autoSelectImages !== undefined ? options.autoSelectImages : true, // 🔥 FIXED: Removed negation operator (was !options.autoSelectImages)
+        async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : true, // When autoSelectImages=true (user wants auto-apply), send async_images=false (backend auto-apply mode)
       };
 
       console.warn('='.repeat(100));

@@ -602,11 +602,12 @@ class OutlineRequest(BaseModel):
 
     @validator('async_images', pre=True, always=True)
     def debug_async_images(cls, v):
-        """Validate async_images field - defaults to True (placeholder mode)"""
-        # If None, default to True (placeholder mode - safer default)
+        """Validate async_images field - defaults to True (placeholder mode is safer default)"""
+        # If None, default to True (placeholder mode - safer default, user can manually select)
         if v is None:
             return True
-        return v
+        # Ensure it's a boolean
+        return bool(v)
 
     # Workaround: Also accept slide_count (snake_case)
     slide_count: Optional[int] = Field(None, description="Alternative field name for slide count")
@@ -776,7 +777,7 @@ async def process_outline(request: OutlineRequest, registry=None) -> OutlineResp
             model=request.model,
             slide_count=inferred_slide_count,
             visual_density=(request.visualDensity or None),
-            async_images=request.async_images if request.async_images is not None else False
+            async_images=request.async_images if request.async_images is not None else True
         )
         
         result = await generator.generate(options)
@@ -922,7 +923,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 model=request.model,
                 slide_count=inferred_slide_count,
                 visual_density=(request.visualDensity or None),
-                async_images=request.async_images if request.async_images is not None else False
+                async_images=request.async_images if request.async_images is not None else True
             )
 
             

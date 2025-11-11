@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 
 type SwitchProps = React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root> & {
   thumbClassName?: string
+  className?: string
 }
 
 const Switch = React.forwardRef<

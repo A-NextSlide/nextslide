@@ -196,6 +196,9 @@ BEST PRACTICE: Subtle gradients using same theme color with varying opacity
 2. TIPTAP TEXT BLOCK - Primary text component (USE MOST!)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+**CRITICAL: Keep point-form text together in ONE block with rich formatting!**
+
+SINGLE LINE EXAMPLE:
 {
   "type": "TiptapTextBlock",
   "props": {
@@ -219,11 +222,39 @@ BEST PRACTICE: Subtle gradients using same theme color with varying opacity
   }
 }
 
+BULLET POINTS COMBINED (NEW APPROACH):
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": { "x": 120, "y": 300 },
+    "width": 1680,
+    "height": 140,  // Height based on number of lines
+    "texts": [
+      { "text": "• ", "style": { "bold": true } },
+      { "text": "Revenue grew ", "style": {} },
+      { "text": "$2.5M", "style": { "bold": true, "textColor": "{{accent}}" } },
+      { "text": "\n• ", "style": { "bold": true } },
+      { "text": "Market share ", "style": {} },
+      { "text": "34%", "style": { "bold": true, "textColor": "{{accent}}", "backgroundColor": "{{accent}}20" } },
+      { "text": "\n• ", "style": { "bold": true } },
+      { "text": "Customer satisfaction ", "style": {} },
+      { "text": "95%", "style": { "bold": true, "textColor": "{{accent}}" } }
+    ],
+    "fontSize": 36,
+    "fontFamily": "Inter",
+    "alignment": "left",
+    "verticalAlignment": "top",
+    "lineHeight": 1.5
+  }
+}
+
 **KEY FEATURES:**
-• Supports rich formatting (bold, italic, highlight, colors)
+• **COMBINE bullet points** in one block with \n separators
+• Supports rich formatting (bold, italic, highlight, colors) within the same block
 • Split text into segments for multi-color formatting
 • Use theme colors: {{primary}}, {{secondary}}, {{accent}}
 • Highlight important numbers/words with accent color + background
+• **SEPARATE blocks** only for titles, headers, different sections
 
 SECTION HEADER EXAMPLE:
 {
@@ -448,9 +479,10 @@ Layout:
 5. LARGE image on right (960, 200, 880×680) - 50% of slide!
 
 Bullets structure:
-- Icon (24×24) at x=80
-- TiptapTextBlock at x=120 (40px after icon)
-- Each bullet: height=40px, gap=28px
+- Optional: Icon (24×24) at x=80 before bullet group
+- ONE TiptapTextBlock at x=120 containing ALL bullets with \n separators
+- Use rich formatting within: bold key terms, color numbers with {{accent}}
+- Height calculated: fontSize × 1.15 × numberOfLines + lineSpacing
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAT SLIDE
@@ -484,8 +516,9 @@ Before outputting, verify:
 ✅ ALL colors use {{primary}}, {{secondary}}, {{accent}} (NO hardcoded colors!)
 ✅ TiptapTextBlock segments use theme colors for emphasis
 ✅ Section headers use {{secondary}} color
-✅ Bullet spacing is 24-32px (NOT 60-80px)
+✅ **Bullets combined** in ONE TiptapTextBlock with rich formatting and \n separators
 ✅ Proper indentation (level 1: 120px, level 2: 160px, level 3: 200px)
+✅ Separate blocks only for titles, headers, different sections (NOT individual bullets)
 ✅ Icons used for visual enhancement (before sections, bullet prefixes)
 ✅ Lines use startPoint/endPoint (NOT position/width)
 ✅ Images are LARGE (800-1200px) and impactful

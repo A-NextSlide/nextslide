@@ -211,7 +211,12 @@ DO NOT include IMAGE tags - those are added separately.
 - DO NOT expand or elaborate on their content
 - Your role is to format and structure their exact words, not to add content
 
-CHARTS: ONLY for exceptional quantitative data (8-15+ points) where visualization is ESSENTIAL"""
+CHARTS: EXTREMELY RARE - ONLY when:
+- You have 8-15+ quantitative data points in ONE measurement type
+- The slide's PURPOSE is data analysis/metrics (not storytelling/education)
+- The pattern is clearer as a visualization than text
+- Examples: quarterly revenue trends, market share %, user growth over 12 months
+- NOT for: concepts, features, comparisons, simple stats, or qualitative content"""
     else:
         mode = """PRESENTATION MODE:
 
@@ -257,19 +262,53 @@ VISUALS:
 🎨 Images/Icons: PRIMARY visual element (50-70% of slides should have images)
 📊 Charts: RARE (only 10-20% of slides, and ONLY for truly exceptional data stories)
 
-CHARTS:
-🚫 NO for: educational/explanatory/concepts/processes/history/tutorials/comparisons
-🚫 NO for: simple lists of features/benefits/stats that work as text
-✅ YES for: Time-series trends, large datasets (15+ points), complex multi-dimensional data
-✅ YES for: When a visual pattern tells the story better than words"""
+CHARTS - WHEN TO USE THEM:
+🚫 NO CHARTS FOR (use text/images instead):
+   - Educational/explanatory content (concepts, processes, how-to)
+   - Historical narratives or stories
+   - Feature lists or benefits
+   - Comparisons that work as bullet points
+   - Simple statistics (2-3 numbers)
+   - Qualitative information (opinions, quotes, descriptions)
+   - Product features, team members, testimonials
+   - Vision statements, mission, values
+
+✅ ONLY USE CHARTS WHEN:
+   - You have 8-15+ QUANTITATIVE data points to compare
+   - The data shows a clear TREND, PATTERN, or DISTRIBUTION
+   - The visual representation reveals insights text cannot
+   - The slide's PRIMARY PURPOSE is data analysis/metrics
+   - Examples: quarterly revenue trends, market share distribution, user growth over time
+
+⚠️ ASK YOURSELF: "Does this slide NEED a chart to be understood, or would text/images work better?"
+   - If the answer is "text/images work fine" → NO CHART"""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):
-1. SAME UNITS: All values same unit (no $ + people)
-2. SAME SCALE: Comparable magnitudes
-3. MAKES SENSE: Realistic (pie=100%, chronological)
-4. SUFFICIENT: 8-15+ points for time series
-5. NUMBERS ONLY: 4500000 not "$4.5M"
+
+🚨 CRITICAL #1: SAME UNITS & MEASUREMENT TYPE
+❌ NEVER mix different types of data in ONE chart:
+   - NO mixing years + heights + distances (e.g., 4525 years, 200 feet, 1.4 meters)
+   - NO mixing revenue + employee count + percentages
+   - NO mixing dates + measurements + counts
+
+✅ ALL values must represent THE SAME MEASUREMENT:
+   - Revenue chart: ONLY revenue values in consistent units ($M)
+   - Employee chart: ONLY employee counts
+   - Time series: ONLY values of same type across time points
+
+EXAMPLE FAILURES:
+❌ [{"name": "Years", "value": 4525}, {"name": "Height (ft)", "value": 200}, {"name": "Distance (m)", "value": 1.4}]
+❌ [{"name": "Revenue ($M)", "value": 500}, {"name": "Employees", "value": 2000}, {"name": "Growth %", "value": 15}]
+
+EXAMPLE SUCCESS:
+✅ [{"name": "Q1 Revenue", "value": 500}, {"name": "Q2 Revenue", "value": 550}, {"name": "Q3 Revenue", "value": 600}]
+✅ [{"name": "North", "value": 1200}, {"name": "South", "value": 1500}, {"name": "East", "value": 1100}]
+
+2. SAME SCALE: Comparable magnitudes (within 100x range)
+3. MAKES SENSE: Realistic (pie=100%, chronological time series)
+4. SUFFICIENT: 3+ points minimum, 8-15+ for trends
+5. NUMBERS ONLY: 4500000 not "$4.5M" (no formatted strings)
 6. REAL LABELS: "North America" not "Category A"
 
 TYPES: bar/column (categories), line/area (time trends), pie (distribution=100%),
@@ -280,7 +319,7 @@ Multi-series: add "series" field → [{"name": "Q1", "value": 450, "series": "Re
 
 Titles need units: "Revenue by Region ($M)"
 
-If ANY fails → NO CHART, use text"""
+If ANY rule fails → NO CHART, use text or bullet points instead"""
 
     return f"""{base}
 

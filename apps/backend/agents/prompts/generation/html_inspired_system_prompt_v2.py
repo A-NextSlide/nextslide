@@ -522,11 +522,13 @@ Margins: 80px from all edges
     "margin": {"top": 20, "right": 20, "bottom": 60, "left": 80},  // Adequate padding!
     "axisBottom": {
       "legend": "Year",                    // X-axis title (when appropriate)
-      "legendOffset": 36
+      "legendOffset": 36,
+      "tickRotation": 0                    // Keep labels horizontal
     },
     "axisLeft": {
       "legend": "Revenue (Millions)",      // Y-axis title (when appropriate)
-      "legendOffset": -60
+      "legendOffset": -60,
+      "tickRotation": 0                    // Keep labels horizontal
     },
     "showLegend": false,
     "backgroundColor": "#00000000"         // Transparent
@@ -579,7 +581,9 @@ Margins: 80px from all edges
   - axisBottom.legend: "Year", "Quarter", "Category" (x-axis label)
   - axisLeft.legend: "Revenue ($M)", "Users (K)", "%" (y-axis label with units)
   - legendOffset: 36 (bottom), -60 (left)
+  - tickRotation: 0 (ALWAYS - keeps labels horizontal and readable)
 • backgroundColor: "#00000000" (transparent)
+• Label rotation: ALWAYS set tickRotation: 0 on both axes to keep labels horizontal
 
 ═══════════════════════════════════════════════════════════════════════════════
 📊 TABLES - USE FOR STRUCTURED DATA!
@@ -965,97 +969,245 @@ For EVERY component:
 • Colors: {{text}} for title, {{accent}} for subtitle/metadata
 
 ═══════════════════════════════════════════════════════════════════════════════
-🎨 TEXT FORMATTING - MULTIPLE BLOCKS, NEVER NEWLINES!
+🎨 TEXT FORMATTING - USE PROPER TIPTAP LIST STRUCTURE!
 ═══════════════════════════════════════════════════════════════════════════════
 
-🚨 **CRITICAL: NEVER use \n newlines in text! Create separate TiptapTextBlock components!**
+🚨 **CRITICAL: Use proper Tiptap document structure for lists - NO manual bullets!**
 
-**WRONG APPROACH (DO NOT DO THIS):**
+**CORRECT APPROACH - USE BULLETLIST/ORDEREDLIST STRUCTURE:**
 ```json
-❌ BAD - Everything crammed with \n newlines:
+✅ CORRECT - Bullet list with proper Tiptap structure:
 {
   "type": "TiptapTextBlock",
   "props": {
-    "texts": [{"text": "Point 1\nSubtext for point 1\n\nPoint 2\nSubtext for point 2"}],
-    "fontSize": 15  // ← Font is tiny because there's too much content!
+    "position": {"x": 120, "y": 280},
+    "width": 800,
+    "height": 180,
+    "texts": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {"type": "text", "text": "Revenue grew ", "style": {}},
+                    {"type": "text", "text": "$2.5B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {"type": "text", "text": "Market share increased ", "style": {}},
+                    {"type": "text", "text": "42%", "style": {"bold": true, "textColor": "{{accent}}"}}
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {"type": "text", "text": "User satisfaction at ", "style": {}},
+                    {"type": "text", "text": "95%", "style": {"bold": true, "backgroundColor": "{{accent}}20"}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "fontSize": 36,
+    "fontFamily": "{{bodyFont}}",
+    "alignment": "left",
+    "verticalAlignment": "top",
+    "padding": 0,
+    "textColor": "{{text}}"
   }
 }
 ```
 
-**CORRECT APPROACH (DO THIS):**
+**FOR NUMBERED LISTS (orderedList):**
 ```json
-✅ GOOD - Separate blocks with proper sizing:
-[
+✅ CORRECT - Use orderedList for sequential steps/instructions:
 {
   "type": "TiptapTextBlock",
   "props": {
-      "position": {"x": 120, "y": 240},
+    "position": {"x": 120, "y": 280},
     "width": 800,
-      "height": 55,  // 48×1.15=55
-      "texts": [{"text": "Point 1", "style": {"bold": true, "textColor": "{{accent}}"}}],
-    "fontSize": 48,
-      "fontFamily": "{{heroFont}}",
-      "alignment": "left",
-      "verticalAlignment": "top",
-      "padding": 0
-    }
-  },
-{
-  "type": "TiptapTextBlock",
-  "props": {
-      "position": {"x": 120, "y": 315},  // 240+55+20=315
-      "width": 800,
-      "height": 37,  // 32×1.15=37
-      "texts": [{"text": "Subtext for point 1"}],
+    "height": 150,
+    "texts": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "orderedList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Install the software", "style": {}}]}
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Configure your settings", "style": {}}]}
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Run the first test", "style": {}}]}
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "fontSize": 32,
-      "fontFamily": "{{bodyFont}}",
+    "fontFamily": "{{bodyFont}}",
+    "alignment": "left"
+  }
+}
+
+// Use orderedList for: steps, instructions, rankings, timelines - ORDER MATTERS!
+```
+
+**STILL CREATE SEPARATE BLOCKS FOR:**
+```json
+✅ Titles and headers - different block from body text:
+[
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 120, "y": 160},
+      "width": 1680,
+      "height": 74,
+      "texts": {
+        "type": "doc",
+        "content": [
+          {"type": "paragraph", "content": [{"type": "text", "text": "Key Metrics", "style": {"bold": true}}]}
+        ]
+      },
+      "fontSize": 64,
+      "fontFamily": "{{heroFont}}",
       "alignment": "left",
-      "verticalAlignment": "top",
       "padding": 0
     }
   },
-{
-  "type": "TiptapTextBlock",
-  "props": {
-      "position": {"x": 120, "y": 402},  // 315+37+50=402
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 120, "y": 280},
       "width": 800,
-      "height": 55,
-      "texts": [{"text": "Point 2", "style": {"bold": true, "textColor": "{{accent}}"}}],
-      "fontSize": 48,
-      "fontFamily": "{{heroFont}}",
-      "alignment": "left",
-      "verticalAlignment": "top",
-      "padding": 0
+      "height": 100,
+      "texts": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "content": [
+                  {"type": "paragraph", "content": [
+                    {"type": "text", "text": "Revenue: ", "style": {"bold": true}},
+                    {"type": "text", "text": "$2.5B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                  ]}
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {"type": "paragraph", "content": [
+                    {"type": "text", "text": "Growth: ", "style": {"bold": true}},
+                    {"type": "text", "text": "42%", "style": {"textColor": "{{accent}}"}}
+                  ]}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "fontSize": 36,
+      "alignment": "left"
     }
   }
 ]
 ```
 
-**RULES FOR BREAKING CONTENT:**
-1. Each section/point = separate TiptapTextBlock
-2. Each bullet = separate TiptapTextBlock
-3. Title + subtitle = 2 separate TiptapTextBlocks
-4. Different font sizes = separate TiptapTextBlocks
-5. NEVER use \n to create multiple lines - that's WRONG!
+**WHEN TO USE LISTS (vs. Other Formats):**
 
-**WHY THIS MATTERS:**
-• Separate blocks = proper font sizing (28-48pt per block)
-• One giant block = tiny font (10-15pt to fit everything)
-• Separate blocks = proper positioning with gaps
-• One block = cramped, hard to read
+✅ **USE orderedList (NUMBERED 1, 2, 3...) WHEN:**
+- Steps in a process that MUST be done in order (installation, setup, workflow)
+- Instructions with a specific sequence (first do X, then Y, then Z)
+- Ranking or priority order (top 5 reasons, 3 key steps)
+- Timeline events in chronological order
 
-**Inline Formatting (within a single texts array):**
-Use for emphasis WITHIN a line:
+✅ **USE bulletList (BULLETS •) WHEN:**
+- Unordered features, benefits, or characteristics
+- List of items with no inherent sequence or priority
+- Multiple related points where order doesn't matter
+- Collection of examples or options
+
+✅ **GENERAL LIST RULES:**
+- 3-7 items typically (not too few, not too many)
+- Items are short and parallel in structure
+- Content is truly list-like (not stats, metrics, or body text)
+
+❌ **DON'T USE LISTS FOR:**
+- Single statements or paragraphs (use regular paragraph)
+- Large blocks of body text (use paragraph)
+- Stats or metrics (use CustomComponent cards or separate TiptapTextBlocks with emphasis)
+- Comparisons (use side-by-side TiptapTextBlocks or CustomComponent)
+- Complex formatted content with mixed structure
+
+**ALTERNATIVES TO LISTS:**
+
+1. **Stats/Metrics (2-3 items)**: Use CustomComponent (three_card_grid, hero_stat_card)
+2. **Single points**: Use regular paragraph with bold/highlight emphasis
+3. **Comparisons**: Use separate TiptapTextBlocks side-by-side OR CustomComponent (two_card_comparison)
+4. **Complex text**: Use paragraph with rich inline formatting (bold, colors, highlights)
+
+**RULES FOR TEXT ORGANIZATION:**
+1. **USE LISTS SPARINGLY**: Only when content is naturally list-like (3-7 items)
+2. **USE PROPER STRUCTURE**: When you do use lists, use bulletList/orderedList - NEVER manual "• " with \n
+3. **COMBINE**: Related bullet points in ONE bulletList structure
+4. **SEPARATE**: Titles from body, headers from content, different sections
+5. **RICH FORMATTING**: Use bold, textColor, backgroundColor within text style objects
+6. **HEIGHT CALCULATION**: fontSize × 1.5 × numberOfListItems for lists
+
+**WHY PROPER LIST STRUCTURE IS BETTER:**
+• Renders correctly with actual bullet points (•) or numbers (1, 2, 3...)
+• Proper indentation and spacing automatically handled
+• Allows rich TipTap formatting: bold, colors, highlights
+
+**Rich TipTap Formatting (within texts array):**
+Use these formatting options for emphasis:
 • Bold: {"bold": true}
 • Colors: {"textColor": "{{accent}}"}
-• Highlighting: {"highlight": true, "backgroundColor": "{{accent}}15"}
-• Example: [{"text": "Revenue grew ", "style": {}}, {"text": "42%", "style": {"bold": true, "textColor": "{{accent}}"}}]
+• Highlighting: {"backgroundColor": "{{accent}}20"}
+• Underline: {"underline": true}
+• Italic: {"italic": true}
+• Example: [{"text": "• Revenue grew ", "style": {}}, {"text": "42%", "style": {"bold": true, "textColor": "{{accent}}", "backgroundColor": "{{accent}}15"}}]
 
 **Font Mixing:**
 • Set fontFamily on each TiptapTextBlock
-• Headers: fontFamily="{{heroFont}}", fontSize=48-72
-• Body: fontFamily="{{bodyFont}}", fontSize=28-36
-• Mix fonts between blocks for hierarchy
+• Headers: fontFamily="{{heroFont}}", fontSize=48-72 (separate block)
+• Body points: fontFamily="{{bodyFont}}", fontSize=28-48 (combined in one block)
+• Mix fonts between different SECTIONS, not between individual bullets
 
 ═══════════════════════════════════════════════════════════════════════════════
 🚀 CUSTOMCOMPONENT - PREFER OVER IMAGES FOR CONCEPTS
@@ -1210,7 +1362,7 @@ Before outputting, verify EVERY requirement:
 ✅ **POSITIONS CALCULATED** - NEVER use fixed y=180, y=230, y=240!
   Calculate contentStartY from actual header elements:
   contentStartY = slideTitleEndY + lineDividerHeight + gap
-✅ **MULTIPLE TEXT BLOCKS** - Each section/bullet = separate TiptapTextBlock (NO \n newlines!)
+✅ **TEXT BLOCKS COMBINED** - Point-form body text in ONE TiptapTextBlock with rich formatting and \n separators!
 ✅ **FONT SIZE MINIMUMS** - Body ≥28pt, Headers ≥48pt, Titles ≥64pt (never smaller!)
 ✅ **CHART MARGINS** - margin: {top: 20, right: 20, bottom: 60, left: 80}
 ✅ **CHART AXIS TITLES** - Add axisBottom.legend and axisLeft.legend when appropriate
@@ -1239,9 +1391,9 @@ Before outputting, verify EVERY requirement:
 ❌ **Chart title overlaps slide title** (didn't calculate contentStartY properly)
 ❌ **Gap at bottom** (chart positioned too high, leaving 150+ px empty at bottom)
 ❌ **Used fixed sizes without calculating space** (e.g., 5 bullets at 48pt when only room for 28pt)
-❌ ANY TiptapTextBlock has \n newlines in text
+❌ **Splitting bullets into separate blocks** (point-form text should be in ONE block!)
 ❌ ANY font size < 28pt for body text
-❌ Content crammed into one block
+❌ Mixing unrelated content in one block (titles with body text)
 ❌ Charts without titles
 ❌ Charts without proper margins (margin prop missing or too small)
 ❌ Charts or images too small (charts <500×400, images <400×300)

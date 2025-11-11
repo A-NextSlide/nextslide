@@ -33,13 +33,37 @@ export interface OutlineSlide {
   key_points?: string[];
 }
 
+export interface ThemeChanges {
+  colors?: {
+    search_query?: string;
+  };
+  brand?: {
+    name?: string;
+    url?: string;
+  };
+  fonts?: {
+    family?: string;
+  };
+  logo?: {
+    action: 'add' | 'remove';
+    brand_names?: string[];
+  };
+}
+
 export interface OutlineData {
-  action: 'generate_outline' | 'update_outline';
+  action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme';
   slide_count?: number;
   topic?: string;
   detail_level?: 'quick' | 'standard' | 'detailed';
   tone?: string;
-  slides: OutlineSlide[];
+  slides?: OutlineSlide[];
+  updated_slides?: Array<{
+    index: number;
+    title: string;
+    subtitle?: string;
+    key_points?: string[];
+  }>;
+  theme_changes?: ThemeChanges;
 }
 
 export interface AgentOutlineEvent {
@@ -76,10 +100,17 @@ function extractJSONFromText(text: string): { data: OutlineData | null; textWith
     try {
       const parsed = JSON.parse(jsonMatch[1]);
       // Validate it has the expected structure
-      if (parsed.action && parsed.slides && Array.isArray(parsed.slides)) {
-        data = parsed as OutlineData;
-        // Remove the JSON block from the text
-        textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+      if (parsed.action) {
+        // Valid if it has slides, updated_slides, or theme_changes
+        const hasSlides = parsed.slides && Array.isArray(parsed.slides);
+        const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
+        const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
+
+        if (hasSlides || hasUpdatedSlides || hasThemeChanges) {
+          data = parsed as OutlineData;
+          // Remove the JSON block from the text
+          textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+        }
       }
     } catch (e) {
       console.error('[OutlineAgent] Failed to parse JSON from text:', e);

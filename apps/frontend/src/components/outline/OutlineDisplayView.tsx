@@ -684,6 +684,37 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         stylePreferences: restSP
       } as DeckOutline;
     });
+
+    // Also clear logo from the deck theme to ensure it doesn't get used during slide generation
+    if (currentOutline?.id && outlineDeckTheme) {
+      const updatedTheme = { ...outlineDeckTheme };
+
+      // Remove logo from all possible locations in the theme
+      if (updatedTheme.brandInfo) {
+        const { logoUrl: _1, logo_url: _2, ...restBrandInfo } = updatedTheme.brandInfo as any;
+        updatedTheme.brandInfo = Object.keys(restBrandInfo).length > 0 ? restBrandInfo : undefined;
+      }
+
+      if (updatedTheme.metadata) {
+        const { logo_url: _1, logo_url_light: _2, logo_url_dark: _3, ...restMetadata } = updatedTheme.metadata as any;
+        updatedTheme.metadata = Object.keys(restMetadata).length > 0 ? restMetadata : undefined;
+      }
+
+      if (updatedTheme.color_palette?.metadata) {
+        const { logo_url: _1, logo_url_light: _2, logo_url_dark: _3, ...restCPMetadata } = (updatedTheme.color_palette as any).metadata;
+        (updatedTheme.color_palette as any).metadata = Object.keys(restCPMetadata).length > 0 ? restCPMetadata : undefined;
+      }
+
+      if (updatedTheme.logo_info) {
+        updatedTheme.logo_info = undefined;
+      }
+
+      if (updatedTheme.logo) {
+        updatedTheme.logo = undefined;
+      }
+
+      setOutlineDeckTheme(currentOutline.id, updatedTheme);
+    }
   };
 
   const swatches = React.useMemo(() => {

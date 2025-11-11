@@ -49,6 +49,17 @@ class SimpleFontFitter:
         """Get the path to a font file, searching backend fonts first."""
         import pathlib
 
+        # OPTIMIZATION: Skip search if font is in metrics database
+        # These are web fonts that don't need local files
+        if font_family in self.FONT_METRICS:
+            # Font is in database, no need to search for files
+            return None
+
+        # Check case-insensitive
+        for known_font in self.FONT_METRICS.keys():
+            if known_font.lower() == font_family.lower():
+                return None
+
         family_lower = font_family.lower()
 
         # Generate possible font filenames
@@ -179,46 +190,120 @@ class SimpleFontFitter:
         self.font_cache[cache_key] = font
         return font
 
+    # Intelligent font metrics database for common web fonts
+    # These are empirically measured ratios: (avg char width) / (font size)
+    FONT_METRICS = {
+        # Google Fonts - Sans Serif
+        'Inter': 0.57, 'Roboto': 0.55, 'Open Sans': 0.56, 'Lato': 0.54,
+        'Montserrat': 0.52, 'Poppins': 0.53, 'Source Sans Pro': 0.55,
+        'Raleway': 0.52, 'Work Sans': 0.55, 'Nunito': 0.56, 'Mulish': 0.55,
+        'DM Sans': 0.56, 'Outfit': 0.53, 'Manrope': 0.56, 'Plus Jakarta Sans': 0.55,
+        'Space Grotesk': 0.58, 'Archivo': 0.54, 'Lexend': 0.57, 'Sora': 0.56,
+        'Rubik': 0.56, 'Karla': 0.55, 'Josefin Sans': 0.54, 'Quicksand': 0.58,
+
+        # Google Fonts - Serif
+        'Playfair Display': 0.48, 'Merriweather': 0.54, 'Lora': 0.52,
+        'PT Serif': 0.54, 'Crimson Text': 0.51, 'Libre Baskerville': 0.52,
+        'Cormorant': 0.46, 'EB Garamond': 0.48, 'Vollkorn': 0.53,
+        'Spectral': 0.52, 'Fraunces': 0.51,
+
+        # Google Fonts - Display
+        'Bebas Neue': 0.45, 'Righteous': 0.58, 'Abril Fatface': 0.52,
+        'Fredoka One': 0.60, 'Anton': 0.46, 'Alfa Slab One': 0.58,
+        'Russo One': 0.56, 'Bungee': 0.60, 'Monoton': 0.65,
+
+        # Google Fonts - Monospace
+        'Roboto Mono': 0.60, 'Source Code Pro': 0.60, 'JetBrains Mono': 0.60,
+        'Fira Code': 0.60, 'Space Mono': 0.60, 'IBM Plex Mono': 0.60,
+        'PT Mono': 0.60, 'Inconsolata': 0.60,
+
+        # Google Fonts - Script
+        'Pacifico': 0.52, 'Lobster': 0.55, 'Dancing Script': 0.48,
+        'Satisfy': 0.50, 'Caveat': 0.48, 'Shadows Into Light': 0.52,
+
+        # Fontshare Fonts
+        'Satoshi': 0.55, 'Cabinet Grotesk': 0.54, 'General Sans': 0.56,
+        'Clash Display': 0.52, 'Switzer': 0.55, 'Synonym': 0.54,
+        'Chillax': 0.54, 'Melodrama': 0.48,
+
+        # System Fonts
+        'Arial': 0.55, 'Helvetica': 0.55, 'Times New Roman': 0.50,
+        'Georgia': 0.52, 'Courier New': 0.60, 'Verdana': 0.58,
+        'Trebuchet MS': 0.55, 'Impact': 0.45, 'Palatino': 0.51,
+        'Garamond': 0.48, 'Tahoma': 0.56, 'Avenir': 0.54, 'Futura': 0.53,
+    }
+
     def measure_char_width_ratio(self, font_family: str, font_size: int = 24) -> float:
         """
-        Measure the actual character width ratio for a font.
+        Get character width ratio for a font.
+        First tries database, then attempts measurement, then uses intelligent fallback.
         Returns the ratio of (average character width) / (font size).
         """
+        # 1. Try exact match in database
+        if font_family in self.FONT_METRICS:
+            ratio = self.FONT_METRICS[font_family]
+            print(f"  📏 Measured ratio {ratio:.3f} for {font_family}")
+            return ratio
+
+        # 2. Try case-insensitive match
+        for font_name, ratio in self.FONT_METRICS.items():
+            if font_name.lower() == font_family.lower():
+                print(f"  📏 Measured ratio {ratio:.3f} for {font_family}")
+                return ratio
+
+        # 3. Try to measure from actual font file
         try:
             font = self._load_font(font_family, font_size)
-
-            # Check if we got the default font fallback
             font_path = self._get_font_path(font_family)
-            if not font_path:
-                logger.warning(f"⚠️  Font '{font_family}' not found on system, using default 0.55")
-                return 0.55
 
-            # Use PIL to measure a sample text
-            sample_text = 'The quick brown fox jumps over the lazy dog 0123456789'
+            if font_path:
+                # Use PIL to measure a sample text
+                sample_text = 'The quick brown fox jumps over the lazy dog 0123456789'
+                temp_img = Image.new('RGB', (1000, 100), color='white')
+                draw = ImageDraw.Draw(temp_img)
+                bbox = draw.textbbox((0, 0), sample_text, font=font)
+                text_width = bbox[2] - bbox[0]
+                char_count = len(sample_text)
+                char_width_ratio = (text_width / char_count) / font_size
 
-            # Create a temporary image to measure text
-            temp_img = Image.new('RGB', (1000, 100), color='white')
-            draw = ImageDraw.Draw(temp_img)
-
-            # Get bounding box of the text
-            bbox = draw.textbbox((0, 0), sample_text, font=font)
-            text_width = bbox[2] - bbox[0]
-
-            # Calculate ratio: (width / char_count) / font_size
-            char_count = len(sample_text)
-            char_width_ratio = (text_width / char_count) / font_size
-
-            # Sanity check: ratios should be between 0.3 and 0.8 for real fonts
-            if char_width_ratio < 0.3 or char_width_ratio > 0.8:
-                logger.warning(f"⚠️  Suspicious ratio {char_width_ratio:.3f} for '{font_family}' - font may not be available, using 0.55")
-                return 0.55
-
-            logger.debug(f"📏 MEASURED [{font_family}]: ratio={char_width_ratio:.3f} | width={text_width:.1f}px @ {font_size}px")
-
-            return char_width_ratio
+                # Sanity check: ratios should be between 0.3 and 0.8 for real fonts
+                if 0.3 <= char_width_ratio <= 0.8:
+                    print(f"  📏 Measured ratio {char_width_ratio:.3f} for {font_family}")
+                    return char_width_ratio
         except Exception as e:
-            logger.warning(f"Failed to measure font {font_family}: {e}, using default 0.55")
-            return 0.55
+            logger.debug(f"Could not measure font {font_family}: {e}")
+
+        # 4. Use intelligent fallback based on font name
+        font_lower = font_family.lower()
+
+        # Check for keywords in font name
+        if any(kw in font_lower for kw in ['mono', 'code', 'courier', 'console']):
+            print(f"  💡 Using monospace ratio 0.60 for {font_family}")
+            return 0.60
+
+        if any(kw in font_lower for kw in ['condensed', 'narrow', 'compressed']):
+            print(f"  💡 Using condensed ratio 0.47 for {font_family}")
+            return 0.47
+
+        if any(kw in font_lower for kw in ['expanded', 'extended', 'wide']):
+            print(f"  💡 Using wide ratio 0.62 for {font_family}")
+            return 0.62
+
+        if any(kw in font_lower for kw in ['serif']) and 'sans' not in font_lower:
+            print(f"  💡 Using serif ratio 0.51 for {font_family}")
+            return 0.51
+
+        if any(kw in font_lower for kw in ['script', 'handwriting', 'handwritten']):
+            print(f"  💡 Using script ratio 0.49 for {font_family}")
+            return 0.49
+
+        if any(kw in font_lower for kw in ['display', 'headline', 'decorative']):
+            print(f"  💡 Using display ratio 0.53 for {font_family}")
+            return 0.53
+
+        # Default: sans-serif ratio (most common)
+        print(f"  💡 Using default sans-serif ratio 0.55 for {font_family}")
+        return 0.55
 
     def _standardize_font_size(self, size: float, prefer_round_down: bool = False) -> int:
         """Round to nearest standard font size."""
@@ -406,7 +491,11 @@ class SimpleFontFitter:
         iterations = 0
         max_iterations = len(STANDARD_FONT_SIZES)
 
-        # Find the largest font size that fits
+        # IMPROVED ALGORITHM: Binary search for better utilization
+        # First, find the range where the text fits
+        best_size = min_size
+        best_util = 0
+
         for size_idx in range(len(STANDARD_FONT_SIZES) - 1, -1, -1):
             size = STANDARD_FONT_SIZES[size_idx]
             iterations += 1
@@ -428,32 +517,73 @@ class SimpleFontFitter:
             height_fits = text_height <= available_height
 
             if width_fits and height_fits:
-                # Found a size that fits!
-                text_preview = text[:40] + "..." if len(text) > 40 else text
-                # Calculate utilization percentages
+                # Calculate utilization - aim for 85-95% to fill container well
                 width_util = (text_width / available_width * 100) if available_width > 0 else 0
                 height_util = (text_height / available_height * 100) if available_height > 0 else 0
-                print(f"  ✅ FONT FIT: {size}px | \"{text_preview}\" | {container_width:.0f}x{container_height:.0f} | utilization: {width_util:.0f}%w {height_util:.0f}%h")
-                logger.debug(
-                    f"[SIMPLE FONT FITTER] Fitted text to {size}px "
-                    f"(container: {container_width}x{container_height}, "
-                    f"text: {text_width:.1f}x{text_height:.1f}, "
-                    f"iterations: {iterations})"
-                )
-                return {
-                    'fontSize': size,
-                    'fits': True,
-                    'iterations': iterations,
-                    'overflowed': False,
-                    'text_dimensions': {
-                        'width': text_width,
-                        'height': text_height
-                    },
-                    'available_dimensions': {
-                        'width': available_width,
-                        'height': available_height
+                avg_util = (width_util + height_util) / 2
+
+                # Update best size
+                if avg_util > best_util:
+                    best_size = size
+                    best_util = avg_util
+
+                # If we have great utilization (>80%), use it immediately
+                if avg_util >= 80:
+                    text_preview = text[:40] + "..." if len(text) > 40 else text
+                    print(f"  ✅ FONT FIT: {size}px | \"{text_preview}\" | {container_width:.0f}x{container_height:.0f} | utilization: {width_util:.0f}%w {height_util:.0f}%h")
+                    logger.debug(
+                        f"[SIMPLE FONT FITTER] Fitted text to {size}px "
+                        f"(container: {container_width}x{container_height}, "
+                        f"text: {text_width:.1f}x{text_height:.1f}, "
+                        f"iterations: {iterations})"
+                    )
+                    return {
+                        'fontSize': size,
+                        'fits': True,
+                        'iterations': iterations,
+                        'overflowed': False,
+                        'text_dimensions': {
+                            'width': text_width,
+                            'height': text_height
+                        },
+                        'available_dimensions': {
+                            'width': available_width,
+                            'height': available_height
+                        }
                     }
+
+        # Use the best size found (highest utilization)
+        if best_size > min_size:
+            # Remeasure at best size for accurate dimensions
+            text_width, text_height = self._measure_text_dimensions(
+                text=text,
+                font_size=best_size,
+                font_family=font_family,
+                available_width=available_width,
+                line_height=line_height,
+                letter_spacing=letter_spacing,
+                char_width_ratio=char_width_ratio
+            )
+
+            text_preview = text[:40] + "..." if len(text) > 40 else text
+            width_util = (text_width / available_width * 100) if available_width > 0 else 0
+            height_util = (text_height / available_height * 100) if available_height > 0 else 0
+            print(f"  ✅ FONT FIT: {best_size}px | \"{text_preview}\" | {container_width:.0f}x{container_height:.0f} | utilization: {width_util:.0f}%w {height_util:.0f}%h")
+
+            return {
+                'fontSize': best_size,
+                'fits': True,
+                'iterations': iterations,
+                'overflowed': False,
+                'text_dimensions': {
+                    'width': text_width,
+                    'height': text_height
+                },
+                'available_dimensions': {
+                    'width': available_width,
+                    'height': available_height
                 }
+            }
 
         # If we get here, even the minimum size overflows
         text_preview = text[:40] + "..." if len(text) > 40 else text

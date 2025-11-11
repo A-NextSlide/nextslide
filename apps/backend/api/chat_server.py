@@ -142,6 +142,7 @@ from api.requests.api_deck_access import router as deck_access_router
 from api.requests.api_comments import router as comments_router
 from api.requests.api_outline_chat import router as outline_chat_router
 from api.requests.api_outline_agent import router as outline_agent_router
+from api.requests.api_outline_theme import router as outline_theme_router
 from api.requests.api_slide_research import router as slide_research_router
 from api.requests.api_slide_reorder import router as slide_reorder_router
 # Make narrative test optional if module was removed during cleanup
@@ -241,6 +242,7 @@ app.include_router(deck_access_router)
 app.include_router(comments_router)
 app.include_router(outline_chat_router)
 app.include_router(outline_agent_router)
+app.include_router(outline_theme_router)
 app.include_router(slide_research_router)
 app.include_router(slide_reorder_router)
 if narrative_test_router is not None:

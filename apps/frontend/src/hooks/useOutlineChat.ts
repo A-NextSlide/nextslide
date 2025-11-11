@@ -225,7 +225,9 @@ export const useOutlineChat = ({
           break;
           
         case 'outline_structure':
-          console.warn('[useOutlineChat] Received outline structure:', event);
+          console.warn('[useOutlineChat] ========== OUTLINE STRUCTURE RECEIVED ==========');
+          console.warn('[useOutlineChat] Expected slide count:', event.slideCount);
+          console.warn('[useOutlineChat] isGenerating should be TRUE now');
           // Mark research complete when structure arrives
           setResearchEvents(prev => {
             // Check if we already have a research_complete event
@@ -297,9 +299,10 @@ export const useOutlineChat = ({
           break;
           
         case 'slide_complete':
-          console.warn('[useOutlineChat] Slide complete:', event);
-          console.warn('[useOutlineChat] Slide data:', event.slide);
+          console.warn('[useOutlineChat] ========== SLIDE COMPLETE ==========');
           console.warn('[useOutlineChat] Slide index:', event.slideIndex);
+          console.warn('[useOutlineChat] Completed slides so far:', completedSlideIndicesRef.current.size + 1);
+          console.warn('[useOutlineChat] Expected total:', outlineStructureInfo?.expectedCount);
           if (event.slideIndex !== undefined && event.slide) {
             // Emit the update to the OutlineEditor
             if (onSlideComplete) {
@@ -317,6 +320,12 @@ export const useOutlineChat = ({
             if (totalSlides && totalSlides > 0) {
               const currentCompleted = completedSlideIndicesRef.current.size;
               setProgress({ current: Math.min(currentCompleted, totalSlides), total: totalSlides });
+
+              // Check if all slides are complete
+              if (currentCompleted >= totalSlides) {
+                console.log('[useOutlineChat] All slides complete! Setting isGenerating to false');
+                setIsGenerating(false);
+              }
             }
 
             // **NEW: Progressively build the outline by updating slides as they complete**
@@ -393,8 +402,8 @@ export const useOutlineChat = ({
           // Merge final outline data to avoid remounting cards and losing edit state
           // Clear research events now that outline is complete
           setResearchEvents([]);
-          // Set isGenerating to false when outline is complete
-          setIsGenerating(false);
+          // DON'T set isGenerating to false here - slides are still being generated!
+          // Wait for the 'complete' event to set isGenerating to false
           if (event.outline && setCurrentOutline) {
             const finalOutline = event.outline as any;
             setCurrentOutline(prev => {
@@ -663,6 +672,8 @@ export const useOutlineChat = ({
           break;
           
         case 'complete':
+          console.warn('[useOutlineChat] ========== COMPLETE EVENT RECEIVED ==========');
+          console.warn('[useOutlineChat] Setting isGenerating to FALSE due to complete event');
           setLoadingStatus({
             message: event.message || 'Complete',
             stage: 'complete'
@@ -769,10 +780,13 @@ export const useOutlineChat = ({
       const outlineId = useDeckStore.getState().deckData?.outline?.id || undefined;
       useThemeStore.getState().resetForNewOutline?.(outlineId);
     } catch {}
+    console.warn('[useOutlineChat] ========== STARTING GENERATION ==========');
+    console.warn('[useOutlineChat] Setting isGenerating to TRUE');
     setIsGenerating(true);
     setLoadingStage('Starting outline generation...');
     setOutlineStructureInfo(null); // Reset
     setProcessedSlidesCount(0);   // Reset
+    completedSlideIndicesRef.current.clear(); // Reset completed slides tracking
     setLoadingStatus({ message: 'Starting outline generation...', stage: 'initializing' });
     setProgress(null);
     
@@ -1031,6 +1045,7 @@ export const useOutlineChat = ({
     setLoadingStage('Generating outline...');
     setOutlineStructureInfo(null);
     setProcessedSlidesCount(0);
+    completedSlideIndicesRef.current.clear(); // Reset completed slides tracking
     setLoadingStatus({ message: 'Generating outline...', stage: 'initializing' });
     setProgress(null);
     

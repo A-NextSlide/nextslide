@@ -14,7 +14,6 @@ import SlideGeneratingUI from '../../common/SlideGeneratingUI';
 import { useTheme } from 'next-themes';
 import { useDeckStore } from '@/stores/deckStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
-import BlueprintAnimation from '@/components/BlueprintAnimation';
 
 interface SlideDisplayProps {
   slides: SlideData[];
@@ -65,9 +64,6 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   const isGenerating = !hasSlideContent && (deckStatus?.state === 'generating' || deckStatus?.state === 'creating');
   const isCompleted = hasSlideContent || deckStatus?.state === 'completed' || (deckStatus?.progress !== undefined && deckStatus.progress >= 100);
   const forceWhite = typeof window !== 'undefined' && (window as any).__tourForceWhiteBg;
-
-  // Check if we're in the layout_design phase
-  const isLayoutDesignPhase = isGenerating && deckStatus?.message?.toLowerCase().includes('blueprint');
   
   // Use multi-selection hook
   const slideContainerRef = useRef<HTMLDivElement>(null);
@@ -311,19 +307,12 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
           >
             {!forceWhite && (
               <div className="absolute inset-0 w-full h-full overflow-hidden">
-                {isLayoutDesignPhase ? (
-                  <BlueprintAnimation
-                    slideTitle={currentSlide?.title || 'Slide'}
-                    slideIndex={currentSlideIndex}
-                  />
-                ) : (
-                  <SlideGeneratingUI
-                    slideNumber={1}
-                    totalSlides={deckStatus.totalSlides}
-                    progress={deckStatus.progress || 0}
-                    message={deckStatus.message || "Creating your presentation"}
-                  />
-                )}
+                <SlideGeneratingUI
+                  slideNumber={1}
+                  totalSlides={deckStatus.totalSlides}
+                  progress={deckStatus.progress || 0}
+                  message={deckStatus.message || "Creating your presentation"}
+                />
               </div>
             )}
           </div>
@@ -367,19 +356,12 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
           >
             {!forceWhite && (
               <div className="absolute inset-0 w-full h-full overflow-hidden">
-                {isLayoutDesignPhase ? (
-                  <BlueprintAnimation
-                    slideTitle={currentSlide?.title || 'Slide'}
-                    slideIndex={currentSlideIndex}
-                  />
-                ) : (
-                  <SlideGeneratingUI
-                    slideNumber={1}
-                    totalSlides={deckStatus?.totalSlides || 1}
-                    progress={0}
-                    message="Preparing your presentation"
-                  />
-                )}
+                <SlideGeneratingUI
+                  slideNumber={1}
+                  totalSlides={deckStatus?.totalSlides || 1}
+                  progress={0}
+                  message="Preparing your presentation"
+                />
               </div>
             )}
           </div>

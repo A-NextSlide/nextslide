@@ -27,11 +27,17 @@ Canvas: 1920×1080px | Output: JSON components
 • Available vertical: 760px (y: 240-1000)
 
 **TEXT - TIPTAPTEXTBLOCK**
-• Break into MULTIPLE blocks - each section/bullet = separate component!
-• NEVER use \n newlines in text - create separate TiptapTextBlocks instead
+• **LISTS** (USE SPARINGLY - only for 3-7 truly list-like items):
+  - Use proper structure: {"type": "doc", "content": [{"type": "bulletList/orderedList", "content": [listItems]}]}
+  - orderedList (1,2,3...) for sequential steps, instructions, rankings, timeline events
+  - bulletList (•) for unordered features, benefits, characteristics, examples
+  - NEVER use manual "• " with \n - always use proper structure
+  - DON'T overuse: prefer CustomComponents for stats, paragraphs for body text
+• **REGULAR TEXT**: Use paragraph structure with rich inline formatting (bold, colors, highlights)
+• **SEPARATE BLOCKS FOR**: Titles, headers, different sections, stat callouts, quotes
 • ALWAYS set: alignment, verticalAlignment, padding=0, textColor, fontFamily, fontSize
 • Minimum font sizes: Body ≥28pt, Headers ≥48pt, Titles ≥64pt
-• Heights: fontSize × 1.15
+• Heights: Calculate based on content (fontSize × 1.15 × number of lines + line spacing)
 • Alignment rules:
   - Title slides: alignment="left", verticalAlignment="top"
   - Stats: alignment="center", verticalAlignment="middle"
@@ -122,7 +128,7 @@ Canvas: 1920×1080px | Output: JSON components
 ═══════════════════════════════════════════
 
 Before outputting:
-✅ **Multiple TiptapTextBlocks** - each section/bullet = separate block (NO \n newlines!)
+✅ **TiptapTextBlocks structure** - Combine point-form text in ONE block with rich formatting, separate titles/headers/sections
 ✅ **Font sizes** - Body ≥28pt, Headers ≥48pt, Titles ≥64pt
 ✅ **Image layout** - ONE large image OR side-by-side (NOT vertical banner stack!)
 ✅ **Image aspect** - height 50-100% of width (no 1200×200 banners!)
@@ -144,7 +150,7 @@ Before outputting:
 ✅ Boundaries verified: x+width ≤ 1840, y+height ≤ 1020
 ✅ Icons: 0-2 max per slide
 
-❌ REJECT if: Fixed Y positions (y=180/230/240), \n newlines, fontSize <28pt, Chart+Image on same slide, chart overlapping title, vertical banner stack (3+ images), super wide/short images (1200×200), charts without margin prop
+❌ REJECT if: Fixed Y positions (y=180/230/240), fontSize <28pt, Chart+Image on same slide, chart overlapping title, vertical banner stack (3+ images), super wide/short images (1200×200), charts without margin prop, splitting bullets into separate blocks
 
 Make slides clean, organized, and impactful!
 
@@ -246,7 +252,8 @@ NEVER OVERLAP:
    - Max 3 bullets, 5 words each
    - Position: Clear of images (80px gap)
    - CRITICAL: alignment, verticalAlignment, padding=0
-   - Split text for emphasis: {"texts": [{"text":"Revenue ","style":{}},{"text":"$2.5B","style":{"bold":true,"textColor":"{{accent}}"}}]}
+   - **Keep bullets together** in one block with rich TipTap formatting
+   - Use inline formatting: {"texts": [{"text":"• Revenue ","style":{"bold":true}},{"text":"$2.5B","style":{"bold":true,"textColor":"{{accent}}"}},{"text":"\n• Growth ","style":{"bold":true}},{"text":"42%","style":{"textColor":"{{accent}}"}}]}
    
 3. LINES (For structure)
    - USE startPoint/endPoint (NOT position/width!)
