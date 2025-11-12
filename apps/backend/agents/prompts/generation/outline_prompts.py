@@ -191,7 +191,7 @@ TEAM SLIDE (text-dense is OK):
 
     if detail == 'detailed':
         mode = """DETAILED MODE:
-Write 100-150 words. Use section headers (##) to organize content logically.
+Write 60-80 words MAX. Use section headers (##) to organize content logically.
 Keep it concise - audience should grasp each point in 3-5 seconds.
 Be SPECIFIC: exact numbers, companies, dates.
 Bold key metrics with **
@@ -212,10 +212,10 @@ DO NOT include IMAGE tags - those are added separately.
 - Your role is to format and structure their exact words, not to add content
 
 CHARTS: EXTREMELY RARE - ONLY when:
-- You have 8-15+ quantitative data points in ONE measurement type
+- You have 10-20+ quantitative data points in ONE measurement type
 - The slide's PURPOSE is data analysis/metrics (not storytelling/education)
 - The pattern is clearer as a visualization than text
-- Examples: quarterly revenue trends, market share %, user growth over 12 months
+- Examples: quarterly revenue trends over 3+ years, market share % across 10+ companies, user growth over 12+ months
 - NOT for: concepts, features, comparisons, simple stats, or qualitative content"""
     else:
         mode = """PRESENTATION MODE:
@@ -245,12 +245,14 @@ The SaaS sector has maintained **steady outcomes**, demonstrating resilience
 Consumer sectors exhibit **high variance** in returns
 
 CONTENT RULES:
-- BREVITY: Each bullet is a headline, not a paragraph
+- EXTREME BREVITY: Each bullet is 5-10 words MAX - headlines only!
+- MAXIMUM 30-40 words per slide (excluding title)
 - 2-3 sections max per slide (don't cram!)
 - 2-3 bullets per section
 - Bold key numbers and metrics with **
-- Test: "Can you READ this in 5 seconds?"
+- Test: "Can you READ this in 3 seconds?"
 - DO NOT include IMAGE tags - those are added separately
+- DO NOT write paragraphs or full sentences - use short phrases
 
 ** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
@@ -259,8 +261,8 @@ CONTENT RULES:
 - Your role is to format and structure their exact words, not to add content
 
 VISUALS:
-🎨 Images/Icons: PRIMARY visual element (50-70% of slides should have images)
-📊 Charts: RARE (only 10-20% of slides, and ONLY for truly exceptional data stories)
+🎨 Images/Icons: PRIMARY visual element (60-80% of slides should have images)
+📊 Charts: EXTREMELY RARE (only 5-10% of slides MAX, and ONLY for truly exceptional data stories)
 
 CHARTS - WHEN TO USE THEM:
 🚫 NO CHARTS FOR (use text/images instead):
@@ -272,16 +274,19 @@ CHARTS - WHEN TO USE THEM:
    - Qualitative information (opinions, quotes, descriptions)
    - Product features, team members, testimonials
    - Vision statements, mission, values
+   - ANY slide where an image or text would work just as well
 
-✅ ONLY USE CHARTS WHEN:
-   - You have 8-15+ QUANTITATIVE data points to compare
+✅ ONLY USE CHARTS WHEN ALL CONDITIONS MET:
+   - You have 10-20+ QUANTITATIVE data points to compare
    - The data shows a clear TREND, PATTERN, or DISTRIBUTION
-   - The visual representation reveals insights text cannot
-   - The slide's PRIMARY PURPOSE is data analysis/metrics
-   - Examples: quarterly revenue trends, market share distribution, user growth over time
+   - The visual representation reveals insights text CANNOT
+   - The slide's PRIMARY PURPOSE is data analysis/metrics (not storytelling)
+   - Examples: quarterly revenue over 3+ years, market share distribution across 10+ companies, user growth over 12+ months
+   - The presentation is business/data-focused (NOT educational, personal, or creative)
 
-⚠️ ASK YOURSELF: "Does this slide NEED a chart to be understood, or would text/images work better?"
-   - If the answer is "text/images work fine" → NO CHART"""
+⚠️ ASK YOURSELF: "Is this slide IMPOSSIBLE to understand without a chart?"
+   - If the answer is "no" or "text/images would work" → NO CHART
+   - Default to NO CHART unless you're 100% certain it's necessary"""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):

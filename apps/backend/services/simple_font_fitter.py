@@ -385,13 +385,22 @@ class SimpleFontFitter:
 
         avg_char_width = font_size * CHAR_WIDTH_RATIO
 
+        # Check if text has bullet points and adjust width accordingly
+        # Bullets take up space: • symbol + space = ~2-3 characters
+        has_bullets = '•' in text or text.strip().startswith('-')
+        bullet_indent = 3 * avg_char_width if has_bullets else 0
+
         # Simulate text wrapping word by word
         words = text.split()
         lines = []
         current_line = []
-        current_width = 0
+        current_width = bullet_indent  # Start with bullet indent if present
 
         for word in words:
+            # Skip bullet symbols in width calculation (already accounted for)
+            if word == '•' or word == '-':
+                continue
+
             # Estimate word width (characters * avg width)
             word_width = len(word) * avg_char_width
             space_width = avg_char_width  # Space character

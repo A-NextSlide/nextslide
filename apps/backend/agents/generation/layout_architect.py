@@ -370,7 +370,12 @@ Return ONLY valid JSON.
         # Extract theme colors dynamically
         primary_bg = colors.get('primary_background', '#FFFFFF')
         primary_text = colors.get('text_colors', {}).get('primary', '#000000')
-        accent_colors = colors.get('accents', ['#0066CC'])
+        accent_colors = colors.get('accents', ['#0066CC', '#FF6B35', '#4ECDC4'])
+
+        # Get individual accent colors for use in examples
+        accent_1 = accent_colors[0] if len(accent_colors) > 0 else '#0066CC'
+        accent_2 = accent_colors[1] if len(accent_colors) > 1 else '#FF6B35'
+        accent_3 = accent_colors[2] if len(accent_colors) > 2 else '#4ECDC4'
 
         # Get full theme context for creative decisions
         theme_name = existing_theme.get('name', 'Custom')
@@ -416,56 +421,212 @@ Think like a magazine art director, not a template user. Every slide should feel
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-🎨 CREATIVE LAYOUT APPROACHES (Examples - NOT rules):
+🔥 AGGRESSIVE DESIGN MANDATE - BE BOLD!
 
-**Approach 1: Asymmetric Drama**
-- Bold off-center compositions
-- Overlapping elements at different depths (zIndex layering)
-- Diagonal lines and unexpected angles
-- Large negative space for impact
+DO NOT create boring split-screen layouts! Every slide should be visually striking and artistic.
 
-**Approach 2: Editorial Magazine**
-- Multi-column text layouts (newspaper style)
-- Dropped caps and pull quotes
-- Text wrapping around images
-- Sidebar annotations
+**YOUR MISSION: Create magazine-quality, editorial designs that USE ALL AVAILABLE COMPONENTS**
 
-**Approach 3: Minimalist Focus**
-- Single dominant element (huge chart, massive image, or bold typography)
-- Extreme whitespace
-- Tiny supporting text
-- Monochromatic with single accent
+═══════════════════════════════════════════════════════════════════════════════
 
-**Approach 4: Layered Collage**
-- Multiple overlapping images with varying opacity
-- Text over shapes over images
-- Color blocks intersecting at angles
-- Depth through shadows and transparency
+🎨 COMPONENT ARSENAL (USE PURPOSEFULLY):
 
-**Approach 5: Grid System Mastery**
-- Break the grid intentionally
-- Items spanning multiple columns
-- Uneven column widths
-- Content bleeding across boundaries
+**Shapes** - USE ONLY FOR FUNCTIONAL PURPOSES:
+- Divider lines: ONLY for clear section separation
+- Background blocks: ONLY when text needs contrast for readability
+- Containers: ONLY for grouping related content
+- DO NOT use shapes for decoration, embellishment, or visual interest
+- Prefer clean, minimal designs - let content breathe
 
-**Approach 6: Typographic Hero**
-- Typography IS the design
-- Massive headings (150-300pt)
-- Text as texture/background
-- Mixed font sizes for hierarchy
-- Creative text positioning (vertical, curved paths)
+**Images** - MAKE THEM DRAMATIC:
+- Full-bleed to edges: x=0, width=960 OR x=960, width=960 (full half-screen)
+- Sharp edges: borderRadius=0 (modern, editorial look)
+- Outlined: Add stroke="#color", strokeWidth=6-12 for framed effect
+- Overlays: Use overlayColor with low opacity for color grading
+- Multiple images: Layer at different sizes/opacities for collage effect
 
-**Approach 7: Data Visualization Art**
-- Charts as centerpieces
-- Custom data presentation styles
-- Infographic-style layouts
-- Visual metaphors for data
+**Lines & Dividers** - MINIMAL USE:
+- Use ONLY to separate distinct sections when absolutely necessary
+- Horizontal dividers: 1-2px height, subtle, below headers only
+- Avoid vertical dividers unless comparing two distinct columns
+- Color: Use subtle opacity (20-30%) to avoid visual clutter
 
-**Approach 8: Cinematic Composition**
-- Rule of thirds with dramatic placement
-- Film-like aspect ratios within canvas
-- Vignettes and gradients
-- Mood-driven color grading
+**Icons** - ADD VISUAL INTEREST:
+- NOT AVAILABLE YET, but use shapes creatively as icon replacements
+- Circles with text initials
+- Geometric patterns
+
+**Color Blocks** - USE SPARINGLY:
+- Only use when text needs background for readability
+- Subtle, low-opacity backgrounds: 5-10% opacity maximum
+- Avoid full-bleed color blocks unless it's a title slide
+- Prefer clean white/background color - let content stand out
+
+**Typography** - GO BIG:
+- Hero text: 120-280pt font sizes
+- Contrast: Mix huge titles with tiny captions (18-24pt)
+- Text over images: Use shapes behind text for readability (zIndex layering)
+- Multi-size hierarchy: h1 (140pt), h2 (72pt), body (36pt), captions (24pt)
+
+**CustomComponent** - USE LIBERALLY FOR VISUAL EXPLANATIONS:
+- DON'T just use text blocks to explain concepts - make them VISUAL!
+- Process flows: Arrow diagrams, step indicators, visual timelines
+- Statistics: Animated counters, progress rings, metric displays
+- Comparisons: Side-by-side cards, before/after visuals
+- Features: Icon grids, benefit showcases, feature matrices
+- Team: Avatar grids, profile cards with stats
+- Data highlights: Stat cards, KPI displays, metric visualizations
+- Think: "How can I show this visually instead of just text?"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+⚡ AGGRESSIVE LAYOUT PATTERNS:
+
+**Pattern 1: FULL-BLEED IMAGE + GRAPHIC OVERLAYS**
+```
+- Image: x=0, y=0, width=960, height=1080, borderRadius=0 (SHARP EDGES)
+- Accent line: x=940, y=0, width=8, height=1080, fill=accent, opacity=1
+- Color block: x=960, y=0, width=960, height=1080, fill=bg with opacity=0.95
+- Shapes: Add 2-3 accent rectangles/circles for visual interest
+- Text: Large, layered over the color block with decorative elements
+```
+
+**Pattern 2: DIAGONAL SPLIT WITH SHAPES**
+```
+- Large rotated rectangle creating diagonal division
+- Image fills one side completely (borderRadius=0)
+- Text on opposite side with accent line dividers
+- Circles or squares as decorative elements
+- Bold color blocks framing content
+```
+
+**Pattern 3: LAYERED COLLAGE**
+```
+- Base image: x=0, y=0, width=1920, height=1080, opacity=0.3, zIndex=1
+- Foreground image: x=100, y=200, width=700, height=500, sharp edges, stroke outline
+- Color blocks: Multiple translucent rectangles at different positions
+- Text: Layered on top with shape backgrounds
+- Accent lines: Creating grid structure
+```
+
+**Pattern 4: CHART AS HERO + DECORATIVE FRAME**
+```
+- NOT just "chart on left, text on right"
+- Add: Accent lines above/below chart
+- Add: Color block background with rounded corners behind chart
+- Add: Decorative circles or shapes near data points
+- Add: Thick border around chart (stroke outline)
+- Text: Side panel with accent line dividers between sections
+```
+
+**Pattern 5: TYPOGRAPHIC POSTER**
+```
+- MASSIVE title: 200-280pt, overlapping multiple elements
+- Background shapes: Large geometric forms in accent colors
+- Small image: Inset with thick outline border
+- Accent lines: Creating visual rhythm and structure
+- Text blocks: Framed with subtle color blocks
+```
+
+**Pattern 6: EDITORIAL MAGAZINE SPREAD**
+```
+- Vertical sidebar: x=0, width=280-400, full height, accent color
+- Main image: borderRadius=0, with 8-12px stroke outline
+- Multiple text blocks: Different sizes, with accent line separators
+- Pull quote: Large text in circle or outlined box
+- Decorative elements: Lines, dots, small shapes for visual interest
+```
+
+**Pattern 7: GEOMETRIC COMPOSITION**
+```
+- Base: Large geometric shapes in accent colors (circles, squares)
+- Images: Clipped to shapes or outlined with thick borders
+- Text: Positioned over solid color blocks for readability
+- Lines: Connecting elements, creating flow
+- Asymmetric balance: Off-center but visually weighted
+```
+
+**Pattern 8: FULL-BLEED EVERYTHING**
+```
+- Image spans entire slide: x=0, y=0, width=1920, height=1080
+- Dark overlay: Shape with opacity=0.7 over part of image
+- Text: Large, white/contrasting color over overlay
+- Accent elements: Bright color lines/circles for pop
+- Sharp edges throughout: borderRadius=0
+```
+
+**Pattern 9: VISUAL EXPLANATION with CustomComponent (HIGHLY ENCOURAGED)**
+```
+- Title at top: Clear heading explaining what's shown
+- CustomComponent: Visual diagram/infographic taking 50-70% of space
+  * Process flow with arrows
+  * Metric display with numbers
+  * Comparison cards
+  * Feature grid with icons
+  * Timeline visualization
+  * Step-by-step diagram
+- Supporting text: Small captions or bullet points if needed
+- NOT ALLOWED: Wall of text - always visualize concepts!
+```
+
+**Pattern 10: FEATURE SHOWCASE with CustomComponents**
+```
+- Split into sections using shapes/dividers
+- Multiple CustomComponents showing different aspects:
+  * Stat card: Key metric with visual indicator
+  * Icon grid: Features with symbols
+  * Progress display: Goals or achievements
+  * Comparison: Before/after or us vs competitor
+- Minimal text, maximum visual communication
+- Think infographic, not document
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🚨 DESIGN REQUIREMENTS (MANDATORY):
+
+**1. CLARITY AND READABILITY FIRST:**
+   - Design must serve the content, not overwhelm it
+   - Each element must have a clear purpose
+   - Generous whitespace between all elements (minimum 60px gaps)
+   - Clean, professional aesthetic - avoid clutter
+
+**2. NO DECORATIVE ELEMENTS:**
+   - NO decorative shapes, circles, or accent lines
+   - NO visual embellishments that don't serve the content
+   - Focus on typography, layout, and content hierarchy
+   - Let the content breathe with ample whitespace
+
+**3. FUNCTIONAL USE OF COMPONENTS:**
+   - Images: Only when they explain or illustrate the content
+   - Shapes: Only for backgrounds when text needs contrast
+   - Lines: Only for section separation when necessary
+   - CustomComponent: For visualizing data, processes, or complex concepts
+   - Each component must justify its existence
+
+**4. CONSERVATIVE COLOR USAGE:**
+   - Use theme colors consistently but sparingly
+   - Accent colors for emphasis only (key data, CTAs)
+   - Prefer subtle, professional color application
+   - Avoid color blocks unless necessary for contrast
+
+**5. APPROPRIATE COMPONENT COUNT:**
+   - Aim for 3-5 components per slide (quality over quantity)
+   - Title/header + content + optional visual = sufficient
+   - More components = more complexity = harder to read
+   - Simplicity is sophisticated
+
+**6. CLEAN, MODERN AESTHETICS:**
+   - Subtle borderRadius (8-12px) for softer, approachable feel
+   - Avoid harsh edges and heavy strokes
+   - Professional, balanced typography
+   - Consistent sizing and spacing
+
+**7. ANTI-OVERLAP VALIDATION:**
+   - Calculate all positions sequentially: nextY = currentY + height + gap
+   - Verify: component.y + component.height + gap ≤ next.y
+   - Minimum gaps: 60px between text elements, 80px around visuals
+   - Ensure all content fits within safe area (y ≤ 920)
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -503,20 +664,14 @@ Examples:
 
 Use this simple system to prevent overlaps:
 
-```javascript
-// Track vertical position as you add components
-let currentY = 100;  // Start at safe area top
-
-// For each component:
-component.y = currentY;
-component.height = calculated_height;  // Based on content
-currentY = component.y + component.height + gap;  // 60-100px gap
-
-// Before adding, verify it fits:
-if (currentY + component.height > 920) {
-  // Won't fit! Use different layout or reduce content
-}
-```
+Track vertical position as you add components:
+- Start: currentY = 100 (safe area top)
+- For each component:
+  * component.y = currentY
+  * component.height = calculated_height (based on content)
+  * currentY = component.y + component.height + gap (60-100px gap)
+- Before adding, verify it fits:
+  * If currentY + component.height > 920, use different layout
 
 Key rules:
 - Minimum gaps: 60px between text, 80px around charts/images
@@ -554,40 +709,60 @@ Shapes:
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-✨ CREATIVE EXAMPLES (inspiration, not templates):
+✨ AGGRESSIVE DESIGN EXAMPLES (showing proper use of all components):
 
-**Example 1: Bold Asymmetric Title Slide**
+**Example 1: Split-Screen Layout - Clean and Functional**
 ```json
 {{
-  "layout_reasoning": "Dramatic off-center title with full-bleed gradient background",
+  "layout_reasoning": "Clean split-screen with image left, content right - no decorative elements",
   "components": [
-    {{"type": "Background", "zIndex": 0, "props": {{"gradient": {{"type": "linear", "angle": 135, "colors": ["{primary_bg}", "{accent_colors[0]}40"]}}}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 200, "y": 300, "width": 1200, "height": 400, "fontSize": 180, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}"}}}}
+    {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
+    {{"type": "Image", "zIndex": 1, "props": {{"x": 100, "y": 200, "width": 760, "height": 680, "src": "image_url", "borderRadius": 12, "objectFit": "cover"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 200, "width": 780, "height": 150, "fontSize": 72, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 410, "width": 780, "height": 470, "fontSize": 36, "content": "<p>Content with proper gaps and no overlaps...</p>", "color": "{primary_text}"}}}}
   ]
 }}
 ```
 
-**Example 2: Magazine Editorial with Sidebar**
+**Example 2: Chart with Text Insights - Clean Layout**
 ```json
 {{
-  "layout_reasoning": "Multi-column layout with accent sidebar",
+  "layout_reasoning": "Chart left with text insights right - clean, functional design",
   "components": [
-    {{"type": "Shape", "zIndex": 5, "props": {{"x": 0, "y": 0, "width": 300, "height": 1080, "fill": "{accent_colors[0]}", "opacity": 0.95}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 380, "y": 120, "width": 1400, "height": 800, "fontSize": 42, "content": "<h2>Title</h2><p>Content...</p>", "color": "{primary_text}"}}}}
+    {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 100, "y": 160, "width": 1720, "height": 80, "fontSize": 64, "content": "<h1>Slide Title</h1>", "color": "{primary_text}"}}}},
+    {{"type": "Chart", "zIndex": 10, "props": {{"x": 100, "y": 280, "width": 760, "height": 600, "chartType": "bar", "data": [...], "colors": ["{accent_1}"], "margin": {{"top": 20, "right": 20, "bottom": 60, "left": 80}}}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 280, "width": 760, "height": 120, "fontSize": 48, "content": "<h2>Key Insights</h2>", "color": "{primary_text}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 460, "width": 760, "height": 420, "fontSize": 32, "content": "<ul><li>340% revenue increase</li><li>Record quarter performance</li></ul>", "color": "{primary_text}"}}}}
   ]
 }}
 ```
 
-**Example 3: Data-Driven Chart Hero**
+**Example 3: Content-Focused Single Column**
 ```json
 {{
-  "layout_reasoning": "Chart as centerpiece with minimal supporting text",
+  "layout_reasoning": "Clean single-column layout with title, image, and content - generous whitespace",
   "components": [
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 100, "y": 80, "width": 1000, "height": 80, "fontSize": 56, "content": "<h1>Growth Metrics</h1>", "color": "{primary_text}"}}}},
-    {{"type": "Chart", "zIndex": 10, "props": {{"x": 100, "y": 220, "width": 1720, "height": 650, "chartType": "line", "data": [...], "colors": {accent_colors}}}}}
+    {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 160, "width": 1600, "height": 100, "fontSize": 72, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}", "textAlign": "center"}}}},
+    {{"type": "Image", "zIndex": 3, "props": {{"x": 360, "y": 320, "width": 1200, "height": 500, "src": "image_url", "borderRadius": 12, "objectFit": "cover"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 360, "y": 880, "width": 1200, "height": 100, "fontSize": 32, "content": "<p>Brief description or caption...</p>", "color": "{primary_text}", "textAlign": "center"}}}}
   ]
 }}
 ```
+
+**Example 4: Title Slide - Clean and Bold**
+```json
+{{
+  "layout_reasoning": "Clean title slide with large typography and optional subtitle - no clutter",
+  "components": [
+    {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 350, "width": 1600, "height": 280, "fontSize": 180, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}", "textAlign": "left"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 690, "width": 1200, "height": 80, "fontSize": 48, "content": "<p>Optional subtitle or context</p>", "color": "{primary_text}", "textAlign": "left", "opacity": 0.7}}}}
+  ]
+}}
+```
+
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -602,29 +777,43 @@ Shapes:
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-✅ VALIDATION CHECKLIST (before returning):
+✅ DESIGN VALIDATION CHECKLIST (before returning):
 
-Text Formatting:
+**Text Formatting:**
 ✓ All TiptapTextBlock content uses HTML tags
 ✓ No plain text or \\n characters
 
-Anti-Overlap:
-✓ Used currentY tracking for positioning
-✓ Minimum 60px gaps between text elements
-✓ Minimum 80px gaps around charts/images
-✓ No overlapping bounding boxes
+**Anti-Overlap (CRITICAL):**
+✓ Used sequential positioning: nextY = currentY + height + gap
+✓ Minimum 60px gaps between text elements verified
+✓ Minimum 80px gaps around charts/images verified
+✓ No overlapping bounding boxes at any zIndex
+✓ All positions calculated, not guessed or fixed
 
-Bounds:
+**Bounds:**
 ✓ All components within safe area: x=[100-1820], y=[100-920]
-✓ Charts minimum 500px (preferably 600-700px)
+✓ Charts minimum 500×400px
+✓ Final component ends before y=920
 
-Layering:
+**Layering:**
 ✓ Proper zIndex: Background(0) < Images(1-5) < Shapes(5-9) < Content(10) < UI(100)
 
-Creative Quality:
-✓ Layout matches theme mood and content type
-✓ Visually balanced and professional
-✓ Unique and intentional design decisions
+**CLEAN DESIGN REQUIREMENTS (CRITICAL):**
+✓ **3-5 functional components** (no clutter!)
+✓ **NO decorative shapes** (shapes only for functional purposes)
+✓ **Appropriate whitespace**: Generous gaps, breathing room
+✓ **Conservative colors**: Theme colors used purposefully, not excessively
+✓ **Each component justified**: Every element serves the content
+✓ **Professional aesthetic**: Clean, modern, readable
+
+**DO NOT RETURN if:**
+❌ Components overlap (y positions not calculated sequentially)
+❌ More than 7 components (too cluttered)
+❌ Decorative shapes added (circles, accent lines without purpose)
+❌ Gaps less than 60px between elements
+❌ Content extends beyond y=920
+❌ Fixed Y positions used (y=240, y=300) instead of calculated
+❌ Heavy visual embellishments that don't serve content
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -637,10 +826,11 @@ Creative Quality:
 
 Available component types:
 - Background: Full-slide background with solid color or gradient
-- Shape: Rectangles, circles for structure/decoration
+- Shape: Rectangles for functional purposes only (containers, dividers)
 - Image: Images with styling (borderRadius, opacity, overlays, etc.)
 - TiptapTextBlock: All text content (MUST use HTML formatting)
 - Chart: Data visualizations (ensure proper sizing)
+- CustomComponent: For interactive visualizations and complex content
 
 Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
 """

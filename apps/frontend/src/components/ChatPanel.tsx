@@ -706,7 +706,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const { deckData, updateDeckData } = (useDeckStore as any).getState();
         const updated = applyDeckDiffPure(deckData, deckDiff as any);
         if (updated !== deckData) {
-          updateDeckData(updated, { skipBackend: true });
+          // CRITICAL FIX: Don't skip backend for deck-level changes (slides_to_add, slides_to_remove, deck_properties)
+          // While component updates are handled via draft system and applyDraftChanges(),
+          // new slides and slide removals need to be persisted immediately
+          const hasSlideAdditions = (deckDiff as any).slides_to_add && (deckDiff as any).slides_to_add.length > 0;
+          const hasSlideRemovals = (deckDiff as any).slides_to_remove && (deckDiff as any).slides_to_remove.length > 0;
+          const hasDeckProps = (deckDiff as any).deck_properties && Object.keys((deckDiff as any).deck_properties).length > 0;
+
+          // Skip backend only if there are NO deck-level changes (pure component updates handled by drafts)
+          const shouldSkipBackend = !hasSlideAdditions && !hasSlideRemovals && !hasDeckProps;
+
+          console.log('[ChatPanel][applyDeckDiff] Deck-level changes', {
+            hasSlideAdditions,
+            hasSlideRemovals,
+            hasDeckProps,
+            skipBackend: shouldSkipBackend
+          });
+
+          updateDeckData(updated, { skipBackend: shouldSkipBackend });
         }
         return;
       } catch (e) {
@@ -1364,12 +1381,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               ]);
               // Prevent any trailing tool/progress lines from appearing after this
               agentFlowLockoutUntilRef.current = Date.now() + 1500;
-              // Clear preview guards so realtime DB updates are not suppressed
+
+              // CRITICAL FIX: Delay clearing preview guards to prevent race conditions
+              // Keep guards active for 2 seconds to block stale Supabase realtime updates
               try {
-                if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-                if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                const clearGuardsDelay = 2000; // Let backend write complete before accepting realtime updates
+                setTimeout(() => {
+                  if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                  if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                  console.log('[Realtime][edit.applied] Preview guards cleared after', clearGuardsDelay, 'ms');
+                }, clearGuardsDelay);
               } catch {}
-              // No under-input plan indicator to hide anymore
+
               // Apply diff locally if we have it for instant component update; fallback to refresh
               try {
                 const editId = appliedEditId;
@@ -1391,6 +1414,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     });
                   }, 0);
                   proposedDiffsRef.current.delete(editId);
+
+                  // CRITICAL FIX: Backend has already persisted changes via auto-apply
+                  // Reload the deck from Supabase to get the persisted state
+                  // Use a delay to ensure backend write is complete
+                  setTimeout(() => {
+                    const { loadDeck } = useDeckStore.getState();
+                    if (typeof loadDeck === 'function') {
+                      console.log('[Realtime][edit.applied] Reloading deck from backend after persistence');
+                      loadDeck();
+                    }
+                  }, 500); // Small delay to ensure backend write completes
                 } else {
                   if (!diff && appliedMessageId) {
                     diff = pendingDiffsByMessageIdRef.current.get(appliedMessageId);
@@ -1403,6 +1437,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     applyDeckDiffRespectingEditMode(diff);
                     // eslint-disable-next-line @typescript-eslint/no-floating-promises
                     maybeOptimizeFontsForDiff(diff);
+
+                    // NOTE: Backend has already persisted changes via auto-apply
+                    // Don't call applyDraftChanges() here as it would pause subscriptions
+                    // and block the incoming Supabase realtime update with the persisted data
                   } else {
                     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
                     if (normalizedAppliedSlides.length > 0) {
@@ -1889,11 +1927,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           }
           if (evt.type === 'deck.edit.applied') {
             setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
-            // Clear preview guards so Supabase realtime merges are no longer suppressed
+
+            // CRITICAL FIX: Don't clear preview guards immediately - keep them for 2 seconds
+            // to prevent stale Supabase realtime updates from overwriting our local changes
             try {
-              if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-              if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+              const clearGuardsDelay = 2000; // 2 seconds to let backend write complete
+              setTimeout(() => {
+                if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+              }, clearGuardsDelay);
             } catch {}
+
             // Persist immediately in edit mode to avoid losing AI changes when toggling modes
             try {
               const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
@@ -1904,15 +1948,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 }
               }
             } catch {}
-            // As a safety net, trigger a quick deck refetch to reflect the applied state if no diff/slides were cached
-            try {
-              const loadDeck = (useDeckStore as any).getState().loadDeck;
-              if (typeof loadDeck === 'function') {
-                setTimeout(() => {
-                  try { loadDeck(); } catch {}
-                }, 150);
-              }
-            } catch {}
+
+            // CRITICAL FIX: Removed immediate loadDeck() refetch that was causing edits to revert
+            // The diff has already been applied locally by the main handler (line 1380)
+            // A refetch here pulls stale data before the backend has finished writing
+            // Instead, trust the local diff application and let Supabase realtime sync naturally
+
             return;
           }
           if (evt.type === 'progress.update') {

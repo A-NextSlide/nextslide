@@ -400,6 +400,11 @@
       },
       "height": "600-800px optimal"
     },
+    "color_rules": {
+      "CRITICAL": "NEVER use {{background}} color for chart data (bars, lines, pie slices, points) - it will be INVISIBLE!",
+      "allowed_colors": "Use {{accent}}, {{secondary}}, or {{text}} for data visualization",
+      "background_only_for": "Only use {{background}} for chart backgroundColor property (the chart's background, not the data)"
+    },
     "theme_detection": {
       "light_backgrounds": [
         "#FFFFFF",

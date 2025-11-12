@@ -48,12 +48,10 @@ export const ComponentStateProvider: React.FC<{ children: React.ReactNode }> = (
         ...currentState,
         ...newState
       };
-      
-      // Only update if the state has actually changed
-      if (JSON.stringify(currentState) === JSON.stringify(mergedState)) {
-        return prev;
-      }
-      
+
+      // CRITICAL FIX: Don't use JSON.stringify comparison - it's too slow and can miss updates
+      // Always update state to ensure rapid state changes (like loading states) are captured
+      // React will handle the diffing and only re-render if needed
       return {
         ...prev,
         [componentId]: mergedState

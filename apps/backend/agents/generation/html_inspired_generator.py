@@ -242,8 +242,8 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             detail_level = 'detailed' if visual_density in ["data-heavy", "rich"] else 'standard'
 
         # Mode detection logic based on detail_level:
-        # - "detailed" → DETAILED MODE (comprehensive, data-rich, 60-80% charts)
-        # - "standard"|"quick" → PRESENTATION MODE (design-focused, <30% charts, high impact only)
+        # - "detailed" → DETAILED MODE (comprehensive, data-rich, 60-80% charts/tables)
+        # - "standard"|"quick" → PRESENTATION MODE (design-focused, 5-10% charts MAX, extremely rare)
         mode = "detailed" if detail_level == "detailed" else "presentation"
 
         logger.info(f"🎨 [MODE DETECTION] detail_level={detail_level} → mode={mode.upper()}")

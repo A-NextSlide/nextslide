@@ -333,10 +333,10 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
     You will respect the rules outlined in the <editor_notes> tag.
     It is important that you fully define the component and that you dont leave any ambiguity.
     """
-    
+
     component_model = registry.get_component_model(component_args.component_type)
     slide_summary = get_slide_summary(deck_data, component_args.slide_id)
-    
+
     # Get dynamic context based on component type
     dynamic_context = ""
     if component_args.component_type == "Image":
@@ -347,7 +347,43 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
             {image_context}
             </image_search_context>
             """
-    
+    elif component_args.component_type == "CustomComponent":
+        # Add specific guidance for CustomComponent to enforce React.createElement syntax
+        dynamic_context = f"""
+            <customcomponent_rules>
+            CRITICAL: CustomComponent render MUST use React.createElement syntax ONLY.
+
+            ❌ NEVER use JSX syntax: <div>, <svg>, <circle>
+            ✅ ALWAYS use: React.createElement('div', ...), React.createElement('svg', ...)
+
+            Example structure:
+            function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
+              var padding = props.padding || 32;
+              var value = props.value || 75;
+              var primaryColor = props.primaryColor || props.color || '#3B82F6';
+              var secondaryColor = props.secondaryColor || '#8B5CF6';
+              var textColor = props.textColor || '#FFFFFF';
+
+              return React.createElement('div', {{
+                style: {{
+                  width: '100%', height: '100%', boxSizing: 'border-box',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: padding + 'px'
+                }}
+              }}, [
+                React.createElement('div', {{
+                  key: 'value',
+                  style: {{fontSize: '48px', fontWeight: '900', color: primaryColor}}
+                }}, String(value) + '%')
+              ]);
+            }}
+
+            For D3 visualizations, use d3.select() on refs, NOT JSX.
+            For animations, use anime() or gsap() with refs, NOT JSX.
+            NO imports, NO JSX, NO template literals with backticks.
+            </customcomponent_rules>
+            """
+
     prompt = f"""
     <editor_notes>
     {editor_notes}

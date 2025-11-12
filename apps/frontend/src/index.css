@@ -1120,6 +1120,23 @@ body {
   animation: none !important;
 }
 
+/* CRITICAL: Enable click-through for interactive CustomComponents */
+/* In edit mode, CustomComponents with interactive content need to receive clicks */
+[data-interactive-component="true"] {
+  pointer-events: auto !important;
+}
+
+/* But keep selection overlay working for the component wrapper */
+.component-wrapper[data-component-type="CustomComponent"] {
+  /* The wrapper can still be selected, but content inside gets clicks */
+  pointer-events: auto;
+}
+
+/* All children of interactive CustomComponents should receive events */
+[data-interactive-component="true"] * {
+  pointer-events: auto !important;
+}
+
 /* Smooth typing animation for ChatInputView */
 @keyframes typewriter {
   from {

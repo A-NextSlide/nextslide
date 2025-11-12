@@ -71,10 +71,12 @@ Canvas: 1920×1080px | Output: JSON components
 • 🚨 CRITICAL: tickRotation MUST be 0 degrees - NEVER rotate (-45, 30-45, etc)
 • If labels are long, increase margin.bottom (80-100) instead of rotating labels
 • Colors: Use theme {{accent}} for most data, only highlight outliers with different color
+• 🚨 CRITICAL: NEVER use {{background}} for chart data (bars, lines, pie slices) - it will be invisible!
 • Verify: x + width ≤ 1840, y + height ≤ 1020
 
 **COLORS**
-• Theme only: {{background}}, {{text}}, {{accent}}
+• Theme only: {{background}}, {{text}}, {{accent}}, {{secondary}}
+• For chart data: Use {{accent}}, {{secondary}}, or {{text}} - NEVER {{background}}!
 • Never hardcode: #3B82F6, etc.
 
 **ICONS**
@@ -171,10 +173,11 @@ Make slides clean, organized, and impactful!
    - Positioned to NOT overlap images (80px gap)
    - Use **bold** for numbers/key data
 
-3. CHARTS (Sparingly - Only when data demands it)
-   - Use ONLY for numerical comparisons
-   - Prefer images/diagrams over charts
-   - Max 1-2 charts per 10-slide deck
+3. CHARTS (EXTREMELY RARE - Only when absolutely necessary)
+   - Use ONLY for complex numerical comparisons with 10+ data points
+   - Prefer images/diagrams/text over charts
+   - Max 1 chart per 15-20 slides (5% density)
+   - Default to NO CHARTS unless data is impossible to understand otherwise
 
 ═══════════════════════════════════════
 📐 LAYOUT PATTERNS (NO OVERLAPS!)

@@ -150,45 +150,65 @@ export async function enrichThemeWithFontMetrics(
   theme: any
 ): Promise<any> {
   if (!theme?.typography) {
+    console.warn('📏 No typography in theme, skipping font measurement');
     return theme;
   }
 
+  console.log('📏 Starting font measurement for theme typography...');
   const enrichedTheme = { ...theme };
   const typography = { ...enrichedTheme.typography };
 
   // Measure heading/hero font
+  // Backend format uses hero_title with 'family' key
   const heading = typography.heading || typography.hero_title;
-  if (heading?.fontFamily || heading?.family) {
+  if (heading) {
     const fontFamily = heading.fontFamily || heading.family;
-    const ratio = await measureFontWhenReady(fontFamily);
+    if (fontFamily) {
+      try {
+        const ratio = await measureFontWhenReady(fontFamily);
 
-    if (typography.heading) {
-      typography.heading = { ...heading, charWidthRatio: ratio };
-    }
-    if (typography.hero_title) {
-      typography.hero_title = { ...heading, charWidthRatio: ratio };
-    }
+        // Update both possible keys
+        if (typography.heading) {
+          typography.heading = { ...typography.heading, charWidthRatio: ratio };
+        }
+        if (typography.hero_title) {
+          typography.hero_title = { ...typography.hero_title, charWidthRatio: ratio };
+        }
 
-    console.log(`📏 Measured ${fontFamily} (heading): ${ratio.toFixed(3)}`);
+        console.log(`📏 ✓ Measured ${fontFamily} (heading/hero): ${ratio.toFixed(3)}`);
+      } catch (err) {
+        console.error(`📏 ✗ Failed to measure ${fontFamily} (heading):`, err);
+      }
+    }
   }
 
   // Measure paragraph/body font
+  // Backend format uses body_text with 'family' key
   const paragraph = typography.paragraph || typography.body_text;
-  if (paragraph?.fontFamily || paragraph?.family) {
+  if (paragraph) {
     const fontFamily = paragraph.fontFamily || paragraph.family;
-    const ratio = await measureFontWhenReady(fontFamily);
+    if (fontFamily) {
+      try {
+        const ratio = await measureFontWhenReady(fontFamily);
 
-    if (typography.paragraph) {
-      typography.paragraph = { ...paragraph, charWidthRatio: ratio };
-    }
-    if (typography.body_text) {
-      typography.body_text = { ...paragraph, charWidthRatio: ratio };
-    }
+        // Update both possible keys
+        if (typography.paragraph) {
+          typography.paragraph = { ...typography.paragraph, charWidthRatio: ratio };
+        }
+        if (typography.body_text) {
+          typography.body_text = { ...typography.body_text, charWidthRatio: ratio };
+        }
 
-    console.log(`📏 Measured ${fontFamily} (body): ${ratio.toFixed(3)}`);
+        console.log(`📏 ✓ Measured ${fontFamily} (paragraph/body): ${ratio.toFixed(3)}`);
+      } catch (err) {
+        console.error(`📏 ✗ Failed to measure ${fontFamily} (body):`, err);
+      }
+    }
   }
 
   enrichedTheme.typography = typography;
+
+  console.log('📏 Font measurement complete. Typography:', typography);
   return enrichedTheme;
 }
 

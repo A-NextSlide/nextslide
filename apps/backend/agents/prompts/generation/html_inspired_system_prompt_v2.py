@@ -213,18 +213,20 @@ You will receive: PRESENTATION MODE or DETAILED MODE. Design accordingly.
 **PRESENTATION MODE - Bold, Visual, High-Impact**
 • HUGE typography (title 450-650pt, supporting 64-120pt, body 36-48pt)
 • Strategic images (20-30% of slides, ONLY for product/teaching)
-• Use CustomComponent for concepts instead of generic images
+• 🚫 NO Chart components - USE CustomComponent for ALL data visualizations
+• Create unique, branded CustomComponents for stats, metrics, comparisons
 • Embrace whitespace - don't fill every slide with images!
 • Interactive components (quizzes, sliders, animations)
-• Minimal charts (20-30% chart density, high-impact data only)
 • Generous spacing (60-80px gaps)
 • Use PATTERN 1 (split-screen) or PATTERN 6 (hero stat) most often
+• Make each slide MEMORABLE with custom visualizations
 
 **DETAILED MODE - Structured, Data-Rich, Professional**
 • Large typography (title 200-280pt, section 64-80pt, body 28-36pt)
 • Aggressive data visualization (60-80% of content slides)
 • Use Tables for structured data comparisons (rows/columns)
-• Use Charts for trends and numerical comparisons
+• Charts acceptable for complex datasets (15+ points, multiple series)
+• Prefer CustomComponent for simpler visualizations (bars, pies, stats)
 • Multiple charts/tables per slide when comparing metrics
 • Tight spacing (24-32px gaps)
 • Use PATTERN 4 (chart+insights) or PATTERN 5 (grid) most often
@@ -572,7 +574,8 @@ Margins: 80px from all edges
 **CHART PROPERTIES**
 • Multi-series: showLegend=true, data has "series" field
 • Single-series: showLegend=false
-• Colors: Theme colors only
+• Colors: Use {{accent}}, {{secondary}}, or {{text}} - NEVER {{background}}!
+• 🚨 CRITICAL: NEVER use {{background}} color for bars, lines, pie slices, or any data visualization - it will be invisible!
 • Data density: Presentation 8-15 points, Detailed 12-20+ points
 • Margins: ALWAYS set margin: {top: 20, right: 20, bottom: 60, left: 80}
   - bottom: 60 for x-axis labels
@@ -1213,132 +1216,934 @@ Use these formatting options for emphasis:
 • Mix fonts between different SECTIONS, not between individual bullets
 
 ═══════════════════════════════════════════════════════════════════════════════
-🚀 CUSTOMCOMPONENT - PREFER OVER IMAGES FOR CONCEPTS
+🚀 CUSTOMCOMPONENT - POWERFUL INTERACTIVE & VISUAL COMPONENTS
 ═══════════════════════════════════════════════════════════════════════════════
 
-🎨 **USE CUSTOMCOMPONENT TO ILLUSTRATE CONCEPTS (Instead of generic images!)**
+🎨 **USE CUSTOMCOMPONENT FOR INTERACTIVE & VISUAL ELEMENTS**
 
 **WHEN TO USE:**
-• Illustrate abstract concepts (process flows, comparisons, frameworks)
-• Interactive elements (quizzes, polls, calculators, steppers)
-• Dashboards with multiple metrics
-• Timelines and progress indicators
-• Before/after comparisons with sliders
-• ANY concept that needs visual explanation
+✅ **Metrics & Stats** - Animated counters, hero numbers, KPI dashboards
+✅ **Comparisons** - Before/after sliders, side-by-side stats
+✅ **Process Flows** - Step diagrams, roadmaps, workflows
+✅ **Timelines** - Progress indicators, roadmap visualization
+✅ **Interactive** - Quizzes, polls, calculators, toggles
+✅ **Data Viz** - Custom charts, gauges, progress rings
+✅ **Frameworks** - Diagrams, matrix layouts, hierarchies
 
-**INTERACTIVE COMPONENTS - MAKE THEM FUNCTIONAL!**
+**CUSTOMCOMPONENT CODING RULES - CRITICAL:**
 
-**1. QUIZ (Fully Working):**
 ```javascript
-function render({props, state, updateState}) {
-  var question = props.question || 'Question?';
-  var options = props.options || ['A', 'B', 'C'];
-  var correct = props.correctAnswer || 0;
+// 1. SIGNATURE - Always include all parameters
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+
+  // 2. EXTRACT PROPS AT TOP - Define padding FIRST, then all other props
+  var padding = props.padding || 32;
+  var width = props.width || containerWidth || 600;
+  var height = props.height || containerHeight || 300;
+
+  // 3. CALCULATE AVAILABLE SPACE
+  var availableWidth = width - padding * 2;
+  var availableHeight = height - padding * 2;
+
+  // 4. EXTRACT ALL VISUAL PROPS (use theme colors!)
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#8B5CF6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
+
+  // 5. EXTRACT CONTENT PROPS (with sensible defaults)
+  var title = props.title || '';
+  var value = props.value || props.mainText || props.content || props.text || '';
+  var label = props.label || '';
+
+  // 6. CALCULATE DYNAMIC SIZES (responsive to available space)
+  var valueSize = Math.min(
+    Math.floor(availableWidth / Math.max(3, String(value).length * 0.6)),
+    Math.floor(availableHeight * 0.5)
+  );
+  var labelSize = Math.min(36, Math.floor(availableWidth / 12));
+
+  // 7. ROOT CONTAINER STYLE - MANDATORY STRUCTURE
+  var rootStyle = {
+    width: '100%',
+    height: '100%',
+    maxWidth: '100%',
+    maxHeight: '100%',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: padding + 'px',
+    fontFamily: fontFamily
+  };
+
+  // 8. RETURN REACT ELEMENT
+  return React.createElement('div', {style: rootStyle}, [
+    // Your content here - use gradient text for impact!
+    React.createElement('div', {
+      key: 'value',
+      style: {
+        fontSize: Math.max(24, valueSize) + 'px',
+        fontWeight: '900',
+        background: 'linear-gradient(135deg, ' + primaryColor + ' 0%, ' + secondaryColor + ' 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text',
+        lineHeight: 1,
+        letterSpacing: '-0.02em',
+        textAlign: 'center'
+      }
+    }, String(value))
+  ]);
+}
+```
+
+**GOLDEN RULES - NEVER BREAK THESE:**
+1. **Extract padding FIRST**: `var padding = props.padding || 32;`
+2. **Calculate available space**: `availableWidth = width - padding * 2`
+3. **Root must have**: `width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', boxSizing: 'border-box', overflow: 'hidden'`
+4. **Use flexDirection: 'column'** for main container (prevents layout issues)
+5. **All sizes must FIT**: Calculate responsive sizes based on availableWidth/availableHeight
+6. **Theme colors via props**: `primaryColor = props.primaryColor || props.color`
+7. **Use React.createElement** only - NO JSX, NO imports, NO template literals
+8. **Declare all variables**: Never reference undefined variables
+9. **NO apostrophes in text**: Use straight quotes or escape properly
+10. **Handle isThumbnail**: Skip animations when `isThumbnail` is true
+
+**EXAMPLE 1: ANIMATED HERO STAT (with anime.js)**
+```javascript
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 32;
+  var width = props.width || containerWidth || 600;
+  var height = props.height || containerHeight || 400;
+  var availableWidth = width - padding * 2;
+  var availableHeight = height - padding * 2;
+
+  var targetValue = props.value || 92;
+  var label = props.label || 'Success Rate';
+  var suffix = props.suffix || '%';
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#8B5CF6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
+
+  var currentValue = state.animatedValue || 0;
+  var valueRef = React.useRef(null);
+
+  var valueSize = Math.min(
+    Math.floor(availableWidth / Math.max(2, (String(targetValue) + suffix).length * 0.5)),
+    Math.floor(availableHeight * 0.6)
+  );
+  var labelSize = Math.min(42, Math.floor(availableWidth / 10));
+
+  React.useEffect(function() {
+    if (isThumbnail || !valueRef.current) return;
+
+    // Animate number counting up
+    anime({
+      targets: {value: currentValue},
+      value: targetValue,
+      duration: 1500,
+      easing: 'easeOutExpo',
+      round: 1,
+      update: function(anim) {
+        var val = Math.round(anim.animations[0].currentValue);
+        updateState({animatedValue: val});
+        if (valueRef.current) {
+          valueRef.current.textContent = val + suffix;
+        }
+      }
+    });
+  }, [targetValue, isThumbnail]);
+
+  return React.createElement('div', {
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
+      flexDirection: 'column', position: 'relative', alignItems: 'center',
+      justifyContent: 'center', padding: padding + 'px', fontFamily: fontFamily
+    }
+  }, [
+    React.createElement('div', {
+      key: 'value',
+      ref: valueRef,
+      style: {
+        fontSize: Math.max(48, valueSize) + 'px',
+        fontWeight: '900',
+        background: 'linear-gradient(135deg, ' + primaryColor + ' 0%, ' + secondaryColor + ' 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text',
+        lineHeight: 1,
+        textAlign: 'center'
+      }
+    }, currentValue + suffix),
+    React.createElement('div', {
+      key: 'label',
+      style: {
+        fontSize: labelSize + 'px',
+        color: textColor,
+        opacity: 0.85,
+        marginTop: '16px',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        textAlign: 'center'
+      }
+    }, String(label))
+  ]);
+}
+```
+
+**EXAMPLE 2: D3 RADIAL PROGRESS (Advanced Visualization)**
+```javascript
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 40;
+  var value = props.value || 75;
+  var maxValue = props.maxValue || 100;
+  var label = props.label || 'Progress';
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#8B5CF6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
+
+  var svgRef = React.useRef(null);
+  var size = Math.min(containerWidth || 400, containerHeight || 400) - padding * 2;
+  var radius = size / 2 - 20;
+
+  React.useEffect(function() {
+    if (!svgRef.current || isThumbnail) return;
+
+    var svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    var g = svg.append('g')
+      .attr('transform', 'translate(' + size/2 + ',' + size/2 + ')');
+
+    // Background arc
+    var arcBg = d3.arc()
+      .innerRadius(radius - 20)
+      .outerRadius(radius)
+      .startAngle(0)
+      .endAngle(2 * Math.PI);
+
+    g.append('path')
+      .attr('d', arcBg)
+      .attr('fill', 'rgba(255,255,255,0.1)');
+
+    // Animated progress arc
+    var angle = (value / maxValue) * 2 * Math.PI;
+    var arcProgress = d3.arc()
+      .innerRadius(radius - 20)
+      .outerRadius(radius)
+      .startAngle(0)
+      .cornerRadius(10);
+
+    var path = g.append('path')
+      .attr('fill', 'url(#gradient)')
+      .transition()
+      .duration(1500)
+      .ease(d3.easeExpOut)
+      .attrTween('d', function() {
+        var interpolate = d3.interpolate(0, angle);
+        return function(t) {
+          arcProgress.endAngle(interpolate(t));
+          return arcProgress();
+        };
+      });
+
+    // Gradient
+    var gradient = svg.append('defs')
+      .append('linearGradient')
+      .attr('id', 'gradient')
+      .attr('x1', '0%').attr('y1', '0%')
+      .attr('x2', '100%').attr('y2', '100%');
+
+    gradient.append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', primaryColor);
+
+    gradient.append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', secondaryColor);
+
+    // Center text
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.2em')
+      .attr('font-size', radius * 0.4 + 'px')
+      .attr('font-weight', '900')
+      .attr('fill', textColor)
+      .text(value);
+
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '1.2em')
+      .attr('font-size', radius * 0.15 + 'px')
+      .attr('fill', textColor)
+      .attr('opacity', '0.7')
+      .text(label);
+
+  }, [value, maxValue, primaryColor, secondaryColor, isThumbnail, size]);
+
+  return React.createElement('div', {
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', padding: padding + 'px', fontFamily: fontFamily
+    }
+  }, React.createElement('svg', {
+    ref: svgRef,
+    width: size,
+    height: size
+  }));
+}
+```
+
+**EXAMPLE 3: CONFETTI CELEBRATION (Interactive)**
+```javascript
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 32;
+  var title = props.title || 'Congratulations!';
+  var subtitle = props.subtitle || 'Click to celebrate';
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#8B5CF6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
+
+  var handleClick = function() {
+    if (isThumbnail) return;
+
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: [primaryColor, secondaryColor, '#EC4899', '#10B981']
+    });
+  };
+
+  return React.createElement('div', {
+    onClick: handleClick,
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: padding + 'px', fontFamily: fontFamily, cursor: 'pointer',
+      transition: 'transform 0.2s'
+    },
+    onMouseEnter: function(e) {
+      e.currentTarget.style.transform = 'scale(1.02)';
+    },
+    onMouseLeave: function(e) {
+      e.currentTarget.style.transform = 'scale(1)';
+    }
+  }, [
+    React.createElement('div', {
+      key: 'title',
+      style: {
+        fontSize: '72px', fontWeight: '900',
+        background: 'linear-gradient(135deg, ' + primaryColor + ', ' + secondaryColor + ')',
+        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text', textAlign: 'center', marginBottom: '16px'
+      }
+    }, title),
+    React.createElement('div', {
+      key: 'subtitle',
+      style: {
+        fontSize: '24px', color: textColor, opacity: 0.7,
+        textAlign: 'center'
+      }
+    }, subtitle)
+  ]);
+}
+```
+
+**EXAMPLE 4: INTERACTIVE MULTIPLE CHOICE QUIZ**
+```javascript
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 32;
+  var question = props.question || 'What is the capital of France?';
+  var options = props.options || ['London', 'Berlin', 'Paris', 'Madrid'];
+  var correctAnswer = props.correctAnswer || 2;
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var secondaryColor = props.secondaryColor || '#10B981';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
+
   var selected = state.selected;
   var revealed = state.revealed || false;
-  
-  var handleClick = function(i) {
+
+  var handleClick = function(index) {
     if (!revealed) {
-      updateState({selected: i, revealed: true});
+      updateState({selected: index, revealed: true});
+      if (index === correctAnswer) {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.7 },
+          colors: [primaryColor, secondaryColor]
+        });
+      }
     }
   };
-  
+
   return React.createElement('div', {
-    style: {width: '100%', height: '100%', padding: '48px', fontFamily: 'Inter'}
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', overflow: 'hidden', display: 'flex',
+      flexDirection: 'column', padding: padding + 'px', fontFamily: fontFamily,
+      justifyContent: 'center'
+    }
   }, [
-    React.createElement('div', {style: {fontSize: '42px', fontWeight: '700', marginBottom: '32px'}}, question),
-    options.map(function(opt, i) {
-      var isCorrect = i === correct;
+    React.createElement('div', {
+      key: 'question',
+      style: {
+        fontSize: '36px', fontWeight: '700', color: textColor,
+        marginBottom: '32px', textAlign: 'center'
+      }
+    }, question),
+    React.createElement('div', {
+      key: 'options',
+      style: { display: 'flex', flexDirection: 'column', gap: '16px' }
+    }, options.map(function(option, i) {
+      var isCorrect = i === correctAnswer;
       var isSelected = i === selected;
-      var bg = !revealed ? '#f3f4f6' : isCorrect ? '#10b98130' : isSelected ? '#ef444430' : '#f3f4f6';
-      var border = !revealed ? '#d1d5db' : isCorrect ? '#10b981' : isSelected ? '#ef4444' : '#d1d5db';
-      
+      var bgColor = !revealed
+        ? 'rgba(255,255,255,0.1)'
+        : isCorrect
+          ? secondaryColor + '30'
+          : isSelected
+            ? '#EF444430'
+            : 'rgba(255,255,255,0.05)';
+      var borderColor = !revealed
+        ? 'rgba(255,255,255,0.2)'
+        : isCorrect
+          ? secondaryColor
+          : isSelected
+            ? '#EF4444'
+            : 'rgba(255,255,255,0.1)';
+
       return React.createElement('div', {
         key: i,
         onClick: function() { handleClick(i); },
         style: {
-          padding: '20px 28px', marginBottom: '16px', borderRadius: '12px',
-          background: bg, border: '2px solid ' + border, cursor: revealed ? 'default' : 'pointer',
-          fontSize: '28px', fontWeight: '600', transition: 'all 0.3s'
+          padding: '20px 28px',
+          borderRadius: '12px',
+          background: bgColor,
+          border: '2px solid ' + borderColor,
+          cursor: revealed ? 'default' : 'pointer',
+          fontSize: '24px',
+          fontWeight: '600',
+          color: textColor,
+          transition: 'all 0.3s',
+          transform: isSelected && revealed ? 'scale(1.02)' : 'scale(1)'
         }
-      }, opt);
-    })
+      }, [
+        revealed && isCorrect && React.createElement('span', {
+          key: 'check',
+          style: { marginRight: '12px', color: secondaryColor, fontSize: '28px' }
+        }, '✓'),
+        revealed && isSelected && !isCorrect && React.createElement('span', {
+          key: 'x',
+          style: { marginRight: '12px', color: '#EF4444', fontSize: '28px' }
+        }, '✗'),
+        option
+      ]);
+    }))
   ]);
 }
 ```
 
-**2. PROCESS DIAGRAM (Visual Illustration):**
+**EXAMPLE 5: INTERACTIVE TRUE/FALSE QUIZ**
 ```javascript
-function render({props}) {
-  var steps = props.steps || ['Research', 'Design', 'Build', 'Test'];
-  var colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981'];
-  
-  return React.createElement('div', {
-    style: {width: '100%', height: '100%', display: 'flex', alignItems: 'center', gap: '20px'}
-  }, steps.map(function(step, i) {
-    return [
-      React.createElement('div', {
-        key: 'step-' + i,
-        style: {
-          flex: 1, background: colors[i], padding: '40px', borderRadius: '16px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '32px', fontWeight: '700', color: '#fff', textAlign: 'center'
-        }
-      }, step),
-      i < steps.length - 1 ? React.createElement('div', {
-        key: 'arrow-' + i,
-        style: {fontSize: '48px', color: '#64748b'}
-      }, '→') : null
-    ];
-  }).flat().filter(Boolean));
-}
-```
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 32;
+  var statement = props.statement || 'The Earth is flat';
+  var correctAnswer = props.correctAnswer || false;
+  var explanation = props.explanation || 'The Earth is approximately spherical.';
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
 
-**3. COMPARISON SLIDER (Interactive):**
-```javascript
-function render({props, state, updateState}) {
-  var leftValue = props.leftValue || 'Before: $1M';
-  var rightValue = props.rightValue || 'After: $5M';
-  var position = state.position || 50;
-  
+  var answered = state.answered;
+  var selectedAnswer = state.selectedAnswer;
+  var showExplanation = state.showExplanation || false;
+
+  var handleAnswer = function(answer) {
+    if (!answered) {
+      var isCorrect = answer === correctAnswer;
+      updateState({
+        answered: true,
+        selectedAnswer: answer,
+        showExplanation: true
+      });
+      if (isCorrect) {
+        confetti({
+          particleCount: 40,
+          spread: 50,
+          origin: { y: 0.7 },
+          colors: [primaryColor, '#10B981']
+        });
+      }
+    }
+  };
+
   return React.createElement('div', {
-    style: {width: '100%', height: '100%', padding: '48px', position: 'relative'}
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', display: 'flex', flexDirection: 'column',
+      padding: padding + 'px', fontFamily: fontFamily, justifyContent: 'center',
+      gap: '32px'
+    }
   }, [
-    React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', marginBottom: '40px'}}, [
-      React.createElement('div', {style: {fontSize: '48px', fontWeight: '700', color: '#ef4444'}}, leftValue),
-      React.createElement('div', {style: {fontSize: '48px', fontWeight: '700', color: '#10b981'}}, rightValue)
+    React.createElement('div', {
+      key: 'statement',
+      style: {
+        fontSize: '32px', fontWeight: '600', color: textColor,
+        textAlign: 'center', lineHeight: 1.4
+      }
+    }, statement),
+    React.createElement('div', {
+      key: 'buttons',
+      style: {
+        display: 'flex', gap: '24px', justifyContent: 'center'
+      }
+    }, [
+      React.createElement('div', {
+        key: 'true',
+        onClick: function() { handleAnswer(true); },
+        style: {
+          padding: '24px 64px',
+          borderRadius: '16px',
+          background: answered && selectedAnswer === true
+            ? (correctAnswer === true ? '#10B98130' : '#EF444430')
+            : 'rgba(255,255,255,0.1)',
+          border: '3px solid ' + (answered && selectedAnswer === true
+            ? (correctAnswer === true ? '#10B981' : '#EF4444')
+            : 'rgba(255,255,255,0.3)'),
+          cursor: answered ? 'default' : 'pointer',
+          fontSize: '28px',
+          fontWeight: '700',
+          color: textColor,
+          transition: 'all 0.3s'
+        }
+      }, 'TRUE'),
+      React.createElement('div', {
+        key: 'false',
+        onClick: function() { handleAnswer(false); },
+        style: {
+          padding: '24px 64px',
+          borderRadius: '16px',
+          background: answered && selectedAnswer === false
+            ? (correctAnswer === false ? '#10B98130' : '#EF444430')
+            : 'rgba(255,255,255,0.1)',
+          border: '3px solid ' + (answered && selectedAnswer === false
+            ? (correctAnswer === false ? '#10B981' : '#EF4444')
+            : 'rgba(255,255,255,0.3)'),
+          cursor: answered ? 'default' : 'pointer',
+          fontSize: '28px',
+          fontWeight: '700',
+          color: textColor,
+          transition: 'all 0.3s'
+        }
+      }, 'FALSE')
     ]),
-    React.createElement('input', {
-      type: 'range',
-      min: 0,
-      max: 100,
-      value: position,
-      onChange: function(e) { updateState({position: e.target.value}); },
-      style: {width: '100%', height: '8px', cursor: 'pointer'}
-    })
+    showExplanation && React.createElement('div', {
+      key: 'explanation',
+      style: {
+        padding: '24px',
+        borderRadius: '12px',
+        background: 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        fontSize: '20px',
+        color: textColor,
+        opacity: 0.85,
+        textAlign: 'center'
+      }
+    }, explanation)
   ]);
 }
 ```
 
-**CODING RULES:**
-1. Signature: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-2. Variables at top: var value = props.value || 'default';
-3. Use React.createElement('div', {style: {...}}, children)
-4. Root style: width: '100%', height: '100%', boxSizing: 'border-box'
-5. Colors: Use getContrastTextColor(bgColor) for text on backgrounds
-6. State: Use state/updateState for interactivity
-7. NO apostrophes in text (use TiptapTextBlock if you have contractions)
+**EXAMPLE 6: INTERACTIVE POLL/SURVEY**
+```javascript
+function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
+  var padding = props.padding || 32;
+  var question = props.question || 'Which feature do you want most?';
+  var options = props.options || ['Dark Mode', 'Collaboration', 'Templates', 'AI Assistant'];
+  var primaryColor = props.primaryColor || props.color || '#3B82F6';
+  var textColor = props.textColor || '#FFFFFF';
+  var fontFamily = props.fontFamily || 'Inter';
 
-**WHEN TO USE CUSTOMCOMPONENT INSTEAD OF IMAGES:**
-• Process flows → CustomComponent with arrows and steps
-• Comparisons → CustomComponent with side-by-side layout
-• Timelines → CustomComponent with animated progress
-• Frameworks → CustomComponent with boxes and connections
-• Any abstract concept → CustomComponent illustration
+  var votes = state.votes || {};
+  var userVote = state.userVote;
+  var totalVotes = Object.values(votes).reduce(function(sum, v) { return sum + v; }, 0);
 
-**WHEN NOT TO USE:**
-• Text has apostrophes/contractions - use TiptapTextBlock
-• Simple layouts - use primitives
+  var handleVote = function(index) {
+    if (userVote === undefined) {
+      var newVotes = Object.assign({}, votes);
+      newVotes[index] = (newVotes[index] || 0) + 1;
+      updateState({votes: newVotes, userVote: index});
+    }
+  };
+
+  return React.createElement('div', {
+    style: {
+      width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%',
+      boxSizing: 'border-box', display: 'flex', flexDirection: 'column',
+      padding: padding + 'px', fontFamily: fontFamily, justifyContent: 'center'
+    }
+  }, [
+    React.createElement('div', {
+      key: 'question',
+      style: {
+        fontSize: '32px', fontWeight: '700', color: textColor,
+        marginBottom: '32px', textAlign: 'center'
+      }
+    }, question),
+    React.createElement('div', {
+      key: 'options',
+      style: { display: 'flex', flexDirection: 'column', gap: '16px' }
+    }, options.map(function(option, i) {
+      var voteCount = votes[i] || 0;
+      var percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+      var isUserVote = userVote === i;
+
+      return React.createElement('div', {
+        key: i,
+        onClick: function() { handleVote(i); },
+        style: {
+          position: 'relative',
+          padding: '20px 24px',
+          borderRadius: '12px',
+          border: '2px solid ' + (isUserVote ? primaryColor : 'rgba(255,255,255,0.2)'),
+          cursor: userVote === undefined ? 'pointer' : 'default',
+          overflow: 'hidden',
+          transition: 'all 0.3s'
+        }
+      }, [
+        React.createElement('div', {
+          key: 'bar',
+          style: {
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            height: '100%',
+            width: percentage + '%',
+            background: 'linear-gradient(90deg, ' + primaryColor + '20, ' + primaryColor + '10)',
+            transition: 'width 0.5s ease-out'
+          }
+        }),
+        React.createElement('div', {
+          key: 'content',
+          style: {
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }
+        }, [
+          React.createElement('span', {
+            key: 'option',
+            style: {
+              fontSize: '22px',
+              fontWeight: isUserVote ? '700' : '600',
+              color: textColor
+            }
+          }, option),
+          totalVotes > 0 && React.createElement('span', {
+            key: 'percent',
+            style: {
+              fontSize: '20px',
+              fontWeight: '700',
+              color: primaryColor
+            }
+          }, percentage + '%')
+        ])
+      ]);
+    }))
+  ]);
+}
+```
+
+**AVAILABLE LIBRARIES IN CUSTOMCOMPONENT:**
+
+You have access to powerful visualization and animation libraries:
+
+1. **d3** - D3.js for advanced data visualizations
+   - Use for: Force graphs, hierarchies, radial charts, custom scales, arcs, paths
+   - Theme integration: Use primaryColor/secondaryColor in gradients, fills
+   - Example: `d3.arc()`, `d3.scaleLinear()`, `d3.interpolate()`
+
+2. **anime** - Anime.js for smooth, performant animations
+   - Use for: Number counting, smooth transitions, staggered animations
+   - Theme integration: Animate with theme colors
+   - Example: `anime({targets: el, translateY: 250, duration: 800})`
+
+3. **gsap** - GSAP for professional-grade animations
+   - Use for: Complex timelines, morphing, stagger effects
+   - Theme integration: Animate colors, transforms
+   - Example: `gsap.from(el, {opacity: 0, y: 50, stagger: 0.1})`
+
+4. **rough** - Rough.js for hand-drawn, sketchy aesthetics
+   - Use for: Casual presentations, creative designs, whiteboard style
+   - Theme integration: Use primaryColor for sketch strokes
+   - Example: `rough.canvas(canvas).rectangle(10, 10, 200, 100)`
+
+5. **confetti** - Canvas-confetti for celebration effects
+   - Use for: Success slides, achievements, milestones
+   - Theme integration: Pass theme colors array
+   - Example: `confetti({particleCount: 100, colors: [primaryColor]})`
+
+**WHEN TO USE EACH LIBRARY:**
+
+**Use d3 when:**
+✅ Creating custom data visualizations (force graphs, tree diagrams, sankey)
+✅ Need precise control over SVG paths and shapes
+✅ Working with complex data transformations
+✅ Building interactive network diagrams or hierarchies
+
+**Use anime when:**
+✅ Animating numbers counting up (KPIs, stats)
+✅ Smooth easing and timing functions needed
+✅ Simple element animations (fade, slide, scale)
+✅ Lightweight animations for better performance
+
+**Use gsap when:**
+✅ Complex animation sequences with timelines
+✅ Staggered animations (bars appearing one by one)
+✅ Morphing shapes or advanced transforms
+✅ Need professional-quality motion
+
+**Use rough when:**
+✅ Casual or creative presentation style
+✅ Whiteboard/sketch aesthetic
+✅ Hand-drawn charts and diagrams
+✅ Informal, approachable design
+
+**Use confetti when:**
+✅ Celebrating achievements or milestones
+✅ Interactive success feedback
+✅ Fun, engaging moments in presentation
+✅ End-of-presentation celebrations
+
+**CRITICAL: ONLY USE VALID COMPONENT TYPES**
+
+**Valid component types ONLY:**
+- TiptapTextBlock (text content)
+- Chart (bar, line, pie, area, scatter charts)
+- Image (photos, illustrations)
+- Shape (rectangles, circles, arrows)
+- Icon (lucide, heroicons icons)
+- Line (connecting lines)
+- CustomComponent (interactive elements, custom visualizations)
+
+**NEVER create made-up types like:**
+❌ "animated-progress-ring" (use CustomComponent with d3 instead)
+❌ "quiz-component" (use CustomComponent with quiz code instead)
+❌ "stat-card" (use CustomComponent or TiptapTextBlock instead)
+❌ "interactive-poll" (use CustomComponent with poll code instead)
+
+**CustomComponent JSON Format (CORRECT):**
+```json
+{
+  "type": "CustomComponent",
+  "props": {
+    "position": {"x": 80, "y": 280},
+    "width": 800,
+    "height": 600,
+    "render": "function render({props, state, updateState, id, isThumbnail}) { var padding = props.padding || 32; /* full code here */ return React.createElement('div', {...}); }",
+    "props": {
+      "question": "What is 2+2?",
+      "options": ["2", "3", "4", "5"],
+      "correctAnswer": 2,
+      "primaryColor": "{{accent}}",
+      "secondaryColor": "{{secondary}}",
+      "textColor": "{{text}}"
+    }
+  }
+}
+```
+
+**WHEN TO USE CUSTOMCOMPONENT VS OTHER COMPONENTS:**
+• **Interactive quizzes** → CustomComponent (multiple choice, true/false, fill-in-blank)
+• **Animated stats** → CustomComponent with anime/gsap (counting numbers, progress)
+• **Custom charts** → CustomComponent with d3 (radial, force graphs, sankey)
+• **Process flows** → CustomComponent with d3 or SVG (arrows, connected boxes)
+• **Celebrations** → CustomComponent with confetti (achievements, milestones)
+• **Hand-drawn style** → CustomComponent with rough (casual aesthetic)
+• **Polls/Surveys** → CustomComponent (clickable options with state)
+• **Standard charts** → Chart component (bar, line, pie - use native when sufficient)
+• **Text content** → TiptapTextBlock (always for readable text with formatting)
+• **Static images** → Image component (photos, screenshots)
+
+**COMMON MISTAKES TO AVOID:**
+❌ Missing padding extraction: `var padding = props.padding || 32;`
+❌ Not calculating available space: Must subtract padding × 2
+❌ Root without proper dimensions: Must have 100% width/height + boxSizing
+❌ Hardcoded colors: Use props.primaryColor, props.secondaryColor, textColor
+❌ Using apostrophes: Use straight quotes or escape
+❌ Missing flexDirection: 'column' for vertical layouts
+❌ Not handling isThumbnail: Skip heavy animations when true (check `if (isThumbnail) return;`)
+❌ Undefined variables: Always declare before use
+❌ Not using libraries: Libraries are available - use them for impressive visuals!
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 ICONS - USE SPARINGLY, NEXT TO TEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+**ICON USAGE RULES - FUNCTIONAL ONLY, NOT DECORATIVE**
+
+**WHEN TO USE ICONS:**
+✅ **Next to bullet points** - Small icons (24-32px) to the LEFT of text
+✅ **Section headers** - Icons with header text for visual hierarchy
+✅ **Process labels** - Icons marking steps in a process
+✅ **Info callouts** - Icon + short text block for emphasis
+✅ **Maximum**: 0-3 icons per slide (rarely more than 2)
+
+**WHEN NOT TO USE ICONS:**
+❌ Floating/decorative icons with no text association
+❌ Background patterns or filler elements
+❌ Icons used to fill empty space
+❌ More than 3 icons on a single slide
+❌ Icons as primary visual (use Image or CustomComponent instead)
+
+**ICON PLACEMENT - CRITICAL:**
+```json
+// Example: Icon next to bullet point
+[
+  {
+    "type": "Icon",
+    "props": {
+      "position": {"x": 120, "y": 305},
+      "width": 28,
+      "height": 28,
+      "iconLibrary": "lucide",
+      "iconName": "ChevronRight",
+      "color": "{{accent}}",
+      "strokeWidth": 2.5,
+      "zIndex": 3
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 164, "y": 300},  // x = iconX + iconWidth + 16px gap
+      "width": 700,
+      "height": 38,
+      "texts": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Revenue increased 42%"}]}]},
+      "fontSize": 32,
+      "alignment": "left",
+      "verticalAlignment": "top"
+    }
+  }
+]
+```
+
+**ICON POSITIONING RULES:**
+1. **Left alignment**: Icon to the LEFT of text, never right
+2. **Gap**: 16-20px between icon and text
+3. **Vertical centering**: Icon Y should align with text baseline
+   - Calculate: `iconY = textY + (textHeight - iconHeight) / 2`
+4. **Consistent sizing**: All icons on slide should be same size
+5. **Size ranges**:
+   - Bullet points: 24-32px
+   - Headers: 36-48px
+   - Large callouts: 48-64px
+
+**ICON LIBRARIES (Choose appropriate style):**
+- **lucide**: Modern, minimal, consistent stroke weight
+- **heroicons**: Clean, versatile, good for UI
+- **feather**: Light, simple, elegant
+- **tabler**: Comprehensive set, slightly playful
+
+**COMMON ICON NAMES (lucide):**
+- **Bullets/Points**: ChevronRight, ArrowRight, CheckCircle, Circle, Dot
+- **Growth/Success**: TrendingUp, ArrowUpRight, CheckCircle2, Trophy
+- **Alerts/Info**: AlertCircle, Info, AlertTriangle, Bell
+- **Actions**: Play, Download, Upload, Send, Share2
+- **Features**: Zap, Star, Heart, Award, Target
+- **Process**: Settings, Tool, Cog, Wrench, Code
+- **Communication**: MessageCircle, Mail, Phone, Users
+- **Time**: Clock, Calendar, Timer, Hourglass
+
+**EXAMPLE: ICONS WITH BULLET LIST**
+```json
+// BAD - Too many icons, decorative usage
+❌ 5+ icons scattered across slide
+❌ Large decorative icon in corner
+❌ Icons without associated text
+
+// GOOD - Functional icons next to text
+✅ Icon + bullet point (3 bullets = 3 icons)
+✅ All icons same size (28px)
+✅ Consistent spacing (16px gap)
+✅ Left-aligned with text
+
+[
+  {
+    "type": "Icon",
+    "props": {
+      "position": {"x": 120, "y": 305},
+      "width": 28,
+      "height": 28,
+      "iconLibrary": "lucide",
+      "iconName": "TrendingUp",
+      "color": "{{accent}}",
+      "strokeWidth": 2.5
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 164, "y": 300},
+      "width": 700,
+      "height": 38,
+      "texts": [{"text": "Revenue growth: 42%"}],
+      "fontSize": 32
+    }
+  },
+  {
+    "type": "Icon",
+    "props": {
+      "position": {"x": 120, "y": 365},
+      "width": 28,
+      "height": 28,
+      "iconLibrary": "lucide",
+      "iconName": "Users",
+      "color": "{{accent}}",
+      "strokeWidth": 2.5
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 164, "y": 360},
+      "width": 700,
+      "height": 38,
+      "texts": [{"text": "User base: 2.5M active"}],
+      "fontSize": 32
+    }
+  }
+]
+```
+
+**ICON SIZING BY CONTEXT:**
+- Small text (28-32pt): 24-28px icons
+- Medium text (36-42pt): 28-32px icons
+- Large text (48-64pt): 36-48px icons
+- Headers (72-96pt): 48-64px icons
+
+**REMEMBER:**
+• Icons are **accessories**, not primary visuals
+• Use **sparingly** - 0-2 per slide is ideal
+• Always **pair with text** - never floating alone
+• **Left-align** with consistent spacing
+• **Same size** for all icons on a slide
+• **Functional only** - no decorative usage
 
 ═══════════════════════════════════════════════════════════════════════════════
 📋 COMPONENT QUICK REFERENCE
@@ -1401,6 +2206,7 @@ Before outputting, verify EVERY requirement:
 ❌ Charts without titles
 ❌ Charts without proper margins (margin prop missing or too small)
 ❌ Charts or images too small (charts <500×400, images <400×300)
+❌ **Chart using {{background}} color for data** (bars, lines, pie slices - will be INVISIBLE!)
 ❌ **Chart + Image on same slide** (chart IS the visual - no images needed!)
 ❌ **Text overlapping with chart** (use PATTERN 4 layouts only)
 ❌ **Vertical banner stack** (3+ images stacked vertically like banners)
@@ -1441,16 +2247,29 @@ def get_mode_specific_guidance(mode: str) -> str:
 
 **FOCUS:**
 • Data-rich, structured layouts with tight spacing
-• Charts on 40-50% of content slides (ONLY when data is essential!)
+• CustomComponent for simpler visualizations (bars, pies, <15 points)
+• Chart acceptable ONLY for complex datasets (15+ points, multi-series)
 • Grid-based organization with clean sections
 • Tabular data uses Tables, not Charts
 
-**CHARTS:**
-• Use ONLY when visualization is clearly superior to text/table
+**DATA VISUALIZATION DECISION:**
+• < 15 data points → USE CustomComponent (animated, branded)
+• Simple comparison → USE CustomComponent
+• 15+ data points + multi-series trends → Chart acceptable
+• Educational/explanatory → USE CustomComponent
+
+**CHARTS (When Required):**
+• Use ONLY when: 15+ data points AND multi-series trends
 • Single: 500-650px width, adaptive height (typically 450-600px)
 • Titles: 22-24pt, {{text}}, positioned 36px above
-• Data density: 12-20+ points, multi-series comparisons
-• AVOID: Simple comparisons (use text instead), lists (use bullets)
+• Must show complex patterns that need precision reading
+• AVOID: Simple comparisons (use CustomComponent), lists (use bullets)
+
+**CUSTOMCOMPONENT (Preferred for Simpler Data):**
+• Stats, metrics, simple bar charts → Animated CustomComponent
+• Feature comparisons → Custom card grids
+• Process flows → Interactive timeline
+• Make it unique and branded, not generic
 
 **LAYOUT:**
 • Tight gaps: 24-32px between elements
@@ -1466,15 +2285,19 @@ def get_mode_specific_guidance(mode: str) -> str:
 **RESTRICTIONS:**
 • Icons: 0-2 max per slide
 • Images: Only when essential for context
-• No decorative shapes"""
+• No decorative shapes
+• Default to CustomComponent, Chart only when truly needed"""
     else:
         return """PRESENTATION MODE - "Design-First Storytelling"
+
+🚨 **CHART POLICY: NO CHART COMPONENTS - USE CUSTOMCOMPONENT INSTEAD**
 
 **FOCUS:**
 • Bold visual hierarchy with dramatic typography
 • Image-driven design (50-70% of slides should have images, NOT charts!)
-• RARE charts (10-20% density, exceptional data stories ONLY)
+• 🚫 ZERO Chart components allowed - CustomComponent for ALL data
 • Creative layouts with generous whitespace
+• **EDUCATIONAL CONTENT: Include interactive quizzes, polls every 3-5 slides**
 
 **TYPOGRAPHY:**
 • Title slides: 450-650pt, MASSIVE, alignment="left"
@@ -1484,24 +2307,38 @@ def get_mode_specific_guidance(mode: str) -> str:
 • Generous gaps: 60-80px
 
 **IMAGES:**
-• PRIMARY visual element - think of images FIRST, charts LAST
+• PRIMARY visual element - think of images FIRST
 • Large feature images: 800-1200px
 • Creative treatments: borderRadius, opacity, layering
 • Use for: storytelling, context, emotional impact, examples
 • searchQuery should be specific to the slide content
 
-**CHARTS:**
-• EXTREMELY RARE: Only 1-2 slides in entire deck should have charts
-• Use ONLY when: Time-series trends, large datasets (15+ points), multi-dimensional data
-• NEVER use for: Simple comparisons, lists, feature descriptions, educational concepts
-• Single chart: 700-850px wide, 500-650px tall
-• Titles: 28-32pt, bold, positioned 40-50px above
+**DATA VISUALIZATION - ALWAYS USE CUSTOMCOMPONENT:**
+• 🚫 NEVER use Chart component in presentation mode
+• ✅ ALWAYS create CustomComponent for data visualization
+• Stats → Animated stat cards with gsap
+• Bar charts → CustomComponent with animated bars using framer-motion
+• Pie charts → CustomComponent with interactive D3 pie/donut
+• Line charts → CustomComponent with recharts or custom SVG
+• Comparisons → Animated comparison cards
+• Metrics dashboard → Grid of stat cards with icons
+• **Each visualization should be UNIQUE and BRANDED** - not generic charts!
 
-**CHART ALTERNATIVES (USE THESE INSTEAD):**
-• Simple stats → Bold text with icons/shapes
-• Comparisons → Side-by-side text sections with images
-• Lists → Clean bullets with section headers and images
-• Process/timeline → CustomComponent or Icons + Lines
+**CUSTOMCOMPONENT EXAMPLES FOR DATA:**
+• "Sales by quarter" → AnimatedBarChart CustomComponent with gradient fills
+• "Market share" → Interactive donut with hover effects
+• "Growth trend" → Animated line with highlighted points
+• "Team metrics" → Dashboard grid with animated counters
+• "Process flow" → Step-by-step animated timeline
+• "Comparison" → Side-by-side cards with animated reveals
+
+**INTERACTIVE EDUCATIONAL CONTENT (Use liberally for teaching/learning):**
+• **Multiple Choice Quiz** → CustomComponent with question + 4 options, confetti on correct answer
+• **True/False Quiz** → CustomComponent with statement + TRUE/FALSE buttons, show explanation
+• **Poll/Survey** → CustomComponent with question + options showing live percentages
+• **Knowledge Check** → Add quiz every 3-5 content slides to reinforce learning
+• **Positioning**: Center quiz (x: 80-120, y: 200-280, width: 800-1000, height: 600-700)
+• **Props**: Pass question, options, correctAnswer, explanation, theme colors
 
 **TEXT:**
 • Break content into separate blocks with different fonts/sizes
@@ -1510,16 +2347,20 @@ def get_mode_specific_guidance(mode: str) -> str:
 • Keep it CONCISE - slides should be readable in 5 seconds
 
 **CREATIVITY:**
-• Use CustomComponent for unique visualizations (dashboards, timelines, comparisons)
+• Use CustomComponent for EVERY data visualization (no exceptions!)
+• Create unique, memorable visualizations - think Dribbble/Behance quality
+• **Educational**: Add quizzes, polls, animated reveals with anime/gsap
 • Layer elements with zIndex
 • Vary opacity for depth (0.3-1.0)
 • Mix font families for character
 
 **RESTRICTIONS:**
+• 🚫 NO Chart components allowed
 • Icons: 0-1 per slide (semantic meaning only)
 • No decorative shapes
 • No busy layouts
-• Charts are the EXCEPTION, not the rule"""
+• Charts are the EXCEPTION, not the rule
+• **EXCEPTION**: Interactive CustomComponents (quizzes, polls) are ENCOURAGED for educational decks"""
 
 
 def get_title_slide_guidance() -> str:

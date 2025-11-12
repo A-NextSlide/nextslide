@@ -61,15 +61,19 @@ def get_tools_and_call_map(
     registry: ComponentRegistry,
     current_slide_id: Optional[str],
 ) -> Tuple[List[Any], Dict[str, Any]]:
+    # Filter out ReactBits from editing agent - it requires specific pre-built component IDs
+    # For custom interactive components, use CustomComponent instead
+    available_types = [t for t in registry.get_component_types() if t != 'ReactBits']
+
     tools = [
         get_edit_component_model(
             deck_data=deck_data,
-            component_types=registry.get_component_types(),
+            component_types=available_types,
             component_ids=get_all_component_ids(deck_data, current_slide_id),
             slide_ids=get_all_slide_ids(deck_data),
         ),
-        get_create_new_component_model(component_types=registry.get_component_types()),
-        get_replace_component_model(component_types=registry.get_component_types()),
+        get_create_new_component_model(component_types=available_types),
+        get_replace_component_model(component_types=available_types),
         RemoveComponentArgs,
         StyleSlideArgs,
         UpdateBackgroundArgs,

@@ -154,17 +154,19 @@ def get_optimized_component_schemas() -> str:
   }
   ```
 
-═══ DISCOURAGED COMPONENTS (Use CustomComponent Instead) ═══
+═══ BANNED COMPONENTS IN PRESENTATION MODE ═══
 
-**Chart** - ⚠️ Consider CustomComponent instead for better design control
-  • If you MUST use Chart: { position, width: ≤850, height: ≤600, chartType, data, colors, showLegend: false }
+**Chart** - 🚫 DO NOT USE IN PRESENTATION MODE
+  • In presentation mode: USE CustomComponent for ALL data visualizations
+  • In detailed mode ONLY: If you have 15+ data points AND complex trends, Chart is acceptable
+  • { position, width: ≤850, height: ≤600, chartType, data, colors, showLegend: false }
   • ALWAYS add title above (TiptapTextBlock, 28pt, 40px above)
   • Verify boundaries: x + width ≤ 1840, y + height ≤ 1020
-  • Better alternative: CustomComponent with custom visualization
+  • 🎯 BETTER: CustomComponent with animated, branded visualization
 
-**Table** - ⚠️ Consider CustomComponent card grid instead
+**Table** - 🚫 Strongly discouraged - use CustomComponent instead
   • If you MUST use Table: { position, width, height, rows: [[{text, style}]], backgroundColor: null, borderWidth: 0 }
-  • Better alternative: CustomComponent with styled card layout
+  • 🎯 BETTER: CustomComponent with styled card grid layout
 
 ═══ WHEN TO USE WHAT ═══
 
@@ -172,12 +174,16 @@ def get_optimized_component_schemas() -> str:
   • All text content (headlines, body, bullets)
   • Multi-color formatted text
 
-✅ **Use CustomComponent for:**
-  • Stats/metrics (ALWAYS prefer over standalone numbers)
-  • Card layouts (features, pricing, team members)
-  • Dashboards (2+ metrics in a grid)
-  • Any complex UI pattern
-  • Interactive elements
+✅ **Use CustomComponent for (MANDATORY FOR DATA):**
+  • 📊 ALL data visualizations in presentation mode (bars, lines, pies, etc.)
+  • 📈 Stats/metrics (ALWAYS prefer over standalone numbers)
+  • 🎴 Card layouts (features, pricing, team members)
+  • 📱 Dashboards (2+ metrics in a grid)
+  • 🎯 Any complex UI pattern
+  • ⚡ Interactive elements, animations
+  • 🎨 Unique, branded designs that stand out
+  • 🔄 Processes, flows, timelines
+  • 📚 Educational concepts and explanations
 
 ✅ **Use Icon for:**
   • Dashboard metric icons (1-2 per slide MAX)
@@ -188,9 +194,9 @@ def get_optimized_component_schemas() -> str:
   • Visual content (photos, diagrams, illustrations)
   • Logo placement (objectFit="contain")
 
-❌ **Avoid:**
+🚫 **NEVER USE:**
+  • Chart component in presentation mode (use CustomComponent)
   • Decorative shapes (use CustomComponent backgrounds instead)
-  • Standalone charts (use CustomComponent visualizations)
   • Tables (use CustomComponent card grids)
   • Multiple icons (keep it minimal - 0-2 max)
 

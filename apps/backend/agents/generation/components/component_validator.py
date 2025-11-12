@@ -1018,10 +1018,10 @@ class ComponentValidator:
         if position.get('y', 0) < 0:
             position['y'] = 0
             logger.debug(f"Fixed negative y position for {comp_type}")
-        
+
         # Update component with validated values
         component['props']['position'] = position
-        
+
         return component
     
     def _validate_image_boundaries(self, component: Dict[str, Any]) -> Dict[str, Any]:

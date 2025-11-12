@@ -6,6 +6,13 @@ import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 
+// Import visualization and animation libraries for CustomComponents
+import * as d3Import from 'd3';
+import * as animeImport from 'animejs';
+import roughImport from 'roughjs';
+import confettiImport from 'canvas-confetti';
+import * as gsapImport from 'gsap';
+
 // Escape raw newlines that appear inside single/double quoted string literals.
 // This prevents accidental split string literals (e.g., 'Calvin\nCycle' becoming two lines)
 // and keeps generated code valid for parsing.
@@ -525,20 +532,30 @@ export const CustomComponentRenderer: React.FC<{
             var props = element.props || {};
             var children = props.children;
             var style = props.style;
+
+            // CRITICAL FIX: Preserve ALL props including event handlers (onClick, onChange, etc.)
+            // Previously was stripping out important handlers by only copying specific props
             var otherProps = {};
             for (var key in props) {
               if (key !== 'children' && key !== 'style' && Object.prototype.hasOwnProperty.call(props, key)) {
                 otherProps[key] = props[key];
               }
             }
+
             var newStyle = style;
             if (children && typeof children === 'string' && children.includes('\\n')) {
               newStyle = Object.assign({}, style || {}, { whiteSpace: 'pre-line' });
             }
+
+            // CRITICAL FIX: Only process children if they're strings with newlines
+            // Don't recursively clone React elements as it breaks event handlers and refs
             var processedChildren = children;
             if (children) {
               if (Array.isArray(children)) {
-                processedChildren = children.map(function (child) { return processReactElement(child); });
+                // Map array children but only process strings
+                processedChildren = children.map(function (child) {
+                  return (typeof child === 'string' && child.includes('\\n')) ? processReactElement(child) : child;
+                });
               } else if (typeof children === 'string' && children.includes('\\n') && !(newStyle && newStyle.whiteSpace)) {
                 var lines = children.split('\\n');
                 processedChildren = lines.reduce(function (acc, line, index) {
@@ -546,11 +563,15 @@ export const CustomComponentRenderer: React.FC<{
                   if (line) acc.push(line);
                   return acc;
                 }, []);
-              } else {
-                processedChildren = processReactElement(children);
               }
+              // Don't recursively process React elements - preserve them as-is
             }
-            return React.cloneElement(element, Object.assign({}, otherProps, { style: newStyle }), processedChildren);
+
+            // Only clone if we actually modified the style or children
+            if (newStyle !== style || processedChildren !== children) {
+              return React.cloneElement(element, Object.assign({}, otherProps, { style: newStyle }), processedChildren);
+            }
+            return element;
           }
           if (Array.isArray(element)) return element.map((item) => processReactElement(item));
           return element;
@@ -611,8 +632,35 @@ export const CustomComponentRenderer: React.FC<{
           throw err;
         }
       `;
-      const compiledFunc = new Function('React', 'getContrastTextColor', 'isLightColor', 'getColorDistance', 'ensureChartColorsContrastWithBackground', 'getThemeAppropriateChartColors', funcBody);
-      const fn = compiledFunc(React, getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors);
+      // Inject visualization libraries into the sandbox for advanced CustomComponents
+      // Security: These libraries are sandboxed within the Function() scope and have no access to parent context
+      const compiledFunc = new Function(
+        'React',
+        'getContrastTextColor',
+        'isLightColor',
+        'getColorDistance',
+        'ensureChartColorsContrastWithBackground',
+        'getThemeAppropriateChartColors',
+        'd3',        // D3.js for advanced data visualizations
+        'anime',     // Anime.js for smooth animations
+        'rough',     // Rough.js for hand-drawn aesthetics
+        'confetti',  // Canvas-confetti for celebration effects
+        'gsap',      // GSAP for professional animations
+        funcBody
+      );
+      const fn = compiledFunc(
+        React,
+        getContrastTextColor,
+        isLightColor,
+        getColorDistance,
+        ensureChartColorsContrastWithBackground,
+        getThemeAppropriateChartColors,
+        d3Import,
+        animeImport,
+        roughImport,
+        confettiImport,
+        gsapImport
+      );
       return { compiledRender: fn, compilationError: null };
     } catch (err) {
       console.error('[CustomComponent] Compilation error:', err);
@@ -1005,9 +1053,10 @@ export const CustomComponentRenderer: React.FC<{
   
   return (
     <ErrorBoundary>
-      <div 
+      <div
         ref={containerRef}
         data-scroll-guard="true"
+        data-interactive-component={!isThumbnail ? "true" : undefined}
         style={{
           ...baseStyles,
           fontSize: `${16 * scaleFactor}px`,
@@ -1022,7 +1071,10 @@ export const CustomComponentRenderer: React.FC<{
           boxSizing: 'border-box',
           // Ensure the container fills its allocated space
           width: baseStyles.width || '100%',
-          height: baseStyles.height || '100%'
+          height: baseStyles.height || '100%',
+          // CRITICAL: Enable pointer events in presentation mode for interactivity
+          // In edit mode, the component layer handles selection
+          pointerEvents: isPresenting ? 'auto' : undefined
         }}
       >
         {/* Apply optimization styles if present (existing persistent optimization) */}

@@ -186,9 +186,16 @@ When user wants to change the theme, colors, fonts, or logos (e.g., "change the 
 - "Make the theme nicer" → `{"action": "update_theme", "theme_changes": {"colors": {"search_query": "elegant premium sophisticated"}}}`
 - "Use warm colors" → `{"action": "update_theme", "theme_changes": {"colors": {"search_query": "warm inviting cozy"}}}`
 - "Use the Stripe brand colors" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "Stripe", "url": "stripe.com"}}}`
+- "Make it Instacart themed" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "Instacart", "url": "instacart.com"}}}`
+- "Use Nike brand" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "Nike", "url": "nike.com"}}}`
 - "Add the Apple logo" → `{"action": "update_theme", "theme_changes": {"logo": {"action": "add", "brand_names": ["Apple"]}}}`
 - "Remove the logo" → `{"action": "update_theme", "theme_changes": {"logo": {"action": "remove"}}}`
 - "Change font to Roboto" → `{"action": "update_theme", "theme_changes": {"fonts": {"family": "Roboto"}}}`
+
+**IMPORTANT: Brand Requests**
+When user mentions a company/brand name (Nike, Stripe, Instacart, Apple, etc.) and asks to use their theme/colors/branding:
+→ Use `"brand": {"name": "CompanyName", "url": "companyname.com"}`
+→ This will automatically fetch their logo, brand colors, and fonts!
 
 **CRITICAL RULE for color/theme requests:**
 ❗ WHENEVER a user mentions colors, themes, aesthetics, or visual style changes, you MUST:
