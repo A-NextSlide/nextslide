@@ -523,12 +523,12 @@ Margins: 80px from all edges
     "axisBottom": {
       "legend": "Year",                    // X-axis title (when appropriate)
       "legendOffset": 36,
-      "tickRotation": 0                    // Keep labels horizontal
+      "tickRotation": 0                    // ALWAYS 0 - NEVER -45 or rotated!
     },
     "axisLeft": {
       "legend": "Revenue (Millions)",      // Y-axis title (when appropriate)
       "legendOffset": -60,
-      "tickRotation": 0                    // Keep labels horizontal
+      "tickRotation": 0                    // ALWAYS 0 - NEVER -45 or rotated!
     },
     "showLegend": false,
     "backgroundColor": "#00000000"         // Transparent
@@ -581,9 +581,12 @@ Margins: 80px from all edges
   - axisBottom.legend: "Year", "Quarter", "Category" (x-axis label)
   - axisLeft.legend: "Revenue ($M)", "Users (K)", "%" (y-axis label with units)
   - legendOffset: 36 (bottom), -60 (left)
-  - tickRotation: 0 (ALWAYS - keeps labels horizontal and readable)
+  - tickRotation: 0 (MANDATORY - NEVER -45° or any other angle)
 • backgroundColor: "#00000000" (transparent)
-• Label rotation: ALWAYS set tickRotation: 0 on both axes to keep labels horizontal
+• 🚨 CRITICAL: Label rotation MUST be 0 degrees - NEVER rotate tick labels
+  - axisBottom: {"tickRotation": 0}  ← ALWAYS 0, never -45 or 30-45
+  - axisLeft: {"tickRotation": 0}    ← ALWAYS 0, never -45 or 30-45
+  - If labels are long, increase margin.bottom (80-100) instead of rotating
 
 ═══════════════════════════════════════════════════════════════════════════════
 📊 TABLES - USE FOR STRUCTURED DATA!
@@ -1366,6 +1369,7 @@ Before outputting, verify EVERY requirement:
 ✅ **FONT SIZE MINIMUMS** - Body ≥28pt, Headers ≥48pt, Titles ≥64pt (never smaller!)
 ✅ **CHART MARGINS** - margin: {top: 20, right: 20, bottom: 60, left: 80}
 ✅ **CHART AXIS TITLES** - Add axisBottom.legend and axisLeft.legend when appropriate
+✅ **TICK ROTATION** - ALWAYS 0 degrees (axisBottom.tickRotation: 0, axisLeft.tickRotation: 0) - NEVER -45 or rotated!
 ✅ **TABLE FONTS** - tableStyles.fontFamily={{bodyFont}}, fontSize 24-32pt
 ✅ **TABLE COLORS** - headerBackgroundColor={{accent}}20, textColor={{text}}
 ✅ **IMAGE ASPECT RATIOS** - height is 50-100% of width (no 1200×200 banners!)

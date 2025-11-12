@@ -398,8 +398,8 @@ class EnhancedPromptBuilder(SlidePromptBuilder):
                 "- Position with 80px gap from other components",
                 "- Use actual data from slide content",
                 "- Set showLegend: false for cleaner look",
-                "- Keep axis labels horizontal (tickRotation: 0) to prevent cutoff",
-                "- Axis config: ALWAYS set axisBottom.tickRotation: 0 and axisLeft.tickRotation: 0",
+                "- 🚨 CRITICAL: Keep axis labels horizontal (tickRotation: 0) - NEVER -45 or rotated!",
+                "- 🚨 Axis config: MANDATORY axisBottom.tickRotation: 0 and axisLeft.tickRotation: 0 - NO EXCEPTIONS!",
                 ""
             ])
         

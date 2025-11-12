@@ -66,9 +66,10 @@ Canvas: 1920×1080px | Output: JSON components
 • Margins: ALWAYS set margin: {top: 20, right: 20, bottom: 60, left: 80}
 • Fonts: ALWAYS set fontFamily: {{bodyFont}} for chart labels/text
 • Axis titles: Add axisBottom.legend and axisLeft.legend when appropriate
-  - axisBottom: {legend: "Year", legendOffset: 36, tickRotation: 0}
-  - axisLeft: {legend: "Revenue ($M)", legendOffset: -60, tickRotation: 0}
-• Tick rotation: ALWAYS set tickRotation: 0 - keep labels horizontal
+  - axisBottom: {legend: "Year", legendOffset: 36, tickRotation: 0}  ← ALWAYS 0, NEVER -45!
+  - axisLeft: {legend: "Revenue ($M)", legendOffset: -60, tickRotation: 0}  ← ALWAYS 0, NEVER -45!
+• 🚨 CRITICAL: tickRotation MUST be 0 degrees - NEVER rotate (-45, 30-45, etc)
+• If labels are long, increase margin.bottom (80-100) instead of rotating labels
 • Colors: Use theme {{accent}} for most data, only highlight outliers with different color
 • Verify: x + width ≤ 1840, y + height ≤ 1020
 

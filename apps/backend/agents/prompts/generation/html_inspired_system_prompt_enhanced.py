@@ -380,8 +380,8 @@ EFFECTS:
     "theme": "light",
     "showLegend": false,
     "colors": ["{{primary}}", "{{secondary}}"],
-    "axisBottom": { "tickRotation": 0, "legend": "Quarter" },
-    "axisLeft": { "tickRotation": 0, "legend": "Revenue ($M)" }
+    "axisBottom": { "tickRotation": 0, "legend": "Quarter" },  // ALWAYS 0 - NEVER -45!
+    "axisLeft": { "tickRotation": 0, "legend": "Revenue ($M)" }  // ALWAYS 0 - NEVER -45!
   }
 }
 
@@ -389,7 +389,7 @@ CHART TYPES: bar, line, pie, area, scatter, waterfall, radar, heatmap
 POSITIONING: Left half (x=80, width=880) OR Right half (x=960, width=880)
 COLORS: Use theme colors - most data in primary, only highlight key outliers in secondary
 FONTS: Always set fontFamily to {{bodyFont}} for consistency
-ROTATION: Always set tickRotation: 0 on both axes - keep labels horizontal
+🚨 ROTATION: MANDATORY tickRotation: 0 on both axes - NEVER -45 or rotated labels!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 7. CUSTOM COMPONENT - Interactive data viz, dashboards

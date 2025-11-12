@@ -556,9 +556,10 @@ const CardCarousel: React.FC<CardCarouselProps> = ({
           // Don't show it for manually added slides or the last slide
           // Show generating state for slides that don't have content yet during generation
           const hasNoContent = !isAddSlide && (!slide.content || slide.content.trim() === '');
-          // Show spinner when generating and slide has no content AND it's not a manually added slide
-          // Manually added slides (isManual: true) should show the editor immediately
-          const isGeneratingSlide = !isAddSlide && isGenerating && hasNoContent && !completedSlides.has(index) && !slide.isManual;
+
+          // ALWAYS show spinner for auto-generated slides without content, even if isGenerating is false
+          // This handles cases where the generation state gets out of sync
+          const isGeneratingSlide = !isAddSlide && hasNoContent && !slide.isManual && !completedSlides.has(index);
 
           // Debug logging for empty cards
           if (!isAddSlide && hasNoContent && index === currentIndex) {

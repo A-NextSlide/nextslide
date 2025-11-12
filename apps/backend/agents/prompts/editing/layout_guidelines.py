@@ -1,145 +1,107 @@
 layout_guidelines = f"""
-1. General Layout
-•	Maximum 1 concept per slide (1 chart, 1 idea, etc.).
-•	Create a clear visual hierarchy (largest = most important).
-•	Use the Rule of Thirds or center-aligned layouts.
-•	Leave breathing room — don't cram.
+🎨 CREATIVE LAYOUT PHILOSOPHY
 
-[Component guidelines are now in slide_generation_prompts.py]
+These are INSPIRATIONAL GUIDELINES, not rigid rules. Use them as a creative springboard.
+The Layout Architect will provide detailed positioning - your job is to execute their vision.
 
-⸻
+═══════════════════════════════════════════════════════════════════
 
-1. Title Slide - MAKE IT POP!
-	•	HERO IMAGE: Full-bleed 1920×1080 with text overlay
-	•	MASSIVE TITLE: 250-300pt font size, MUST overlap image/gradient for drama (ensure contrast)
-	•	Bold positioning: Center, off-center, or dramatic angles
-	•	Use gradients/overlays for text contrast on images
-	•	Subtitle: Still large (80-120pt) but secondary
-	•	Alignment: Centered OR left-aligned hero title (choose based on vibe and reading pattern)
-	•	Metadata row (subtle): presenter • organization • date — 24-28pt, muted color, increased letter-spacing
-	•	Metadata placement: Bottom-left or bottom-right; never compete with the hero title
-	•	Logo (optional): Small (80-160px) in a corner with ample clearspace; low visual weight
-	•	Spacing: Maintain 80px edge margins; align to grid; consistent vertical rhythm between title, subtitle, and metadata
+✨ GENERAL PRINCIPLES (Inspiration, not prescription):
 
-⸻
+• Focus: One main concept per slide - give it room to breathe
+• Hierarchy: Larger = more important, but break this rule when it creates interest
+• Balance: Use whitespace intentionally - empty space is powerful
+• Rhythm: Establish visual flow through sizing, spacing, and alignment
+• Surprise: Unexpected layouts are memorable - don't default to centered/safe
 
-2. Agenda Slide
-	•	Vertical list: Left-align bullets or numbered steps.
-	•	Grid spacing: Use even vertical spacing for readability.
-	•	Progress indication (optional): Highlight current section subtly.
+═══════════════════════════════════════════════════════════════════
 
-⸻
+💡 SLIDE TYPE INSPIRATION (Examples of what works well):
 
-3. Section Divider
-	•	Full-bleed background: Use image or solid color.
-	•	Centered title: Single, large heading in center or upper third.
-	•	No other content.
+Title Slides:
+• Hero imagery with dramatic text overlays
+• Massive typography (150-300pt) as the main visual
+• Asymmetric compositions with bold color blocks
+• Minimal text, maximum impact
 
-⸻
+Content Slides:
+• Side-by-side layouts for text + visuals (most versatile)
+• Layered compositions with overlapping elements
+• Magazine-style multi-column text
+• Grid systems that can be broken intentionally
 
-4. Content Slide
-	•	SPLIT-SCREEN LAYOUT (PRIMARY): Side-by-side text + image
-		- Text left (50-60%), Image right (40-50%)  
-		- OR: Image left (40-50%), Text right (50-60%)
-		- NEVER stack text vertically with image at bottom!
-	•	Image placement rules:
-		- DEFAULT: LEFT or RIGHT (80% of slides)
-		- RARELY: Bottom (20% - ONLY for panoramic/wide images)
-	•	Use grid: Align all elements to an 8pt/12pt baseline grid.
+Data Slides:
+• Charts as heroes - give them 50-70% of the space
+• Pair with minimal supporting text
+• Use color strategically to highlight insights
+• Consider unconventional chart positions (not just top-left)
 
-⸻
+Quote Slides:
+• Generous whitespace to focus attention
+• Large, beautiful typography
+• Minimal attribution (small, subtle)
+• Background images at low opacity can add mood
 
-5. Data Slide
-	•	Single LARGE chart per slide - takes up HALF the slide horizontally.
-	•	Chart should be the HERO - positioned LEFT or RIGHT side.
-	•	Supporting text on the opposite half - clean and minimal.
-	•	Chart positioning options:
-		- Left half: X=80, width=880px, height=600-800px
-		- Right half: X=960, width=880px, height=600-800px
-		- NO vertical stacking - always side-by-side!
-	•	Text gets the other half - properly aligned and spaced.
+Comparison Slides:
+• Side-by-side columns work well
+• But also consider: diagonal splits, overlapping cards, or before/after reveals
+• Visual separators help (lines, spacing, color blocks)
 
-⸻
+Section Dividers:
+• Full-bleed backgrounds
+• Single powerful statement
+• Opportunity for dramatic visual breaks
 
-6. Quote Slide
-	•	Centered or left-aligned quote text.
-	•	Wide margins: Ample whitespace to focus attention.
-	•	Attribution small: Below or beside the quote.
+Process/Timeline Slides:
+• Linear flows (left-to-right or top-to-bottom)
+• Circular/loop layouts for continuous processes
+• Icons + labels work well
+• Use connecting lines/arrows to show flow
 
-⸻
+═══════════════════════════════════════════════════════════════════
 
-7. Comparison Slide
-	•	Two-column layout: Equal-width halves with clear labels.
-	•	Symmetrical design: Mirror structure for both sides.
-	•	Dividing line (optional): Use a visual separator.
+🔧 TECHNICAL REQUIREMENTS (Follow these strictly):
 
-⸻
+1. NO OVERLAPS:
+   • Components must not overlap (unless intentionally layered at different zIndex)
+   • Minimum spacing: 60px between text, 80px around charts/images
+   • Use currentY tracking: next_Y = previous_Y + previous_height + gap
 
-8. Process Slide
-	•	Linear or circular layout: Horizontal for timelines, circular for loops.
-	•	Consistent spacing: Equal space between steps.
-	•	Icons + short labels: Align vertically under each step.
+2. CHART SIZING:
+   • Charts need space to be readable
+   • Minimum: 500×500px (prefer 600×700px)
+   • If a chart won't fit vertically, use a side-by-side layout
 
-⸻
+3. BOUNDS:
+   • Safe area: x=[100-1820], y=[100-920]
+   • This leaves room for slide numbers and citations
+   • Verify all components fit within bounds
 
-9. Problem Slide
-	•	Full-width headline: Bold statement across top or center.
-	•	One image or icon: Place centrally or off to the side.
-	•	Minimal layout: Avoid multiple sections or content blocks.
+4. HTML FORMATTING:
+   • ALL text must use proper HTML: <h1>, <p>, <ul>, <strong>, etc.
+   • NO plain text or \\n line breaks
 
-⸻
+5. LAYERING (zIndex):
+   • Background: 0
+   • Images (backgrounds): 1-5
+   • Shapes (decorative): 5-9
+   • Text & Charts: 10
+   • UI elements: 100
 
-10. Solution Slide
-	•	Headline + visual: Title at top, large visual below.
-	•	Centered layout: Balanced design reinforces clarity.
-	•	Avoid text blocks: Use callouts or labels if needed.
+═══════════════════════════════════════════════════════════════════
 
-⸻
+🎯 YOUR ROLE:
 
-11. Case Study Slide
-	•	Two-section layout: Top for story, bottom for results.
-	•	Left-right flow (optional): Problem on left, solution on right.
-	•	Use cards or boxes: For clarity if showing multiple cases.
+The Layout Architect provides the creative vision and positioning.
+You execute their blueprint faithfully while generating the actual content.
 
-⸻
+Trust their layout decisions - they've been designed to:
+• Match the theme and content
+• Avoid overlaps
+• Create visual interest
+• Maintain professional quality
 
-12. Call to Action Slide
-	•	Centered button/text: Place CTA in middle third.
-	•	Use space: Let CTA breathe with generous margins.
-	•	Optional footer: Add contact info below in smaller text.
+If a layout seems unconventional, that's intentional creativity, not an error.
 
-⸻
-
-13. Thank You Slide
-	•	Centered layout: "Thank you" or contact info in middle.
-	•	Minimal content: One or two elements only.
-	•	Footer bar (optional): For social links or branding.
-
-⸻
-
-COMPONENT SIZING REQUIREMENTS (APPLY TO ALL SLIDES):
-
-1. TEXT COMPONENT DIMENSIONS:
-	•	Calculate size based on content length:
-		- Short phrases (1-3 words): 300-600px width, 80-120px height
-		- Medium content (4-15 words): 400-800px width, 100-200px height
-		- Long content (16-50 words): 600-1000px width, 200-400px height
-		- Very long content (50+ words): 800-1200px width, 400-600px height
-	•	Add padding: 20-40px inside all text components
-	•	Multi-line text: Add 60-80px height per additional line
-	•	Bullet lists: Calculate as (bullet_count × 50px) + 100px base height
-
-2. OVERLAP PREVENTION:
-	•	NO components may overlap each other
-	•	Minimum spacing: 40px between text blocks, 60px around charts/images
-	•	Edge margins: Keep text 80px from slide edges, charts/images 60px from edges
-	•	Bounds checking: Verify x+width and y+height don't conflict with other components
-	•	Vertical stacking formula: next_Y = previous_Y + previous_height + gap_size
-
-3. RESPONSIVE ADJUSTMENTS:
-	•	Longer content requires larger components (both width and height)
-	•	Dense content gets wider components rather than smaller fonts
-	•	When components don't fit horizontally, stack them vertically
-	•	Prioritize readability: increase component size over decreasing font size
-
+═══════════════════════════════════════════════════════════════════
 """

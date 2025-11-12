@@ -1813,7 +1813,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             style={{ paddingTop: '2px', paddingBottom: '2px' }}
           >
             {/* Show a single loading card placeholder while waiting for the first streamed slide */}
-            {isGeneratingOutline && currentOutline?.slides?.length === 0 ? (
+            {isGeneratingOutline && currentOutline?.slides?.length === 0 && currentOutline?.title ? (
               <div className="relative h-full flex items-center justify-center px-6">
                 <div
                   className="w-[75%] max-w-[700px] bg-white/95 dark:bg-zinc-900/95 rounded-xl shadow-md border-2 border-[#FF4301]/60 dark:border-[#FF4301]/60 flex items-center justify-center"

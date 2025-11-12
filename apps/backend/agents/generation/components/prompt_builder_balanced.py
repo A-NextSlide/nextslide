@@ -26,7 +26,7 @@ Available components:
 IMPORTANT RULES:
 1. Title slides: Background (image or gradient). Content/data slides: prefer NO Background unless necessary for readability
 2. Every slide MUST have at least 3 TiptapTextBlock components with strong hierarchy (split intro/headline/emphasis). Each block must include: fontFamily, fontWeight ('bold'|'normal'), letterSpacing (numeric, e.g., -0.02), lineHeight, textShadow, alignment, verticalAlignment, opacity, rotation:0, zIndex, transparent backgroundColor '#00000000', root textColor plus texts[].style.textColor. Inline segments MUST use texts[].style for emphasis (bold/italic/underline/strike/superscript/subscript) and textColor overrides. REQUIRED: In each block, emphasize 1–3 key segments (numbers/keywords) using bold + accent color and ≥1.5× size.
-3. Charts: If content contains numbers/percentages/comparisons, INCLUDE a Chart (large, prominent). Rotate x-axis labels 30–45° when long; increase bottom margin to prevent cropping (Highcharts: xAxis.labels.rotation/autoRotation + chart.marginBottom)
+3. Charts: If content contains numbers/percentages/comparisons, INCLUDE a Chart (large, prominent). ALWAYS set tickRotation: 0 on both axisBottom and axisLeft to keep labels horizontal and readable. NEVER rotate tick labels (no -45°, no 30-45°). Increase bottom margin (marginBottom: 80-100) to prevent label cropping
 4. Icons: ONLY next to text (bullets, headers, process labels). Place to the LEFT of the text with a 16–20px gap and vertical centering. Do NOT include bullet characters in the text label itself. NO floating/background decoration
 5. Shapes: ONLY as text containers or dividers. NO free-floating decorative shapes
 6. Use theme colors consistently and position components to avoid overlap
