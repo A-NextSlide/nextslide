@@ -120,10 +120,11 @@ export function DeckStoreInitializer({
       
       const initializeStore = useDeckStore.getState().initialize;
     if (initializeStore) {
-        initializeStore({ 
-          deckId, 
+        initializeStore({
+          deckId,
           isNewDeck,
-          syncEnabled: true 
+          syncEnabled: true,
+          useRealtimeSubscription: true  // ✅ CRITICAL: Enable real-time subscription for live updates
         });
       }
     } else if (location.pathname === '/' || location.pathname === '') {

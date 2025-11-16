@@ -8,7 +8,7 @@ import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColors
 
 // Import visualization and animation libraries for CustomComponents
 import * as d3Import from 'd3';
-import * as animeImport from 'animejs';
+import animeImport from 'animejs';
 import roughImport from 'roughjs';
 import confettiImport from 'canvas-confetti';
 import * as gsapImport from 'gsap';

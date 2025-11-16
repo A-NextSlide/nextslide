@@ -284,6 +284,13 @@ export const createSyncOperations = (set: Function, get: Function) => {
           table: 'decks',
           filter: `uuid=eq.${currentDeckId}` // Only listen to changes for this specific deck
         }, async (payload) => {
+          console.log('🔴 [Realtime] RECEIVED EVENT:', {
+            eventType: payload.eventType,
+            deckId: (payload.new as any)?.uuid,
+            hasNew: !!payload.new,
+            hasOld: !!payload.old,
+            timestamp: new Date().toISOString()
+          });
           // Handle DELETE events differently
           if (payload.eventType === 'DELETE') {
             // For DELETE events, we check if the deleted deck is the current one
@@ -305,26 +312,16 @@ export const createSyncOperations = (set: Function, get: Function) => {
           
           // Get current deck data for comparisons
           const { deckData, updateInProgress } = get();
-          
-          // Skip if we're in the middle of an update operation
-          if (updateInProgress) {
-            return;
-          }
-          
-          // Skip if the subscription manager has paused subscriptions
-          if (get().subscriptionManager.paused) {
-            return;
-          }
-          
-          // Double-check that this update is for our current deck
+
+          // Double-check that this update is for our current deck (do this check early)
           const updatedDeckId = (payload.new as any)?.uuid || '';
           // Accept updates that match either the currentDeckId or the store deck uuid
           if (updatedDeckId !== currentDeckId && updatedDeckId !== deckData.uuid) {
             console.warn('[setupRealtimeSubscription] Received update for different deck, ignoring');
             return; // Skip updates for other decks
           }
-          
-          // Only process if it's newer than what we already have (normalize timestamps)
+
+          // Check timestamps to see if this is a newer update from backend
           const rawLm = (payload.new as any)?.last_modified
             || (payload.new as any)?.lastModified
             || (payload.new as any)?.updated_at
@@ -332,7 +329,43 @@ export const createSyncOperations = (set: Function, get: Function) => {
           const newLastModified = rawLm ? new Date(rawLm).toISOString() : '';
           const currentLastModified = deckData.lastModified || '';
 
-          if (currentLastModified && newLastModified) {
+          // Determine if this update is significantly newer (came from backend, not a feedback loop)
+          let isSignificantlyNewer = false;
+          if (newLastModified && currentLastModified) {
+            const newMs = Date.parse(newLastModified);
+            const curMs = Date.parse(currentLastModified);
+            if (!Number.isNaN(newMs) && !Number.isNaN(curMs)) {
+              // Consider it significantly newer if it's at least 100ms newer
+              isSignificantlyNewer = newMs > curMs + 100;
+            }
+          }
+
+          // Log the decision
+          console.log('[Realtime][UPDATE] Processing decision:', {
+            updateInProgress,
+            subscriptionPaused: get().subscriptionManager.paused,
+            isSignificantlyNewer,
+            willProcess: true
+          });
+
+          // Skip if we're in the middle of an update operation UNLESS this is a newer backend update
+          if (updateInProgress && !isSignificantlyNewer) {
+            console.log('[Realtime][UPDATE] ❌ Skipped - update in progress and not significantly newer');
+            return;
+          }
+
+          // Skip if subscription is paused UNLESS this is a significantly newer backend update
+          if (get().subscriptionManager.paused && !isSignificantlyNewer) {
+            console.log('[Realtime][UPDATE] ❌ Skipped - subscription paused and not significantly newer');
+            return;
+          }
+
+          // If we got here and subscription was paused, log that we're bypassing it
+          if (get().subscriptionManager.paused && isSignificantlyNewer) {
+            console.log('[Realtime][UPDATE] ✅ Processing despite paused subscription - backend update detected');
+          }
+          // Additional timestamp validation (redundant check, but kept for safety)
+          if (currentLastModified && newLastModified && !isSignificantlyNewer) {
             const newMs = Date.parse(newLastModified);
             const curMs = Date.parse(currentLastModified);
             if (!Number.isNaN(newMs) && !Number.isNaN(curMs) && newMs <= curMs) {
@@ -483,6 +516,14 @@ export const createSyncOperations = (set: Function, get: Function) => {
             }
           } catch {}
 
+          // CRITICAL FIX: Skip refetch if we successfully applied incoming slides
+          // The refetch was causing reverts by fetching stale data from backend
+          const hasIncomingSlides = Array.isArray((payload.new as any)?.slides) && (payload.new as any).slides.length > 0;
+          if (hasIncomingSlides) {
+            console.log('[Realtime][UPDATE] Skipping refetch - slides already applied from realtime payload');
+            return; // Don't refetch if we already have the data
+          }
+
           realtimeFetchTimeout = setTimeout(async () => {
             try {
               const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
@@ -495,6 +536,12 @@ export const createSyncOperations = (set: Function, get: Function) => {
 
               // Normalize deck data from backend
               updatedDeck = normalizeDeckData(updatedDeck);
+
+              // CRITICAL: Sort slides by their order field when loading from backend
+              if (updatedDeck.slides && Array.isArray(updatedDeck.slides)) {
+                updatedDeck.slides = updatedDeck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
+                console.log(`[Realtime][REFETCH] Sorted ${updatedDeck.slides.length} slides by order field`);
+              }
 
               if (isEditing) {
                 // In edit mode: merge fetched slides into editor drafts to avoid flicker
@@ -801,7 +848,13 @@ export const createSyncOperations = (set: Function, get: Function) => {
       
       // The deck from the API should already be formatted correctly
       const transformedDeck = normalizeDeckData(deck);
-      
+
+      // CRITICAL: Sort slides by their order field when loading from backend
+      if (transformedDeck.slides && Array.isArray(transformedDeck.slides)) {
+        transformedDeck.slides = transformedDeck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
+        console.log(`[loadDeck] Sorted ${transformedDeck.slides.length} slides by order field`);
+      }
+
       // Set current deck ID globally for position sync filtering
       if (typeof window !== 'undefined') {
         (window as any).__currentDeckId = deckId;
@@ -906,13 +959,19 @@ export const createSyncOperations = (set: Function, get: Function) => {
                 if (deck) {
         // Normalize deck data from backend
         deck = normalizeDeckData(deck);
-        
+
+        // CRITICAL: Sort slides by their order field when loading from backend
+        if (deck.slides && Array.isArray(deck.slides)) {
+          deck.slides = deck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
+          console.log(`[initialize] Sorted ${deck.slides.length} slides by order field`);
+        }
+
         // Set current deck ID globally for position sync filtering
         if (typeof window !== 'undefined') {
           (window as any).__currentDeckId = deckId;
         }
-        
-        set({ 
+
+        set({
           deckData: deck,
           isSyncing: false,
           error: null,
@@ -954,9 +1013,19 @@ export const createSyncOperations = (set: Function, get: Function) => {
     }
     
     // Set up subscription if enabled
+    console.log('[initialize] Subscription setup check:', {
+      syncEnabled,
+      useRealtimeSubscription,
+      willSetup: syncEnabled && useRealtimeSubscription,
+      deckId
+    });
+
     if (syncEnabled && useRealtimeSubscription) {
       // Re-enabled with guards in the subscription handler
+      console.log('[initialize] Calling setupRealtimeSubscription()');
       setupRealtimeSubscription();
+    } else {
+      console.log('[initialize] Skipping subscription setup');
     }
     
     // Set up interval sync if needed and return cleanup function

@@ -796,7 +796,23 @@ body {
 
 /* ... existing code ... */
 
-/* Noise overlay effect */
+/* Grain overlay effect - similar to Lovable */
+.grain-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 1;
+  z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='2.5' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  background-size: 100px 100px;
+  background-repeat: repeat;
+  mix-blend-mode: overlay;
+}
+
+/* Noise overlay effect (fallback) */
 .noise-overlay {
   position: fixed;
   top: 0;
@@ -806,7 +822,7 @@ body {
   pointer-events: none;
   opacity: 0.03;
   z-index: 1;
-  background-image: 
+  background-image:
     repeating-linear-gradient(
       45deg,
       transparent,
@@ -825,9 +841,14 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
+  .grain-overlay {
+    opacity: 1;
+    mix-blend-mode: overlay;
+  }
+
   .noise-overlay {
     opacity: 0.02;
-    background-image: 
+    background-image:
       repeating-linear-gradient(
         45deg,
         transparent,
@@ -845,9 +866,14 @@ body {
   }
 }
 
+:global(.dark) .grain-overlay {
+  opacity: 1;
+  mix-blend-mode: overlay;
+}
+
 :global(.dark) .noise-overlay {
   opacity: 0.02;
-  background-image: 
+  background-image:
     repeating-linear-gradient(
       45deg,
       transparent,

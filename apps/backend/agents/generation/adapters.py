@@ -1416,11 +1416,24 @@ class SimpleDeckComposer(IDeckComposer):
             # When async_images=True (auto-apply OFF/placeholders), we search in background during slide generation
             # CRITICAL: Default must match compose_deck_stream signature (True = async/placeholders)
             async_images_mode = options.get('async_images', True)
-            logger.debug(f"[SEARCH MODE CHECK] async_images={async_images_mode}, image_manager={self.image_manager is not None}")
-            logger.debug(f"  AUTO-APPLY MODE (sync search): {not async_images_mode and self.image_manager}")
-            logger.debug(f"  PLACEHOLDER MODE (async search): {async_images_mode and self.image_manager}")
 
-            if not async_images_mode and self.image_manager:
+            # Check if auto-select images is enabled in stylePreferences
+            auto_select_images = False
+            if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                auto_select_images = getattr(deck_outline.stylePreferences, 'autoSelectImages', False)
+
+            # If auto-select is enabled, SKIP backend image search entirely
+            # The frontend will handle image search and application using metadata.searchQuery
+            skip_image_search = auto_select_images
+            if skip_image_search:
+                logger.info(f"🔍 AUTO-SELECT IMAGES ENABLED: Skipping backend SerpAPI search (24 images/slide)")
+                logger.info(f"🔍 Frontend will search and apply images using metadata.searchQuery from components")
+
+            logger.debug(f"[SEARCH MODE CHECK] async_images={async_images_mode}, image_manager={self.image_manager is not None}, auto_select={auto_select_images}, skip_search={skip_image_search}")
+            logger.debug(f"  AUTO-APPLY MODE (sync search): {not async_images_mode and self.image_manager and not skip_image_search}")
+            logger.debug(f"  PLACEHOLDER MODE (async search): {async_images_mode and self.image_manager and not skip_image_search}")
+
+            if not async_images_mode and self.image_manager and not skip_image_search:
                 # AUTO-APPLY MODE: Search for images synchronously BEFORE slide generation
                 logger.debug(f"AUTO-APPLY MODE: Searching for images synchronously BEFORE slide generation...")
                 logger.info("🎯 AUTO-APPLY MODE: Searching for images synchronously before slide generation...")
@@ -1513,7 +1526,7 @@ class SimpleDeckComposer(IDeckComposer):
                     import traceback
                     logger.error(traceback.format_exc())
 
-            elif async_images_mode and self.image_manager:
+            elif async_images_mode and self.image_manager and not skip_image_search:
                 # PLACEHOLDER MODE: Start image collection phase if not already started
                 if not needs_media_processing:
                     yield progress.start_phase(GenerationPhase.IMAGE_COLLECTION)

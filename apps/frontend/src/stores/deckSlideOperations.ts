@@ -265,28 +265,48 @@ export const createSlideOperations = (set: StoreApi<DeckState>['setState'], get:
         const { deckData } = get();
         
         // Validate indices
-        if (sourceIndex < 0 || sourceIndex >= deckData.slides.length || 
-            destinationIndex < 0 || destinationIndex >= deckData.slides.length ||
+        // Note: destinationIndex can be equal to slides.length (insert at end after removal)
+        if (sourceIndex < 0 || sourceIndex >= deckData.slides.length ||
+            destinationIndex < 0 || destinationIndex > deckData.slides.length ||
             sourceIndex === destinationIndex) {
-          console.warn(`[reorderSlides] Invalid slide indices for reordering: ${sourceIndex} to ${destinationIndex}`);
+          console.warn(`[reorderSlides][STORE] Invalid slide indices: source=${sourceIndex}, dest=${destinationIndex}, length=${deckData.slides.length}`);
           return;
         }
-        
+
+        console.log(`[reorderSlides][STORE] Calling reorderSlidesUtil with source=${sourceIndex}, dest=${destinationIndex}, arrayLength=${deckData.slides.length}`);
+        console.log(`[reorderSlides][STORE] Deck UUID: ${deckData.uuid}, Deck Name: ${deckData.name}`);
+
+        // Log ALL slide IDs before reorder
+        const beforeIds = deckData.slides.map((s, i) => `[${i}]${s.id.substring(0,8)}`).join(' ');
+        console.log(`[reorderSlides][STORE] BEFORE IDs: ${beforeIds}`);
+
         // Create updated slides array
         const updatedSlides = reorderSlidesUtil(deckData.slides, sourceIndex, destinationIndex);
-        
+
+        // Log ALL slide IDs after reorder
+        const afterIds = updatedSlides.map((s, i) => `[${i}]${s.id.substring(0,8)}`).join(' ');
+        console.log(`[reorderSlides][STORE] AFTER IDs: ${afterIds}`);
+
         // Generate a new version
         const versionInfo = get().generateNewVersion();
-        
-        // Create updated deck data
+
+        // Create updated deck data with current timestamp
         const updatedDeck = {
           ...deckData,
           slides: updatedSlides,
-          ...versionInfo
+          ...versionInfo,
+          lastModified: new Date().toISOString()
         };
-        
+
+        console.log(`[reorderSlides][STORE] 💾 Saving to backend with lastModified: ${updatedDeck.lastModified}`);
+
+        // Update lastSyncTime to prevent realtime updates from overwriting
+        set({ lastSyncTime: new Date() });
+
         // Update state and save to backend
         get().updateDeckData(updatedDeck);
+
+        console.log(`[reorderSlides][STORE] ✅ updateDeckData called`);
         
 
       } catch (error) {

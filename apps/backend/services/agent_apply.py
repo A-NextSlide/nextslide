@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
+import logging
 
 from utils.supabase import get_deck
 from agents.persistence.deck_persistence import DeckPersistence
+
+logger = logging.getLogger(__name__)
 
 
 def _find_component(slide: Dict[str, Any], component_id: str) -> Optional[Dict[str, Any]]:
@@ -653,7 +656,17 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         # slide_properties
         for k, v in (sd.get("slide_properties") or {}).items():
             slide[k] = v
+
+        # Log what operations were performed on this slide
+        num_removed = len(sd.get("components_to_remove", []) or [])
+        num_added = len(sd.get("components_to_add", []) or [])
+        num_updated = len(sd.get("components_to_update", []) or [])
+        num_props = len(sd.get("slide_properties") or {})
+        print(f"\n🟡 [APPLY_DIFF] Slide {sid}: removed={num_removed}, added={num_added}, updated={num_updated}, props={num_props}")
+        print(f"🟡 [APPLY_DIFF] Slide now has {len(slide.get('components', []))} components")
+
         changed_slide_ids.add(sid)
+        print(f"🟡 [APPLY_DIFF] Added slide {sid} to changed_slide_ids (now has {len(changed_slide_ids)} slides)")
 
     persistence = DeckPersistence()
 
@@ -673,10 +686,16 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         return None
     # Recompute index map in case slide list changed during updates
     slide_index_map = {s.get("id"): idx for idx, s in enumerate(slides) if isinstance(s, dict) and s.get("id")}
+    print(f"\n🟣 [APPLY_DIFF] changed_slide_ids: {changed_slide_ids}")
+    print(f"🟣 [APPLY_DIFF] slide_index_map keys: {list(slide_index_map.keys())}")
     for sid in changed_slide_ids:
         idx = slide_index_map.get(sid)
+        print(f"🟣 [APPLY_DIFF] Processing slide {sid}, idx={idx}, len(slides)={len(slides)}")
         if idx is None or idx >= len(slides):
+            print(f"❌ [APPLY_DIFF] Skipping slide {sid}: idx is None or out of bounds")
             continue
+        print(f"🟣 [APPLY_DIFF] Persisting slide {sid} at index {idx}")
+        print(f"🟣 [APPLY_DIFF] Slide has {len(slides[idx].get('components', []))} components")
         await persistence.update_slide_with_user(deck_id, idx, slides[idx], user_id=user_id, force_immediate=True)
 
     updated = get_deck(deck_id)

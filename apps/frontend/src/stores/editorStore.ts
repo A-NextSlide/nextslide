@@ -18,6 +18,7 @@ import { useEditModeTransitionStore } from './editModeTransitionStore';
 interface EditorState {
   // Draft component state
   draftComponents: Record<string, ComponentInstance[]>; // slideId -> components array
+  draftComponentsVersion: number; // Incremented on any draft modification to force React re-renders
 
   // Selection state
   selectedComponentIds: Set<string>; // Multiple selected components
@@ -113,6 +114,7 @@ interface EditorState {
 export const useEditorStore = create<EditorState>((set, get) => ({
   // Initial state (simplified)
   draftComponents: {},
+  draftComponentsVersion: 0,
   selectedComponentIds: new Set<string>(),
   isSelectionMode: false,
   selectionRectangle: null,
@@ -249,7 +251,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   
   updateDraftComponent: (slideId: string, componentId: string, updates: Partial<ComponentInstance>, skipHistory: boolean = false) => {
-    const currentComponents = get().draftComponents[slideId] || [];
+    let currentComponents = get().draftComponents[slideId];
+
+    // If draft doesn't exist for this slide, initialize from main deck
+    if (!currentComponents) {
+      const slide = useDeckStore.getState().deckData.slides.find(s => s.id === slideId);
+      if (slide?.components) {
+        currentComponents = slide.components.map(comp => {
+          if (comp.type === 'Chart') {
+            return prepareChartForDraft(comp);
+          }
+          return structuredClone(comp);
+        });
+        // Initialize the draft
+        get().setDraftComponentsForSlide(slideId, currentComponents);
+      } else {
+        currentComponents = [];
+      }
+    }
 
     // Add current state to history before updating (if needed)
     if (!skipHistory) {
@@ -311,13 +330,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (skipHistory) {
         get().markSlideAsChanged(slideId);
     }
-    
+
     // Set last operation to trigger UI updates
     get().setLastOperation(`update-${componentId}-${Date.now()}`);
+
+    // CRITICAL: Increment version to force React re-render
+    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
   },
-  
+
   addDraftComponent: (slideId: string, component: ComponentInstance, skipHistory: boolean = false) => {
-    const currentComponents = get().draftComponents[slideId] || [];
+    let currentComponents = get().draftComponents[slideId];
+
+    // If draft doesn't exist for this slide, initialize from main deck
+    if (!currentComponents) {
+      const slide = useDeckStore.getState().deckData.slides.find(s => s.id === slideId);
+      if (slide?.components) {
+        currentComponents = slide.components.map(comp => {
+          if (comp.type === 'Chart') {
+            return prepareChartForDraft(comp);
+          }
+          return structuredClone(comp);
+        });
+        // Initialize the draft
+        get().setDraftComponentsForSlide(slideId, currentComponents);
+      } else {
+        currentComponents = [];
+      }
+    }
 
     // Add current state to history before adding (if needed)
     if (!skipHistory) {
@@ -376,13 +415,34 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (skipHistory) {
       get().markSlideAsChanged(slideId);
     }
-    
+
     // Set last operation to trigger UI updates
     get().setLastOperation(`add-${finalComponent.id}-${Date.now()}`);
+
+    // CRITICAL: Increment version to force React re-render
+    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
   },
   
   removeDraftComponent: (slideId: string, componentId: string, skipHistory: boolean = false) => {
-    const currentComponents = get().draftComponents[slideId] || [];
+    let currentComponents = get().draftComponents[slideId];
+
+    // If draft doesn't exist for this slide, initialize from main deck
+    if (!currentComponents) {
+      const slide = useDeckStore.getState().deckData.slides.find(s => s.id === slideId);
+      if (slide?.components) {
+        currentComponents = slide.components.map(comp => {
+          if (comp.type === 'Chart') {
+            return prepareChartForDraft(comp);
+          }
+          return structuredClone(comp);
+        });
+        // Initialize the draft
+        get().setDraftComponentsForSlide(slideId, currentComponents);
+      } else {
+        currentComponents = [];
+      }
+    }
+
     const componentToRemove = currentComponents.find(comp => comp.id === componentId);
 
     if (!componentToRemove) {
@@ -424,9 +484,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
      if (skipHistory) {
       get().markSlideAsChanged(slideId);
     }
-    
+
     // Set last operation to trigger UI updates
     get().setLastOperation(`remove-${componentId}-${Date.now()}`);
+
+    // CRITICAL: Increment version to force React re-render
+    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
   },
 
   // --- REMOVED: History functions (moved to historyStore) ---

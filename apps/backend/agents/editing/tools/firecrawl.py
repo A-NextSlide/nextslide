@@ -19,8 +19,9 @@ logger = get_logger(__name__)
 class FirecrawlFetchArgs(ToolModel):
     tool_name: Literal["firecrawl_fetch"] = Field(
         description=(
-            "Fetch content or images using Firecrawl (search/scrape) and apply to a slide. "
-            "Use to update component text from the web or insert an image based on a query or URL."
+            "Fetch TEXT CONTENT or WEB IMAGES from websites using Firecrawl (search/scrape). "
+            "⚠️ DO NOT use for creating AI-generated slide graphics - use create_new_component with Image type instead. "
+            "Use this ONLY to: (1) update component text from web content, or (2) insert existing web images by URL."
         )
     )
     slide_id: str = Field(description="Target slide id")
@@ -65,9 +66,22 @@ def _pick_image_url_from_search(search_data: Dict[str, Any], index: int = 0) -> 
             idx = max(0, min(index or 0, len(images) - 1))
             # Firecrawl images shape: { title, imageUrl, url, position }
             img = images[idx]
-            return img.get("imageUrl") or img.get("url")
-    except Exception:
-        pass
+            # Handle both dict and Pydantic model responses from Firecrawl SDK
+            if isinstance(img, dict):
+                return img.get("imageUrl") or img.get("url")
+            else:
+                # Pydantic model from Firecrawl SDK - use getattr instead of .get()
+                try:
+                    return (
+                        getattr(img, "imageUrl", None) or
+                        getattr(img, "url", None) or
+                        getattr(img, "image_url", None)
+                    )
+                except AttributeError:
+                    logger.warning(f"Could not extract image URL from object type: {type(img)}")
+                    return None
+    except Exception as e:
+        logger.warning(f"Failed to extract image URL from search results: {e}")
     return None
 
 

@@ -294,20 +294,74 @@ export const duplicateSlide = (slides: SlideData[], id: string): SlideData[] => 
 };
 
 /**
- * Reorders slides by moving a slide from one position to another
+ * Reorders slides by moving a slide from sourceIndex to destinationIndex.
+ * Uses insert/move pattern: removes slide from source, inserts at destination.
+ * All other slides shift to accommodate the move.
  */
 export const reorderSlides = (slides: SlideData[], sourceIndex: number, destinationIndex: number): SlideData[] => {
-  if (sourceIndex < 0 || sourceIndex >= slides.length || 
-      destinationIndex < 0 || destinationIndex >= slides.length || 
+  if (sourceIndex < 0 || sourceIndex >= slides.length ||
+      destinationIndex < 0 || destinationIndex > slides.length ||
       sourceIndex === destinationIndex) {
+    console.log(`⚠️ Invalid reorder: source=${sourceIndex}, dest=${destinationIndex}, length=${slides.length}`);
     return slides;
   }
-  
+
+  // Log the array state BEFORE any changes
+  const beforeState = slides.slice(Math.max(0, Math.min(sourceIndex, destinationIndex) - 1), Math.max(sourceIndex, destinationIndex) + 2)
+    .map((s, i) => {
+      const actualIndex = Math.max(0, Math.min(sourceIndex, destinationIndex) - 1) + i;
+      return `[${actualIndex}]${actualIndex === sourceIndex ? '→' : ' '}${s.title.substring(0, 12)}`;
+    })
+    .join(' ');
+
+  console.log(`📍 BEFORE: ${beforeState}`);
+
   const updatedSlides = [...slides];
-  const [removedSlide] = updatedSlides.splice(sourceIndex, 1);
-  updatedSlides.splice(destinationIndex, 0, removedSlide);
-  
-  return updatedSlides;
+
+  console.log(`🔧 Array length before removal: ${updatedSlides.length}`);
+
+  // Remove the slide from its current position
+  const [slideToMove] = updatedSlides.splice(sourceIndex, 1);
+
+  if (!slideToMove) {
+    console.error(`❌ ERROR: No slide found at index ${sourceIndex}!`);
+    return slides;
+  }
+
+  console.log(`🔄 Removed "${slideToMove.title.substring(0, 20)}" from index ${sourceIndex}`);
+  console.log(`🔧 Array length after removal: ${updatedSlides.length}`);
+  console.log(`🔧 Attempting to insert at index ${destinationIndex} (max allowed: ${updatedSlides.length})`);
+
+  // Validate destination index after removal
+  if (destinationIndex < 0 || destinationIndex > updatedSlides.length) {
+    console.error(`❌ ERROR: Invalid destination ${destinationIndex} for array of length ${updatedSlides.length}`);
+    // Put the slide back and return original
+    updatedSlides.splice(sourceIndex, 0, slideToMove);
+    return slides;
+  }
+
+  // Insert it at the destination position
+  updatedSlides.splice(destinationIndex, 0, slideToMove);
+  console.log(`📍 Inserted "${slideToMove.title.substring(0, 20)}" at index ${destinationIndex}`);
+  console.log(`🔧 Array length after insertion: ${updatedSlides.length}`);
+
+  // Renormalize ALL order values to match array indices (0, 1, 2, 3...)
+  const normalizedSlides = updatedSlides.map((slide, index) => ({
+    ...slide,
+    order: index
+  }));
+
+  // Log the array state AFTER changes
+  const afterState = normalizedSlides.slice(Math.max(0, Math.min(sourceIndex, destinationIndex) - 1), Math.max(sourceIndex, destinationIndex) + 2)
+    .map((s, i) => {
+      const actualIndex = Math.max(0, Math.min(sourceIndex, destinationIndex) - 1) + i;
+      return `[${actualIndex}]${actualIndex === destinationIndex ? '→' : ' '}${s.title.substring(0, 12)}`;
+    })
+    .join(' ');
+
+  console.log(`✅ AFTER: ${afterState}`);
+
+  return normalizedSlides;
 };
 
 /**

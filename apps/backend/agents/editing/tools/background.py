@@ -89,56 +89,55 @@ def update_background(update_args: UpdateBackgroundArgs, registry: ComponentRegi
             return None
 
     theme_context = _extract_theme_context(deck_data)
-    system_prompt = f"""
-    You are a creative designer creating stunning presentation backgrounds.
-    You will be given a background request in the <background_request> tag.
-    You will then create a background component that matches this request.
-    You will respect the rules in the <editor_notes> tag.
-    The background should be a full-screen component that covers the entire slide (1920x1080).
-    
-    CRITICAL: Create clean, high-contrast backgrounds that elevate the presentation:
 
-    1. SOLID COLOR BACKGROUNDS (default):
-       - Use the theme/page backgroundColor from palette/theme
-       - Ensure strong text contrast; prefer light backgrounds unless the theme is dark
-       - Optional: subtle overlays using blurred solid-color blobs (low opacity)
+    # Build system prompt with caching
+    system_prompt_base = """You are a creative designer creating stunning presentation backgrounds.
+You will be given a background request in the <background_request> tag.
+You will then create a background component that matches this request.
+You will respect the rules in the <editor_notes> tag.
+The background should be a full-screen component that covers the entire slide (1920x1080).
 
-    2. CREATIVE PATTERNS (optional):
-       - Geometric patterns with very low opacity (8-12%)
-       - Dot grids for tech presentations (very subtle)
-       - Abstract shapes used sparingly (blurred, low opacity)
+CRITICAL: Create clean, high-contrast backgrounds that elevate the presentation:
 
-    3. NO GRADIENTS:
-       - Do not use gradient backgrounds; use solid color fills only
-       - Overlays must also avoid gradient CSS; use solid colors with opacity/blur
+1. SOLID COLOR BACKGROUNDS (default):
+   - Use the theme/page backgroundColor from palette/theme
+   - Ensure strong text contrast; prefer light backgrounds unless the theme is dark
+   - Optional: subtle overlays using blurred solid-color blobs (low opacity)
 
-    COLOR SELECTION:
-    - Choose backgroundColor from palette DB or theme model
-    - Maintain readability by ensuring text contrast on the selected background
-    - Think like a motion designer, not a PowerPoint template
-    
-    Ensure that you assign the correct properties to the background component. Including fields that should be set to None.
-    Note that your goal is to only produce a background component, that will be applied to all slides, do not concern yourself with the id
-    """
-    
+2. CREATIVE PATTERNS (optional):
+   - Geometric patterns with very low opacity (8-12%)
+   - Dot grids for tech presentations (very subtle)
+   - Abstract shapes used sparingly (blurred, low opacity)
+
+3. NO GRADIENTS:
+   - Do not use gradient backgrounds; use solid color fills only
+   - Overlays must also avoid gradient CSS; use solid colors with opacity/blur
+
+COLOR SELECTION:
+- Choose backgroundColor from palette DB or theme model
+- Maintain readability by ensuring text contrast on the selected background
+- Think like a motion designer, not a PowerPoint template
+
+Ensure that you assign the correct properties to the background component. Including fields that should be set to None.
+Note that your goal is to only produce a background component, that will be applied to all slides, do not concern yourself with the id"""
+
+    editor_notes_section = f"""<editor_notes>
+{editor_notes}
+</editor_notes>"""
+
     # Build theme section without backslashes in f-string
-    theme_section = f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""
+    theme_section = f"""<theme_context>
+{theme_context}
+</theme_context>""" if theme_context else ""
 
-    prompt = f"""
-    <editor_notes>
-    {editor_notes}
-    </editor_notes>
-
-    {theme_section}
-
-    <background_request>
-    {update_args.background_request}
-    </background_request>
-    """
+    # Background request is NOT cached (changes every time)
+    background_request_section = f"""<background_request>
+{update_args.background_request}
+</background_request>"""
 
     # Get the background component model from registry
     background_model = registry.get_component_diff_model("Background")
-    
+
     # Create response model
     BackgroundResponse = create_model(
         "BackgroundResponse",
@@ -151,8 +150,20 @@ def update_background(update_args: UpdateBackgroundArgs, registry: ComponentRegi
             Field(description="A succinct description of the background changes")
         )
     )
-    
+
     client, model = get_client(DECK_EDITOR_MODEL)
+
+    # Use content blocks with cache_control for Claude's prompt caching
+    # Cache breakpoints: 1) editor_notes, 2) theme_context (if present)
+    system_content = [
+        {"type": "text", "text": system_prompt_base},
+        {"type": "text", "text": editor_notes_section, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    user_content = []
+    if theme_section:
+        user_content.append({"type": "text", "text": theme_section, "cache_control": {"type": "ephemeral"}})
+    user_content.append({"type": "text", "text": background_request_section})
 
     # Get the background design from the LLM
     response = invoke(
@@ -161,8 +172,8 @@ def update_background(update_args: UpdateBackgroundArgs, registry: ComponentRegi
         max_tokens=2048,
         response_model=BackgroundResponse,
         messages=[
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": prompt }
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
         ],
         max_retries=2,
     )

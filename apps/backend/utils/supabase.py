@@ -168,6 +168,11 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             deck_record["name"] = deck_data.get("name")
         if deck_data.get("slides") is not None:
             deck_record["slides"] = deck_data.get("slides")
+            print(f"\n🟢 [UPLOAD_DECK] Preparing to upload {len(deck_data.get('slides', []))} slides")
+            for i, slide in enumerate(deck_data.get("slides", [])[:3]):  # Log first 3 slides
+                comp_count = len(slide.get('components', []))
+                comp_types = [c.get('type') for c in slide.get('components', [])]
+                print(f"🟢 [UPLOAD_DECK] Slide {i}: {comp_count} components - {comp_types}")
         if deck_data.get("size") is not None:
             deck_record["size"] = deck_data.get("size")
         if deck_data.get("status") is not None:

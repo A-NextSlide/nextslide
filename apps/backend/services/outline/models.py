@@ -32,8 +32,10 @@ class OutlineOptions(BaseModel):
         if v is not None:
             if v < 1:
                 return 1
-            elif v > 20:
-                return 20
+            elif v > 50:
+                # Increased max to 50 to support comprehensive tutorials and complex topics
+                # Most presentations stay under 20, but some educational/technical content needs more
+                return 50
         return v
 
     @validator('enable_research', always=True)

@@ -1024,7 +1024,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
       )}>
         {/* Star Animation - positioned behind content */}
         {!currentOutline && isDeckListReady && !localIsOutlineGenerating && (
-          <div 
+          <div
             className="absolute pointer-events-none z-0"
             style={{
               left: '50%',

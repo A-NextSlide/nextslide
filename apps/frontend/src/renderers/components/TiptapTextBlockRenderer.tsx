@@ -99,7 +99,7 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   // In presentation mode, the entire slide is CSS-scaled, so text should not be separately scaled
   const isPresenting = usePresentationStore(state => state.isPresenting);
 
-  const [slideWidth, setSlideWidth] = React.useState(() => 
+  const [slideWidth, setSlideWidth] = React.useState(() =>
     isThumbnail ? NATIVE_WIDTH : getSlideContainerWidth(DEFAULT_SLIDE_DISPLAY_WIDTH)
   );
 
@@ -147,6 +147,98 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   const scaleFactor = (isThumbnail || isPresenting) ? 1 : slideWidth / NATIVE_WIDTH;
   const finalFontSize = Math.round((props.fontSize || fontSize) * scaleFactor);
   const finalLetterSpacing = Math.round(letterSpacing * scaleFactor);
+
+  // =================================================================
+  // FIT-TO-BOX SCALING - Intelligent overflow detection and resizing
+  // =================================================================
+  // Port of CustomComponentRenderer's fit-to-box logic
+  const contentWrapperRef = useRef<HTMLDivElement>(null);
+  const [fitScale, setFitScale] = React.useState(1);
+  const [isFitReady, setIsFitReady] = React.useState(false);
+
+  const computeFit = React.useCallback(() => {
+    const containerEl = containerRef?.current as HTMLDivElement | null;
+    const contentEl = contentWrapperRef.current as HTMLDivElement | null;
+    if (!containerEl || !contentEl || isCurrentlyTextEditing) {
+      setFitScale(1);
+      setIsFitReady(true);
+      return;
+    }
+
+    // Container size (available space for content)
+    const containerW = Math.max(0, containerEl.clientWidth || 0);
+    const containerH = Math.max(0, containerEl.clientHeight || 0);
+
+    // Content natural size (what it wants to be, including its own padding)
+    const naturalW = Math.max(0, contentEl.scrollWidth || contentEl.offsetWidth || 0);
+    const naturalH = Math.max(0, contentEl.scrollHeight || contentEl.offsetHeight || 0);
+
+    if (naturalW === 0 || naturalH === 0 || containerW === 0 || containerH === 0) {
+      setFitScale(1);
+      setIsFitReady(true);
+      return;
+    }
+
+    // Calculate scale needed to fit content in container
+    // IMPORTANT: Only scale DOWN (never up) to prevent content loss
+    const scale = Math.min(containerW / naturalW, containerH / naturalH, 1);
+
+    // Debug logging
+    if (scale < 0.99) {
+      console.log('[TiptapTextBlock] Scaling down:', {
+        scale: scale.toFixed(3),
+        containerW: containerW.toFixed(0),
+        containerH: containerH.toFixed(0),
+        naturalW: naturalW.toFixed(0),
+        naturalH: naturalH.toFixed(0),
+        overflow: {
+          width: naturalW > containerW,
+          height: naturalH > containerH
+        }
+      });
+    }
+
+    setFitScale(scale);
+    setIsFitReady(true);
+  }, [containerRef, isCurrentlyTextEditing]);
+
+  // Compute fit on mount and when content/container changes
+  useEffect(() => {
+    computeFit();
+
+    const containerEl = containerRef?.current as HTMLDivElement | null;
+    const contentEl = contentWrapperRef.current as HTMLDivElement | null;
+
+    const ro: ResizeObserver | null = (typeof ResizeObserver !== 'undefined')
+      ? new ResizeObserver(() => {
+          if (typeof requestAnimationFrame !== 'undefined') {
+            requestAnimationFrame(() => computeFit());
+          } else {
+            computeFit();
+          }
+        })
+      : null;
+
+    if (ro) {
+      if (containerEl) ro.observe(containerEl);
+      if (contentEl) ro.observe(contentEl);
+    }
+
+    const onResize = () => computeFit();
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (ro) ro.disconnect();
+    };
+  }, [computeFit]);
+
+  // Re-compute when content changes (after editor updates)
+  useEffect(() => {
+    // Small delay to allow DOM to update after editor changes
+    const timer = setTimeout(() => computeFit(), 50);
+    return () => clearTimeout(timer);
+  }, [texts, computeFit]);
 
   // =================================================================
   // TIPTAP EDITOR CONFIGURATION
@@ -511,9 +603,21 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
     lineHeight: lineHeight || 1.5,
     letterSpacing: `${finalLetterSpacing}px`,
     color: textColor,
-    padding: typeof padding === 'number' ? `${padding}px` : String(padding),
+    // Remove padding from here - it will be on the content wrapper
     cursor: isCurrentlyTextEditing ? 'text' : (isSelected ? 'text' : 'move'),
   } as React.CSSProperties;
+
+  // Content wrapper style with fit-to-box scaling
+  // Apply padding here so it's included in the measured content
+  const contentWrapperStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    padding: typeof padding === 'number' ? `${padding}px` : String(padding),
+    boxSizing: 'border-box',
+    transform: fitScale !== 1 ? `scale(${fitScale})` : undefined,
+    transformOrigin: 'top left',
+    visibility: isFitReady ? 'visible' : 'hidden',
+  };
 
   return (
     <div
@@ -524,8 +628,9 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       data-component-type="TiptapTextBlock"
     >
       <div
+        ref={contentWrapperRef}
         className="tiptap-editor-wrapper"
-        style={{ width: '100%', height: '100%' }}
+        style={contentWrapperStyle}
         onDoubleClick={(e) => {
           e.stopPropagation();
           e.preventDefault();

@@ -131,7 +131,6 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
               ${index === currentSlideIndex
                 ? 'border-2 border-primary shadow-sm'
                 : 'border border-border hover:border-primary/50'}
-              ${draggedIndex === index ? 'opacity-50' : ''}
             `}
             draggable={true}
             onDragStart={() => handleDragStart(index)}
@@ -245,8 +244,18 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   
   // Use stable slide references to prevent unnecessary re-renders
   const displaySlides = React.useMemo(() => {
-    // Return slides without modification - they're already stable from the store
-    return slides || [];
+    // Sort slides by their order field to ensure correct display
+    const sortedSlides = [...(slides || [])].sort((a, b) => a.order - b.order);
+
+    // Debug logging to track render order
+    if (sortedSlides.length > 0) {
+      const positions = [3, 4, 5, 6].map(pos =>
+        sortedSlides[pos] ? `[${pos}] ${sortedSlides[pos].title.substring(0, 15)}` : `[${pos}] empty`
+      );
+      console.log('📊 Rendered order positions 3-6:', positions.join(' | '));
+    }
+
+    return sortedSlides;
   }, [slides]);
   
   const totalSlides = displaySlides.length;
@@ -254,6 +263,9 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   
   // State for drag and drop
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   
   // Track if we should show the stacked animation (only on first mount during generation)
   const [hasAnimatedIn, setHasAnimatedIn] = useState(false);
@@ -424,101 +436,148 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     });
   };
   
-  // Drag and drop handlers
+  // Drag and drop handlers with insert/reorder pattern
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
+    // Set a global flag to block realtime updates during drag
+    (window as any).__isDraggingSlide = true;
+    console.log('🎯 Started dragging slide', index + 1);
   };
-  
+
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Provide visual feedback
-    const thumbnailElements = document.querySelectorAll('.slide-thumbnail');
-    thumbnailElements.forEach((el, i) => {
-      if (i === index) {
-        el.classList.add('border-dashed', 'border-primary');
-      } else {
-        el.classList.remove('border-dashed', 'border-primary');
-      }
-    });
+
+    if (draggedIndex === null) {
+      return;
+    }
+
+    // Get mouse position relative to the thumbnail
+    const element = e.currentTarget as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const threshold = rect.width / 2;
+
+    // Simple logic: left half = before this index, right half = after this index
+    let dropZone: number;
+    if (mouseX < threshold) {
+      // Left half - insert before this slide
+      dropZone = index;
+    } else {
+      // Right half - insert after this slide
+      dropZone = index + 1;
+    }
+
+    // Allow the drop zone to be set even if it's the same position
+    // The handleDrop function will check if actual reordering is needed
+    setDropZoneIndex(dropZone);
   };
-  
+
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
-  
+
   const handleDrop = async (e: React.DragEvent, destinationIndex: number) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Clean up visual feedback
-    const thumbnailElements = document.querySelectorAll('.slide-thumbnail');
-    thumbnailElements.forEach(el => {
-      el.classList.remove('border-dashed', 'border-primary');
-    });
-    
+
     const now = Date.now();
-    // Prevent rapid sequential operations
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS) {
+    // Prevent rapid sequential operations OR if already reordering
+    if (now - lastOperationTime < OPERATION_THROTTLE_MS || isReordering) {
       console.log("Operation throttled - please wait before reordering slides");
-      setDraggedIndex(null); // Reset drag state
+      setDraggedIndex(null);
+      setDropZoneIndex(null);
       return;
     }
-    
-    if (draggedIndex !== null && draggedIndex !== destinationIndex) {
-      // Update operation timestamp
+
+    if (draggedIndex !== null && dropZoneIndex !== null) {
+      // Log the current state
+      const draggedSlide = displaySlides[draggedIndex];
+      console.log(`🎯 DROP: Dragged slide ${draggedIndex + 1} "${draggedSlide?.title?.substring(0, 20)}" to dropZone ${dropZoneIndex}`);
+
+      // Calculate the actual destination index after removal
+      // When we remove the dragged slide, indices shift
+      let actualDestination = dropZoneIndex;
+      if (dropZoneIndex > draggedIndex) {
+        // If dropping after the dragged position, adjust for the removed element
+        actualDestination = dropZoneIndex - 1;
+      }
+
+      console.log(`📐 Calculated actualDestination: ${actualDestination} (dropZone was ${dropZoneIndex}, draggedIndex was ${draggedIndex})`);
+
+      // Don't do anything if it's the same position
+      if (draggedIndex === actualDestination) {
+        console.log('⚠️ Same position - skipping');
+        setDraggedIndex(null);
+        setDropZoneIndex(null);
+        return;
+      }
+
+      // Update operation timestamp and set reordering flag
       setLastOperationTime(now);
-      
+      setIsReordering(true);
+
       try {
+        console.log(`🔄 EXECUTING: Move slide from index ${draggedIndex} to index ${actualDestination}`);
+
+        // Highlight the destination briefly to show where it's going
+        setHighlightedIndex(actualDestination);
+
         // Reorder slides using the function from deckStore
-        await reorderSlides(draggedIndex, destinationIndex);
-        
+        await reorderSlides(draggedIndex, actualDestination);
+
+        // Wait for animation to complete (spring animation ~500ms)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Clear highlight
+        setHighlightedIndex(null);
+
         // Show toast notification
         toast({
-          title: "Slides Reordered",
-          description: `Slide ${draggedIndex + 1} moved to position ${destinationIndex + 1}.`,
-          duration: 3000
+          title: "Slide Moved",
+          description: `Slide ${draggedIndex + 1} moved to position ${actualDestination + 1}.`,
+          duration: 2000
         });
-        
+
         // Update current slide index if necessary
         if (currentSlideIndex === draggedIndex) {
-          onThumbnailClick(destinationIndex);
-        } else if (
-          // Handle the case where current slide index needs to be adjusted
-          (currentSlideIndex > draggedIndex && currentSlideIndex <= destinationIndex) ||
-          (currentSlideIndex < draggedIndex && currentSlideIndex >= destinationIndex)
-        ) {
-          const newIndex = currentSlideIndex > draggedIndex 
-            ? currentSlideIndex - 1 
-            : currentSlideIndex + 1;
-          onThumbnailClick(newIndex);
+          onThumbnailClick(actualDestination);
+        } else if (draggedIndex < currentSlideIndex && actualDestination >= currentSlideIndex) {
+          onThumbnailClick(currentSlideIndex - 1);
+        } else if (draggedIndex > currentSlideIndex && actualDestination <= currentSlideIndex) {
+          onThumbnailClick(currentSlideIndex + 1);
         }
       } catch (error) {
-        // Handle reordering error
+        console.error('Error reordering slides:', error);
         toast({
           title: "Error Reordering Slides",
           description: "An error occurred while reordering slides.",
           variant: "destructive",
           duration: 3000
         });
+      } finally {
+        // Reset reordering flag after operation completes
+        setIsReordering(false);
       }
     }
-    
+
     // Reset drag state
     setDraggedIndex(null);
+    setDropZoneIndex(null);
   };
-  
+
   const handleDragEnd = () => {
-    // Clean up visual feedback
-    const thumbnailElements = document.querySelectorAll('.slide-thumbnail');
-    thumbnailElements.forEach(el => {
-      el.classList.remove('border-dashed', 'border-primary');
-    });
-    
     // Reset drag state
     setDraggedIndex(null);
+    setDropZoneIndex(null);
+
+    // Clear the global drag flag after a longer delay to ensure backend sync completes
+    // This prevents realtime updates from overwriting the reorder
+    setTimeout(() => {
+      (window as any).__isDraggingSlide = false;
+      console.log('🎯 Finished dragging - realtime updates re-enabled');
+    }, 3000); // Increased from 500ms to 3000ms to allow backend sync
   };
 
   // Reference to the thumbnail container for scrolling
@@ -578,51 +637,115 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
         "pb-2",
         "scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
       )}>
-        <div className="flex gap-2 px-2">
+        <motion.div
+          className="flex gap-2 px-2"
+          layout
+          transition={{
+            layout: {
+              type: "spring",
+              stiffness: 350,
+              damping: 30
+            }
+          }}
+        >
           {displaySlides.map((slide, index) => {
             // Calculate stacked position for initialization
             const stackOffset = isInitializing ? index * 4 : 0;
             const initialX = isInitializing ? -stackOffset : 0;
-            
+            const showDropZoneBefore = dropZoneIndex === index && draggedIndex !== null;
+            const isDragged = draggedIndex === index;
+            const isHighlighted = highlightedIndex === index;
+
             return (
-              <motion.div
-                key={`slide-wrapper-${index}`}
-                initial={isInitializing ? { 
-                  x: initialX,
-                  scale: 0.95,
-                  opacity: 0.8
-                } : false}
-                animate={{ 
-                  x: 0,
-                  scale: 1,
-                  opacity: 1
-                }}
-                transition={{
-                  type: "spring",
-                  stiffness: 200,
-                  damping: 20,
-                  delay: isInitializing ? index * 0.1 : 0
-                }}
-              >
-                <ThumbnailItem
-                  slide={slide}
-                  index={index}
-                  currentSlideIndex={currentSlideIndex}
-                  isTransitioning={isTransitioning}
-                  draggedIndex={draggedIndex}
-                  handleThumbnailClick={handleThumbnailClick}
-                  handleDeleteSlide={handleDeleteSlide}
-                  handleDuplicateSlide={handleDuplicateSlide}
-                  handleNewSlide={handleNewSlide}
-                  handleDragStart={handleDragStart}
-                  handleDragOver={handleDragOver}
-                  handleDragLeave={handleDragLeave}
-                  handleDrop={handleDrop}
-                  handleDragEnd={handleDragEnd}
-                  deckStatus={deckStatus}
-                  isNewDeck={isNewDeck}
-                />
-              </motion.div>
+              <React.Fragment key={slide.id}>
+                {/* Drop zone indicator before this slide */}
+                <AnimatePresence>
+                  {showDropZoneBefore && (
+                    <motion.div
+                      initial={{ width: 0, opacity: 0 }}
+                      animate={{ width: 4, opacity: 1 }}
+                      exit={{ width: 0, opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="flex-shrink-0 bg-primary rounded-sm"
+                      style={{ height: '96px', alignSelf: 'center' }}
+                    />
+                  )}
+                </AnimatePresence>
+
+                <motion.div
+                  layoutId={slide.id}
+                  layout="position"
+                  initial={isInitializing ? {
+                    x: initialX,
+                    scale: 0.95,
+                    opacity: 0.8
+                  } : false}
+                  animate={{
+                    scale: isDragged ? 0.95 : isHighlighted ? 1.05 : 1,
+                    opacity: isDragged ? 0.5 : 1
+                  }}
+                  transition={{
+                    layout: {
+                      type: "spring",
+                      stiffness: 350,
+                      damping: 30,
+                      mass: 0.8
+                    },
+                    scale: {
+                      type: "spring",
+                      stiffness: 400,
+                      damping: 20
+                    },
+                    opacity: {
+                      duration: 0.2
+                    },
+                    default: {
+                      type: "spring",
+                      stiffness: 200,
+                      damping: 20,
+                      delay: isInitializing ? index * 0.1 : 0
+                    }
+                  }}
+                  style={{
+                    filter: isHighlighted ? 'brightness(1.2)' : 'none'
+                  }}
+                >
+                  <ThumbnailItem
+                    slide={slide}
+                    index={index}
+                    currentSlideIndex={currentSlideIndex}
+                    isTransitioning={isTransitioning}
+                    draggedIndex={draggedIndex}
+                    handleThumbnailClick={handleThumbnailClick}
+                    handleDeleteSlide={handleDeleteSlide}
+                    handleDuplicateSlide={handleDuplicateSlide}
+                    handleNewSlide={handleNewSlide}
+                    handleDragStart={handleDragStart}
+                    handleDragOver={handleDragOver}
+                    handleDragLeave={handleDragLeave}
+                    handleDrop={handleDrop}
+                    handleDragEnd={handleDragEnd}
+                    deckStatus={deckStatus}
+                    isNewDeck={isNewDeck}
+                  />
+                </motion.div>
+
+                {/* Drop zone indicator after last slide */}
+                {index === displaySlides.length - 1 && (
+                  <AnimatePresence>
+                    {dropZoneIndex === index + 1 && draggedIndex !== null && (
+                      <motion.div
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{ width: 4, opacity: 1 }}
+                        exit={{ width: 0, opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex-shrink-0 bg-primary rounded-sm"
+                        style={{ height: '96px', alignSelf: 'center' }}
+                      />
+                    )}
+                  </AnimatePresence>
+                )}
+              </React.Fragment>
             );
           })}
           
@@ -643,7 +766,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
             </div>
           )}
           */}
-        </div>
+        </motion.div>
       </div>
       
       {/* Add Slide button at the end of thumbnails */}

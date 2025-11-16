@@ -300,6 +300,12 @@ export const createCoreDeckOperations = (set, get) => {
             logger.debug('Skipping realtime update - draft changes being applied');
             return;
           }
+
+          // Check if user is actively dragging slides - if so, skip the update
+          if ((window as any).__isDraggingSlide) {
+            console.log('⛔ BLOCKED: Realtime update blocked - user is dragging slides');
+            return;
+          }
           
           // Check if the data is actually different before updating
           const currentData = get().deckData;
@@ -357,7 +363,7 @@ export const createCoreDeckOperations = (set, get) => {
               if (lastSyncTime) {
                 const timeSinceSync = Date.now() - lastSyncTime.getTime();
                 if (timeSinceSync < 3000) {
-                  logger.debug(`Skipping realtime update - recently synced ${timeSinceSync}ms ago`);
+                  console.log(`⛔ BLOCKED: Realtime update blocked - recently synced ${timeSinceSync}ms ago`);
                   return;
                 }
               }
@@ -367,9 +373,32 @@ export const createCoreDeckOperations = (set, get) => {
           // Before applying, defensively merge slides to avoid clobbering completed slides
           if (data.slides && currentData.slides && Array.isArray(data.slides)) {
             try {
-              const mergedSlides = data.slides.map((incoming: any, i: number) => {
-                const current = currentData.slides[i];
-                if (!current) return incoming;
+              console.log(`🔄 REALTIME MERGE: Merging ${data.slides.length} incoming slides with ${currentData.slides.length} current slides`);
+
+              // Log incoming slide order by ID
+              const incomingIds = data.slides.map((s: any, i: number) => `[${i}]${s.id.substring(0,8)}`).join(' ');
+              console.log(`📥 INCOMING IDs: ${incomingIds}`);
+
+              // Log current slide order by ID
+              const currentIds = currentData.slides.map((s: any, i: number) => `[${i}]${s.id.substring(0,8)}`).join(' ');
+              console.log(`💾 CURRENT IDs: ${currentIds}`);
+
+              // CRITICAL FIX: Preserve CURRENT slide order, not incoming order!
+              // When user reorders locally, we want to keep their order and just merge content updates
+
+              // Create maps for fast lookup
+              const currentSlidesById = new Map(currentData.slides.map((s: any) => [s.id, s]));
+              const incomingSlidesById = new Map(data.slides.map((s: any) => [s.id, s]));
+
+              // Iterate over CURRENT slides (preserving local order)
+              const mergedSlides = currentData.slides.map((current: any) => {
+                const incoming = incomingSlidesById.get(current.id);
+
+                // If no incoming match, keep current
+                if (!incoming) {
+                  console.log(`  No incoming data for slide ${current.id.substring(0,8)} - keeping current`);
+                  return current;
+                }
                 const currentCompleted = current.status === 'completed';
                 const incomingCompleted = incoming.status === 'completed';
                 const currentComps = Array.isArray(current.components) ? current.components : [];
@@ -423,10 +452,34 @@ export const createCoreDeckOperations = (set, get) => {
                     : incomingComps;
                 }
                 
-                return { ...incoming, id, status, components };
+                // CRITICAL: Use current slide as base, merge in updates from incoming
+                // This preserves current order while updating content
+                return {
+                  ...current,  // Start with current (preserves order)
+                  ...incoming, // Merge incoming updates
+                  id,          // But keep these critical fields from our merge logic
+                  status,
+                  components,
+                  order: current.order  // CRITICAL: Preserve local order value!
+                };
               });
+
+              // Add any NEW slides from incoming that aren't in current
+              // (this handles slide generation during realtime updates)
+              const currentSlideIds = new Set(currentData.slides.map((s: any) => s.id));
+              data.slides.forEach((incoming: any) => {
+                if (!currentSlideIds.has(incoming.id)) {
+                  console.log(`  Adding new slide ${incoming.id.substring(0,8)} from incoming`);
+                  mergedSlides.push(incoming);
+                }
+              });
+
+              const mergedIds = mergedSlides.map((s: any, i: number) => `[${i}]${s.id.substring(0,8)}`).join(' ');
+              console.log(`🔀 MERGED RESULT: ${mergedIds}`);
+
               data = { ...data, slides: mergedSlides };
-            } catch {
+            } catch (error) {
+              console.error('❌ Merge failed:', error);
               // If merge fails for any reason, fall back to incoming data
             }
           }

@@ -100,6 +100,12 @@ Canvas: 1920×1080px | Output: JSON components
 • Make quizzes/polls FULLY functional with state/updateState
 • Signature: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
 • Variables at top INSIDE body: var value = props.value;
+• **EQUAL SIZING FOR CARDS/METRICS:**
+  - Use CSS Grid with equal columns: display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)'
+  - Or Flexbox: display: 'flex', each child has flex: '1', minWidth: '0'
+  - Ensure ALL cards have identical padding, border-radius, and styling
+  - NEVER mix fixed widths - always use fractional units (1fr) or flex: 1
+  - Example: gridTemplateColumns: '1fr 1fr 1fr', gap: '12px'
 • Colors: Use getContrastTextColor(bgColor)
 • State: Use for interactivity (quizzes, sliders, toggles)
 • NO apostrophes in text (use TiptapTextBlock)

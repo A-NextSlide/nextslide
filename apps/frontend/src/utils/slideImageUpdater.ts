@@ -128,6 +128,7 @@ export class SlideImageUpdater {
     const autoSelectImages = preferences?.autoSelectImages === true;
 
     if (!autoSelectImages) {
+      console.log('[SlideImageUpdater] Auto-select images is disabled, skipping application');
       return;
     }
     
@@ -334,6 +335,112 @@ export class SlideImageUpdater {
     await Promise.all(searchPromises);
     this.isPreloading = false;
     console.log(`[SlideImageUpdater] ✅ Preload complete! Loaded ${searchPromises.length} unique images`);
+  }
+
+  /**
+   * Apply images to a newly created slide immediately during generation
+   * This avoids the delay of waiting for slide_images_available event
+   */
+  public async applyImagesToNewSlide(slideId: string, slideIndex: number) {
+    // Check if auto-select images is enabled
+    const preferences = (window as any).__slideGenerationPreferences;
+    const autoSelectImages = preferences?.autoSelectImages === true;
+
+    if (!autoSelectImages) {
+      console.log('[SlideImageUpdater] Auto-apply disabled, skipping immediate application');
+      return;
+    }
+
+    const { deckData, batchUpdateSlideComponents } = useDeckStore.getState();
+    const slide = deckData.slides[slideIndex];
+
+    if (!slide) {
+      console.log(`[SlideImageUpdater] Slide not found at index ${slideIndex}`);
+      return;
+    }
+
+    // Check if already processing
+    if (this.processingSlides.has(slide.id)) {
+      console.log(`[SlideImageUpdater] ⏭️ Slide ${slide.id} already being processed`);
+      return;
+    }
+
+    this.processingSlides.add(slide.id);
+    console.log(`[SlideImageUpdater] 🎨 Immediately applying images to new slide ${slide.id}...`);
+
+    // Find Image components with searchQuery metadata
+    const imageComponents = slide.components.filter(c => {
+      if (c.type !== 'Image') return false;
+      const componentKey = `${slide.id}-${c.id}`;
+
+      // Skip if already applied
+      if (this.appliedImages.has(componentKey)) {
+        return false;
+      }
+
+      // Must have searchQuery metadata
+      const searchQuery = c.props.metadata?.searchQuery || c.props.metadata?.topic;
+      return !!searchQuery && this.needsImage(c);
+    });
+
+    if (imageComponents.length === 0) {
+      console.log(`[SlideImageUpdater] ℹ️ No images to apply for slide ${slide.id}`);
+      this.processingSlides.delete(slide.id);
+      return;
+    }
+
+    console.log(`[SlideImageUpdater] 🖼️ Applying ${imageComponents.length} images to slide ${slide.id}`);
+
+    const usedUrls = new Set<string>();
+    const updatedComponents = await Promise.all(
+      slide.components.map(async (component) => {
+        if (component.type === 'Image' && this.needsImage(component)) {
+          const componentKey = `${slide.id}-${component.id}`;
+
+          // Skip if already applied
+          if (this.appliedImages.has(componentKey)) {
+            return component;
+          }
+
+          const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+
+          if (searchQuery) {
+            console.log(`[SlideImageUpdater] 🔍 Searching for "${searchQuery}" for component ${component.id}...`);
+
+            const searchResult = await this.searchForImage(searchQuery);
+
+            if (searchResult && !usedUrls.has(searchResult.link)) {
+              usedUrls.add(searchResult.link);
+              this.appliedImages.set(componentKey, searchResult.link);
+
+              console.log(`[SlideImageUpdater] ✅ Applied "${searchQuery}" → ${searchResult.link.substring(0, 50)}...`);
+
+              return {
+                ...component,
+                props: {
+                  ...component.props,
+                  src: searchResult.link,
+                  alt: searchResult.title || searchResult.alt || component.props.alt || 'Slide image',
+                  autoApplied: true,
+                  isGenerating: false,
+                  isPlaceholder: false
+                }
+              };
+            }
+          }
+        }
+        return component;
+      })
+    );
+
+    // Update the slide with images
+    batchUpdateSlideComponents([{
+      slideId: slide.id,
+      components: updatedComponents
+    }]);
+
+    this.processingSlides.delete(slide.id);
+    console.log(`[SlideImageUpdater] ✅ Completed immediate image application for slide ${slide.id}`);
   }
 
   /**

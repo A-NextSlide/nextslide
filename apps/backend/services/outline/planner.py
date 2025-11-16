@@ -28,11 +28,11 @@ class OutlinePlanner:
     """Handles the planning phase of outline generation"""
     
     def __init__(self):
+        # These are now guidelines, not strict limits - AI should adjust based on topic complexity
         self.default_slide_ranges = {
-            "quick": (1, 3),
-            "standard": (4, 8),
-            # Use None for open-ended upper bound to express "8+" in prompts
-            "detailed": (8, None)
+            "quick": (1, 6),      # Expanded: simple topics 1-3, multi-part topics 4-6
+            "standard": (4, 10),  # Expanded: typical 4-8, complex topics can go to 10
+            "detailed": (8, 20)   # Expanded: comprehensive coverage, split content properly
         }
     
     async def create_plan(self, options: OutlineOptions, processed_files: Optional[Dict] = None) -> Dict[str, Any]:
@@ -58,12 +58,16 @@ class OutlinePlanner:
             logger.debug(options.prompt[-500:] if len(options.prompt) > 500 else options.prompt)
         
         prompt = get_outline_planning_prompt(
-            options.prompt, 
-            options.style_context, 
+            options.prompt,
+            options.style_context,
             options.detail_level,
             options.slide_count
         )
-        
+
+        # Debug: Log the prompt to understand what's being sent
+        logger.info(f"[PLANNER DEBUG] Generated prompt (first 1000 chars):\n{prompt[:1000]}")
+        logger.info(f"[PLANNER DEBUG] Prompt contains slide count guidance")
+
         try:
             temperature = 0.7 if not self._requires_default_temperature(model_name) else 1.0
             
@@ -120,37 +124,35 @@ class OutlinePlanner:
             return self._create_fallback_plan(options)
     
     async def _handle_gemini_planning(
-        self, client, model_name: str, options: OutlineOptions, 
+        self, client, model_name: str, options: OutlineOptions,
         max_tokens: int, temperature: float
     ) -> Dict[str, Any]:
         """Handle Gemini-specific planning"""
-        slide_count_info = f" (exactly {options.slide_count} slides)" if options.slide_count else f" ({self._get_slide_range(options.detail_level)})"
-        
-        # Special instructions for small slide counts
-        special_instruction = ""
-        if options.slide_count == 1:
-            special_instruction = "\nIMPORTANT: Generate EXACTLY 1 slide. It should be a content slide only - NO title or conclusion."
-        elif options.slide_count == 2:
-            special_instruction = "\nIMPORTANT: Generate EXACTLY 2 slides. Both should be content slides - NO title or conclusion slides."
-        
+        # Only show count if explicitly requested
+        if options.slide_count:
+            slide_count_info = f" (exactly {options.slide_count} slides)"
+            special_instruction = ""
+            if options.slide_count == 1:
+                special_instruction = "\nIMPORTANT: Generate EXACTLY 1 slide. It should be a content slide only - NO title or conclusion."
+            elif options.slide_count == 2:
+                special_instruction = "\nIMPORTANT: Generate EXACTLY 2 slides. Both should be content slides - NO title or conclusion slides."
+        else:
+            slide_count_info = " (you decide)"
+            special_instruction = ""
+
         # Enforcement for specific slide counts
         enforcement = ""
         if options.slide_count:
             enforcement = f"""
-CRITICAL REQUIREMENT: You MUST generate EXACTLY {options.slide_count} slides. 
+CRITICAL REQUIREMENT: You MUST generate EXACTLY {options.slide_count} slides.
 The "slides" array in your JSON response MUST have EXACTLY {options.slide_count} items.
 DO NOT generate more or fewer slides."""
         else:
-            # Add explicit range enforcement when only detail level is provided
-            if options.detail_level == 'quick':
-                enforcement = "\nCRITICAL: Because detail level is 'quick', generate BETWEEN 1 and 3 slides total. Do NOT exceed 3."
-            elif options.detail_level == 'standard':
-                enforcement = "\nCRITICAL: Because detail level is 'standard', generate BETWEEN 4 and 8 slides total."
-            elif options.detail_level == 'detailed':
-                enforcement = "\nGUIDELINE: Because detail level is 'detailed', generate 8 or more slides as appropriate (aim 8-12 unless the topic clearly merits more)."
-        
+            # Let AI decide - minimal guidance
+            enforcement = "\nDecide the optimal number of slides based on what the topic needs. Each slide should focus on one clear concept."
+
         simplified_prompt = f"""Create a presentation outline for: {options.prompt}
-                    
+
 Detail level: {options.detail_level}
 Style: {options.style_context or 'Professional'}
 Slides needed: {slide_count_info}{special_instruction}{enforcement}

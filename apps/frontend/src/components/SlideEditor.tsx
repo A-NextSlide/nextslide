@@ -169,9 +169,10 @@ const SlideEditorContent: React.FC = () => {
   const lastProcessedUpdateRef = useRef<string>(''); // Track last update to prevent duplicates
   const lastMessageRef = useRef<string>(''); // Track last message to prevent duplicates
   const lastVersionRefetchTsRef = useRef<number>(0);
-  const [lastSystemMessageForChat, setLastSystemMessageForChat] = 
+  const [lastSystemMessageForChat, setLastSystemMessageForChat] =
     useState<ChatPanelProps['newSystemMessage']>(null);
   const previousDeckStatusRef = useRef<DeckStatus | null>(null);
+  const processedSlideIdsRef = useRef<Set<string>>(new Set()); // Track which slides have had images applied
   
   // Expose deck status globally for editor store to access
   useEffect(() => {
@@ -301,6 +302,44 @@ const SlideEditorContent: React.FC = () => {
               name: deck.name || currentDeckData.name,
               slides: slides as unknown as SlideData[]
             }, { skipBackend: true, isRealtimeUpdate: true });
+
+            // Apply images immediately to newly added slides (if auto-select is enabled)
+            // Check ALL slides, not just count difference (handles batched updates)
+            const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages;
+            if (autoSelectImages) {
+              const newSlides: Array<{slide: any, index: number}> = [];
+
+              // Find slides that haven't been processed yet
+              for (let i = 0; i < slides.length; i++) {
+                const slide = slides[i] as any;
+                if (slide && slide.id && !processedSlideIdsRef.current.has(slide.id)) {
+                  // Check if slide has Image components with searchQuery metadata
+                  const hasImages = slide.components?.some((c: any) =>
+                    c.type === 'Image' && (c.props?.metadata?.searchQuery || c.props?.metadata?.topic)
+                  );
+
+                  if (hasImages) {
+                    newSlides.push({ slide, index: i });
+                    processedSlideIdsRef.current.add(slide.id);
+                  }
+                }
+              }
+
+              if (newSlides.length > 0) {
+                console.log(`[fetchLatestDeck] ${newSlides.length} new slide(s) with images detected, applying...`);
+
+                // Import and use SlideImageUpdater
+                import('@/utils/slideImageUpdater').then(({ SlideImageUpdater }) => {
+                  const updater = SlideImageUpdater.getInstance();
+                  // Apply images to each new slide
+                  newSlides.forEach(({ slide, index }) => {
+                    updater.applyImagesToNewSlide(slide.id, index);
+                  });
+                }).catch(err => {
+                  console.error('[fetchLatestDeck] Error applying images:', err);
+                });
+              }
+            }
           }
         }
       }
@@ -1723,36 +1762,29 @@ const SlideEditorContent: React.FC = () => {
   useEffect(() => {
     const handleImagesAvailable = (event: CustomEvent) => {
       console.log('[SlideEditor] slide_images_available event received:', event.detail);
-      
+
       // Prevent infinite loop
       if (applyingImagesRef.current) {
         console.log('[SlideEditor] Already applying images, skipping to prevent loop');
         return;
       }
-      
-      // Check if auto-select images is enabled before applying
+
+      // Check if auto-select images is enabled
       const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+
+      // IMPORTANT: If auto-select is enabled, we DON'T use the old cached image system
+      // The new system applies images immediately in fetchLatestDeck using searchQuery metadata
       if (autoSelectImages) {
-        console.log('[SlideEditor] Auto-select images is enabled, applying cached images');
-        // Apply images immediately when they become available
-        const imageUpdater = SlideImageUpdater.getInstance();
-        setTimeout(async () => {
-          applyingImagesRef.current = true;
-          try {
-            await imageUpdater.applyAllCachedImages();
-          } finally {
-            setTimeout(() => {
-              applyingImagesRef.current = false;
-            }, 2000);
-          }
-        }, 100);
-      } else {
-        console.log('[SlideEditor] Auto-select images is disabled, skipping automatic application');
+        console.log('[SlideEditor] Auto-select is ENABLED - ignoring slide_images_available event (using new immediate application system)');
+        return;
       }
+
+      // Only for manual selection mode (auto-select disabled)
+      console.log('[SlideEditor] Auto-select is DISABLED - these images are for manual selection');
     };
 
     window.addEventListener('slide_images_available', handleImagesAvailable);
-    
+
     return () => {
       window.removeEventListener('slide_images_available', handleImagesAvailable);
     };

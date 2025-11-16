@@ -351,21 +351,43 @@ class ComponentValidator:
             props = component.get('props', {}) or {}
             comp_type = component.get('type')
 
-            # Get text content
+            # Get text content from multiple possible sources
             text_content = ""
+            content_source = None
             if 'texts' in props and isinstance(props['texts'], list):
                 # For rich text components
                 text_content = ' '.join([t.get('text', '') for t in props['texts']])
+                content_source = "texts"
             elif 'text' in props:
                 # For plain text components
                 text_content = props.get('text', '')
+                content_source = "text"
+            elif 'content' in props:
+                # For TiptapTextBlock with HTML content
+                import re
+                # Strip HTML tags to get plain text for measurement
+                html_content = props.get('content', '')
+                text_content = re.sub(r'<[^>]+>', '', html_content)
+                # Decode common HTML entities
+                text_content = text_content.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                content_source = "content (HTML)"
+                print(f"      📄 HTML content: {html_content[:100]}...")
+                print(f"      📝 Plain text: {text_content[:100]}...")
 
             if not text_content.strip():
+                print(f"      ⚠️  No text content found in {comp_type}")
                 return component
 
             # Get container dimensions
             width = props.get('width') or 600
             height = props.get('height') or 200
+
+            # Debug: Show what we're sizing
+            print(f"      🔍 Sizing {comp_type}:")
+            print(f"         Source: {content_source}")
+            print(f"         Text: '{text_content[:60]}{'...' if len(text_content) > 60 else ''}'")
+            print(f"         Container: {width:.0f}x{height:.0f}px")
+            print(f"         Current fontSize: {props.get('fontSize', 'not set')}")
 
             # Get padding
             if comp_type == 'Shape' and props.get('hasText'):

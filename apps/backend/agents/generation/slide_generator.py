@@ -3351,20 +3351,33 @@ class SlideGeneratorV2(ISlideGenerator):
                 # If it's a base64 data URL or a valid URL, use it
                 if preview_url and (preview_url.startswith('data:') or preview_url.startswith('http')):
                     img_comp['props']['src'] = preview_url
+                    img_comp['props']['autoApplied'] = True  # Mark as auto-applied to prevent frontend replacement
                     logger.info(f"[IMAGE REPLACEMENT] ✓ Successfully replaced placeholder with {media.get('filename')}")
                 else:
                     # Fallback to placeholder if URL is invalid
                     img_comp['props']['src'] = 'placeholder'
                     logger.warning(f"[IMAGE REPLACEMENT] ✗ Invalid preview URL for media '{media.get('filename')}', keeping placeholder")
-                
+
                 img_comp['props']['alt'] = media.get('interpretation', media.get('filename', ''))
-                
-                # Add metadata for tracking
+
+                # Extract component's searchQuery (if AI set one during generation)
+                component_search_query = img_comp.get('props', {}).get('searchQuery', '').strip()
+                # Fallback to alt text if searchQuery not provided
+                if not component_search_query:
+                    component_search_query = img_comp.get('props', {}).get('alt', '').strip()
+
+                # Use media interpretation as topic/searchQuery if component doesn't have one
+                media_interpretation = media.get('interpretation', '').strip()
+                search_query = component_search_query or media_interpretation or media.get('filename', '')
+
+                # Add metadata for tracking (including searchQuery and topic for ImagePicker)
                 img_comp['props']['metadata'] = {
                     'taggedMediaId': media.get('id'),
                     'filename': media.get('filename'),
                     'type': media.get('type'),
-                    'originalUrl': media.get('previewUrl')
+                    'originalUrl': media.get('previewUrl'),
+                    'searchQuery': search_query,
+                    'topic': media_interpretation or search_query
                 }
                 
                 logger.info(f"[IMAGE REPLACEMENT] Completed processing for '{media.get('filename')}'")
@@ -3501,6 +3514,7 @@ class SlideGeneratorV2(ISlideGenerator):
             # If it's a valid URL, use it
             if image_url and (image_url.startswith('data:') or image_url.startswith('http')):
                 img_comp['props']['src'] = image_url
+                img_comp['props']['autoApplied'] = True  # Mark as auto-applied to prevent frontend replacement
                 used_urls_this_slide.add(image_url)  # Track as used
                 logger.info(f"[IMAGE REPLACEMENT] ✓ Successfully replaced placeholder with image (unique)")
             else:

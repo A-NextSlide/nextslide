@@ -51,10 +51,10 @@ def to_json_safe(obj: Any) -> Any:
                 # For diff-like models, DO NOT exclude unset so mutated defaults (like appended lists)
                 # are preserved. Also keep explicit None values to allow clearing fields.
                 cls_name = getattr(obj.__class__, '__name__', '')
-                if any(k in cls_name for k in ("DeckDiff", "SlideDiff", "ComponentDiff")):
-                    result = to_json_safe(obj.model_dump(exclude_none=False, exclude_unset=False))
+                if any(k in cls_name for k in ("DeckDiff", "SlideDiff", "ComponentDiff", "PropsDiff")):
+                    result = to_json_safe(obj.model_dump(exclude_none=False, exclude_unset=False, mode='python'))
                 else:
-                    result = to_json_safe(obj.model_dump(exclude_none=True, exclude_unset=True))
+                    result = to_json_safe(obj.model_dump(exclude_none=True, exclude_unset=True, mode='python'))
                 logger.debug(f"Successfully serialized {type(obj)} via model_dump")
                 return result
             except Exception as e:
@@ -63,7 +63,7 @@ def to_json_safe(obj: Any) -> Any:
             try:
                 # Same handling as above for dict() path
                 cls_name = getattr(obj.__class__, '__name__', '')
-                if any(k in cls_name for k in ("DeckDiff", "SlideDiff", "ComponentDiff")):
+                if any(k in cls_name for k in ("DeckDiff", "SlideDiff", "ComponentDiff", "PropsDiff")):
                     result = to_json_safe(obj.dict(exclude_none=False, exclude_unset=False))
                 else:
                     result = to_json_safe(obj.dict(exclude_none=True, exclude_unset=True))

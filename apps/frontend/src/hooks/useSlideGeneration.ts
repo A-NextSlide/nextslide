@@ -475,6 +475,13 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     
     // Add detailed logging for image_collection events
     if (event.stage === 'image_collection') {
+      // Check if auto-select is enabled - if so, skip caching/dispatching these events
+      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages;
+      if (autoSelectImages) {
+        console.log('[useSlideGeneration] Auto-select enabled, ignoring image_collection event (backend should have skipped search)');
+        return; // Don't process image events when auto-select is on
+      }
+
       console.log('[useSlideGeneration] FULL image_collection event:', event);
       // Check if this is a "Images ready for slide X" event
       if (event.message && event.message.includes('Images ready for slide')) {
@@ -483,26 +490,26 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         if (slideMatch) {
           const slideNumber = parseInt(slideMatch[1], 10);
           const slideIndex = slideNumber - 1; // Convert to 0-based index
-          
+
           // Check if we have the image data in the event
           if (event.data && typeof event.data === 'object') {
             // The event data might contain the images directly or wrapped
             const images = event.data.images || event.data.data?.images;
             const slideId = event.data.slide_id || event.data.data?.slide_id;
-            
+
             if (images && images.length > 0 && slideId) {
               // Initialize cache if needed
               if (!window.__slideImageCache) {
                 window.__slideImageCache = {};
               }
-              
+
               window.__slideImageCache[slideId] = {
                 slideId: slideId,
                 slideIndex: slideIndex,
                 slideTitle: `Slide ${slideNumber}`,
                 images: images
               };
-              
+
               // Dispatch event
               window.dispatchEvent(new CustomEvent('slide_images_available', {
                 detail: {

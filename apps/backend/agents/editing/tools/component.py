@@ -1,6 +1,7 @@
 from typing import List, Union, Literal
 from pydantic import BaseModel, Field, create_model
 import uuid
+import logging
 
 from models.tools import ToolModel
 from models.component import ComponentBase
@@ -9,7 +10,7 @@ from models.deck import DeckBase, DeckDiff
 from agents.prompts.editing.editor_notes import get_editor_notes
 from agents.ai.clients import get_client, invoke
 from utils.deck import find_component_by_id, get_component_info
-from utils.images import image_exists 
+from utils.images import image_exists
 from utils.summaries import get_slide_summary
 from agents.dynamic_context.image_search import get_image_search_context
 
@@ -22,6 +23,8 @@ import asyncio
 import threading
 from queue import Queue
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def _infer_style_guidance(slide_summary: str, base_prompt: str) -> str:
@@ -199,46 +202,52 @@ def get_additional_context(component: ComponentBase):
 
 def edit_component(edit_args: EditComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
     editor_notes = get_editor_notes((1920, 1080))
-    system_prompt = f"""
-    You are a helpful assistant that helps with deck editing.
-    You will be given a component data in the <component> tag and a user request in the <edit_request> tag.
-    You will then make the changes to the component data and return edit response summary.
-    You will respect the rules in the <editor_notes> tag.
-    You will also be given a list of relevant component ids in the <relevant_component_ids> tag, you are not allowed to change these components, but you can use them to understand the context of the edit request.
-    If changes are not needed, return an empty diff.
-    """
-    
+
     component = find_component_by_id(deck_data, edit_args.metadata.component_id)
+
+    # Check if component was found
+    if not component:
+        logger.error(f"Component {edit_args.metadata.component_id} not found in deck")
+        raise ValueError(f"Component {edit_args.metadata.component_id} not found in deck")
+
     slide_summary = get_slide_summary(deck_data, edit_args.metadata.slide_id)
     relevant_components = [find_component_by_id(deck_data, component_id) for component_id in edit_args.relevant_component_ids]
     component_diff_model = registry.get_component_diff_model(edit_args.metadata.component_type)
     additional_context = get_additional_context(component['component'])
-    
-    prompt = f"""
-    <editor_notes>
-    {editor_notes}
-    </editor_notes>
 
-    <edit_request>
-    {edit_args.edit_request}
-    </edit_request>
+    # Build system prompt with caching
+    system_prompt_base = """You are a helpful assistant that helps with deck editing.
+You will be given a component data in the <component> tag and a user request in the <edit_request> tag.
+You will then make the changes to the component data and return edit response summary.
+You will respect the rules in the <editor_notes> tag.
+You will also be given a list of relevant component ids in the <relevant_component_ids> tag, you are not allowed to change these components, but you can use them to understand the context of the edit request.
+If changes are not needed, return an empty diff."""
 
-    <relevant_components>
-    {relevant_components}
-    </relevant_components>
+    editor_notes_section = f"""<editor_notes>
+{editor_notes}
+</editor_notes>"""
 
-    <additional_component_context>
-    {additional_context}
-    </additional_component_context
+    # Build cacheable context sections
+    context_section = f"""<relevant_components>
+{relevant_components}
+</relevant_components>
 
-    <slide_summary>
-    {slide_summary}
-    </slide_summary>
+<additional_component_context>
+{additional_context}
+</additional_component_context>
 
-    <component>
-    {component}
-    </component>
-    """
+<slide_summary>
+{slide_summary}
+</slide_summary>"""
+
+    component_section = f"""<component>
+{component}
+</component>"""
+
+    # Edit request is NOT cached (changes every time)
+    edit_request_section = f"""<edit_request>
+{edit_args.edit_request}
+</edit_request>"""
 
     EditResponse = create_model(
         "EditResponse",
@@ -250,21 +259,42 @@ def edit_component(edit_args: EditComponentArgs, registry: ComponentRegistry, de
             str,
             Field(description="A succinct description of the changes to apply to the component")
         )
-    ) 
-    
+    )
+
     client, model = get_client(DECK_EDITOR_MODEL)
 
-    response = invoke(
-        client=client,
-        model=model,
-        max_tokens=4096,
-        response_model=EditResponse,
-        messages=[
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": prompt }
-        ],
-        max_retries=2,
-    )
+    try:
+        # Use content blocks with cache_control for Claude's prompt caching
+        # Cache breakpoints: 1) editor_notes, 2) context, 3) component data
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=16384,
+            response_model=EditResponse,
+            messages=[
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": system_prompt_base},
+                        {"type": "text", "text": editor_notes_section, "cache_control": {"type": "ephemeral"}}
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}},
+                        {"type": "text", "text": component_section, "cache_control": {"type": "ephemeral"}},
+                        {"type": "text", "text": edit_request_section}
+                    ]
+                }
+            ],
+            max_retries=3,
+        )
+    except Exception as e:
+        logger.error(f"Component edit failed for component {edit_args.metadata.component_id}: {str(e)}")
+        logger.error(f"Editor notes length: {len(editor_notes_section)} chars")
+        logger.error(f"Component data length: {len(component_section)} chars")
+        raise
     # Guardrail: ensure the diff targets the intended component id to avoid ID mismatch crashes
     try:
         component_diff = response.component_diff
@@ -312,9 +342,9 @@ def edit_component(edit_args: EditComponentArgs, registry: ComponentRegistry, de
 
 
 class CreateComponentArgs(ToolModel):
-    tool_name: Literal["create_new_component"] = Field(description="Creating a new component")
-    component_type: Union[str] = Field(description="The type of the component")
-    component_request: str = Field(description="The of the edit request for the component. Ensure the instructions are specific and clear enough to be implemented by the editor.")
+    tool_name: Literal["create_new_component"] = Field(description="Create a new component on a slide. For Image components, this automatically generates AI images using Gemini/DALL-E based on your description. Use this as the PRIMARY tool for adding images to slides.")
+    component_type: Union[str] = Field(description="The type of the component to create (e.g., Image, TiptapTextBlock, Chart, Shape, Title)")
+    component_request: str = Field(description="Detailed description of the component to create. For images, describe what the image should show (e.g., 'a professional photo of a cat in a business suit'). The AI will generate the image automatically.")
     slide_id: Union[str] = Field(description="The id of the slide to add the component to")
     id: str = Field(description="UUID for the new component")
 
@@ -381,6 +411,30 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
             For D3 visualizations, use d3.select() on refs, NOT JSX.
             For animations, use anime() or gsap() with refs, NOT JSX.
             NO imports, NO JSX, NO template literals with backticks.
+
+            EQUAL SIZING FOR MULTIPLE CARDS/ITEMS:
+            When creating multiple cards, metrics, or items in a grid/list:
+            - Use CSS Grid or Flexbox with equal sizing: 'display: grid; grid-template-columns: repeat(3, 1fr)'
+            - For cards: Ensure ALL cards have identical width/height dimensions
+            - For flex layouts: Use 'flex: 1' on each item to ensure equal distribution
+            - Example for 3 equal columns:
+              gridTemplateColumns: '1fr 1fr 1fr' OR 'repeat(3, 1fr)'
+              gap: '12px'
+            - For card grids, each card should have:
+              flex: '1' (if using flexbox)
+              minWidth: '0' (to prevent overflow)
+              Equal padding/margin values
+            - NEVER use fixed widths that vary between cards
+            - ALWAYS ensure visual balance and symmetry
+
+            Example for equal-sized cards:
+            var cardStyle = {{
+              flex: '1',
+              minWidth: '0',
+              padding: '16px',
+              borderRadius: '8px',
+              background: 'rgba(255,255,255,0.1)'
+            }};
             </customcomponent_rules>
             """
 
@@ -414,17 +468,23 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
     
     client, model = get_client(DECK_EDITOR_MODEL)
 
-    response = invoke(
-        client=client,
-        model=model,
-        max_tokens=4096,
-        response_model=CreateResponse,
-        messages=[
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": prompt }
-        ],
-        max_retries=2,
-    )
+    try:
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=16384,  # Increased from 4096 to prevent JSON truncation on complex components
+            response_model=CreateResponse,
+            messages=[
+                { "role": "system", "content": system_prompt },
+                { "role": "user", "content": prompt }
+            ],
+            max_retries=3,  # Increased from 2 to give more retry attempts
+        )
+    except Exception as e:
+        logger.error(f"Component creation failed for component {component_args.id}: {str(e)}")
+        logger.error(f"System prompt length: {len(system_prompt)} chars")
+        logger.error(f"User prompt length: {len(prompt)} chars")
+        raise
 
     # Set the ID on the component after getting the response
     response.component.id = component_args.id
@@ -455,6 +515,122 @@ class RemoveComponentArgs(ToolModel):
 
 def remove_component(component_args: RemoveComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
     deck_diff.remove_component(component_args.slide_id, component_args.component_id)
+    return deck_diff
+
+class RemoveAllContentArgs(ToolModel):
+    tool_name: Literal["remove_all_content"] = Field(description="Remove all content components (text, shapes, images, charts, etc.) from a slide, leaving only the background. Use this when asked to 'delete all content', 'clear the slide', 'remove everything', etc.")
+    slide_id: Union[str] = Field(description="The id of the slide to clear")
+    include_background: bool = Field(default=False, description="If True, also removes the background. Default is False (keeps background).")
+
+def remove_all_content(remove_args: RemoveAllContentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
+    """Remove all content components from a slide, optionally keeping the background."""
+    # Resolve slides for typed models or plain dicts
+    slides_iter = []
+    if hasattr(deck_data, 'slides'):
+        slides_iter = list(getattr(deck_data, 'slides', []) or [])
+    elif isinstance(deck_data, dict):
+        slides_iter = list(deck_data.get('slides', []) or [])
+
+    # Find the slide
+    slide = None
+    for s in slides_iter:
+        slide_id = getattr(s, 'id', None)
+        if slide_id is None and isinstance(s, dict):
+            slide_id = s.get('id')
+        if slide_id == remove_args.slide_id:
+            slide = s
+            break
+
+    if not slide:
+        raise ValueError(f"Slide {remove_args.slide_id} not found")
+
+    # Get components
+    if hasattr(slide, 'components'):
+        comps = list(getattr(slide, 'components', []) or [])
+    elif isinstance(slide, dict):
+        comps = list(slide.get('components', []) or [])
+    else:
+        comps = []
+
+    # Get all components except background (unless include_background is True)
+    components_to_remove = []
+    for component in comps:
+        comp_type = getattr(component, 'type', None)
+        if comp_type is None and isinstance(component, dict):
+            comp_type = component.get('type')
+
+        # Skip background unless explicitly requested
+        if comp_type == 'Background' and not remove_args.include_background:
+            continue
+
+        # Remove everything else
+        comp_id = getattr(component, 'id', None)
+        if comp_id is None and isinstance(component, dict):
+            comp_id = component.get('id')
+        if comp_id:
+            components_to_remove.append(comp_id)
+
+    # Remove all identified components
+    for comp_id in components_to_remove:
+        deck_diff.remove_component(remove_args.slide_id, comp_id)
+
+    logger.info(f"Removed {len(components_to_remove)} components from slide {remove_args.slide_id}")
+    return deck_diff
+
+class RemoveComponentsByTypeArgs(ToolModel):
+    tool_name: Literal["remove_components_by_type"] = Field(description="Remove all components of a specific type from a slide. Useful for 'delete all text', 'remove all shapes', 'clear all images', etc.")
+    slide_id: Union[str] = Field(description="The id of the slide")
+    component_types: List[str] = Field(description="List of component types to remove (e.g., ['TiptapTextBlock', 'TextBlock'] for all text, ['Shape'] for shapes, ['Image'] for images, ['Chart'] for charts)")
+
+def remove_components_by_type(remove_args: RemoveComponentsByTypeArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
+    """Remove all components of specified types from a slide."""
+    # Resolve slides for typed models or plain dicts
+    slides_iter = []
+    if hasattr(deck_data, 'slides'):
+        slides_iter = list(getattr(deck_data, 'slides', []) or [])
+    elif isinstance(deck_data, dict):
+        slides_iter = list(deck_data.get('slides', []) or [])
+
+    # Find the slide
+    slide = None
+    for s in slides_iter:
+        slide_id = getattr(s, 'id', None)
+        if slide_id is None and isinstance(s, dict):
+            slide_id = s.get('id')
+        if slide_id == remove_args.slide_id:
+            slide = s
+            break
+
+    if not slide:
+        raise ValueError(f"Slide {remove_args.slide_id} not found")
+
+    # Get components
+    if hasattr(slide, 'components'):
+        comps = list(getattr(slide, 'components', []) or [])
+    elif isinstance(slide, dict):
+        comps = list(slide.get('components', []) or [])
+    else:
+        comps = []
+
+    # Get all components matching the specified types
+    components_to_remove = []
+    for component in comps:
+        comp_type = getattr(component, 'type', None)
+        if comp_type is None and isinstance(component, dict):
+            comp_type = component.get('type')
+
+        if comp_type in remove_args.component_types:
+            comp_id = getattr(component, 'id', None)
+            if comp_id is None and isinstance(component, dict):
+                comp_id = component.get('id')
+            if comp_id:
+                components_to_remove.append(comp_id)
+
+    # Remove all identified components
+    for comp_id in components_to_remove:
+        deck_diff.remove_component(remove_args.slide_id, comp_id)
+
+    logger.info(f"Removed {len(components_to_remove)} components of types {remove_args.component_types} from slide {remove_args.slide_id}")
     return deck_diff
 
 class ReplaceComponentArgs(ToolModel):

@@ -1394,7 +1394,7 @@ const DeckList: React.FC = () => {
           </div>
         </div>
         
-        <div 
+        <div
           className="relative flex flex-col transition-all duration-300 ease-in-out bg-[#F5F5DC] dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800"
           style={(currentOutline || isOutlineChatGenerating) ? {
             position: 'absolute',
@@ -1429,7 +1429,7 @@ const DeckList: React.FC = () => {
             />
           )}
           
-          <div 
+          <div
             className="flex-1 bg-[#F5F5DC] dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 overflow-y-auto hover:overflow-y-auto hide-scrollbar p-6 z-20 scrollable-container scroll-fade-bottom"
             style={{ 
               height: 'calc(100vh - 64px)',

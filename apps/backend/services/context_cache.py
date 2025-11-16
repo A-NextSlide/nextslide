@@ -31,6 +31,9 @@ def _json_hash(data: Any) -> str:
             return obj.dict()
         if isinstance(obj, set):
             return sorted(list(obj))
+        # Handle datetime objects
+        if hasattr(obj, "isoformat"):
+            return obj.isoformat()
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
     payload = json.dumps(data, sort_keys=True, default=_default)

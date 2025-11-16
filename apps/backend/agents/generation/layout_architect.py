@@ -889,7 +889,8 @@ Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
                         "width": 1600,
                         "height": 120,
                         "content": f"<h1>{slide.title}</h1>",
-                        "fontSize": typo_scale.get('section_title', 72),
+                        # fontSize will be calculated by component_validator based on content
+                        "fontSize": typo_scale.get('section_title', 72),  # Initial size, will be auto-fitted
                         "textAlign": "center"
                     }
                 },
@@ -902,7 +903,8 @@ Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
                         "y": 1020,
                         "width": 100,
                         "height": 40,
-                        "fontSize": 18
+                        # fontSize will be calculated by component_validator based on content
+                        "fontSize": 18  # Initial size, will be auto-fitted
                     }
                 }
             ]

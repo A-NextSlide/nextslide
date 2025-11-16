@@ -200,10 +200,21 @@ class AIImageOrchestrator:
                     try:
                         components[idx]['props']['src'] = res['url']
                         components[idx]['props']['alt'] = components[idx]['props'].get('alt') or title or 'Generated image'
+                        components[idx]['props']['autoApplied'] = True  # Mark as auto-applied to prevent frontend replacement
                         meta = components[idx]['props'].setdefault('metadata', {})
                         meta['ai_generated'] = True
                         meta['model_used'] = res.get('model_used')
                         meta['prompt_used'] = plan.get('prompt')[:400]
+
+                        # Extract searchQuery from component or use title/alt as fallback
+                        component_search_query = components[idx]['props'].get('searchQuery', '').strip()
+                        if not component_search_query:
+                            component_search_query = components[idx]['props'].get('alt', '').strip()
+                        search_query = component_search_query or title or 'Generated image'
+
+                        meta['searchQuery'] = search_query
+                        meta['topic'] = title or search_query
+
                         updated = True
                         logger.info("[AIImageOrchestrator] Slide %s: applied AI image to component %s", slide_index + 1, idx)
                     except Exception:

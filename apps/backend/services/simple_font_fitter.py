@@ -428,15 +428,19 @@ class SimpleFontFitter:
 
         # Calculate dimensions
         num_lines = len(lines)
+        # Line height is the space between baselines
+        # For n lines, height = font_size + (n-1) * (font_size * line_height)
+        # Simplified: font_size * (1 + (n-1) * line_height)
+        # But actually, CSS line-height is the TOTAL height of each line box
+        # So for n lines: font_size * line_height * n
         line_height_px = font_size * line_height
+        total_height = num_lines * line_height_px
 
         # Width is the longest line
         max_line_width = 0
         for line in lines:
             line_width = len(line) * avg_char_width
             max_line_width = max(max_line_width, line_width)
-
-        total_height = num_lines * line_height_px
 
         # Add letter spacing if specified
         if letter_spacing > 0:
@@ -484,8 +488,10 @@ class SimpleFontFitter:
             }
 
         # Available space after padding
-        available_width = max(container_width - (padding_x * 2), 50)
-        available_height = max(container_height - (padding_y * 2), 20)
+        # Add 10% safety margin to account for measurement inaccuracies
+        SAFETY_MARGIN = 0.90  # Use 90% of available space to be safe
+        available_width = max((container_width - (padding_x * 2)) * SAFETY_MARGIN, 50)
+        available_height = max((container_height - (padding_y * 2)) * SAFETY_MARGIN, 20)
 
         # Log if using measured ratio vs default
         if char_width_ratio is not None:
@@ -540,6 +546,7 @@ class SimpleFontFitter:
                 if avg_util >= 80:
                     text_preview = text[:40] + "..." if len(text) > 40 else text
                     print(f"  ✅ FONT FIT: {size}px | \"{text_preview}\" | {container_width:.0f}x{container_height:.0f} | utilization: {width_util:.0f}%w {height_util:.0f}%h")
+                    print(f"      📐 Text dimensions: {text_width:.0f}x{text_height:.0f} | Available: {available_width:.0f}x{available_height:.0f}")
                     logger.debug(
                         f"[SIMPLE FONT FITTER] Fitted text to {size}px "
                         f"(container: {container_width}x{container_height}, "
@@ -560,6 +567,10 @@ class SimpleFontFitter:
                             'height': available_height
                         }
                     }
+            else:
+                # Debug: Show why it doesn't fit
+                if iterations <= 3:  # Only show first few attempts to avoid spam
+                    print(f"      ❌ {size}px too large: text={text_width:.0f}x{text_height:.0f}, available={available_width:.0f}x{available_height:.0f}")
 
         # Use the best size found (highest utilization)
         if best_size > min_size:

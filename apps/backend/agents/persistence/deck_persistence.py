@@ -296,20 +296,25 @@ class DeckPersistence:
             try:
                 # Don't move theme/style_spec - keep them at root level
                 # The upload_deck function should handle the structure as-is
-                
+
                 # IMPORTANT: Update timestamp and version for realtime
                 from datetime import datetime
                 import uuid
                 deck['last_modified'] = datetime.utcnow().isoformat()
                 deck['version'] = str(uuid.uuid4())
-                
+
                 # Log for debugging
                 logger.debug(f"Setting last_modified to {deck['last_modified']} for realtime update")
-                
+                print(f"\n🔵 [PERSISTENCE] About to upload deck {deck_uuid}")
+                print(f"🔵 [PERSISTENCE] Slide {slide_index} has {len(deck['slides'][slide_index].get('components', []))} components before upload")
+                component_types = [c.get('type') for c in deck['slides'][slide_index].get('components', [])]
+                print(f"🔵 [PERSISTENCE] Component types: {component_types}")
+
                 # Run upload_deck in executor
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     loop = asyncio.get_event_loop()
                     await loop.run_in_executor(executor, upload_deck, deck, deck_uuid)
+                print(f"🔵 [PERSISTENCE] upload_deck completed")
                 logger.debug(f"[PERSISTENCE] Successfully uploaded deck {deck_uuid} to database")
                 
                 # Verify the update

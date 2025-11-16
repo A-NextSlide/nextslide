@@ -630,19 +630,40 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, []);
 
   // Apply deck diff respecting edit mode
-  const applyDeckDiffRespectingEditMode = useCallback((deckDiff: DeckDiff) => {
-    if (!deckDiff) return;
-    
+  const applyDeckDiffRespectingEditMode = useCallback((deckDiff: DeckDiff, isEditDiff = false) => {
+    if (!deckDiff) {
+      console.log('[applyDeckDiff] No diff provided, returning');
+      return;
+    }
+
+    console.log('[applyDeckDiff] Starting diff application', {
+      hasSlides: !!(deckDiff as any).slides_to_update?.length,
+      slidesCount: (deckDiff as any).slides_to_update?.length,
+      isEditDiff
+    });
+
     // HARD GUARD: If deck is already completed, do not process any generation diffs
+    // BUT: Always allow edit diffs through (component updates from editing agent)
     try {
       const deckData = (useDeckStore as any).getState().deckData;
       const allCompleted = Array.isArray(deckData?.slides) && deckData.slides.length > 0 && deckData.slides.every((s: any) => s.status === 'completed');
-      if (allCompleted) {
-        console.log('[ChatPanel] Deck is completed; skipping diff application');
+      console.log('[applyDeckDiff] Completion check', {
+        hasSlides: Array.isArray(deckData?.slides),
+        slideCount: deckData?.slides?.length,
+        allCompleted,
+        isEditDiff
+      });
+      if (allCompleted && !isEditDiff) {
+        console.log('[ChatPanel] Deck is completed; skipping generation diff application');
         setIsGenerating(false);
         return;
       }
-    } catch {}
+      if (allCompleted && isEditDiff) {
+        console.log('[ChatPanel] Deck is completed but this is an edit diff; allowing through');
+      }
+    } catch (e) {
+      console.log('[applyDeckDiff] Error checking completion status', e);
+    }
 
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
     
@@ -670,14 +691,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         slidesToUpdate.forEach((slideDiff: any) => {
           const slideId = slideDiff?.slide_id;
           if (!slideId) return;
-          // If this slide has unsaved local changes, do not overwrite drafts
+
+          // CRITICAL: Always process removals first, even if slide has local changes
+          // Removals are explicit user actions that must be applied immediately
+          (slideDiff.components_to_remove || []).forEach((compId: string) => {
+            console.log('[ChatPanel] Removing component from draft', { slideId, compId });
+            editorStore.removeDraftComponent(slideId, compId, true);
+          });
+
+          // For updates and additions, check if slide has unsaved local changes
+          // If so, skip to avoid overwriting user edits
           try {
             const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
             if (hasLocal) {
+              console.log('[ChatPanel] Skipping updates/additions for slide with local changes', { slideId });
               return;
             }
           } catch {}
-          
+
           // Apply component updates
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
             editorStore.updateDraftComponent(
@@ -690,40 +721,38 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               true // skipHistory
             );
           });
-          
+
           // Add new components
           (slideDiff.components_to_add || []).forEach((comp: any) => {
             editorStore.addDraftComponent(slideId, comp, true);
-          });
-          
-          // Remove components
-          (slideDiff.components_to_remove || []).forEach((compId: string) => {
-            editorStore.removeDraftComponent(slideId, compId, true);
           });
         });
         
         // Apply deck-level changes to main store
         const { deckData, updateDeckData } = (useDeckStore as any).getState();
+        console.log('[ChatPanel] Applying deck diff to main store', {
+          isEditing,
+          hasRemoves: !!(deckDiff as any).slides_to_update?.some((s: any) => s.components_to_remove?.length > 0)
+        });
         const updated = applyDeckDiffPure(deckData, deckDiff as any);
         if (updated !== deckData) {
-          // CRITICAL FIX: Don't skip backend for deck-level changes (slides_to_add, slides_to_remove, deck_properties)
-          // While component updates are handled via draft system and applyDraftChanges(),
-          // new slides and slide removals need to be persisted immediately
+          // CRITICAL FIX: Backend auto-apply has ALREADY persisted deck-level changes
+          // So we should ALWAYS skip backend here to avoid double-saving
+          // Just update local state for instant preview
           const hasSlideAdditions = (deckDiff as any).slides_to_add && (deckDiff as any).slides_to_add.length > 0;
           const hasSlideRemovals = (deckDiff as any).slides_to_remove && (deckDiff as any).slides_to_remove.length > 0;
           const hasDeckProps = (deckDiff as any).deck_properties && Object.keys((deckDiff as any).deck_properties).length > 0;
 
-          // Skip backend only if there are NO deck-level changes (pure component updates handled by drafts)
-          const shouldSkipBackend = !hasSlideAdditions && !hasSlideRemovals && !hasDeckProps;
-
-          console.log('[ChatPanel][applyDeckDiff] Deck-level changes', {
+          console.log('[ChatPanel][applyDeckDiff] Applying deck-level changes locally', {
             hasSlideAdditions,
             hasSlideRemovals,
             hasDeckProps,
-            skipBackend: shouldSkipBackend
+            slidesInUpdated: updated.slides?.length,
+            slidesInCurrent: deckData.slides?.length
           });
 
-          updateDeckData(updated, { skipBackend: shouldSkipBackend });
+          // Always skip backend since backend auto-apply already persisted
+          updateDeckData(updated, { skipBackend: true });
         }
         return;
       } catch (e) {
@@ -1281,7 +1310,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     slidesBefore: before?.slides?.length,
                     versionBefore: (before as any)?.version,
                   });
-                  applyDeckDiffRespectingEditMode(edit.diff);
+                  applyDeckDiffRespectingEditMode(edit.diff, true);  // Pass true - this is an edit proposal
                   // Trigger font optimization for slides touched by style tool
                   // eslint-disable-next-line @typescript-eslint/no-floating-promises
                   maybeOptimizeFontsForDiff(edit.diff);
@@ -1327,7 +1356,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       slides_to_update: [],
                       slides_to_add: []
                     } as DeckDiff;
-                    applyDeckDiffRespectingEditMode(deckLevelOnlyDiff);
+                    applyDeckDiffRespectingEditMode(deckLevelOnlyDiff, true);  // Pass true - this is an edit
                   }
                   // If style tool is active or just finished, optimize fonts for those slides now
                   try {
@@ -1345,7 +1374,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 // Fallback to diff-based updates if no preview slides
                 if (diff) {
                   console.log('[Realtime][preview.diff] Applying diff', { editId, hasSlides: !!(diff.slides_to_update?.length) });
-                  applyDeckDiffRespectingEditMode(diff);
+                  applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
                   // Trigger font optimization for slides touched by style tool
                   // eslint-disable-next-line @typescript-eslint/no-floating-promises
                   maybeOptimizeFontsForDiff(diff);
@@ -1375,6 +1404,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               const deckRevision = (evt as any).data?.deckRevision;
               const ts = Date.now();
               console.log('[Realtime][edit.applied] received', { editId: appliedEditId, deckRevision, ts });
+              console.log('[Realtime][edit.applied] full event data:', JSON.stringify((evt as any).data, null, 2));
+              console.log('[Realtime][edit.applied] has deck_diff?', !!(evt as any).data?.deck_diff);
+              if ((evt as any).data?.deck_diff) {
+                console.log('[Realtime][edit.applied] deck_diff details:', JSON.stringify((evt as any).data.deck_diff, null, 2));
+              }
               setMessages(prev => [
                 ...prev,
                 { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true, showIcon: false } }
@@ -1382,25 +1416,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               // Prevent any trailing tool/progress lines from appearing after this
               agentFlowLockoutUntilRef.current = Date.now() + 1500;
 
-              // CRITICAL FIX: Delay clearing preview guards to prevent race conditions
-              // Keep guards active for 2 seconds to block stale Supabase realtime updates
-              try {
-                const clearGuardsDelay = 2000; // Let backend write complete before accepting realtime updates
-                setTimeout(() => {
-                  if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-                  if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-                  console.log('[Realtime][edit.applied] Preview guards cleared after', clearGuardsDelay, 'ms');
-                }, clearGuardsDelay);
-              } catch {}
+              // NOTE: Preview guards are cleared in the diff application path below
+              // This allows Supabase realtime updates to come through after backend persistence
 
               // Apply diff locally if we have it for instant component update; fallback to refresh
               try {
                 const editId = appliedEditId;
                 let diff = editId ? proposedDiffsRef.current.get(editId) : undefined;
+
+                // CRITICAL FIX: Try to get deck_diff from the event data directly
+                if (!diff && (evt as any).data?.deck_diff) {
+                  diff = (evt as any).data.deck_diff;
+                  console.log('[Realtime][edit.applied] using deck_diff from event data', { editId, diff });
+                }
+
                 if (diff) {
-                  console.log('[Realtime][edit.applied] re-applying cached diff', { editId });
+                  console.log('[Realtime][edit.applied] applying diff', { editId, diffKeys: Object.keys(diff), slidesToUpdate: diff.slides_to_update?.length });
                   const before = useDeckStore.getState().deckData;
-                  applyDeckDiffRespectingEditMode(diff);
+                  applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
                   // Trigger font optimization for slides touched by style tool
                   // eslint-disable-next-line @typescript-eslint/no-floating-promises
                   maybeOptimizeFontsForDiff(diff);
@@ -1415,33 +1448,66 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }, 0);
                   proposedDiffsRef.current.delete(editId);
 
-                  // CRITICAL FIX: Backend has already persisted changes via auto-apply
-                  // Reload the deck from Supabase to get the persisted state
-                  // Use a delay to ensure backend write is complete
-                  setTimeout(() => {
-                    const { loadDeck } = useDeckStore.getState();
-                    if (typeof loadDeck === 'function') {
-                      console.log('[Realtime][edit.applied] Reloading deck from backend after persistence');
-                      loadDeck();
-                    }
-                  }, 500); // Small delay to ensure backend write completes
-                } else {
+                  // CRITICAL FIX: Keep preview guards active for 2 seconds to prevent Supabase realtime
+                  // from overwriting agent-applied changes with stale data
+                  // The local diff has already been applied, and we need to give the database time to commit
+                  try {
+                    const agentEditTimestamp = Date.now();
+                    (window as any).__lastAgentEditTs = agentEditTimestamp;
+
+                    // Clear guards after 2 seconds to allow Supabase realtime to sync
+                    setTimeout(() => {
+                      if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                      if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                      console.log('[Realtime][edit.applied] Preview guards cleared after 2s delay');
+                    }, 2000);
+                  } catch {}
+
+                  // NOTE: Don't force reload - let Supabase realtime handle it after the delay
+                  // The local diff has already been applied for instant preview
+                } else{
                   if (!diff && appliedMessageId) {
                     diff = pendingDiffsByMessageIdRef.current.get(appliedMessageId);
                     if (diff) {
                       pendingDiffsByMessageIdRef.current.delete(appliedMessageId);
                     }
                   }
+                  // CRITICAL FIX: Try deck_diff from event data as final fallback
+                  if (!diff && (evt as any).data?.deck_diff) {
+                    diff = (evt as any).data.deck_diff;
+                    console.log('[Realtime][edit.applied] using deck_diff from event data (message fallback)', { messageId: appliedMessageId });
+                  }
                   if (diff) {
                     console.log('[Realtime][edit.applied] applying message-based diff', { messageId: appliedMessageId });
-                    applyDeckDiffRespectingEditMode(diff);
+                    applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
                     // eslint-disable-next-line @typescript-eslint/no-floating-promises
                     maybeOptimizeFontsForDiff(diff);
+
+                    // CRITICAL FIX: Keep preview guards active for 2 seconds
+                    try {
+                      const agentEditTimestamp = Date.now();
+                      (window as any).__lastAgentEditTs = agentEditTimestamp;
+
+                      // Clear guards after delay
+                      setTimeout(() => {
+                        if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                        if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                        console.log('[Realtime][edit.applied] Preview guards cleared after 2s (message-based diff path)');
+                      }, 2000);
+                    } catch {}
 
                     // NOTE: Backend has already persisted changes via auto-apply
                     // Don't call applyDraftChanges() here as it would pause subscriptions
                     // and block the incoming Supabase realtime update with the persisted data
                   } else {
+                    // CRITICAL FIX: Clear preview guards even when no diff is found
+                    // This allows Supabase realtime updates to come through
+                    try {
+                      if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                      if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                      console.log('[Realtime][edit.applied] Preview guards cleared (no diff fallback path)');
+                    } catch {}
+
                     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
                     if (normalizedAppliedSlides.length > 0) {
                       console.log('[Realtime][edit.applied] applying slide payload fallback', { count: normalizedAppliedSlides.length });
@@ -1454,31 +1520,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         }
                       } catch {}
                     } else if (!isEditing) {
-                      console.log('[Realtime][edit.applied] no cached diff; triggering deck reload');
-                      const clearCache = (useDeckStore as any).getState().clearSlideCache;
-                      if (typeof clearCache === 'function') clearCache();
-                      const loadDeck = (useDeckStore as any).getState().loadDeck;
-                      if (typeof loadDeck === 'function') loadDeck();
+                      console.log('[Realtime][edit.applied] no cached diff; relying on Supabase realtime (guards cleared)');
+                      // NOTE: Don't force loadDeck() here - let Supabase realtime handle it
+                      // Guards are cleared, so realtime updates will come through naturally
                     } else {
-                      console.log('[Realtime][edit.applied] no cached diff; in edit mode, deferring full reload to avoid flicker');
+                      console.log('[Realtime][edit.applied] no cached diff; in edit mode, relying on Supabase realtime');
                     }
                   }
                 }
-                // If backend provided a deckRevision, optimistically refetch the deck for consistency
+                // NOTE: Even if backend provided a deckRevision, don't force loadDeck()
+                // Let Supabase realtime handle it naturally since guards are cleared
+                // Forcing a reload here can fetch stale data and replace the locally applied changes
                 if (deckRevision) {
-                  const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-                  if (!isEditing) {
-                    console.log('[Realtime][edit.applied] deckRevision provided; scheduling quick refetch');
-                    const loadDeck = (useDeckStore as any).getState().loadDeck;
-                    if (typeof loadDeck === 'function') {
-                      setTimeout(() => {
-                        try { 
-                          console.log('[Realtime][edit.applied] calling loadDeck()');
-                          loadDeck(); 
-                        } catch {}
-                      }, 150);
-                    }
-                  }
+                  console.log('[Realtime][edit.applied] deckRevision provided; relying on Supabase realtime', { deckRevision });
                 }
               } catch {}
               return;
@@ -1917,7 +1971,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               // Mark that a preview has been applied so realtime DB updates older than this are ignored
               try { (window as any).__pendingPreviewTs = Date.now(); } catch {}
               if (diff) {
-                applyDeckDiffRespectingEditMode(diff);
+                applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
                 // Trigger font optimization for slides touched by style tool
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
                 maybeOptimizeFontsForDiff(diff);
@@ -1928,14 +1982,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           if (evt.type === 'deck.edit.applied') {
             setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
 
-            // CRITICAL FIX: Don't clear preview guards immediately - keep them for 2 seconds
-            // to prevent stale Supabase realtime updates from overwriting our local changes
+            // CRITICAL FIX: Clear preview guards immediately to allow Supabase realtime updates
+            // Backend has already persisted changes, so we want realtime to sync them
             try {
-              const clearGuardsDelay = 2000; // 2 seconds to let backend write complete
-              setTimeout(() => {
-                if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-                if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-              }, clearGuardsDelay);
+              if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+              if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+              console.log('[Realtime][edit.applied][secondary] Preview guards cleared to allow database sync');
             } catch {}
 
             // Persist immediately in edit mode to avoid losing AI changes when toggling modes
@@ -1949,10 +2001,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
             } catch {}
 
-            // CRITICAL FIX: Removed immediate loadDeck() refetch that was causing edits to revert
-            // The diff has already been applied locally by the main handler (line 1380)
-            // A refetch here pulls stale data before the backend has finished writing
-            // Instead, trust the local diff application and let Supabase realtime sync naturally
+            // CRITICAL FIX: Reload deck from database after backend has persisted changes
+            // The backend has already saved the changes, but frontend draft/subscription system is broken
+            // Simple solution: just reload from DB after giving backend time to write
+            setTimeout(() => {
+              console.log('[deck.edit.applied] Reloading deck from database to sync changes');
+              const deckStore = useDeckStore.getState();
+              if (deckStore.loadDeck) {
+                deckStore.loadDeck();
+              }
+            }, 1000); // 1 second delay to ensure backend write completes
 
             return;
           }
@@ -2432,7 +2490,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Handle processing of deck diffs from API response
   const handleDeckDiff = (deckDiff: DeckDiff) => {
     if (!deckDiff) return;
-    applyDeckDiffRespectingEditMode(deckDiff);
+    applyDeckDiffRespectingEditMode(deckDiff, true);  // Pass true - these are edit diffs from the API
   };
   
   // Handle feedback for AI messages
@@ -2677,9 +2735,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const updatedTheme = currentTheme ? { ...currentTheme } : {};
 
                     if (result.theme_updates.color_palette) {
+                      // Deep merge color_palette to preserve metadata
+                      const existingCP = updatedTheme.color_palette || {};
+                      const newCP = result.theme_updates.color_palette;
+
                       updatedTheme.color_palette = {
-                        ...(updatedTheme.color_palette || {}),
-                        ...result.theme_updates.color_palette
+                        ...existingCP,
+                        ...newCP,
+                        // Deep merge metadata specifically
+                        metadata: {
+                          ...(existingCP.metadata || {}),
+                          ...(newCP.metadata || {})
+                        }
                       };
                     }
 

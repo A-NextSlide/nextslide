@@ -550,6 +550,63 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
             except Exception:
                 updated_slides_payload = []
 
+            # Convert fast path operations to deck_diff format for frontend compatibility
+            deck_diff_for_frontend = {}
+            try:
+                # Build a deck diff from the fast path operations
+                # Group operations by slide_id to create slide diffs
+                if diff and diff.get("operations"):
+                    slides_to_update = []
+                    slide_ops_map = {}
+
+                    # Group operations by slide
+                    for op in diff.get("operations", []):
+                        slide_id = op.get("slideId")
+                        if slide_id:
+                            if slide_id not in slide_ops_map:
+                                slide_ops_map[slide_id] = {
+                                    "slide_id": slide_id,
+                                    "components_to_update": [],
+                                    "components_to_add": [],
+                                    "components_to_remove": []
+                                }
+
+                            # Convert operation to component diff
+                            if op.get("op") == "update_component_style":
+                                comp_id = op.get("componentId")
+                                style = op.get("style", {})
+
+                                # Convert style to props format
+                                props = {}
+                                if "background" in style:
+                                    bg = style["background"]
+                                    if isinstance(bg, dict):
+                                        if bg.get("type") == "solid" or bg.get("type") == "color":
+                                            props["backgroundColor"] = bg.get("color")
+                                            props["backgroundType"] = "color"
+                                elif "textColor" in style:
+                                    props["textColor"] = style["textColor"]
+                                elif "fontFamily" in style:
+                                    props["fontFamily"] = style["fontFamily"]
+
+                                if props:
+                                    slide_ops_map[slide_id]["components_to_update"].append({
+                                        "id": comp_id,
+                                        "props": props
+                                    })
+
+                    # Convert map to list
+                    slides_to_update = list(slide_ops_map.values())
+
+                    deck_diff_for_frontend = {
+                        "slides_to_update": slides_to_update,
+                        "slides_to_add": [],
+                        "slides_to_remove": []
+                    }
+            except Exception as e:
+                logger.warning(f"[FastPath] Failed to convert operations to deck_diff: {e}")
+                deck_diff_for_frontend = {}
+
             # Stream minimal assistant acknowledgement and applied event
             await agent_stream_bus.publish(session_id, {
                 "type": "assistant.message.delta",
@@ -570,7 +627,13 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                 "sessionId": session_id,
                 "messageId": message_id,
                 "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "data": {"editId": e["id"], "deckRevision": deck_revision, "updatedSlideIds": updated_slide_ids, "slides": updated_slides_payload}
+                "data": {
+                    "editId": e["id"],
+                    "deckRevision": deck_revision,
+                    "updatedSlideIds": updated_slide_ids,
+                    "slides": updated_slides_payload,
+                    "deck_diff": deck_diff_for_frontend  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                }
             }))
             try:
                 logger.info("[AgentChat] edit.applied session=%s deck=%s editId=%s revision=%s updatedSlides=%s", session_id, deck_id, e.get("id"), deck_revision, updated_slide_ids)
@@ -581,7 +644,13 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                 "user_id": user["id"],
                 "message_id": message_id,
                 "type": "deck.edit.applied",
-                "data": {"editId": e["id"], "deckRevision": deck_revision, "updatedSlideIds": updated_slide_ids, "slides": updated_slides_payload}
+                "data": {
+                    "editId": e["id"],
+                    "deckRevision": deck_revision,
+                    "updatedSlideIds": updated_slide_ids,
+                    "slides": updated_slides_payload,
+                    "deck_diff": deck_diff_for_frontend  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                }
             }).execute()
 
             return {"messageId": message_id, "stream": {"websocket": f"/v1/agent/stream?sessionId={session_id}", "sse": f"/v1/agent/stream/{session_id}"}}
@@ -843,9 +912,24 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
         return {"messageId": message_id}
 
     # Determine current slide for orchestrator
+    # CRITICAL FIX: Use the user's actual selection from this message, not the saved session slide_id
+    # This ensures the agent targets the correct slide when user selects a different slide
+    selected_slide_id = None
+    try:
+        if selections and len(selections) > 0:
+            # Extract slide_id from first selection (user's current slide)
+            first_sel = selections[0]
+            selected_slide_id = first_sel.get("slideId") or first_sel.get("slide_id")
+    except Exception:
+        pass
+
+    # Fall back to session slide_id if no selection provided
+    if not selected_slide_id:
+        selected_slide_id = slide_id
+
     current_slide = None
     for s in (deck_data.get("slides") or []):
-        if s.get("id") == slide_id:
+        if s.get("id") == selected_slide_id:
             current_slide = s
             break
     if not current_slide and (deck_data.get("slides")):
@@ -1240,21 +1324,32 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                     updated_slides_payload = []
 
                 # Stream applied event
-                logger.info(f"[DEBUG] Publishing deck.edit.applied event")
                 await agent_stream_bus.publish(session_id, {
                     "type": "deck.edit.applied",
                     "sessionId": session_id,
                     "messageId": message_id,
                     "timestamp": int(datetime.utcnow().timestamp() * 1000),
                     # Include updatedSlideIds and compact slide payloads for instant UI patch
-                    "data": {"editId": e["id"], "deckRevision": deck_revision, "updatedSlideIds": updated_slide_ids, "slides": updated_slides_payload}
+                    "data": {
+                        "editId": e["id"],
+                        "deckRevision": deck_revision,
+                        "updatedSlideIds": updated_slide_ids,
+                        "slides": updated_slides_payload,
+                        "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                    }
                 })
                 sb.table("agent_events").insert({
                     "session_id": session_id,
                     "user_id": user["id"],
                     "message_id": message_id,
                     "type": "deck.edit.applied",
-                    "data": {"editId": e["id"], "deckRevision": deck_revision, "updatedSlideIds": updated_slide_ids, "slides": updated_slides_payload}
+                    "data": {
+                        "editId": e["id"],
+                        "deckRevision": deck_revision,
+                        "updatedSlideIds": updated_slide_ids,
+                        "slides": updated_slides_payload,
+                        "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                    }
                 }).execute()
                 logger.info(f"[DEBUG] deck.edit.applied event published successfully")
 

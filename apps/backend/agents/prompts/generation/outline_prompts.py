@@ -57,11 +57,13 @@ Slides 2-{slide_count-1}: Content
 Slide {slide_count}: Conclusion
 COUNT CHECK: slides.length === {slide_count}"""
     else:
-        count_inst = f"""Generate slides based on detail level:
-- quick: 1-3 slides
-- standard: 4-8 slides
-- detailed: 8+ slides
-Current: {detail_level}"""
+        # Give minimal guidance, let model decide
+        if detail_level == "detailed":
+            count_inst = "Use as many slides as needed to comprehensively explain the topic. Each slide = one focused concept."
+        elif detail_level == "standard":
+            count_inst = "Create an appropriate number of slides to properly cover the topic. Break it down logically."
+        else:  # quick
+            count_inst = "Create a concise presentation. Use your judgment on slide count."
 
     enforcement = f"\n\n*** MUST GENERATE EXACTLY {slide_count} SLIDES ***" if slide_count else ""
 
@@ -78,20 +80,14 @@ CONTEXT DETECTION:
 RULES:
 1. Title reflects ACTUAL topic (not generic)
 2. Use company/product/topic name
-3. Slide count: {count_inst}
-4. Flow: {get_flow_requirements(slide_count)}
-5. Context-aware:
+3. Flow: {get_flow_requirements(slide_count)}
+4. Context-aware:
    - Educational: NO market size/TAM/ROI, use learning objectives
    - Personal/How-to: NO stats/charts/business metrics, keep FUN
    - Business: Professional structure with data
-6. ONE CONCEPT PER SLIDE for complex educational topics
+5. ONE CONCEPT PER SLIDE - never cram multiple ideas together
+6. Create logical structure with proper flow
 7. End with appropriate closing
-
-EDUCATIONAL BREAKDOWN (math/science/technical):
-- Break complex topics into digestible slides
-- One formula/concept per slide
-- Progressive: simple → complex
-- Never cram multiple formulas on one slide
 
 TITLE FORMULAS:
 - Business: "[Company]: [Value Prop]" or "[Result] with [Product]"
@@ -110,7 +106,9 @@ Output JSON:
   "context": "business|educational|personal|informational"
 }}
 
-Slide types: title, agenda, content, transition, divider, stat, quote, team, conclusion
+Slide types: title, agenda, content, transition, divider, stat, quote, team, quiz, conclusion
+
+📝 Use 'quiz' type for interactive checkpoint slides in educational presentations
 
 Style: {style_context or 'Professional'}
 
@@ -186,24 +184,108 @@ TEAM SLIDE (text-dense is OK):
 - No full bios, no paragraphs
 """
 
+    if slide_type == 'quiz':
+        return f"""{base}
+
+INTERACTIVE QUIZ/CHECKPOINT SLIDE:
+Create an engaging quiz to test understanding of previous concepts.
+
+FORMAT:
+## Quiz: [Topic]
+
+**Question:** [Clear, specific question about the concept just taught]
+
+**Options:**
+A) [Option 1]
+B) [Option 2]
+C) [Option 3]
+D) [Option 4]
+
+**Answer:** [Correct answer letter]
+**Why:** [Brief 1-sentence explanation]
+
+QUIZ DESIGN RULES:
+- Question should test UNDERSTANDING, not just memorization
+- Make wrong answers plausible but clearly incorrect
+- Keep question and answers concise (under 15 words each)
+- Focus on the KEY concept from previous 2-3 slides
+- Make it engaging and relevant to real-world application
+
+EXAMPLE:
+## Quick Check: Photosynthesis
+
+**Question:** What do plants produce during photosynthesis?
+
+**Options:**
+A) Carbon dioxide and water
+B) Glucose and oxygen
+C) Nitrogen and oxygen
+D) Glucose and carbon dioxide
+
+**Answer:** B
+**Why:** Plants use CO₂ and water to create glucose (food) and oxygen (byproduct)"""
+
     # CONTENT SLIDES
     data_note = "\n\nUSE REAL DATA from files!" if has_data else ""
 
     if detail == 'detailed':
-        mode = """DETAILED MODE:
-Write 60-80 words MAX. Use section headers (##) to organize content logically.
-Keep it concise - audience should grasp each point in 3-5 seconds.
-Be SPECIFIC: exact numbers, companies, dates.
-Bold key metrics with **
-✅ "Uber (2010 seed, **$510K** → **$2.5B** exit)"
-❌ "strong performance"
+        mode = """DETAILED MODE - EDUCATIONAL APPROACH:
+
+🎓 GOAL: Deep understanding through clear, focused explanations.
+This is NOT about cramming information - it's about TEACHING concepts properly.
+
+CONTENT PER SLIDE:
+- 40-60 words MAX per slide (less is better!)
+- ONE clear concept or idea per slide
+- If you need to explain multiple related points, they should be SIMPLE bullets, not paragraphs
+- Think "textbook clarity" not "presentation density"
 
 FORMAT:
-## Section Header (2-5 words)
-• Detailed point with specific data (8-12 words)
-• Another detailed point (8-12 words)
+## Concept Title (2-5 words)
+• Clear, simple point (6-10 words)
+• Supporting detail (6-10 words)
+• Optional example (6-10 words)
 
-DO NOT include IMAGE tags - those are added separately.
+EDUCATIONAL CONTENT RULES:
+✅ Break complex topics into multiple slides (already done in outline)
+✅ Each slide focuses on ONE learning objective
+✅ Use simple, accessible language
+✅ Include concrete examples when helpful
+✅ Progressive complexity: simple → advanced
+✅ For processes: ONE step per slide
+✅ For concepts: definition → explanation → example
+✅ For comparisons: overview → item A → item B → synthesis
+
+INTERACTIVE ELEMENTS for Educational Content:
+- For key concepts: add "💡 Quick Check: [simple question to test understanding]"
+- For processes: add "✓ Checkpoint: What did we learn?"
+- For complex topics: add "🤔 Think: How would you apply this?"
+
+EXAMPLES BY TOPIC TYPE:
+
+Educational Concept:
+## Photosynthesis Overview
+• Plants convert sunlight into chemical energy
+• Occurs in chloroplasts (green parts of plants)
+• Produces glucose and oxygen
+
+💡 Quick Check: What do plants need for photosynthesis?
+
+Tutorial Step:
+## Step 3: Mixing the Batter
+• Combine dry and wet ingredients separately first
+• Gently fold wet into dry - don't overmix
+• Stop when just combined (some lumps OK)
+
+✓ Checkpoint: Batter should be slightly lumpy, not smooth
+
+Technical Concept:
+## What is an API?
+• Application Programming Interface
+• Allows different software to communicate
+• Like a waiter taking your order to the kitchen
+
+🤔 Think: What APIs do you use every day?
 
 ** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
@@ -211,12 +293,10 @@ DO NOT include IMAGE tags - those are added separately.
 - DO NOT expand or elaborate on their content
 - Your role is to format and structure their exact words, not to add content
 
-CHARTS: EXTREMELY RARE - ONLY when:
-- You have 10-20+ quantitative data points in ONE measurement type
-- The slide's PURPOSE is data analysis/metrics (not storytelling/education)
-- The pattern is clearer as a visualization than text
-- Examples: quarterly revenue trends over 3+ years, market share % across 10+ companies, user growth over 12+ months
-- NOT for: concepts, features, comparisons, simple stats, or qualitative content"""
+CHARTS: ALMOST NEVER in educational/detailed mode
+- Educational content needs TEXT and EXAMPLES, not charts
+- ONLY use charts if you have 15+ quantitative data points showing a clear pattern
+- Default to text explanations and examples"""
     else:
         mode = """PRESENTATION MODE:
 

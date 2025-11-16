@@ -46,12 +46,18 @@ def build_deck_digest(deck_data, current_slide_id=None):
             components = []
 
         component_types = []
+        component_details = []
         for comp in components:
             ctype = getattr(comp, "type", None)
             if ctype is None and isinstance(comp, dict):
                 ctype = comp.get("type")
+            cid = getattr(comp, "id", None)
+            if cid is None and isinstance(comp, dict):
+                cid = comp.get("id")
             if ctype:
                 component_types.append(str(ctype))
+            if ctype and cid:
+                component_details.append({"id": str(cid), "type": str(ctype)})
 
         slides_meta.append(
             {
@@ -60,6 +66,7 @@ def build_deck_digest(deck_data, current_slide_id=None):
                 "index": index,
                 "componentCount": len(components),
                 "componentTypes": component_types[:6],
+                "components": component_details[:10],  # Include first 10 component IDs
                 "isCurrent": bool(current_slide_id and slide_id == current_slide_id),
             }
         )
@@ -69,10 +76,18 @@ def build_deck_digest(deck_data, current_slide_id=None):
     for slide in slides_meta[:12]:
         prefix = "*" if slide["isCurrent"] else "-"
         types_preview = ", ".join(slide["componentTypes"]) or "no components"
-        summary_lines.append(
-            f"{prefix} Slide {slide['index'] + 1}: {slide['title']} "
-            f"({slide['componentCount']} components: {types_preview})"
-        )
+        comp_details = slide.get("components", [])
+        if comp_details:
+            comp_ids_str = "; ".join([f"{c['type']}(id:{c['id']})" for c in comp_details[:6]])
+            summary_lines.append(
+                f"{prefix} Slide {slide['index'] + 1}: {slide['title']} "
+                f"({slide['componentCount']} components: {comp_ids_str})"
+            )
+        else:
+            summary_lines.append(
+                f"{prefix} Slide {slide['index'] + 1}: {slide['title']} "
+                f"({slide['componentCount']} components: {types_preview})"
+            )
 
     summary_text = "\n".join(summary_lines)
 

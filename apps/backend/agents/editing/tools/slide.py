@@ -273,77 +273,91 @@ def style_slide(slide_style_args: StyleSlideArgs, registry: ComponentRegistry, d
         layout_guidelines = default_layout_guidelines
         style_guidelines = default_style_guidelines
     
-    system_prompt = f"""
-    You are a helpful assistant that helps with deck and presentation styling.
-    You will be given a slide data in the <slide> tag.
-    You will then make the changes to the slide data to make the slide more aesthetically pleasing and in line with the presentation style.
-    You will respect the rules in the <editor_notes> tag.
-    Your job will be to call the update component tool to update the slide data. For each component that needs modification, you will call the tool once with clear instructions on what to change
-    Do not be afriad to make many changes, and ensure that your instrcutions to the tool calls are very clear, as the editior will not have full context
-    {"RAG design context is provided in <rag_context> and should be treated as PRIMARY guidance for layout/style." if rag_context_str else "Guidelines for layout and style will be provided in the <layout_guidelines> and <style_guidelines> tags."}
+    # Build system prompt with caching
+    system_prompt_base = f"""You are a helpful assistant that helps with deck and presentation styling.
+You will be given a slide data in the <slide> tag.
+You will then make the changes to the slide data to make the slide more aesthetically pleasing and in line with the presentation style.
+You will respect the rules in the <editor_notes> tag.
+Your job will be to call the update component tool to update the slide data. For each component that needs modification, you will call the tool once with clear instructions on what to change
+Do not be afriad to make many changes, and ensure that your instrcutions to the tool calls are very clear, as the editior will not have full context
+{"RAG design context is provided in <rag_context> and should be treated as PRIMARY guidance for layout/style." if rag_context_str else "Guidelines for layout and style will be provided in the <layout_guidelines> and <style_guidelines> tags."}
 
-    CRITICAL THEME CONSISTENCY:
-    - If <theme_context> is provided, you MUST follow its palette (colors), typography, and visual style. It OVERRIDES generic guidelines.
-    - Use the theme's primary/secondary backgrounds and accents to drive color choices for text, shapes, and charts.
-    - Use the theme's typography families when changing fontFamily for text components.
-    - Keep coherence with theme across all edits.
-    """
-    
+CRITICAL THEME CONSISTENCY:
+- If <theme_context> is provided, you MUST follow its palette (colors), typography, and visual style. It OVERRIDES generic guidelines.
+- Use the theme's primary/secondary backgrounds and accents to drive color choices for text, shapes, and charts.
+- Use the theme's typography families when changing fontFamily for text components.
+- Keep coherence with theme across all edits."""
+
+    editor_notes_section = f"""<editor_notes>
+{editor_notes}
+</editor_notes>"""
+
     # Build context sections without backslashes in f-strings
-    theme_section = f"<theme_context>\n{theme_context}\n</theme_context>" if theme_context else ""
+    theme_section = f"""<theme_context>
+{theme_context}
+</theme_context>""" if theme_context else ""
 
     if rag_context_str:
-        context_section = f"<rag_context>\n{rag_context_str}\n</rag_context>"
+        context_section = f"""<rag_context>
+{rag_context_str}
+</rag_context>"""
     else:
-        layout_section = f"<layout_guidelines>\n{layout_guidelines}\n</layout_guidelines>"
-        style_section = f"<style_guidelines>\n{style_guidelines}\n</style_guidelines>"
+        layout_section = f"""<layout_guidelines>
+{layout_guidelines}
+</layout_guidelines>"""
+        style_section = f"""<style_guidelines>
+{style_guidelines}
+</style_guidelines>"""
         context_section = f"{layout_section}\n\n{style_section}"
 
-    prompt = f"""
-    <editor_notes>
-    {editor_notes}
-    </editor_notes>
+    # Slide summary is NOT cached (changes per slide)
+    slide_summary_section = f"""<slide_summary_compact>
+{compact_summary}
+</slide_summary_compact>"""
 
-    {theme_section}
-
-    {context_section}
-
-    <slide_summary_compact>
-    {compact_summary}
-    </slide_summary_compact>
-    """
-    
     client, model = get_client(SLIDE_STYLE_MODEL)
 
     EditComponentArgs = get_edit_component_model(deck_data=deck_data,
                                 component_types=registry.get_component_types(),
-                                component_ids=get_all_component_ids(deck_data, slide_style_args.slide_id), 
+                                component_ids=get_all_component_ids(deck_data, slide_style_args.slide_id),
                                 slide_ids=get_all_slide_ids(deck_data))
 
     # Dynamically create the EditRequest model based on the available ids and types
-    EditRequest = create_model("EditRequest", 
+    EditRequest = create_model("EditRequest",
         edit_request_summary=(str, Field(description="A succinct description of the edit request")),
         tool=(EditComponentArgs, Field(description="The tool call to use to edit the deck"))
     )
 
-    ToolsCalls = create_model("ToolsCalls", 
+    ToolsCalls = create_model("ToolsCalls",
         tool_calls=(List[EditRequest], Field(description="The list of tool calls to use to edit the deck"))
     )
+
+    # Use content blocks with cache_control for Claude's prompt caching
+    # Cache breakpoints: 1) editor_notes, 2) theme_context, 3) context (RAG or guidelines)
+    system_content = [
+        {"type": "text", "text": system_prompt_base},
+        {"type": "text", "text": editor_notes_section, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    user_content = []
+    if theme_section:
+        user_content.append({"type": "text", "text": theme_section, "cache_control": {"type": "ephemeral"}})
+    user_content.append({"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}})
+    user_content.append({"type": "text", "text": slide_summary_section})
 
     response = invoke(
         client=client,
         model=model,
-        # Allow more room for structured tool calls while staying within safe bounds
         max_tokens=4000,
         response_model=ToolsCalls,
         messages=[
             {
                 "role": "system",
-                "content": system_prompt
+                "content": system_content
             },
             {
-                "role": "user", 
-                "content": prompt
+                "role": "user",
+                "content": user_content
             }
         ]
     )

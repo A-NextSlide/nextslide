@@ -133,7 +133,9 @@ Always return valid JSON in the exact format requested."""
             return narrative_data
             
         except Exception as e:
-            logger.error(f"Error analyzing narrative flow: {e}")
+            logger.error(f"Error analyzing narrative flow: {e}", exc_info=True)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
             # Return a basic narrative flow on error
             return self._generate_fallback_narrative(outline)
     
@@ -241,7 +243,10 @@ Ensure:
             
             # Validate and fix slide references
             data = self._validate_slide_references(data, slide_ids)
-            
+
+            # Validate and normalize types before creating objects
+            data = self._normalize_types(data)
+
             # Create NarrativeFlow object
             return NarrativeFlow(
                 story_arc=StoryArc(**data['story_arc']),
@@ -256,12 +261,80 @@ Ensure:
             )
             
         except Exception as e:
-            logger.error(f"Error parsing narrative response: {e}")
+            logger.error(f"Error parsing narrative response: {e}", exc_info=True)
+            logger.error(f"Response was: {response[:500] if len(response) > 500 else response}")
             return self._generate_fallback_narrative(outline)
     
+    def _normalize_types(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize and validate all enum types to match Pydantic models"""
+        # Valid values for each type
+        valid_arc_types = {"problem-solution", "chronological", "persuasive", "educational", "custom", "topical", "comparative"}
+        valid_importance = {"high", "medium", "low"}
+        valid_flow_types = {"transition", "pacing", "emphasis", "structure"}
+        valid_priority = {"high", "medium", "low"}
+        valid_tones = {"professional", "conversational", "inspirational", "educational", "persuasive"}
+        valid_language = {"technical", "general", "executive", "beginner"}
+        valid_tip_categories = {"delivery", "content", "visual", "interaction"}
+
+        # Normalize story arc type
+        if 'story_arc' in data and 'type' in data['story_arc']:
+            arc_type = str(data['story_arc']['type']).lower().strip()
+            if arc_type not in valid_arc_types:
+                # Map common variations
+                type_mapping = {
+                    "problem-solution": ["problem", "solution", "problem/solution"],
+                    "educational": ["educational", "teaching", "learning", "tutorial"],
+                    "chronological": ["chronological", "timeline", "sequential", "history"],
+                    "persuasive": ["persuasive", "pitch", "sales"],
+                    "comparative": ["comparative", "comparison"],
+                    "topical": ["topical", "topic-based"]
+                }
+                for valid_type, aliases in type_mapping.items():
+                    if any(alias in arc_type for alias in aliases):
+                        arc_type = valid_type
+                        break
+                else:
+                    arc_type = "educational"  # Default fallback
+            data['story_arc']['type'] = arc_type
+
+        # Normalize key themes importance
+        if 'key_themes' in data:
+            for theme in data['key_themes']:
+                if 'importance' in theme:
+                    imp = str(theme['importance']).lower().strip()
+                    theme['importance'] = imp if imp in valid_importance else "medium"
+
+        # Normalize flow recommendations
+        if 'flow_recommendations' in data:
+            for rec in data['flow_recommendations']:
+                if 'type' in rec:
+                    rec_type = str(rec['type']).lower().strip()
+                    rec['type'] = rec_type if rec_type in valid_flow_types else "structure"
+                if 'priority' in rec:
+                    pri = str(rec['priority']).lower().strip()
+                    rec['priority'] = pri if pri in valid_priority else "medium"
+
+        # Normalize tone and style
+        if 'tone_and_style' in data:
+            if 'overall_tone' in data['tone_and_style']:
+                tone = str(data['tone_and_style']['overall_tone']).lower().strip()
+                data['tone_and_style']['overall_tone'] = tone if tone in valid_tones else "professional"
+            if 'language_level' in data['tone_and_style']:
+                lang = str(data['tone_and_style']['language_level']).lower().strip()
+                data['tone_and_style']['language_level'] = lang if lang in valid_language else "general"
+
+        # Normalize presentation tips
+        if 'presentation_tips' in data:
+            for tip in data['presentation_tips']:
+                if 'category' in tip:
+                    cat = str(tip['category']).lower().strip()
+                    tip['category'] = cat if cat in valid_tip_categories else "content"
+
+        return data
+
     def _validate_slide_references(
-        self, 
-        data: Dict[str, Any], 
+        self,
+        data: Dict[str, Any],
         valid_slide_ids: List[str]
     ) -> Dict[str, Any]:
         """Ensure all slide references are valid"""

@@ -50,7 +50,8 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   const addDraftComponent = useEditorStore(state => state.addDraftComponent);
   const removeDraftComponent = useEditorStore(state => state.removeDraftComponent);
   const lastOperation = useEditorStore(state => state.lastOperation); // Track undo/redo operations
-  
+  const draftComponentsVersion = useEditorStore(state => state.draftComponentsVersion); // Track draft modifications
+
   // Get history index from history store
   const historyIndex = useHistoryStore(state => state.historyIndex); // Track history changes
   
@@ -136,7 +137,7 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [currentSlide, isEditing, getDraftComponents, componentVersion, historyIndex, lastOperation, isInTransition]);
+  }, [currentSlide, isEditing, getDraftComponents, componentVersion, historyIndex, lastOperation, draftComponentsVersion, isInTransition]);
   
   // Force update on history operations
   useEffect(() => {

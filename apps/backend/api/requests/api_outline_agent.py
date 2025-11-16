@@ -244,6 +244,38 @@ Assistant: ```json
 ```
 Perfect! I've created a 10-slide executive overview on renewable energy, focusing on business strategy and ROI. Want me to adjust anything?
 
+User: "create a presentation about delivery services with Instacart branding"
+Assistant: ```json
+{
+  "action": "generate_outline",
+  "slide_count": 5,
+  "topic": "The Future of Delivery Services",
+  "detail_level": "standard",
+  "tone": "professional",
+  "slides": [
+    {
+      "title": "Revolutionizing Grocery Delivery",
+      "subtitle": "How Technology is Changing the Game",
+      "key_points": ["On-demand delivery trends", "Customer expectations", "Market growth"]
+    },
+    ...
+  ]
+}
+```
+Great! I've created your presentation. Now let me apply the Instacart branding...
+```json
+{
+  "action": "update_theme",
+  "theme_changes": {
+    "brand": {
+      "name": "Instacart",
+      "url": "instacart.com"
+    }
+  }
+}
+```
+Perfect! Your presentation now has Instacart's brand colors and logo.
+
 User: "make slide 3 have less content"
 Assistant: ```json
 {
