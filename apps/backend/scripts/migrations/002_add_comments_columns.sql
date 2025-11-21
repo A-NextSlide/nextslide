@@ -18,3 +18,4 @@ CREATE INDEX IF NOT EXISTS idx_comments_anchor ON comments USING GIN (anchor);
 COMMENT ON COLUMN comments.anchor IS 'JSONB storing comment anchor info: {type: "component"|"region"|"component_group", slideId, componentId?, componentIds?, rect?}';
 COMMENT ON COLUMN comments.mention_user_ids IS 'Array of user IDs that were mentioned in this comment';
 
+

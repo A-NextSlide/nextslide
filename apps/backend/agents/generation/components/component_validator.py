@@ -6,7 +6,6 @@ from typing import Dict, Any, List, Optional
 import re
 import uuid
 from setup_logging_optimized import get_logger
-from services.simple_font_fitter import SimpleFontFitter
 
 logger = get_logger(__name__)
 
@@ -17,9 +16,7 @@ class ComponentValidator:
     def __init__(self, registry=None):
         """Initialize with optional registry."""
         self.registry = registry
-        self.font_fitter = SimpleFontFitter()
-        # Clear cache on init to pick up new font path changes
-        self.measured_font_ratios = {}  # Cache for measured font ratios
+
     
     def validate_components(
         self,
@@ -30,13 +27,6 @@ class ComponentValidator:
         """Validate components against registry."""
         # Use provided registry or fall back to instance registry
         registry = registry or self.registry
-
-        # Apply font sizing to all text components if theme provided
-        if theme:
-            logger.debug(f"[FONT SIZING] Applying adaptive font sizing to {len(components)} components")
-            components = self.apply_slide_font_sizing(components, theme)
-        else:
-            logger.warning("[FONT SIZING] No theme provided, skipping font sizing")
 
         validated = []
         
@@ -86,8 +76,6 @@ class ComponentValidator:
                     except Exception:
                         pass
                     component = self._promote_plain_text_to_rich_tiptap(component, theme)
-                    # Apply intelligent font sizing
-                    component = self._apply_intelligent_font_sizing(component)
                 
                 # Validate boundaries for all components to prevent overflow
                 component = self._validate_component_boundaries(component)
@@ -137,6 +125,7 @@ class ComponentValidator:
             validated = [self._validate_component_boundaries(c) for c in validated]
         except Exception as e:
             logger.debug(f"boundary pass skipped: {e}")
+
         return validated
 
     def _normalize_non_overlapping_layout(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -344,315 +333,6 @@ class ComponentValidator:
 
         component['props'] = props
         return component
-
-    def _apply_intelligent_font_sizing(self, component: Dict[str, Any], theme: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Apply simple font sizing - fit text to container."""
-        try:
-            props = component.get('props', {}) or {}
-            comp_type = component.get('type')
-
-            # Get text content from multiple possible sources
-            text_content = ""
-            content_source = None
-            if 'texts' in props and isinstance(props['texts'], list):
-                # For rich text components
-                text_content = ' '.join([t.get('text', '') for t in props['texts']])
-                content_source = "texts"
-            elif 'text' in props:
-                # For plain text components
-                text_content = props.get('text', '')
-                content_source = "text"
-            elif 'content' in props:
-                # For TiptapTextBlock with HTML content
-                import re
-                # Strip HTML tags to get plain text for measurement
-                html_content = props.get('content', '')
-                text_content = re.sub(r'<[^>]+>', '', html_content)
-                # Decode common HTML entities
-                text_content = text_content.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-                content_source = "content (HTML)"
-                print(f"      📄 HTML content: {html_content[:100]}...")
-                print(f"      📝 Plain text: {text_content[:100]}...")
-
-            if not text_content.strip():
-                print(f"      ⚠️  No text content found in {comp_type}")
-                return component
-
-            # Get container dimensions
-            width = props.get('width') or 600
-            height = props.get('height') or 200
-
-            # Debug: Show what we're sizing
-            print(f"      🔍 Sizing {comp_type}:")
-            print(f"         Source: {content_source}")
-            print(f"         Text: '{text_content[:60]}{'...' if len(text_content) > 60 else ''}'")
-            print(f"         Container: {width:.0f}x{height:.0f}px")
-            print(f"         Current fontSize: {props.get('fontSize', 'not set')}")
-
-            # Get padding
-            if comp_type == 'Shape' and props.get('hasText'):
-                # Shape uses textPadding (single value) for all sides
-                text_padding = props.get('textPadding', 16)
-                padding_x = text_padding
-                padding_y = text_padding
-            else:
-                # Regular text components use paddingX/paddingY or generic padding
-                padding_x = props.get('paddingX') or props.get('padding', 10)
-                padding_y = props.get('paddingY') or props.get('padding', 5)
-
-            # Get font family and look up its character width ratio from theme
-            font_family = props.get('fontFamily', 'Inter')
-            char_width_ratio = None
-
-            if theme:
-                # Try to find the charWidthRatio from theme
-                typography = theme.get('typography', {})
-
-                # Check if this font matches heading or paragraph font
-                # Support both frontend format (heading/paragraph) and backend format (hero_title/body_text)
-                heading = typography.get('heading') or typography.get('hero_title', {})
-                paragraph = typography.get('paragraph') or typography.get('body_text', {})
-
-                # Check heading font (supports both 'fontFamily' and 'family' keys)
-                heading_font = heading.get('fontFamily') or heading.get('family')
-                if heading_font == font_family:
-                    char_width_ratio = heading.get('charWidthRatio')
-                    if char_width_ratio:
-                        print(f"  🎯 Using theme ratio {char_width_ratio:.3f} for {font_family} (heading)")
-
-                # Check paragraph/body font (supports both 'fontFamily' and 'family' keys)
-                para_font = paragraph.get('fontFamily') or paragraph.get('family')
-                if para_font == font_family:
-                    char_width_ratio = paragraph.get('charWidthRatio')
-                    if char_width_ratio:
-                        print(f"  🎯 Using theme ratio {char_width_ratio:.3f} for {font_family} (paragraph)")
-
-            # If no ratio found in theme, measure it automatically on backend
-            if char_width_ratio is None:
-                # Check cache first, but only use if it's not the default 0.55
-                cached_ratio = self.measured_font_ratios.get(font_family)
-                if cached_ratio is not None and cached_ratio != 0.55:
-                    char_width_ratio = cached_ratio
-                    print(f"  📦 Using cached ratio {char_width_ratio:.3f} for {font_family}")
-                else:
-                    # Measure the font (will print its own logs)
-                    print(f"  🔍 Measuring font '{font_family}'...")
-                    char_width_ratio = self.font_fitter.measure_char_width_ratio(font_family)
-                    self.measured_font_ratios[font_family] = char_width_ratio
-                    print(f"  📏 Measured ratio {char_width_ratio:.3f} for {font_family}")
-
-            # Get line height from component props (already normalized at lines 222-241)
-            line_height = props.get('lineHeight', 1.5)  # Fallback just in case
-
-            # Fit text to container (backend designs for 1920px, frontend handles scaling)
-            result = self.font_fitter.fit_text_to_container(
-                text=text_content,
-                container_width=width,
-                container_height=height,
-                font_family=font_family,
-                padding_x=padding_x,
-                padding_y=padding_y,
-                line_height=line_height,
-                letter_spacing=0,
-                char_width_ratio=char_width_ratio  # Pass measured ratio from frontend
-            )
-
-            # Store the fitted size
-            props['fontSize'] = result['fontSize']
-            # Keep the line height that was used for calculation (from props or default 1.5)
-            props['lineHeight'] = line_height
-            props['letterSpacing'] = 0
-
-            # Update rich text segments with the same size
-            if 'texts' in props and isinstance(props['texts'], list):
-                for text_segment in props['texts']:
-                    text_segment['fontSize'] = result['fontSize']
-
-            print(f"      → Fitted to {result['fontSize']}px for {width:.0f}x{height:.0f} container")
-
-            logger.debug(
-                f"[SIMPLE FONT FITTER] {comp_type}: {result['fontSize']}px "
-                f"(container={width}x{height}, fits={result['fits']}, iterations={result['iterations']})"
-            )
-
-            component['props'] = props
-            return component
-
-        except Exception as e:
-            logger.warning(f"[SIMPLE FONT FITTER] Failed for {comp_type}: {e}")
-            return component
-
-
-    def apply_slide_font_sizing(self,
-                               components: List[Dict[str, Any]],
-                               theme: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Apply adaptive font sizing to all text components."""
-        try:
-            # Debug: Check if theme has charWidthRatio
-            print(f"\n🔍 FULL THEME DEBUG:")
-            print(f"  Theme type: {type(theme)}")
-            print(f"  Theme keys: {list(theme.keys()) if isinstance(theme, dict) else 'Not a dict'}")
-
-            if theme and theme.get('typography'):
-                typography = theme.get('typography', {})
-                print(f"  Typography type: {type(typography)}")
-                print(f"  Typography keys: {list(typography.keys()) if isinstance(typography, dict) else 'Not a dict'}")
-
-                # Support both formats: frontend (heading/paragraph) and backend (hero_title/body_text)
-                heading = typography.get('heading') or typography.get('hero_title', {})
-                paragraph = typography.get('paragraph') or typography.get('body_text', {})
-                heading_ratio = heading.get('charWidthRatio')
-                para_ratio = paragraph.get('charWidthRatio')
-
-                # Print detailed theme typography structure
-                print(f"\n📚 THEME TYPOGRAPHY STRUCTURE:")
-                print(f"  Heading/Hero: {heading}")
-                print(f"  Paragraph/Body: {paragraph}")
-
-                if heading_ratio or para_ratio:
-                    print(f"\n📊 THEME CHAR WIDTH RATIOS: heading={heading_ratio}, paragraph={para_ratio}")
-                else:
-                    print(f"\n⚠️  NO CHAR WIDTH RATIOS IN THEME")
-                    # Check if fonts exist (support both 'fontFamily' and 'family' keys)
-                    heading_font = heading.get('fontFamily') or heading.get('family')
-                    para_font = paragraph.get('fontFamily') or paragraph.get('family')
-                    if not heading_font and not para_font:
-                        print(f"   💡 Typography has no fonts! Check theme in database or frontend theme selector")
-                    else:
-                        print(f"   💡 Fonts found: heading={heading_font}, body={para_font}")
-                        print(f"   🔬 Will measure fonts automatically on backend")
-
-            print(f"\n🔤 FONT SIZING: Processing {len(components)} components...")
-            sized_count = 0
-            # Process ALL text components with adaptive sizing
-            for comp in components:
-                comp_type = comp.get('type')
-                props = comp.get('props', {})
-
-                # More robust text component detection
-                has_text = ('text' in props or 'texts' in props)
-
-                # Check for ANY component with text properties
-                has_font_props = any(key in props for key in ['fontSize', 'fontFamily', 'textColor'])
-
-                # Check common text component types (case insensitive)
-                comp_type_lower = (comp_type or '').lower()
-                is_text_type = any(text_type in comp_type_lower for text_type in
-                                  ['text', 'title', 'heading', 'tiptap', 'label', 'caption'])
-
-                # If it has text content OR text-related properties, it's a text component
-                if has_text or has_font_props or is_text_type:
-                    logger.debug(f"[FONT SIZING] Processing {comp_type} component")
-                    # Apply adaptive sizing to each component (pass theme for char width ratios)
-                    self._apply_intelligent_font_sizing(comp, theme)
-                    sized_count += 1
-
-            # Normalize font sizes for consistent appearance
-            if sized_count > 0:
-                print(f"  ✅ Fitted {sized_count} text components")
-            components = self._normalize_font_sizes_by_x_position(components)
-
-            logger.debug(f"[FONT SIZING] ✅ Applied adaptive font sizing to {sized_count} text components")
-            print(f"✅ FONT SIZING COMPLETE\n")
-            return components
-
-        except Exception as e:
-            logger.error(f"[FONT SIZING] Batch font sizing failed: {e}", exc_info=True)
-            return components
-
-    def _normalize_font_sizes_by_x_position(self, components: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Simple normalization: Group text components by x-position and use median font size.
-        This ensures bullet points and aligned text have consistent sizing.
-        """
-        try:
-            X_TOLERANCE = 15  # Horizontal alignment tolerance
-            Y_TOLERANCE = 100  # Vertical proximity tolerance
-
-            text_components = []
-            for comp in components:
-                comp_type = comp.get('type', '')
-                props = comp.get('props', {})
-                position = props.get('position', {})
-
-                # Only process regular text components
-                if comp_type in ['TiptapTextBlock', 'TextBlock'] and 'fontSize' in props:
-                    # Skip titles/headings
-                    metadata = props.get('metadata', {})
-                    role = metadata.get('role', '').lower()
-                    if 'title' not in role and 'heading' not in role:
-                        text_components.append({
-                            'component': comp,
-                            'x': position.get('x', 0),
-                            'y': position.get('y', 0),
-                            'fontSize': props['fontSize']
-                        })
-
-            if len(text_components) < 2:
-                return components
-
-            # Group by x-position
-            groups = {}
-            for item in text_components:
-                x, y = item['x'], item['y']
-                found_group = False
-
-                for group_key in groups:
-                    group_x = group_key[0]
-                    if abs(x - group_x) <= X_TOLERANCE:
-                        # Check y proximity to any item in group
-                        for existing in groups[group_key]:
-                            if abs(y - existing['y']) <= Y_TOLERANCE:
-                                groups[group_key].append(item)
-                                found_group = True
-                                break
-                    if found_group:
-                        break
-
-                if not found_group:
-                    groups[(x, y)] = [item]
-
-            # Apply MINIMUM size to each group to ensure consistent sizing without overflow
-            # Using minimum prevents enlarging text that barely fits, which would cause overflow
-            normalized_count = 0
-            for group_items in groups.values():
-                if len(group_items) > 1:
-                    sizes = sorted([item['fontSize'] for item in group_items])
-                    min_size = sizes[0]  # Use minimum size instead of median
-                    max_size = sizes[-1]
-
-                    # Only normalize if the size range is reasonable (not mixing titles with body text)
-                    # Allow normalization if max size is at most 1.5x the min size
-                    size_ratio = max_size / min_size if min_size > 0 else float('inf')
-
-                    if size_ratio <= 1.5:
-                        # Sizes are similar enough to normalize to the smallest
-                        # This ensures all text fits without overflow
-                        if max_size != min_size:
-                            print(f"  🔄 NORMALIZE: {len(group_items)} components | {sizes} → {min_size}px (using minimum)")
-                            normalized_count += len(group_items)
-
-                        for item in group_items:
-                            props = item['component']['props']
-                            props['fontSize'] = min_size
-
-                            # Update text segments
-                            if 'texts' in props and isinstance(props['texts'], list):
-                                for seg in props['texts']:
-                                    if isinstance(seg, dict):
-                                        seg['fontSize'] = min_size
-                    else:
-                        # Sizes are too different - skip normalization for this group
-                        print(f"  ⏭️  SKIP NORMALIZE: {len(group_items)} components | {sizes} | Size ratio {size_ratio:.1f}x too high (max 1.5x)")
-
-            if normalized_count > 0:
-                print(f"  ✅ Normalized {normalized_count} components to consistent sizes")
-
-            return components
-
-        except Exception as e:
-            logger.warning(f"[FONT NORMALIZATION] Failed: {e}")
-            return components
 
     def _promote_plain_text_to_rich_tiptap(self, component: Dict[str, Any], theme: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Ensure text components use rich Tiptap texts[] structure with style and emphasis.

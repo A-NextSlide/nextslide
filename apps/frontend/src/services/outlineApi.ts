@@ -175,32 +175,32 @@ export interface ProgressUpdate {
 // New streaming event types
 export interface StreamingEvent {
   type: 'progress' | 'status' | 'outline_structure' | 'slide_start' | 'slide_complete' |
-        'files_processed' |
-        'outline_complete' | 'deck_ready' | 'deck_created' | 'deck_created_with_warning' |
-        'narrative_flow_started' | 'narrative_flow_ready' | 'narrative_flow_pending' |
-        'error' | 'images_collected' | 'images_ready_for_selection' | 'data' | 'complete' |
-        'deck_creation_started' | 'deck_complete' | 'creating_deck';
-  
+  'files_processed' |
+  'outline_complete' | 'deck_ready' | 'deck_created' | 'deck_created_with_warning' |
+  'narrative_flow_started' | 'narrative_flow_ready' | 'narrative_flow_pending' |
+  'error' | 'images_collected' | 'images_ready_for_selection' | 'data' | 'complete' |
+  'deck_creation_started' | 'deck_complete' | 'creating_deck';
+
   // Common fields
   message?: string;
   timestamp?: number;
-  
+
   // For progress events
   stage?: string;
   percent?: number;
   progress?: number; // Alternative progress field
   currentSlide?: number;
   totalSlides?: number;
-  
+
   // For generic data events
   data?: any;
-  
+
   // For outline_structure event
   title?: string;
   slideCount?: number;
   slideTitles?: string[];
   slideTypes?: string[];
-  
+
   // For slide_complete event
   slideIndex?: number;
   slide?: {
@@ -220,7 +220,7 @@ export interface StreamingEvent {
     };
     taggedMedia?: TaggedMedia[];
   };
-  
+
   // For outline_complete event (Progress: 85%)
   success?: boolean;
   hasResult?: boolean;
@@ -234,21 +234,21 @@ export interface StreamingEvent {
     detail_level?: string;
     research_enabled?: boolean;
   };
-  
+
   // For deck_ready event (Success: Navigation target)
   deck_id?: string;           // UUID from Supabase
   deck_url?: string;          // '/deck/{deck_id}' or '/editor/{deck_id}'
-  
+
   // For deck_created_with_warning event
   database_error?: string;    // Error details when DB save fails
   database_saved?: boolean;   // Flag indicating if DB save was successful
-  
+
   // For narrative flow events
   notes?: any;                // Narrative flow payload for narrative_flow_ready
-  
+
   // For error events
   error?: string;
-  
+
   // For images_collected event
   images_by_slide?: Array<{
     slide_id: string;
@@ -275,7 +275,7 @@ export class OutlineAPI {
   private baseUrl: string;
   // Add deduplication map to track pending requests
   private pendingRequests: Map<string, Promise<any>> = new Map();
-  
+
   constructor() {
     // Get base URL from environment or use default
     const env = (import.meta as any).env || process.env;
@@ -284,25 +284,25 @@ export class OutlineAPI {
     // Log the API URL being used
     // console.log('[OutlineAPI] Using API URL:', this.baseUrl);
   }
-  
+
   // Generate a unique key for request deduplication
   private generateRequestKey(method: string, data: any): string {
     // For deck creation, create a key based on slide titles and content
     // to avoid issues with changing outline titles
     if (method === 'createDeckFromOutline' && data.outline) {
       const outline = data.outline;
-      
+
       // Create a signature from slide titles and count
       const slideTitles = outline.slides?.map((s: any) => s.title || '').sort().join('|') || '';
       const slideCount = outline.slides?.length || 0;
-      
+
       // Simple hash function for the content
       const contentHash = this.simpleHash(slideTitles);
-      
+
       const key = `${method}:${slideCount}:${contentHash}`;
       return key;
     }
-    
+
     // For other methods, use the full data
     const dataString = JSON.stringify(data, Object.keys(data).sort());
     return `${method}:${dataString}`;
@@ -329,7 +329,7 @@ export class OutlineAPI {
   ): Promise<{ theme: any; palette?: any }> {
     // Deduplicate in-flight theme requests per outline.id
     try {
-      const outlineId = outline?.id || (typeof outline === 'object' ? JSON.stringify({ t: outline?.title, s: (outline?.slides||[]).length }) : 'unknown');
+      const outlineId = outline?.id || (typeof outline === 'object' ? JSON.stringify({ t: outline?.title, s: (outline?.slides || []).length }) : 'unknown');
       const requestKey = this.generateRequestKey('generateThemeFromOutline', { outlineId, deckId: deckId || '' });
       const existing = this.pendingRequests.get(requestKey);
       if (existing) {
@@ -339,7 +339,7 @@ export class OutlineAPI {
       const promise = this._generateThemeFromOutlineInternal(outline, deckId, onProgress)
         .finally(() => {
           // Clean up after resolution
-          try { this.pendingRequests.delete(requestKey); } catch {}
+          try { this.pendingRequests.delete(requestKey); } catch { }
         });
       this.pendingRequests.set(requestKey, promise);
       return promise;
@@ -363,30 +363,30 @@ export class OutlineAPI {
       title: outline.title,
       slides: Array.isArray(outline.slides)
         ? outline.slides.map((s: any) => ({
-            id: s.id,
-            title: s.title,
-            content: s.content,
-            deepResearch: !!s.deepResearch,
-          }))
+          id: s.id,
+          title: s.title,
+          content: s.content,
+          deepResearch: !!s.deepResearch,
+        }))
         : [],
       stylePreferences: outline.stylePreferences
         ? {
-            initialIdea: outline.stylePreferences.initialIdea,
-            vibeContext: outline.stylePreferences.vibeContext,
-            font: outline.stylePreferences.font ?? null,
-            colors: outline.stylePreferences.colors
-              ? {
-                  type: outline.stylePreferences.colors.type,
-                  name: outline.stylePreferences.colors.name,
-                  background: outline.stylePreferences.colors.background,
-                  text: outline.stylePreferences.colors.text,
-                  accent1: outline.stylePreferences.colors.accent1,
-                  accent2: outline.stylePreferences.colors.accent2,
-                  accent3: outline.stylePreferences.colors.accent3,
-                }
-              : null,
-            logoUrl: (outline.stylePreferences as any)?.logoUrl,
-          }
+          initialIdea: outline.stylePreferences.initialIdea,
+          vibeContext: outline.stylePreferences.vibeContext,
+          font: outline.stylePreferences.font ?? null,
+          colors: outline.stylePreferences.colors
+            ? {
+              type: outline.stylePreferences.colors.type,
+              name: outline.stylePreferences.colors.name,
+              background: outline.stylePreferences.colors.background,
+              text: outline.stylePreferences.colors.text,
+              accent1: outline.stylePreferences.colors.accent1,
+              accent2: outline.stylePreferences.colors.accent2,
+              accent3: outline.stylePreferences.colors.accent3,
+            }
+            : null,
+          logoUrl: (outline.stylePreferences as any)?.logoUrl,
+        }
         : undefined,
       notes: outline.notes,
     };
@@ -440,7 +440,7 @@ export class OutlineAPI {
               finalTheme = evt.theme;
               finalPalette = evt.palette;
             }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -483,7 +483,7 @@ export class OutlineAPI {
       return { theme, palette: data.palette };
     }
   }
-  
+
   /**
    * Convert File to base64 string
    */
@@ -498,7 +498,7 @@ export class OutlineAPI {
       reader.onerror = (error) => reject(error);
     });
   }
-  
+
   /**
    * Generate outline with the given parameters
    */
@@ -518,23 +518,23 @@ export class OutlineAPI {
 
     try {
       const formData = new FormData();
-      
+
       // Determine which base prompt to use
       const hasFiles = files && files.length > 0;
-      
+
       // For testing: use minimal prompts if there's an issue
       const useMinimalPrompts = false; // Set to true to test with minimal prompts
-      
-      const chatCompletionSystemPrompt = useMinimalPrompts 
+
+      const chatCompletionSystemPrompt = useMinimalPrompts
         ? "You are a helpful assistant that creates presentation outlines."
-        : hasFiles 
+        : hasFiles
           ? "" // Backend will provide the appropriate prompt
           : "";
-      
+
       const assistantSystemPrompt = useMinimalPrompts
         ? "Create a presentation outline with a title and slides."
         : "";
-      
+
       // Convert files to base64
       const filesData = await Promise.all(
         files.map(async (file) => ({
@@ -544,7 +544,7 @@ export class OutlineAPI {
           size: file.size
         }))
       );
-      
+
       const request: OutlineGenerationRequest = {
         prompt,
         files: filesData.length > 0 ? filesData : undefined,
@@ -555,7 +555,7 @@ export class OutlineAPI {
         chatCompletionSystemPrompt,
         assistantSystemPrompt
       };
-      
+
       // Add form data for the request
       for (const key in request) {
         if (request[key] instanceof Array) {
@@ -570,28 +570,28 @@ export class OutlineAPI {
           formData.append(key, request[key]);
         }
       }
-      
+
       const response = await fetch(API_ENDPOINTS.getFullUrl(API_ENDPOINTS.GENERATE_OUTLINE), {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Outline generation failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      
+
       const responseData: OutlineGenerationResponse = await response.json();
-      
+
       // Check for both 'outline' and 'result' fields for compatibility
       const outline = responseData.outline || (responseData as any).result;
-      
+
       if (!responseData.success || !outline) {
         throw new Error(responseData.error || 'Outline generation failed');
       }
-      
+
       return outline;
-      
+
     } catch (fetchError) {
       if (fetchError instanceof TypeError) {
         throw new Error('Network error - Check if API server is running at: ' + this.baseUrl);
@@ -599,7 +599,7 @@ export class OutlineAPI {
       throw fetchError;
     }
   }
-  
+
   /**
    * Enhance content with web search
    */
@@ -610,13 +610,13 @@ export class OutlineAPI {
         contentEnhancement: "" // Backend will provide the appropriate prompt
       }
     };
-    
+
     // Add enhancePrompt field that backend expects
     const requestWithEnhancePrompt = {
       ...request,
       enhancePrompt: "" // Backend will provide the appropriate prompt
     };
-    
+
     const response = await fetch(API_ENDPOINTS.getFullUrl(API_ENDPOINTS.ENHANCE_CONTENT), {
       method: 'POST',
       headers: {
@@ -624,14 +624,14 @@ export class OutlineAPI {
       },
       body: JSON.stringify(requestWithEnhancePrompt),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Content enhancement failed: ${response.statusText}`);
     }
-    
+
     return response.json();
   }
-  
+
   /**
    * Interpret media files
    */
@@ -649,7 +649,7 @@ export class OutlineAPI {
         size: file.size
       }))
     );
-    
+
     const request: MediaInterpretationRequest = {
       files: filesData,
       slides,
@@ -658,7 +658,7 @@ export class OutlineAPI {
         mediaInterpretation: "" // Backend will provide the appropriate prompt
       }
     };
-    
+
     const response = await fetch(API_ENDPOINTS.getFullUrl(API_ENDPOINTS.INTERPRET_MEDIA), {
       method: 'POST',
       headers: {
@@ -666,17 +666,17 @@ export class OutlineAPI {
       },
       body: JSON.stringify(request),
     });
-    
+
     if (!response.ok) {
       throw new Error(`Media interpretation failed: ${response.statusText}`);
     }
-    
+
     const result: MediaInterpretationResponse = await response.json();
-    
+
     if (!result.success) {
       throw new Error(result.error || 'Media interpretation failed');
     }
-    
+
     // Convert response to TaggedMedia format
     return result.interpretedMedia.map(media => ({
       id: media.fileId,
@@ -733,7 +733,7 @@ export class OutlineAPI {
         additional_instructions: options.additional_instructions,
         style_preferences: options.style_preferences
       };
-      
+
       const response = await fetch(`${this.baseUrl}/generate-outline`, {
         method: 'POST',
         headers: {
@@ -742,20 +742,20 @@ export class OutlineAPI {
         },
         body: JSON.stringify(request),
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Outline generation failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      
+
       const result: OutlineResponse = await response.json();
-      
+
       if (result.status !== 'success' || !result.outline) {
         throw new Error('Outline generation failed');
       }
-      
+
       return result.outline;
-      
+
     } catch (fetchError) {
       if (fetchError instanceof TypeError) {
         throw new Error('Network error - Check if API server is running at: ' + this.baseUrl);
@@ -775,13 +775,13 @@ export class OutlineAPI {
   ): Promise<{ deck_id: string; deck_url?: string }> {
     // Generate a unique key for this request
     const requestKey = this.generateRequestKey('createDeckFromOutline', { outline, stylePreferences });
-    
+
     // Check if this request is already in progress
     const pendingRequest = this.pendingRequests.get(requestKey);
     if (pendingRequest) {
       return pendingRequest;
     }
-    
+
     // Create the promise for this request
     const requestPromise = (async () => {
       try {
@@ -794,16 +794,16 @@ export class OutlineAPI {
             }
           });
         }
-        
+
         const request: CreateDeckFromOutlineRequest = {
           outline,
           style_preferences: stylePreferences,
           async_images: autoApplyImages !== undefined ? !autoApplyImages : true  // When autoApplyImages=true (user wants auto-apply), send async_images=false (backend auto-apply mode)
         };
-        
+
         // For now, use the streaming approach directly since EventSource endpoint doesn't exist yet
         return await this.createDeckWithStreaming(request, onProgress);
-        
+
       } catch (error) {
         if (error instanceof TypeError) {
           throw new Error('Network error - Check if API server is running at: ' + this.baseUrl);
@@ -814,10 +814,10 @@ export class OutlineAPI {
         this.pendingRequests.delete(requestKey);
       }
     })();
-    
+
     // Store the pending request
     this.pendingRequests.set(requestKey, requestPromise);
-    
+
     return requestPromise;
   }
 
@@ -833,7 +833,7 @@ export class OutlineAPI {
       let deckId = '';
       let deckUrl = '';
       let eventSource: EventSource | null = null;
-      
+
       // First, initiate the deck creation with POST
       fetch(`${this.baseUrl}/create-deck-from-outline`, {
         method: 'POST',
@@ -846,26 +846,26 @@ export class OutlineAPI {
         if (!response.ok) {
           throw new Error(`Deck creation failed: ${response.status} ${response.statusText}`);
         }
-        
+
         // Get the session ID or stream ID from response headers if available
         const streamId = response.headers.get('X-Stream-ID') || '';
-        
+
         // Create EventSource for SSE events
-        const eventSourceUrl = streamId 
+        const eventSourceUrl = streamId
           ? `${this.baseUrl}/create-deck-from-outline/events?stream_id=${streamId}`
           : `${this.baseUrl}/create-deck-from-outline/events`;
-          
+
         eventSource = new EventSource(eventSourceUrl);
-        
+
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            
+
             // IMPORTANT: Capture deck_id from ANY event that has it
             if (data.deck_id && !deckId) {
               deckId = data.deck_id;
             }
-            
+
             // Convert to StreamingEvent format for callback
             const streamingEvent: StreamingEvent = {
               type: data.type as any,
@@ -874,25 +874,25 @@ export class OutlineAPI {
               progress: data.progress,
               data: data
             };
-            
+
             if (onProgress) {
               onProgress(streamingEvent);
             }
-            
+
             // Handle different event types
             switch (data.type) {
               case 'deck_creation_started':
                 // Deck creation started - has deck_id
                 break;
-                
+
               case 'deck_created':
                 // Deck saved to database successfully
                 break;
-                
+
               case 'deck_created_with_warning':
                 // Database save failed but composition continues
                 break;
-                
+
               case 'deck_complete':
                 // Deck composition complete
                 if (data.deck_id) {
@@ -904,12 +904,12 @@ export class OutlineAPI {
                 eventSource.close();
                 resolve({ deck_id: deckId, deck_url: deckUrl });
                 break;
-                
+
               case 'error':
                 // Error during composition
                 const errorMessage = data.error || data.message || 'Deck creation failed';
                 eventSource.close();
-                
+
                 // If we have a deck_id, we can still return it for partial recovery
                 if (deckId) {
                   resolve({ deck_id: deckId, deck_url: deckUrl });
@@ -921,10 +921,10 @@ export class OutlineAPI {
           } catch (parseError) {
           }
         };
-        
+
         eventSource.onerror = (error) => {
           eventSource?.close();
-          
+
           // If we already have a deck_id, resolve with it
           if (deckId) {
             resolve({ deck_id: deckId, deck_url: deckUrl });
@@ -932,7 +932,7 @@ export class OutlineAPI {
             reject(new Error('Connection error during deck creation'));
           }
         };
-        
+
       }).catch(fetchError => {
         if (eventSource) {
           eventSource.close();
@@ -951,10 +951,10 @@ export class OutlineAPI {
   ): Promise<{ deck_id: string; deck_url?: string }> {
     // Use the correct endpoint
     const endpoint = API_ENDPOINTS.getFullUrl(API_ENDPOINTS.COMPOSE_DECK_STREAM);
-    
+
     // Generate a proper UUID for deck_id if not provided
     const deck_id = request.outline?.deck_id || request.outline?.id || uuidv4();
-    
+
     // Construct the request body to match expected format
     const requestBody = {
       deck_id: deck_id,
@@ -981,48 +981,48 @@ export class OutlineAPI {
       },
       body: JSON.stringify(requestBody),
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Deck creation failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    
+
     if (!response.body) {
       throw new Error('No response body available for streaming');
     }
-    
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let deckId = '';
     let deckUrl = '';
-    
+
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) break;
-      
+
       const chunk = decoder.decode(value, { stream: true });
       buffer += chunk;
-      
+
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-      
+
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim();
-          
+
           if (data === '' || data === '[DONE]') {
             continue;
           }
-          
+
           try {
             const event = JSON.parse(data) as StreamingEvent;
-            
+
             if (onProgress) {
               onProgress(event);
             }
-            
+
             // Handle different event types
             switch (event.type) {
               case 'data':
@@ -1030,7 +1030,7 @@ export class OutlineAPI {
                   deckId = event.data.deck_id;
                 }
                 break;
-                
+
               case 'complete':
                 if (event.data?.deck_id) {
                   deckId = event.data.deck_id;
@@ -1039,7 +1039,7 @@ export class OutlineAPI {
                   deckUrl = event.data.deck_url;
                 }
                 return { deck_id: deckId, deck_url: deckUrl };
-                
+
               case 'error':
                 throw new Error(event.message || 'Deck creation failed');
             }
@@ -1049,11 +1049,11 @@ export class OutlineAPI {
         }
       }
     }
-    
+
     if (!deckId) {
       throw new Error('Deck creation completed but no deck ID received');
     }
-    
+
     return { deck_id: deckId, deck_url: deckUrl };
   }
 
@@ -1081,19 +1081,19 @@ export class OutlineAPI {
     try {
       // Determine which base prompt to use
       const hasFiles = files && files.length > 0;
-      
+
       const useMinimalPrompts = false;
-      
-      const chatCompletionSystemPrompt = useMinimalPrompts 
+
+      const chatCompletionSystemPrompt = useMinimalPrompts
         ? "You are a helpful assistant that creates presentation outlines."
-        : hasFiles 
+        : hasFiles
           ? "" // Backend will provide the appropriate prompt
           : "";
-      
+
       const assistantSystemPrompt = useMinimalPrompts
         ? "Create a presentation outline with a title and slides."
         : "";
-      
+
       // Convert files to base64
       const filesData = await Promise.all(
         files.map(async (file) => ({
@@ -1103,7 +1103,7 @@ export class OutlineAPI {
           size: file.size
         }))
       );
-      
+
       // Build request while omitting null/undefined/empty values to satisfy strict validators
       console.warn('[outlineApi] ⚠️ Building request');
       console.warn('[outlineApi] options.detailLevel:', options.detailLevel);
@@ -1137,8 +1137,8 @@ export class OutlineAPI {
       if (options.colorPreference != null) request.colorPreference = options.colorPreference;
       if (chatCompletionSystemPrompt && chatCompletionSystemPrompt.trim().length > 0) request.chatCompletionSystemPrompt = chatCompletionSystemPrompt;
       if (assistantSystemPrompt && assistantSystemPrompt.trim().length > 0) request.assistantSystemPrompt = assistantSystemPrompt;
-      
-      
+
+
       const endpointUrl = API_ENDPOINTS.getFullUrl(API_ENDPOINTS.GENERATE_OUTLINE_STREAM);
       console.warn('[outlineApi] Using streaming endpoint:', endpointUrl);
       console.warn('[outlineApi] Starting stream at:', new Date().toISOString());
@@ -1175,16 +1175,16 @@ export class OutlineAPI {
         },
         body: JSON.stringify(request),
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Streaming outline generation failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      
+
       if (!response.body) {
         throw new Error('No response body available for streaming');
       }
-      
+
       const readStream = async (): Promise<DeckOutline> => {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
@@ -1256,7 +1256,7 @@ export class OutlineAPI {
                       ...outlineMetadata,
                       narrativeFlow: event.narrative_flow
                     };
-                    try { onProgress?.({ type: 'status', message: 'narrative_flow_ready' } as any); } catch {}
+                    try { onProgress?.({ type: 'status', message: 'narrative_flow_ready' } as any); } catch { }
                   }
                 }
               } catch {
@@ -1293,7 +1293,7 @@ export class OutlineAPI {
           throw new Error('Failed to generate outline - no data received');
         }
       };
-      
+
       return await readStream();
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('fetch')) {
@@ -1349,7 +1349,7 @@ export class OutlineAPI {
               const event = JSON.parse(dataStr);
               console.warn('[outlineApi] Received SSE event:', event.type, event);
               console.warn('[outlineApi] About to call onProgress, callback exists:', !!onProgress);
-              
+
               // Always mirror research/theming events to a global buffer for the Thinking UI
               try {
                 const t = (event as any)?.type;
@@ -1361,7 +1361,7 @@ export class OutlineAPI {
                     w.__DEBUG_RESEARCH_EVENTS__ = buf;
                   }
                 }
-              } catch {}
+              } catch { }
 
               if (onProgress) {
                 console.warn('[outlineApi] Calling onProgress callback now...');
@@ -1397,7 +1397,7 @@ export class OutlineAPI {
                 }
                 if (event.narrative_flow) {
                   outlineMetadata = { ...outlineMetadata, narrativeFlow: event.narrative_flow };
-                  try { onProgress?.({ type: 'status', message: 'narrative_flow_ready' } as any); } catch {}
+                  try { onProgress?.({ type: 'status', message: 'narrative_flow_ready' } as any); } catch { }
                 }
               }
             } catch (error) {
@@ -1453,20 +1453,20 @@ export class OutlineAPI {
         xhr.onerror = (event) => {
           const elapsedTime = Date.now() - startTime;
           console.error('[outlineApi] XHR error after', elapsedTime, 'ms:', event);
-          
+
           if (elapsedTime < 6000) { // Less than 6 seconds suggests a proxy timeout
             reject(new Error('Connection terminated by proxy timeout. Please restart your dev server after updating vite.config.ts'));
           } else {
             reject(new Error('Network error - Check if API server is running at: ' + this.baseUrl));
           }
         };
-        
+
         xhr.onabort = () => {
           const elapsedTime = Date.now() - startTime;
           console.error('[outlineApi] XHR aborted after', elapsedTime, 'ms');
           reject(new Error('Request aborted'));
         };
-        
+
         xhr.ontimeout = () => {
           const elapsedTime = Date.now() - startTime;
           console.error('[outlineApi] XHR timeout after', elapsedTime, 'ms');

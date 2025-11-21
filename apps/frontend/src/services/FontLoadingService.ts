@@ -73,10 +73,10 @@ function getFontPriority(fontDef: FontDefinition): number {
   if (COMMON_FONTS.includes(fontDef.name)) return FONT_PRIORITY.COMMON;
 
   for (const [category, priority] of Object.entries(FONT_PRIORITY_MAP)) {
-     // Find which category the font belongs to
-     if (FONT_CATEGORIES[category]?.some(f => f.name === fontDef.name)) {
-         return priority;
-     }
+    // Find which category the font belongs to
+    if (FONT_CATEGORIES[category]?.some(f => f.name === fontDef.name)) {
+      return priority;
+    }
   }
 
   return FONT_PRIORITY.STANDARD; // Default priority
@@ -126,7 +126,7 @@ export const FontLoadingService = {
             family: displayName,
             source: 'designer'
           } as any;
-          
+
           // Attach backend metadata for on-demand loading
           (def as any).id = (item as any).id;
           (def as any).category = (item as any).category;
@@ -135,7 +135,7 @@ export const FontLoadingService = {
           // Categorize fonts by source and category for better organization
           const category = ((item as any).category || '').toLowerCase();
           const source = (item as any).source;
-          
+
           // Add to source-specific category
           // PERFORMANCE: Skip PixelBuddha from frontend dropdowns to prevent slowdown
           // PixelBuddha fonts are still used by backend for hero/title generation
@@ -146,7 +146,7 @@ export const FontLoadingService = {
           } else {
             designerCat.push(def);
           }
-          
+
           // Also categorize by type for easier selection
           if (category.includes('display') || category.includes('headline')) {
             displayCat.push(def);
@@ -157,7 +157,7 @@ export const FontLoadingService = {
           } else if (category.includes('script') || category.includes('handwritten')) {
             scriptCat.push(def);
           }
-          
+
           // Tag-based categorization
           const tags = (item as any).tags || [];
           if (tags.some((t: string) => t.toLowerCase().includes('retro') || t.toLowerCase().includes('vintage'))) {
@@ -166,10 +166,10 @@ export const FontLoadingService = {
           if (tags.some((t: string) => t.toLowerCase().includes('tech') || t.toLowerCase().includes('futuristic'))) {
             techCat.push(def);
           }
-          
+
           existingNames.add(displayName);
         }
-        
+
         designerFontsSynced = true;
       } catch (e) {
         console.error('[FontLoadingService] Failed to sync designer fonts:', e);
@@ -225,7 +225,7 @@ export const FontLoadingService = {
     if (fontDef.source === 'system') {
       loadedFonts.add(fontName);
       if (!fontPerformanceMetrics[fontName]) {
-           fontPerformanceMetrics[fontName] = { loadTime: 0, uses: 1 };
+        fontPerformanceMetrics[fontName] = { loadTime: 0, uses: 1 };
       }
       return Promise.resolve();
     }
@@ -285,79 +285,79 @@ export const FontLoadingService = {
             break;
 
           case 'google':
-             // Construct Google Font API URL
-             let googleUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontDef.family)}`;
-             const variants: string[] = [];
-             const weights = String(fontDef.weight || '400').split(' ').map(w => w.trim()).filter(Boolean);
-             
-             // Handle variable fonts specially
-             if (fontDef.style === 'variable') {
-                 // For variable fonts, use the weight range format
-                 if (weights.length >= 2) {
-                     const minWeight = weights[0];
-                     const maxWeight = weights[weights.length - 1];
-                     googleUrl += `:wght@${minWeight}..${maxWeight}`;
-                 } else {
-                     // Fallback for variable fonts with single weight
-                     googleUrl += `:wght@${weights[0] || '400'}`;
-                 }
-             } else {
-                 // Regular font handling
-                 // Determine which styles to load based on font capabilities
-                 let styles: string[] = [];
-                 if (fontDef.style === 'italic') {
-                     styles = ['1']; // Only italic
-                 } else if (fontDef.style === 'normal') {
-                     styles = ['0']; // Only normal
-                 } else {
-                     // Check if font supports italic before loading both styles
-                     const { fontSupportsItalic } = await import('../utils/fontCapabilities');
-                     const supportsItalic = fontSupportsItalic(fontDef.name);
-                     styles = supportsItalic ? ['0', '1'] : ['0']; // Only load italic if supported
-                 }
-     
-                 // Create proper weight-style combinations
-                 styles.forEach(style => {
-                     weights.forEach(weight => {
-                         variants.push(`${style},${weight}`);
-                     });
-                 });
-                 
-                 if(variants.length > 0) {
-                     googleUrl += `:ital,wght@${variants.join(';')}`;
-                 }
-             }
-             googleUrl += '&display=swap';
- 
-             // Check if this stylesheet link already exists
-             if (!document.querySelector(`link[href="${googleUrl}"]`)) {
-                 // Create and append the <link> tag
-                 const link = document.createElement('link');
-                 link.rel = 'stylesheet';
-                 link.href = googleUrl;
-                 link.onload = () => {
-                   // Font stylesheet loaded successfully
-                 };
-                                link.onerror = () => {
-                 // Google Font failed to load
-               };
-                 document.head.appendChild(link);
-                 // Loading Google Font
-                 // Font styles and weights configured
-             } else {
-                 // Google Font stylesheet already exists
-             }
-             break;
+            // Construct Google Font API URL
+            let googleUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontDef.family)}`;
+            const variants: string[] = [];
+            const weights = String(fontDef.weight || '400').split(' ').map(w => w.trim()).filter(Boolean);
+
+            // Handle variable fonts specially
+            if (fontDef.style === 'variable') {
+              // For variable fonts, use the weight range format
+              if (weights.length >= 2) {
+                const minWeight = weights[0];
+                const maxWeight = weights[weights.length - 1];
+                googleUrl += `:wght@${minWeight}..${maxWeight}`;
+              } else {
+                // Fallback for variable fonts with single weight
+                googleUrl += `:wght@${weights[0] || '400'}`;
+              }
+            } else {
+              // Regular font handling
+              // Determine which styles to load based on font capabilities
+              let styles: string[] = [];
+              if (fontDef.style === 'italic') {
+                styles = ['1']; // Only italic
+              } else if (fontDef.style === 'normal') {
+                styles = ['0']; // Only normal
+              } else {
+                // Check if font supports italic before loading both styles
+                const { fontSupportsItalic } = await import('../utils/fontCapabilities');
+                const supportsItalic = fontSupportsItalic(fontDef.name);
+                styles = supportsItalic ? ['0', '1'] : ['0']; // Only load italic if supported
+              }
+
+              // Create proper weight-style combinations
+              styles.forEach(style => {
+                weights.forEach(weight => {
+                  variants.push(`${style},${weight}`);
+                });
+              });
+
+              if (variants.length > 0) {
+                googleUrl += `:ital,wght@${variants.join(';')}`;
+              }
+            }
+            googleUrl += '&display=swap';
+
+            // Check if this stylesheet link already exists
+            if (!document.querySelector(`link[href="${googleUrl}"]`)) {
+              // Create and append the <link> tag
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = googleUrl;
+              link.onload = () => {
+                // Font stylesheet loaded successfully
+              };
+              link.onerror = () => {
+                // Google Font failed to load
+              };
+              document.head.appendChild(link);
+              // Loading Google Font
+              // Font styles and weights configured
+            } else {
+              // Google Font stylesheet already exists
+            }
+            break;
 
           case 'fontshare':
             // For Fontshare fonts, we need to use the exact family name from the definition
             let fontshareUrl = `https://api.fontshare.com/v2/css?f[]=${encodeURIComponent(fontDef.family)}`;
             const fsWeights = String(fontDef.weight || '400').split(' ').map(w => w.trim()).filter(Boolean);
             if (fsWeights.length > 0) {
-                 fontshareUrl += `@${fsWeights.join(',')}`;
+              fontshareUrl += `@${fsWeights.join(',')}`;
             }
             fontshareUrl += '&display=swap';
-            
+
             // Use link tag instead of fetch to avoid CORS issues
             const fontshareId = `fontshare-${fontDef.family.replace(/\s+/g, '-').toLowerCase()}`;
             if (!document.querySelector(`link#${fontshareId}`)) {
@@ -368,9 +368,9 @@ export const FontLoadingService = {
               link.onload = () => {
                 // Font loaded successfully
               };
-                              link.onerror = () => {
-                  // Font failed to load
-                };
+              link.onerror = () => {
+                // Font failed to load
+              };
               document.head.appendChild(link);
             }
             break;
@@ -418,7 +418,7 @@ export const FontLoadingService = {
         // 6. Inject CSS if not already present (Only for non-google sources now)
         if (fontDef.source !== 'google' && fontDef.source !== 'cdn' && fontDef.source !== 'fontshare') {
           if (cssToInject && !styleTag.textContent?.includes(cssToInject)) {
-             styleTag.textContent += cssToInject;
+            styleTag.textContent += cssToInject;
           }
         }
 
@@ -427,29 +427,29 @@ export const FontLoadingService = {
         // If weight range or multiple weights, check common 400 to validate availability
         const fontWeight = (fontDef.style === 'variable' || (fontDef.weight && /\s|\d\s\d/.test(String(fontDef.weight)))) ? '400' : (fontDef.weight ? String(fontDef.weight).split(' ')[0] : '400');
         const fontLoadString = `${fontStyle} ${fontWeight} 1em "${fontDef.family}"`;
-        
+
         // For Fontshare fonts, we need to wait a bit for the stylesheet to load
         if (fontDef.source === 'fontshare') {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        
+
         const fontCheckPromise = 'fonts' in document ? document.fonts.load(fontLoadString) : Promise.resolve([null]);
 
         // 8. Set timeout and race
         const currentPriority = priority || getFontPriority(fontDef); // Use definition here
-        const timeoutMs = currentPriority <= FONT_PRIORITY.COMMON ? 3000 : 5000; 
+        const timeoutMs = currentPriority <= FONT_PRIORITY.COMMON ? 3000 : 5000;
 
         try {
           await Promise.race([
             fontCheckPromise,
             new Promise((_, reject) => setTimeout(() => reject(new Error('Font load timeout')), timeoutMs))
           ]);
-          
+
           // Additional verification for Google fonts
           if (fontDef.source === 'google' && 'fonts' in document) {
             // Give it a moment for the stylesheet to be processed
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             // Check if font is actually ready
             const isReady = document.fonts.check(fontLoadString);
             if (!isReady) {
@@ -465,10 +465,10 @@ export const FontLoadingService = {
         loadedFonts.add(fontName);
         const loadTime = performance.now() - startTime;
         fontPerformanceMetrics[fontName] = { loadTime, uses: (fontPerformanceMetrics[fontName]?.uses || 0) + 1 };
-        import('../utils/performanceMonitor').then(m => m.recordFontMetric(fontName, loadTime)).catch(()=>{});
+        import('../utils/performanceMonitor').then(m => m.recordFontMetric(fontName, loadTime)).catch(() => { });
         resolve();
 
-      } catch (error: any) {        
+      } catch (error: any) {
         // Do NOT mark as loaded on error; record failure only
         if (!fontPerformanceMetrics[fontName]) {
           fontPerformanceMetrics[fontName] = { loadTime: -1, uses: 1 }; // Indicate error
@@ -489,17 +489,17 @@ export const FontLoadingService = {
   /**
    * Load a batch of fonts with smart throttling
    */
-  loadFonts: async (fonts: string[] | FontDefinition[], options?: { 
-    maxConcurrent?: number; 
+  loadFonts: async (fonts: string[] | FontDefinition[], options?: {
+    maxConcurrent?: number;
     delayBetweenBatches?: number;
     useIdleCallback?: boolean;
   }): Promise<void> => {
     if (!fonts.length) return;
 
-    const { 
-      maxConcurrent = 3, 
+    const {
+      maxConcurrent = 3,
       delayBetweenBatches = 100,
-      useIdleCallback = true 
+      useIdleCallback = true
     } = options || {};
 
     const fontNames = fonts.map(font => typeof font === 'string' ? font : font.name);
@@ -522,7 +522,7 @@ export const FontLoadingService = {
     // Load batches with delays
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      
+
       const loadBatch = () => {
         return Promise.all(batch.map(def => FontLoadingService.loadFont(def.name)));
       };
@@ -562,7 +562,7 @@ export const FontLoadingService = {
       // Non-fatal - fonts will load on first render
     }
   },
-  
+
   /**
    * Preload system and common fonts with enhanced font coverage.
    * TIER 1 (Immediate): System fonts only
@@ -582,44 +582,44 @@ export const FontLoadingService = {
 
     // Load a broader selection of fonts slightly later
     setTimeout(() => {
-        // Load designer-curated picks prominently
-        const awwwardsNames = (FONT_CATEGORIES['Awwwards Picks'] || []).map(f => f.name);
-        // Load ALL premium fonts immediately since they're high quality
-        const premiumNames = (FONT_CATEGORIES['Premium'] || []).map(f => f.name);
-        const sansSerifNames = (FONT_CATEGORIES['Sans-Serif'] || []).slice(0, 8).map(f => f.name);
-        const serifNames = (FONT_CATEGORIES['Serif'] || []).slice(0, 8).map(f => f.name);
-        // Load ALL contemporary fonts since they're trending
-        const contemporaryNames = (FONT_CATEGORIES['Contemporary'] || []).map(f => f.name);
-        // Load variable fonts for better performance
-        const variableNames = (FONT_CATEGORIES['Variable'] || []).slice(0, 3).map(f => f.name);
-        // Load ALL monospace fonts
-        const monoNames = (FONT_CATEGORIES['Monospace'] || []).map(f => f.name);
-        const boldNames = (FONT_CATEGORIES['Bold'] || []).slice(0, 8).map(f => f.name);
-        // Load ALL Design fonts since they're commonly used
-        const designNames = (FONT_CATEGORIES['Design'] || []).slice(0, 15).map(f => f.name);
-        // Load popular script fonts
-        const scriptNames = (FONT_CATEGORIES['Script'] || []).slice(0, 8).map(f => f.name);
-        // Load elegant fonts
-        const elegantNames = (FONT_CATEGORIES['Elegant'] || []).slice(0, 8).map(f => f.name);
-        // De-emphasize Modern fonts; load fewer
-        const modernNames = (FONT_CATEGORIES['Modern'] || []).slice(0, 4).map(f => f.name);
-        
-        // Load all these font categories together (Designer Local loads lazily via picker)
-        FontLoadingService.loadFonts([
-          ...awwwardsNames,
-          ...premiumNames,
-          ...sansSerifNames, 
-          ...serifNames,
-          ...contemporaryNames,
-          ...variableNames,
-          ...monoNames,
-          ...boldNames,
-          ...designNames,
-          ...scriptNames,
-          ...elegantNames,
-          ...modernNames
-        ]);
-    }, 1000); 
+      // Load designer-curated picks prominently
+      const awwwardsNames = (FONT_CATEGORIES['Awwwards Picks'] || []).map(f => f.name);
+      // Load ALL premium fonts immediately since they're high quality
+      const premiumNames = (FONT_CATEGORIES['Premium'] || []).map(f => f.name);
+      const sansSerifNames = (FONT_CATEGORIES['Sans-Serif'] || []).slice(0, 8).map(f => f.name);
+      const serifNames = (FONT_CATEGORIES['Serif'] || []).slice(0, 8).map(f => f.name);
+      // Load ALL contemporary fonts since they're trending
+      const contemporaryNames = (FONT_CATEGORIES['Contemporary'] || []).map(f => f.name);
+      // Load variable fonts for better performance
+      const variableNames = (FONT_CATEGORIES['Variable'] || []).slice(0, 3).map(f => f.name);
+      // Load ALL monospace fonts
+      const monoNames = (FONT_CATEGORIES['Monospace'] || []).map(f => f.name);
+      const boldNames = (FONT_CATEGORIES['Bold'] || []).slice(0, 8).map(f => f.name);
+      // Load ALL Design fonts since they're commonly used
+      const designNames = (FONT_CATEGORIES['Design'] || []).slice(0, 15).map(f => f.name);
+      // Load popular script fonts
+      const scriptNames = (FONT_CATEGORIES['Script'] || []).slice(0, 8).map(f => f.name);
+      // Load elegant fonts
+      const elegantNames = (FONT_CATEGORIES['Elegant'] || []).slice(0, 8).map(f => f.name);
+      // De-emphasize Modern fonts; load fewer
+      const modernNames = (FONT_CATEGORIES['Modern'] || []).slice(0, 4).map(f => f.name);
+
+      // Load all these font categories together (Designer Local loads lazily via picker)
+      FontLoadingService.loadFonts([
+        ...awwwardsNames,
+        ...premiumNames,
+        ...sansSerifNames,
+        ...serifNames,
+        ...contemporaryNames,
+        ...variableNames,
+        ...monoNames,
+        ...boldNames,
+        ...designNames,
+        ...scriptNames,
+        ...elegantNames,
+        ...modernNames
+      ]);
+    }, 1000);
   },
 
   /**
@@ -666,10 +666,10 @@ export const FontLoadingService = {
    * Get all font categories mapped to font names (for grouped dropdowns)
    */
   getFontCategories: (): Record<string, string[]> => {
-     return Object.entries(FONT_CATEGORIES).reduce((acc, [category, fonts]) => {
-        acc[category] = fonts.map(font => font.name);
-        return acc;
-     }, {} as Record<string, string[]>);
+    return Object.entries(FONT_CATEGORIES).reduce((acc, [category, fonts]) => {
+      acc[category] = fonts.map(font => font.name);
+      return acc;
+    }, {} as Record<string, string[]>);
   },
 
   /**
@@ -678,7 +678,7 @@ export const FontLoadingService = {
   isDesignerFontsSynced: (): boolean => {
     return designerFontsSynced;
   },
-  
+
   /**
    * Get de-duplicated font groups using priority order similar to registry.
    */
@@ -742,19 +742,19 @@ export const FontLoadingService = {
     FontLoadingService.loadFonts(sansFonts, { maxConcurrent: 2, delayBetweenBatches: 100, useIdleCallback: true });
 
     // 4. Load other categories progressively
-    const otherCategories = Object.keys(categories).filter(cat => 
-      cat !== 'System & Web Safe' && 
-      cat !== 'Sans-Serif' && 
+    const otherCategories = Object.keys(categories).filter(cat =>
+      cat !== 'System & Web Safe' &&
+      cat !== 'Sans-Serif' &&
       cat !== activeTab
     );
 
     otherCategories.forEach((category, index) => {
       setTimeout(() => {
         const fonts = categories[category] || [];
-        FontLoadingService.loadFonts(fonts, { 
-          maxConcurrent: 2, 
-          delayBetweenBatches: 200, 
-          useIdleCallback: true 
+        FontLoadingService.loadFonts(fonts, {
+          maxConcurrent: 2,
+          delayBetweenBatches: 200,
+          useIdleCallback: true
         });
       }, (index + 1) * 1000); // Stagger by 1 second
     });
@@ -767,7 +767,7 @@ export const FontLoadingService = {
     const totalFonts = Object.values(FONT_CATEGORIES).flat().length;
     const loadedCount = loadedFonts.size;
     const loadingCount = loadingFonts.size;
-    
+
     return {
       totalFonts,
       loadedCount,
@@ -784,7 +784,7 @@ export const FontLoadingService = {
   debugProblematicFonts: async () => {
     const problematicFonts = ['Comfortaa', 'Quicksand', 'Josefin Sans', 'Cabin', 'Barlow', 'Varela Round'];
     // Testing problematic fonts...
-    
+
     for (const fontName of problematicFonts) {
       // Testing font...
       try {
@@ -794,7 +794,7 @@ export const FontLoadingService = {
         console.error(`❌ ${fontName} failed:`, error);
       }
     }
-    
+
     // Final stats available via getLoadingStats()
   }
 };

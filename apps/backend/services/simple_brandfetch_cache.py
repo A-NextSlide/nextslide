@@ -149,9 +149,19 @@ class SimpleBrandfetchCache:
             logger.info(f"✗ Cache MISS for {identifier} (tried: {cache_keys_to_try})")
         else:
             logger.info(f"🔄 Force refresh for {normalized_id}")
-        
-        # Step 2: Call Brandfetch API (use search-first resolution for names)
-        api_result = await self.brandfetch_service.get_brand_data_with_search(identifier)
+
+        # Step 2: Call Brandfetch API
+        # For domains (like "dyna.co"), use direct lookup to avoid fuzzy search matching wrong companies
+        # For brand names (like "nike"), use search to find the domain
+        import re
+        looks_like_domain = bool(re.match(r"^[a-z0-9][a-z0-9\-\.]+\.[a-z]{2,}$", identifier.lower().strip()))
+
+        if looks_like_domain:
+            logger.info(f"🎯 Using direct lookup for domain: {identifier}")
+            api_result = await self.brandfetch_service.get_brand_data(identifier)
+        else:
+            logger.info(f"🔍 Using search for brand name: {identifier}")
+            api_result = await self.brandfetch_service.get_brand_data_with_search(identifier)
 
         # Step 2.5: Process logos - download and store in our Supabase storage
         if api_result and not api_result.get('error') and api_result.get('logos'):

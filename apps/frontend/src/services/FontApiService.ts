@@ -154,7 +154,7 @@ export const FontApiService = {
     const stylesToTry = pickStyleKey(weightHint);
     for (const styleKey of stylesToTry) {
       const url = buildSimpleFileUrl(chosen.id, styleKey);
-      try { injectPreload(url, name, weightHint); } catch {}
+      try { injectPreload(url, name, weightHint); } catch { }
       const ok = await loadWithFontFace(name, url, weightHint, 'normal');
       if (ok) return true;
     }
@@ -196,7 +196,7 @@ export const FontApiService = {
         const directUrl = `${base}/fonts/designer/${encodeURIComponent(meta.id)}/${encodeURIComponent(best.filename || pathOnly.split('/').pop() || pathOnly)}`;
 
         console.log(`[FontApiService] Trying direct URL: ${directUrl}`);
-        try { injectPreload(directUrl, name, weightHint); } catch {}
+        try { injectPreload(directUrl, name, weightHint); } catch { }
         const ok = await loadWithFontFace(name, directUrl, weightHint, 'normal');
         if (ok) return true;
       }
@@ -204,7 +204,7 @@ export const FontApiService = {
       // Last attempt: simple regular
       const url = buildSimpleFileUrl(chosen.id, 'regular');
       console.log(`[FontApiService] Last attempt with simple URL: ${url}`);
-      try { injectPreload(url, name, weightHint); } catch {}
+      try { injectPreload(url, name, weightHint); } catch { }
       const ok = await loadWithFontFace(name, url, weightHint, 'normal');
       if (ok) return true;
     } catch (error) {

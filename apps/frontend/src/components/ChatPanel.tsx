@@ -2004,13 +2004,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             // CRITICAL FIX: Reload deck from database after backend has persisted changes
             // The backend has already saved the changes, but frontend draft/subscription system is broken
             // Simple solution: just reload from DB after giving backend time to write
+            console.log('[deck.edit.applied] 🔄 Scheduling deck reload in 2 seconds...');
             setTimeout(() => {
-              console.log('[deck.edit.applied] Reloading deck from database to sync changes');
+              console.log('[deck.edit.applied] 🔄 RELOADING DECK FROM DATABASE NOW');
               const deckStore = useDeckStore.getState();
               if (deckStore.loadDeck) {
                 deckStore.loadDeck();
+                console.log('[deck.edit.applied] ✅ Deck reload triggered');
+              } else {
+                console.error('[deck.edit.applied] ❌ loadDeck function not found!');
               }
-            }, 1000); // 1 second delay to ensure backend write completes
+            }, 2000); // 2 second delay to ensure backend write completes
 
             return;
           }

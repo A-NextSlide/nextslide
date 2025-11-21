@@ -153,10 +153,10 @@ export interface DiscardedFile {
 
 export interface ColorConfig {
   type: 'default' | 'predefined' | 'ai' | 'custom';
-  name?: string;      
-  background?: string; 
-  text?: string;       
-  accent1?: string;      
+  name?: string;
+  background?: string;
+  text?: string;
+  accent1?: string;
   accent2?: string;
   accent3?: string;
 }

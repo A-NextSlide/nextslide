@@ -406,6 +406,19 @@ Safe Area: x=[100-1820], y=[100-920]
 ⚠️ FIXED ELEMENTS (avoid overlapping):
 {json.dumps(consistent, indent=2)}
 
+🎯 MANDATORY POSITIONING RULES - CONSISTENT LAYOUT:
+**Title Position (STRICT):**
+- Main titles MUST appear in y range: 160-220 (±20px tolerance)
+- Title slide hero titles: y range: 350-450
+- x position for titles: 100-200 (left-aligned) OR 160-360 (slightly indented)
+- Width: 1600-1720px for full-width titles
+- This ensures titles appear in the SAME position across all slides
+
+**Element Consistency:**
+- All slide titles should align vertically (same y-position ±20px)
+- Slide numbers: Always bottom-right (x=1780, y=1000)
+- Citations: Always bottom-left (x=100, y=1000)
+
 ═══════════════════════════════════════════════════════════════════════════════
 
 ✨ CREATIVE FREEDOM - DESIGN PHILOSOPHY:
@@ -451,10 +464,14 @@ DO NOT create boring split-screen layouts! Every slide should be visually striki
 - Avoid vertical dividers unless comparing two distinct columns
 - Color: Use subtle opacity (20-30%) to avoid visual clutter
 
-**Icons** - ADD VISUAL INTEREST:
-- NOT AVAILABLE YET, but use shapes creatively as icon replacements
-- Circles with text initials
-- Geometric patterns
+**Icons** - USE LIBERALLY FOR VISUAL ENHANCEMENT:
+- Icons ARE available via the Icon component
+- Use Lucide icon library (iconLibrary: "lucide")
+- Common icons: CheckCircle, ArrowRight, Star, Users, TrendingUp, Zap, Target, Shield
+- Size: 24-48px for inline icons, 64-96px for hero icons
+- Place icons next to headings, bullet points, or as visual markers
+- Icons add professionalism and visual hierarchy
+- Example: {{"type": "Icon", "props": {{"x": 100, "y": 200, "iconLibrary": "lucide", "iconName": "CheckCircle", "size": 32, "color": "{accent_1}"}}}}
 
 **Color Blocks** - USE SPARINGLY:
 - Only use when text needs background for readability
@@ -591,42 +608,54 @@ DO NOT create boring split-screen layouts! Every slide should be visually striki
    - Generous whitespace between all elements (minimum 60px gaps)
    - Clean, professional aesthetic - avoid clutter
 
-**2. NO DECORATIVE ELEMENTS:**
-   - NO decorative shapes, circles, or accent lines
-   - NO visual embellishments that don't serve the content
-   - Focus on typography, layout, and content hierarchy
-   - Let the content breathe with ample whitespace
+**2. USE ALL COMPONENT TYPES APPROPRIATELY:**
+   - **TiptapTextBlock**: For all text content (titles, body, captions)
+   - **Images**: When they illustrate or explain content
+   - **Icons**: Use next to headings, bullet points, feature lists (highly encouraged!)
+   - **Shapes**: For backgrounds when text needs contrast, dividers, or containers
+   - **Lines**: For section separation when necessary
+   - **Charts**: For data visualization
+   - **CustomComponent**: For complex visualizations, processes, or interactive content
+   - Each component must serve the content, not just decorate
 
-**3. FUNCTIONAL USE OF COMPONENTS:**
-   - Images: Only when they explain or illustrate the content
-   - Shapes: Only for backgrounds when text needs contrast
-   - Lines: Only for section separation when necessary
-   - CustomComponent: For visualizing data, processes, or complex concepts
-   - Each component must justify its existence
+**3. SMART COMPONENT DISTRIBUTION:**
+   - Aim for 4-8 functional components per slide
+   - Title + content + visuals (images/charts/icons) + optional shapes
+   - Don't overcrowd, but don't be too minimal either
+   - Use icons generously to add visual markers and hierarchy
 
-**4. CONSERVATIVE COLOR USAGE:**
-   - Use theme colors consistently but sparingly
-   - Accent colors for emphasis only (key data, CTAs)
-   - Prefer subtle, professional color application
-   - Avoid color blocks unless necessary for contrast
+**4. STRATEGIC COLOR USAGE:**
+   - Use theme colors consistently throughout
+   - Accent colors for emphasis (icons, highlights, key data)
+   - Use accent colors for icons to create visual interest
+   - Vary opacity for depth and hierarchy
 
-**5. APPROPRIATE COMPONENT COUNT:**
-   - Aim for 3-5 components per slide (quality over quantity)
-   - Title/header + content + optional visual = sufficient
-   - More components = more complexity = harder to read
-   - Simplicity is sophisticated
-
-**6. CLEAN, MODERN AESTHETICS:**
+**5. CLEAN, MODERN AESTHETICS:**
    - Subtle borderRadius (8-12px) for softer, approachable feel
    - Avoid harsh edges and heavy strokes
    - Professional, balanced typography
    - Consistent sizing and spacing
 
-**7. ANTI-OVERLAP VALIDATION:**
+**6. ANTI-OVERLAP VALIDATION (CRITICAL - NO EXCEPTIONS):**
+   - **ABSOLUTELY NO OVERLAPPING COMPONENTS ALLOWED**
    - Calculate all positions sequentially: nextY = currentY + height + gap
-   - Verify: component.y + component.height + gap ≤ next.y
-   - Minimum gaps: 60px between text elements, 80px around visuals
-   - Ensure all content fits within safe area (y ≤ 920)
+   - VERIFY MATH: For every component, check component.y + component.height + gap ≤ next.y
+   - Minimum gaps (NON-NEGOTIABLE):
+     * 60px between text elements
+     * 80px around charts/images
+     * 40px around icons
+   - Track vertical space as you add components:
+     ```
+     currentY = 160 (title position)
+     title.y = currentY
+     currentY = title.y + title.height + 80 (gap)
+     content.y = currentY
+     currentY = content.y + content.height + 80 (gap)
+     chart.y = currentY
+     ... and so on
+     ```
+   - Ensure final element ends before y=920 (safe area bottom)
+   - If you can't fit all components, reduce component count or use two-column layout
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -709,56 +738,64 @@ Shapes:
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-✨ AGGRESSIVE DESIGN EXAMPLES (showing proper use of all components):
+✨ DESIGN EXAMPLES (showing proper positioning, no overlaps, and component usage):
 
-**Example 1: Split-Screen Layout - Clean and Functional**
+**Example 1: Split-Screen with Icons - Consistent Title Position**
 ```json
 {{
-  "layout_reasoning": "Clean split-screen with image left, content right - no decorative elements",
+  "layout_reasoning": "Split-screen with image left, content with icons right - consistent title at y=180",
   "components": [
     {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
-    {{"type": "Image", "zIndex": 1, "props": {{"x": 100, "y": 200, "width": 760, "height": 680, "src": "image_url", "borderRadius": 12, "objectFit": "cover"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 200, "width": 780, "height": 150, "fontSize": 72, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 410, "width": 780, "height": 470, "fontSize": 36, "content": "<p>Content with proper gaps and no overlaps...</p>", "color": "{primary_text}"}}}}
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 180, "width": 1600, "height": 100, "fontSize": 72, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}"}}}},
+    {{"type": "Image", "zIndex": 1, "props": {{"x": 100, "y": 340, "width": 760, "height": 540, "src": "placeholder", "borderRadius": 12, "objectFit": "cover"}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 960, "y": 340, "iconLibrary": "lucide", "iconName": "CheckCircle", "size": 40, "color": "{accent_1}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1020, "y": 340, "width": 700, "height": 100, "fontSize": 36, "content": "<p>First key point with icon</p>", "color": "{primary_text}"}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 960, "y": 480, "iconLibrary": "lucide", "iconName": "TrendingUp", "size": 40, "color": "{accent_1}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1020, "y": 480, "width": 700, "height": 100, "fontSize": 36, "content": "<p>Second key point with icon</p>", "color": "{primary_text}"}}}}
   ]
 }}
 ```
 
-**Example 2: Chart with Text Insights - Clean Layout**
+**Example 2: Chart with Icons and Insights - Consistent Positioning**
 ```json
 {{
-  "layout_reasoning": "Chart left with text insights right - clean, functional design",
+  "layout_reasoning": "Chart with icon-enhanced insights - title at y=180, no overlaps",
   "components": [
     {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 100, "y": 160, "width": 1720, "height": 80, "fontSize": 64, "content": "<h1>Slide Title</h1>", "color": "{primary_text}"}}}},
-    {{"type": "Chart", "zIndex": 10, "props": {{"x": 100, "y": 280, "width": 760, "height": 600, "chartType": "bar", "data": [...], "colors": ["{accent_1}"], "margin": {{"top": 20, "right": 20, "bottom": 60, "left": 80}}}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 280, "width": 760, "height": 120, "fontSize": 48, "content": "<h2>Key Insights</h2>", "color": "{primary_text}"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 960, "y": 460, "width": 760, "height": 420, "fontSize": 32, "content": "<ul><li>340% revenue increase</li><li>Record quarter performance</li></ul>", "color": "{primary_text}"}}}}
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 180, "width": 1600, "height": 100, "fontSize": 72, "content": "<h1>Revenue Growth</h1>", "color": "{primary_text}"}}}},
+    {{"type": "Chart", "zIndex": 10, "props": {{"x": 100, "y": 340, "width": 800, "height": 540, "chartType": "bar", "data": [...], "colors": ["{accent_1}"], "margin": {{"top": 20, "right": 20, "bottom": 60, "left": 80}}}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 1000, "y": 360, "iconLibrary": "lucide", "iconName": "TrendingUp", "size": 48, "color": "{accent_1}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1070, "y": 360, "width": 700, "height": 140, "fontSize": 48, "content": "<h2>340% Growth</h2>", "color": "{primary_text}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 1000, "y": 540, "width": 770, "height": 340, "fontSize": 32, "content": "<ul><li>Record quarter performance</li><li>All targets exceeded</li></ul>", "color": "{primary_text}"}}}}
   ]
 }}
 ```
 
-**Example 3: Content-Focused Single Column**
+**Example 3: Feature List with Icons - Vertical Layout**
 ```json
 {{
-  "layout_reasoning": "Clean single-column layout with title, image, and content - generous whitespace",
+  "layout_reasoning": "Feature list with icons for each point - title at y=180, sequential positioning",
   "components": [
     {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 160, "width": 1600, "height": 100, "fontSize": 72, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}", "textAlign": "center"}}}},
-    {{"type": "Image", "zIndex": 3, "props": {{"x": 360, "y": 320, "width": 1200, "height": 500, "src": "image_url", "borderRadius": 12, "objectFit": "cover"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 360, "y": 880, "width": 1200, "height": 100, "fontSize": 32, "content": "<p>Brief description or caption...</p>", "color": "{primary_text}", "textAlign": "center"}}}}
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 180, "width": 1600, "height": 100, "fontSize": 72, "content": "<h1>Key Features</h1>", "color": "{primary_text}"}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 200, "y": 340, "iconLibrary": "lucide", "iconName": "Zap", "size": 48, "color": "{accent_1}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 280, "y": 340, "width": 1400, "height": 100, "fontSize": 40, "content": "<h3>Lightning Fast Performance</h3>", "color": "{primary_text}"}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 200, "y": 480, "iconLibrary": "lucide", "iconName": "Shield", "size": 48, "color": "{accent_2}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 280, "y": 480, "width": 1400, "height": 100, "fontSize": 40, "content": "<h3>Enterprise Security</h3>", "color": "{primary_text}"}}}},
+    {{"type": "Icon", "zIndex": 10, "props": {{"x": 200, "y": 620, "iconLibrary": "lucide", "iconName": "Users", "size": 48, "color": "{accent_3}"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 280, "y": 620, "width": 1400, "height": 100, "fontSize": 40, "content": "<h3>Team Collaboration</h3>", "color": "{primary_text}"}}}}
   ]
 }}
 ```
 
-**Example 4: Title Slide - Clean and Bold**
+**Example 4: Title Slide - Consistent Hero Position**
 ```json
 {{
-  "layout_reasoning": "Clean title slide with large typography and optional subtitle - no clutter",
+  "layout_reasoning": "Title slide with hero title at y=400 (within 350-450 range)",
   "components": [
     {{"type": "Background", "zIndex": 0, "props": {{"color": "{primary_bg}"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 350, "width": 1600, "height": 280, "fontSize": 180, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}", "textAlign": "left"}}}},
-    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 690, "width": 1200, "height": 80, "fontSize": 48, "content": "<p>Optional subtitle or context</p>", "color": "{primary_text}", "textAlign": "left", "opacity": 0.7}}}}
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 400, "width": 1600, "height": 280, "fontSize": 180, "content": "<h1>{slide.title}</h1>", "color": "{primary_text}", "textAlign": "left"}}}},
+    {{"type": "TiptapTextBlock", "zIndex": 10, "props": {{"x": 160, "y": 740, "width": 1200, "height": 80, "fontSize": 48, "content": "<p>Optional subtitle</p>", "color": "{primary_text}", "textAlign": "left", "opacity": 0.7}}}}
   ]
 }}
 ```
@@ -779,41 +816,48 @@ Shapes:
 
 ✅ DESIGN VALIDATION CHECKLIST (before returning):
 
+**Consistent Positioning (MANDATORY):**
+✓ Title position in correct y range: 160-220 for content slides, 350-450 for title slides
+✓ Title x position: 100-200 (left-aligned) or 160-360 (indented)
+✓ Slide number at x=1780, y=1000
+✓ All titles at same y-position (±20px tolerance)
+
 **Text Formatting:**
 ✓ All TiptapTextBlock content uses HTML tags
 ✓ No plain text or \\n characters
 
-**Anti-Overlap (CRITICAL):**
+**Anti-Overlap (CRITICAL - NO EXCEPTIONS):**
 ✓ Used sequential positioning: nextY = currentY + height + gap
-✓ Minimum 60px gaps between text elements verified
-✓ Minimum 80px gaps around charts/images verified
+✓ VERIFIED MATH: For each component, checked component.y + component.height + gap ≤ next.y
+✓ Minimum 60px gaps between text elements
+✓ Minimum 80px gaps around charts/images
+✓ Minimum 40px gaps around icons
 ✓ No overlapping bounding boxes at any zIndex
-✓ All positions calculated, not guessed or fixed
+✓ All positions calculated sequentially, not guessed or fixed
 
 **Bounds:**
 ✓ All components within safe area: x=[100-1820], y=[100-920]
 ✓ Charts minimum 500×400px
 ✓ Final component ends before y=920
 
-**Layering:**
-✓ Proper zIndex: Background(0) < Images(1-5) < Shapes(5-9) < Content(10) < UI(100)
+**Component Usage:**
+✓ 4-8 functional components per slide
+✓ Icons used where appropriate (bullet points, features, headings)
+✓ All component types considered (Text, Images, Icons, Shapes, Charts, CustomComponents)
+✓ Each component serves the content
 
-**CLEAN DESIGN REQUIREMENTS (CRITICAL):**
-✓ **3-5 functional components** (no clutter!)
-✓ **NO decorative shapes** (shapes only for functional purposes)
-✓ **Appropriate whitespace**: Generous gaps, breathing room
-✓ **Conservative colors**: Theme colors used purposefully, not excessively
-✓ **Each component justified**: Every element serves the content
-✓ **Professional aesthetic**: Clean, modern, readable
+**Layering:**
+✓ Proper zIndex: Background(0) < Images(1-5) < Shapes(5-9) < Content(10) < Icons(10) < UI(100)
 
 **DO NOT RETURN if:**
-❌ Components overlap (y positions not calculated sequentially)
-❌ More than 7 components (too cluttered)
-❌ Decorative shapes added (circles, accent lines without purpose)
-❌ Gaps less than 60px between elements
+❌ Title not in required y range (160-220 or 350-450)
+❌ Components overlap (ABSOLUTE DEALBREAKER)
+❌ Y positions not calculated sequentially
+❌ Gaps less than minimum required (60px text, 80px visuals, 40px icons)
 ❌ Content extends beyond y=920
-❌ Fixed Y positions used (y=240, y=300) instead of calculated
-❌ Heavy visual embellishments that don't serve content
+❌ Fixed Y positions used instead of calculated
+❌ Missing icons when they would enhance clarity
+❌ Math not verified for overlap prevention
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -870,8 +914,14 @@ Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
         typo_scale = layout_strategy.get("typography_scale", {})
         spacing = layout_strategy.get("spacing_system", {})
 
+        # Use consistent title positioning based on slide type
+        if slide_type == "title":
+            title_y = 400  # Hero title position (350-450 range)
+        else:
+            title_y = 180  # Standard title position (160-220 range)
+
         return {
-            "layout_reasoning": f"Default {slide_type} layout with centered title and content.",
+            "layout_reasoning": f"Default {slide_type} layout with consistent title positioning and no overlaps.",
             "components": [
                 {
                     "id": "bg",
@@ -885,13 +935,12 @@ Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
                     "zIndex": 10,
                     "props": {
                         "x": 160,
-                        "y": 200,
+                        "y": title_y,
                         "width": 1600,
                         "height": 120,
                         "content": f"<h1>{slide.title}</h1>",
-                        # fontSize will be calculated by component_validator based on content
-                        "fontSize": typo_scale.get('section_title', 72),  # Initial size, will be auto-fitted
-                        "textAlign": "center"
+                        "fontSize": typo_scale.get('section_title', 72),
+                        "textAlign": "left"
                     }
                 },
                 {
@@ -899,12 +948,12 @@ Remember: Return ONLY valid JSON (no markdown code blocks, no comments).
                     "type": "TiptapTextBlock",
                     "zIndex": 100,
                     "props": {
-                        "x": 80,
-                        "y": 1020,
+                        "x": 1780,
+                        "y": 1000,
                         "width": 100,
                         "height": 40,
-                        # fontSize will be calculated by component_validator based on content
-                        "fontSize": 18  # Initial size, will be auto-fitted
+                        "fontSize": 18,
+                        "textAlign": "right"
                     }
                 }
             ]
