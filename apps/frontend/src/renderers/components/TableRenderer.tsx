@@ -115,29 +115,10 @@ export const renderTable: RendererFunction = (props) => {
   // Scale pixel-based table metrics to match slide scale in editor view.
   // Keep thumbnails and presentation mode unscaled (transform handles it there).
   const [pixelScale, setPixelScale] = useState(1);
+  
+  // Optimization removed: pixelScale is always 1
 
-  useEffect(() => {
-    if (!containerRef?.current || isThumbnail || isPresenting) return;
-    const slideContainer = containerRef.current.closest('.slide-container') as HTMLElement | null;
-    if (!slideContainer) return;
-
-    const logicalWidthAttr = slideContainer.getAttribute('data-slide-width');
-    const logicalWidth = Number(logicalWidthAttr) || DEFAULT_SLIDE_WIDTH;
-
-    const computeScale = () => {
-      const actualWidth = slideContainer.clientWidth || logicalWidth;
-      const scale = actualWidth / (logicalWidth || DEFAULT_SLIDE_WIDTH);
-      setPixelScale(scale || 1);
-    };
-
-    computeScale();
-
-    const ro = new ResizeObserver(() => computeScale());
-    ro.observe(slideContainer);
-    return () => ro.disconnect();
-  }, [containerRef, isThumbnail, isPresenting]);
-
-  const effectivePixelScale = (isThumbnail || isPresenting) ? 1 : pixelScale;
+  const effectivePixelScale = 1;
 
   // State management
   const [isDragging, setIsDragging] = useState(false);

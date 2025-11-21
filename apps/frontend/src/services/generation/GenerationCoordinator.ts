@@ -302,7 +302,7 @@ export class GenerationCoordinator extends EventTarget {
       body: JSON.stringify({
         outline: validatedOutline,
         style_preferences: stylePreferences,
-        async_images: true,  // Default to TRUE (placeholders) - user can toggle auto-apply ON if desired
+        async_images: true,  // Images load in background - backend doesn't support sync mode
         // Include the deck name from outline title
         deck_name: validatedOutline.title || 'New Presentation'
       })
@@ -346,7 +346,7 @@ export class GenerationCoordinator extends EventTarget {
               continue; // ignore empty payloads
             }
             const data = JSON.parse(payload);
-            
+
             // Log slide events for debugging
             if (data.type === 'slide_completed' || data.type === 'slide_generated') {
               console.log('[GenerationCoordinator] Slide event:', {
@@ -356,7 +356,7 @@ export class GenerationCoordinator extends EventTarget {
                 components: data.slide?.components?.length
               });
             }
-            
+
             // Send event to progress tracker
             this.progressTracker.handleEvent(data);
             

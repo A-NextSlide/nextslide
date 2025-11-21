@@ -692,35 +692,8 @@ export const CustomComponentRenderer: React.FC<{
   // Check if we're in presentation mode
   const isPresenting = usePresentationStore(state => state.isPresenting);
   
-  // Calculate scale
-  const scaleFactor = useMemo(() => {
-    if (isThumbnail || isPresenting) return 1;
-    const container = document.getElementById('slide-display-container');
-    if (!container) return 950 / DEFAULT_SLIDE_WIDTH;
-    
-    // Check if we're in edit mode
-    let parent = container.parentElement;
-    let isInEditMode = false;
-    let maxLevels = 5;
-    
-    while (parent && maxLevels > 0) {
-      const transform = window.getComputedStyle(parent).transform;
-      if (transform && transform !== 'none' && transform.includes('0.92')) {
-        isInEditMode = true;
-        break;
-      }
-      parent = parent.parentElement;
-      maxLevels--;
-    }
-    
-    // If in edit mode, use DOM width; otherwise use visual width
-    const width = isInEditMode 
-      ? (container.offsetWidth || container.clientWidth || 950)
-      : (container.getBoundingClientRect().width || 950);
-    
-    // Backend generates fonts for 1920x1080 slides
-    return width / DEFAULT_SLIDE_WIDTH;
-  }, [isThumbnail, isPresenting]);
+  // Use standard scale factor (optimization removed)
+  const scaleFactor = 1;
   
   // Dynamic fit-to-box scaling (non-persistent): scales content down to fit, back up to 1 when growing
   const contentInnerRef = useRef<HTMLDivElement>(null);

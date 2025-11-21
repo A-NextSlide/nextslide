@@ -31,7 +31,7 @@ import { ShapeProps } from '@/registry/components/shape';
 import { FontSize } from '@/extensions/FontSize';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { getFontFamilyWithFallback } from '../../utils/fontUtils';
-import { getSlideContainerWidth, isInEditMode } from '../../utils/slideContainerUtils';
+import { isInEditMode } from '../../utils/slideContainerUtils';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { getContrastTextColor } from '@/utils/colorUtils';
 
@@ -239,115 +239,16 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
   // Check if we're in presentation mode
   const isPresenting = usePresentationStore(state => state.isPresenting);
 
-  // Track the slide container's width for accurate font scaling
-  // Use slide container scale instead of component scale to avoid double-scaling
-  const [slideContainerWidth, setSlideContainerWidth] = useState<number>(() => 
-    isThumbnail ? DEFAULT_SLIDE_WIDTH : getSlideContainerWidth(DEFAULT_SLIDE_WIDTH)
-  );
-
-  const slideContainerWidthRef = useRef<number>(slideContainerWidth);
-
-  // Measure slide container's width for font scaling
-  useEffect(() => {
-    if (isThumbnail || isPresenting) return;
-
-    const updateSlideWidth = () => {
-      if (isCurrentlyTextEditing) return; // Skip during text editing to prevent font size changes
-
-      const newWidth = getSlideContainerWidth(DEFAULT_SLIDE_WIDTH);
-      const widthDiff = Math.abs(newWidth - slideContainerWidthRef.current);
-
-      // Only update if difference is significant to avoid micro-adjustments
-      if (newWidth > 0 && widthDiff > 10) {
-        slideContainerWidthRef.current = newWidth;
-        setSlideContainerWidth(newWidth);
-      }
-    };
-
-    updateSlideWidth();
-
-    const slideContainer = document.getElementById('slide-display-container');
-    if (!slideContainer) return;
-
-    const resizeObserver = new ResizeObserver(updateSlideWidth);
-    resizeObserver.observe(slideContainer);
-    window.addEventListener('resize', updateSlideWidth);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateSlideWidth);
-    };
-  }, [isThumbnail, isPresenting]);
-
-  // Font size calculation - scale based on slide container scale, not component scale
-  // This prevents double-scaling since components are already sized as percentages
-  const fontScaleFactor = useMemo(() => {
-    // Thumbnails and presentation mode are already scaled by outer slide transform; keep fonts at native size
-    // The entire slide (including fonts) will be CSS-scaled together
-    if (isThumbnail || isPresenting) {
-      return 1;
-    }
-
-    // For regular slides, calculate scale based on slide container vs native slide width
-    // Backend generates fonts for 1920x1080 slides, so we scale from that
-    const scaleFactor = slideContainerWidth / DEFAULT_SLIDE_WIDTH;
-
-    // Round to 4 decimal places to prevent micro-fluctuations
-    return Math.round(scaleFactor * 10000) / 10000;
-  }, [isThumbnail, isPresenting, slideContainerWidth]);
-
-  // CRITICAL FIX: Store the stable font size to prevent resize on click/selection
-  // We lock the font size based on props.fontSize and fontScaleFactor, only recalculate when they change
-  const stableFontSizeRef = useRef<string | null>(null);
-  const lastPropsSizeRef = useRef<number | null>(null);
-  const lastScaleFactorRef = useRef<number | null>(null);
-
+  // Font size calculation - simply use props
   const getFontSize = useMemo(() => {
-    // Always use props.fontSize if it exists (this is the source of truth)
-    const nativeSize = Math.round(props.fontSize || effectiveFontSize || 16); // Round to whole number
+    const size = Math.round(props.fontSize || effectiveFontSize || 16);
+    return `${size}px`;
+  }, [props.fontSize, effectiveFontSize]);
 
-    // For thumbnails, return scaled size
-    if (isThumbnail) {
-      return `${Math.round(nativeSize * fontScaleFactor)}px`;
-    }
-
-    // CRITICAL FIX: Use stable reference with threshold to prevent micro-adjustments
-    // Only recalculate if props.fontSize OR fontScaleFactor changed significantly
-    // This prevents resize-on-click and micro-fluctuations while still allowing proper scaling
-    if (stableFontSizeRef.current &&
-        lastPropsSizeRef.current === nativeSize) {
-      // Check if scale factor changed significantly (more than 0.5% difference)
-      const scaleFactorDiff = Math.abs(fontScaleFactor - (lastScaleFactorRef.current || 0));
-      const scaleFactorThreshold = 0.005; // 0.5% threshold
-
-      if (scaleFactorDiff < scaleFactorThreshold) {
-        return stableFontSizeRef.current;
-      }
-    }
-
-    // Apply scaling and round to whole number (for all components)
-    const finalSize = Math.round(nativeSize * fontScaleFactor);
-
-    const result = `${finalSize}px`;
-    stableFontSizeRef.current = result;
-    lastPropsSizeRef.current = nativeSize;
-    lastScaleFactorRef.current = fontScaleFactor;
-
-    return result;
-  }, [props.fontSize, fontScaleFactor, isThumbnail]); // Only essential dependencies to prevent unnecessary recalculations
-  
-  // Removed font optimization listener
-
-  // Letter spacing calculation - scale for non-thumbnails
+  // Letter spacing calculation
   const getLetterSpacing = useMemo(() => {
-    if (isThumbnail) {
-      // Thumbnails don't need scaling (CSS transform handles it)
-      return letterSpacing ? `${letterSpacing}px` : '0px';
-    }
-    
-    // For non-thumbnail views, scale the letter spacing
-    return letterSpacing ? `${letterSpacing * fontScaleFactor}px` : '0px';
-  }, [letterSpacing, isThumbnail, fontScaleFactor]);
+    return letterSpacing ? `${letterSpacing}px` : '0px';
+  }, [letterSpacing]);
 
   // Initial content preparation
   // Freeze initial content at mount - don't recalculate when texts prop changes
@@ -1025,19 +926,11 @@ export const ShapeWithTextRenderer: React.FC<ShapeWithTextRendererProps> = ({
     height: '100%'
   };
 
-  // Calculate text padding - scale for non-thumbnails
+  // Calculate text padding
   const getTextPadding = useMemo(() => {
     const basePadding = textPadding || 16; // Default to 16px if not set
-    
-    if (isThumbnail) {
-      // Thumbnails don't need scaling (CSS transform handles it)
-      return `${basePadding}px`;
-    }
-    
-    // For non-thumbnail views, scale the padding to match font scaling
-    const scaledPadding = basePadding * fontScaleFactor;
-    return `${scaledPadding}px`;
-  }, [textPadding, isThumbnail, fontScaleFactor]);
+    return `${basePadding}px`;
+  }, [textPadding]);
 
   // Text wrapper styles - keep stable across edit/non-edit states to prevent size jumps
   const textWrapperStyle: React.CSSProperties = {

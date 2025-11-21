@@ -284,6 +284,10 @@ class SlideRenderer:
         # Draw overlap indicators
         if overlaps:
             self._draw_overlap_indicators(draw, overlaps, component_bounds)
+            
+        # Render citations footer (if present in metadata but not in components)
+        self._render_citations_footer(img, draw, slide_data)
+
         
         # Add debug info
         self._add_debug_info(draw, slide_data, overlaps, text_overflows)
@@ -330,6 +334,37 @@ class SlideRenderer:
             'CustomComponent': 7,
         }
         return z_order.get(component.get('type', ''), 10)
+
+    def _render_citations_footer(self, img: Image.Image, draw: ImageDraw.Draw, slide_data: Dict[str, Any]):
+        """Render citations footer if present in slide data"""
+        footer = slide_data.get('citationsFooter')
+        if not footer or not isinstance(footer, dict):
+            return
+            
+        sources = footer.get('sources', [])
+        if not sources:
+            return
+            
+        # Footer configuration
+        footer_y = self.canvas_height - 60
+        footer_height = 60
+        margin_right = 80
+        
+        # Draw divider line
+        draw.line([80, footer_y, self.canvas_width - 80, footer_y], fill='#E5E7EB', width=1)
+        
+        # Render sources
+        font = self.get_font('Arial', 14)
+        text = "Sources: " + " • ".join([s.get('title', 'Source') for s in sources])
+        
+        # Calculate text width to align right
+        bbox = font.getbbox(text)
+        text_width = bbox[2] - bbox[0]
+        text_x = self.canvas_width - margin_right - text_width
+        text_y = footer_y + (footer_height - (bbox[3] - bbox[1])) // 2
+        
+        draw.text((text_x, text_y), text, font=font, fill='#9CA3AF')
+
     
     def _render_component(self, img: Image.Image, draw: ImageDraw.Draw, component: Dict[str, Any]) -> Optional[Tuple[int, int, int, int]]:
         """Render a single component and return its bounds (x1, y1, x2, y2)"""

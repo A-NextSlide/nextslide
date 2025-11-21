@@ -304,7 +304,16 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         
         # Check for chart data
         chart_info = ""
-        if context.has_chart_data:
+        
+        # STRICTER CHART CONTROL: Reduce chart frequency on narrative slides
+        slide_type_lower = slide_type.lower()
+        data_keywords = ['data', 'chart', 'stat', 'comparison', 'financial', 'growth', 'market', 'metrics', 'kpi']
+        is_data_focused = any(k in slide_type_lower for k in data_keywords)
+        is_narrative = any(k in slide_type_lower for k in ['title', 'cover', 'section', 'agenda', 'thank', 'content', 'narrative'])
+        
+        should_include_chart = context.has_chart_data and (is_data_focused or not is_narrative)
+        
+        if should_include_chart:
             try:
                 extracted = context.slide_outline.extractedData
                 chart_type = extracted.chartType if hasattr(extracted, 'chartType') else extracted.get('chartType', 'bar')
@@ -356,7 +365,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
         multi_item_guidance = ""
         try:
             # SKIP multi-item image guidance if slide has chart data (chart takes priority!)
-            if context.has_chart_data:
+            if should_include_chart:
                 logger.info(f"⚠️ [MULTI-ITEM] Skipping multi-item image guidance for slide {context.slide_index + 1} - has chart data")
                 multi_item_guidance = ""
             else:
@@ -376,8 +385,9 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
                 is_multi_item = (
                     list_indicators >= 2 or  # Has 2+ list items
                     unique_caps >= 3 or  # Has 3+ different capitalized names
-                    any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries']) or
-                    any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'])  # Common multi-item examples
+                    any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries', 'steps', 'phases', 'goals', 'values', 'principles']) or
+                    any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']) or # Common multi-item examples
+                    ' vs ' in title_lower or ' versus ' in title_lower  # Comparisons
                 )
                 
                 if not is_multi_item:
@@ -465,7 +475,7 @@ Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} 
             logger.info(f"🎨 Design style for slide {context.slide_index + 1}: {design_style}")
 
         # Determine if this is a chart-appropriate slide
-        is_chart_slide = context.has_chart_data
+        is_chart_slide = should_include_chart
         chart_reminder = ""
         if not is_chart_slide:
             chart_reminder = f"""

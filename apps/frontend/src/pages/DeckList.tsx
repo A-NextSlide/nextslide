@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
-import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Pencil } from 'lucide-react';
+import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Pencil, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useDeckStore } from '@/stores/deckStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,6 +20,9 @@ import DeckCard from '@/components/deck/DeckCard';
 import { ModeToggle } from "@/components/ui/ModeToggle";
 import { UserMenu } from "@/components/ui/UserMenu";
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useTypewriter } from '@/hooks/useTypewriter';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API_CONFIG } from '@/config/environment';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OutlineEditor from '@/components/outline/OutlineEditor';
@@ -55,19 +58,22 @@ import { useAuth } from '@/context/SupabaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useThemeStore } from '@/stores/themeStore';
 import AppearanceOnboarding, { THEME_ONBOARDING_KEY } from '@/components/onboarding/AppearanceOnboarding';
+import ConversationalOnboarding from '@/components/onboarding/ConversationalOnboarding';
+import ParticleAnimation from '@/components/visuals/ParticleAnimation';
+import { ArrowRight } from 'lucide-react';
 
 // Virtualized deck grid component for better performance with many decks
-const VirtualizedDeckGrid = React.memo(({ 
-  decks, 
-  onEdit, 
+const VirtualizedDeckGrid = React.memo(({
+  decks,
+  onEdit,
   onShowDeleteDialog,
   onLoadMore,
   hasMore,
   isLoadingMore,
   isInitialLoad
-}: { 
-  decks: CompleteDeckData[] | any, 
-  onEdit: (deck: CompleteDeckData) => void, 
+}: {
+  decks: CompleteDeckData[] | any,
+  onEdit: (deck: CompleteDeckData) => void,
   onShowDeleteDialog: (deckId: string, event: React.MouseEvent) => void,
   onLoadMore: () => void,
   hasMore: boolean,
@@ -88,14 +94,14 @@ const VirtualizedDeckGrid = React.memo(({
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const hasCheckedInitialVisibility = useRef(false);
-  
+
   // Check initial visibility once when decks are loaded
   useEffect(() => {
     if (!hasCheckedInitialVisibility.current && decks.length > 0 && itemRefs.current.size > 0) {
       // Small delay to ensure DOM is ready
       setTimeout(() => {
         const visibleIndexes = new Set<number>();
-        
+
         // Find the scrollable container
         let scrollContainer = containerRef.current?.parentElement;
         while (scrollContainer && scrollContainer !== document.body) {
@@ -105,9 +111,9 @@ const VirtualizedDeckGrid = React.memo(({
           }
           scrollContainer = scrollContainer.parentElement;
         }
-        
+
         const containerRect = scrollContainer?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
-        
+
         // Check which cards are initially visible
         itemRefs.current.forEach((element, index) => {
           const rect = element.getBoundingClientRect();
@@ -116,13 +122,13 @@ const VirtualizedDeckGrid = React.memo(({
             visibleIndexes.add(index);
           }
         });
-        
+
         setInitiallyVisibleDecks(visibleIndexes);
         hasCheckedInitialVisibility.current = true;
       }, 100); // Small delay to ensure layout is complete
     }
   }, [safeDecks.length]);
-  
+
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -140,17 +146,17 @@ const VirtualizedDeckGrid = React.memo(({
         threshold: 0
       }
     );
-    
+
     // Observe all deck placeholders
     itemRefs.current.forEach((element) => {
       observer.observe(element);
     });
-    
+
     return () => {
       observer.disconnect();
     };
   }, [safeDecks.length]);
-  
+
   // Set up infinite scroll observer
   useEffect(() => {
     // Find the scrollable container
@@ -165,11 +171,11 @@ const VirtualizedDeckGrid = React.memo(({
       }
       return null;
     };
-    
+
     scrollContainerRef.current = findScrollContainer();
-    
+
     if (!scrollContainerRef.current || !loadMoreTriggerRef.current || !hasMore) return;
-    
+
     const scrollObserver = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
@@ -182,21 +188,21 @@ const VirtualizedDeckGrid = React.memo(({
         threshold: 0
       }
     );
-    
+
     scrollObserver.observe(loadMoreTriggerRef.current);
-    
+
     return () => {
       scrollObserver.disconnect();
     };
   }, [hasMore, isLoadingMore, onLoadMore]);
-  
+
   return (
     <div ref={containerRef} className="grid grid-cols-1 gap-6 auto-rows-max">
       {safeDecks.map((deck, index) => {
         // Only animate if this card was initially visible
         const shouldAnimate = initiallyVisibleDecks.has(index);
         const shouldRender = renderedDecks.has(index);
-        
+
         return (
           <div
             key={deck.uuid}
@@ -207,7 +213,7 @@ const VirtualizedDeckGrid = React.memo(({
             className="min-h-[200px]" // Reserve space for the card
           >
             {shouldRender ? (
-              <DeckCard 
+              <DeckCard
                 deck={deck}
                 onEdit={onEdit}
                 onShowDeleteDialog={onShowDeleteDialog}
@@ -227,7 +233,7 @@ const VirtualizedDeckGrid = React.memo(({
           </div>
         );
       })}
-      
+
       {/* Load more trigger */}
       {hasMore && (
         <div ref={loadMoreTriggerRef} className="py-4">
@@ -247,16 +253,16 @@ const VirtualizedDeckGrid = React.memo(({
 VirtualizedDeckGrid.displayName = 'VirtualizedDeckGrid';
 
 // Virtualized deck grid for the popup dialog with different layout and infinite scrolling
-const VirtualizedPopupDeckGrid = React.memo(({ 
-  decks, 
-  onEdit, 
+const VirtualizedPopupDeckGrid = React.memo(({
+  decks,
+  onEdit,
   onShowDeleteDialog,
   onLoadMore,
   hasMore,
   isLoadingMore
-}: { 
-  decks: CompleteDeckData[] | any, 
-  onEdit: (deck: CompleteDeckData) => void, 
+}: {
+  decks: CompleteDeckData[] | any,
+  onEdit: (deck: CompleteDeckData) => void,
   onShowDeleteDialog: (deckId: string, event: React.MouseEvent) => void,
   onLoadMore: () => void,
   hasMore: boolean,
@@ -271,7 +277,7 @@ const VirtualizedPopupDeckGrid = React.memo(({
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
-  
+
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -294,16 +300,16 @@ const VirtualizedPopupDeckGrid = React.memo(({
         threshold: 0
       }
     );
-    
+
     itemRefs.current.forEach((element) => {
       observer.observe(element);
     });
-    
+
     return () => {
       observer.disconnect();
     };
   }, [safeDecks.length]);
-  
+
   // Set up infinite scroll observer
   useEffect(() => {
     // Find the scrollable container (the dialog content's scrollable area)
@@ -318,11 +324,11 @@ const VirtualizedPopupDeckGrid = React.memo(({
       }
       return null;
     };
-    
+
     scrollContainerRef.current = findScrollContainer();
-    
+
     if (!scrollContainerRef.current || !loadMoreTriggerRef.current || !hasMore) return;
-    
+
     const scrollObserver = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
@@ -335,14 +341,14 @@ const VirtualizedPopupDeckGrid = React.memo(({
         threshold: 0
       }
     );
-    
+
     scrollObserver.observe(loadMoreTriggerRef.current);
-    
+
     return () => {
       scrollObserver.disconnect();
     };
   }, [hasMore, isLoadingMore, onLoadMore]);
-  
+
   return (
     <div ref={containerRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 w-full">
       {safeDecks.map((deck, index) => (
@@ -355,7 +361,7 @@ const VirtualizedPopupDeckGrid = React.memo(({
           className="min-h-[150px]"
         >
           {visibleDecks.has(index) ? (
-            <div 
+            <div
               className="group relative cursor-pointer border hover:shadow-md transition-all duration-300 rounded-lg overflow-hidden"
               onClick={() => onEdit(deck)}
             >
@@ -401,7 +407,7 @@ const VirtualizedPopupDeckGrid = React.memo(({
           )}
         </div>
       ))}
-      
+
       {/* Load more trigger */}
       {hasMore && (
         <div ref={loadMoreTriggerRef} className="col-span-full py-4">
@@ -430,7 +436,7 @@ const DeckList: React.FC = () => {
   const instanceId = useRef(`DeckList_${++componentInstanceCount}_${Date.now()}`);
   const { isAuthenticated, refreshAdminStatus } = useAuth();
   const hasCalledAdminCheckRef = useRef(false);
-  
+
   // Get deck management state and functions first, before using isLoading
   const {
     decks,
@@ -449,7 +455,7 @@ const DeckList: React.FC = () => {
     handleConfirmDelete,
     handleCancelDelete,
   } = useDeckManagement();
-  
+
   useEffect(() => {
     // Don't clear preferences on mount - they may have been set by OutlineEditor
     // Just ensure the unmounting flag is cleared
@@ -462,7 +468,7 @@ const DeckList: React.FC = () => {
     return () => {
     };
   }, []);
-  
+
   // Defer admin check until decks finish initial loading to avoid competing with priority load
   useEffect(() => {
     if (!isAuthenticated || hasCalledAdminCheckRef.current || isLoading) return;
@@ -477,20 +483,20 @@ const DeckList: React.FC = () => {
               method: 'GET',
               headers: { 'Authorization': `Bearer ${token}` },
             });
-          } catch {}
+          } catch { }
         }
       } finally {
-        try { await refreshAdminStatus(); } catch {}
+        try { await refreshAdminStatus(); } catch { }
       }
     })();
   }, [isAuthenticated, isLoading, refreshAdminStatus]);
-  
+
   // Search state for the main side navigation
   const { searchQuery, setSearchQuery, filteredDecks } = useDeckFiltering(decks);
-  
+
   // Slide generation hook for handling slide images
   const { handleGenerationProgress: onSlideImagesFound } = useSlideGeneration('');
-  
+
   // Popup deck pagination
   const {
     popupDecks,
@@ -502,40 +508,78 @@ const DeckList: React.FC = () => {
     loadMorePopupDecks,
     resetPopupDecks
   } = usePopupDeckPagination();
-  
+
   // Separate search state for the popup
   const [popupSearchQuery, setPopupSearchQuery] = useState('');
   const filteredPopupDecks = useMemo(() => {
     if (!popupSearchQuery.trim()) return popupDecks;
-    
+
     const query = popupSearchQuery.toLowerCase().trim();
-    return popupDecks.filter(deck => 
+    return popupDecks.filter(deck =>
       (deck.name || '').toLowerCase().includes(query)
     );
   }, [popupDecks, popupSearchQuery]);
-  
+
   // Handle popup search changes
   const handlePopupSearchChange = (value: string) => {
     setPopupSearchQuery(value);
     // Note: When searching, we filter the already loaded decks
     // Infinite scroll is disabled during search (see hasMore prop in VirtualizedPopupDeckGrid)
   };
-  
+
   const navigate = useNavigate();
   const { toast, dismiss } = useToast();
   const [isOutlineProcessing, setIsOutlineProcessing] = useState(false);
-  
+
   // State for resizable panel
-  const [deckListWidth, setDeckListWidth] = useState(21); // 21% default width (was 20%)
+  const [deckListWidth, setDeckListWidth] = useState(20); // Default width 20%
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null); // For throttling resize updates
-  
+
   // State for slides gallery
   const [showGallery, setShowGallery] = useState(false);
   const [showGoogleImport, setShowGoogleImport] = useState(false);
   const [showAppearanceOnboarding, setShowAppearanceOnboarding] = useState(false);
-  
+  const [showConversationalOnboarding, setShowConversationalOnboarding] = useState(false);
+  const [heroInput, setHeroInput] = useState('');
+
+  // Hero input state
+  const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('quick');
+  const [slideCount, setSlideCount] = useState<number | undefined>(undefined);
+  const typewriterText = useTypewriter({
+    phrases: [
+      'a pitch deck for my startup',
+      'a lecture on history',
+      'a strategy for world domi...\b\b\b\b\b\b\b\bgrowth',
+      'a marketing proposal'
+    ],
+    typingSpeed: 50,
+    deletingSpeed: 30,
+    pauseDuration: 2000
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
+  const [linkInput, setLinkInput] = useState('');
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setUploadedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const handleLinkAdd = () => {
+    if (linkInput.trim()) {
+      // For now just clear it, in real app we'd validate and add to a list
+      setLinkInput('');
+      setIsLinkPopoverOpen(false);
+      toast({
+        title: "Link added",
+        description: "Link has been added to context",
+      });
+    }
+  };
+
   // State for shared decks
   const [sharedDecks, setSharedDecks] = useState<CompleteDeckData[]>([]);
   const [isLoadingShared, setIsLoadingShared] = useState(false);
@@ -570,15 +614,15 @@ const DeckList: React.FC = () => {
       console.error('[DeckList] No outline or slides available for reordering');
       return;
     }
-    
+
     const fromSlide = currentOutline.slides[fromIndex];
     const toSlide = currentOutline.slides[toIndex];
-    
+
     if (!fromSlide || !toSlide) {
       console.error('[DeckList] Invalid slide indices for reordering', { fromIndex, toIndex, slidesLength: currentOutline.slides.length });
       return;
     }
-    
+
     handleSlideReorder(fromSlide.id, toSlide.id);
   }, [currentOutline, handleSlideReorder]);
 
@@ -607,9 +651,43 @@ const DeckList: React.FC = () => {
     setCurrentOutline(manualOutline);
   }, [setCurrentOutline]);
 
-  // Handle "Create with AI" - show outline view without an outline
+  // State to hold conversational data for outline generation
+  const [conversationalData, setConversationalData] = useState<{
+    topic?: string;
+    stylePreferences?: string;
+    slideCount?: number;
+    detailLevel?: 'quick' | 'standard' | 'detailed';
+  } | null>(null);
+
+  // Handle "Create with AI" - show conversational onboarding
   const handleCreateWithAI = useCallback(() => {
+    setShowConversationalOnboarding(true);
+  }, []);
+
+  // Handle completion of conversational onboarding
+  const handleConversationalComplete = useCallback((data: {
+    topic?: string;
+    stylePreferences?: string;
+    slideCount?: number;
+    detailLevel?: 'quick' | 'standard' | 'detailed';
+  }) => {
+    console.log('[DeckList] Conversational onboarding complete:', data);
+
+    // Hide conversational onboarding
+    setShowConversationalOnboarding(false);
+
+    // Update style preferences with collected data
+    setStylePreferences({
+      initialIdea: data.topic,
+      vibeContext: data.stylePreferences,
+    });
+
+    // Store conversational data to trigger generation
+    setConversationalData(data);
+
+    // Show outline view - OutlineEditor will see conversationalData and start generation
     setCurrentOutline(null);
+    setIsOutlineChatGenerating(true); // Immediately show loading state
     setShowOutlineView(true);
   }, []);
 
@@ -617,10 +695,10 @@ const DeckList: React.FC = () => {
   const loadSharedDecks = useCallback(async () => {
     setIsLoadingShared(true);
     setSharedDecksError(null);
-    
+
     try {
       const response = await shareService.getSharedDecks('shared');
-      
+
       if (response.success && response.data) {
         setSharedDecks(response.data);
       } else {
@@ -646,10 +724,10 @@ const DeckList: React.FC = () => {
     completedResearchSlides,
     handleStartResearch,
   } = useSlideResearch(currentOutline, setCurrentOutline);
-  
+
   const isResearching = researchingSlides.length > 0;
 
-    // Lifted from OutlineEditor: Deck Generation state and function
+  // Lifted from OutlineEditor: Deck Generation state and function
   const [isDeckGenerating, setIsDeckGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<{
     currentSlide: number;
@@ -660,8 +738,8 @@ const DeckList: React.FC = () => {
 
 
   // Get progress info from useOutlineChat through OutlineEditor
-  const [outlineProgress, setOutlineProgress] = useState<{ 
-    stage: string | null; 
+  const [outlineProgress, setOutlineProgress] = useState<{
+    stage: string | null;
     progress: { current: number; total: number } | null;
   }>({
     stage: null,
@@ -675,7 +753,7 @@ const DeckList: React.FC = () => {
 
   // Track research/thinking streaming events from OutlineEditor to feed the left Thinking tab
   const [outlineResearchEvents, setOutlineResearchEvents] = useState<any[]>([]);
-  
+
   // Callback to capture research events from OutlineEditor
   const handleResearchEventsUpdate = useCallback((events: any[]) => {
     console.warn('[DeckList] Received research events:', events?.length || 0, events);
@@ -724,12 +802,12 @@ const DeckList: React.FC = () => {
       // Small delay to ensure smooth transition
       const timer = setTimeout(() => {
         setIsDeckListReady(true);
-  
-        
+
+
         // Show star after deck list is ready and rendered
         setTimeout(() => {
           setShowStar(true);
-          
+
         }, 50);
       }, 100);
       return () => clearTimeout(timer);
@@ -743,16 +821,16 @@ const DeckList: React.FC = () => {
     document.documentElement.style.overflow = '';
     document.body.style.position = '';
     document.body.style.overflow = '';
-    
+
     // Clear any persisted outline state when navigating back to deck list
     resetOutline(); // Use the reset function to ensure clean state
     setIsOutlineChatGenerating(false);
     setIsOutlineProcessing(false);
-    
+
     // Only reset deck store if we're coming back from an editor
     const lastEditedDeckId = sessionStorage.getItem('lastEditedDeckId');
     if (lastEditedDeckId) {
-      
+
       const deckStoreState = useDeckStore.getState();
       if (deckStoreState.resetStore) {
         deckStoreState.resetStore();
@@ -761,11 +839,11 @@ const DeckList: React.FC = () => {
       sessionStorage.removeItem('lastEditedDeckId');
       sessionStorage.removeItem('lastGeneratedDeckId');
     }
-    
+
     return () => {
       // Don't abort deck generation on cleanup - let it complete
       // The abort should only happen on explicit error or user cancellation
-      
+
       // Reset to fixed positioning when leaving the page (for editor)
       document.documentElement.style.position = 'fixed';
       document.documentElement.style.overflow = 'hidden';
@@ -781,7 +859,7 @@ const DeckList: React.FC = () => {
       if (!hasOnboarded) {
         setShowAppearanceOnboarding(true);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // Callback to receive style preference updates from OutlineEditor
@@ -821,18 +899,18 @@ const DeckList: React.FC = () => {
 
     setIsDeckGenerating(true);
     setGenerationProgress(null);
-    
+
     let deckId = '';
     let navigatedDeckId: string | null = null;
     const deckName = currentOutline?.title || '';
 
     const persistDeckContext = (targetDeckId: string) => {
       if (!targetDeckId) return;
-      
+
       try {
         sessionStorage.setItem('lastEditedDeckId', targetDeckId);
         sessionStorage.setItem('activeGenerationDeckName', deckName);
-      } catch {}
+      } catch { }
 
       if (typeof window !== 'undefined') {
         (window as any).__activeGenerationDeckId = targetDeckId;
@@ -858,13 +936,13 @@ const DeckList: React.FC = () => {
     try {
       // Reset deck store before generation
       useDeckStore.getState().resetStore();
-      
+
       // Clear any stale deck ID from session storage
       sessionStorage.removeItem('lastEditedDeckId');
-      
+
       // Use GenerationCoordinator to handle the generation
       const coordinator = GenerationCoordinator.getInstance();
-      
+
       // Store autoSelectImages preference globally
       // PRIORITY: Use existing window preference (from toggle), then outline preference, then default to FALSE
       // This prevents overwriting what the toggle already set!
@@ -876,8 +954,8 @@ const DeckList: React.FC = () => {
         existingWindowPref !== undefined
           ? existingWindowPref // ✅ Use what the toggle already set
           : currentOutline?.stylePreferences?.autoSelectImages !== undefined
-          ? currentOutline.stylePreferences.autoSelectImages
-          : false; // Default to FALSE - user must explicitly enable
+            ? currentOutline.stylePreferences.autoSelectImages
+            : false; // Default to FALSE - user must explicitly enable
 
       console.log('[DeckList] 🔴 Setting autoSelectImages preference before generation');
       console.log('[DeckList] 🔴 Existing window preference:', existingWindowPref);
@@ -891,7 +969,7 @@ const DeckList: React.FC = () => {
         };
         console.log('[DeckList] 🔴 Set window.__slideGenerationPreferences:', (window as any).__slideGenerationPreferences);
       }
-      
+
       // Attach current workspace theme into outline so backend can skip theme creation
       const outlineDeckTheme = useThemeStore.getState().getOutlineDeckTheme?.(currentOutline.id);
       const wsTheme = useThemeStore.getState().getWorkspaceTheme?.();
@@ -919,7 +997,7 @@ const DeckList: React.FC = () => {
           const otherColors = existingColors.filter((c: string) => {
             const cl = String(c || '').toLowerCase();
             return cl !== String(accent1 || '').toLowerCase() &&
-                   cl !== String(accent2 || '').toLowerCase();
+              cl !== String(accent2 || '').toLowerCase();
           });
 
           // Put accent_1 and accent_2 at the FRONT, then add the rest
@@ -959,7 +1037,7 @@ const DeckList: React.FC = () => {
           const otherColors = existingColors.filter((c: string) => {
             const cl = String(c || '').toLowerCase();
             return cl !== String(accent1 || '').toLowerCase() &&
-                   cl !== String(accent2 || '').toLowerCase();
+              cl !== String(accent2 || '').toLowerCase();
           });
 
           const reorderedColors = [accent1, accent2, ...otherColors].filter(Boolean);
@@ -975,9 +1053,9 @@ const DeckList: React.FC = () => {
 
         // Ensure logo is passed along if available
         const logoUrl = (currentOutline as any)?.stylePreferences?.logoUrl ||
-                       outlineDeckTheme?.logo?.url ||
-                       outlineDeckTheme?.logo_info?.url ||
-                       outlineDeckTheme?.brandInfo?.logoUrl;
+          outlineDeckTheme?.logo?.url ||
+          outlineDeckTheme?.logo_info?.url ||
+          outlineDeckTheme?.brandInfo?.logoUrl;
         if (logoUrl && !finalTheme.logo) {
           finalTheme.logo = { url: logoUrl };
         }
@@ -1022,7 +1100,7 @@ const DeckList: React.FC = () => {
         (event) => {
           // Pass events to slide generation hook
           onSlideImagesFound(event);
-          
+
           // Handle deck creation start - capture deck ID immediately
           const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId || (event as any).deckUUID;
           if (emittedDeckId) {
@@ -1036,7 +1114,7 @@ const DeckList: React.FC = () => {
             const slideIndex = event.slide_index || event.data?.slide_index || 0;
             const slideTitle = event.slide_title || event.data?.slide_title || '';
             const totalSlides = event.total_slides || currentOutline?.slides?.length || 0;
-            
+
             // Still update progress for any UI that might be showing it
             setGenerationProgress({
               currentSlide: slideIndex + 1,
@@ -1044,12 +1122,12 @@ const DeckList: React.FC = () => {
               slideTitle: slideTitle
             });
           }
-          
+
           // Handle completion
           if (event.type === 'deck_complete' || event.type === 'complete') {
             // Clear generation progress
             setGenerationProgress(null);
-            
+
             // Clean up active generation marker
             if (typeof window !== 'undefined') {
               delete (window as any).__activeGenerationDeckId;
@@ -1057,22 +1135,22 @@ const DeckList: React.FC = () => {
           }
         }
       );
-      
+
       // Wait for the generation to complete
       const result = await resultPromise;
       deckId = result.deckId;
       persistDeckContext(deckId);
       navigateToDeck(deckId);
-      
+
       toast({
         title: "🎉 Deck Created!",
         description: "Your presentation is ready!",
         duration: 3000,
       });
-      
+
     } catch (error: any) {
       console.error('[DeckList] Error generating deck:', error);
-      
+
       // Only show error toast if it's not a duplicate generation
       if (!error.message?.includes('already in progress')) {
         toast({
@@ -1093,7 +1171,7 @@ const DeckList: React.FC = () => {
   }, [handleGenerateDeckInternal]);
 
 
-  
+
   // Handle resize drag functionality
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -1110,7 +1188,7 @@ const DeckList: React.FC = () => {
         // If e.clientX is the mouse position from the left of the screen,
         // the width of the right panel in pixels is (windowWidth - e.clientX).
         let newWidthPct = ((windowWidth - e.clientX) / windowWidth) * 100;
-        
+
         // Constrain width between 15% and 40%
         newWidthPct = Math.min(Math.max(newWidthPct, 15), 40);
         setDeckListWidth(newWidthPct);
@@ -1150,7 +1228,7 @@ const DeckList: React.FC = () => {
   };
 
   // Extract all slides from all decks
-  const allSlides = decks.flatMap(deck => 
+  const allSlides = decks.flatMap(deck =>
     (deck.slides || []).map(slide => ({
       ...slide,
       deckName: deck.name || 'Untitled presentation',
@@ -1160,7 +1238,7 @@ const DeckList: React.FC = () => {
 
   // Reset popup search and load data when opening/closing the dialog
   const handleDialogOpenChange = (open: boolean) => {
-    
+
     if (open) {
       // Load popup decks when opening the dialog
       // Always load if we don't have any decks and not currently loading
@@ -1182,11 +1260,12 @@ const DeckList: React.FC = () => {
   }
 
   return (
-    <div className="h-screen bg-[#F5F5DC] dark:bg-zinc-900 flex flex-col overflow-hidden relative">
-      <div className="noise-overlay pointer-events-none"></div>
-      
+    <div className="h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
+      <ParticleAnimation />
+      {/* <div className="noise-overlay pointer-events-none"></div> */}
 
-      
+
+
       <header className="w-full bg-transparent flex items-center justify-between px-6 py-4 z-20 relative">
         <div className="w-32"></div> {/* Spacer for centering */}
         <div className="absolute left-1/2 -translate-x-1/2">
@@ -1205,7 +1284,7 @@ const DeckList: React.FC = () => {
           />
         </div>
         <div className="flex items-center gap-4">
-          {!(currentOutline || isOutlineChatGenerating) && (
+          {!(currentOutline || isOutlineChatGenerating || showConversationalOnboarding) && (
             <div className="flex items-center">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1223,11 +1302,11 @@ const DeckList: React.FC = () => {
                   <DropdownMenuItem onClick={handleCreateWithAI} className="cursor-pointer">
                     <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
                       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 20v-6"/>
-                        <path d="M6 20v-4"/>
-                        <path d="M18 20v-8"/>
-                        <path d="M3 3h18"/>
-                        <path d="M3 7h18"/>
+                        <path d="M12 20v-6" />
+                        <path d="M6 20v-4" />
+                        <path d="M18 20v-8" />
+                        <path d="M3 3h18" />
+                        <path d="M3 7h18" />
                       </svg>
                     </span>
                     <span>Create with AI</span>
@@ -1243,10 +1322,10 @@ const DeckList: React.FC = () => {
                   <DropdownMenuItem onClick={() => setShowGoogleImport(true)} className="cursor-pointer">
                     <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
                       <svg className="h-4 w-4" viewBox="0 0 256 262" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <path fill="#4285F4" d="M255.68 133.45c0-10.32-.84-17.86-2.66-25.67H130.54v46.59h71.97c-1.45 11.66-9.3 29.2-26.76 41.01l-.24 1.6 38.86 30.13 2.69.27c24.72-22.79 38.62-56.33 38.62-94.93"/>
-                        <path fill="#34A853" d="M130.54 261.1c35.1 0 64.57-11.53 86.09-31.02l-41.03-31.84c-11.02 7.67-25.8 13.03-45.06 13.03-34.49 0-63.73-22.79-74.15-54.35l-1.53.13-40.15 31.09-.52 1.45C35.48 230.21 79.88 261.1 130.54 261.1"/>
-                        <path fill="#FBBC05" d="M56.39 156.92c-2.76-8.23-4.35-17.03-4.35-26.18 0-9.14 1.59-17.95 4.21-26.18l-.07-1.75L15.4 71.15l-1.3.62C5.05 89.2 0 108.83 0 130.74c0 21.91 5.05 41.54 14.1 58.97l42.29-32.79"/>
-                        <path fill="#EA4335" d="M130.54 50.48c24.41 0 40.85 10.54 50.21 19.35l36.65-35.82C195.01 12.16 165.64 0 130.54 0 79.88 0 35.48 30.89 14.1 71.77l42.2 32.79c10.49-31.56 39.73-54.08 74.24-54.08"/>
+                        <path fill="#4285F4" d="M255.68 133.45c0-10.32-.84-17.86-2.66-25.67H130.54v46.59h71.97c-1.45 11.66-9.3 29.2-26.76 41.01l-.24 1.6 38.86 30.13 2.69.27c24.72-22.79 38.62-56.33 38.62-94.93" />
+                        <path fill="#34A853" d="M130.54 261.1c35.1 0 64.57-11.53 86.09-31.02l-41.03-31.84c-11.02 7.67-25.8 13.03-45.06 13.03-34.49 0-63.73-22.79-74.15-54.35l-1.53.13-40.15 31.09-.52 1.45C35.48 230.21 79.88 261.1 130.54 261.1" />
+                        <path fill="#FBBC05" d="M56.39 156.92c-2.76-8.23-4.35-17.03-4.35-26.18 0-9.14 1.59-17.95 4.21-26.18l-.07-1.75L15.4 71.15l-1.3.62C5.05 89.2 0 108.83 0 130.74c0 21.91 5.05 41.54 14.1 58.97l42.29-32.79" />
+                        <path fill="#EA4335" d="M130.54 50.48c24.41 0 40.85 10.54 50.21 19.35l36.65-35.82C195.01 12.16 165.64 0 130.54 0 79.88 0 35.48 30.89 14.1 71.77l42.2 32.79c10.49-31.56 39.73-54.08 74.24-54.08" />
                       </svg>
                     </span>
                     <span>Import from Google Slides</span>
@@ -1259,17 +1338,17 @@ const DeckList: React.FC = () => {
           <UserMenu />
         </div>
       </header>
-      
+
       <div className="flex-1 flex overflow-hidden relative z-10">
-        <div 
+        <div
           className="relative flex flex-col transition-all duration-300 ease-in-out overflow-hidden"
           style={{
-            width: (currentOutline || isOutlineChatGenerating) ? '100%' : `${100 - deckListWidth}%`,
+            width: '100%',
             transitionDuration: isResizing ? '0ms' : undefined,
           }}
         >
           {/* NEW PRESENTATION BUTTON moved to header */}
-          
+
           {currentOutline && (
             <div className={(currentOutline as any).isManualMode ? "h-[48px] flex-shrink-0" : "h-[64px] flex-shrink-0"}>
               <OutlineHeader
@@ -1291,7 +1370,20 @@ const DeckList: React.FC = () => {
               "w-full h-full",
               currentOutline ? (currentOutline as any).isManualMode ? "flex pt-2" : "flex pt-6 px-8" : "flex justify-center items-center"
             )}>
-              {(currentOutline || showOutlineView) ? (
+              {showConversationalOnboarding ? (
+                // Show conversational onboarding
+                <div className="w-full h-full">
+                  <ConversationalOnboarding
+                    initialMessage={heroInput}
+                    slideCount={slideCount}
+                    onComplete={(data) => {
+                      setShowConversationalOnboarding(false);
+                      handleConversationalComplete(data);
+                    }}
+                    onCancel={() => setShowConversationalOnboarding(false)}
+                  />
+                </div>
+              ) : (currentOutline || showOutlineView) ? (
                 <div className={cn(
                   "flex flex-row",
                   isMounted ? "animate-fade-in" : "opacity-0"
@@ -1341,16 +1433,65 @@ const DeckList: React.FC = () => {
                           outlineIsGenerating={isOutlineChatGenerating}
                           onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
                           outlineCurrentSlideIndex={outlineCurrentSlideIndex}
+                          initialConversationalData={conversationalData}
                           onOutlineAgentToolCall={(params) => {
                             console.log('[DeckList] Agent generated outline:', params);
                             // Agent created new outline - merge with existing or create new
                             if (!currentOutline) {
+                              // Map agent slides to frontend slides if available
+                              const initialSlides: FrontendSlideOutline[] = params.slides ? params.slides.map((s: any, i: number) => ({
+                                id: uuidv4(),
+                                title: s.title,
+                                subtitle: s.subtitle || '',
+                                content: s.key_points ? s.key_points.join('\n') : '',
+                                type: 'content',
+                                status: 'pending',
+                                thumbnail: '',
+                                notes: '',
+                                layout: 'default'
+                              })) : [];
+
                               const newOutline: FrontendDeckOutline = {
                                 id: uuidv4(),
                                 title: params.topic || 'Presentation',
-                                slides: []
+                                slides: initialSlides
                               };
                               setCurrentOutline(newOutline);
+
+                              // Handle theme changes if present
+                              if (params.theme_changes && params.theme_changes.brand) {
+                                console.log('[DeckList] Applying theme changes:', params.theme_changes);
+                                const themeStore = useThemeStore.getState();
+                                const brandName = params.theme_changes.brand.name || 'Custom Brand';
+
+                                // Create a custom theme based on the brand
+                                const newThemeId = themeStore.addCustomTheme({
+                                  name: brandName,
+                                  colors: {
+                                    primary: '#000000', // Default placeholder
+                                    secondary: '#333333',
+                                    accent: '#FF4301', // Keep our orange accent
+                                    background: '#FFFFFF',
+                                    text: '#000000',
+                                    surface: '#F5F5F5',
+                                    border: '#E5E5E5'
+                                  },
+                                  fonts: {
+                                    heading: 'Inter',
+                                    body: 'Inter'
+                                  },
+                                  borderRadius: '0.5rem'
+                                });
+
+                                themeStore.setWorkspaceTheme(newThemeId);
+                                themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
+                                themeStore.setThemeReady(true);
+                              } else {
+                                // No theme changes, ensure default theme is ready
+                                const themeStore = useThemeStore.getState();
+                                themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
+                                themeStore.setThemeReady(true);
+                              }
                             }
                           }}
                         />
@@ -1364,365 +1505,473 @@ const DeckList: React.FC = () => {
                           onAddSlide={handleAddSlide}
                           onSlideTitleChange={handleSlideTitleChange}
                           onSlideContentChange={handleSlideContentChange}
+                          handleSlideReorder={handleSlideReorderByIndex}
                           onToggleDeepResearch={handleToggleDeepResearch}
                           onDeleteSlide={handleDeleteSlide}
-                          handleSlideReorder={handleSlideReorderByIndex}
-                          researchingSlides={researchingSlides}
+                          isDeckGenerating={isDeckGenerating}
                           isGeneratingOutline={isOutlineChatGenerating}
-                          onCurrentSlideIndexChange={setOutlineCurrentSlideIndex}
+                          researchingSlides={researchingSlides}
+                          researchEvents={outlineResearchEvents}
                         />
                       </div>
                     </>
                   )}
                 </div>
               ) : (
-                <OutlineEditor 
-                  createDefaultDeck={createDefaultDeckForOutline}
-                  updateDeckData={updateDeckDataForOutline}
-                  navigate={navigate}
-                  toast={toast}
-                  dismiss={dismiss}
-                  setIsOutlineProcessing={setIsOutlineProcessing}
-                  currentOutline={currentOutline}
-                  setCurrentOutline={setCurrentOutline}
-                  handleAddSlide={handleAddSlide}
-                  handleSlideTitleChange={handleSlideTitleChange}
-                  handleSlideContentChange={handleSlideContentChange}
-                  handleSlideReorder={handleSlideReorder}
-                  handleToggleDeepResearch={handleToggleDeepResearch}
-                  handleDeleteSlide={handleDeleteSlide}
-                  isDeckGenerating={isDeckGenerating}
-                  researchingSlides={researchingSlides}
-                  onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
-                  onProgressUpdate={(stage, progress) => {
-                    setOutlineProgress({ stage, progress });
-                  }}
-                  onStylePreferencesUpdate={handleStylePreferencesUpdate}
-                  onUploadedFilesChange={setUploadedFiles}
-                  isDeckListReady={showStar}
-                  onResearchEventsUpdate={setOutlineResearchEvents}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div
-          className="relative flex flex-col transition-all duration-300 ease-in-out bg-[#F5F5DC] dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800"
-          style={(currentOutline || isOutlineChatGenerating) ? {
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: `${deckListWidth}%`,
-            transform: 'translateX(100%)',
-            opacity: 0,
-            pointerEvents: 'none',
-            transitionDuration: undefined,
-          } : {
-            position: 'relative',
-            width: `${deckListWidth}%`,
-            transform: 'translateX(0%)',
-            opacity: 1,
-            pointerEvents: isDeckListReady ? 'auto' : 'none',
-            transitionDuration: isResizing ? '0ms' : undefined,
-          }}
-          onMouseEnter={() => {
-            // Debug logging to check if the panel is receiving mouse events
-            if (!currentOutline && !isOutlineChatGenerating && isDeckListReady) {
-      
-            }
-          }}
-        >
-          {!(currentOutline || isOutlineChatGenerating) && (
-            <div 
-              ref={resizeHandleRef}
-              className="absolute left-0 top-0 bottom-0 w-1 hover:w-2 bg-transparent hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 cursor-ew-resize transition-all z-30"
-              onMouseDown={handleResizeStart}
-            />
-          )}
-          
-          <div
-            className="flex-1 bg-[#F5F5DC] dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 overflow-y-auto hover:overflow-y-auto hide-scrollbar p-6 z-20 scrollable-container scroll-fade-bottom"
-            style={{ 
-              height: 'calc(100vh - 64px)',
-            }} 
-          >
-            {isDeckListReady && !isLoading ? (
-              <div>
-                <div className="relative mb-4">
-                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-neutral-400" />
-                  <Input
-                    type="text"
-                    placeholder="Search presentations..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-transparent border border-zinc-300 dark:border-zinc-600 hover:border-zinc-500 dark:hover:border-zinc-400 focus:border-zinc-700 dark:focus:border-zinc-300 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-10 rounded-md h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                  />
-                </div>
-
-                <Tabs defaultValue="by-me" value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center space-x-2">
-                      <TabsList className="bg-transparent p-0 border-none shadow-none">
-                        <TabsTrigger 
-                          value="by-me" 
-                          className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-500 data-[state=active]:border-b-2 data-[state=active]:border-orange-500 data-[state=active]:border-b-offset-[-1px] data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none"
-                        >
-                          My Presentations
-                        </TabsTrigger>
-                        <TabsTrigger 
-                          value="shared" 
-                          className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-500 data-[state=active]:border-b-2 data-[state=active]:border-orange-500 data-[state=active]:border-b-offset-[-1px] data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none"
-                        >
-                          Shared
-                        </TabsTrigger>
-                      </TabsList>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-xs px-2 py-1 text-zinc-600 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
-                      onClick={() => handleDialogOpenChange(true)}
-                    >
-                                            View All
-                    </Button>
+                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 selection:bg-orange-100 selection:text-orange-900">
+                  {/* Particle Background */}
+                  <div className="absolute inset-0 z-0 pointer-events-none">
+                    <ParticleAnimation
+                      isTyping={heroInput.length > 0}
+                      isLoading={isOutlineChatGenerating || isDeckGenerating}
+                    />
                   </div>
-                  <TabsContent value="by-me" className="mt-0">
-                    {filteredDecks.length === 0 ? (
-                      <EmptyDeckList searchQuery={searchQuery} onCreateDeck={handleCreateDeck} authError={authError} onReload={loadDecks} />
-                    ) : (
-                      <VirtualizedDeckGrid 
-                        decks={filteredDecks} 
-                        onEdit={handleEditDeck} 
-                        onShowDeleteDialog={handleShowDeleteDialog} 
-                        onLoadMore={loadMoreDecks}
-                        hasMore={hasMore}
-                        isLoadingMore={isLoadingMore}
-                        isInitialLoad={true}
-                      />
-                    )}
-                  </TabsContent>
-                  
-                  <TabsContent value="shared" className="mt-0">
-                    {isLoadingShared ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="flex flex-col items-center justify-center">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                          <p className="text-sm text-muted-foreground mt-4">Loading shared presentations...</p>
+
+                  {/* Left Pane: Hero Section */}
+                  <div
+                    className="relative z-10 h-full overflow-y-auto flex flex-col flex-1 min-w-0"
+                  >
+                    <div className="min-h-full flex flex-col">
+                      {/* Header Removed (Duplicate) */}
+
+                      {/* Hero Content - Centered Vertically */}
+                      <div className="flex-1 flex flex-col justify-center items-center p-8 pb-32">
+                        <div className="max-w-3xl w-full text-center space-y-8">
+                          {/* Main Heading */}
+                          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="flex flex-col items-center justify-center mb-10 space-y-6 text-center z-10 relative">
+                              <h1
+                                className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
+                                style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
+                              >
+                                Turn your ideas into<br className="hidden md:block" /> stunning stories
+                              </h1>
+                              <div className="space-y-2">
+                                <p className="text-lg md:text-xl font-medium text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
+                                  The smartest way to craft professional narratives for any audience.
+                                </p>
+                                <p className="text-sm md:text-base text-zinc-500 dark:text-zinc-400">
+                                  Type topic, paste link, or upload file.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Input Area */}
+                          <div className="relative max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
+                            <div className="relative group">
+                              <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                              <div className="relative flex items-center bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10">
+
+                                {/* Input Field with Typewriter Placeholder */}
+                                <div className="flex-1 relative">
+                                  <Input
+                                    className="w-full border-none shadow-none focus-visible:ring-0 h-14 bg-transparent placeholder:text-slate-300 px-4 font-sans"
+                                    value={heroInput}
+                                    onChange={(e) => setHeroInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && (heroInput.trim() || uploadedFiles.length > 0)) {
+                                        setShowConversationalOnboarding(true);
+                                      }
+                                    }}
+                                  />
+                                  {!heroInput && (
+                                    <div className="absolute inset-0 pointer-events-none flex items-center px-4 text-lg text-slate-400">
+                                      <span className="whitespace-pre">I want to create </span>
+                                      <span className="text-slate-300">{typewriterText}</span>
+                                      <span className="animate-pulse text-orange-500">|</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Actions Divider */}
+                                <div className="h-8 w-px bg-slate-200 mx-2"></div>
+
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-1 pr-2">
+                                  {/* Upload Button */}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-colors"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    title="Upload files"
+                                  >
+                                    <Upload size={18} />
+                                  </Button>
+                                  <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    className="hidden"
+                                    multiple
+                                    onChange={handleFileUpload}
+                                  />
+
+                                  {/* Link Button */}
+                                  <Popover open={isLinkPopoverOpen} onOpenChange={setIsLinkPopoverOpen}>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                        title="Add link"
+                                      >
+                                        <LinkIcon size={18} />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-80 p-3" side="top" align="center">
+                                      <div className="flex gap-2">
+                                        <Input
+                                          placeholder="Paste URL..."
+                                          value={linkInput}
+                                          onChange={(e) => setLinkInput(e.target.value)}
+                                          className="h-9"
+                                          onKeyDown={(e) => e.key === 'Enter' && handleLinkAdd()}
+                                        />
+                                        <Button size="sm" onClick={handleLinkAdd} className="bg-blue-600 hover:bg-blue-700 text-white h-9 w-9 p-0">
+                                          <Plus size={16} />
+                                        </Button>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+
+                                  {/* Slide Count Popover */}
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        className="h-8 border-none shadow-none bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium rounded-lg focus:ring-0 gap-2 px-3"
+                                      >
+                                        <span className="truncate">
+                                          {slideCount === undefined ? 'Auto' :
+                                            slideCount > 10 ? '10+ Slides' :
+                                              `${slideCount} Slides`}
+                                        </span>
+                                        <ChevronDown className="h-3 w-3 opacity-50" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[280px] p-3" align="end">
+                                      <div className="space-y-3">
+                                        <div className="font-medium text-xs text-slate-500 uppercase tracking-wider">Number of Slides</div>
+
+                                        {/* Auto Option */}
+                                        <button
+                                          onClick={() => {
+                                            setSlideCount(undefined);
+                                            setDetailLevel('quick');
+                                          }}
+                                          className={cn(
+                                            "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
+                                            slideCount === undefined
+                                              ? "bg-orange-50 border-orange-500 text-orange-700"
+                                              : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                          )}
+                                        >
+                                          Auto (Recommended)
+                                        </button>
+
+                                        {/* Number Grid */}
+                                        <div className="grid grid-cols-5 gap-2">
+                                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                                            <button
+                                              key={num}
+                                              onClick={() => {
+                                                setSlideCount(num);
+                                                setDetailLevel(num <= 3 ? 'quick' : 'standard');
+                                              }}
+                                              className={cn(
+                                                "py-2 rounded-lg text-xs font-medium transition-all border",
+                                                slideCount === num
+                                                  ? "bg-orange-50 border-orange-500 text-orange-700"
+                                                  : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                              )}
+                                            >
+                                              {num}
+                                            </button>
+                                          ))}
+                                        </div>
+
+                                        {/* 10+ Option */}
+                                        <button
+                                          onClick={() => {
+                                            setSlideCount(12);
+                                            setDetailLevel('detailed');
+                                          }}
+                                          className={cn(
+                                            "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
+                                            slideCount === 12
+                                              ? "bg-orange-50 border-orange-500 text-orange-700"
+                                              : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                          )}
+                                        >
+                                          10+ Slides
+                                        </button>
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+
+                                  {/* Submit Button */}
+                                  <Button
+                                    size="icon"
+                                    className="h-12 w-12 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-105 active:scale-95"
+                                    onClick={() => {
+                                      if (heroInput.trim() || uploadedFiles.length > 0) {
+                                        setShowConversationalOnboarding(true);
+                                      }
+                                    }}
+                                  >
+                                    <ArrowRight size={24} />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Uploaded Files Preview */}
+                            {uploadedFiles.length > 0 && (
+                              <div className="mt-4 flex flex-wrap gap-2 justify-center animate-in fade-in slide-in-from-top-2">
+                                {uploadedFiles.map((file, i) => (
+                                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-white/80 backdrop-blur-sm border border-slate-200 rounded-lg shadow-sm text-sm text-slate-600">
+                                    <FilePlus size={14} className="text-orange-500" />
+                                    <span className="max-w-[150px] truncate">{file.name}</span>
+                                    <button
+                                      onClick={() => setUploadedFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                      className="ml-1 text-slate-400 hover:text-red-500 transition-colors"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    ) : sharedDecksError ? (
-                      <div className="text-center py-12">
-                        <h3 className="text-lg font-medium text-red-500">
-                          Error loading shared presentations
-                        </h3>
-                        <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-2">
-                          {sharedDecksError}
-                        </p>
-                        <Button 
-                          onClick={loadSharedDecks} 
-                          size="sm" 
-                          className="mt-4"
-                          variant="outline"
-                        >
-                          Try Again
-                        </Button>
-                      </div>
-                    ) : sharedDecks.length === 0 ? (
-                      <div className="text-center py-12">
-                        <h3 className="text-lg font-medium text-zinc-300 dark:text-zinc-400">
-                          No shared presentations available
-                        </h3>
-                        <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-2">
-                          Presentations shared with you will appear here
-                        </p>
-                      </div>
-                    ) : (
-                      <VirtualizedDeckGrid 
-                        decks={sharedDecks} 
-                        onEdit={handleEditDeck} 
-                        onShowDeleteDialog={handleShowDeleteDialog} 
-                        onLoadMore={() => {}} // No pagination for shared decks yet
-                        hasMore={false}
-                        isLoadingMore={false}
-                        isInitialLoad={false}
-                      />
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </div>
-            ) : (
-              <div className="animate-pulse">
-                <div className="h-9 bg-zinc-200 dark:bg-zinc-800 rounded-md mb-4"></div>
-                <div className="flex justify-between items-center mb-6">
-                  <div className="flex gap-4">
-                    <div className="h-6 w-24 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
-                    <div className="h-6 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+                    </div>
                   </div>
-                  <div className="h-6 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+
+                  {/* Resize Handle */}
+                  <div
+                    className="w-1 h-full cursor-ew-resize hover:bg-orange-500/50 transition-colors relative z-50 flex-shrink-0 group"
+                    onMouseDown={handleResizeStart}
+                  >
+                    <div className="absolute inset-y-0 -left-2 -right-2 z-50" /> {/* Hit area */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 bg-zinc-300 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+
+                  {/* Right Pane: Deck List */}
+                  <div
+                    className="h-full bg-white/60 backdrop-blur-xl border-l border-white/50 shadow-xl shadow-slate-200/50 relative z-10 flex flex-col flex-none"
+                    style={{ width: `${deckListWidth}%` }}
+                  >
+                    <div className="p-4 pt-20 border-b border-zinc-100 flex-shrink-0">
+                      <div className="flex flex-col gap-4">
+                        <div className="relative w-full">
+                          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                          <Input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-white/50 border-zinc-200 focus:bg-white pl-10 h-9 rounded-lg text-sm"
+                          />
+                        </div>
+
+                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                          <TabsList className="w-full bg-zinc-100/50 p-1 rounded-lg grid grid-cols-2">
+                            <TabsTrigger value="by-me" className="rounded-md text-xs">My Decks</TabsTrigger>
+                            <TabsTrigger value="shared" className="rounded-md text-xs">Shared</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full">
+                        <TabsContent value="by-me" className="mt-0 h-full">
+                          {isLoading ? (
+                            <div className="grid grid-cols-1 gap-4">
+                              {[1, 2, 3, 4].map((i) => (
+                                <div key={i} className="aspect-[16/9] bg-zinc-100 rounded-xl animate-pulse" />
+                              ))}
+                            </div>
+                          ) : filteredDecks.length === 0 ? (
+                            <EmptyDeckList searchQuery={searchQuery} onCreateDeck={handleCreateDeck} authError={authError} onReload={loadDecks} />
+                          ) : (
+                            <VirtualizedDeckGrid
+                              decks={filteredDecks}
+                              onEdit={handleEditDeck}
+                              onShowDeleteDialog={handleShowDeleteDialog}
+                              onLoadMore={loadMoreDecks}
+                              hasMore={hasMore}
+                              isLoadingMore={isLoadingMore}
+                              isInitialLoad={true}
+                            />
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="shared" className="mt-0 h-full">
+                          {isLoadingShared ? (
+                            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-500" /></div>
+                          ) : sharedDecks.length === 0 ? (
+                            <div className="text-center py-12 text-zinc-500 text-sm">No shared presentations found.</div>
+                          ) : (
+                            <VirtualizedDeckGrid
+                              decks={sharedDecks}
+                              onEdit={handleEditDeck}
+                              onShowDeleteDialog={handleShowDeleteDialog}
+                              onLoadMore={() => { }}
+                              hasMore={false}
+                              isLoadingMore={false}
+                              isInitialLoad={false}
+                            />
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+
+                    {/* Dialogs */}
+                    <Dialog open={showGallery} onOpenChange={handleDialogOpenChange}>
+                      <DialogContent className="sm:max-w-[900px] h-[80vh] p-0 overflow-hidden flex flex-col">
+                        <DialogHeader className="p-6 flex-shrink-0">
+                          {/* @ts-ignore - DialogTitle children prop issue */}
+                          <DialogTitle className="text-xl">
+                            Import from Google Slides
+                          </DialogTitle>
+                        </DialogHeader>
+                        <div className="px-6 pb-6 flex-shrink-0">
+                          <div className="relative mt-4">
+                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-neutral-400" />
+                            <Input
+                              type="text"
+                              placeholder="Search presentations..."
+                              value={popupSearchQuery}
+                              onChange={(e) => handlePopupSearchChange(e.target.value)}
+                              className="w-full bg-transparent border border-zinc-300 dark:border-zinc-600 hover:border-zinc-500 dark:hover:border-zinc-400 focus:border-zinc-700 dark:focus:border-zinc-300 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-10 rounded-md h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                            />
+                          </div>
+                        </div>
+
+                        <Tabs defaultValue="by-me" className="flex flex-col flex-grow overflow-hidden">
+                          <div className="px-6 pt-0 flex-shrink-0">
+                            <TabsList className="bg-muted/50">
+                              <TabsTrigger value="by-me" className="text-sm">My Presentations</TabsTrigger>
+                              <TabsTrigger value="shared" className="text-sm">Shared</TabsTrigger>
+                            </TabsList>
+                          </div>
+
+                          <div className="p-6 pt-4 overflow-y-auto flex-grow">
+                            <TabsContent value="by-me" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
+                              {isLoadingPopup && popupDecks.length === 0 ? (
+                                <div className="w-full text-center py-10">
+                                  <div className="flex flex-col items-center justify-center">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+                                    <p className="text-sm text-muted-foreground mt-4">Loading presentations...</p>
+                                  </div>
+                                </div>
+                              ) : filteredPopupDecks.length === 0 && popupSearchQuery.trim() ? (
+                                <div className="w-full text-center py-10">
+                                  <p className="text-lg text-muted-foreground">No presentations match "{popupSearchQuery}"</p>
+                                </div>
+                              ) : filteredPopupDecks.length === 0 && hasLoadedInitialPopup ? (
+                                <div className="w-full text-center py-10">
+                                  <p className="text-lg text-muted-foreground">No presentations found</p>
+                                </div>
+                              ) : filteredPopupDecks.length > 0 ? (
+                                <VirtualizedPopupDeckGrid
+                                  decks={filteredPopupDecks}
+                                  onEdit={(deck) => {
+                                    handleEditDeck(deck);
+                                    setShowGallery(false);
+                                  }}
+                                  onShowDeleteDialog={handleShowDeleteDialog}
+                                  onLoadMore={loadMorePopupDecks}
+                                  hasMore={hasMorePopup && !popupSearchQuery.trim()}
+                                  isLoadingMore={isLoadingMorePopup}
+                                />
+                              ) : null}
+                            </TabsContent>
+                            <TabsContent value="shared" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
+                              {isLoadingShared ? (
+                                <div className="w-full text-center py-10">
+                                  <div className="flex flex-col items-center justify-center">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+                                    <p className="text-sm text-muted-foreground mt-4">Loading shared presentations...</p>
+                                  </div>
+                                </div>
+                              ) : sharedDecksError ? (
+                                <div className="w-full text-center py-10">
+                                  <div className="flex flex-col items-center justify-center">
+                                    <p className="text-lg text-destructive font-medium">Error loading shared presentations</p>
+                                    <p className="text-sm text-muted-foreground mt-2">{sharedDecksError}</p>
+                                    <Button onClick={loadSharedDecks} size="sm" className="mt-4" variant="outline">Try Again</Button>
+                                  </div>
+                                </div>
+                              ) : sharedDecks.length === 0 ? (
+                                <div className="w-full text-center py-10">
+                                  <p className="text-lg text-muted-foreground">No shared presentations available</p>
+                                  <p className="text-sm text-muted-foreground mt-2">Presentations shared with you will appear here</p>
+                                </div>
+                              ) : (
+                                <VirtualizedPopupDeckGrid
+                                  decks={sharedDecks}
+                                  onEdit={(deck) => {
+                                    handleEditDeck(deck);
+                                    setShowGallery(false);
+                                  }}
+                                  onShowDeleteDialog={handleShowDeleteDialog}
+                                  onLoadMore={() => { }}
+                                  hasMore={false}
+                                  isLoadingMore={false}
+                                />
+                              )}
+                            </TabsContent>
+                          </div>
+                        </Tabs>
+                      </DialogContent>
+                    </Dialog>
+
+                    <AppearanceOnboarding
+                      open={showAppearanceOnboarding}
+                      onComplete={() => setShowAppearanceOnboarding(false)}
+                    />
+
+                    <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />
+
+                    <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure you want to delete this presentation?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the
+                            presentation and all of its slides.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel onClick={handleCancelDelete} disabled={isDeleting}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleConfirmDelete}
+                            disabled={isDeleting}
+                            className="bg-red-600 hover:bg-red-700 focus:ring-600"
+                          >
+                            {isDeleting ? (
+                              <>
+                                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-r-transparent"></span>
+                                Deleting...
+                              </>
+                            ) : (
+                              "Delete Presentation"
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </div>
-                <div className="space-y-6">
-                  <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
-                  <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
-                  <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
-      
-      <Dialog open={showGallery} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="sm:max-w-[900px] h-[80vh] p-0 overflow-hidden flex flex-col">
-          <DialogHeader className="p-6 flex-shrink-0">
-            <DialogTitle className="text-xl font-bold">All Presentations</DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6 flex-shrink-0">
-            <div className="relative mt-4">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-neutral-400" />
-              <Input
-                type="text"
-                placeholder="Search presentations..."
-                value={popupSearchQuery}
-                onChange={(e) => handlePopupSearchChange(e.target.value)}
-                className="w-full bg-transparent border border-zinc-300 dark:border-zinc-600 hover:border-zinc-500 dark:hover:border-zinc-400 focus:border-zinc-700 dark:focus:border-zinc-300 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-10 rounded-md h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-          </div>
-          
-          <Tabs defaultValue="by-me" className="flex flex-col flex-grow overflow-hidden">
-            <div className="px-6 pt-0 flex-shrink-0">
-              <TabsList className="bg-muted/50">
-                <TabsTrigger 
-                  value="by-me"
-                  className="text-sm"
-                >
-                  My Presentations
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="shared"
-                  className="text-sm"
-                >
-                  Shared
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            
-            <div className="p-6 pt-4 overflow-y-auto flex-grow">
-              <TabsContent value="by-me" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
-                {isLoadingPopup && popupDecks.length === 0 ? (
-                  <div className="w-full text-center py-10">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                      <p className="text-sm text-muted-foreground mt-4">Loading presentations...</p>
-                    </div>
-                  </div>
-                ) : filteredPopupDecks.length === 0 && popupSearchQuery.trim() ? (
-                  <div className="w-full text-center py-10">
-                    <p className="text-lg text-muted-foreground">No presentations match "{popupSearchQuery}"</p>
-                  </div>
-                ) : filteredPopupDecks.length === 0 && hasLoadedInitialPopup ? (
-                  <div className="w-full text-center py-10">
-                    <p className="text-lg text-muted-foreground">No presentations found</p>
-                  </div>
-                ) : filteredPopupDecks.length > 0 ? (
-                  <VirtualizedPopupDeckGrid 
-                    decks={filteredPopupDecks} 
-                    onEdit={(deck) => {
-                      handleEditDeck(deck);
-                      setShowGallery(false);
-                    }}
-                    onShowDeleteDialog={handleShowDeleteDialog}
-                    onLoadMore={loadMorePopupDecks}
-                    hasMore={hasMorePopup && !popupSearchQuery.trim()} // Disable infinite scroll when searching
-                    isLoadingMore={isLoadingMorePopup}
-                  />
-                ) : null}
-              </TabsContent>
-              <TabsContent value="shared" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
-                {isLoadingShared ? (
-                  <div className="w-full text-center py-10">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                      <p className="text-sm text-muted-foreground mt-4">Loading shared presentations...</p>
-                    </div>
-                  </div>
-                ) : sharedDecksError ? (
-                  <div className="w-full text-center py-10">
-                    <div className="flex flex-col items-center justify-center">
-                      <p className="text-lg text-destructive font-medium">Error loading shared presentations</p>
-                      <p className="text-sm text-muted-foreground mt-2">{sharedDecksError}</p>
-                      <Button 
-                        onClick={loadSharedDecks} 
-                        size="sm" 
-                        className="mt-4"
-                        variant="outline"
-                      >
-                        Try Again
-                      </Button>
-                    </div>
-                  </div>
-                ) : sharedDecks.length === 0 ? (
-                  <div className="w-full text-center py-10">
-                    <p className="text-lg text-muted-foreground">No shared presentations available</p>
-                    <p className="text-sm text-muted-foreground mt-2">Presentations shared with you will appear here</p>
-                  </div>
-                ) : (
-                  <VirtualizedPopupDeckGrid 
-                    decks={sharedDecks} 
-                    onEdit={(deck) => {
-                      handleEditDeck(deck);
-                      setShowGallery(false);
-                    }}
-                    onShowDeleteDialog={handleShowDeleteDialog}
-                    onLoadMore={() => {}} // No pagination for shared decks yet
-                    hasMore={false}
-                    isLoadingMore={false}
-                  />
-                )}
-              </TabsContent>
-            </div>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
-
-      {/* First-visit onboarding for theme choice */}
-      <AppearanceOnboarding
-        open={showAppearanceOnboarding}
-        onComplete={() => setShowAppearanceOnboarding(false)}
-      />
-
-      <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />
-      
-      <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this presentation?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              presentation and all of its slides.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelDelete} disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-            >
-              {isDeleting ? (
-                <>
-                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-r-transparent"></span>
-                  Deleting...
-                </>
-              ) : (
-                "Delete Presentation"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };

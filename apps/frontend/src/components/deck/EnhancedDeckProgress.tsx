@@ -101,7 +101,7 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
   // No auto-increment - backend sends accurate real-time progress updates
   useEffect(() => {
     // Only ensure completion at 100%
-    if (phase === 'generation_complete' || localProgress >= 100) {
+    if (phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || localProgress >= 100) {
       setLocalProgress(100);
       return;
     }
@@ -127,7 +127,7 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
     return () => clearInterval(timer);
   }, [localProgress]);
 
-  const isComplete = phase === 'generation_complete' || progress >= 100;
+  const isComplete = phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || progress >= 100;
 
   // Track the maximum phase index we've reached to prevent going backwards
   const [maxPhaseIndex, setMaxPhaseIndex] = useState(-1);

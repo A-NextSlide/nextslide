@@ -444,15 +444,8 @@ export class OutlineAPI {
         }
       }
 
-      // Enrich theme with font measurements before returning
+      // Return theme without font measurements (optimization removed)
       if (finalTheme) {
-        try {
-          const { enrichThemeWithFontMetrics } = await import('../utils/fontMeasurement');
-          finalTheme = await enrichThemeWithFontMetrics(finalTheme);
-        } catch (err) {
-          console.warn('Failed to measure fonts for theme:', err);
-          // Continue with unmeasured theme
-        }
         return { theme: finalTheme, palette: finalPalette };
       }
 
@@ -470,17 +463,8 @@ export class OutlineAPI {
       const data = await resp.json();
       if (!data?.success || !data?.theme) throw new Error('Theme generation failed');
 
-      // Enrich theme with font measurements before returning
-      let theme = data.theme;
-      try {
-        const { enrichThemeWithFontMetrics } = await import('../utils/fontMeasurement');
-        theme = await enrichThemeWithFontMetrics(theme);
-      } catch (err) {
-        console.warn('Failed to measure fonts for theme:', err);
-        // Continue with unmeasured theme
-      }
-
-      return { theme, palette: data.palette };
+      // Return theme without font measurements (optimization removed)
+      return { theme: data.theme, palette: data.palette };
     }
   }
 

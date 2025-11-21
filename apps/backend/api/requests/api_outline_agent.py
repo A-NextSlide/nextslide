@@ -90,6 +90,14 @@ You make changes by outputting JSON actions. There are three types:
 ```
 
 3. **New Outlines** (creating from scratch):
+**IMPORTANT:** When creating a new outline, FIRST describe the narrative flow and story of the presentation in natural language.
+- Explain the "story arc" of the presentation.
+- Describe what the audience will take away.
+- If the user asked for a "detailed" presentation, provide a more comprehensive narrative.
+
+Example Response:
+"I've designed a presentation that takes the audience on a journey from the basics of AI to its future implications. We'll start with a strong hook about how AI is already in our daily lives, then move into the technical foundations. The middle section explores real-world applications, and we'll conclude with a thought-provoking look at ethical challenges. Here is the structure:"
+
 ```json
 {"action": "generate_outline", "slide_count": 5, "topic": "Topic", "slides": [...]}
 ```

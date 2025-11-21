@@ -112,7 +112,7 @@ def get_optimized_component_schemas() -> str:
     var textColor = getContrastTextColor(primaryColor);
     
     return React.createElement('div', {
-      style: {width: '100%', height: '100%', display: 'flex', gap: '40px'}
+      style: {width: '100%', height: '100%', display: 'flex', gap: '60px'}
     }, items.map(function(item, i) {
       return React.createElement('div', {
         key: i,
@@ -123,7 +123,7 @@ def get_optimized_component_schemas() -> str:
         }
       }, [
         React.createElement('div', {style: {fontSize: '80px', fontWeight: '900', color: textColor}}, item.value),
-        React.createElement('div', {style: {fontSize: '24px', color: textColor, marginTop: '12px', opacity: 0.8}}, item.label)
+        React.createElement('div', {style: {fontSize: '32px', color: textColor, marginTop: '16px', opacity: 0.9}}, item.label)
       ]);
     }));
   }
@@ -140,7 +140,7 @@ def get_optimized_component_schemas() -> str:
     return React.createElement('div', {
       style: {
         width: '100%', height: '100%', display: 'flex',
-        alignItems: 'center', gap: '24px', padding: '32px',
+        alignItems: 'center', gap: '32px', padding: '32px',
         background: color + '15', borderRadius: '16px'
       }
     }, [
@@ -150,6 +150,27 @@ def get_optimized_component_schemas() -> str:
       React.createElement('div', {
         style: {fontSize: '36px', fontWeight: '600', color: textColor}
       }, text)
+    ]);
+  }
+  ```
+
+  **Narrative Feature Card:**
+  ```javascript
+  function render({props}) {
+    var title = props.title || 'Feature Name';
+    var description = props.description || 'Detailed description of this amazing feature that provides value to users.';
+    var bg = props.primaryColor || '#3B82F6';
+    var textColor = getContrastTextColor(bg);
+    
+    return React.createElement('div', {
+      style: {
+        width: '100%', height: '100%', padding: '48px',
+        background: bg, borderRadius: '24px',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center'
+      }
+    }, [
+      React.createElement('div', {style: {fontSize: '48px', fontWeight: 'bold', color: textColor, marginBottom: '24px'}}, title),
+      React.createElement('div', {style: {fontSize: '32px', lineHeight: '1.4', color: textColor, opacity: 0.9}}, description)
     ]);
   }
   ```
@@ -217,10 +238,10 @@ USE: Background + TiptapTextBlock + CustomComponent
 ```json
 [
   {"type": "Background", "props": {"backgroundType": "color", "fill": {"color": "{{primary}}"}}},
-  {"type": "TiptapTextBlock", "props": {"position": {"x": 120, "y": 120}, "texts": [{"text": "Revenue Dashboard", "style": {"textColor": "{{secondary}}", "bold": true}}], "fontSize": 48, "width": 800, "height": 55}},
+  {"type": "TiptapTextBlock", "props": {"position": {"x": 80, "y": 80}, "texts": [{"text": "Revenue Dashboard", "style": {"textColor": "{{secondary}}", "bold": true}}], "fontSize": 80, "width": 1760, "height": 100, "alignment": "left", "verticalAlignment": "top"}},
   {"type": "CustomComponent", "props": {
-    "position": {"x": 120, "y": 220},
-    "width": 1680,
+    "position": {"x": 80, "y": 240},
+    "width": 1760,
     "height": 700,
     "primaryColor": "{{accent}}",
     "items": [
@@ -228,7 +249,7 @@ USE: Background + TiptapTextBlock + CustomComponent
       {"label": "Q2 Revenue", "value": "$3.1M"},
       {"label": "Growth", "value": "+24%"}
     ],
-    "render": "function render({props}){var items=props.items||[];var pc=props.primaryColor||'#3B82F6';var tc=getContrastTextColor(pc);return React.createElement('div',{style:{display:'flex',gap:'40px',width:'100%',height:'100%'}},items.map(function(item,i){return React.createElement('div',{key:i,style:{flex:1,background:pc,padding:'48px',borderRadius:'20px',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}},[React.createElement('div',{style:{fontSize:'72px',fontWeight:'900',color:tc}},item.value),React.createElement('div',{style:{fontSize:'24px',color:tc,marginTop:'12px',opacity:0.85}},item.label)]);}));}"
+    "render": "function render({props}){var items=props.items||[];var pc=props.primaryColor||'#3B82F6';var tc=getContrastTextColor(pc);return React.createElement('div',{style:{display:'flex',gap:'60px',width:'100%',height:'100%'}},items.map(function(item,i){return React.createElement('div',{key:i,style:{flex:1,background:pc,padding:'48px',borderRadius:'20px',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}},[React.createElement('div',{style:{fontSize:'80px',fontWeight:'900',color:tc}},item.value),React.createElement('div',{style:{fontSize:'32px',color:tc,marginTop:'16px',opacity:0.9}},item.label)]);}));}"
   }}
 ]
 ```

@@ -123,26 +123,26 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   updatedSlideIds = new Set(),
   handleSlideReorder,
   isAiNotesExpanded = false,
-  setIsAiNotesExpanded = () => {},
+  setIsAiNotesExpanded = () => { },
   researchingSlides = [],
   dragOverSlideId = null,
-  setDragOverSlideId = () => {},
+  setDragOverSlideId = () => { },
   tooltipHostSlideId = null,
-  setTooltipHostSlideId = () => {},
+  setTooltipHostSlideId = () => { },
   currentTooltipAlign = 'left',
-  setCurrentTooltipAlign = () => {},
+  setCurrentTooltipAlign = () => { },
   outlineScrollRef,
   isProcessingMedia = false,
   animatingOutMediaIds = new Set(),
-  setAnimatingOutMediaIds = () => {},
+  setAnimatingOutMediaIds = () => { },
   uploadedFiles = [],
-  setUploadedFiles = () => {},
-  handleDragStart = () => {},
-  handleDragOver = () => {},
-  handleDrop = () => {},
-  handleDragEnd = () => {},
-  handleFilesDroppedOnSlide = async () => {},
-  toast = () => {},
+  setUploadedFiles = () => { },
+  handleDragStart = () => { },
+  handleDragOver = () => { },
+  handleDrop = () => { },
+  handleDragEnd = () => { },
+  handleFilesDroppedOnSlide = async () => { },
+  toast = () => { },
   completedSlides = new Set(),
   isGeneratingOutline = false,
   isAnalyzingFiles = false,
@@ -186,7 +186,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       };
     }
   }, [currentOutline?.slides?.length, researchEvents.length, isGeneratingOutline, isResearching]);
-  
+
   // RENDER DEBUG - log every render  
   // console.log('🔄 [OutlineDisplayView] RENDERING with events:', researchEvents.length, 'generating:', isGeneratingOutline);
   const [showTypewriter, setShowTypewriter] = useState(false); // Start false, will be set true when outline loads
@@ -241,10 +241,10 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const [fontEditor, setFontEditor] = useState<{ open: boolean; type: 'heading' | 'body'; x: number; y: number } | null>(null);
   const [colorEditor, setColorEditor] = useState<{ open: boolean; swatchIndex: number; x: number; y: number } | null>(null);
   const [draggedExtraIndex, setDraggedExtraIndex] = useState<number | null>(null);
-  
+
   // Dynamic font groups that update when fonts are synced (like ChatInputView)
   const [dynamicFontGroups, setDynamicFontGroups] = useState<Record<string, string[]> | null>(null);
-  
+
   // Static font groups as fallback
   const fontGroups = React.useMemo<Record<string, string[]>>(() => {
     try {
@@ -297,11 +297,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       (async () => {
         try {
           await FontLoadingService.syncDesignerFonts?.();
-        } catch {}
+        } catch { }
         if (!cancelled) {
           try {
             setDynamicFontGroups(FontLoadingService.getDedupedFontGroups?.() || null);
-          } catch {}
+          } catch { }
         }
       })();
     }
@@ -311,17 +311,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   // Load fonts when theme changes - with loading state to prevent FOUC
   useEffect(() => {
     if (!currentHeadingFont) return;
-    
+
     let cancelled = false;
-    
+
     (async () => {
       try {
         await FontLoadingService.syncDesignerFonts?.();
         await FontLoadingService.loadFont(currentHeadingFont);
-        
+
         // Small delay to ensure browser has processed the font
         await new Promise(resolve => setTimeout(resolve, 50));
-        
+
         // Force a re-render by checking if font is actually loaded
         if (!cancelled && 'fonts' in document) {
           try {
@@ -334,23 +334,23 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         console.warn('Failed to load heading font:', currentHeadingFont, err);
       }
     })();
-    
+
     return () => { cancelled = true; };
   }, [currentHeadingFont]);
 
   useEffect(() => {
     if (!currentBodyFont) return;
-    
+
     let cancelled = false;
-    
+
     (async () => {
       try {
         await FontLoadingService.syncDesignerFonts?.();
         await FontLoadingService.loadFont(currentBodyFont);
-        
+
         // Small delay to ensure browser has processed the font
         await new Promise(resolve => setTimeout(resolve, 50));
-        
+
         // Force a re-render by checking if font is actually loaded
         if (!cancelled && 'fonts' in document) {
           try {
@@ -363,7 +363,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         console.warn('Failed to load body font:', currentBodyFont, err);
       }
     })();
-    
+
     return () => { cancelled = true; };
   }, [currentBodyFont]);
 
@@ -378,7 +378,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         return;
       }
       markOutlineThemeRequested?.(currentOutline.id);
-    } catch {}
+    } catch { }
 
     try {
       const key = `__theme_requested_${currentOutline.id}`;
@@ -387,7 +387,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         return;
       }
       (window as any)[key] = true;
-    } catch {}
+    } catch { }
 
     (async () => {
       try {
@@ -395,12 +395,12 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           const state = useThemeStore.getState();
           const previousTheme = state.getOutlineTheme?.(currentOutline.id);
           if (previousTheme?.id) {
-            try { state.removeCustomTheme(previousTheme.id); } catch {}
+            try { state.removeCustomTheme(previousTheme.id); } catch { }
           }
           state.setWorkspaceTheme(initialWorkspaceTheme.id);
           state.setOutlineDeckTheme?.(currentOutline.id, null);
           state.setOutlineTheme(currentOutline.id, { ...initialWorkspaceTheme, id: initialWorkspaceTheme.id, isCustom: false } as any);
-        } catch {}
+        } catch { }
         setThemeError(null);
         // We don't apply a placeholder theme. Block theme application until backend finishes.
         setThemeReady(false);
@@ -439,14 +439,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               try {
                 const afterCP = (themePayload?.color_palette || {}) as any;
                 const afterColors = Array.isArray(afterCP.colors) ? afterCP.colors : [];
-              } catch {}
-            } catch {}
+              } catch { }
+            } catch { }
 
             // CRITICAL: FIX THE COLORS ARRAY ORDER **BEFORE** STORING!
             // The backend's semantic assignment is in legacy fields (primary_background, accent_1, primary_text)
             // but the colors array might be in wrong order. Fix it NOW before any storage.
             const colors = (themePayload?.color_palette || {}) as any;
-            
+
             // DEBUG: Log what backend sent
             console.log('[THEME DEBUG] Backend color_palette:', {
               primary_background: colors.primary_background,
@@ -456,13 +456,13 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               accents: colors.accents,
               text_colors: colors.text_colors
             });
-            
+
             const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
             const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
             const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
-            
+
             console.log('[THEME DEBUG] Extracted colors:', { pageBg, textColor, accent1 });
-            
+
             // Colors array should ONLY contain visual theme colors (bg + accents), NOT text color
             // Use empty array to prevent extras from appearing - we set explicit fields instead
             const colorsArray: string[] = [];
@@ -491,13 +491,13 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             // Helper to determine if color is neutral (needed for richness calculation)
             const isNeutralHex = (hex?: string) => {
               if (!hex || typeof hex !== 'string') return false;
-              const h = hex.trim().replace('#','');
+              const h = hex.trim().replace('#', '');
               if (h.length !== 6) return false;
-              const r = parseInt(h.slice(0,2), 16), g = parseInt(h.slice(2,4), 16), b = parseInt(h.slice(4,6), 16);
+              const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
               const sum = r + g + b;
               if (sum >= 720) return true; // near-white
               if (sum <= 60) return true;  // near-black
-              const maxc = Math.max(r,g,b), minc = Math.min(r,g,b);
+              const maxc = Math.max(r, g, b), minc = Math.min(r, g, b);
               return (maxc - minc) <= 8;   // grey
             };
 
@@ -533,7 +533,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               } else if (newRich === existingRich && newColors.length > existingColors.length) {
                 shouldOverride = true;
               }
-            } catch {}
+            } catch { }
             const typography = (themePayload?.typography || {}) as any;
 
             // DEBUG: Log color extraction (colors, colorsArray already extracted above)
@@ -560,11 +560,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const addedId = addCustomTheme(builtTheme);
             const savedTheme = { ...builtTheme, id: addedId, isCustom: true } as any;
             setWorkspaceTheme(addedId);
-            
+
             // Capture as initial theme if this is the first theme we receive (branded theme)
             const isFirstTheme = !initialTheme;
             setInitialTheme(prev => prev || savedTheme);
-            
+
             // Add to generated list (dedup by signature) ONLY if it's not the initial theme
             // to avoid duplicating the branded theme in the theme list
             if (!isFirstTheme) {
@@ -574,9 +574,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                   const dedup = prev.filter(t => themeSignature(t as any) !== sig);
                   return [savedTheme as any, ...dedup].slice(0, 24);
                 });
-              } catch {}
+              } catch { }
             }
-            
+
             if (isRich || isThemeGenerated) {
               setThemeReady(true);
             }
@@ -637,11 +637,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         console.groupEnd();
       }
       setLogoUrl(candidate || null);
-    } catch {}
+    } catch { }
   }, [currentOutline?.id, outlineDeckTheme, (currentOutline as any)?.stylePreferences?.logoUrl]);
 
   const handleClickReplaceLogo = () => {
-    try { logoFileInputRef.current?.click(); } catch {}
+    try { logoFileInputRef.current?.click(); } catch { }
   };
 
   const handleLogoFileSelected: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
@@ -753,17 +753,17 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         cp.primary_background = hex;
         if (Array.isArray(cp.backgrounds)) cp.backgrounds[0] = hex;
         useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
-      } catch {}
+      } catch { }
       return;
     }
     if (sw.role === 'text') {
-      applyThemeUpdate((t) => ({ 
-        ...t, 
-        typography: { 
+      applyThemeUpdate((t) => ({
+        ...t,
+        typography: {
           ...t.typography,
           paragraph: { ...t.typography?.paragraph, color: hex },
           heading: { ...t.typography?.heading, color: hex }
-        } 
+        }
       }));
       // Keep outline deck theme palette in sync so swatches update live
       try {
@@ -773,7 +773,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         if (!cp.text_colors) cp.text_colors = {};
         cp.text_colors.primary = hex;
         useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
-      } catch {}
+      } catch { }
       return;
     }
     if (sw.role === 'accent1') {
@@ -785,7 +785,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         cp.accent_1 = hex;
         if (Array.isArray(cp.accents)) cp.accents[0] = hex;
         useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: cp });
-      } catch {}
+      } catch { }
       return;
     }
   };
@@ -818,40 +818,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       const remaining = colors.filter(c => !uniqueExtras.some(u => u.toLowerCase() === String(c).toLowerCase()));
       const nextColors = [...uniqueExtras, ...remaining];
       useThemeStore.getState().setOutlineDeckTheme(currentOutline.id, { ...deckTheme, color_palette: { ...cp, colors: nextColors } });
-    } catch {}
+    } catch { }
   };
 
-  // Measure font character width ratio by rendering sample text
-  const measureFontCharWidthRatio = (fontFamily: string, fontSize: number = 24): number => {
-    try {
-      // Create temporary element
-      const tempEl = document.createElement('div');
-      tempEl.style.position = 'absolute';
-      tempEl.style.visibility = 'hidden';
-      tempEl.style.whiteSpace = 'nowrap';
-      tempEl.style.fontSize = `${fontSize}px`;
-      tempEl.style.fontFamily = fontFamily;
-
-      // Use a representative sample text
-      const sampleText = 'The quick brown fox jumps over the lazy dog 0123456789';
-      tempEl.textContent = sampleText;
-
-      document.body.appendChild(tempEl);
-      const rect = tempEl.getBoundingClientRect();
-      document.body.removeChild(tempEl);
-
-      // Calculate character width ratio
-      const charCount = sampleText.length;
-      const charWidthRatio = (rect.width / charCount) / fontSize;
-
-      console.log(`📏 MEASURED [${fontFamily}]: ratio=${charWidthRatio.toFixed(3)} | width=${rect.width.toFixed(1)}px @ ${fontSize}px`);
-
-      return charWidthRatio;
-    } catch (error) {
-      console.warn('Failed to measure font:', error);
-      return 0.55; // Default fallback
-    }
-  };
 
   const openFontPanelAt = (e: React.MouseEvent, type: 'heading' | 'body') => {
     try {
@@ -884,19 +853,19 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           const inside = fontEditorRef.current && fontEditorRef.current.contains(target);
           // Check if click is inside a Radix dropdown menu (portaled content)
           const insideDropdown = (target as Element).closest('[data-radix-popper-content-wrapper]') !== null ||
-                                 (target as Element).closest('[role="menu"]') !== null ||
-                                 (target as Element).closest('[role="menuitem"]') !== null;
+            (target as Element).closest('[role="menu"]') !== null ||
+            (target as Element).closest('[role="menuitem"]') !== null;
           if (!inside && !insideDropdown) setFontEditor(null);
         }
         if (colorEditor?.open) {
           const inside = colorEditorRef.current && colorEditorRef.current.contains(target);
           // Check if click is inside a color picker or dropdown
           const insideDropdown = (target as Element).closest('[data-radix-popper-content-wrapper]') !== null ||
-                                 (target as Element).closest('[role="menu"]') !== null ||
-                                 (target as Element).closest('[role="dialog"]') !== null;
+            (target as Element).closest('[role="menu"]') !== null ||
+            (target as Element).closest('[role="dialog"]') !== null;
           if (!inside && !insideDropdown) setColorEditor(null);
         }
-      } catch {}
+      } catch { }
     };
     const handleKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
@@ -952,8 +921,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           }
         } as any;
         setOutlineDeckTheme(currentOutline.id, deckTheme);
-      } catch {}
-    } catch {}
+      } catch { }
+    } catch { }
   };
 
   // Get all navigable themes (initial + generated)
@@ -968,14 +937,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const handleNextTheme = async () => {
     const allThemes = getAllThemes();
     if (!allThemes.length) return;
-    
+
     const nextIdx = (currentThemeIndex + 1) % allThemes.length;
-    
+
     // If we're at the last theme, generate more before moving to the next
     if (nextIdx === 0 && allThemes.length > 1) {
       await generateAiThemes();
     }
-    
+
     setCurrentThemeIndex(nextIdx);
     const updatedThemes = getAllThemes();
     applyThemeSelection(updatedThemes[nextIdx] || allThemes[nextIdx]);
@@ -984,14 +953,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const handlePrevTheme = () => {
     const allThemes = getAllThemes();
     if (!allThemes.length) return;
-    
+
     const prevIdx = currentThemeIndex === 0 ? allThemes.length - 1 : currentThemeIndex - 1;
     setCurrentThemeIndex(prevIdx);
     applyThemeSelection(allThemes[prevIdx]);
   };
 
   const [isGeneratingThemes, setIsGeneratingThemes] = useState(false);
-  
+
   const generateAiThemes = async () => {
     setIsGeneratingThemes(true);
     try {
@@ -1004,8 +973,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           num_colors: 3,
           temperature: temperature.toString(),
           num_results: 10,
-          adjacency: ["0","60","50","60","0","50","50","50","0"],
-          palette: ["-","-","-"]
+          adjacency: ["0", "60", "50", "60", "0", "50", "50", "50", "0"],
+          palette: ["-", "-", "-"]
         }),
       });
       if (!response.ok) throw new Error("Huemint API error");
@@ -1020,7 +989,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         },
         accent1: result.palette[2],
         accent2: result.palette[2],
-        swatches: result.palette.map((c, i) => ({ color: c, label: ['Background', 'Text', 'Accent'][i] || `Color ${i+1}` }))
+        swatches: result.palette.map((c, i) => ({ color: c, label: ['Background', 'Text', 'Accent'][i] || `Color ${i + 1}` }))
       } as any));
       setGeneratedThemes(prev => [...prev, ...newThemes]);
       if (generatedThemes.length === 0 && newThemes.length > 0) {
@@ -1032,7 +1001,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       setIsGeneratingThemes(false);
     }
   };
-  
+
   useEffect(() => {
     if (!generatedThemes.length && !isGeneratingThemes) {
       generateAiThemes();
@@ -1043,11 +1012,11 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   useEffect(() => {
     const allThemes = getAllThemes();
     if (allThemes.length === 0) return;
-    
+
     const currentThemeObj = useThemeStore.getState().getWorkspaceTheme();
     const currSig = themeSignature(currentThemeObj as any);
     const foundIdx = allThemes.findIndex(t => themeSignature(t as any) === currSig || t.id === workspaceThemeId);
-    
+
     if (foundIdx >= 0 && foundIdx !== currentThemeIndex) {
       setCurrentThemeIndex(foundIdx);
     }
@@ -1087,7 +1056,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         onCurrentSlideIndexChange?.(idx);
         try {
           window.dispatchEvent(new CustomEvent('navigate-to-slide', { detail: { slideIndex: idx } }));
-        } catch {}
+        } catch { }
       }
     };
     window.addEventListener('navigate-to-slide-from-flow', handler as EventListener);
@@ -1114,15 +1083,15 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   // Track newly added slides for animation
   const [newSlideIds, setNewSlideIds] = useState<Set<string>>(new Set());
   const [animatedSlides, setAnimatedSlides] = React.useState<Set<string>>(new Set());
-  
+
   // useRef must be at the top level of the component
   const previousSlideCount = React.useRef<number>(currentOutline?.slides.length || 0);
   const previousSlidesWithContent = React.useRef<Set<string>>(new Set()); // Track slides that had content
   const isUserAtBottom = React.useRef<boolean>(true); // Track if user is at bottom of scroll
-  
+
   // Track the initial slide count when generation starts
   const initialGeneratingSlideCount = React.useRef<number>(0);
-  
+
   // Update initial slide count when outline generation starts/stops
   React.useEffect(() => {
     if (isGeneratingOutline && initialGeneratingSlideCount.current === 0 && currentOutline) {
@@ -1141,7 +1110,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   useEffect(() => {
     if (currentOutline) {
       const isNewOutline = !previousOutlineIdRef.current || previousOutlineIdRef.current !== currentOutline.id;
-      
+
       if (isNewOutline) {
         // This is a new outline, show typewriter
         setShowTypewriter(true);
@@ -1215,7 +1184,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           .filter(slide => slide.content && slide.content.trim() !== '')
           .map(slide => slide.id)
       );
-      
+
       // Scroll to show the new slide
       if (effectiveScrollRef.current && isGeneratingOutline) {
         setTimeout(() => {
@@ -1224,7 +1193,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const scrollHeight = scrollContainer.scrollHeight;
             const clientHeight = scrollContainer.clientHeight;
             const maxScroll = scrollHeight - clientHeight;
-            
+
             // Scroll to bottom to show new content
             scrollContainer.scrollTo({
               top: maxScroll,
@@ -1233,7 +1202,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           }
         }, 100);
       }
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [currentOutline?.slides, animatedSlides, isGeneratingOutline]);
@@ -1242,31 +1211,31 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   React.useEffect(() => {
     if (currentOutline) {
       const currentCount = currentOutline.slides.length;
-      
+
       // Only process if we have more slides than before (slide was added)
       if (currentCount > previousSlideCount.current) {
         // Get the last slide(s) that were added
         const newSlides = currentOutline.slides.slice(previousSlideCount.current);
-        
+
         // For manually added slides (which won't have content initially)
         const manuallyAddedSlideIds = newSlides
           .filter(slide => !slide.content || slide.content.trim() === '')
           .map(slide => slide.id);
-        
+
         if (manuallyAddedSlideIds.length > 0) {
           // Set only the new slides for animation
           setNewSlideIds(new Set(manuallyAddedSlideIds));
-          
+
           // Remove the animation flag after animation completes
           const timeoutId = setTimeout(() => {
             setNewSlideIds(new Set());
           }, 600); // Match animation duration
-          
+
           // Cleanup timeout on unmount or next update
           return () => clearTimeout(timeoutId);
         }
       }
-      
+
       previousSlideCount.current = currentCount;
     }
   }, [currentOutline?.slides.length]);
@@ -1300,7 +1269,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     updateWidgetPosition();
     setTimeout(updateWidgetPosition, 100);
     setTimeout(updateWidgetPosition, 500);
-    
+
     window.addEventListener('resize', updateWidgetPosition);
     window.addEventListener('scroll', updateWidgetPosition, { passive: true } as any);
     const scrollEl = effectiveScrollRef.current;
@@ -1315,7 +1284,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   // Handle immediate research on single slide
   const handleImmediateResearch = async (slideId: string) => {
     if (!currentOutline) return;
-    
+
     const slide = currentOutline.slides.find(s => s.id === slideId);
     if (!slide || !slide.content || slide.content.trim() === '') {
       toast({
@@ -1325,7 +1294,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       });
       return;
     }
-    
+
     // Call the parent's handleToggleDeepResearch which manages the researchingSlides state
     handleToggleDeepResearch(slideId);
   };
@@ -1334,14 +1303,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
   const handleOutlineChatMessage = async (message: string, targetSlideIndex?: number | 'all') => {
     setIsEditingOutline(true);
     setCurrentEditTarget(targetSlideIndex);
-    
+
     // Determine which slides are being edited
     if (targetSlideIndex === 'all') {
       setCurrentEditingSlides(currentOutline.slides.map(s => s.id));
     } else if (typeof targetSlideIndex === 'number' && currentOutline.slides[targetSlideIndex]) {
       setCurrentEditingSlides([currentOutline.slides[targetSlideIndex].id]);
     }
-    
+
     try {
       // Prepare the request body with complete outline structure
       const requestBody = {
@@ -1393,8 +1362,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         },
         target_slide_index: targetSlideIndex === 'all' ? null : targetSlideIndex
       };
-      
-      
+
+
       // Call the outline edit API
       const response = await fetch('/api/outline/edit', {
         method: 'POST',
@@ -1403,7 +1372,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         },
         body: JSON.stringify(requestBody),
       });
-      
+
       if (!response.ok) {
         // If 404, provide a helpful message about the feature being in development
         if (response.status === 404) {
@@ -1416,14 +1385,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           setIsEditingOutline(false);
           return;
         }
-        
+
         const errorData = await response.json().catch(() => null);
         // Parse error details properly
         let errorMessage = `Failed to edit outline: ${response.statusText}`;
         if (errorData?.detail) {
           if (Array.isArray(errorData.detail)) {
             // Handle validation errors from FastAPI
-            errorMessage = errorData.detail.map((err: any) => 
+            errorMessage = errorData.detail.map((err: any) =>
               typeof err === 'object' ? err.msg || JSON.stringify(err) : err
             ).join(', ');
           } else {
@@ -1432,40 +1401,40 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         }
         throw new Error(errorMessage);
       }
-      
+
       const result = await response.json();
-      
+
       // Check if we have an updated outline in the response
       // Backend returns updatedOutline directly without success field
       if (result.updatedOutline || result.outline) {
         // Update the outline with the edited version
         const updatedOutline = result.updatedOutline || result.outline;
-        
+
         // Format the response to have structured content with bold headers
         if (updatedOutline && updatedOutline.slides) {
           updatedOutline.slides = updatedOutline.slides.map((slide: SlideOutline) => {
             // If the slide content was updated, ensure it's properly formatted for TipTap
             if (slide.content) {
               let formattedContent = slide.content;
-              
+
               // Convert markdown bold (**text** or __text__) to HTML bold tags
               formattedContent = formattedContent.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
               formattedContent = formattedContent.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-              
+
               // Convert markdown italic (*text* or _text_) to HTML italic tags - be careful not to match bold
               formattedContent = formattedContent.replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
               formattedContent = formattedContent.replace(/(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)/g, '<em>$1</em>');
-              
+
               // Convert to proper TipTap HTML structure if not already HTML
               if (!formattedContent.includes('<p>') && !formattedContent.includes('<ul>') && !formattedContent.includes('<ol>')) {
                 const lines = formattedContent.split('\n').filter(line => line.trim());
                 const htmlLines = [];
                 let inList = false;
                 let listType = '';
-                
+
                 for (const line of lines) {
                   const trimmedLine = line.trim();
-                  
+
                   // Check for bullet points
                   if (/^[•\-\*]/.test(trimmedLine)) {
                     const content = trimmedLine.replace(/^[•\-\*]\s*/, '');
@@ -1503,35 +1472,35 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                     }
                   }
                 }
-                
+
                 // Close any open list
                 if (inList) {
                   htmlLines.push(`</${listType}>`);
                 }
-                
+
                 formattedContent = htmlLines.join('');
               }
-              
+
               slide.content = formattedContent;
             }
             return slide;
           });
         }
-        
+
         // If narrative flow was updated, merge it in
         if (result.updatedNarrativeFlow) {
           updatedOutline.narrativeFlow = result.updatedNarrativeFlow;
         }
-        
+
         setCurrentOutline(updatedOutline);
-        
+
         toast({
           title: "Outline updated",
-          description: targetSlideIndex === 'all' 
-            ? "All slides have been updated" 
+          description: targetSlideIndex === 'all'
+            ? "All slides have been updated"
             : `Slide ${targetSlideIndex + 1} has been updated`,
         });
-        
+
         // Show additional toast if narrative flow changed significantly
         if (result.changes?.narrative_impact && result.changes.narrative_impact !== 'none') {
           setTimeout(() => {
@@ -1544,18 +1513,18 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       } else if (result.success && (result.outline || result.updatedOutline)) {
         // Also handle if backend includes success field
         const updatedOutline = result.updatedOutline || result.outline;
-        
+
         // If narrative flow was updated, merge it in
         if (result.updatedNarrativeFlow) {
           updatedOutline.narrativeFlow = result.updatedNarrativeFlow;
         }
-        
+
         setCurrentOutline(updatedOutline);
-        
+
         toast({
           title: "Outline updated",
-          description: targetSlideIndex === 'all' 
-            ? "All slides have been updated" 
+          description: targetSlideIndex === 'all'
+            ? "All slides have been updated"
             : `Slide ${targetSlideIndex + 1} has been updated`,
         });
       } else {
@@ -1606,7 +1575,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         <div className="px-6 pt-1 pb-0 flex-shrink-0 min-h-[3.5rem]">
           {(showTypewriter || showSubtext) && (
             <div>
-              <TypewriterText 
+              <TypewriterText
                 text="First, let's perfect your content"
                 delay={50}
                 className="text-left text-lg"
@@ -1625,7 +1594,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       )}
 
       {/* Fallback loading banner while waiting for initial layout (prevents empty gap under header) */}
-      {currentOutline && currentOutline.slides.length === 0 && !isGeneratingOutline && uploadedFiles.length === 0 && !(currentOutline as any).isManualMode && (
+      {((isGeneratingOutline) || (currentOutline && currentOutline.slides.length === 0 && uploadedFiles.length === 0 && !(currentOutline as any).isManualMode)) && (
         <div className="px-6 pt-2 pb-4 flex-shrink-0">
           <div className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-orange-50/60 to-white/30 dark:from-orange-900/20 dark:to-zinc-900/30 shadow-sm">
             <div className="flex items-center gap-3 p-3" role="status" aria-live="polite">
@@ -1704,52 +1673,52 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       {currentOutline && (currentOutline.slides?.length > 0 || isGeneratingOutline || uploadedFiles.length > 0) && (
         <>
           {/* AI Notes Section - using correct property names */}
-          {currentOutline && 
-           ('discarded_files' in currentOutline && (currentOutline as any).discarded_files?.length > 0 || 
-            'source_files_used' in currentOutline && (currentOutline as any).source_files_used?.length > 0) && (
-            <Collapsible
-              open={isAiNotesExpanded}
-              onOpenChange={setIsAiNotesExpanded}
-              className="mb-3 mx-4 border border-zinc-300/60 dark:border-neutral-700/50 rounded-lg bg-zinc-50/30 dark:bg-neutral-900/20 shadow-sm hover:shadow-md"
-            >
-              <CollapsibleTrigger className="flex items-center justify-between w-full p-2.5 text-xs font-medium text-left text-zinc-600 dark:text-neutral-300 hover:bg-zinc-100/50 dark:hover:bg-neutral-800/40 rounded-t-lg focus:outline-none group">
-                <div className="flex items-center">
-                  <Info className="h-3.5 w-3.5 mr-2 text-blue-500" />
-                  <span className="group-hover:text-zinc-800 dark:group-hover:text-neutral-100 transition-colors">AI File Processing Notes</span>
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="p-2.5 border-t border-zinc-300/50 dark:border-neutral-700/40 text-xs text-zinc-500 dark:text-neutral-400 space-y-2.5 bg-white dark:bg-neutral-800/10 rounded-b-lg">
-                {currentOutline && 'source_files_used' in currentOutline && (currentOutline as any).source_files_used && (currentOutline as any).source_files_used.length > 0 && (
-                  <div className="pt-1">
-                    <p className="font-medium text-zinc-600 dark:text-neutral-300 mb-1">Files used for content generation:</p>
-                    <ul className="list-disc list-inside space-y-1 pl-1 text-zinc-500 dark:text-neutral-400">
-                      {(currentOutline as any).source_files_used.map((file: { file_id: string, filename: string, reasoning: string }) => (
-                        <li key={file.file_id || file.filename}>
-                          <span className="font-semibold text-zinc-600 dark:text-neutral-300">{file.filename || file.file_id}:</span> {file.reasoning}
-                        </li>
-                      ))}
-                    </ul>
+          {currentOutline &&
+            ('discarded_files' in currentOutline && (currentOutline as any).discarded_files?.length > 0 ||
+              'source_files_used' in currentOutline && (currentOutline as any).source_files_used?.length > 0) && (
+              <Collapsible
+                open={isAiNotesExpanded}
+                onOpenChange={setIsAiNotesExpanded}
+                className="mb-3 mx-4 border border-zinc-300/60 dark:border-neutral-700/50 rounded-lg bg-zinc-50/30 dark:bg-neutral-900/20 shadow-sm hover:shadow-md"
+              >
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-2.5 text-xs font-medium text-left text-zinc-600 dark:text-neutral-300 hover:bg-zinc-100/50 dark:hover:bg-neutral-800/40 rounded-t-lg focus:outline-none group">
+                  <div className="flex items-center">
+                    <Info className="h-3.5 w-3.5 mr-2 text-blue-500" />
+                    <span className="group-hover:text-zinc-800 dark:group-hover:text-neutral-100 transition-colors">AI File Processing Notes</span>
                   </div>
-                )}
-                {currentOutline && 'discarded_files' in currentOutline && (currentOutline as any).discarded_files && (currentOutline as any).discarded_files.length > 0 && (
-                  <div className="pt-2 border-t border-zinc-200/40 dark:border-neutral-700/30 mt-2">
-                    <p className="font-medium text-zinc-600 dark:text-neutral-300 mb-1">Files not used or discarded:</p>
-                    <ul className="list-disc list-inside space-y-1 pl-1 text-zinc-500 dark:text-neutral-400">
-                      {(currentOutline as any).discarded_files.map((file: { file_id: string, filename: string, reasoning: string }) => (
-                        <li key={file.file_id || file.filename}>
-                          <span className="font-semibold text-zinc-600 dark:text-neutral-300">{file.filename || file.file_id}:</span> {file.reasoning}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <p className="pt-2 border-t border-zinc-200/40 dark:border-neutral-700/30 mt-2 text-zinc-500 dark:text-neutral-400">
-                  Tip: Drag specific files onto slide cards below to assign them manually.
-                </p>
-              </CollapsibleContent>
-            </Collapsible>
-          )}
-          
+                </CollapsibleTrigger>
+                <CollapsibleContent className="p-2.5 border-t border-zinc-300/50 dark:border-neutral-700/40 text-xs text-zinc-500 dark:text-neutral-400 space-y-2.5 bg-white dark:bg-neutral-800/10 rounded-b-lg">
+                  {currentOutline && 'source_files_used' in currentOutline && (currentOutline as any).source_files_used && (currentOutline as any).source_files_used.length > 0 && (
+                    <div className="pt-1">
+                      <p className="font-medium text-zinc-600 dark:text-neutral-300 mb-1">Files used for content generation:</p>
+                      <ul className="list-disc list-inside space-y-1 pl-1 text-zinc-500 dark:text-neutral-400">
+                        {(currentOutline as any).source_files_used.map((file: { file_id: string, filename: string, reasoning: string }) => (
+                          <li key={file.file_id || file.filename}>
+                            <span className="font-semibold text-zinc-600 dark:text-neutral-300">{file.filename || file.file_id}:</span> {file.reasoning}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {currentOutline && 'discarded_files' in currentOutline && (currentOutline as any).discarded_files && (currentOutline as any).discarded_files.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-200/40 dark:border-neutral-700/30 mt-2">
+                      <p className="font-medium text-zinc-600 dark:text-neutral-300 mb-1">Files not used or discarded:</p>
+                      <ul className="list-disc list-inside space-y-1 pl-1 text-zinc-500 dark:text-neutral-400">
+                        {(currentOutline as any).discarded_files.map((file: { file_id: string, filename: string, reasoning: string }) => (
+                          <li key={file.file_id || file.filename}>
+                            <span className="font-semibold text-zinc-600 dark:text-neutral-300">{file.filename || file.file_id}:</span> {file.reasoning}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <p className="pt-2 border-t border-zinc-200/40 dark:border-neutral-700/30 mt-2 text-zinc-500 dark:text-neutral-400">
+                    Tip: Drag specific files onto slide cards below to assign them manually.
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
           {/* Show uploaded files hint only if there are uploaded files */}
           {uploadedFiles.length > 0 && (
             <div className="px-6 pt-2 pb-2 flex-shrink-0 bg-orange-50/50 dark:bg-orange-900/10 border-t border-orange-200 dark:border-orange-800">
@@ -1802,7 +1771,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               </p>
             </div>
           )}
-          
+
           {/* Card Carousel - takes most available space; lock parent scroll during generation */}
           <div
             ref={slidesAreaRef}
@@ -1938,224 +1907,219 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                               </div>
                             </div>
                           ) : (
-                          <div ref={themePanelRef} className="h-full w-full grid grid-cols-2 relative">
-                            {/* Left: Typography samples with logo controls pinned to bottom + Swap */}
-                            <div 
-                              className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
-                              style={{ backgroundColor: workspaceTheme.page?.backgroundColor || '#ffffff' }}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-[11px] opacity-70">Theme</div>
-                                  <div className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                                    {currentThemeIndex === 0 && initialTheme ? 'Branded' : 'AI Generated'}
+                            <div ref={themePanelRef} className="h-full w-full grid grid-cols-2 relative">
+                              {/* Left: Typography samples with logo controls pinned to bottom + Swap */}
+                              <div
+                                className="h-full p-4 flex flex-col gap-3 overflow-hidden border-r border-zinc-900/20 dark:border-zinc-700/50"
+                                style={{ backgroundColor: workspaceTheme.page?.backgroundColor || '#ffffff' }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-[11px] opacity-70">Theme</div>
+                                    <div className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                                      {currentThemeIndex === 0 && initialTheme ? 'Branded' : 'AI Generated'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                      onClick={handlePrevTheme}
+                                      disabled={getAllThemes().length <= 1 || isGeneratingThemes}
+                                      title="Previous theme"
+                                    >
+                                      <ChevronLeft className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                                    </button>
+                                    <button
+                                      className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                      onClick={handleNextTheme}
+                                      disabled={isGeneratingThemes}
+                                      title="Next theme"
+                                    >
+                                      {isGeneratingThemes ? (
+                                        <Loader2 className="h-4 w-4 text-zinc-700 dark:text-zinc-300 animate-spin" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                                      )}
+                                    </button>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                    onClick={handlePrevTheme}
-                                    disabled={getAllThemes().length <= 1 || isGeneratingThemes}
-                                    title="Previous theme"
+                                <div className="flex flex-col gap-1">
+                                  <div
+                                    className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
+                                    style={{
+                                      fontFamily: workspaceTheme.typography.heading?.fontFamily || 'Inter',
+                                      color: workspaceTheme.typography.heading?.color || '#1f2937',
+                                      borderBottom: `2px solid ${workspaceTheme.accent1 || '#FF4301'}`
+                                    }}
+                                    onClick={(e) => openFontPanelAt(e, 'heading')}
                                   >
-                                    <ChevronLeft className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
-                                  </button>
-                                  <button
-                                    className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                    onClick={handleNextTheme}
-                                    disabled={isGeneratingThemes}
-                                    title="Next theme"
-                                  >
-                                    {isGeneratingThemes ? (
-                                      <Loader2 className="h-4 w-4 text-zinc-700 dark:text-zinc-300 animate-spin" />
-                                    ) : (
-                                      <ChevronRight className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
-                                    )}
-                                  </button>
+                                    Heading Sample
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="flex flex-col gap-1">
                                 <div
-                                  className="text-[24px] font-bold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none pb-2"
-                                  style={{
-                                    fontFamily: workspaceTheme.typography.heading?.fontFamily || 'Inter',
-                                    color: workspaceTheme.typography.heading?.color || '#1f2937',
-                                    borderBottom: `2px solid ${workspaceTheme.accent1 || '#FF4301'}`
-                                  }}
-                                  onClick={(e) => openFontPanelAt(e, 'heading')}
+                                  className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
+                                  style={{ fontFamily: workspaceTheme.typography.paragraph?.fontFamily || 'Inter', color: workspaceTheme.typography.paragraph?.color || '#1f2937' }}
+                                  onClick={(e) => openFontPanelAt(e, 'body')}
                                 >
-                                  Heading Sample
+                                  Body sample text shows the selected body font.
                                 </div>
-                              </div>
-                              <div
-                                className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
-                                style={{ fontFamily: workspaceTheme.typography.paragraph?.fontFamily || 'Inter', color: workspaceTheme.typography.paragraph?.color || '#1f2937' }}
-                                onClick={(e) => openFontPanelAt(e, 'body')}
-                              >
-                                Body sample text shows the selected body font.
-                              </div>
-                              {/* Logo block anchored at bottom with replace/remove */}
-                              <div className="mt-auto">
-                                <div className="text-xs font-medium mb-2 text-zinc-700 dark:text-zinc-300">Brand logo</div>
-                                <div className="h-16 w-40 rounded-md border-2 border-zinc-300 dark:border-zinc-600 flex items-center justify-center overflow-hidden bg-white dark:bg-zinc-800 shadow-sm">
-                                  {logoUrl ? (
-                                    <img src={logoUrl} alt="Brand logo" className="max-h-12 max-w-[9rem] object-contain" />
-                                  ) : (
-                                    <div className="text-xs text-zinc-400 dark:text-zinc-500">No logo</div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-3">
-                                  <button
-                                    className="text-xs px-3 py-1.5 rounded-md border-2 border-zinc-400 dark:border-zinc-500 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600 hover:border-[#FF4301] dark:hover:border-[#FF4301] disabled:opacity-60 font-medium shadow-sm transition-all"
-                                    onClick={handleClickReplaceLogo}
-                                    disabled={isUploadingLogo}
-                                  >
-                                    {isUploadingLogo ? 'Uploading…' : (logoUrl ? 'Replace logo' : 'Add logo')}
-                                  </button>
-                                  {logoUrl && (
+                                {/* Logo block anchored at bottom with replace/remove */}
+                                <div className="mt-auto">
+                                  <div className="text-xs font-medium mb-2 text-zinc-700 dark:text-zinc-300">Brand logo</div>
+                                  <div className="h-16 w-40 rounded-md border-2 border-zinc-300 dark:border-zinc-600 flex items-center justify-center overflow-hidden bg-white dark:bg-zinc-800 shadow-sm">
+                                    {logoUrl ? (
+                                      <img src={logoUrl} alt="Brand logo" className="max-h-12 max-w-[9rem] object-contain" />
+                                    ) : (
+                                      <div className="text-xs text-zinc-400 dark:text-zinc-500">No logo</div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-3">
                                     <button
-                                      className="text-xs px-3 py-1.5 rounded-md border-2 border-red-400 dark:border-red-500 bg-white dark:bg-zinc-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-500 dark:hover:border-red-400 font-medium shadow-sm transition-all"
-                                      onClick={handleRemoveLogo}
+                                      className="text-xs px-3 py-1.5 rounded-md border-2 border-zinc-400 dark:border-zinc-500 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600 hover:border-[#FF4301] dark:hover:border-[#FF4301] disabled:opacity-60 font-medium shadow-sm transition-all"
+                                      onClick={handleClickReplaceLogo}
+                                      disabled={isUploadingLogo}
                                     >
-                                      Remove
+                                      {isUploadingLogo ? 'Uploading…' : (logoUrl ? 'Replace logo' : 'Add logo')}
                                     </button>
-                                  )}
-                                  <input
-                                    ref={logoFileInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={handleLogoFileSelected}
-                                  />
+                                    {logoUrl && (
+                                      <button
+                                        className="text-xs px-3 py-1.5 rounded-md border-2 border-red-400 dark:border-red-500 bg-white dark:bg-zinc-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-500 dark:hover:border-red-400 font-medium shadow-sm transition-all"
+                                        onClick={handleRemoveLogo}
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                    <input
+                                      ref={logoFileInputRef}
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={handleLogoFileSelected}
+                                    />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            {/* Vertical color bars with labels - fills available width */}
-                            <div className="h-full p-2 flex gap-1">
-                              {/* Only render palette when a real theme is applied and palette exists */}
-                              {swatches.length > 0 ? (
-                                <div className="flex-1 flex gap-1">
-                                  {swatches.map((sw, idx) => (
-                                    <Popover key={idx}>
-                                      <PopoverTrigger asChild>
-                                        <div
-                                          className="flex-1 min-w-[20px] rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all relative"
-                                          style={{ backgroundColor: sw.color }}
-                                          title={sw.label || `Color ${idx + 1}`}
-                                        >
+                              {/* Vertical color bars with labels - fills available width */}
+                              <div className="h-full p-2 flex gap-1">
+                                {/* Only render palette when a real theme is applied and palette exists */}
+                                {swatches.length > 0 ? (
+                                  <div className="flex-1 flex gap-1">
+                                    {swatches.map((sw, idx) => (
+                                      <Popover key={idx}>
+                                        <PopoverTrigger asChild>
                                           <div
-                                            className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
-                                            style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+                                            className="flex-1 min-w-[20px] rounded-sm cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all relative"
+                                            style={{ backgroundColor: sw.color }}
+                                            title={sw.label || `Color ${idx + 1}`}
                                           >
-                                            {sw.label}
+                                            <div
+                                              className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-white whitespace-nowrap"
+                                              style={{ fontFamily: 'HKGrotesk, Inter, sans-serif', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+                                            >
+                                              {sw.label}
+                                            </div>
                                           </div>
-                                        </div>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-2" side="bottom" align="center">
-                                        <EnhancedColorPicker
-                                          color={String(sw.color)}
-                                          onChange={(hex) => updateSwatchColor(idx, hex)}
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="h-full w-full flex items-center justify-center text-[11px] text-zinc-400 select-none">
-                                  {/* No palette colors available */}
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-2" side="bottom" align="center">
+                                          <EnhancedColorPicker
+                                            color={String(sw.color)}
+                                            onChange={(hex) => updateSwatchColor(idx, hex)}
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="h-full w-full flex items-center justify-center text-[11px] text-zinc-400 select-none">
+                                    {/* No palette colors available */}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Floating editors */}
+                              {fontEditor?.open && (() => {
+                                const groups = dynamicFontGroups || fontGroups;
+                                return (
+                                  <div
+                                    ref={fontEditorRef}
+                                    className="absolute p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
+                                    style={{
+                                      left: Math.max(8, Math.min((fontEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)),
+                                      top: Math.max(8, Math.min((fontEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 200)),
+                                      width: 240,
+                                      zIndex: 9999 // Very high z-index to ensure dropdown content appears above everything
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="text-[10px] mb-1 opacity-70">
+                                      {fontEditor.type === 'heading' ? 'Heading Font' : 'Body Font'}
+                                    </div>
+                                    <GroupedDropdown
+                                      value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
+                                      options={ALL_FONT_NAMES}
+                                      groups={groups}
+                                      onChange={async (value) => {
+                                        const fontName = String(value);
+                                        console.log('[OutlineDisplayView] Font selected:', fontName);
+
+                                        // Load font FIRST before applying to theme
+                                        try {
+                                          await FontLoadingService.syncDesignerFonts?.();
+                                          await FontLoadingService.loadFont(fontName);
+                                          // Small delay to ensure font is rendered
+                                          await new Promise(resolve => setTimeout(resolve, 100));
+                                        } catch (err) {
+                                          console.warn('Font loading error:', err);
+                                        }
+
+                                        // Now apply the theme update
+                                        if (fontEditor.type === 'heading') {
+                                          applyThemeUpdate((t) => ({
+                                            ...t,
+                                            typography: {
+                                              ...t.typography,
+                                              heading: {
+                                                ...(t.typography?.heading || {}),
+                                                fontFamily: fontName,
+                                              }
+                                            }
+                                          } as any));
+                                        } else {
+                                          applyThemeUpdate((t) => ({
+                                            ...t,
+                                            typography: {
+                                              ...t.typography,
+                                              paragraph: {
+                                                ...(t.typography?.paragraph || {}),
+                                                fontFamily: fontName,
+                                              }
+                                            }
+                                          } as any));
+                                        }
+                                        setFontEditor(null);
+                                      }}
+                                      placeholder="Select font"
+                                    />
+                                  </div>
+                                );
+                              })()}
+                              {colorEditor?.open && (
+                                <div
+                                  ref={colorEditorRef}
+                                  className="absolute z-50 p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
+                                  style={{ left: Math.max(8, Math.min((colorEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)), top: Math.max(8, Math.min((colorEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 230)), width: 240 }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <div className="text-[10px] mb-1 opacity-70">Color</div>
+                                  <EnhancedColorPicker
+                                    color={String(swatches[colorEditor.swatchIndex]?.color || '#ffffff')}
+                                    onChange={(hex) => {
+                                      updateSwatchColor(colorEditor.swatchIndex, hex);
+                                    }}
+                                    onChangeComplete={() => setColorEditor(null)}
+                                  />
                                 </div>
                               )}
                             </div>
-                            {/* Floating editors */}
-                            {fontEditor?.open && (() => {
-                              const groups = dynamicFontGroups || fontGroups;
-                              return (
-                                <div
-                                  ref={fontEditorRef}
-                                  className="absolute p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
-                                  style={{ 
-                                    left: Math.max(8, Math.min((fontEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)), 
-                                    top: Math.max(8, Math.min((fontEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 200)), 
-                                    width: 240,
-                                    zIndex: 9999 // Very high z-index to ensure dropdown content appears above everything
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <div className="text-[10px] mb-1 opacity-70">
-                                    {fontEditor.type === 'heading' ? 'Heading Font' : 'Body Font'}
-                                  </div>
-                                  <GroupedDropdown
-                                    value={fontEditor.type === 'heading' ? currentHeadingFont : currentBodyFont}
-                                    options={ALL_FONT_NAMES}
-                                    groups={groups}
-                                    onChange={async (value) => {
-                                      const fontName = String(value);
-                                      console.log('[OutlineDisplayView] Font selected:', fontName);
-
-                                      // Load font FIRST before applying to theme
-                                      try {
-                                        await FontLoadingService.syncDesignerFonts?.();
-                                        await FontLoadingService.loadFont(fontName);
-                                        // Small delay to ensure font is rendered
-                                        await new Promise(resolve => setTimeout(resolve, 100));
-                                      } catch (err) {
-                                        console.warn('Font loading error:', err);
-                                      }
-
-                                      // Measure the actual font character width ratio
-                                      const charWidthRatio = measureFontCharWidthRatio(fontName);
-
-                                      // Now apply the theme update with the measured ratio
-                                      if (fontEditor.type === 'heading') {
-                                        applyThemeUpdate((t) => ({
-                                          ...t,
-                                          typography: {
-                                            ...t.typography,
-                                            heading: {
-                                              ...(t.typography?.heading || {}),
-                                              fontFamily: fontName,
-                                              charWidthRatio
-                                            }
-                                          }
-                                        } as any));
-                                      } else {
-                                        applyThemeUpdate((t) => ({
-                                          ...t,
-                                          typography: {
-                                            ...t.typography,
-                                            paragraph: {
-                                              ...(t.typography?.paragraph || {}),
-                                              fontFamily: fontName,
-                                              charWidthRatio
-                                            }
-                                          }
-                                        } as any));
-                                      }
-                                      setFontEditor(null);
-                                    }}
-                                    placeholder="Select font"
-                                  />
-                                </div>
-                              );
-                            })()}
-                            {colorEditor?.open && (
-                              <div
-                                ref={colorEditorRef}
-                                className="absolute z-50 p-2 rounded-md border bg-white shadow-md dark:bg-neutral-900 dark:border-neutral-700"
-                                style={{ left: Math.max(8, Math.min((colorEditor.x || 0), (themePanelRef.current?.clientWidth || 0) - 260)), top: Math.max(8, Math.min((colorEditor.y || 0), (themePanelRef.current?.clientHeight || 0) - 230)), width: 240 }}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div className="text-[10px] mb-1 opacity-70">Color</div>
-                                <EnhancedColorPicker
-                                  color={String(swatches[colorEditor.swatchIndex]?.color || '#ffffff')}
-                                  onChange={(hex) => {
-                                    updateSwatchColor(colorEditor.swatchIndex, hex);
-                                  }}
-                                  onChangeComplete={() => setColorEditor(null)}
-                                />
-                              </div>
-                            )}
-                          </div>
                           )}
                         </div>
                       )}

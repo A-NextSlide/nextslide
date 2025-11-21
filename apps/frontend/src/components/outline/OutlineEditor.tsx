@@ -77,6 +77,14 @@ interface OutlineEditorProps {
   isDeckListReady?: boolean;
   // Bubble research streaming events to parent (for left Thinking tab)
   onResearchEventsUpdate?: (events: any[]) => void;
+  // New props for conversational onboarding integration
+  initialStylePreferences?: {
+    vibeContext?: string;
+    detailLevel?: 'quick' | 'standard' | 'detailed';
+    slideCount?: number;
+  };
+  autoStart?: boolean;
+  onAutoStartComplete?: () => void;
 }
 
 // Test outline creation function
@@ -180,6 +188,9 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   onUploadedFilesChange,
   isDeckListReady,
   onResearchEventsUpdate,
+  initialStylePreferences,
+  autoStart,
+  onAutoStartComplete,
 }) => {
  
   const [isAiNotesExpanded, setIsAiNotesExpanded] = useState(false);
@@ -1001,6 +1012,36 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
       onUploadedFilesChange(uploadedFiles);
     }
   }, [uploadedFiles, onUploadedFilesChange]);
+
+  // Auto-start generation if triggered from conversational onboarding
+  useEffect(() => {
+    if (autoStart && initialStylePreferences && !currentOutline) {
+      console.log('[OutlineEditor] Auto-starting generation from conversational onboarding');
+
+      // Set style preferences
+      if (initialStylePreferences.vibeContext) {
+        setStyleVibeText(initialStylePreferences.vibeContext);
+      }
+
+      // Trigger generation
+      const startGeneration = async () => {
+        try {
+          await handleInitiateOutline(
+            initialStylePreferences.detailLevel || 'standard',
+            initialStylePreferences.slideCount
+          );
+          // Notify parent that auto-start is complete
+          if (onAutoStartComplete) {
+            onAutoStartComplete();
+          }
+        } catch (error) {
+          console.error('[OutlineEditor] Error in auto-start generation:', error);
+        }
+      };
+
+      startGeneration();
+    }
+  }, [autoStart]); // Only run once when autoStart changes
 
   // Debug: Monitor currentOutline changes and tagged media
   useEffect(() => {

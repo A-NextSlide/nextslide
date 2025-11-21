@@ -98,6 +98,7 @@ function extractJSONFromText(text: string): { data: OutlineData | null; textWith
 
   if (jsonMatch && jsonMatch[1]) {
     try {
+      console.log('[OutlineAgent] Found JSON block, attempting parse...');
       const parsed = JSON.parse(jsonMatch[1]);
       // Validate it has the expected structure
       if (parsed.action) {
@@ -107,13 +108,17 @@ function extractJSONFromText(text: string): { data: OutlineData | null; textWith
         const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
 
         if (hasSlides || hasUpdatedSlides || hasThemeChanges) {
+          console.log('[OutlineAgent] Valid JSON action found:', parsed.action);
           data = parsed as OutlineData;
           // Remove the JSON block from the text
           textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+        } else {
+          console.warn('[OutlineAgent] JSON parsed but missing required fields (slides, updated_slides, or theme_changes)');
         }
       }
     } catch (e) {
       console.error('[OutlineAgent] Failed to parse JSON from text:', e);
+      console.debug('[OutlineAgent] Raw JSON content:', jsonMatch[1]);
     }
   }
 

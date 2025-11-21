@@ -152,7 +152,7 @@ const sendChatToApi = async (
 ) => {
   // Convert UI messages to API format
   const chatHistory = convertMessagesToApiFormat(messages);
-  
+
   const payload: Record<string, any> = {
     message,
     slide_id: slideId,
@@ -199,6 +199,7 @@ export interface ChatPanelProps {
   outlineIsGenerating?: boolean; // Is outline currently generating
   outlineCurrentSlideIndex?: number; // Current slide index in outline mode
   onOutlineChatGeneratingChange?: (isGenerating: boolean) => void; // Called when outline generation state changes
+  initialConversationalData?: any; // Data passed from conversational onboarding
 }
 
 /**
@@ -221,7 +222,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   outlineMessages,
   outlineIsGenerating = false,
   outlineCurrentSlideIndex = 0,
-  onOutlineChatGeneratingChange
+  onOutlineChatGeneratingChange,
+  initialConversationalData
 }) => {
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -295,6 +297,97 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Outline agent for conversational outline generation (only when enabled)
   const outlineAgentData = useOutlineAgentHook();
   const outlineAgent = (outlineMode && useOutlineAgent) ? outlineAgentData : null;
+
+  // Handle initial conversational data from onboarding
+  const hasProcessedConversationalDataRef = useRef(false);
+  useEffect(() => {
+    if (
+      initialConversationalData &&
+      !hasProcessedConversationalDataRef.current &&
+      onOutlineAgentToolCall &&
+      outlineAgent
+    ) {
+      console.log('[ChatPanel] Processing initial conversational data:', initialConversationalData);
+      hasProcessedConversationalDataRef.current = true;
+
+      // If we already have slides (e.g. from a narrative flow that generated them), use them directly
+      if (initialConversationalData.slides && initialConversationalData.slides.length > 0) {
+        onOutlineAgentToolCall({
+          topic: initialConversationalData.topic,
+          slide_count: initialConversationalData.slideCount,
+          detail_level: initialConversationalData.detailLevel || 'standard',
+          slides: initialConversationalData.slides,
+          narrative: initialConversationalData.narrative
+        });
+
+        if (initialConversationalData.narrative) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `narrative-${Date.now()}`,
+              type: 'ai',
+              message: initialConversationalData.narrative,
+              timestamp: new Date(),
+              feedback: null
+            }
+          ]);
+        }
+      } else {
+        // No slides yet - we need to generate the outline using the agent
+        // Construct a prompt from the collected data
+        const topic = initialConversationalData.topic;
+        const slideCount = initialConversationalData.slideCount;
+        const detailLevel = initialConversationalData.detailLevel || 'standard';
+        const chatHistory = initialConversationalData.chatHistory;
+        const themeChanges = initialConversationalData.themeChanges;
+
+        let prompt = `Create a presentation about ${topic}.`;
+        if (slideCount) {
+          prompt += ` It should have approximately ${slideCount} slides.`;
+        }
+
+        // Construct full prompt with context for the agent
+        let fullPrompt = prompt;
+        if (chatHistory && chatHistory.length > 0) {
+          const historyText = chatHistory.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n');
+          fullPrompt += `\n\nContext from previous conversation:\n${historyText}\n\nPlease use this context to create a detailed outline that addresses the user's specific requirements discussed above.`;
+        }
+
+        // Add user message to chat (show the simple prompt to keep UI clean, but indicate context usage)
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `user-${Date.now()}`,
+            type: 'user',
+            message: prompt + (chatHistory && chatHistory.length > 0 ? ' (using context from chat)' : ''),
+            timestamp: new Date(),
+            feedback: null
+          }
+        ]);
+
+        // Trigger agent generation with full context
+        outlineAgent.sendMessage(
+          fullPrompt,
+          (outlineData) => {
+            console.log('[ChatPanel] Agent generated outline from conversational data:', outlineData);
+            onOutlineAgentToolCall({
+              topic: outlineData.topic || topic,
+              slide_count: outlineData.slide_count || slideCount,
+              detail_level: outlineData.detail_level || detailLevel,
+              slides: outlineData.slides, // The agent returns 'slides' in the data
+              narrative: outlineData.narrative,
+              theme_changes: outlineData.theme_changes || themeChanges // Use agent's theme or passed theme
+            });
+          },
+          {
+            // Pass context if needed
+            slide_count: slideCount,
+            detail_level: detailLevel
+          }
+        );
+      }
+    }
+  }, [initialConversationalData, onOutlineAgentToolCall, outlineAgent]);
 
   // Auto-send initial prompt from URL when in outline agent mode
   const hasProcessedInitialPromptRef = useRef(false);
@@ -437,7 +530,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const clearPlanTimers = useCallback(() => {
     try {
       planTimersRef.current.forEach((id) => clearTimeout(id));
-    } catch {}
+    } catch { }
     planTimersRef.current = [];
   }, []);
 
@@ -553,8 +646,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const appendSelectionRow = useCallback((label: string) => {
     const now = Date.now();
     const friendly = formatSelectionLabel(label);
-    setMessages(prev => [...prev, { id: `sel-${now}-${Math.random().toString(36).slice(2,6)}`, type: 'system', message: `Using selection: ${friendly}`,
-      timestamp: new Date(), feedback: null, metadata: { type: 'agent_selection', compactRow: true } }]);
+    setMessages(prev => [...prev, {
+      id: `sel-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'system', message: `Using selection: ${friendly}`,
+      timestamp: new Date(), feedback: null, metadata: { type: 'agent_selection', compactRow: true }
+    }]);
   }, [formatSelectionLabel]);
 
   // Sanitize agent text to replace raw IDs in phrases like "Using selection: ..."
@@ -581,7 +676,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (now - last < TOOL_DEDUP_WINDOW_MS) return;
     toolDedupRef.current.set(key, now);
     toolDedupRef.current.forEach((t, k) => { if (now - t > TOOL_DEDUP_WINDOW_MS * 3) toolDedupRef.current.delete(k); });
-    setMessages(prev => [...prev, { id: `tool-${now}-${Math.random().toString(36).slice(2,6)}`, type: 'system', message: text, timestamp: new Date(), feedback: null, metadata: { type: 'agent_tool', status, tool, compactRow: true } }]);
+    setMessages(prev => [...prev, { id: `tool-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'system', message: text, timestamp: new Date(), feedback: null, metadata: { type: 'agent_tool', status, tool, compactRow: true } }]);
   }, [setMessages]);
 
   const isStyleTool = useCallback((toolName?: string): boolean => {
@@ -600,7 +695,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       upd.forEach((s: any) => { if (s && typeof s.slide_id === 'string') ids.add(s.slide_id); });
       const add = Array.isArray(diff.slides_to_add) ? diff.slides_to_add : [];
       add.forEach((s: any) => { if (s && typeof s.id === 'string') ids.add(s.id); });
-    } catch {}
+    } catch { }
     return Array.from(ids);
   }, []);
 
@@ -666,7 +761,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
 
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-    
+
     if (isEditing) {
       // Skip applying diffs while actively interacting (drag/resize)
       try {
@@ -679,14 +774,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           console.log('[AgentChat] Skipping diff due to active interaction');
           return;
         }
-      } catch {}
+      } catch { }
       // In edit mode: apply to editor drafts
       try {
         const editorStore = useEditorStore.getState();
         const slidesToUpdate = (deckDiff as any).slides_to_update || [];
         const slidesToAdd = (deckDiff as any).slides_to_add || [];
         const slidesToRemove = (deckDiff as any).slides_to_remove || [];
-        
+
         // Apply component updates to drafts
         slidesToUpdate.forEach((slideDiff: any) => {
           const slideId = slideDiff?.slide_id;
@@ -707,7 +802,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               console.log('[ChatPanel] Skipping updates/additions for slide with local changes', { slideId });
               return;
             }
-          } catch {}
+          } catch { }
 
           // Apply component updates
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
@@ -727,7 +822,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             editorStore.addDraftComponent(slideId, comp, true);
           });
         });
-        
+
         // Apply deck-level changes to main store
         const { deckData, updateDeckData } = (useDeckStore as any).getState();
         console.log('[ChatPanel] Applying deck diff to main store', {
@@ -759,7 +854,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         console.warn('[AgentChat] Failed to apply diff to drafts', e);
       }
     }
-    
+
     // Not in edit mode: apply directly to deck store
     try {
       const { deckData, updateDeckData } = (useDeckStore as any).getState();
@@ -784,7 +879,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         setIsGenerating(false);
         return;
       }
-    } catch {}
+    } catch { }
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
     if (!isEditing) {
       // Not editing: merge into deck store as a normal state change
@@ -801,7 +896,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           lastModified: new Date().toISOString(),
           version: `${curr.version || ''}-preview-${Date.now()}`
         }, { skipBackend: true });
-      } catch {}
+      } catch { }
       return;
     }
 
@@ -817,7 +912,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         console.log('[AgentChat] Skipping preview merge due to active interaction');
         return;
       }
-    } catch {}
+    } catch { }
     try {
       const editorStore = useEditorStore.getState();
       previewSlides.forEach((previewSlide: any) => {
@@ -829,7 +924,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           if (hasLocal) {
             return;
           }
-        } catch {}
+        } catch { }
         const previewComponents: any[] = Array.isArray(previewSlide.components) ? previewSlide.components : [];
         const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
 
@@ -865,23 +960,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const [currentGeneratingSlide, setCurrentGeneratingSlide] = useState(0);
   const [processedMessageIds, setProcessedMessageIds] = useState<Set<string>>(new Set());
-  
+
   // Try to use the store and navigation hooks, but catch any errors
   let slides: SlideData[] = [];
   let currentSlideIndex = 0;
-  
+
   try {
     // Use Zustand store directly
     const deckData = useDeckStore(state => state.deckData);
     slides = deckData.slides;
-    
+
     const navigationContext = useNavigation();
     currentSlideIndex = navigationContext.currentSlideIndex;
   } catch (error) {
     console.error("ChatPanel: Context hook error (possibly rendered outside providers)", error);
     // Continue with default values if hook fails
   }
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef(messages.length);
   const lastMessageTypeRef = useRef<string | null>(null);
@@ -949,15 +1044,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const c = getColorValue(v);
         if (typeof c === 'string' && c.trim()) entries.push({ key: k || 'color', color: c });
       });
-    } catch {}
+    } catch { }
     return entries;
   };
-  
+
   // Handle add_system_message events
   useEffect(() => {
     const handleAddSystemMessage = (event: CustomEvent) => {
       const { message, metadata } = event.detail;
-      
+
       // Add the system message to the chat
       const newMessage: ExtendedChatMessageProps = {
         id: `system-${Date.now()}`,
@@ -967,9 +1062,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         metadata,
         feedback: null
       };
-      
 
-      
+
+
       setMessages(prev => [...prev, newMessage]);
 
       // Track phase to auto-expand/contract the preview with stages
@@ -979,11 +1074,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (isStreaming && phase) {
           setCurrentPhase(String(phase));
         }
-      } catch {}
+      } catch { }
     };
-    
+
     window.addEventListener('add_system_message', handleAddSystemMessage as EventListener);
-    
+
     return () => {
       window.removeEventListener('add_system_message', handleAddSystemMessage as EventListener);
     };
@@ -1093,7 +1188,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             setIf('light_variant', paletteMeta.logo_url_light);
             setIf('dark_variant', paletteMeta.logo_url_dark);
             // Generic shallow scan for common fields
-            for (const k of ['logo','logo_url','brand_logo','brand_logo_url']) {
+            for (const k of ['logo', 'logo_url', 'brand_logo', 'brand_logo_url']) {
               const v = (obj as any)[k];
               if (isUrl(v)) setIf('url', v);
               if (v && typeof v === 'object') {
@@ -1114,7 +1209,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               next.logo = { url, light_variant: light, dark_variant: dark, source: (existing.source || 'derived') };
             }
           }
-        } catch {}
+        } catch { }
         if (d?.tool && d.tool.label) {
           const incoming = { label: String(d.tool.label), status: String(d.tool.status || 'start') };
           const key = incoming.label.toLowerCase().trim();
@@ -1163,17 +1258,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Scroll to bottom when messages change
   useEffect(() => {
     // Check if we're just updating an existing images_collected message
-    const isJustUpdatingImages = messages.length === previousMessageCountRef.current && 
+    const isJustUpdatingImages = messages.length === previousMessageCountRef.current &&
       messages.some(msg => msg.metadata?.type === 'images_collected') &&
       lastMessageTypeRef.current === 'images_collected';
-    
+
     // Only scroll if we're not just updating images
     if (!isJustUpdatingImages) {
       messagesEndRef.current?.scrollIntoView({
         behavior: 'smooth'
       });
     }
-    
+
     // Update refs for next comparison
     previousMessageCountRef.current = messages.length;
     const lastMessage = messages[messages.length - 1];
@@ -1321,7 +1416,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       versionAfter: (after as any)?.version,
                     });
                   }, 0);
-                } catch {}
+                } catch { }
               }
               setMessages(prev => [...prev, { id: `proposed-${Date.now()}`, type: 'system', message: `✨ ${summary}`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_proposed', compactRow: true } }]);
               return;
@@ -1367,7 +1462,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       // eslint-disable-next-line @typescript-eslint/no-floating-promises
                       optimizeSlidesByIdSequential(ids);
                     }
-                  } catch {}
+                  } catch { }
                   return;
                 }
 
@@ -1461,11 +1556,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
                       console.log('[Realtime][edit.applied] Preview guards cleared after 2s delay');
                     }, 2000);
-                  } catch {}
+                  } catch { }
 
                   // NOTE: Don't force reload - let Supabase realtime handle it after the delay
                   // The local diff has already been applied for instant preview
-                } else{
+                } else {
                   if (!diff && appliedMessageId) {
                     diff = pendingDiffsByMessageIdRef.current.get(appliedMessageId);
                     if (diff) {
@@ -1494,7 +1589,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
                         console.log('[Realtime][edit.applied] Preview guards cleared after 2s (message-based diff path)');
                       }, 2000);
-                    } catch {}
+                    } catch { }
 
                     // NOTE: Backend has already persisted changes via auto-apply
                     // Don't call applyDraftChanges() here as it would pause subscriptions
@@ -1506,7 +1601,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
                       if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
                       console.log('[Realtime][edit.applied] Preview guards cleared (no diff fallback path)');
-                    } catch {}
+                    } catch { }
 
                     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
                     if (normalizedAppliedSlides.length > 0) {
@@ -1518,7 +1613,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           // eslint-disable-next-line @typescript-eslint/no-floating-promises
                           optimizeSlidesByIdSequential(ids);
                         }
-                      } catch {}
+                      } catch { }
                     } else if (!isEditing) {
                       console.log('[Realtime][edit.applied] no cached diff; relying on Supabase realtime (guards cleared)');
                       // NOTE: Don't force loadDeck() here - let Supabase realtime handle it
@@ -1534,7 +1629,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 if (deckRevision) {
                   console.log('[Realtime][edit.applied] deckRevision provided; relying on Supabase realtime', { deckRevision });
                 }
-              } catch {}
+              } catch { }
               return;
             }
             if (evt.type === 'progress.update') {
@@ -1556,9 +1651,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     })();
     return () => {
       // Mark unmounting to help other monitors avoid background activity during navigation
-      try { (window as any).__isUnmounting = true; } catch {}
+      try { (window as any).__isUnmounting = true; } catch { }
       // Clear plan timers on unmount
-      try { planTimersRef.current.forEach((id) => clearTimeout(id)); } catch {}
+      try { planTimersRef.current.forEach((id) => clearTimeout(id)); } catch { }
       planTimersRef.current = [];
 
       // Ensure we fully disconnect any active chat connections on unmount
@@ -1566,7 +1661,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (agentClientRef.current) {
           agentClientRef.current.disconnect();
         }
-      } catch {}
+      } catch { }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1582,7 +1677,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       // Attempt to establish the session; internal guard prevents duplicate connects
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       ensureAgentSession();
-    } catch {}
+    } catch { }
     // Re-run when slides list or current index change, or when we get a session
   }, [slides, currentSlideIndex, agentSessionId]);
 
@@ -1692,7 +1787,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const slide = deck?.slides?.find((s: any) => s.id === slideId);
         const comps = Array.isArray(slide?.components) ? slide.components : [];
         overlaps = getOverlappingComponentIds(elementId, comps);
-      } catch {}
+      } catch { }
 
       // Persist visual selection
       const rootEl = getRootForId(elementId);
@@ -1830,7 +1925,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     try {
       window.dispatchEvent(new CustomEvent('chat:selection-mode-changed', { detail: { selecting: isSelecting } }));
-    } catch {}
+    } catch { }
   }, [isSelecting]);
 
   const removeSelection = useCallback((elementId: string) => {
@@ -1879,14 +1974,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const expectedSlideId = slides[currentSlideIndex]?.id;
       if (agentClientRef.current && agentSessionId) {
         if (sessionSlideIdRef.current !== expectedSlideId) {
-          try { agentClientRef.current.disconnect(); } catch {}
+          try { agentClientRef.current.disconnect(); } catch { }
           agentClientRef.current = null;
           setAgentSessionId(null);
         } else {
           return true;
         }
       }
-    } catch {}
+    } catch { }
     if (connectingRef.current) return connectingRef.current;
     connectingRef.current = (async () => {
       const deckData = useDeckStore.getState().deckData;
@@ -1897,141 +1992,143 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;
-        const client = new AgentChatClient({ onEvent: (evt) => {
-          if (!evt || !evt.type) return;
-          if (evt.type === 'assistant.message.delta') {
-            const rawDelta = (evt as any).data?.delta || '';
-            const trimmed = String(rawDelta).trim();
-            if (!streamingAiMsgIdRef.current && (trimmed === '' || /^\d+$/.test(trimmed))) {
+        const client = new AgentChatClient({
+          onEvent: (evt) => {
+            if (!evt || !evt.type) return;
+            if (evt.type === 'assistant.message.delta') {
+              const rawDelta = (evt as any).data?.delta || '';
+              const trimmed = String(rawDelta).trim();
+              if (!streamingAiMsgIdRef.current && (trimmed === '' || /^\d+$/.test(trimmed))) {
+                return;
+              }
+              const id = streamingAiMsgIdRef.current || `ai-stream-${Date.now()}`;
+              if (!streamingAiMsgIdRef.current) {
+                streamingAiMsgIdRef.current = id;
+                setMessages(prev => [...prev, { id, type: 'ai', message: '', timestamp: new Date(), feedback: null }]);
+              }
+              setMessages(prev => prev.map(m => {
+                if (m.id !== id) return m;
+                const current = String(m.message || '');
+                if (current.trim().length === 0 && /^\d+$/.test(trimmed)) {
+                  return m;
+                }
+                const next = humanizeSystemPhrases(current + rawDelta);
+                return { ...m, message: next };
+              }));
               return;
             }
-            const id = streamingAiMsgIdRef.current || `ai-stream-${Date.now()}`;
-            if (!streamingAiMsgIdRef.current) {
-              streamingAiMsgIdRef.current = id;
-              setMessages(prev => [...prev, { id, type: 'ai', message: '', timestamp: new Date(), feedback: null }]);
-            }
-            setMessages(prev => prev.map(m => {
-              if (m.id !== id) return m;
-              const current = String(m.message || '');
-              if (current.trim().length === 0 && /^\d+$/.test(trimmed)) {
-                return m;
+            if (evt.type === 'assistant.message.complete') {
+              const doneId = (evt as any).data?.messageId || streamingAiMsgIdRef.current;
+              if (doneId) {
+                setMessages(prev => {
+                  const msg = prev.find(m => m.id === doneId);
+                  if (!msg) return prev;
+                  const text = String(msg.message ?? '').trim();
+                  if (text === '' || /^\d+$/.test(text)) {
+                    return prev.filter(m => m.id !== doneId);
+                  }
+                  const humanized = humanizeSystemPhrases(text);
+                  return prev.map(m => m.id === doneId ? { ...m, message: humanized } : m);
+                });
               }
-              const next = humanizeSystemPhrases(current + rawDelta);
-              return { ...m, message: next };
-            }));
-            return;
-          }
-          if (evt.type === 'assistant.message.complete') {
-            const doneId = (evt as any).data?.messageId || streamingAiMsgIdRef.current;
-            if (doneId) {
-              setMessages(prev => {
-                const msg = prev.find(m => m.id === doneId);
-                if (!msg) return prev;
-                const text = String(msg.message ?? '').trim();
-                if (text === '' || /^\d+$/.test(text)) {
-                  return prev.filter(m => m.id !== doneId);
-                }
-                const humanized = humanizeSystemPhrases(text);
-                return prev.map(m => m.id === doneId ? { ...m, message: humanized } : m);
-              });
+              streamingAiMsgIdRef.current = null;
+              return;
             }
-            streamingAiMsgIdRef.current = null;
-            return;
-          }
-          if ((evt as any).type === 'agent.plan.update') {
-            const steps: string[] = (evt as any).data?.plan?.map((s: any) => s.title) || [];
-            animatePlanMessage(steps);
-            return;
-          }
-          if ((evt as any).type === 'agent.selection.using' || (evt as any).type === 'agent.selection') {
-            const label = (evt as any).data?.label || (evt as any).data?.selection || 'selection';
-            appendSelectionRow(label);
-            return;
-          }
-          if (evt.type?.startsWith('agent.tool.')) {
-            const { tool, status } = (evt as any).data || {};
-            appendToolRow(tool, status);
-            if (isStyleTool(tool)) {
-              if (status === 'start') {
-                styleToolStateRef.current = { active: true, name: tool, lastStartTs: Date.now(), lastFinishTs: styleToolStateRef.current.lastFinishTs };
-              } else if (status === 'finish' || status === 'error') {
-                styleToolStateRef.current = { active: false, name: tool, lastStartTs: styleToolStateRef.current.lastStartTs, lastFinishTs: Date.now() };
-              }
+            if ((evt as any).type === 'agent.plan.update') {
+              const steps: string[] = (evt as any).data?.plan?.map((s: any) => s.title) || [];
+              animatePlanMessage(steps);
+              return;
             }
-            return;
-          }
-          if (evt.type === 'deck.edit.proposed') {
-            const summary = (evt as any).data?.edit?.summary || 'Proposed edit available';
-            setMessages(prev => [...prev, { id: `proposed-${Date.now()}`, type: 'system', message: `✨ ${summary}`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_proposed' } }]);
-            return;
-          }
-          if (evt.type === 'deck.preview.diff') {
-            const diff = (evt as any).data?.diff;
-            try {
-              // Mark that a preview has been applied so realtime DB updates older than this are ignored
-              try { (window as any).__pendingPreviewTs = Date.now(); } catch {}
-              if (diff) {
-                applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
-                // Trigger font optimization for slides touched by style tool
-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                maybeOptimizeFontsForDiff(diff);
-              }
-            } catch {}
-            return;
-          }
-          if (evt.type === 'deck.edit.applied') {
-            setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
-
-            // CRITICAL FIX: Clear preview guards immediately to allow Supabase realtime updates
-            // Backend has already persisted changes, so we want realtime to sync them
-            try {
-              if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-              if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-              console.log('[Realtime][edit.applied][secondary] Preview guards cleared to allow database sync');
-            } catch {}
-
-            // Persist immediately in edit mode to avoid losing AI changes when toggling modes
-            try {
-              const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-              if (isEditing) {
-                const editorStore = useEditorStore.getState();
-                if (typeof editorStore.applyDraftChanges === 'function') {
-                  editorStore.applyDraftChanges();
+            if ((evt as any).type === 'agent.selection.using' || (evt as any).type === 'agent.selection') {
+              const label = (evt as any).data?.label || (evt as any).data?.selection || 'selection';
+              appendSelectionRow(label);
+              return;
+            }
+            if (evt.type?.startsWith('agent.tool.')) {
+              const { tool, status } = (evt as any).data || {};
+              appendToolRow(tool, status);
+              if (isStyleTool(tool)) {
+                if (status === 'start') {
+                  styleToolStateRef.current = { active: true, name: tool, lastStartTs: Date.now(), lastFinishTs: styleToolStateRef.current.lastFinishTs };
+                } else if (status === 'finish' || status === 'error') {
+                  styleToolStateRef.current = { active: false, name: tool, lastStartTs: styleToolStateRef.current.lastStartTs, lastFinishTs: Date.now() };
                 }
               }
-            } catch {}
+              return;
+            }
+            if (evt.type === 'deck.edit.proposed') {
+              const summary = (evt as any).data?.edit?.summary || 'Proposed edit available';
+              setMessages(prev => [...prev, { id: `proposed-${Date.now()}`, type: 'system', message: `✨ ${summary}`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_proposed' } }]);
+              return;
+            }
+            if (evt.type === 'deck.preview.diff') {
+              const diff = (evt as any).data?.diff;
+              try {
+                // Mark that a preview has been applied so realtime DB updates older than this are ignored
+                try { (window as any).__pendingPreviewTs = Date.now(); } catch { }
+                if (diff) {
+                  applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
+                  // Trigger font optimization for slides touched by style tool
+                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                  maybeOptimizeFontsForDiff(diff);
+                }
+              } catch { }
+              return;
+            }
+            if (evt.type === 'deck.edit.applied') {
+              setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
 
-            // CRITICAL FIX: Reload deck from database after backend has persisted changes
-            // The backend has already saved the changes, but frontend draft/subscription system is broken
-            // Simple solution: just reload from DB after giving backend time to write
-            console.log('[deck.edit.applied] 🔄 Scheduling deck reload in 2 seconds...');
-            setTimeout(() => {
-              console.log('[deck.edit.applied] 🔄 RELOADING DECK FROM DATABASE NOW');
-              const deckStore = useDeckStore.getState();
-              if (deckStore.loadDeck) {
-                deckStore.loadDeck();
-                console.log('[deck.edit.applied] ✅ Deck reload triggered');
+              // CRITICAL FIX: Clear preview guards immediately to allow Supabase realtime updates
+              // Backend has already persisted changes, so we want realtime to sync them
+              try {
+                if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
+                if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                console.log('[Realtime][edit.applied][secondary] Preview guards cleared to allow database sync');
+              } catch { }
+
+              // Persist immediately in edit mode to avoid losing AI changes when toggling modes
+              try {
+                const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+                if (isEditing) {
+                  const editorStore = useEditorStore.getState();
+                  if (typeof editorStore.applyDraftChanges === 'function') {
+                    editorStore.applyDraftChanges();
+                  }
+                }
+              } catch { }
+
+              // CRITICAL FIX: Reload deck from database after backend has persisted changes
+              // The backend has already saved the changes, but frontend draft/subscription system is broken
+              // Simple solution: just reload from DB after giving backend time to write
+              console.log('[deck.edit.applied] 🔄 Scheduling deck reload in 2 seconds...');
+              setTimeout(() => {
+                console.log('[deck.edit.applied] 🔄 RELOADING DECK FROM DATABASE NOW');
+                const deckStore = useDeckStore.getState();
+                if (deckStore.loadDeck) {
+                  deckStore.loadDeck();
+                  console.log('[deck.edit.applied] ✅ Deck reload triggered');
+                } else {
+                  console.error('[deck.edit.applied] ❌ loadDeck function not found!');
+                }
+              }, 2000); // 2 second delay to ensure backend write completes
+
+              return;
+            }
+            if (evt.type === 'progress.update') {
+              const { phase, percent } = (evt as any).data || {};
+              const existingId = agentProgressMsgIdRef.current;
+              const text = `${phase || 'Working'}… ${percent ?? 0}%`;
+              if (existingId) {
+                setMessages(prev => prev.map(m => m.id === existingId ? { ...m, message: text, metadata: { ...m.metadata, type: 'progress', compactRow: true, phase, percent } } : m));
               } else {
-                console.error('[deck.edit.applied] ❌ loadDeck function not found!');
+                const id3 = `progress-${Date.now()}`;
+                agentProgressMsgIdRef.current = id3;
+                setMessages(prev => [...prev, { id: id3, type: 'system', message: text, timestamp: new Date(), feedback: null, metadata: { type: 'progress', compactRow: true, phase, percent } }]);
               }
-            }, 2000); // 2 second delay to ensure backend write completes
-
-            return;
-          }
-          if (evt.type === 'progress.update') {
-            const { phase, percent } = (evt as any).data || {};
-            const existingId = agentProgressMsgIdRef.current;
-            const text = `${phase || 'Working'}… ${percent ?? 0}%`;
-            if (existingId) {
-              setMessages(prev => prev.map(m => m.id === existingId ? { ...m, message: text, metadata: { ...m.metadata, type: 'progress', compactRow: true, phase, percent } } : m));
-            } else {
-              const id3 = `progress-${Date.now()}`;
-              agentProgressMsgIdRef.current = id3;
-              setMessages(prev => [...prev, { id: id3, type: 'system', message: text, timestamp: new Date(), feedback: null, metadata: { type: 'progress', compactRow: true, phase, percent } }]);
+              return;
             }
-            return;
           }
-        } }, token || undefined);
+        }, token || undefined);
         const sid = await client.createSession(String(deckId), String(slideId), { agentProfile: 'authoring' });
         client.openWebSocket();
         agentClientRef.current = client;
@@ -2223,20 +2320,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       return;
     }
     {
-        // Log all incoming messages for debugging
-      
+      // Log all incoming messages for debugging
+
       // Create a unique ID for this message based on content and metadata
       const messageKey = `${newSystemMessage.message}-${JSON.stringify(newSystemMessage.metadata)}`;
       const messageId = `system-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Check if we've already processed this exact message
       if (processedMessageIds.has(messageKey)) {
         return;
       }
-      
+
       // Add to processed messages
       setProcessedMessageIds(prev => new Set([...prev, messageKey]));
-      
+
       const systemMessageToAdd: ExtendedChatMessageProps = {
         id: messageId,
         type: 'ai',
@@ -2252,17 +2349,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (just === '0' && !streaming) {
           return;
         }
-      } catch {}
-      
+      } catch { }
+
       // Special handling for images_collected events - update existing message or add new one
       if (systemMessageToAdd.metadata?.type === 'images_collected') {
 
         setMessages(prevMessages => {
           // Find existing images_collected message
-          const existingImagesIndex = prevMessages.findIndex(msg => 
+          const existingImagesIndex = prevMessages.findIndex(msg =>
             msg.metadata?.type === 'images_collected'
           );
-          
+
           if (existingImagesIndex !== -1) {
             // Update existing images_collected message
 
@@ -2285,25 +2382,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         });
         return;
       }
-      
 
-      
+
+
       // Skip "Deck composition completed successfully!" messages with 0% progress
-      if ((systemMessageToAdd.message.includes('Deck composition completed successfully') || 
-           systemMessageToAdd.message.includes('Deck generation complete')) &&
-          systemMessageToAdd.metadata?.progress === 0) {
+      if ((systemMessageToAdd.message.includes('Deck composition completed successfully') ||
+        systemMessageToAdd.message.includes('Deck generation complete')) &&
+        systemMessageToAdd.metadata?.progress === 0) {
         console.log('🚫 Skipping duplicate/incorrect completion message with 0% progress');
         return;
       }
-      
+
       // Also skip any "Deck composition completed successfully!" messages that shouldn't appear
       // This message should be replaced with the user-friendly completion message
       if (systemMessageToAdd.message === 'Deck composition completed successfully!' ||
-          systemMessageToAdd.message === 'Deck generation complete!') {
+        systemMessageToAdd.message === 'Deck generation complete!') {
         console.log('🚫 Skipping raw completion message - should use user-friendly version');
         return;
       }
-      
+
       setMessages(prevMessages => {
         console.log('[ChatPanel] Processing new system message:', {
           message: systemMessageToAdd.message.substring(0, 50),
@@ -2313,8 +2410,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           progress: systemMessageToAdd.metadata?.progress,
           existingProgressMessage: prevMessages.some(m => m.id === 'generation-progress')
         });
-        
-         // Update generation state based on message type
+
+        // Update generation state based on message type
         if (systemMessageToAdd.metadata?.isStreamingUpdate) {
           // If deck already completed, ignore streaming updates and set isGenerating false
           try {
@@ -2324,39 +2421,39 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               setIsGenerating(false);
               return prevMessages;
             }
-          } catch {}
-          if (systemMessageToAdd.metadata?.type === 'generation_complete' || 
-              systemMessageToAdd.metadata?.progress === 100) {
+          } catch { }
+          if (systemMessageToAdd.metadata?.type === 'generation_complete' ||
+            systemMessageToAdd.metadata?.progress === 100) {
             setIsGenerating(false);
           } else if (systemMessageToAdd.metadata?.type === 'generation_status' ||
-                     systemMessageToAdd.metadata?.stage) {
+            systemMessageToAdd.metadata?.stage) {
             setIsGenerating(true);
           }
         }
-        
+
         // Skip info messages if we're still generating
         // But allow info messages after generation is complete
         if (systemMessageToAdd.metadata?.type === 'info') {
           const progressMessage = prevMessages.find(msg => msg.id === 'generation-progress');
-          const hasActiveGeneration = progressMessage && 
-                                    progressMessage.metadata?.type !== 'generation_complete' &&
-                                    progressMessage.metadata?.progress < 100;
-          
+          const hasActiveGeneration = progressMessage &&
+            progressMessage.metadata?.type !== 'generation_complete' &&
+            progressMessage.metadata?.progress < 100;
+
           if (hasActiveGeneration) {
             console.log('🔄 Skipping info message during generation');
             return prevMessages;
           }
         }
-        
+
         // Always consolidate streaming updates into a single progress message
-        if (systemMessageToAdd.metadata?.isStreamingUpdate && 
-            systemMessageToAdd.metadata?.type !== 'generation_complete' &&
-            systemMessageToAdd.metadata?.type !== 'info') {
-          const existingProgressIndex = prevMessages.findIndex(msg => 
-            msg.id === 'generation-progress' || 
+        if (systemMessageToAdd.metadata?.isStreamingUpdate &&
+          systemMessageToAdd.metadata?.type !== 'generation_complete' &&
+          systemMessageToAdd.metadata?.type !== 'info') {
+          const existingProgressIndex = prevMessages.findIndex(msg =>
+            msg.id === 'generation-progress' ||
             (msg.metadata?.isStreamingUpdate && msg.metadata?.type !== 'generation_complete' && msg.metadata?.type !== 'info')
           );
-          
+
           if (existingProgressIndex !== -1) {
             // Update existing progress message
             const updatedMessages = [...prevMessages];
@@ -2375,18 +2472,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             return [...prevMessages, { ...systemMessageToAdd, id: 'generation-progress' }];
           }
         }
-        
+
         // Check if this is a progress update (but NOT a completion message)
         const isProgressUpdate = systemMessageToAdd.metadata?.isStreamingUpdate === true &&
-                                systemMessageToAdd.metadata?.type !== 'generation_complete' &&
-                                systemMessageToAdd.metadata?.type !== 'info';
-        
+          systemMessageToAdd.metadata?.type !== 'generation_complete' &&
+          systemMessageToAdd.metadata?.type !== 'info';
+
         // Check if this is a completion message
         const isCompletionMessage = systemMessageToAdd.metadata?.type === 'generation_complete' ||
-                                   systemMessageToAdd.metadata?.stage === 'generation_complete' ||
-                                   systemMessageToAdd.message.includes('Your presentation is ready!');
-        
-        
+          systemMessageToAdd.metadata?.stage === 'generation_complete' ||
+          systemMessageToAdd.message.includes('Your presentation is ready!');
+
+
         // If it's a completion message, replace the progress message
         if (isCompletionMessage) {
           // Check if we already have a completion message
@@ -2395,19 +2492,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             msg.metadata?.stage === 'generation_complete' ||
             msg.message.includes('Your presentation is ready!')
           );
-          
+
           if (existingCompletionIndex !== -1) {
             // We already have a completion message, don't add another
             console.log('🚫 Skipping duplicate completion message');
             return prevMessages;
           }
-          
+
           // Find and replace the progress message
-          const progressMessageIndex = prevMessages.findIndex(msg => 
+          const progressMessageIndex = prevMessages.findIndex(msg =>
             msg.id === 'generation-progress' ||
             (msg.metadata?.type === 'progress' && msg.metadata?.isStreamingUpdate)
           );
-          
+
           if (progressMessageIndex !== -1) {
             // Replace the progress message with the completion message
             const updatedMessages = [...prevMessages];
@@ -2415,31 +2512,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             return updatedMessages;
           }
         }
-        
+
         // Progress updates are already handled above in the streaming update block
         // This prevents any duplicate handling
         if (isProgressUpdate && !isCompletionMessage) {
           console.log('⚠️ Progress update reached secondary handler - should be handled above');
           return prevMessages;
         }
-        
+
         // For non-progress streaming messages (completion, errors, etc), skip them
-        if (systemMessageToAdd.metadata?.isStreamingUpdate && 
-            !isProgressUpdate && 
-            !isCompletionMessage) {
+        if (systemMessageToAdd.metadata?.isStreamingUpdate &&
+          !isProgressUpdate &&
+          !isCompletionMessage) {
           // Skip if it's a duplicate streaming update
           return prevMessages;
         }
-        
+
         // Handle completion messages specially
         if (isCompletionMessage) {
           console.log('📍 Processing completion message:', {
             message: systemMessageToAdd.message,
             metadata: systemMessageToAdd.metadata
           });
-          
+
           // Check if we already have a completion message
-          const hasCompletionMessage = prevMessages.some(msg => 
+          const hasCompletionMessage = prevMessages.some(msg =>
             msg.metadata?.type === 'generation_complete' ||
             msg.message.includes('Your presentation is ready!')
           );
@@ -2447,7 +2544,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             console.log('🔄 Skipping duplicate completion message');
             return prevMessages;
           }
-          
+
           // Replace the progress message with completion message
           const progressIndex = prevMessages.findIndex(msg => msg.id === 'generation-progress');
           if (progressIndex !== -1) {
@@ -2465,7 +2562,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             return [...prevMessages, { ...systemMessageToAdd, id: 'generation-complete' }];
           }
         }
-        
+
         // Check for duplicate non-progress messages
         const lastFewMessages = prevMessages.slice(-5);
         const isDuplicate = lastFewMessages.some(msg => {
@@ -2475,12 +2572,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           const isSameType = msg.metadata?.type === systemMessageToAdd.metadata?.type;
           return timeDiff < 3000 && (isSameMessage || (isSameStage && isSameType));
         });
-        
+
         if (isDuplicate) {
           console.log('🔄 Skipping duplicate system message:', systemMessageToAdd.message.substring(0, 50) + '...');
           return prevMessages;
         }
-        
+
         // Debug log for info messages
         if (systemMessageToAdd.metadata?.type === 'info') {
           console.log('ℹ️ Adding info message:', systemMessageToAdd.message);
@@ -2496,7 +2593,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (!deckDiff) return;
     applyDeckDiffRespectingEditMode(deckDiff, true);  // Pass true - these are edit diffs from the API
   };
-  
+
   // Handle feedback for AI messages
   const handleMessageFeedback = async (messageId: string, feedback: FeedbackType) => {
     // Find the message that received feedback
@@ -2505,16 +2602,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       console.error('Message not found:', messageId);
       return;
     }
-    
+
     // Update the message with the feedback in local state
-    setMessages(prevMessages => 
-      prevMessages.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, feedback } 
+    setMessages(prevMessages =>
+      prevMessages.map(msg =>
+        msg.id === messageId
+          ? { ...msg, feedback }
           : msg
       )
     );
-    
+
     try {
       // Simplify chat history to avoid large payloads
       const simplifiedHistory = messages.map(msg => ({
@@ -2523,11 +2620,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         message: msg.message,
         timestamp: msg.timestamp
       }));
-      
+
       // Extract before/after states from message metadata if available
       const beforeJson = targetMessage.metadata?.deckStateBefore;
       const afterJson = targetMessage.metadata?.deckStateAfter;
-      
+
       // Save feedback to Supabase
       const result = await saveFeedback({
         messageId: messageId,
@@ -2541,7 +2638,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           currentSlideIndex: currentSlideIndex
         }
       });
-      
+
       if (!result.success) {
         console.error('Failed to save feedback:', result.error);
       }
@@ -2927,10 +3024,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         setMessages(prev => prev.map(m =>
           m.id === aiMessageId
             ? {
-                ...m,
-                message: `Error: ${(error as Error)?.message || 'Unknown error'}. Check console for details.`,
-                metadata: { isTyping: false }
-              }
+              ...m,
+              message: `Error: ${(error as Error)?.message || 'Unknown error'}. Check console for details.`,
+              metadata: { isTyping: false }
+            }
             : m
         ));
         setIsGenerating(false);
@@ -3000,7 +3097,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // Get the complete deck data
       const deckData = useDeckStore.getState().deckData;
-      
+
       // Store the deck state before changes for feedback comparison
       const deckStateBefore = JSON.parse(JSON.stringify(deckData));
 
@@ -3018,13 +3115,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const effectiveSelections = (selectionContext.length > 0 || !slideId)
         ? selectionContext
         : [{
-            elementId: slideId,
-            elementType: 'Slide',
-            slideId: slideId,
-            overlaps: [],
-            domPath: `#slide_${slideId}`,
-            implicit: true
-          } as any];
+          elementId: slideId,
+          elementType: 'Slide',
+          slideId: slideId,
+          overlaps: [],
+          domPath: `#slide_${slideId}`,
+          implicit: true
+        } as any];
 
       // Prepare lightweight attachment metadata
       // Ensure any pending attachments without URL are processed now
@@ -3032,7 +3129,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       if (pending.length > 0) {
         try {
           await processAndRegisterFiles(pending.map(p => p.file));
-        } catch {}
+        } catch { }
       }
 
       const finalized = (attachments as Array<PendingAttachment | RegisteredAttachment>).filter((a: any) => (a as any).url) as RegisteredAttachment[];
@@ -3079,7 +3176,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       // Create timestamp for assistant response
       const responseTimestamp = new Date(data.timestamp);
       const aiMessageId = `ai-${Date.now()}`;
-      
+
       // Add AI response from API to UI
       const aiMessage: ExtendedChatMessageProps = {
         id: aiMessageId,
@@ -3092,38 +3189,38 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           deckStateBefore
         }
       };
-      
+
       // Process deck diff if available
       if (data.deck_diff) {
         handleDeckDiff(data.deck_diff);
       }
-      
+
       // Get the updated deck state after changes
       const deckStateAfter = useDeckStore.getState().deckData;
-      
+
       // Update the AI message with the after state
       aiMessage.metadata = {
         ...aiMessage.metadata,
         deckStateAfter
       };
-      
+
       // Add the complete AI message to the UI
       setMessages(prevMessages => [...prevMessages, aiMessage]);
 
       // Clear uploaded attachments after sending
       setAttachments([]);
       // Already cleared above; nothing else to do here
-      
+
     } catch (error) {
       console.error('Error sending message to API:', error);
-      
+
       // Add error message to UI
       const errorTimestamp = new Date();
       const errorMessage = "I'm having trouble connecting to the server. Please try again later.";
       const errorMessageId = `error-${Date.now()}`;
-      
+
       setMessages(prevMessages => [
-        ...prevMessages, 
+        ...prevMessages,
         {
           id: errorMessageId,
           type: 'ai',
@@ -3135,7 +3232,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           }
         }
       ]);
-      
+
     } finally {
       setIsLoading(false);
     }
@@ -3165,7 +3262,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, [outlineMode, useOutlineAgent]);
 
   return (
-    <div 
+    <div
       data-tour="chat-panel"
       className={`
         flex flex-col h-full rounded-lg overflow-hidden transition-opacity duration-150 backdrop-blur-md min-w-0 shrink-0
@@ -3208,7 +3305,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
               // Don't show SlideGeneratingUI for generation status messages
               // Let them render as normal chat messages
-              
+
               // Otherwise render normal chat message
               const inline = (msg.metadata?.isStreamingUpdate && themePreview) ? (
                 <div>
@@ -3313,7 +3410,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           <div className="text-xs mb-1 opacity-80">Tools</div>
                           <div className="flex flex-wrap gap-1">
                             {themePreview.tools.map((t, i) => (
-                              <span key={`${t.label}-${i}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${t.status==='finish' ? 'border-green-300 bg-green-50/50 dark:border-green-700/60 dark:bg-green-900/20' : 'border-zinc-300 bg-zinc-50/50 dark:border-neutral-700 dark:bg-white/5'}`}>{t.status==='finish' ? '✓' : '…'} {t.label}</span>
+                              <span key={`${t.label}-${i}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${t.status === 'finish' ? 'border-green-300 bg-green-50/50 dark:border-green-700/60 dark:bg-green-900/20' : 'border-zinc-300 bg-zinc-50/50 dark:border-neutral-700 dark:bg-white/5'}`}>{t.status === 'finish' ? '✓' : '…'} {t.label}</span>
                             ))}
                           </div>
                         </div>
@@ -3324,17 +3421,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               ) : undefined;
 
               return (
-              <ChatMessage 
-                key={msg.id} 
-                {...msg} 
-                inlineBelow={inline}
-                onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
-              />
+                <ChatMessage
+                  key={msg.id}
+                  {...msg}
+                  inlineBelow={inline}
+                  onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                />
               );
             })}
-            
+
             {isLoading && <ChatMessage type="ai" message="" isLoading={true} timestamp={new Date()} />}
-            
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -3342,8 +3439,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="px-2.5 pb-2.5 pt-6 min-w-0">
             <div
               className={
-                `border rounded-xl px-3.5 pb-3.5 flex flex-col justify-between min-h-[230px] min-w-0 ${
-                  isDraggingOver ? 'border-orange-500 border-dashed border-2' : 'border-zinc-300 dark:border-[#929292]'
+                `border rounded-xl px-3.5 pb-3.5 flex flex-col justify-between min-h-[230px] min-w-0 ${isDraggingOver ? 'border-orange-500 border-dashed border-2' : 'border-zinc-300 dark:border-[#929292]'
                 }`
               }
             >
@@ -3373,11 +3469,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     return (
                       <div
                         key={`${att.name}-${idx}`}
-                        className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs border ${
-                          pending
-                            ? 'bg-orange-50/40 dark:bg-orange-900/20 border-orange-300/70 dark:border-orange-700/60 text-orange-700 dark:text-orange-300'
-                            : 'bg-neutral-900/5 dark:bg-white/10 border-neutral-300/60 dark:border-neutral-700'
-                        }`}
+                        className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs border ${pending
+                          ? 'bg-orange-50/40 dark:bg-orange-900/20 border-orange-300/70 dark:border-orange-700/60 text-orange-700 dark:text-orange-300'
+                          : 'bg-neutral-900/5 dark:bg-white/10 border-neutral-300/60 dark:border-neutral-700'
+                          }`}
                         aria-busy={pending}
                       >
                         {pending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -3416,7 +3511,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               </div>
 
               {/* Bottom Row: Suggestions and Buttons */}
-                <div className="mt-auto pt-2 relative flex flex-col min-w-0" onClick={() => inputRef.current?.focus()}>
+              <div className="mt-auto pt-2 relative flex flex-col min-w-0" onClick={() => inputRef.current?.focus()}>
                 {/* Suggestions (top-left) with fade/collapse when typing */}
                 {!isLoading && messages.length === 1 && (
                   <div
@@ -3521,7 +3616,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                               const next = !prev;
                               if (next) {
                                 // Turning ON chat targeting: ensure slide editing is OFF
-                                try { setSlideEditing(false); } catch {}
+                                try { setSlideEditing(false); } catch { }
                               } else {
                                 // Turning OFF chat targeting: clear visuals
                                 clearSelections();
@@ -3544,7 +3639,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       onClick={(e) => { e.stopPropagation(); sendMessage(); }}
                       disabled={!input.trim() || isLoading}
                       className="h-8 w-8 transition-all flex items-center justify-center rounded-full text-white hover:opacity-80"
-                      style={{ 
+                      style={{
                         backgroundColor: COLORS.SUGGESTION_PINK
                       }}
                     >
@@ -3554,7 +3649,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 </div>
               </div>
             </div>
-            
+
 
           </div>
         </>

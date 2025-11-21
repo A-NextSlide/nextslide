@@ -346,6 +346,8 @@ export class GenerationProgressTracker extends EventEmitter {
         break;
         
       case 'deck_complete':
+      case 'composition_complete':
+      case 'complete':
         this.handleDeckComplete(event);
         break;
         
@@ -619,13 +621,13 @@ export class GenerationProgressTracker extends EventEmitter {
     this.setTargetProgress(100);
     this.state.phase = 'finalization';
     this.state.message = 'Your presentation is ready!';
-    
+
     // Mark all slides as completed
     this.state.slides.forEach(slide => {
       slide.status = 'completed';
       slide.progress = 100;
     });
-    
+
     // Dispatch DOM event for other components to listen
     window.dispatchEvent(new CustomEvent('deck_complete', {
       detail: event
