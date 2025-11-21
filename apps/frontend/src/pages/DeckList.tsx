@@ -1030,8 +1030,7 @@ const DeckList: React.FC = () => {
             persistDeckContext(emittedDeckId);
             navigateToDeck(emittedDeckId);
           }
-          }
-          
+
           // Track slide generation progress - but we're already on the deck page
           if (event.type === 'slide_started' || event.type === 'progress') {
             const slideIndex = event.slide_index || event.data?.slide_index || 0;
