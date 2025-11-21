@@ -41,6 +41,20 @@ async def create_session(body: Dict[str, Any], token: Optional[str] = Depends(ge
         raise HTTPException(status_code=400, detail="deckId is required")
 
     sb = get_supabase_client()
+
+    # CRITICAL: Verify that the deck exists in the database before creating the agent session
+    # This prevents foreign key constraint violations when the deck hasn't been created yet
+    from utils.supabase import get_deck
+    deck = get_deck(deck_id)
+    if not deck:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "DECK_NOT_FOUND",
+                "message": f"Deck {deck_id} does not exist. Please wait for deck creation to complete."
+            }
+        )
+
     record = {
         "user_id": user["id"],
         "deck_id": deck_id,

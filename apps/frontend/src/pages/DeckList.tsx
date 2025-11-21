@@ -822,10 +822,39 @@ const DeckList: React.FC = () => {
     setIsDeckGenerating(true);
     setGenerationProgress(null);
     
-    // Initialize with outline ID if available - this is the source of truth
-    let deckId = currentOutline?.id || '';
-    let hasNavigated = false;
-    
+    let deckId = '';
+    let navigatedDeckId: string | null = null;
+    const deckName = currentOutline?.title || '';
+
+    const persistDeckContext = (targetDeckId: string) => {
+      if (!targetDeckId) return;
+      
+      try {
+        sessionStorage.setItem('lastEditedDeckId', targetDeckId);
+        sessionStorage.setItem('activeGenerationDeckName', deckName);
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        (window as any).__activeGenerationDeckId = targetDeckId;
+        (window as any).__activeGenerationDeckName = deckName;
+      }
+    };
+
+    const navigateToDeck = (targetDeckId: string) => {
+      if (!targetDeckId || navigatedDeckId === targetDeckId) {
+        return;
+      }
+
+      navigatedDeckId = targetDeckId;
+      navigate(`/deck/${targetDeckId}?new=true`);
+    };
+
+    // DON'T navigate yet - wait for deck_created event from backend
+    // The navigation will happen when we receive the deck_created event
+    if (currentOutline?.id) {
+      deckId = currentOutline.id;
+      // Navigation removed - happens in onProgress callback when deck_created event is received
+    }
     try {
       // Reset deck store before generation
       useDeckStore.getState().resetStore();
@@ -995,42 +1024,12 @@ const DeckList: React.FC = () => {
           onSlideImagesFound(event);
           
           // Handle deck creation start - capture deck ID immediately
-          // Try to get ID from event, fallback to known outline ID
           const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId || (event as any).deckUUID;
-          
           if (emittedDeckId) {
             deckId = emittedDeckId;
+            persistDeckContext(emittedDeckId);
+            navigateToDeck(emittedDeckId);
           }
-          
-          // If we haven't navigated yet, and we have a valid deck ID (either from event or outline)
-          // AND the event indicates generation has actually started/progressed
-          if (!hasNavigated && deckId) {
-            const isGenerationEvent = 
-              event.type === 'deck_creation_started' || 
-              event.type === 'deck_created' || 
-              event.type === 'slide_started' || 
-              event.type === 'progress' ||
-              emittedDeckId; // Or if we explicitly got an ID in the event
-              
-            if (isGenerationEvent) {
-              // Store deck ID
-              sessionStorage.setItem('lastEditedDeckId', deckId);
-              
-              // Set active generation in window for SlideEditor to pick up
-              if (typeof window !== 'undefined') {
-                (window as any).__activeGenerationDeckId = deckId;
-                // Also expose the intended deck name so the editor can show it immediately
-                try {
-                  (window as any).__activeGenerationDeckName = currentOutline?.title || '';
-                  sessionStorage.setItem('activeGenerationDeckName', currentOutline?.title || '');
-                } catch {}
-              }
-
-              // Navigate to deck editor now that generation has been initiated by the user
-              hasNavigated = true;
-              console.log('[DeckList] Navigating to deck editor:', deckId);
-              navigate(`/deck/${deckId}?new=true`);
-            }
           }
           
           // Track slide generation progress - but we're already on the deck page
@@ -1063,6 +1062,8 @@ const DeckList: React.FC = () => {
       // Wait for the generation to complete
       const result = await resultPromise;
       deckId = result.deckId;
+      persistDeckContext(deckId);
+      navigateToDeck(deckId);
       
       toast({
         title: "🎉 Deck Created!",

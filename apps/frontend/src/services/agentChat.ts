@@ -80,7 +80,7 @@ export class AgentChatClient {
     return this.readyPromise;
   }
 
-  async createSession(deckId: string, slideId: string, metadata?: Record<string, any>): Promise<string> {
+  async createSession(deckId: string, slideId: string, metadata?: Record<string, any>, retryCount = 0): Promise<string> {
     const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
     if (!base) throw new Error('AGENT_BASE_URL not configured');
     // Only call the canonical Python agent endpoint path. Allow a single trailing-slash retry.
@@ -94,6 +94,20 @@ export class AgentChatClient {
       body: JSON.stringify({ deckId, slideId, metadata: metadata || { agentProfile: 'authoring' } }),
     };
     const res = await fetch(urlNoSlash, requestInit);
+
+    // Handle 404 error - deck doesn't exist yet, retry with exponential backoff
+    if (res.status === 404 && retryCount < 5) {
+      const errorData = await res.json().catch(() => null);
+      const isDeckNotFound = errorData?.detail?.error === 'DECK_NOT_FOUND' ||
+                            errorData?.error?.code === 'DECK_NOT_FOUND';
+
+      if (isDeckNotFound) {
+        console.log(`[AgentChat] Deck ${deckId} not found yet, retrying in ${Math.pow(2, retryCount)} seconds... (attempt ${retryCount + 1}/5)`);
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        return this.createSession(deckId, slideId, metadata, retryCount + 1);
+      }
+    }
+
     if (!res.ok) throw new Error(`createSession failed: ${res.status}`);
     const json = await res.json();
     this.sessionId = json.session?.id ?? null;
