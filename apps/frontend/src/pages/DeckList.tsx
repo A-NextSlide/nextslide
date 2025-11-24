@@ -1321,7 +1321,10 @@ const DeckList: React.FC = () => {
 
   return (
     <div className="h-screen bg-white dark:bg-black flex flex-col overflow-hidden relative font-sans">
-      <ParticleAnimation />
+      <ParticleAnimation
+        isTyping={isUserTyping}
+        isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
+      />
       {/* <div className="noise-overlay pointer-events-none"></div> */}
 
 
@@ -1663,12 +1666,7 @@ const DeckList: React.FC = () => {
               ) : (
                 <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 selection:bg-orange-100 selection:text-orange-900">
                   {/* Particle Background */}
-                  <div className="absolute inset-0 z-0 pointer-events-none">
-                    <ParticleAnimation
-                      isTyping={isUserTyping}
-                      isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
-                    />
-                  </div>
+
 
                   {/* Left Pane: Hero Section */}
                   <div
