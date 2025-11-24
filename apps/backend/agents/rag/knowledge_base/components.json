@@ -28,7 +28,18 @@
     "critical_rules": {
       "padding": "Must always be 0 (numeric, not string)",
       "texts": "Tiptap document structure OR legacy array format. For lists, use proper Tiptap doc structure with bulletList/orderedList.",
-      "style_keys": ["bold", "italic", "underline", "strike", "superscript", "subscript", "textColor", "backgroundColor", "highlight", "link"],
+      "style_keys": [
+        "bold",
+        "italic",
+        "underline",
+        "strike",
+        "superscript",
+        "subscript",
+        "textColor",
+        "backgroundColor",
+        "highlight",
+        "link"
+      ],
       "height": "Calculate as fontSize x 1.15 for single line, fontSize x 1.5 x numItems for lists",
       "multiple_blocks": "CRITICAL: BREAK content into MULTIPLE TiptapTextBlock components - DON'T cram everything into one!",
       "alignment": "ALWAYS set alignment prop: 'left' | 'center' | 'right' | 'justify'",
@@ -135,36 +146,140 @@
     "examples": {
       "metric_split": {
         "texts": [
-          {"text": "340", "fontSize": 240, "style": {"bold": true, "textColor": "{accent_1}"}},
-          {"text": "%", "fontSize": 120, "style": {"bold": true}},
-          {"text": "growth rate", "fontSize": 36, "style": {"textColor": "{primary_text}", "backgroundColor": "#00000000"}}
+          {
+            "text": "340",
+            "fontSize": 240,
+            "style": {
+              "bold": true,
+              "textColor": "{accent_1}"
+            }
+          },
+          {
+            "text": "%",
+            "fontSize": 120,
+            "style": {
+              "bold": true
+            }
+          },
+          {
+            "text": "growth rate",
+            "fontSize": 36,
+            "style": {
+              "textColor": "{primary_text}",
+              "backgroundColor": "#00000000"
+            }
+          }
         ]
       },
       "inline_citation": {
         "texts": [
-          {"text": "Key fact ", "fontSize": 40},
-          {"text": "72", "fontSize": 88, "style": {"bold": true, "textColor": "{accent_1}"}},
-          {"text": "%", "fontSize": 56},
-          {"text": " adoption", "fontSize": 40},
-          {"text": " [1]", "fontSize": 32, "style": {"superscript": true, "textColor": "{primary_text}", "backgroundColor": "#00000000"}}
+          {
+            "text": "Key fact ",
+            "fontSize": 40
+          },
+          {
+            "text": "72",
+            "fontSize": 88,
+            "style": {
+              "bold": true,
+              "textColor": "{accent_1}"
+            }
+          },
+          {
+            "text": "%",
+            "fontSize": 56
+          },
+          {
+            "text": " adoption",
+            "fontSize": 40
+          },
+          {
+            "text": " [1]",
+            "fontSize": 32,
+            "style": {
+              "superscript": true,
+              "textColor": "{primary_text}",
+              "backgroundColor": "#00000000"
+            }
+          }
         ]
       },
       "rich_formatting_example": {
         "description": "USE RICH TEXT FORMATTING - bold, highlight, and accent colors for impact",
         "texts": [
-          {"text": "Revenue grew ", "fontSize": 32, "style": {"textColor": "{primary_text}", "bold": false}},
-          {"text": "340%", "fontSize": 32, "style": {"bold": true, "textColor": "{accent_1}", "highlight": true, "backgroundColor": "{accent_1}20"}},
-          {"text": " in ", "fontSize": 32, "style": {"textColor": "{primary_text}", "bold": false}},
-          {"text": "Q1", "fontSize": 32, "style": {"bold": true, "textColor": "{secondary_color}"}}
+          {
+            "text": "Revenue grew ",
+            "fontSize": 32,
+            "style": {
+              "textColor": "{primary_text}",
+              "bold": false
+            }
+          },
+          {
+            "text": "340%",
+            "fontSize": 32,
+            "style": {
+              "bold": true,
+              "textColor": "{accent_1}",
+              "highlight": true,
+              "backgroundColor": "{accent_1}20"
+            }
+          },
+          {
+            "text": " in ",
+            "fontSize": 32,
+            "style": {
+              "textColor": "{primary_text}",
+              "bold": false
+            }
+          },
+          {
+            "text": "Q1",
+            "fontSize": 32,
+            "style": {
+              "bold": true,
+              "textColor": "{secondary_color}"
+            }
+          }
         ]
       },
       "bullet_with_emphasis": {
         "description": "Bullet point with key numbers/words emphasized",
         "texts": [
-          {"text": "Featured in ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
-          {"text": "2,000+", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}", "highlight": true, "backgroundColor": "{accent_1}20"}},
-          {"text": " newspapers by ", "fontSize": 28, "style": {"textColor": "{primary_text}", "bold": false}},
-          {"text": "early 1980s", "fontSize": 28, "style": {"bold": true, "textColor": "{accent_1}"}}
+          {
+            "text": "Featured in ",
+            "fontSize": 28,
+            "style": {
+              "textColor": "{primary_text}",
+              "bold": false
+            }
+          },
+          {
+            "text": "2,000+",
+            "fontSize": 28,
+            "style": {
+              "bold": true,
+              "textColor": "{accent_1}",
+              "highlight": true,
+              "backgroundColor": "{accent_1}20"
+            }
+          },
+          {
+            "text": " newspapers by ",
+            "fontSize": 28,
+            "style": {
+              "textColor": "{primary_text}",
+              "bold": false
+            }
+          },
+          {
+            "text": "early 1980s",
+            "fontSize": 28,
+            "style": {
+              "bold": true,
+              "textColor": "{accent_1}"
+            }
+          }
         ]
       },
       "proper_bullet_list": {
@@ -181,8 +296,19 @@
                     {
                       "type": "paragraph",
                       "content": [
-                        {"type": "text", "text": "Revenue grew ", "style": {}},
-                        {"type": "text", "text": "$2.5B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                        {
+                          "type": "text",
+                          "text": "Revenue grew ",
+                          "style": {}
+                        },
+                        {
+                          "type": "text",
+                          "text": "$2.5B",
+                          "style": {
+                            "bold": true,
+                            "textColor": "{{accent}}"
+                          }
+                        }
                       ]
                     }
                   ]
@@ -193,8 +319,19 @@
                     {
                       "type": "paragraph",
                       "content": [
-                        {"type": "text", "text": "Market share increased ", "style": {}},
-                        {"type": "text", "text": "42%", "style": {"bold": true, "textColor": "{{accent}}"}}
+                        {
+                          "type": "text",
+                          "text": "Market share increased ",
+                          "style": {}
+                        },
+                        {
+                          "type": "text",
+                          "text": "42%",
+                          "style": {
+                            "bold": true,
+                            "textColor": "{{accent}}"
+                          }
+                        }
                       ]
                     }
                   ]
@@ -215,19 +352,48 @@
                 {
                   "type": "listItem",
                   "content": [
-                    {"type": "paragraph", "content": [{"type": "text", "text": "Identify the problem", "style": {}}]}
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Identify the problem",
+                          "style": {}
+                        }
+                      ]
+                    }
                   ]
                 },
                 {
                   "type": "listItem",
                   "content": [
-                    {"type": "paragraph", "content": [{"type": "text", "text": "Research solutions", "style": {}}]}
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Research solutions",
+                          "style": {}
+                        }
+                      ]
+                    }
                   ]
                 },
                 {
                   "type": "listItem",
                   "content": [
-                    {"type": "paragraph", "content": [{"type": "text", "text": "Implement and test", "style": {"bold": true}}]}
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Implement and test",
+                          "style": {
+                            "bold": true
+                          }
+                        }
+                      ]
+                    }
                   ]
                 }
               ]
@@ -241,10 +407,21 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 300},
+              "position": {
+                "x": 120,
+                "y": 300
+              },
               "width": 700,
               "height": 92,
-              "texts": [{"text": "$964M", "style": {"bold": true, "textColor": "{{accent}}"}}],
+              "texts": [
+                {
+                  "text": "$964M",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}"
+                  }
+                }
+              ],
               "fontSize": 72,
               "fontFamily": "{{heroFont}}",
               "alignment": "center",
@@ -254,10 +431,20 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 410},
+              "position": {
+                "x": 120,
+                "y": 410
+              },
               "width": 700,
               "height": 37,
-              "texts": [{"text": "1961 Budget", "style": {"textColor": "{{secondary}}"}}],
+              "texts": [
+                {
+                  "text": "1961 Budget",
+                  "style": {
+                    "textColor": "{{secondary}}"
+                  }
+                }
+              ],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
               "alignment": "center",
@@ -267,10 +454,21 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 1000, "y": 300},
+              "position": {
+                "x": 1000,
+                "y": 300
+              },
               "width": 700,
               "height": 92,
-              "texts": [{"text": "$35B+", "style": {"bold": true, "textColor": "{{accent}}"}}],
+              "texts": [
+                {
+                  "text": "$35B+",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}"
+                  }
+                }
+              ],
               "fontSize": 72,
               "fontFamily": "{{heroFont}}",
               "alignment": "center",
@@ -280,10 +478,20 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 1000, "y": 410},
+              "position": {
+                "x": 1000,
+                "y": 410
+              },
               "width": 700,
               "height": 37,
-              "texts": [{"text": "Artemis 2025", "style": {"textColor": "{{secondary}}"}}],
+              "texts": [
+                {
+                  "text": "Artemis 2025",
+                  "style": {
+                    "textColor": "{{secondary}}"
+                  }
+                }
+              ],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
               "alignment": "center",
@@ -298,10 +506,21 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 160},
+              "position": {
+                "x": 120,
+                "y": 160
+              },
               "width": 1680,
               "height": 77,
-              "texts": [{"text": "NASA Budget Evolution", "style": {"bold": true, "textColor": "{{primary}}"}}],
+              "texts": [
+                {
+                  "text": "NASA Budget Evolution",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{primary}}"
+                  }
+                }
+              ],
               "fontSize": 64,
               "fontFamily": "{{heroFont}}",
               "fontWeight": 900,
@@ -312,15 +531,49 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 260},
+              "position": {
+                "x": 120,
+                "y": 260
+              },
               "width": 1680,
               "height": 55,
               "texts": [
-                {"text": "From ", "style": {"textColor": "{{secondary}}"}},
-                {"text": "$964M", "style": {"bold": true, "textColor": "{{accent}}", "highlight": true, "backgroundColor": "{{accent}}15"}},
-                {"text": " (1961) to ", "style": {"textColor": "{{secondary}}"}},
-                {"text": "$35B+", "style": {"bold": true, "textColor": "{{accent}}", "highlight": true, "backgroundColor": "{{accent}}15"}},
-                {"text": " (Artemis 2025)", "style": {"textColor": "{{secondary}}"}}
+                {
+                  "text": "From ",
+                  "style": {
+                    "textColor": "{{secondary}}"
+                  }
+                },
+                {
+                  "text": "$964M",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}",
+                    "highlight": true,
+                    "backgroundColor": "{{accent}}15"
+                  }
+                },
+                {
+                  "text": " (1961) to ",
+                  "style": {
+                    "textColor": "{{secondary}}"
+                  }
+                },
+                {
+                  "text": "$35B+",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}",
+                    "highlight": true,
+                    "backgroundColor": "{{accent}}15"
+                  }
+                },
+                {
+                  "text": " (Artemis 2025)",
+                  "style": {
+                    "textColor": "{{secondary}}"
+                  }
+                }
               ],
               "fontSize": 44,
               "fontFamily": "{{bodyFont}}",
@@ -332,10 +585,22 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 360},
+              "position": {
+                "x": 120,
+                "y": 360
+              },
               "width": 800,
               "height": 43,
-              "texts": [{"text": "KEY MILESTONES", "style": {"bold": true, "textColor": "{{secondary}}", "uppercase": true}}],
+              "texts": [
+                {
+                  "text": "KEY MILESTONES",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{secondary}}",
+                    "uppercase": true
+                  }
+                }
+              ],
               "fontSize": 36,
               "fontFamily": "{{bodyFont}}",
               "fontWeight": 700,
@@ -346,12 +611,26 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 440},
+              "position": {
+                "x": 120,
+                "y": 440
+              },
               "width": 800,
               "height": 37,
               "texts": [
-                {"text": "Sputnik: ", "style": {"textColor": "{{primary}}"}},
-                {"text": "$0.1B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                {
+                  "text": "Sputnik: ",
+                  "style": {
+                    "textColor": "{{primary}}"
+                  }
+                },
+                {
+                  "text": "$0.1B",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}"
+                  }
+                }
               ],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
@@ -362,12 +641,26 @@
           {
             "type": "TiptapTextBlock",
             "props": {
-              "position": {"x": 120, "y": 500},
+              "position": {
+                "x": 120,
+                "y": 500
+              },
               "width": 800,
               "height": 37,
               "texts": [
-                {"text": "Gagarin: ", "style": {"textColor": "{{primary}}"}},
-                {"text": "$0.96B", "style": {"bold": true, "textColor": "{{accent}}"}}
+                {
+                  "text": "Gagarin: ",
+                  "style": {
+                    "textColor": "{{primary}}"
+                  }
+                },
+                {
+                  "text": "$0.96B",
+                  "style": {
+                    "bold": true,
+                    "textColor": "{{accent}}"
+                  }
+                }
               ],
               "fontSize": 32,
               "fontFamily": "{{bodyFont}}",
@@ -472,16 +765,63 @@
       "padding": "Declare padding ONCE: var padding = 24; (DO NOT redeclare later!)"
     },
     "content_triggers": {
-      "metrics_keywords": ["growth", "increase", "performance", "kpi", "roi", "metrics", "revenue", "profit", "sales"],
-      "comparison_keywords": ["vs", "before", "after", "comparison", "difference", "versus", "improvement"],
-      "timeline_keywords": ["roadmap", "timeline", "phases", "journey", "stages", "progress"],
-      "engagement_keywords": ["quiz", "poll", "vote", "feedback", "opinion", "survey"],
-      "process_keywords": ["decision", "flow", "framework", "steps", "choice", "workflow"],
-      "data_keywords": ["statistics", "data", "numbers", "percentage", "dollars", "metrics", "analytics"]
+      "metrics_keywords": [
+        "growth",
+        "increase",
+        "performance",
+        "kpi",
+        "roi",
+        "metrics",
+        "revenue",
+        "profit",
+        "sales"
+      ],
+      "comparison_keywords": [
+        "vs",
+        "before",
+        "after",
+        "comparison",
+        "difference",
+        "versus",
+        "improvement"
+      ],
+      "timeline_keywords": [
+        "roadmap",
+        "timeline",
+        "phases",
+        "journey",
+        "stages",
+        "progress"
+      ],
+      "engagement_keywords": [
+        "quiz",
+        "poll",
+        "vote",
+        "feedback",
+        "opinion",
+        "survey"
+      ],
+      "process_keywords": [
+        "decision",
+        "flow",
+        "framework",
+        "steps",
+        "choice",
+        "workflow"
+      ],
+      "data_keywords": [
+        "statistics",
+        "data",
+        "numbers",
+        "percentage",
+        "dollars",
+        "metrics",
+        "analytics"
+      ]
     },
     "data_visualization_priority": {
       "single_metric": "Use hero_metric_showcase or hero_stat_display for maximum impact",
-      "multiple_metrics": "Use multi_stat_dashboard or kpi_cards with size hierarchy", 
+      "multiple_metrics": "Use multi_stat_dashboard or kpi_cards with size hierarchy",
       "comparisons": "Use stat_comparison_split or comparison_bars",
       "percentages": "Use animated_progress_rings or gauge_chart",
       "trends": "Combine small line chart with HUGE current value display"
@@ -562,8 +902,14 @@
         "description": "Horizontal line below header",
         "type": "Lines",
         "props": {
-          "startPoint": {"x": 80, "y": 180},
-          "endPoint": {"x": 1840, "y": 180},
+          "startPoint": {
+            "x": 80,
+            "y": 180
+          },
+          "endPoint": {
+            "x": 1840,
+            "y": 180
+          },
           "connectionType": "straight",
           "stroke": "#E5E7EB",
           "strokeWidth": 2,
@@ -575,8 +921,14 @@
         "description": "Vertical line splitting content",
         "type": "Lines",
         "props": {
-          "startPoint": {"x": 960, "y": 200},
-          "endPoint": {"x": 960, "y": 880},
+          "startPoint": {
+            "x": 960,
+            "y": 200
+          },
+          "endPoint": {
+            "x": 960,
+            "y": 880
+          },
           "connectionType": "straight",
           "stroke": "#D1D5DB",
           "strokeWidth": 2,
@@ -588,8 +940,14 @@
         "description": "Arrow connecting two components",
         "type": "Lines",
         "props": {
-          "startPoint": {"x": 400, "y": 300},
-          "endPoint": {"x": 800, "y": 500},
+          "startPoint": {
+            "x": 400,
+            "y": 300
+          },
+          "endPoint": {
+            "x": 800,
+            "y": 500
+          },
           "connectionType": "elbow",
           "stroke": "#3B82F6",
           "strokeWidth": 3,
@@ -682,5 +1040,76 @@
       }
     },
     "design_guidance": "ALWAYS default to gradients - they add depth, sophistication and visual appeal. Only use solid colors when absolutely necessary."
+  },
+  "SmartLayout": {
+    "description": "The PREFERRED layout system for structured slides. Handles alignment and responsiveness automatically.",
+    "required_props": [
+      "layout",
+      "slots"
+    ],
+    "layouts": {
+      "SplitRight": "Text on left, visual on right (most common)",
+      "SplitLeft": "Visual on left, text on right",
+      "GridLayout": "Grid of items (stats, features)",
+      "HeroLayout": "Centered big title and subtitle"
+    },
+    "slots": "Object mapping slot names to components (e.g., { 'left': { type: 'BigTitle', ... }, 'right': { type: 'StatCard', ... } })",
+    "example": {
+      "type": "SmartLayout",
+      "props": {
+        "layout": "SplitRight",
+        "slots": {
+          "left": {
+            "type": "BigTitle",
+            "props": {
+              "text": "Growth",
+              "highlight": "Growth"
+            }
+          },
+          "right": {
+            "type": "StatCard",
+            "props": {
+              "label": "Revenue",
+              "value": "$10M"
+            }
+          }
+        }
+      }
+    }
+  },
+  "SmartImage": {
+    "description": "Image component optimized for SmartLayout slots. Handles aspect ratio and captioning automatically.",
+    "required_props": [
+      "src"
+    ],
+    "props": {
+      "src": "ALWAYS use 'placeholder'",
+      "caption": "Optional caption text below the image",
+      "alt": "Descriptive alt text for the image content",
+      "aspectRatio": "Optional: '16:9', '4:3', '1:1' (defaults to container fit)"
+    }
+  },
+  "StatCard": {
+    "description": "High-impact statistic display. Use inside SmartLayout or standalone.",
+    "required_props": [
+      "label",
+      "value"
+    ],
+    "props": {
+      "label": "Label text (e.g., 'Revenue')",
+      "value": "Value text (e.g., '$10M')",
+      "trend": "Optional trend text (e.g., '+20%')",
+      "trendDirection": "'up', 'down', or 'neutral'"
+    }
+  },
+  "BigTitle": {
+    "description": "Large, styled headline with highlighting support.",
+    "required_props": [
+      "text"
+    ],
+    "props": {
+      "text": "The headline text",
+      "highlight": "Substring to highlight in accent color"
+    }
   }
 }

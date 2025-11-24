@@ -105,7 +105,7 @@ USE CUSTOMCOMPONENT FOR:
 - Anything that should look memorable
 
 ONLY USE CHART WHEN ALL CONDITIONS MET:
-1. Detailed mode is active (NOT presentation mode)
+1. Structured mode is active (NOT creative mode)
 2. You have 15+ quantitative data points
 3. The data shows complex trends requiring precision reading
 4. A standard chart is MORE effective than a custom visualization

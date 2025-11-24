@@ -172,7 +172,7 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             
         except Exception as e:
             logger.error(f"Failed to load component schemas: {e}")
-            return "Components: Background, Shape, TiptapTextBlock, Image, Line, Lines, Chart, CustomComponent, ReactBits, Icon, Group, Table\n"
+            return "Components: SmartLayout, StatCard, BigTitle, SmartImage, Background, Shape, TiptapTextBlock, Image, Line, Lines, Chart, CustomComponent, ReactBits, Icon, Group, Table\n"
     
     def _build_html_inspired_user_prompt_dynamic(
         self,
@@ -241,24 +241,33 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
             visual_density = getattr(context, 'visual_density', 'moderate')
             detail_level = 'detailed' if visual_density in ["data-heavy", "rich"] else 'standard'
 
-        # Mode detection logic based on detail_level:
-        # - "detailed" → DETAILED MODE (comprehensive, data-rich, 60-80% charts/tables)
-        # - "standard"|"quick" → PRESENTATION MODE (design-focused, 5-10% charts MAX, extremely rare)
-        mode = "detailed" if detail_level == "detailed" else "presentation"
+        # Mode detection logic:
+        # - "detailed" or Professional style → STRUCTURED MODE
+        # - "standard"/"quick" or Creative style → CREATIVE MODE
+        
+        # Check design_style for keywords
+        design_style_lower = theme_dict.get('design_style', '').lower()
+        is_creative_style = any(k in design_style_lower for k in ['creative', 'fun', 'playful', 'dynamic', 'bold', 'modern', 'artistic'])
+        is_professional_style = any(k in design_style_lower for k in ['professional', 'corporate', 'clean', 'minimal', 'structured', 'educational', 'academic'])
+        
+        if detail_level == "detailed":
+            mode = "structured"
+        elif is_professional_style and not is_creative_style:
+            mode = "structured"
+        elif is_creative_style:
+            mode = "creative"
+        else:
+            # Default fallback: standard/quick -> creative (more impressive by default)
+            mode = "creative"
 
-        logger.info(f"🎨 [MODE DETECTION] detail_level={detail_level} → mode={mode.upper()}")
+        logger.info(f"🎨 [MODE DETECTION] detail_level={detail_level}, style={design_style_lower[:30]}... → mode={mode.upper()}")
 
         # Use V2 prompt (mode-specific design philosophy)
         v2_prompt = get_html_inspired_system_prompt_v2()
         
-        # Get COMPLETE schemas from typebox using SchemaExtractor
-        # Include all commonly used components
-        component_list = [
-            'Background', 'TiptapTextBlock', 'Image', 'Lines', 'Line',
-            'Icon', 'Shape', 'ShapeWithText', 'Chart', 'Table',
-            'CustomComponent', 'ReactBits', 'Group', 'Video', 'Math', 'Diagram'
-        ]
-        schema_section = self._schema_extractor.format_for_prompt(component_list)
+        # Get COMPLETE schemas from components.json (Rich definitions)
+        # This ensures SmartLayout, StatCard, etc. are included with full instructions
+        schema_section = self._load_component_schemas()
         
         # Add header and usage instructions
         schema_section = f"""
@@ -514,10 +523,13 @@ COMPONENT EXAMPLES - COPY THESE PROP VALUES EXACTLY:
 Background component:
 {{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color", "gradient": null}}}}
 
-TiptapTextBlock (ALL text):
+💎 SMART LAYOUT (PREFERRED for Content):
+{{"type": "SmartLayout", "props": {{"layout": "SplitRight", "slots": {{"left": {{"type": "BigTitle", "props": {{"text": "Title", "highlight": "Title"}}}}, "right": {{"type": "StatCard", "props": {{"label": "Label", "value": "Value"}}}}}}}}}}
+
+TiptapTextBlock (Legacy/Custom - AVOID unless necessary):
 {{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "fontFamily": "Inter", ...}}}}
 
-Shape (decorative elements):
+Shape (decorative elements - AVOID unless necessary):
 {{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "shapeType": "circle", ...}}}}
 
 ShapeWithText (boxes with text):
@@ -580,8 +592,8 @@ Line/Lines:
 • Minimum: NEVER go below 28pt for any body text!
 
 📐 POSITIONING STRATEGY:
-1. Choose layout pattern from V2 (Split-screen, Grid, Single-column)
-2. Calculate positions: nextY = currentY + currentHeight + gap
+1. PREFERRED: Use SmartLayout (SplitRight, GridLayout) - NO manual positioning needed!
+2. FALLBACK: Calculate positions manually (nextY = currentY + currentHeight + gap)
 3. Verify no overlaps before outputting
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -689,10 +701,10 @@ Output valid JSON component array now (using the 3 colors above EXACTLY + alignm
             return "PROCESS: CustomComponent timeline (theme colors!) OR Lines + minimal Shapes + TiptapTextBlock (alignment='left', verticalAlignment='top'). Add Image (diagram/illustration)!"
         
         elif 'data' in slide_type or 'chart' in slide_type:
-            return "DATA: Include Chart component with provided data OR CustomComponent visualization. Position chart left/right (x=80 width=880 OR x=960 width=880). Add TiptapTextBlock insights (alignment='left', verticalAlignment='top')."
+            return "DATA: Use SmartLayout (SplitRight) with Chart in 'right' slot and BigTitle/StatCard in 'left' slot. Or use GridLayout for multiple stats."
         
         else:
-            return "CONTENT: TiptapTextBlock directly on background (alignment='left', verticalAlignment='top' for body text, NO boxes!) + Image (LARGE, 50-60% of slide). Shape ONLY for key highlights. Use theme colors!"
+            return "CONTENT: Use SmartLayout (SplitRight) with BigTitle in 'left' slot and SmartImage in 'right' slot. Avoid manual TiptapTextBlock placement."
     
     def _get_blueprint_from_theme(self, context: SlideGenerationContext) -> str:
         """Extract and format LayoutArchitect blueprint if available"""

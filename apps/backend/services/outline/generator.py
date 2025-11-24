@@ -2069,13 +2069,26 @@ Requirements:
                     # Research content slides with Perplexity
                     perplexity_client, perplexity_model = get_client('perplexity-sonar', wrap_with_instructor=False)
                     
+                    # Build comprehensive context including conversation details
+                    context_parts = [options.prompt]
+                    if options.style_context and options.style_context.strip():
+                        # Extract custom requirements from style context (e.g., financial details, specific asks)
+                        context_parts.append(options.style_context.strip())
+                    
+                    full_context = "\n\n".join(context_parts)
+                    
                     research_prompt = f"""Research this slide topic and provide key facts with sources:
 
 Presentation: {presentation_title}
 Slide: {slide_title}
-Context: {options.prompt}
+Context: {full_context}
+
+IMPORTANT: If the context includes specific financial data, metrics, or custom requirements (like funding amounts, burn rates, runway, team details), prioritize those CUSTOM details over general web research. Use web research only to supplement or validate the custom information provided.
 
 Provide 3-5 key facts with specific data, numbers, and sources."""
+                    
+                    logger.info(f"[PERPLEXITY RESEARCH] Slide {idx+1} ({slide_title}): Including style_context in research prompt")
+                    logger.debug(f"[PERPLEXITY RESEARCH] Full context length: {len(full_context)} chars")
 
                     research_result = await loop.run_in_executor(
                         None,
@@ -2221,15 +2234,22 @@ REMEMBER: NO IMAGE tags in content."""
                         
                         citation_instruction = "Use inline citation numbers matching the research sources above." if research_citations else "Include facts and data."
                         
+                        # Include conversation context for custom requirements
+                        context_for_slide = options.prompt
+                        if options.style_context and options.style_context.strip():
+                            context_for_slide = f"{options.prompt}\n\nAdditional context from conversation:\n{options.style_context}"
+                        
                         slide_prompt = f"""Create presentation content for this slide:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
-Context: {options.prompt}
+Context: {context_for_slide}
 
 {research_data_section}OUTPUT FORMAT: Return ONLY the slide content. DO NOT include metadata headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'. 
 DO NOT include IMAGE tags in your response - those will be added separately.
 {citation_instruction}
+
+CRITICAL: If the context includes CUSTOM financial details, metrics, or specific requirements (e.g., "$15M raise", "$3M runway", "burn chart"), USE THOSE EXACT CUSTOM VALUES instead of generic research. The custom details from the conversation take PRIORITY over web-researched data.
 
 🎯 STRUCTURED CONTENT REQUIREMENTS:
 

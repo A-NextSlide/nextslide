@@ -69,9 +69,16 @@ interface ConversationalOnboardingProps {
   onCancel?: () => void;
   initialMessage?: string;
   slideCount?: number;
+  onProcessingChange?: (isProcessing: boolean) => void;
 }
 
-const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({ onComplete, onCancel, initialMessage, slideCount }) => {
+const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
+  onComplete,
+  onCancel,
+  initialMessage,
+  slideCount,
+  onProcessingChange
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isAgentTyping, setIsAgentTyping] = useState(false);
@@ -86,6 +93,11 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({ onC
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Notify parent of processing state changes
+  useEffect(() => {
+    onProcessingChange?.(isProcessing || isAgentTyping);
+  }, [isProcessing, isAgentTyping, onProcessingChange]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -141,6 +153,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({ onC
 
     setInput('');
     setIsProcessing(true);
+    onProcessingChange?.(true);
     addMessage('user', userMessage);
 
     // Auto-focus input after sending

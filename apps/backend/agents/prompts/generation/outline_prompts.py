@@ -229,30 +229,30 @@ D) Glucose and carbon dioxide
     data_note = "\n\nUSE REAL DATA from files!" if has_data else ""
 
     if detail == 'detailed':
-        mode = """DETAILED MODE - EDUCATIONAL APPROACH:
+        mode = """STRUCTURED MODE - EDUCATIONAL/PROFESSIONAL APPROACH:
 
 🎓 GOAL: Deep understanding through clear, focused explanations.
 This is NOT about cramming information - it's about TEACHING concepts properly.
 
 CONTENT PER SLIDE:
-- 40-60 words MAX per slide (less is better!)
-- ONE clear concept or idea per slide
-- If you need to explain multiple related points, they should be SIMPLE bullets, not paragraphs
-- Think "textbook clarity" not "presentation density"
+- 150-200 words per slide (comprehensive coverage)
+- Multiple concepts allowed if related
+- Use full sentences and paragraphs where appropriate
+- Think "textbook clarity" with sufficient detail
 
 FORMAT:
 ## Concept Title (2-5 words)
-• Clear, simple point (6-10 words)
-• Supporting detail (6-10 words)
-• Optional example (6-10 words)
+• Clear, detailed point (15-25 words)
+• Supporting detail with context (15-25 words)
+• Optional example or case study (15-25 words)
 
 EDUCATIONAL CONTENT RULES:
-✅ Break complex topics into multiple slides (already done in outline)
-✅ Each slide focuses on ONE learning objective
-✅ Use simple, accessible language
+✅ Break complex topics into logical sections
+✅ Each slide focuses on a key learning objective
+✅ Use clear, accessible language
 ✅ Include concrete examples when helpful
 ✅ Progressive complexity: simple → advanced
-✅ For processes: ONE step per slide
+✅ For processes: detailed steps
 ✅ For concepts: definition → explanation → example
 ✅ For comparisons: overview → item A → item B → synthesis
 
@@ -265,27 +265,27 @@ EXAMPLES BY TOPIC TYPE:
 
 Educational Concept:
 ## Photosynthesis Overview
-• Plants convert sunlight into chemical energy
-• Occurs in chloroplasts (green parts of plants)
-• Produces glucose and oxygen
+• Plants convert sunlight into chemical energy through a complex process involving chlorophyll.
+• This occurs primarily in the chloroplasts, which are the green parts of plants responsible for absorbing light.
+• The process produces glucose, which serves as food for the plant, and releases oxygen as a vital byproduct for other life.
 
-💡 Quick Check: What do plants need for photosynthesis?
+💡 Quick Check: What are the two main products of photosynthesis?
 
 Tutorial Step:
 ## Step 3: Mixing the Batter
-• Combine dry and wet ingredients separately first
-• Gently fold wet into dry - don't overmix
-• Stop when just combined (some lumps OK)
+• Combine dry and wet ingredients separately first to ensure even distribution of leavening agents.
+• Gently fold the wet mixture into the dry ingredients - be careful not to overmix, as this can develop gluten and make the result tough.
+• Stop mixing when just combined; some small lumps are perfectly fine and will disappear during baking.
 
-✓ Checkpoint: Batter should be slightly lumpy, not smooth
+✓ Checkpoint: The batter should look slightly lumpy, not perfectly smooth.
 
 Technical Concept:
 ## What is an API?
-• Application Programming Interface
-• Allows different software to communicate
-• Like a waiter taking your order to the kitchen
+• Application Programming Interface (API) is a set of rules and protocols that allows different software applications to communicate with each other.
+• It acts as an intermediary, similar to a waiter taking your order to the kitchen and bringing the food back to you.
+• APIs enable developers to access functionality or data from other services without needing to understand their internal implementation.
 
-🤔 Think: What APIs do you use every day?
+🤔 Think: What are some APIs you might be using right now without realizing it?
 
 ** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
@@ -298,41 +298,41 @@ CHARTS: ALMOST NEVER in educational/detailed mode
 - ONLY use charts if you have 15+ quantitative data points showing a clear pattern
 - Default to text explanations and examples"""
     else:
-        mode = """PRESENTATION MODE:
+        mode = """CREATIVE MODE - DESIGN-FIRST APPROACH:
 
-GOAL: Simple, visual-first slides the audience can absorb in seconds.
+GOAL: Visual-first slides that are easy to absorb but provide sufficient context.
 
-APPROACH: Think like the example slides shown - clean sections with minimal text.
+APPROACH: Clean sections with clear, descriptive text.
 
 FORMAT:
 ## Section Title (2-5 words)
-• Concise point (5-10 words max)
-• Another key point (5-10 words max)
+• Concise but clear point (10-15 words)
+• Another key point with detail (10-15 words)
 
 ## Another Section (if needed)
-• Supporting insight (5-10 words max)
+• Supporting insight (10-15 words)
 
 EXAMPLE - PITCH DECK SLIDE:
 ## Sector Insights
 
 ## Fintech
-Fintech has shown **notable growth** with higher mega outcome incidence
+Fintech has shown **notable growth** with higher mega outcome incidence, driven by increasing adoption of digital payments and banking solutions.
 
 ## SaaS
-The SaaS sector has maintained **steady outcomes**, demonstrating resilience
+The SaaS sector has maintained **steady outcomes**, demonstrating resilience even in fluctuating market conditions due to recurring revenue models.
 
 ## Consumer
-Consumer sectors exhibit **high variance** in returns
+Consumer sectors exhibit **high variance** in returns, often dependent on shifting consumer trends and brand loyalty.
 
 CONTENT RULES:
-- EXTREME BREVITY: Each bullet is 5-10 words MAX - headlines only!
-- MAXIMUM 30-40 words per slide (excluding title)
-- 2-3 sections max per slide (don't cram!)
+- BREVITY WITH SUBSTANCE: Bullets should be 10-15 words - clear and descriptive.
+- MAXIMUM 60-80 words per slide (excluding title)
+- 2-3 sections max per slide
 - 2-3 bullets per section
 - Bold key numbers and metrics with **
-- Test: "Can you READ this in 3 seconds?"
 - DO NOT include IMAGE tags - those are added separately
-- DO NOT write paragraphs or full sentences - use short phrases
+- Use short, punchy sentences
+- Avoid wall of text, but avoid vague one-liners
 
 ** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
@@ -400,7 +400,7 @@ TYPES: bar/column (categories), line/area (time trends), pie (distribution=100%)
 waterfall (sequential), scatter/bubble (correlation), radar (multi-dimensional),
 heatmap (2D intensity), sankey (flow), treemap/sunburst (hierarchical)
 
-Multi-series: add "series" field → [{"name": "Q1", "value": 450, "series": "Revenue"}, ...]
+403: Multi-series: add "series" field → [{"name": "Q1", "value": 450, "series": "Revenue"}, ...]
 
 Titles need units: "Revenue by Region ($M)"
 

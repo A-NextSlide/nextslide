@@ -542,7 +542,20 @@ const DeckList: React.FC = () => {
   const [showGoogleImport, setShowGoogleImport] = useState(false);
   const [showAppearanceOnboarding, setShowAppearanceOnboarding] = useState(false);
   const [showConversationalOnboarding, setShowConversationalOnboarding] = useState(false);
+  const [isAgentThinking, setIsAgentThinking] = useState(false);
   const [heroInput, setHeroInput] = useState('');
+  const [isUserTyping, setIsUserTyping] = useState(false);
+
+  // Debounce typing state
+  useEffect(() => {
+    if (heroInput.length > 0) {
+      setIsUserTyping(true);
+      const timeout = setTimeout(() => setIsUserTyping(false), 1000);
+      return () => clearTimeout(timeout);
+    } else {
+      setIsUserTyping(false);
+    }
+  }, [heroInput]);
 
   // Hero input state
   const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('quick');
@@ -670,6 +683,7 @@ const DeckList: React.FC = () => {
     stylePreferences?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
+    themeChanges?: any;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
 
@@ -685,8 +699,54 @@ const DeckList: React.FC = () => {
     // Store conversational data to trigger generation
     setConversationalData(data);
 
+    // Apply theme changes immediately if present
+    if (data.themeChanges) {
+      console.log('[DeckList] Applying theme changes from conversation:', data.themeChanges);
+      const themeStore = useThemeStore.getState();
+
+      if (data.themeChanges.brand) {
+        const brandName = data.themeChanges.brand.name || 'Custom Brand';
+        // Create a custom theme based on the brand
+        const newThemeId = themeStore.addCustomTheme({
+          name: brandName,
+          page: {
+            backgroundColor: '#FFFFFF',
+          },
+          typography: {
+            paragraph: {
+              fontFamily: 'Inter',
+              color: '#000000',
+              fontSize: '16px',
+              fontWeight: 400,
+              lineHeight: 1.5
+            },
+            heading: {
+              fontFamily: 'Inter',
+              color: '#000000',
+              fontSize: '32px',
+              fontWeight: 700
+            }
+          },
+          accent1: '#FF4301',
+          accent2: '#333333'
+        });
+        themeStore.setWorkspaceTheme(newThemeId);
+      } else if (data.themeChanges.colors) {
+        // If just colors were requested, we might want to trigger a theme generation
+        // For now, we'll just ensure the theme is marked as ready so the UI updates
+      }
+
+      themeStore.setThemeReady(true);
+    }
+
     // Show outline view - OutlineEditor will see conversationalData and start generation
-    setCurrentOutline(null);
+    // Create a placeholder outline so the view doesn't stay blank
+    const placeholderOutline: FrontendDeckOutline = {
+      id: uuidv4(),
+      title: data.topic || 'Generating Presentation...',
+      slides: []
+    };
+    setCurrentOutline(placeholderOutline);
     setIsOutlineChatGenerating(true); // Immediately show loading state
     setShowOutlineView(true);
   }, []);
@@ -1381,6 +1441,7 @@ const DeckList: React.FC = () => {
                       handleConversationalComplete(data);
                     }}
                     onCancel={() => setShowConversationalOnboarding(false)}
+                    onProcessingChange={setIsAgentThinking}
                   />
                 </div>
               ) : (currentOutline || showOutlineView) ? (
@@ -1436,62 +1497,144 @@ const DeckList: React.FC = () => {
                           initialConversationalData={conversationalData}
                           onOutlineAgentToolCall={(params) => {
                             console.log('[DeckList] Agent generated outline:', params);
-                            // Agent created new outline - merge with existing or create new
-                            if (!currentOutline) {
-                              // Map agent slides to frontend slides if available
-                              const initialSlides: FrontendSlideOutline[] = params.slides ? params.slides.map((s: any, i: number) => ({
-                                id: uuidv4(),
+
+                            // Handle streaming slide updates (one at a time)
+                            if (params.slideIndex !== undefined && params.slides && params.slides.length === 1) {
+                              // This is a single slide update - merge it into the outline
+                              console.log('[DeckList] 🔄 STREAMING SLIDE UPDATE for index:', params.slideIndex);
+                              const slide = params.slides[0];
+                              console.log('[DeckList] 📝 Incoming slide title:', slide.title);
+                              console.log('[DeckList] 📄 Incoming content preview:', slide.content?.substring(0, 200));
+                              console.log('[DeckList] 📊 Has content?', !!slide.content);
+                              console.log('[DeckList] 📊 Content length:', slide.content?.length || 0);
+
+                              setCurrentOutline(prev => {
+                                if (!prev) {
+                                  console.log('[DeckList] ⚠️ No previous outline to update!');
+                                  return prev;
+                                }
+
+                                console.log('[DeckList] 📋 Current outline has', prev.slides?.length, 'slides before update');
+
+                                const newSlide: FrontendSlideOutline = {
+                                  id: slide.id || uuidv4(),
+                                  title: slide.title,
+                                  subtitle: slide.subtitle || '',
+                                  content: slide.content || (slide.key_points ? slide.key_points.map((kp: any) => `• ${kp}`).join('\n') : ''),
+                                  type: 'content',
+                                  status: 'pending',
+                                  thumbnail: '',
+                                  notes: '',
+                                  layout: 'default',
+                                  deepResearch: slide.deepResearch || false,
+                                  citations: slide.citations || [],
+                                  footnotes: slide.footnotes || [],
+                                  taggedMedia: slide.taggedMedia || []
+                                };
+
+                                console.log('[DeckList] ✅ Created newSlide with content length:', newSlide.content?.length);
+
+                                // Insert or replace at the specified index
+                                const updatedSlides = [...prev.slides];
+                                if (params.slideIndex < updatedSlides.length) {
+                                  console.log('[DeckList] 🔄 Replacing slide at index', params.slideIndex);
+                                  updatedSlides[params.slideIndex] = newSlide;
+                                } else {
+                                  console.log('[DeckList] ➕ Adding slide at end (index beyond length)');
+                                  // Add at the end if index is beyond current length
+                                  updatedSlides.push(newSlide);
+                                }
+
+                                console.log('[DeckList] 📋 Updated outline will have', updatedSlides.length, 'slides');
+
+                                return {
+                                  ...prev,
+                                  slides: updatedSlides
+                                };
+                              });
+                              return;
+                            }
+
+                            // Map agent slides to frontend slides if available
+                            console.log('[DeckList] 🌟 BATCH OUTLINE UPDATE');
+                            console.log('[DeckList] 📊 Incoming slides count:', params.slides?.length || 0);
+                            console.log('[DeckList] 📋 Current outline slides count:', currentOutline?.slides?.length || 0);
+
+                            const initialSlides: FrontendSlideOutline[] = params.slides ? params.slides.map((s: any, i: number) => {
+                              // Try to find existing slide at this index to preserve ID for smooth streaming
+                              const existingSlide = currentOutline?.slides?.[i];
+                              const slideId = existingSlide ? existingSlide.id : (s.id || uuidv4());
+
+                              console.log(`[DeckList] 📄 Slide ${i}: title="${s.title}", content length=${s.content?.length || 0}, has key_points=${!!s.key_points}`);
+
+                              return {
+                                id: slideId,
                                 title: s.title,
                                 subtitle: s.subtitle || '',
-                                content: s.key_points ? s.key_points.join('\n') : '',
-                                type: 'content',
-                                status: 'pending',
-                                thumbnail: '',
-                                notes: '',
-                                layout: 'default'
-                              })) : [];
-
-                              const newOutline: FrontendDeckOutline = {
-                                id: uuidv4(),
-                                title: params.topic || 'Presentation',
-                                slides: initialSlides
+                                content: s.content || (s.key_points ? s.key_points.map((kp: any) => `• ${kp}`).join('\n') : ''),
+                                type: s.type || 'content',
+                                status: s.status || 'pending',
+                                thumbnail: s.thumbnail || '',
+                                notes: s.notes || '',
+                                layout: s.layout || 'default',
+                                deepResearch: s.deepResearch || false,
+                                citations: s.citations || [],
+                                footnotes: s.footnotes || [],
+                                taggedMedia: s.taggedMedia || []
                               };
-                              setCurrentOutline(newOutline);
+                            }) : [];
 
-                              // Handle theme changes if present
-                              if (params.theme_changes && params.theme_changes.brand) {
-                                console.log('[DeckList] Applying theme changes:', params.theme_changes);
-                                const themeStore = useThemeStore.getState();
-                                const brandName = params.theme_changes.brand.name || 'Custom Brand';
+                            const newOutline: FrontendDeckOutline = {
+                              id: currentOutline?.id || uuidv4(), // Preserve ID if updating placeholder
+                              title: params.topic || currentOutline?.title || 'Presentation',
+                              slides: initialSlides
+                            };
 
-                                // Create a custom theme based on the brand
-                                const newThemeId = themeStore.addCustomTheme({
-                                  name: brandName,
-                                  colors: {
-                                    primary: '#000000', // Default placeholder
-                                    secondary: '#333333',
-                                    accent: '#FF4301', // Keep our orange accent
-                                    background: '#FFFFFF',
-                                    text: '#000000',
-                                    surface: '#F5F5F5',
-                                    border: '#E5E5E5'
+                            console.log('[DeckList] ✅ Setting new outline with', newOutline.slides.length, 'slides');
+                            setCurrentOutline(newOutline);
+                            // Note: We don't manually set isOutlineChatGenerating(false) here anymore.
+                            // The ChatPanel component monitors the agent's processing state and updates it automatically.
+                            // This ensures the loading state persists during partial updates and clears only when done.
+
+                            // Handle theme changes if present
+                            if (params.theme_changes && params.theme_changes.brand) {
+                              console.log('[DeckList] Applying theme changes:', params.theme_changes);
+                              const themeStore = useThemeStore.getState();
+                              const brandName = params.theme_changes.brand.name || 'Custom Brand';
+
+                              // Create a custom theme based on the brand
+                              const newThemeId = themeStore.addCustomTheme({
+                                name: brandName,
+                                page: {
+                                  backgroundColor: '#FFFFFF',
+                                },
+                                typography: {
+                                  paragraph: {
+                                    fontFamily: 'Inter',
+                                    color: '#000000',
+                                    fontSize: '16px',
+                                    fontWeight: 400,
+                                    lineHeight: 1.5
                                   },
-                                  fonts: {
-                                    heading: 'Inter',
-                                    body: 'Inter'
-                                  },
-                                  borderRadius: '0.5rem'
-                                });
+                                  heading: {
+                                    fontFamily: 'Inter',
+                                    color: '#000000',
+                                    fontSize: '32px',
+                                    fontWeight: 700
+                                  }
+                                },
+                                accent1: '#FF4301',
+                                accent2: '#333333'
+                              });
 
-                                themeStore.setWorkspaceTheme(newThemeId);
-                                themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
-                                themeStore.setThemeReady(true);
-                              } else {
-                                // No theme changes, ensure default theme is ready
-                                const themeStore = useThemeStore.getState();
-                                themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
-                                themeStore.setThemeReady(true);
-                              }
+                              themeStore.setWorkspaceTheme(newThemeId);
+                              themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
+                              themeStore.setThemeReady(true);
+                            } else {
+                              // No theme changes, ensure default theme is ready
+                              const themeStore = useThemeStore.getState();
+                              themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
+                              themeStore.setThemeReady(true);
                             }
                           }}
                         />
@@ -1522,8 +1665,8 @@ const DeckList: React.FC = () => {
                   {/* Particle Background */}
                   <div className="absolute inset-0 z-0 pointer-events-none">
                     <ParticleAnimation
-                      isTyping={heroInput.length > 0}
-                      isLoading={isOutlineChatGenerating || isDeckGenerating}
+                      isTyping={isUserTyping}
+                      isLoading={isOutlineChatGenerating || isDeckGenerating || isAgentThinking}
                     />
                   </div>
 
@@ -1548,7 +1691,7 @@ const DeckList: React.FC = () => {
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-lg md:text-xl font-medium text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
-                                  The smartest way to craft professional narratives for any audience.
+                                  The smartest way to craft stunning presentations for any audience.
                                 </p>
                                 <p className="text-sm md:text-base text-zinc-500 dark:text-zinc-400">
                                   Type topic, paste link, or upload file.

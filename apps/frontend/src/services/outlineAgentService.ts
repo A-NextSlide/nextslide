@@ -87,6 +87,89 @@ export type AgentEvent =
   | AgentDoneEvent;
 
 /**
+ * Try to extract partial slide data from streaming JSON text
+ */
+function extractPartialSlides(text: string): OutlineData | null {
+  // 1. Find the start of the slides array
+  const slidesMatch = text.match(/"slides"\s*:\s*\[/);
+  if (!slidesMatch) return null;
+
+  const slidesStartIndex = slidesMatch.index! + slidesMatch[0].length;
+  const slidesText = text.slice(slidesStartIndex);
+
+  // 2. Extract complete objects { ... }
+  const slides: any[] = [];
+  let braceCount = 0;
+  let currentObjectStart = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < slidesText.length; i++) {
+    const char = slidesText[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        if (braceCount === 0) currentObjectStart = i;
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0 && currentObjectStart !== -1) {
+          // Found a complete object
+          const objStr = slidesText.slice(currentObjectStart, i + 1);
+          try {
+            const obj = JSON.parse(objStr);
+            // Validate basic slide structure
+            if (obj.title) {
+              slides.push(obj);
+            }
+          } catch (e) {
+            // Ignore malformed objects
+          }
+          currentObjectStart = -1;
+        }
+      } else if (char === ']') {
+        // End of slides array
+        break;
+      }
+    }
+  }
+
+  if (slides.length > 0) {
+    // Try to extract other metadata if available
+    let action: any = 'generate_outline';
+    const actionMatch = text.match(/"action"\s*:\s*"([^"]+)"/);
+    if (actionMatch) action = actionMatch[1];
+
+    let topic: string | undefined;
+    const topicMatch = text.match(/"topic"\s*:\s*"([^"]+)"/);
+    if (topicMatch) topic = topicMatch[1];
+
+    return {
+      action,
+      topic,
+      slides
+    };
+  }
+
+  return null;
+}
+
+/**
  * Extract JSON blocks from text (between ```json and ```)
  * Returns both the parsed data and the text with JSON removed
  */
@@ -154,6 +237,7 @@ export async function* streamOutlineAgentChat(
     let buffer = '';
     let accumulatedText = '';
     let outlineEmitted = false;
+    let lastEmittedSlideCount = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -183,6 +267,17 @@ export async function* streamOutlineAgentChat(
                     data
                   };
                   outlineEmitted = true;
+                }
+              } else if (!outlineEmitted) {
+                // Try to extract partial slides
+                const partialData = extractPartialSlides(accumulatedText);
+                if (partialData && partialData.slides && partialData.slides.length > lastEmittedSlideCount) {
+                  console.log('[OutlineAgent] Emitting partial outline:', partialData.slides.length, 'slides');
+                  yield {
+                    type: 'outline',
+                    data: partialData
+                  };
+                  lastEmittedSlideCount = partialData.slides.length;
                 }
               }
 

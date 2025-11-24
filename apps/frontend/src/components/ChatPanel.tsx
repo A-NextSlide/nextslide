@@ -301,13 +301,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Handle initial conversational data from onboarding
   const hasProcessedConversationalDataRef = useRef(false);
   useEffect(() => {
+    console.log('[ChatPanel] Effect running, checking conditions:', {
+      hasInitialData: !!initialConversationalData,
+      hasProcessed: hasProcessedConversationalDataRef.current,
+      hasToolCallCb: !!onOutlineAgentToolCall,
+      hasAgent: !!outlineAgent
+    });
+    
     if (
       initialConversationalData &&
       !hasProcessedConversationalDataRef.current &&
-      onOutlineAgentToolCall &&
-      outlineAgent
+      onOutlineAgentToolCall
+      // Remove outlineAgent requirement - we're calling the API directly now
     ) {
-      console.log('[ChatPanel] Processing initial conversational data:', initialConversationalData);
+      console.log('[ChatPanel] ✅ Processing initial conversational data:', initialConversationalData);
       hasProcessedConversationalDataRef.current = true;
 
       // If we already have slides (e.g. from a narrative flow that generated them), use them directly
@@ -333,7 +340,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           ]);
         }
       } else {
-        // No slides yet - we need to generate the outline using the agent
+        // No slides yet - we need to generate using the REAL streaming endpoint with Perplexity
         // Construct a prompt from the collected data
         const topic = initialConversationalData.topic;
         const slideCount = initialConversationalData.slideCount;
@@ -346,11 +353,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           prompt += ` It should have approximately ${slideCount} slides.`;
         }
 
-        // Construct full prompt with context for the agent
-        let fullPrompt = prompt;
+        // Build style context from chat history if available
+        let styleContext = '';
         if (chatHistory && chatHistory.length > 0) {
           const historyText = chatHistory.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n');
-          fullPrompt += `\n\nContext from previous conversation:\n${historyText}\n\nPlease use this context to create a detailed outline that addresses the user's specific requirements discussed above.`;
+          styleContext = `Context from conversation:\n${historyText}`;
         }
 
         // Add user message to chat (show the simple prompt to keep UI clean, but indicate context usage)
@@ -365,29 +372,104 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           }
         ]);
 
-        // Trigger agent generation with full context
-        outlineAgent.sendMessage(
-          fullPrompt,
-          (outlineData) => {
-            console.log('[ChatPanel] Agent generated outline from conversational data:', outlineData);
-            onOutlineAgentToolCall({
-              topic: outlineData.topic || topic,
-              slide_count: outlineData.slide_count || slideCount,
-              detail_level: outlineData.detail_level || detailLevel,
-              slides: outlineData.slides, // The agent returns 'slides' in the data
-              narrative: outlineData.narrative,
-              theme_changes: outlineData.theme_changes || themeChanges // Use agent's theme or passed theme
-            });
-          },
-          {
-            // Pass context if needed
-            slide_count: slideCount,
-            detail_level: detailLevel
+        // Call the REAL streaming outline endpoint
+        (async () => {
+          try {
+            console.log('[ChatPanel] 🚀 Calling REAL streaming outline endpoint with Perplexity');
+            const { outlineApi } = await import('@/services/outlineApi');
+            
+            // Notify parent that generation is starting
+            if (onOutlineChatGeneratingChange) {
+              onOutlineChatGeneratingChange(true);
+            }
+            
+            // Start streaming generation
+            const outline = await outlineApi.generateOutlineStream(
+              prompt,
+              [], // No files from conversational onboarding
+              {
+                detailLevel: detailLevel,
+                slideCount: slideCount,
+                styleContext: styleContext,
+                enableResearch: true, // Always enable research for conversational mode
+                autoSelectImages: false // Default to false
+              },
+              (event) => {
+                console.log('[ChatPanel] 📥 Stream event:', event.type, event);
+                
+                // Forward events to parent for display
+                if (event.type === 'outline_structure') {
+                  console.log('[ChatPanel] 📋 OUTLINE_STRUCTURE - Slide titles:', event.slideTitles);
+                  // Emit initial structure with placeholder slides
+                  const placeholderSlides = (event.slideTitles || []).map((title: string, idx: number) => ({
+                    id: `placeholder-${idx}`,
+                    title: title,
+                    content: '', // Empty for now
+                    deepResearch: false,
+                    status: 'pending'
+                  }));
+                  
+                  onOutlineAgentToolCall({
+                    topic: event.title,
+                    slide_count: event.slideCount,
+                    detail_level: detailLevel,
+                    slides: placeholderSlides // Pre-populate with placeholders
+                  });
+                } else if (event.type === 'slide_complete' && event.slide) {
+                  // Stream individual slides as they complete
+                  console.log('[ChatPanel] 🎯 SLIDE_COMPLETE for index', event.slideIndex);
+                  console.log('[ChatPanel] 📝 Slide title:', event.slide.title);
+                  console.log('[ChatPanel] 📄 Content preview (first 200 chars):', event.slide.content?.substring(0, 200));
+                  console.log('[ChatPanel] 📚 Citations count:', event.slide.citations?.length || 0);
+                  console.log('[ChatPanel] 🔗 Footnotes count:', event.slide.footnotes?.length || 0);
+                  console.log('[ChatPanel] 🖼️ Tagged media count:', event.slide.taggedMedia?.length || 0);
+                  
+                  onOutlineAgentToolCall({
+                    topic: topic,
+                    slide_count: slideCount,
+                    detail_level: detailLevel,
+                    slides: [event.slide], // Single slide update
+                    slideIndex: event.slideIndex // Index to merge at
+                  });
+                } else if (event.type === 'outline_complete') {
+                  // DON'T pass slides from outline_complete - we already have them from streaming
+                  // Just notify that generation is complete
+                  console.log('[ChatPanel] ✅ Outline generation complete');
+                  if (onOutlineChatGeneratingChange) {
+                    onOutlineChatGeneratingChange(false);
+                  }
+                }
+              }
+            );
+            
+            console.log('[ChatPanel] ✅ Streaming outline generation complete:', outline);
+            
+            // Ensure loading state is cleared
+            if (onOutlineChatGeneratingChange) {
+              onOutlineChatGeneratingChange(false);
+            }
+          } catch (error) {
+            console.error('[ChatPanel] Error generating outline:', error);
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `error-${Date.now()}`,
+                type: 'ai',
+                message: 'Sorry, I encountered an error generating your presentation. Please try again.',
+                timestamp: new Date(),
+                feedback: null
+              }
+            ]);
+            
+            // Clear loading state on error
+            if (onOutlineChatGeneratingChange) {
+              onOutlineChatGeneratingChange(false);
+            }
           }
-        );
+        })();
       }
     }
-  }, [initialConversationalData, onOutlineAgentToolCall, outlineAgent]);
+  }, [initialConversationalData, onOutlineAgentToolCall, onOutlineChatGeneratingChange]);
 
   // Auto-send initial prompt from URL when in outline agent mode
   const hasProcessedInitialPromptRef = useRef(false);

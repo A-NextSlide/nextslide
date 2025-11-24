@@ -42,6 +42,34 @@ def get_optimized_component_schemas() -> str:
   • Simple dividers and connectors
   • Calculate Y position: previousComponent.y + previousComponent.height + gap
 
+═══ SMART COMPONENTS (Preferred for Layouts) ═══
+
+**SmartLayout** { layout: "SplitRight"|"SplitLeft"|"GridLayout"|"HeroLayout", slots: { [slotName]: { type, props } } }
+  • THE BEST WAY to design slides. Guaranteed alignment.
+  • layout="SplitRight": Left=content, Right=visual. Slots: "left", "right".
+  • layout="GridLayout": Auto-grid for items. Slots: "item1", "item2", etc.
+  • Example:
+    {
+      "type": "SmartLayout",
+      "props": {
+        "layout": "SplitRight",
+        "slots": {
+          "left": { "type": "BigTitle", "props": { "text": "Growth", "highlight": "Growth" } },
+          "right": { "type": "StatCard", "props": { "label": "Revenue", "value": "$10M" } }
+        }
+      },
+      "width": 1920, "height": 1080
+    }
+
+**StatCard** { label, value, trend, trendDirection: "up"|"down"|"neutral" }
+  • Use for KPIs and big numbers.
+  • Can be used inside SmartLayout OR as standalone component.
+  • Example: { "type": "StatCard", "props": { "label": "Users", "value": "1M", "trend": "+50%", "trendDirection": "up" } }
+
+**BigTitle** { text, highlight }
+  • Use for high-impact headers.
+  • highlight: substring to colorize.
+
 ═══ ACCENT COMPONENTS (Use Sparingly) ═══
 
 **Icon** { position, width: 24-40, height: 24-40, iconLibrary: "lucide", iconName, color: "{{accent}}" }
@@ -175,11 +203,11 @@ def get_optimized_component_schemas() -> str:
   }
   ```
 
-═══ BANNED COMPONENTS IN PRESENTATION MODE ═══
+═══ BANNED COMPONENTS IN CREATIVE MODE ═══
 
-**Chart** - 🚫 DO NOT USE IN PRESENTATION MODE
-  • In presentation mode: USE CustomComponent for ALL data visualizations
-  • In detailed mode ONLY: If you have 15+ data points AND complex trends, Chart is acceptable
+**Chart** - 🚫 DO NOT USE IN CREATIVE MODE
+  • In creative mode: USE CustomComponent for ALL data visualizations
+  • In structured mode ONLY: If you have 15+ data points AND complex trends, Chart is acceptable
   • { position, width: ≤850, height: ≤600, chartType, data, colors, showLegend: false }
   • ALWAYS add title above (TiptapTextBlock, 28pt, 40px above)
   • Verify boundaries: x + width ≤ 1840, y + height ≤ 1020
@@ -196,7 +224,7 @@ def get_optimized_component_schemas() -> str:
   • Multi-color formatted text
 
 ✅ **Use CustomComponent for (MANDATORY FOR DATA):**
-  • 📊 ALL data visualizations in presentation mode (bars, lines, pies, etc.)
+  • 📊 ALL data visualizations in creative mode (bars, lines, pies, etc.)
   • 📈 Stats/metrics (ALWAYS prefer over standalone numbers)
   • 🎴 Card layouts (features, pricing, team members)
   • 📱 Dashboards (2+ metrics in a grid)
@@ -216,7 +244,7 @@ def get_optimized_component_schemas() -> str:
   • Logo placement (objectFit="contain")
 
 🚫 **NEVER USE:**
-  • Chart component in presentation mode (use CustomComponent)
+  • Chart component in creative mode (use CustomComponent)
   • Decorative shapes (use CustomComponent backgrounds instead)
   • Tables (use CustomComponent card grids)
   • Multiple icons (keep it minimal - 0-2 max)

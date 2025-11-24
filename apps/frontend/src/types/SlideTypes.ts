@@ -104,7 +104,13 @@ export interface NarrativeFlow {
 export interface SlideOutline {
   id: string;
   title: string;
+  subtitle?: string; // Optional subtitle for the slide
   content: string;
+  type?: string; // Optional slide type (e.g., 'content', 'title', 'quote', etc.)
+  status?: 'pending' | 'generating' | 'streaming' | 'completed' | 'error'; // Slide status
+  thumbnail?: string; // Optional thumbnail URL
+  notes?: string; // Optional speaker notes
+  layout?: string; // Optional layout type
   deepResearch: boolean;
   extractedData?: ExtractedData;
   // Optional: explicit citations for this slide (promoted to top-level so backend can consume directly)

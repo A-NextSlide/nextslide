@@ -1,6 +1,6 @@
 // Import and re-export from utils
-import { 
-  rendererRegistry, 
+import {
+  rendererRegistry,
   registerRenderer,
   createComponentStyles,
   getComponentProps,
@@ -23,10 +23,10 @@ import { ComponentRenderer } from './ComponentRenderer';
 export {
   // Registry
   rendererRegistry,
-  
+
   // Registration function
   registerRenderer,
-  
+
   // Component styling utilities
   createComponentStyles,
   getComponentProps,
@@ -35,10 +35,10 @@ export {
   createBorderStyle,
   getTextAlign,
   getVerticalAlign,
-  
+
   // Safety components
   RendererErrorBoundary,
-  
+
   // Export ComponentRenderer
   ComponentRenderer
 };
@@ -80,6 +80,8 @@ import './components/WavyLinesRenderer';
 import './components/ReactBitsRenderer';
 import './components/MathRenderer';
 import './components/DiagramRenderer';
+import './components/SmartLayoutRenderer';
+import './components/StatCardRenderer';
 
 // Auto-register chart renderers from the new charts system
 import '@/charts/renderers/BaseChartRenderer';

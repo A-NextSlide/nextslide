@@ -1594,7 +1594,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       )}
 
       {/* Fallback loading banner while waiting for initial layout (prevents empty gap under header) */}
-      {((isGeneratingOutline) || (currentOutline && currentOutline.slides.length === 0 && uploadedFiles.length === 0 && !(currentOutline as any).isManualMode)) && (
+      {/* Only show if generating AND no slides yet - hide once first slide arrives */}
+      {((isGeneratingOutline && currentOutline?.slides?.length === 0) || (currentOutline && currentOutline.slides.length === 0 && uploadedFiles.length === 0 && !(currentOutline as any).isManualMode && !isGeneratingOutline)) && (
         <div className="px-6 pt-2 pb-4 flex-shrink-0">
           <div className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-orange-50/60 to-white/30 dark:from-orange-900/20 dark:to-zinc-900/30 shadow-sm">
             <div className="flex items-center gap-3 p-3" role="status" aria-live="polite">

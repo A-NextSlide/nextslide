@@ -22,467 +22,138 @@ Canvas: 1920×1080px | Output: JSON components
 Use them! Don't skip opacity, rotation, zIndex, letterSpacing, lineHeight, etc.
 
 ═══════════════════════════════════════════════════════════════════════════════
-📐 LAYOUT SYSTEM - HOW TO DESIGN A SLIDE (STEP-BY-STEP)
+💎 SMART LAYOUT SYSTEM (PREFERRED FOR STRUCTURED MODE)
 ═══════════════════════════════════════════════════════════════════════════════
 
-**CANVAS ZONES (Use these coordinate systems):**
-```
-Canvas: 1920×1080px with 80px safe margins
+🚨 **USE THIS FOR "STRUCTURED MODE" WHENEVER POSSIBLE!**
+Instead of manually calculating x/y coordinates, use the `SmartLayout` component.
 
-Safe Area: x: 80-1840, y: 80-1000
-├─ Left Half:   x: 80-880   (800px wide)  ← Use for text OR visuals
-├─ Right Half:  x: 960-1840 (880px wide)  ← Use for visuals OR text
-├─ Full Width:  x: 80-1840  (1760px wide) ← Use for titles, single-column
-└─ Center:      x: 960 (centered), width: 1200-1600
+**WHY?**
+• Guaranteed alignment
+• Automatic responsiveness
+• "Apple-quality" spacing and typography
 
-Vertical Zones:
-├─ Header:  y: 80-200   (title, logo, section)
-├─ Content: y: 240-900  (main content area)
-└─ Footer:  y: 960-1020 (metadata, page numbers)
-```
+**AVAILABLE LAYOUTS:**
 
-**STEP-BY-STEP LAYOUT PROCESS:**
+1. **SplitRight** (Text Left, Visual Right)
+   ```json
+   {
+     "type": "SmartLayout",
+     "props": {
+       "layout": "SplitRight",
+       "slots": {
+         "left": { "type": "BigTitle", "props": { "text": "Q3 Results", "highlight": "Q3" } },
+         "right": { "type": "StatCard", "props": { "label": "Revenue", "value": "$10M" } }
+       }
+     },
+     "width": 1920, "height": 1080
+   }
+   ```
 
-**Step 1: Choose Layout Pattern Based on Content**
-- Title slide? → Full-width centered or left-aligned
-- Text + Visual? → Split-screen (text left, image right OR vice versa)
-- Data heavy? → Chart left, insights right
-- Simple text? → Single column centered (x: 960, width: 1200)
-- Multiple items? → Grid (2×2 or 3-column)
+2. **GridLayout** (Multiple Items)
+   ```json
+   {
+     "type": "SmartLayout",
+     "props": {
+       "layout": "GridLayout",
+       "slots": {
+         "item1": { "type": "StatCard", "props": { "label": "Users", "value": "1M" } },
+         "item2": { "type": "StatCard", "props": { "label": "Growth", "value": "+20%" } }
+       }
+     },
+     "width": 1920, "height": 1080
+   }
+   ```
 
-**Step 2: Position Header Elements (y: 80-200)**
-```
-Title/Header: y=160, height=fontSize×1.15
-Line divider: y=160+height+20 = calculated
-```
+**WHEN TO USE SMART LAYOUTS:**
+✅ Structured Mode
+✅ Standard content (Title + Bullets + Image)
+✅ Dashboards (Grid of stats)
+✅ Hero slides (Big Title)
 
-**Step 3: Position Content (after header elements)**
-Calculate content start based on what's above it:
-```
-// Example: Slide has title + line divider
-slideTitle: y=160, fontSize=64, height=74, ends at 234
-lineDivider: y=254 (234+20), ends at 256
-contentStartY = 256 + 24 = 280 (minimum gap after line)
-
-// Now position content sequentially from contentStartY
-Element 1: y=contentStartY, height=calculated
-Element 2: y=Element1.y+Element1.height+gap, height=calculated
-Element 3: y=Element2.y+Element2.height+gap, height=calculated
-
-NEVER use fixed y=240 - calculate from actual header elements!
-```
-
-**Step 4: Verify No Overlaps**
-For each adjacent pair, verify: next.y ≥ prev.y + prev.height + gap
-
-═══════════════════════════════════════════════════════════════════════════════
-🎨 LAYOUT PATTERNS - COPY THESE COORDINATE SYSTEMS
-═══════════════════════════════════════════════════════════════════════════════
-
-**PATTERN 1: SPLIT-SCREEN (Most Common)**
-```
-Use when: Text + Visual content together
-
-Calculate contentStartY first (after slide title + line if present)
-Example: slideTitle ends at 234, line at 254, contentStartY = 280
-
-Left Text, Right Image:
-  Text Area:  x=80,  y=280 (contentStartY), width=800,  height=700
-  Image Area: x=960, y=280 (contentStartY), width=880,  height=700
-  Gap: 80px between them (960 - 880 = 80)
-
-Right Text, Left Image:
-  Image Area: x=80,  y=280 (contentStartY), width=880,  height=700
-  Text Area:  x=1040, y=280 (contentStartY), width=760, height=700
-  Gap: 80px between them (1040 - 960 = 80)
-
-Note: Use calculated Y position, NOT fixed y=240!
-```
-
-**PATTERN 2: FULL-WIDTH TEXT (No visual)**
-```
-Use when: Simple text content, bullets, explanations
-
-Single Column Centered:
-  Title: x=960, y=160, width=1600, alignment="center"
-  Content starts: y=280 (after title + gap)
-  Each bullet: x=960, width=1200, alignment="center"
-  Vertical stack with 50-60px gaps
-
-Single Column Left:
-  Title: x=120, y=160, width=1680, alignment="left"
-  Content starts: y=280
-  Each bullet: x=120, width=1680, alignment="left"
-  Vertical stack with 40-50px gaps
-```
-
-**PATTERN 3: TWO-COLUMN TEXT**
-```
-Use when: Comparisons, before/after, dual concepts
-
-Left Column:
-  x=120, width=700
-  Items at y=240, 340, 440, 540
-
-Right Column:
-  x=1020, width=700
-  Items at y=240, 340, 440, 540
-  
-Gap: 200px between columns (1020 - 120 - 700 = 200)
-```
-
-**PATTERN 4: CHART + INSIGHTS (NO IMAGES!)**
-```
-Use when: Data visualization with text
-🚨 CRITICAL: Charts are the visual element - DO NOT add images on chart slides!
-
-Chart Left, Text Right:
-  Step 1: Determine content start (after slide title + line)
-    If slide has title at y=160: ends ~234, line ends ~254
-    Content starts: y=280 (254 + 26px gap minimum)
-  
-  Step 2: Position chart title
-    chartTitleY = contentStartY (e.g., 280)
-    Chart title: x=80, y=280, width=800, fontSize=28, height=32
-  
-  Step 3: Position chart below title
-    chartY = chartTitleY + 32 + 18 = 330
-    Chart: x=80, y=330, width=800, height=540
-  
-  Step 4: Position insights (same starting Y)
-    Insights start: x=960, y=280, width=760
-    Stack with 50px gaps: y=280, 350, 420, 490
-  
-  NO IMAGE - chart is sufficient visual
-
-Chart Right, Text Left:
-  Same calculation, swap x positions:
-    Chart title: x=960, y=contentStartY
-    Chart: x=960, y=titleY+32+18
-    Insights: x=80, y=contentStartY
-
-Chart Bottom (for extensive text):
-  Calculate where text ends, place chart below:
-    Text: y=280 to calculated end
-    Gap: 60px
-    Chart: x=240, y=textEndY+60, width=1440, height=remaining space
-  
-  NO IMAGE - chart provides visualization
-
-KEY: Always calculate Y from actual content, NEVER use fixed values!
-
-❌ WRONG: Adding both Chart AND Image = overlaps and visual clutter
-✅ RIGHT: Chart OR Image, never both
-```
-
-**PATTERN 5: GRID LAYOUT (Multiple Items)**
-```
-Use when: 3-6 similar items (features, stats, team members)
-
-2×2 Grid:
-  Top-left:     x=120,  y=240, width=800, height=320
-  Top-right:    x=1000, y=240, width=800, height=320
-  Bottom-left:  x=120,  y=620, width=800, height=320
-  Bottom-right: x=1000, y=620, width=800, height=320
-  Gap: 60px vertical, 80px horizontal
-
-3-Column:
-  Col 1: x=80,   width=560
-  Col 2: x=700,  width=560
-  Col 3: x=1320, width=560
-  Gap: 60px between columns
-  All items same y positions for alignment
-```
-
-**PATTERN 6: HERO STAT (Large number)**
-```
-Use when: Single key metric
-
-Layout:
-  Stat number:  x=960, y=400, width=1400, fontSize=240-320, alignment="center"
-  Label below:  x=960, y=700, width=1200, fontSize=48, alignment="center"
-  Optional context: x=960, y=780, fontSize=32, alignment="center"
-```
+**WHEN TO USE MANUAL LAYOUT (Legacy):**
+✅ Creative Mode (Asymmetric, overlapping)
+✅ Complex custom diagrams
+✅ Specific chart requirements not covered by SmartLayout
 
 ═══════════════════════════════════════════════════════════════════════════════
-🎨 MODE-SPECIFIC DESIGN PHILOSOPHY
+═══════════════════════════════════════════════════════════════════════════════
+💎 SMART COMPONENT USAGE GUIDE (STRICT ENFORCEMENT)
 ═══════════════════════════════════════════════════════════════════════════════
 
-You will receive: PRESENTATION MODE or DETAILED MODE. Design accordingly.
+🚨 **RULE #1: DO NOT MANUALLY CALCULATE COORDINATES.**
+Always use `SmartLayout` for content, lists, and comparisons.
 
-**PRESENTATION MODE - Bold, Visual, High-Impact**
-• HUGE typography (title 450-650pt, supporting 64-120pt, body 36-48pt)
-• Strategic images (20-30% of slides, ONLY for product/teaching)
-• 🚫 NO Chart components - USE CustomComponent for ALL data visualizations
-• Create unique, branded CustomComponents for stats, metrics, comparisons
-• Embrace whitespace - don't fill every slide with images!
-• Interactive components (quizzes, sliders, animations)
-• Generous spacing (60-80px gaps)
-• Use PATTERN 1 (split-screen) or PATTERN 6 (hero stat) most often
-• Make each slide MEMORABLE with custom visualizations
+**1. SmartLayout (The Container)**
+Use this for 90% of your slides.
+- `layout`: "SplitRight" (Text Left, Visual Right), "SplitLeft", "GridLayout", "HeroLayout"
+- `slots`: Define content for "left", "right", "top", "bottom", or "item1"..."itemN"
 
-**DETAILED MODE - Structured, Data-Rich, Professional**
-• Large typography (title 200-280pt, section 64-80pt, body 28-36pt)
-• Aggressive data visualization (60-80% of content slides)
-• Use Tables for structured data comparisons (rows/columns)
-• Charts acceptable for complex datasets (15+ points, multiple series)
-• Prefer CustomComponent for simpler visualizations (bars, pies, stats)
-• Multiple charts/tables per slide when comparing metrics
-• Tight spacing (24-32px gaps)
-• Use PATTERN 4 (chart+insights) or PATTERN 5 (grid) most often
+**2. BigTitle (The Header)**
+Use this for slide titles within SmartLayout slots.
+- `text`: The main headline
+- `highlight`: Substring to highlight with accent color
 
-═══════════════════════════════════════════════════════════════════════════════
-📊 POSITIONING EXAMPLES - EXACT CALCULATIONS
-═══════════════════════════════════════════════════════════════════════════════
+**3. StatCard (The Data)**
+Use this for key metrics instead of raw text.
+- `label`: "Revenue", "Growth", etc.
+- `value`: "$10M", "+20%", etc.
+- `trend`: "up" or "down" (optional)
 
-**EXAMPLE 1: Content Slide with 3 Bullets (PATTERN 2)**
-```
-Step 1 - Title:
-  y=160, fontSize=64, height=64×1.15=74
-  Component ends at: 160+74=234
+**4. SmartImage (The Visual)**
+Use this for images within SmartLayout slots.
+- `src`: "placeholder" (or specific URL if known)
+- `caption`: Optional text below image
 
-Step 2 - Line divider:
-  y=234+20=254 (20px gap after title)
-  Thickness ~2px, ends at 256
-
-Step 3 - Bullet 1:
-  y=256+40=296 (40px gap after line)
-  fontSize=36, height=36×1.15=41
-  Ends at: 296+41=337
-
-Step 4 - Bullet 2:
-  y=337+50=387 (50px gap)
-  fontSize=36, height=41
-  Ends at: 387+41=428
-
-Step 5 - Bullet 3:
-  y=428+50=478 (50px gap)
-  fontSize=36, height=41
-  Ends at: 478+41=519
-
-✅ All calculated, no overlaps!
+**EXAMPLE: STANDARD CONTENT SLIDE**
+```json
+{
+  "type": "SmartLayout",
+  "props": {
+    "layout": "SplitRight",
+    "slots": {
+      "left": {
+        "type": "Group",
+        "props": {
+          "children": [
+            {"type": "BigTitle", "props": {"text": "Market Growth", "highlight": "Growth"}},
+            {"type": "TiptapTextBlock", "props": {"text": "• Market expanded by 20%\n• New regions added"}}
+          ]
+        }
+      },
+      "right": {
+        "type": "SmartImage",
+        "props": {"src": "placeholder", "caption": "Regional Map"}
+      }
+    }
+  }
+}
 ```
 
-**EXAMPLE 2: Split-Screen with Image (PATTERN 1)**
-```
-Left: Text bullets
-  Title: x=120, y=160, width=760, height=74
-  Bullet 1: x=120, y=280, width=760, height=41
-  Bullet 2: x=120, y=371, width=760, height=41
-  Bullet 3: x=120, y=462, width=760, height=41
-
-Right: Image
-  x=960, y=240, width=880, height=700
-
-Verification:
-  Text area width: 120 to 880 (760px)
-  Image area width: 960 to 1840 (880px)
-  Gap: 960 - 880 = 80px ✅
-```
-
-**EXAMPLE 3: Chart with Insights (PATTERN 4)**
-```
-Assume: Slide title at y=160, ends at 234, line divider ends at 254
-Content starts: y=280 (after 26px gap)
-
-Chart Title:
-  x=80, y=280, fontSize=28, height=32
-  Ends at: 280+32=312
-
-Chart:
-  x=80, y=330 (312+18 gap), width=800, height=520
-  Ends at x: 80+800=880 ✅
-  Ends at y: 330+520=850 ✅ (within bounds)
-
-Insight 1 (right side):
-  x=960, y=280, width=760, fontSize=32, height=37
-  Ends at: 280+37=317
-
-Insight 2:
-  y=317+50=367 (50px gap), height=37
-  Ends at: 367+37=404
-
-Insight 3:
-  y=404+50=454, height=37
-  Ends at: 454+37=491
-
-Verification:
-  Chart ends at x=880, insights start at x=960 ✅ (80px gap)
-  Chart ends at y=850, within 1000 limit ✅
-  All Y positions calculated from content start ✅
-  No vertical overlaps ✅
+**EXAMPLE: DATA DASHBOARD**
+```json
+{
+  "type": "SmartLayout",
+  "props": {
+    "layout": "GridLayout",
+    "columns": 2,
+    "slots": {
+      "item1": {"type": "StatCard", "props": {"label": "Users", "value": "1M", "trend": "up"}},
+      "item2": {"type": "StatCard", "props": {"label": "Revenue", "value": "$5M", "trend": "up"}},
+      "item3": {"type": "StatCard", "props": {"label": "Churn", "value": "2%", "trend": "down"}},
+      "item4": {"type": "Chart", "props": {"chartType": "bar", "data": [...]}}
+    }
+  }
+}
 ```
 
-═══════════════════════════════════════════════════════════════════════════════
-🎯 SPACE-FIRST DESIGN - PREVENT OVERLAPS BY PLANNING AHEAD
-═══════════════════════════════════════════════════════════════════════════════
+**WHEN TO USE MANUAL POSITIONING (FALLBACK):**
+Only use manual `TiptapTextBlock` and `Shape` positioning if:
+1. The design is explicitly "Creative/Chaotic" (Creative Mode).
+2. You are building a complex custom diagram that `SmartLayout` cannot handle.
+3. You are explicitly asked to "ignore smart layouts".
 
-**CRITICAL: Calculate space BEFORE choosing sizes!**
-
-**STEP 1: Count What You Need to Include**
-```
-Example content: Title + 5 bullet points + 1 image
-
-Components needed:
-- 1 Title block
-- 5 Bullet blocks  
-- 1 Image
-- Total: 7 components
-
-Vertical space available: y=240 to y=1000 = 760px
-```
-
-**STEP 2: Calculate Minimum Space Required**
-```
-Using MINIMUM sizes (28pt body, 50px gaps):
-- Title: 64pt → 64×1.15 = 74px
-- Gap: 50px
-- Bullet 1: 28pt → 28×1.15 = 32px
-- Gap: 50px
-- Bullet 2: 32px
-- Gap: 50px
-- Bullet 3: 32px
-- Gap: 50px
-- Bullet 4: 32px
-- Gap: 50px
-- Bullet 5: 32px
-
-Total text: 74 + (5×32) + (6×50) = 74 + 160 + 300 = 534px
-Remaining for image: 760 - 534 = 226px
-
-PROBLEM: Only 226px left for image (too small!)
-```
-
-**STEP 3: Adjust Strategy Based on Space**
-```
-Option A: Split-screen layout (recommended)
-  Left column (x: 80-880):
-    - Title + 5 bullets
-    - Can use full 760px height
-    - Fits comfortably with 36-42pt fonts
-  
-  Right column (x: 960-1840):
-    - Image can be 700-800px tall
-    - Separate vertical space!
-
-Option B: Reduce content
-  - Show only 3 bullets (most important)
-  - Now: 74 + (3×32) + (4×50) = 74 + 96 + 200 = 370px
-  - Remaining: 760 - 370 = 390px for image ✅
-
-Option C: Skip image
-  - Use all 760px for text
-  - Can increase font sizes: 48pt bullets
-  - More generous gaps: 70-80px
-
-CHOOSE based on what's most important!
-```
-
-**STEP 4: Size Components to Fit Allocated Space**
-```
-IF using split-screen:
-  Text area has 760px vertical
-  - Title: 64pt (74px)
-  - 5 bullets: 36pt each (41px each = 205px)
-  - Gaps: 60px × 6 = 360px
-  - Total: 74 + 205 + 360 = 639px ✅ Fits!
-  
-  Image area has 760px vertical
-  - Image: 700px height ✅ Fits!
-
-IF single column (no image):
-  Full 760px for text
-  - Title: 80pt (92px)
-  - 5 bullets: 42pt each (48px each = 240px)
-  - Gaps: 80px × 6 = 480px
-  - Total: 92 + 240 + 480 = 812px ❌ TOO MUCH!
-  
-  Adjust: Reduce gaps to 60px
-  - Total: 92 + 240 + 360 = 692px ✅ Fits!
-```
-
-**STEP 5: Position Components with Calculated Sizes**
-```javascript
-// Now that sizes are determined, position them:
-let currentY = 240;
-
-title.y = currentY;
-title.fontSize = 64; // From allocation
-title.height = 74;
-currentY = 240 + 74 + 60 = 374;
-
-bullet1.y = currentY;
-bullet1.fontSize = 36; // From allocation
-bullet1.height = 41;
-currentY = 374 + 41 + 60 = 475;
-
-// Continue...
-```
-
-**THE KEY: Work backwards from space available, don't blindly use recommended sizes!**
-
-═══════════════════════════════════════════════════════════════════════════════
-🎯 CORE DESIGN PRINCIPLES
-═══════════════════════════════════════════════════════════════════════════════
-
-**TYPOGRAPHY - FLEXIBLE RANGES (Adjust based on content amount!)**
-```
-RECOMMENDED RANGES (not fixed values):
-• Title/Hero: 180-650pt (mode-dependent)
-• Section: 64-120pt  
-• Body: 28-48pt
-• Captions: 18-28pt
-• Heights: fontSize × 1.15
-
-ABSOLUTE MINIMUMS (never go below):
-• Body text: ≥28pt
-• Section headers: ≥48pt
-• Titles: ≥64pt
-
-SIZING STRATEGY:
-• Few items (1-3 bullets)? → Use LARGE sizes (42-48pt body, 80-100pt headers)
-• Many items (5-7 bullets)? → Use SMALL sizes (28-36pt body, 64-80pt headers)
-• Adjust to fit available space - calculate total first!
-```
-
-**TEXT ALIGNMENT**
-• Title slides: alignment="left", verticalAlignment="top"
-• Stats: alignment="center", verticalAlignment="middle"
-• Body: alignment="left", verticalAlignment="top"
-• Every TiptapTextBlock MUST have: alignment, verticalAlignment, padding=0, textColor, fontFamily, fontSize
-
-**COLORS**
-• ONLY theme colors: {{background}}, {{text}}, {{accent}}
-• Never hardcode #3B82F6, etc.
-
-**SIZING - FLEXIBLE BASED ON SPACE**
-```
-ABSOLUTE MINIMUMS:
-• Charts: ≥500×400px
-• Images: ≥400×300px (unless logos)
-• Body text: ≥28pt
-
-RECOMMENDED (adjust if space is tight):
-• Charts: 700-850px width, 500-650px height
-• Images: 800-1200px width, 600-900px height
-• Body text: 32-48pt
-
-IF CONTENT WON'T FIT:
-1. Use split-screen (separate vertical space for text vs visuals)
-2. Reduce font sizes (but stay ≥28pt!)
-3. Reduce number of items shown
-4. Skip the image entirely
-5. Use tighter gaps (40-50px vs 60-80px)
-
-DON'T: Blindly use recommended sizes and overflow!
-```
-
-**POSITIONING FORMULA**
-```
-nextY = currentY + currentHeight + gap
-Gaps: 60-80px (presentation), 24-32px (detailed)
-Margins: 80px from all edges
-```
+Otherwise, **SMART LAYOUT IS MANDATORY.**
 
 ═══════════════════════════════════════════════════════════════════════════════
 📊 CHARTS - EVERY CHART NEEDS A TITLE!
@@ -2242,125 +1913,62 @@ Make slides like Apple keynotes - bold, clean, impactful!
 
 def get_mode_specific_guidance(mode: str) -> str:
     """Get concise mode-specific guidance for dynamic prompt"""
-    if mode.lower() == "detailed":
-        return """DETAILED MODE - "The Analyst Approach"
+    mode_lower = mode.lower()
+    
+    # Map input modes to our two core philosophies
+    is_structured = any(k in mode_lower for k in ['structured', 'detailed', 'professional', 'educational', 'analyst'])
+    
+    if is_structured:
+        return """STRUCTURED MODE - "The Professional Analyst"
 
 **FOCUS:**
-• Data-rich, structured layouts with tight spacing
-• CustomComponent for simpler visualizations (bars, pies, <15 points)
-• Chart acceptable ONLY for complex datasets (15+ points, multi-series)
-• Grid-based organization with clean sections
-• Tabular data uses Tables, not Charts
+• Clarity, hierarchy, and information density.
+• Clean, grid-based layouts with balanced spacing (30-50px).
+• Professional typography (Title 80-120pt, Body 32-40pt).
+• **Charts Allowed**: Standard Chart components are WELCOME for data.
+• **Tables Encouraged**: Use Tables for structured comparisons.
 
-**DATA VISUALIZATION DECISION:**
-• < 15 data points → USE CustomComponent (animated, branded)
-• Simple comparison → USE CustomComponent
-• 15+ data points + multi-series trends → Chart acceptable
-• Educational/explanatory → USE CustomComponent
+**LAYOUT STRATEGY:**
+• Use PATTERN 4 (Chart + Insights) or PATTERN 5 (Grid).
+• Align everything to the grid (left: 80, center: 960, right: 1840).
+• Keep margins consistent.
 
-**CHARTS (When Required):**
-• Use ONLY when: 15+ data points AND multi-series trends
-• Single: 500-650px width, adaptive height (typically 450-600px)
-• Titles: 22-24pt, {{text}}, positioned 36px above
-• Must show complex patterns that need precision reading
-• AVOID: Simple comparisons (use CustomComponent), lists (use bullets)
-
-**CUSTOMCOMPONENT (Preferred for Simpler Data):**
-• Stats, metrics, simple bar charts → Animated CustomComponent
-• Feature comparisons → Custom card grids
-• Process flows → Interactive timeline
-• Make it unique and branded, not generic
-
-**LAYOUT:**
-• Tight gaps: 24-32px between elements
-• Break content into organized sections
-• Use tables when appropriate (clean: backgroundColor=null, borderWidth=0)
-• Title slides: 200-280pt, alignment="left"
-
-**TEXT:**
-• Break into multiple TiptapTextBlocks
-• Use highlighting for emphasis: {{accent}}15
-• Mix fonts: heroFont for headers, bodyFont for content
+**DATA VISUALIZATION:**
+• **Charts**: Use standard Chart component for clear, precise data.
+• **Tables**: Use Table component for detailed comparisons.
+• **CustomComponent**: Use for KPIs, process flows, or simple stats.
 
 **RESTRICTIONS:**
-• Icons: 0-2 max per slide
-• Images: Only when essential for context
-• No decorative shapes
-• Default to CustomComponent, Chart only when truly needed"""
+• No overlapping elements (unless intentional layering).
+• No "wild" asymmetry.
+• Keep it clean and readable."""
+
     else:
-        return """PRESENTATION MODE - "Design-First Storytelling"
+        # Default to CREATIVE MODE
+        return """CREATIVE MODE - "Design-First Storytelling"
 
-🚨 **CHART POLICY: NO CHART COMPONENTS - USE CUSTOMCOMPONENT INSTEAD**
+🚨 **CHART POLICY: AVOID STANDARD CHARTS - USE CUSTOMCOMPONENT**
 
 **FOCUS:**
-• Bold visual hierarchy with dramatic typography
-• Image-driven design (50-70% of slides should have images, NOT charts!)
-• 🚫 ZERO Chart components allowed - CustomComponent for ALL data
-• Creative layouts with generous whitespace
-• **EDUCATIONAL CONTENT: Include interactive quizzes, polls every 3-5 slides**
+• **WOW Factor**: High-impact visuals, emotional connection.
+• **Typography**: DRAMATIC sizes (Title 180-650pt).
+• **Layout**: Asymmetric, dynamic, generous whitespace (60-80px).
+• **Visuals**: Heavy use of CustomComponent for "infographic" feel.
 
-**TYPOGRAPHY:**
-• Title slides: 450-650pt, MASSIVE, alignment="left"
-• Hero elements: 120-240pt
-• Supporting: 64-96pt
-• Body: 36-48pt
-• Generous gaps: 60-80px
+**DESIGN TECHNIQUES:**
+• **Overlapping**: Layer images behind text (with opacity).
+• **Masking**: Use Shapes to mask images or create interesting backgrounds.
+• **Interactivity**: Quizzes, polls, confetti celebrations.
 
-**IMAGES:**
-• PRIMARY visual element - think of images FIRST
-• Large feature images: 800-1200px
-• Creative treatments: borderRadius, opacity, layering
-• Use for: storytelling, context, emotional impact, examples
-• searchQuery should be specific to the slide content
-
-**DATA VISUALIZATION - ALWAYS USE CUSTOMCOMPONENT:**
-• 🚫 NEVER use Chart component in presentation mode
-• ✅ ALWAYS create CustomComponent for data visualization
-• Stats → Animated stat cards with gsap
-• Bar charts → CustomComponent with animated bars using framer-motion
-• Pie charts → CustomComponent with interactive D3 pie/donut
-• Line charts → CustomComponent with recharts or custom SVG
-• Comparisons → Animated comparison cards
-• Metrics dashboard → Grid of stat cards with icons
-• **Each visualization should be UNIQUE and BRANDED** - not generic charts!
-
-**CUSTOMCOMPONENT EXAMPLES FOR DATA:**
-• "Sales by quarter" → AnimatedBarChart CustomComponent with gradient fills
-• "Market share" → Interactive donut with hover effects
-• "Growth trend" → Animated line with highlighted points
-• "Team metrics" → Dashboard grid with animated counters
-• "Process flow" → Step-by-step animated timeline
-• "Comparison" → Side-by-side cards with animated reveals
-
-**INTERACTIVE EDUCATIONAL CONTENT (Use liberally for teaching/learning):**
-• **Multiple Choice Quiz** → CustomComponent with question + 4 options, confetti on correct answer
-• **True/False Quiz** → CustomComponent with statement + TRUE/FALSE buttons, show explanation
-• **Poll/Survey** → CustomComponent with question + options showing live percentages
-• **Knowledge Check** → Add quiz every 3-5 content slides to reinforce learning
-• **Positioning**: Center quiz (x: 80-120, y: 200-280, width: 800-1000, height: 600-700)
-• **Props**: Pass question, options, correctAnswer, explanation, theme colors
-
-**TEXT:**
-• Break content into separate blocks with different fonts/sizes
-• Highlight key numbers: bold + {{accent}} + backgroundColor
-• Bucket horizontally/vertically for 2-5 items
-• Keep it CONCISE - slides should be readable in 5 seconds
-
-**CREATIVITY:**
-• Use CustomComponent for EVERY data visualization (no exceptions!)
-• Create unique, memorable visualizations - think Dribbble/Behance quality
-• **Educational**: Add quizzes, polls, animated reveals with anime/gsap
-• Layer elements with zIndex
-• Vary opacity for depth (0.3-1.0)
-• Mix font families for character
+**DATA VISUALIZATION:**
+• 🚫 **Avoid Chart Component**: It looks too "corporate".
+• ✅ **Use CustomComponent**: Build animated bars, donuts, or counters.
+• Make data look like art!
 
 **RESTRICTIONS:**
-• 🚫 NO Chart components allowed
-• Icons: 0-1 per slide (semantic meaning only)
-• No decorative shapes
-• No busy layouts
-• Charts are the EXCEPTION, not the rule
-• **EXCEPTION**: Interactive CustomComponents (quizzes, polls) are ENCOURAGED for educational decks"""
+• **No boring lists**: Turn bullets into visual cards or icons.
+• **No standard tables**: Turn tables into comparison grids.
+• **Be bold**: If it looks like a standard PowerPoint, you failed."""
 
 
 def get_title_slide_guidance() -> str:

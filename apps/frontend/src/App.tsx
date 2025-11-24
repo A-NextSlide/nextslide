@@ -46,6 +46,7 @@ import AdminBrands from './pages/admin/AdminBrands';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
+import SmartGallery from './pages/SmartGallery';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -90,12 +91,12 @@ const syncConfig = {
 // Component to monitor deck changes
 const DeckMonitor = ({ onChange }: { onChange: (data: CompleteDeckData) => void }) => {
   const deckData = useDeckStore(state => state.deckData);
-  
+
   // Use effect to call onChange when deckData changes
   useEffect(() => {
     onChange(deckData);
   }, [deckData, onChange]);
-  
+
   return null;
 };
 
@@ -104,7 +105,7 @@ const ServerMonitor = () => {
   const { serverConnected, serverHasRegistry } = useRegistry();
   const [prevConnected, setPrevConnected] = useState<boolean | null>(null);
   const [prevHasRegistry, setPrevHasRegistry] = useState<boolean | null>(null);
-  
+
   // Log server connection and registry status changes
   useEffect(() => {
     const timestamp = new Date().toISOString();
@@ -113,13 +114,13 @@ const ServerMonitor = () => {
       registryLoaded: serverHasRegistry ? 'YES' : 'NO',
       timestamp
     };
-    
+
     // Always show status in dev tools using a styled console log
     // console.log(
     //   `%c🔌 Server: ${currentStatus.connected} | 📚 Registry: ${currentStatus.registryLoaded} | ⏱️ ${timestamp.split('T')[1].split('.')[0]}`,
     //   `color: ${serverConnected ? 'green' : 'red'}; font-weight: bold; background-color: ${serverHasRegistry ? '#e6ffe6' : '#fff0f0'}; padding: 2px 5px; border-radius: 3px;`
     // );
-    
+
     // Alert about changes
     if (prevConnected !== null && prevConnected !== serverConnected) {
       // console.log(
@@ -127,19 +128,19 @@ const ServerMonitor = () => {
       //   'color: white; background-color: ' + (serverConnected ? 'green' : 'red') + '; padding: 3px 8px; font-weight: bold; border-radius: 3px;'
       // );
     }
-    
+
     if (prevHasRegistry !== null && prevHasRegistry !== serverHasRegistry) {
       // console.log(
       //   `%cRegistry ${serverHasRegistry ? 'LOADED' : 'MISSING'} on server`,
       //   'color: white; background-color: ' + (serverHasRegistry ? 'blue' : 'orange') + '; padding: 3px 8px; font-weight: bold; border-radius: 3px;'
       // );
     }
-    
+
     // Update previous state
     setPrevConnected(serverConnected);
     setPrevHasRegistry(serverHasRegistry);
   }, [serverConnected, serverHasRegistry, prevConnected, prevHasRegistry]);
-  
+
   return null;
 };
 
@@ -148,13 +149,13 @@ const AppContent = () => {
   const location = useLocation();
   const [isEditing, setIsEditing] = useState(false);
   const { session } = useAuth();
-  
+
   // Only enable collaboration on editor routes, not on deck list or other pages
   const collaborationDisabledRoutes = ['/slide-tagging', '/renderer', '/', '/collaboration-test'];
-  const isCollaborationEnabled = !collaborationDisabledRoutes.some(route => 
+  const isCollaborationEnabled = !collaborationDisabledRoutes.some(route =>
     route === '/' ? location.pathname === '/' : location.pathname.startsWith(route)
   );
-  
+
   // Initialize debug tools in development mode
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
@@ -164,22 +165,22 @@ const AppContent = () => {
           monitor.logFontMetrics(50); // Show fonts that took over 50ms to load
         });
       };
-      
+
       // Expose store for debugging
       (window as any).useDeckStore = useDeckStore;
       // console.log('🔧 Debug: useDeckStore exposed to window object');
     }
   }, []);
-  
+
   // This handler is now for logging purposes only
   const handleDeckDataChange = (deckData: CompleteDeckData) => {
     // console.log(`Deck data updated, now contains ${deckData.slides.length} slides`);
   };
-  
+
   const handleSyncUpdate = (isSyncing: boolean, lastSyncTime: Date | null) => {
     // console.log(`Sync state: ${isSyncing ? 'Syncing' : 'Idle'}, last sync: ${lastSyncTime?.toLocaleTimeString() || 'never'}`);
   };
-  
+
   const handleEditingChange = (editing: boolean) => {
     setIsEditing(editing);
     // console.log(`Edit mode changed to ${editing}`);
@@ -195,7 +196,7 @@ const AppContent = () => {
         {/* Preload only system fonts */}
         <FontPreloader />
         {/* Initialize the deck store early in the component tree */}
-        <DeckStoreInitializer 
+        <DeckStoreInitializer
           syncEnabled={syncConfig.enabled}
           useRealtimeSubscription={syncConfig.useRealtimeSubscription}
           autoSyncInterval={syncConfig.autoSyncInterval}
@@ -208,174 +209,175 @@ const AppContent = () => {
           {/* Monitor for deck data changes */}
           <DeckMonitor onChange={handleDeckDataChange} />
           <TemporaryPasswordGate enabled={import.meta.env.VITE_ENABLE_TEMP_GATE !== 'false'} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'NextBeta'}>
-          <Routes>
-            {/* Legacy alias: redirect settings/integrations to profile integrations */}
-            <Route path="/settings/integrations" element={<RouteRedirect to="/profile?tab=integrations" />} />
-            <Route path="/" element={<Landing />} />
-            <Route 
-              path="/app" 
-              element={
-                <ProtectedRoute>
-                  <DeckList />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/login" 
-              element={
-                <ProtectedRoute requireAuth={false}>
-                  <Login />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/signup" 
-              element={
-                <ProtectedRoute requireAuth={false}>
-                  <Signup />
-                </ProtectedRoute>
-              } 
-            />
-            <Route
-              path="/deck/:deckId"
-              element={
-                <ProtectedRoute>
-                  <SlideEditor />
-                </ProtectedRoute>
-              }
-            />
-            {/* Outline View route - removed, using embedded outline in DeckList */}
-            {/* Google Slides JSON Test route */}
-            <Route 
-              path="/slide-tagging" 
-              element={
-                <ProtectedRoute>
-                  <SlideTagging />
-                </ProtectedRoute>
-              }
-            />
-            {/* Yjs collaboration test route */}
-            <Route 
-              path="/collaboration-test" 
-              element={
-                <ProtectedRoute>
-                  <React.Suspense fallback={<div>Loading collaboration test...</div>}>
-                    <TestCollaboration />
-                  </React.Suspense>
-                </ProtectedRoute>
-              }
-            />
-            {/* Add renderer route, only available when RENDERER env var is set */}
-            {import.meta.env.VITE_RENDERER === 'true' && (
+            <Routes>
+              {/* Legacy alias: redirect settings/integrations to profile integrations */}
+              <Route path="/settings/integrations" element={<RouteRedirect to="/profile?tab=integrations" />} />
+              <Route path="/" element={<Landing />} />
               <Route
-                path="/renderer"
+                path="/app"
                 element={
-                  <React.Suspense fallback={<div>Loading renderer...</div>}>
-                    <LazyRenderer />
-                  </React.Suspense>
+                  <ProtectedRoute>
+                    <DeckList />
+                  </ProtectedRoute>
                 }
               />
-            )}
-            <Route 
-              path="/profile" 
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/team" 
-              element={
-                <ProtectedRoute>
-                  <TeamSettings />
-                </ProtectedRoute>
-              } 
-            />
-            {/* Shared deck routes */}
-            <Route 
-              path="/p/:shareCode" 
-              element={<SharedDeckView />}
-            />
-            <Route 
-              path="/e/:shareCode" 
-              element={<SharedDeckEdit />}
-            />
-            {/* Email verification route */}
-            <Route 
-              path="/verify-email/:token" 
-              element={<EmailVerification />}
-            />
-            <Route 
-              path="/verify-email/pending" 
-              element={<EmailVerification />}
-            />
-            {/* Auth Callback route */}
-            <Route
-              path="/auth-callback"
-              element={<AuthCallback />}
-            />
-            {/* Reset Password route */}
-            <Route
-              path="/reset-password"
-              element={
-                <ProtectedRoute>
-                  <ResetPassword />
-                </ProtectedRoute>
-              }
-            />
-            {/* Admin routes */}
-            <Route
-              path="/admin"
-              element={
-                <AdminProtectedRoute>
-                  <AdminDashboard />
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/users"
-              element={
-                <AdminProtectedRoute>
-                  <AdminUsers />
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/users/:userId"
-              element={
-                <AdminProtectedRoute>
-                  <AdminUserDetail />
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/decks"
-              element={
-                <AdminProtectedRoute>
-                  <AdminDecks />
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/brands"
-              element={
-                <AdminProtectedRoute>
-                  <AdminBrands />
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/analytics"
-              element={
-                <AdminProtectedRoute>
-                  <AdminAnalytics />
-                </AdminProtectedRoute>
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+              <Route
+                path="/login"
+                element={
+                  <ProtectedRoute requireAuth={false}>
+                    <Login />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/signup"
+                element={
+                  <ProtectedRoute requireAuth={false}>
+                    <Signup />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/deck/:deckId"
+                element={
+                  <ProtectedRoute>
+                    <SlideEditor />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Outline View route - removed, using embedded outline in DeckList */}
+              {/* Google Slides JSON Test route */}
+              <Route
+                path="/slide-tagging"
+                element={
+                  <ProtectedRoute>
+                    <SlideTagging />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Yjs collaboration test route */}
+              <Route
+                path="/collaboration-test"
+                element={
+                  <ProtectedRoute>
+                    <React.Suspense fallback={<div>Loading collaboration test...</div>}>
+                      <TestCollaboration />
+                    </React.Suspense>
+                  </ProtectedRoute>
+                }
+              />
+              {/* Add renderer route, only available when RENDERER env var is set */}
+              {import.meta.env.VITE_RENDERER === 'true' && (
+                <Route
+                  path="/renderer"
+                  element={
+                    <React.Suspense fallback={<div>Loading renderer...</div>}>
+                      <LazyRenderer />
+                    </React.Suspense>
+                  }
+                />
+              )}
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/team"
+                element={
+                  <ProtectedRoute>
+                    <TeamSettings />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Shared deck routes */}
+              <Route
+                path="/p/:shareCode"
+                element={<SharedDeckView />}
+              />
+              <Route
+                path="/e/:shareCode"
+                element={<SharedDeckEdit />}
+              />
+              {/* Email verification route */}
+              <Route
+                path="/verify-email/:token"
+                element={<EmailVerification />}
+              />
+              <Route
+                path="/verify-email/pending"
+                element={<EmailVerification />}
+              />
+              {/* Auth Callback route */}
+              <Route
+                path="/auth-callback"
+                element={<AuthCallback />}
+              />
+              {/* Reset Password route */}
+              <Route
+                path="/reset-password"
+                element={
+                  <ProtectedRoute>
+                    <ResetPassword />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Admin routes */}
+              <Route
+                path="/admin"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminDashboard />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminUsers />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users/:userId"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminUserDetail />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/decks"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminDecks />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/brands"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminBrands />
+                  </AdminProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/analytics"
+                element={
+                  <AdminProtectedRoute>
+                    <AdminAnalytics />
+                  </AdminProtectedRoute>
+                }
+              />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="/smart-gallery" element={<SmartGallery />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
           </TemporaryPasswordGate>
         </ThemeProvider>
       </ComponentStateProvider>
@@ -385,7 +387,7 @@ const AppContent = () => {
 
 function App() {
   const [isReady, setIsReady] = useState(false);
-  
+
   // Clear stale deck IDs from session storage on app load
   useEffect(() => {
     // Clear any stale deck IDs that might cause loading errors
@@ -406,7 +408,7 @@ function App() {
       }
     }
   }, []);
-  
+
   // Optimize initial render by loading critical resources
   useEffect(() => {
     // This effect is now empty as the initialization is moved to AppContent
