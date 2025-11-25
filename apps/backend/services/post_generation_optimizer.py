@@ -131,25 +131,39 @@ class PostGenerationOptimizer:
             if not text_content or not text_content.strip():
                 return None
             
-            # Get container dimensions
+            # Get container dimensions - ensure they are numeric
             width = props.get('width')
             height = props.get('height')
-            
-            if not width or not height:
+
+            # Convert to float, handling None and non-numeric values
+            try:
+                width = float(width) if width is not None else 0
+                height = float(height) if height is not None else 0
+            except (TypeError, ValueError):
+                logger.debug(f"  ⚠️ Component {component_index} has invalid dimensions: {width}x{height}")
+                return None
+
+            if width <= 0 or height <= 0:
                 logger.debug(f"  ⚠️ Component {component_index} missing dimensions: {width}x{height}")
                 return None
-            
+
             # Get current font size and position
             original_font_size = self._get_current_font_size(props, comp_type)
             original_position = self._get_position(props)
-            
-            # Calculate padding
+
+            # Calculate padding - ensure numeric
             padding_x, padding_y = self._get_padding(props, comp_type)
+            padding_x = float(padding_x) if padding_x is not None else 0
+            padding_y = float(padding_y) if padding_y is not None else 0
+
+            # Get letter spacing - ensure numeric (can be None explicitly)
+            letter_spacing = props.get('letterSpacing') or 0
+            try:
+                letter_spacing = float(letter_spacing)
+            except (TypeError, ValueError):
+                letter_spacing = 0
             
-            # Get letter spacing
-            letter_spacing = props.get('letterSpacing', 0)
-            
-            # Calculate optimal font size
+            # Calculate optimal font size - use original as max to only REDUCE, never increase
             sizing_result = self.font_sizer.find_optimal_size(
                 text=text_content,
                 container_width=width,
@@ -157,15 +171,19 @@ class PostGenerationOptimizer:
                 font_family=props.get('fontFamily', 'Inter'),
                 padding_x=padding_x,
                 padding_y=padding_y,
-                letter_spacing=letter_spacing
+                letter_spacing=letter_spacing,
+                max_size=original_font_size  # Never increase beyond AI-generated size
             )
-            
-            # Apply optimized font size
+
+            # Apply optimized font size only if it was REDUCED (text didn't fit)
             optimized_font_size = sizing_result.font_size
-            size_changed = abs(optimized_font_size - original_font_size) > 0.5
-            
-            if size_changed:
+            size_reduced = original_font_size - optimized_font_size > 0.5  # Only track reductions
+
+            if size_reduced:
                 self._apply_font_size(component, sizing_result, comp_type)
+            else:
+                # Text already fits at original size, no change needed
+                optimized_font_size = original_font_size
             
             # Check if position needs adjustment
             optimized_position, position_adjusted = self._optimize_position(
@@ -181,7 +199,7 @@ class PostGenerationOptimizer:
                 original_position=original_position,
                 optimized_position=optimized_position,
                 position_adjusted=position_adjusted,
-                size_adjusted=size_changed,
+                size_adjusted=size_reduced,
                 fits_in_container=sizing_result.fits,
                 confidence=sizing_result.confidence
             )
@@ -217,15 +235,24 @@ class PostGenerationOptimizer:
     def _get_current_font_size(self, props: Dict[str, Any], comp_type: str) -> float:
         """Get current font size from component"""
         # Try direct fontSize prop
-        if 'fontSize' in props:
-            return float(props.get('fontSize', 16))
-        
+        font_size = props.get('fontSize')
+        if font_size is not None:
+            try:
+                return float(font_size)
+            except (TypeError, ValueError):
+                pass
+
         # Try from texts array
         if 'texts' in props and isinstance(props['texts'], list) and len(props['texts']) > 0:
             first_text = props['texts'][0]
             if isinstance(first_text, dict):
-                return float(first_text.get('fontSize', 16))
-        
+                text_font_size = first_text.get('fontSize')
+                if text_font_size is not None:
+                    try:
+                        return float(text_font_size)
+                    except (TypeError, ValueError):
+                        pass
+
         # Default
         return 16.0
     
@@ -273,7 +300,8 @@ class PostGenerationOptimizer:
             for text_segment in props['texts']:
                 if isinstance(text_segment, dict):
                     # Preserve relative sizing for emphasized text
-                    current_size = text_segment.get('fontSize', optimized_size)
+                    # Note: fontSize can be None explicitly, so use 'or' not just .get() default
+                    current_size = text_segment.get('fontSize') or optimized_size
                     if current_size > optimized_size * 1.3:
                         # Keep emphasis but scale proportionally
                         text_segment['fontSize'] = optimized_size * 1.2

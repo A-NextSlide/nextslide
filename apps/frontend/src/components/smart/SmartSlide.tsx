@@ -14,12 +14,10 @@ const LAYOUTS: Record<string, any> = {
 };
 
 import { StatCard } from './elements/data/StatCard';
-import { SmartImage } from './elements/media/SmartImage';
 
 const COMPONENTS: Record<string, any> = {
     'BigTitle': BigTitle,
     'StatCard': StatCard,
-    'SmartImage': SmartImage,
 };
 
 export interface SmartComponentData {

@@ -647,13 +647,12 @@ class SimpleDeckComposer(IDeckComposer):
                     boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans']
                     has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                     
-                    if is_fun_topic and has_boring_fonts:
-                        logger.debug(f"FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
+                    if is_fun_topic:
+                        logger.debug(f"FUN TOPIC DETECTED!")
                         logger.debug(f"  Title: {deck_outline.title}")
-                        logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
-                        logger.debug(f"  FORCING theme regeneration to get playful fonts!")
+                        logger.debug(f"  FORCING theme regeneration to get playful colors and fonts!")
                         logger.debug(f"  Ignoring cached theme...\n")
-                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' has boring cached fonts - forcing regeneration")
+                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' - forcing regeneration")
                         existing_theme_data = None  # Skip cached theme!
                     else:
                         logger.debug(f"FOUND EXISTING THEME IN DATABASE")
@@ -754,12 +753,11 @@ class SimpleDeckComposer(IDeckComposer):
                             boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
                             has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                             
-                            if is_fun_topic and has_boring_fonts:
-                                logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
+                            if is_fun_topic:
+                                logger.debug(f"FUN TOPIC IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
                                 logger.debug(f"  Title: '{deck_outline.title}'")
-                                logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
                                 logger.debug(f"  CLEARING outline theme to force regeneration!\n")
-                                logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
+                                logger.info(f"[DECK COMPOSER] 🎮 Fun topic - clearing outline theme (2nd path)")
                                 outline_theme = None  # Clear it!
                             
                             if outline_theme:  # Only use if not cleared
@@ -788,8 +786,19 @@ class SimpleDeckComposer(IDeckComposer):
                     existing_theme_data = get_deck_theme(deck_uuid)
 
                     if existing_theme_data:
-                        logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
-                        theme = ThemeSpec.from_dict(existing_theme_data)
+                        # CRITICAL: Check if fun topic again to avoid picking up stale theme
+                        title_lower = deck_outline.title.lower()
+                        is_fun_topic = any(kw in title_lower for kw in [
+                            'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
+                            'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
+                        ])
+                        
+                        if is_fun_topic:
+                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic '{deck_outline.title}' - ignoring database theme (2nd check)")
+                            theme = None
+                        else:
+                            logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
+                            theme = ThemeSpec.from_dict(existing_theme_data)
 
                         # Also check for palette and search_terms
                         existing_deck = get_deck(deck_uuid)

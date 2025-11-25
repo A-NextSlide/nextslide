@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Import curated PixelBuddha font list for performance
 try:
     from services.curated_pixelbuddha_fonts import CURATED_PIXELBUDDHA_FONTS, FALLBACK_PIXELBUDDHA_FONTS
-    USE_CURATED_ONLY = True
+    USE_CURATED_ONLY = False
 except ImportError:
     CURATED_PIXELBUDDHA_FONTS = []
     FALLBACK_PIXELBUDDHA_FONTS = []
@@ -519,12 +519,12 @@ class EnhancedFontService:
 
             if is_bold_font or is_display_font:
                 # Penalize bold/thick/display fonts for body text - they're hard to read!
-                # Only exception: if context EXPLICITLY prefers bold (e.g., poster design)
+                # STRICT RULE: Never use bold/display fonts for body text unless explicitly requested
                 if context.get('prefer_bold_body', False):
-                    score *= 0.7  # Moderate penalty even when preferred
+                    score *= 0.5  # Heavy penalty even when preferred
                 else:
-                    score *= 0.3  # Heavy penalty for bold/display fonts in body text
-                logger.debug(f"Bold/Display body font penalized: {font_id} (category={category}, score reduced)")
+                    score = 0.0  # STRICT BAN: Score 0 means it won't be selected
+                logger.debug(f"Bold/Display body font penalized: {font_id} (category={category}, score={score})")
             
             if 'designer' in source and 'sans' in category:
                 # Designer sans-serif fonts are great for body text!

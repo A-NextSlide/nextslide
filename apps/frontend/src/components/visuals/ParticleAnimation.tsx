@@ -98,11 +98,15 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
             const active = isTypingRef.current || isLoadingRef.current;
             const targetEnergy = active ? 1.0 : 0.0;
 
-            // Smooth energy transition
-            // Fast decay (0.1) for responsive stop, fast attack (0.1) for responsive start
-            const lerpFactor = 0.1;
+            // Smooth energy transition with different speeds for acceleration vs deceleration
+            // Fast attack (0.1) for responsive start, slow decay (0.015) for smooth deceleration
+            const isDecelerating = targetEnergy < energyRef.current;
+            const lerpFactor = isDecelerating ? 0.015 : 0.1;
             energyRef.current += (targetEnergy - energyRef.current) * lerpFactor;
             const energy = energyRef.current;
+            
+            // Detect if we should be stopping (user stopped typing/loading)
+            const shouldStop = !active;
 
             const rgb = isDark ? '255, 255, 255' : '0, 0, 0';
             const accentRgb = '255, 67, 1';
@@ -133,28 +137,33 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
                 const vortexVx = (-dy / (dist + 10)) * swirlSpeed;
                 const vortexVy = (dx / (dist + 10)) * swirlSpeed;
 
-                // 2. Idle State: Suspended Animation (Micro-drift)
-                // User requested "stop moving". We keep a tiny "Brownian motion" jitter
-                // so it doesn't look like a frozen glitch, but effectively static.
-                // No horizontal flow.
-                const idleVx = (Math.random() - 0.5) * 0.05;
-                const idleVy = (Math.random() - 0.5) * 0.05;
-
-                // Blend based on Energy
-                // If energy is 0, it's basically stopped.
-                const targetVx = idleVx * (1 - energy) + vortexVx * energy;
-                const targetVy = idleVy * (1 - energy) + vortexVy * energy;
-
-                // Apply with inertia
-                p.vx += (targetVx - p.vx) * 0.05;
-                p.vy += (targetVy - p.vy) * 0.05;
+                // When active, accelerate toward vortex motion
+                // When stopping, immediately apply drag to naturally slow down (no target switch)
+                if (!shouldStop) {
+                    // Active: Apply vortex force with current energy level
+                    const targetVx = vortexVx * energy;
+                    const targetVy = vortexVy * energy;
+                    p.vx += (targetVx - p.vx) * 0.05;
+                    p.vy += (targetVy - p.vy) * 0.05;
+                } else {
+                    // Stopping: Apply gentle drag to slow down naturally from current velocity
+                    // No more vortex force - just natural deceleration
+                    p.vx *= 0.96;
+                    p.vy *= 0.96;
+                    
+                    // Add tiny Brownian motion only when nearly stopped
+                    if (Math.abs(p.vx) < 0.1 && Math.abs(p.vy) < 0.1) {
+                        p.vx += (Math.random() - 0.5) * 0.02;
+                        p.vy += (Math.random() - 0.5) * 0.02;
+                    }
+                }
 
                 p.x += p.vx;
                 p.y += p.vy;
 
                 // Wrap Logic (Infinite Field)
-                // Only needed if moving fast (active). If idle, they barely move.
-                if (energy > 0.01) {
+                // Only needed if moving fast (active). If stopping, they will naturally slow down.
+                if (!shouldStop) {
                     const buffer = 50;
                     if (p.x < -buffer) p.x = width + buffer;
                     if (p.x > width + buffer) p.x = -buffer;

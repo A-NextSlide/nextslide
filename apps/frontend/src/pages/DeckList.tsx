@@ -1685,11 +1685,11 @@ const DeckList: React.FC = () => {
                                 className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                Turn your ideas into<br className="hidden md:block" /> stunning stories
+                                TURN IDEAS INTO<br />BEAUTIFUL PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
-                                <p className="text-lg md:text-xl font-medium text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
-                                  The smartest way to craft stunning presentations for any audience.
+                                <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
+                                  Create stunning, structured decks in seconds — just describe what you need.
                                 </p>
                                 <p className="text-sm md:text-base text-zinc-500 dark:text-zinc-400">
                                   Type topic, paste link, or upload file.

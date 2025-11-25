@@ -20,6 +20,7 @@ from setup_logging_optimized import get_logger
 from agents.generation.theme_adapter import ThemeAdapter
 from agents.generation.components.layout_integrator import LayoutIntegrator
 from services.user_info_service import get_user_info_service
+from services.post_generation_optimizer import post_generation_optimizer
 
 logger = get_logger(__name__)
 
@@ -866,12 +867,23 @@ class SlideGeneratorV2(ISlideGenerator):
             logger.debug(f"[SLIDE GEN] ✅ Stored {len(image_search_terms)} image search terms in slide data")
             for key, term in list(image_search_terms.items())[:3]:
                 logger.debug(f"   {key}: '{term}'")
-        
+
+        # Run font size optimization to ensure text fits in containers
+        try:
+            slide_data, optimization_results = post_generation_optimizer.optimize_slide(
+                slide_data, context.slide_index
+            )
+            if optimization_results:
+                adjusted_count = sum(1 for r in optimization_results if r.size_adjusted or r.position_adjusted)
+                logger.debug(f"[SLIDE GEN] Font optimization: {adjusted_count} components adjusted")
+        except Exception as e:
+            logger.warning(f"[SLIDE GEN] Font optimization failed (non-critical): {e}")
+
         logger.info(
             f"  [Step 4/4] ✓ Post-processing complete - "
             f"{len(validated_components)} components validated"
         )
-        
+
         return slide_data
 
     def _final_text_flow_pass(self, slide_data: Dict[str, Any], context: SlideGenerationContext, theme_structure: Dict[str, Any]) -> None:

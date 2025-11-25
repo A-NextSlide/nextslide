@@ -180,508 +180,124 @@ class HTMLInspiredSlideGenerator(ISlideGenerator):
     ) -> str:
         """
         Build user prompt optimized for Claude caching.
-        
-        STRUCTURE:
-        1. STATIC content (component schemas, rules) - CACHED
-        2. <<<CACHE_BREAKPOINT>>>
-        3. DYNAMIC content (slide-specific) - NOT CACHED
+        STREAMLINED VERSION - focuses on essentials only.
         """
-        
+
         # Extract theme info
         theme_dict = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else {}
-
-        # CRITICAL: Extract colors from color_palette nested structure
-        # ✨ USE NAMED KEYS TO MATCH THEME API STRUCTURE! ✨
         color_palette = theme_dict.get('color_palette', {})
 
-        # READ FROM NAMED KEYS (these are what theme API creates in api_theme.py lines 152-156)
-        # DO NOT use colors array - it contains accents only, NOT background/text!
+        # Extract colors
         primary_bg = color_palette.get('primary_background', '#0A0E27')
         text_primary = color_palette.get('primary_text', '#FFFFFF')
         accent_1 = color_palette.get('accent_1', '#2563EB')
 
-        logger.info(f"🎨 Extracted theme colors from NAMED KEYS: bg={primary_bg}, text={text_primary}, accent={accent_1}")
-
-        # ONLY 3 colors to keep it simple and match outline → dropdown → generation
         theme_colors = {
-            'background': primary_bg,      # primary_background - For slide backgrounds
-            'text': text_primary,          # primary_text - For ALL text
-            'accent': accent_1,            # accent_1 - For emphasis/highlights
+            'background': primary_bg,
+            'text': text_primary,
+            'accent': accent_1,
         }
-        
-        slide_type = getattr(context.slide_outline, 'slide_type', 'content')
-        
-        # ═══════════════════════════════════════════════════════════
-        # PART 1: STATIC CONTENT (CACHED BY CLAUDE - REUSED FOR ALL SLIDES!)
-        # Uses the ENHANCED system prompt with theme colors, icons, spacing, etc.
-        # ═══════════════════════════════════════════════════════════
 
-        # Determine mode based on detail_level from deck_outline.notes
-        # detail_level: "quick"|"standard"|"detailed"
+        slide_type = getattr(context.slide_outline, 'slide_type', 'content')
+
+        # Determine mode
         detail_level = None
         try:
-            # First check if detail_level is stored in deck_outline.notes
             notes = getattr(context.deck_outline, 'notes', None)
             if isinstance(notes, dict):
                 detail_level = notes.get('detail_level')
         except Exception:
             pass
 
-        # If not in notes, check stylePreferences
         if not detail_level:
-            try:
-                style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
-                if style_prefs:
-                    detail_level = getattr(style_prefs, 'detailLevel', None)
-            except Exception:
-                pass
+            detail_level = 'standard'
 
-        # If still not found, use visual_density as fallback
-        if not detail_level:
-            visual_density = getattr(context, 'visual_density', 'moderate')
-            detail_level = 'detailed' if visual_density in ["data-heavy", "rich"] else 'standard'
+        mode = "structured" if detail_level == "detailed" else "creative"
 
-        # Mode detection logic:
-        # - "detailed" or Professional style → STRUCTURED MODE
-        # - "standard"/"quick" or Creative style → CREATIVE MODE
-        
-        # Check design_style for keywords
-        design_style_lower = theme_dict.get('design_style', '').lower()
-        is_creative_style = any(k in design_style_lower for k in ['creative', 'fun', 'playful', 'dynamic', 'bold', 'modern', 'artistic'])
-        is_professional_style = any(k in design_style_lower for k in ['professional', 'corporate', 'clean', 'minimal', 'structured', 'educational', 'academic'])
-        
-        if detail_level == "detailed":
-            mode = "structured"
-        elif is_professional_style and not is_creative_style:
-            mode = "structured"
-        elif is_creative_style:
-            mode = "creative"
-        else:
-            # Default fallback: standard/quick -> creative (more impressive by default)
-            mode = "creative"
-
-        logger.info(f"🎨 [MODE DETECTION] detail_level={detail_level}, style={design_style_lower[:30]}... → mode={mode.upper()}")
-
-        # Use V2 prompt (mode-specific design philosophy)
+        # Get system prompt and schemas
         v2_prompt = get_html_inspired_system_prompt_v2()
-        
-        # Get COMPLETE schemas from components.json (Rich definitions)
-        # This ensures SmartLayout, StatCard, etc. are included with full instructions
         schema_section = self._load_component_schemas()
-        
-        # Add header and usage instructions
-        schema_section = f"""
-═══════════════════════════════════════════════════════════════════════════════
-📋 COMPLETE COMPONENT SCHEMAS - USE ALL AVAILABLE PROPERTIES
-═══════════════════════════════════════════════════════════════════════════════
 
-🚨 CRITICAL: These are the COMPLETE schemas with ALL available properties.
-✅ USE all relevant properties for each component
-✅ Don't skip optional properties that improve design (opacity, rotation, zIndex, etc.)
-✅ All properties shown below are available and should be used when appropriate
-
-{schema_section}
-
-🎯 IMPORTANT REMINDERS:
-• TiptapTextBlock: ALWAYS include alignment, verticalAlignment, padding (0), textColor, fontSize, fontFamily
-• Image: ALWAYS set objectFit ("contain" for logos, "cover" for photos)
-• Shape: When hasText=true, MUST include texts, fontSize, textColor, alignment, verticalAlignment
-• Lines: ALWAYS use startPoint/endPoint with {{x, y}} coordinates
-• CustomComponent: ALWAYS use getContrastTextColor(bgColor) for text on colored backgrounds
-• All components: Consider opacity, rotation, zIndex for visual effects
-
-═══════════════════════════════════════════════════════════════════════════════
-"""
-
-        # Build cached part: V2 prompt + complete schemas
         cached_part = f"""{v2_prompt}
 
 {schema_section}"""
 
-        # ═══════════════════════════════════════════════════════════
-        # CACHE BREAKPOINT - Everything after this is slide-specific
-        # ═══════════════════════════════════════════════════════════
-        
-        # ═══════════════════════════════════════════════════════════
-        # PART 2: DYNAMIC CONTENT (SLIDE-SPECIFIC - NOT CACHED)
-        # ═══════════════════════════════════════════════════════════
-
-        # CHECK FOR LAYOUT ARCHITECT BLUEPRINT
-        blueprint_section = self._get_blueprint_from_theme(context)
-
-        guidance = self._get_concise_slide_guidance(slide_type)
-        
         # Check for chart data
         chart_info = ""
-        
-        # STRICTER CHART CONTROL: Reduce chart frequency on narrative slides
-        slide_type_lower = slide_type.lower()
-        data_keywords = ['data', 'chart', 'stat', 'comparison', 'financial', 'growth', 'market', 'metrics', 'kpi']
-        is_data_focused = any(k in slide_type_lower for k in data_keywords)
-        is_narrative = any(k in slide_type_lower for k in ['title', 'cover', 'section', 'agenda', 'thank', 'content', 'narrative'])
-        
-        should_include_chart = context.has_chart_data and (is_data_focused or not is_narrative)
-        
+        should_include_chart = context.has_chart_data
+
         if should_include_chart:
             try:
                 extracted = context.slide_outline.extractedData
                 chart_type = extracted.chartType if hasattr(extracted, 'chartType') else extracted.get('chartType', 'bar')
                 data = extracted.data if hasattr(extracted, 'data') else extracted.get('data', [])
-                data_count = len(data) if data else 0
-                
-                logger.info(f"📊 [CHART] Slide {context.slide_index + 1} has chart data: {chart_type} with {data_count} points")
-                
-                chart_info = f"\n\n📊 CHART DATA AVAILABLE - MUST INCLUDE CHART COMPONENT:\nChart Type: {chart_type}\nData Points: {data_count}\n"
-                
-                # Add ALL the data (it's in dynamic part, so it's okay)
-                if data and len(data) > 0:
-                    import json
-                    chart_info += f"\nCOMPLETE DATA:\n{json.dumps(data, indent=2)}\n"
-                    chart_info += f"\n🚨 CRITICAL CHART POSITIONING - CALCULATE FROM CONTENT START:\n"
-                    chart_info += f"\n**STEP 1: Calculate contentStartY**"
-                    chart_info += f"\n  • If slide has title: slideTitle ends at ~234, line ends at ~254"
-                    chart_info += f"\n  • contentStartY = 254 + 26 = 280 (minimum)"
-                    chart_info += f"\n  • NEVER use fixed y=180 or y=240!"
-                    chart_info += f"\n\n**STEP 2: Position Chart Title**"
-                    chart_info += f"\n  • chartTitleY = contentStartY (e.g., 280)"
-                    chart_info += f"\n  • Chart title: x=80, y=280, width=800, fontSize=28, height=32"
-                    chart_info += f"\n\n**STEP 3: Position Chart**"
-                    chart_info += f"\n  • chartY = chartTitleY + 32 + 18 = 330"
-                    chart_info += f"\n  • Chart: x=80, y=330, width=800, height=540"
-                    chart_info += f"\n  • Verify ends at: 330 + 540 = 870 ✅ (< 1000)"
-                    chart_info += f"\n\n**STEP 4: Position Insights Right**"
-                    chart_info += f"\n  • Text insights: x=960, y=280 (same as chart title), width=760"
-                    chart_info += f"\n  • Stack with 50px gaps: y=280, 350, 420, 490"
-                    chart_info += f"\n\n**NEVER**: Chart + Image on same slide = overlaps! Choose chart OR image, not both!"
-                    chart_info += f"\n\nChart props REQUIRED:"
-                    chart_info += f"\n  • chartType='{chart_type}'"
-                    chart_info += f"\n  • data=[use exact data above]"
-                    chart_info += f"\n  • margin: {{top: 20, right: 20, bottom: 60, left: 80}}"
-                    chart_info += f"\n  • axisBottom: {{legend: 'Category', legendOffset: 36}}"
-                    chart_info += f"\n  • axisLeft: {{legend: 'Value', legendOffset: -60}}"
-                    chart_info += f"\n  • showLegend: false"
-                    chart_info += f"\n  • backgroundColor: '#00000000'"
-                
-                logger.info(f"✅ [CHART] Added {data_count} data points to prompt for slide {context.slide_index + 1}")
+
+                import json
+                chart_info = f"""
+
+📊 CHART DATA - USE PATTERN 4 (Chart + Insights):
+Chart Type: {chart_type}
+Data: {json.dumps(data, indent=2)}
+
+Position: Chart at x=80, y=280, width=800, height=540
+Insights: Text blocks at x=960, y=280 (stacked with 60px gaps)
+NO images on this slide - chart IS the visual!"""
             except Exception as e:
-                logger.error(f"❌ [CHART] Error extracting chart info: {e}")
-                chart_info = "\n\n📊 CHART DATA AVAILABLE - Include Chart component!"
-        
-        # Get mode-specific guidance from V2 prompt
+                logger.error(f"Chart error: {e}")
+
+        # Get mode guidance
         mode_guidance = get_mode_specific_guidance(mode)
 
-        # 🚨 Detect multi-item content for special guidance
-        multi_item_guidance = ""
-        try:
-            # SKIP multi-item image guidance if slide has chart data (chart takes priority!)
-            if should_include_chart:
-                logger.info(f"⚠️ [MULTI-ITEM] Skipping multi-item image guidance for slide {context.slide_index + 1} - has chart data")
-                multi_item_guidance = ""
-            else:
-                # Simple detection: Look for lists, bullets, multiple capitalized names
-                content_lower = context.slide_outline.content.lower()
-                title_lower = context.slide_outline.title.lower()
-                
-                # Count list indicators
-                list_indicators = content_lower.count('\n-') + content_lower.count('\n•') + content_lower.count('\n*')
-                
-                # Count capitalized words (potential item names)
-                import re
-                capitalized_words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b', context.slide_outline.content)
-                unique_caps = len(set(capitalized_words))
-                
-                # Detect multi-item scenarios
-                is_multi_item = (
-                    list_indicators >= 2 or  # Has 2+ list items
-                    unique_caps >= 3 or  # Has 3+ different capitalized names
-                    any(word in title_lower for word in ['planets', 'products', 'features', 'members', 'team', 'regions', 'cities', 'countries', 'steps', 'phases', 'goals', 'values', 'principles']) or
-                    any(word in content_lower for word in ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']) or # Common multi-item examples
-                    ' vs ' in title_lower or ' versus ' in title_lower  # Comparisons
-                )
-                
-                if not is_multi_item:
-                    multi_item_guidance = ""
-                elif is_multi_item:
-                    # Extract item names for logging
-                    item_names = []
-                    lines = context.slide_outline.content.split('\n')
-                    for line in lines:
-                        line = line.strip().lstrip('-•*0123456789. ')
-                        if line and len(line) > 2 and line[0].isupper():
-                            # Get first 1-2 words
-                            words = line.split()[:2]
-                            item_name = ' '.join(words)
-                            if len(item_name) > 2:
-                                item_names.append(item_name)
-                    
-                    if len(item_names) >= 2:
-                        logger.info(f"🎯 [MULTI-ITEM DETECTED] Slide {context.slide_index + 1} has {len(item_names)} items: {item_names}")
-                        
-                        multi_item_guidance = f"""
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 MULTI-ITEM SLIDE DETECTED - BREAK APART INTO SECTIONS!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🚨 THIS SLIDE IS ABOUT {len(item_names)} DISTINCT ITEMS: {', '.join(item_names[:5])}
-
-**CRITICAL INSTRUCTIONS:**
-✅ Create SEPARATE SECTIONS for EACH item
-✅ Each section gets: Title + Facts + Individual Image
-✅ Layout: Horizontal sections, Vertical stack, or Grid (choose based on {len(item_names)} items)
-✅ Each Image component MUST have metadata with specific topic/searchQuery
-
-**REQUIRED FOR EACH ITEM:**
-- Item name/title in bold, accent color ({{{{accent}}}})
-- 2-4 key facts/details about that specific item
-- Image component with:
-  * src="placeholder"
-  * alt="[Specific description of THIS item]"
-  * metadata: {{"topic": "[Item name]", "searchQuery": "[Item name + context]"}}
-
-**LAYOUT GUIDANCE FOR {len(item_names)} ITEMS:**
-{'Horizontal sections (3 columns)' if len(item_names) == 3 else 'Grid layout (2x3)' if len(item_names) >= 4 else 'Vertical stack'}
-
-**EXAMPLE METADATA FOR EACH IMAGE:**
-Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} {deck_subject if 'deck_subject' in locals() else ''}"}}
-{'Item 2: metadata: {"topic": "' + item_names[1] + '", "searchQuery": "' + item_names[1] + '"}' if len(item_names) > 1 else ''}
-
-🚨 DO NOT group with 1 image - EACH ITEM NEEDS ITS OWN IMAGE!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-        except Exception as e:
-            logger.debug(f"Multi-item detection failed: {e}")
-            multi_item_guidance = ""
-
-        # Check if citationsFooter exists and format it
-        citations_info = ""
-        if hasattr(context.slide_outline, 'citationsFooter') and context.slide_outline.citationsFooter:
-            footer = context.slide_outline.citationsFooter
-            if footer.get('sources'):
-                import json
-                citations_info = f"\n\n**CITATIONS FOOTER (MUST RENDER):**\n{json.dumps(footer, indent=2)}\n🚨 CRITICAL: Render the divider line and clickable source links at the bottom-right as shown in the system prompt!"
-
-        # Extract design_style from theme
-        design_style = theme_dict.get('design_style', '')
-        design_style_section = ""
-        if design_style:
-            design_style_section = f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎨 DESIGN STYLE FOR THIS DECK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-{design_style}
-
-🚨 IMPORTANT: Follow this design style throughout the slide!
-- Use the layout approach described (left-aligned, centered, corners, etc.)
-- Apply the typography philosophy (minimal, bold, structured, etc.)
-- Incorporate the visual elements mentioned (rotations, geometric accents, etc.)
-- Match the overall mood and spacing approach
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-            logger.info(f"🎨 Design style for slide {context.slide_index + 1}: {design_style}")
-
-        # Determine if this is a chart-appropriate slide
-        is_chart_slide = should_include_chart
-        chart_reminder = ""
-        if not is_chart_slide:
-            chart_reminder = f"""
-
-🚨 CRITICAL VISUAL STRATEGY:
-• This slide should use IMAGES, not charts!
-• Think: What photo/illustration would help the audience understand this?
-• Charts are ONLY for exceptional quantitative data (this slide doesn't have that)
-• Use Image component with specific, relevant searchQuery
-• Examples: product screenshots, concept illustrations, relevant photography
-"""
-
+        # Build dynamic part - MUCH SIMPLER
         dynamic_part = f"""
 ═══════════════════════════════════════════════════════════
-🎯 SLIDE {context.slide_index + 1} OF {context.total_slides} - CREATE NOW
+🎯 SLIDE {context.slide_index + 1} OF {context.total_slides}
 ═══════════════════════════════════════════════════════════
-{design_style_section}
-**SLIDE TITLE:** {context.slide_outline.title}
+
+**TITLE:** {context.slide_outline.title}
+**TYPE:** {slide_type}
 
 **CONTENT:**
-{context.slide_outline.content}{citations_info}
-
-**SLIDE TYPE:** {slide_type}{chart_info}{multi_item_guidance}{chart_reminder}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎨 THEME COLORS - CONCRETE JSON EXAMPLES (COPY THESE EXACTLY!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-YOUR 3 THEME COLORS:
-  Background: {theme_colors['background']}
-  Text:       {theme_colors['text']}
-  Accent:     {theme_colors['accent']}
-
-COMPONENT EXAMPLES - COPY THESE PROP VALUES EXACTLY:
-
-Background component:
-{{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color", "gradient": null}}}}
-
-💎 SMART LAYOUT (PREFERRED for Content):
-{{"type": "SmartLayout", "props": {{"layout": "SplitRight", "slots": {{"left": {{"type": "BigTitle", "props": {{"text": "Title", "highlight": "Title"}}}}, "right": {{"type": "StatCard", "props": {{"label": "Label", "value": "Value"}}}}}}}}}}
-
-TiptapTextBlock (Legacy/Custom - AVOID unless necessary):
-{{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "fontFamily": "Inter", ...}}}}
-
-Shape (decorative elements - AVOID unless necessary):
-{{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "shapeType": "circle", ...}}}}
-
-ShapeWithText (boxes with text):
-{{"type": "ShapeWithText", "props": {{"fill": "{theme_colors['accent']}", "textColor": "{theme_colors['text']}", ...}}}}
-
-Icon (if absolutely needed, 0-2 MAX):
-{{"type": "Icon", "props": {{"color": "{theme_colors['accent']}", "iconName": "trending-up", ...}}}}
-
-Line/Lines:
-{{"type": "Line", "props": {{"stroke": "{theme_colors['accent']}", ...}}}}
-
-🚨 ABSOLUTELY FORBIDDEN:
-❌ Background with textColor={theme_colors['text']} - WRONG!
-❌ TiptapTextBlock with textColor={theme_colors['background']} - WRONG!
-❌ Shape with fill={theme_colors['text']} - WRONG!
-
-✅ ONLY USE:
-- {theme_colors['background']} for: Background.backgroundColor
-- {theme_colors['text']} for: TiptapTextBlock.textColor, ShapeWithText.textColor
-- {theme_colors['accent']} for: Shape.fill, Icon.color, Line.stroke
-
-**Fonts:**
-• Heading: {theme_dict.get('typography', {}).get('hero_title', {}).get('family', 'Inter')}
-• Body: {theme_dict.get('typography', {}).get('body_text', {}).get('family', 'Inter')}
+{context.slide_outline.content}
+{chart_info}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎭 MODE-SPECIFIC GUIDANCE FOR THIS DECK
+🎨 THEME COLORS (USE EXACTLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Background: {theme_colors['background']}
+Text:       {theme_colors['text']}
+Accent:     {theme_colors['accent']}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎭 MODE: {mode.upper()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {mode_guidance}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 SLIDE-SPECIFIC INSTRUCTIONS
+✅ BEFORE OUTPUT - VERIFY:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+□ Background is FIRST component with backgroundColor="{theme_colors['background']}"
+□ All text uses textColor="{theme_colors['text']}"
+□ Accents use fill/color="{theme_colors['accent']}"
+□ nextY = currentY + height + 60 for EVERY component (no overlaps!)
+□ All bounds within 80-1840 (x), 80-1000 (y)
+□ TiptapTextBlock has: alignment, verticalAlignment, padding=0
+□ Font sizes: titles ≥48pt, body ≥32pt
+□ Chart OR Image, never both
 
-🎯 DESIGN PHILOSOPHY - SIMPLE, VISUAL, IMPACTFUL:
-**THINK LIKE A PITCH DECK:**
-• Each slide = ONE core idea, delivered visually
-• Less text = more impact (audience reads slides in 5 seconds!)
-• Images tell stories, charts show exceptional data ONLY
-• 2-3 sections MAX per slide, 2-3 bullets per section
-• Each bullet = 5-10 words (a headline, not a paragraph)
+Output valid JSON array:"""
 
-🚨 CRITICAL LAYOUT RULE - CHART OR IMAGE, NEVER BOTH:
-• If slide has Chart data → NO Image component (chart is the visual!)
-• If slide has NO chart data → Consider adding Image for visual impact
-• Use PATTERN 4 (Chart + Insights) from system prompt for charts
-• Chart left + text insights right OR chart bottom + text top
-• Verify no overlaps: chart and text must have 80px gap minimum
-
-🚨 BREAK THIS CONTENT INTO MULTIPLE TIPTAPTEXTBLOCK COMPONENTS:
-• Each section/topic = separate TiptapTextBlock
-• Each bullet point = separate TiptapTextBlock
-• Different importance levels = different font sizes in separate blocks
-• NEVER use \\n newlines - that creates tiny unreadable text!
-
-📏 FONT SIZE REQUIREMENTS:
-• Headers/topics: 48-72pt (large, bold)
-• Body/details: 32-42pt (readable)
-• Minimum: NEVER go below 28pt for any body text!
-
-📐 POSITIONING STRATEGY:
-1. PREFERRED: Use SmartLayout (SplitRight, GridLayout) - NO manual positioning needed!
-2. FALLBACK: Calculate positions manually (nextY = currentY + currentHeight + gap)
-3. Verify no overlaps before outputting
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 CRITICAL VALIDATION CHECKLIST - VERIFY BEFORE OUTPUTTING!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔴 TEXT STRUCTURE (CHECK FIRST):
-✅ Content broken into MULTIPLE TiptapTextBlock components (one per section/bullet)
-✅ NO \\n newlines in any text (that causes tiny fonts!)
-✅ Each TiptapTextBlock has proper fontSize: ≥28pt for body, ≥48pt for headers
-✅ Font sizes are READABLE (not 10-15pt!)
-
-🔴 COLOR VALIDATION (CHECK EVERY COMPONENT):
-✅ Background: backgroundColor="{theme_colors['background']}" ← EXACTLY THIS VALUE
-✅ TiptapTextBlock: textColor="{theme_colors['text']}" ← EXACTLY THIS VALUE
-✅ Shape: fill="{theme_colors['accent']}" ← EXACTLY THIS VALUE
-✅ Icon: color="{theme_colors['accent']}" ← EXACTLY THIS VALUE
-✅ Line: stroke="{theme_colors['accent']}" ← EXACTLY THIS VALUE
-
-❌ COMMON MISTAKES TO AVOID:
-❌ Background with backgroundColor="{theme_colors['text']}" - FAILS VALIDATION!
-❌ Background with backgroundColor="{theme_colors['accent']}" - FAILS VALIDATION!
-❌ TiptapTextBlock with textColor="{theme_colors['background']}" - FAILS VALIDATION!
-❌ TiptapTextBlock with textColor="{theme_colors['accent']}" - FAILS VALIDATION!
-❌ Shape with fill="{theme_colors['text']}" - FAILS VALIDATION!
-❌ Using ANY color other than these 3 theme colors - FAILS VALIDATION!
-
-📊 CHART COLORS (if chart present):
-Generate palette from ACCENT color {theme_colors['accent']} by varying brightness:
-- Take accent color {theme_colors['accent']}
-- Create variations: darker → original → lighter
-- Apply to each data series/item
-- Chart background should be transparent or very light
-
-✅ Other Rules:
-✅ Tables: backgroundColor=null, borderWidth=0
-✅ Lines: Always use startPoint/endPoint coordinates
-✅ Heights: Use fontSize × 1.15 formula
-
-🎯 ICONS - USE SPARINGLY!
-🚨 MOST SLIDES NEED 0 ICONS - Only use for critical metrics/dashboards!
-❌ DO NOT use icons for: Regular bullets, section headers, decorative purposes, large background decoration
-✅ USE icons for: Key dashboard metrics (1-2 MAX), hero numbers with semantic meaning
-📚 When absolutely needed: 5000+ icons available (Lucide default) - Use kebab-case: "dollar-sign", "trending-up"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 TEXT ALIGNMENT - CRITICAL RULES (ALWAYS INCLUDE THESE PROPS!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🚨 EVERY TiptapTextBlock MUST HAVE alignment AND verticalAlignment props!
-
-**ALIGNMENT RULES BY SLIDE TYPE:**
-✅ TITLE/COVER slides: alignment="left", verticalAlignment="top" (NEVER center!)
-✅ STAT slides: alignment="center", verticalAlignment="middle"
-✅ CONTENT slides: alignment="left", verticalAlignment="top" (body text)
-✅ COMPARISON slides: alignment="center" (for side-by-side items)
-
-**AVAILABLE VALUES:**
-- alignment: "left" | "center" | "right" | "justify"
-- verticalAlignment: "top" | "middle" | "bottom"
-
-**DEFAULT (when in doubt):**
-- alignment="left", verticalAlignment="top"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ EXAMPLE SLIDE WITH CORRECT COLORS & ALIGNMENT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[
-  {{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color"}}}},
-  {{"type": "TiptapTextBlock", "props": {{"textColor": "{theme_colors['text']}", "position": {{"x": 100, "y": 100}}, "width": 800, "height": 92, "texts": [{{"text": "Title"}}], "fontSize": 72, "alignment": "left", "verticalAlignment": "top", "padding": 0}}}},
-  {{"type": "Shape", "props": {{"fill": "{theme_colors['accent']}", "position": {{"x": 100, "y": 200}}, "width": 100, "height": 100}}}}
-]
-↑ THIS IS CORRECT - Background={theme_colors['background']}, Text={theme_colors['text']}, Shape={theme_colors['accent']}, PLUS alignment props!
-
-Output valid JSON component array now (using the 3 colors above EXACTLY + alignment props):"""
-
-        # INJECT BLUEPRINT IF AVAILABLE
+        # Check for blueprint
+        blueprint_section = self._get_blueprint_from_theme(context)
         if blueprint_section:
             dynamic_part = blueprint_section + "\n\n" + dynamic_part
 
-        # Combine with cache delimiter for Claude caching
         full_prompt = cached_part + CACHE_DELIM + dynamic_part
-        
-        # Log hash of cached part to verify it's identical across slides
+
         import hashlib
         cached_hash = hashlib.md5(cached_part.encode()).hexdigest()[:8]
-        logger.info(f"📝 Prompt built: {len(cached_part)} chars CACHED (hash: {cached_hash}) + {len(dynamic_part)} chars dynamic")
-        
+        logger.info(f"📝 Prompt: {len(cached_part)} cached (hash:{cached_hash}) + {len(dynamic_part)} dynamic")
+
         return full_prompt
     
     def _get_concise_slide_guidance(self, slide_type: str) -> str:

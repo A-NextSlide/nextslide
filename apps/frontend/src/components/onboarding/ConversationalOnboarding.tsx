@@ -473,16 +473,50 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                       {/* Background */}
                       <rect width="200" height="100" fill="currentColor" className="text-zinc-50 dark:text-zinc-900" />
 
+                      {/* Left Content - Title */}
+                      <rect x="10" y="15" width="60" height="6" rx="2" fill="currentColor" className="text-zinc-800 dark:text-zinc-300" />
+                      
+                      {/* Left Content - Text blocks */}
+                      <rect x="10" y="26" width="55" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
+                      <rect x="10" y="32" width="52" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
+                      <rect x="10" y="38" width="50" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
+                      
                       {/* Left Content - Charts */}
-                      <rect x="15" y="20" width="60" height="6" rx="2" fill="currentColor" className="text-zinc-800 dark:text-zinc-300" />
-                      <rect x="15" y="40" width="20" height="35" rx="1" fill="currentColor" className="text-blue-200 dark:text-blue-900" />
-                      <rect x="40" y="50" width="20" height="25" rx="1" fill="currentColor" className="text-blue-300 dark:text-blue-800" />
-                      <rect x="65" y="35" width="20" height="40" rx="1" fill="currentColor" className="text-blue-400 dark:text-blue-700" />
+                      <rect x="10" y="48" width="15" height="30" rx="1" fill="currentColor" className="text-blue-200 dark:text-blue-900" />
+                      <rect x="28" y="55" width="15" height="23" rx="1" fill="currentColor" className="text-blue-300 dark:text-blue-800" />
+                      <rect x="46" y="50" width="15" height="28" rx="1" fill="currentColor" className="text-blue-400 dark:text-blue-700" />
+                      
+                      {/* Additional text below chart */}
+                      <rect x="10" y="83" width="45" height="2.5" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
+                      <rect x="10" y="88" width="40" height="2.5" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
 
-                      {/* Right Image Placeholder */}
-                      <rect x="100" y="15" width="85" height="70" rx="2" fill="currentColor" className="text-indigo-100 dark:text-indigo-900/20" />
-                      <rect x="110" y="25" width="65" height="50" rx="1" fill="currentColor" className="text-indigo-200 dark:text-indigo-800/30" />
+                      {/* Right Image Placeholder with more detail */}
+                      <rect x="75" y="15" width="115" height="70" rx="2" fill="currentColor" className="text-indigo-100 dark:text-indigo-900/20" />
+                      <rect x="82" y="22" width="50" height="35" rx="1" fill="currentColor" className="text-indigo-200 dark:text-indigo-800/30" />
+                      <rect x="135" y="22" width="48" height="20" rx="1" fill="currentColor" className="text-purple-200 dark:text-purple-800/30" />
+                      <rect x="135" y="45" width="48" height="12" rx="1" fill="currentColor" className="text-blue-200 dark:text-blue-800/30" />
+                      
+                      {/* Caption */}
+                      <rect x="82" y="60" width="80" height="2" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
+                      <rect x="82" y="65" width="70" height="2" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
                     </svg>
+                  </button>
+                </div>
+                
+                {/* Continue Chatting Link */}
+                <div className="flex justify-center mt-2">
+                  <button
+                    onClick={() => {
+                      // Allow user to continue asking questions
+                      setStage('chat');
+                      addMessage('user', 'I want to continue chatting');
+                      setTimeout(() => {
+                        addAgentMessage("Of course! What else would you like to discuss about your presentation?");
+                      }, 500);
+                    }}
+                    className="text-xs font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                  >
+                    continue chatting
                   </button>
                 </div>
               </div>
