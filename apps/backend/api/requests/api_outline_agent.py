@@ -77,12 +77,18 @@ When a user's request lacks detail, ask 2-3 focused questions about:
 - Be friendly and encouraging, not robotic
 
 **CRITICAL: COMPLETION TRIGGERS**
-If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", or indicates they are satisfied:
+If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), or indicates they are satisfied:
 1. STOP asking questions.
 2. Infer any missing details (audience, tone, etc.) based on the conversation.
 3. IMMEDIATELY output the `generate_outline` JSON.
 4. Do NOT just say "Okay, I'll build it" - you MUST output the JSON to actually build it.
 5. Do NOT describe the buttons in text (e.g. "I've created buttons for you"). The UI will show them automatically when you output the JSON.
+6. **STOP after outputting generate_outline JSON** - Do NOT continue with theme updates or other actions in the same response.
+
+**FATAL ERROR WARNING:**
+If you say "Done!", "Your presentation is ready!", "I've set that up!", or "All set!" but DO NOT output the `generate_outline` JSON, the user will see NOTHING and will be stuck.
+You MUST output the `generate_outline` JSON block whenever you reach a point of agreement or completion.
+NEVER finish a turn with just a text confirmation if the goal was to build the outline.
 
 **Generating Outlines and Theme Changes:**
 You make changes by outputting JSON actions. There are three types:
@@ -130,6 +136,8 @@ When you have enough context to generate an outline, output JSON in this EXACT f
 
 After the JSON, add a friendly 1-sentence confirmation like:
 "I've created a 5-slide outline on machine learning. What do you think?"
+
+🚨 **IMPORTANT**: After outputting generate_outline JSON, STOP. Do NOT auto-apply themes or make any other changes. The UI will show presentation type buttons (Simple/Detailed) for the user to choose. Wait for user to select before proceeding.
 
 **Editing Existing Outlines:**
 When user wants to modify an existing outline (available in [CURRENT OUTLINE] context):
@@ -500,33 +508,55 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
 
         # After streaming, extract JSON and any text after it
         import re
-        json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', full_response)
-        text_after_json = ""
-
-        if json_match:
-            # Extract text after the JSON block
-            json_end = json_match.end()
-            text_after_json = full_response[json_end:].strip()
-        else:
-            # Try inline JSON format
-            json_match = re.search(r'(\{[\s\S]*?"action"[\s\S]*?\})', full_response)
-            if json_match:
-                json_end = json_match.end()
-                text_after_json = full_response[json_end:].strip()
-
-        if json_match:
+        
+        # Find ALL JSON blocks to handle cases where agent outputs multiple actions
+        found_json_blocks = []
+        
+        # 1. Search for code blocks
+        for match in re.finditer(r'```json\s*(\{[\s\S]*?\})\s*```', full_response):
             try:
-                outline_data = json.loads(json_match.group(1))
-                logger.info(f"[OutlineAgent] Extracted outline data: {outline_data.get('action')}")
+                data = json.loads(match.group(1))
+                found_json_blocks.append({
+                    'data': data,
+                    'end_index': match.end()
+                })
+            except:
+                pass
+                
+        # 2. If no code blocks, search for raw JSON with action
+        if not found_json_blocks:
+             # Basic regex for simple cases (nested braces are hard with regex)
+             match = re.search(r'(\{[\s\S]*?"action"[\s\S]*?\})', full_response)
+             if match:
+                 try:
+                     data = json.loads(match.group(1))
+                     found_json_blocks.append({
+                         'data': data,
+                         'end_index': match.end()
+                     })
+                 except:
+                     pass
 
-                # Send the outline data
-                yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
-
-                # Send any friendly text that came after the JSON
-                if text_after_json:
-                    yield f"data: {json.dumps({'type': 'text', 'content': text_after_json})}\n\n"
-            except Exception as e:
-                logger.error(f"[OutlineAgent] Failed to parse outline JSON: {e}")
+        # Prioritize generate_outline
+        chosen_block = None
+        for block in found_json_blocks:
+            if block['data'].get('action') == 'generate_outline':
+                chosen_block = block
+                break
+        
+        # If no generate_outline, take the first one (e.g. update_theme)
+        if not chosen_block and found_json_blocks:
+            chosen_block = found_json_blocks[0]
+            
+        if chosen_block:
+            outline_data = chosen_block['data']
+            text_after_json = full_response[chosen_block['end_index']:].strip()
+            
+            logger.info(f"[OutlineAgent] Extracted outline data: {outline_data.get('action')}")
+            yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
+            
+            if text_after_json:
+                 yield f"data: {json.dumps({'type': 'text', 'content': text_after_json})}\n\n"
 
         # Send done event
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

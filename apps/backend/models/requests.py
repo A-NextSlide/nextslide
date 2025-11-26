@@ -137,6 +137,7 @@ class StylePreferencesItem(BaseModel):
     font: Optional[str] = Field(None, description="Preferred font name (e.g., 'Arial', 'Roboto').")
     colors: Optional[ColorConfigItem] = Field(None, description="Color preferences for the deck.")
     logoUrl: Optional[str] = Field(None, description="URL to a company/brand logo to place consistently on slides.")
+    autoSelectImages: Optional[bool] = Field(None, description="When True, frontend handles image search/application; backend skips SerpAPI search.")
 
 class DeckOutline(BaseModel):
     id: str = Field(description="Unique identifier for the deck outline.")

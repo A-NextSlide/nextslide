@@ -730,7 +730,9 @@
       "interaction": "Engage with quiz_component, interactive_poll, interactive_slider",
       "visual_appeal": "Add modern aesthetics with morphing_blob, floating_icons, countdown_timer"
     },
-    "when_to_use": "When content needs structured layout, qualitative relationships, or interactions rather than numerical axis comparison",
+    "when_to_use": {
+      "complex_layouts": "When content needs structured layout, qualitative relationships, or interactions rather than numerical axis comparison"
+    },
     "presentation_mode_priority": {
       "philosophy": "In PRESENTATION MODE, prefer CustomComponents over plain text - make it VISUAL!",
       "card_layouts": "Use card-based components (three_card_grid, two_card_comparison, hero_stat_card) for 70% of content slides",
@@ -1110,6 +1112,154 @@
     "props": {
       "text": "The headline text",
       "highlight": "Substring to highlight in accent color"
+    }
+  },
+  "Icon": {
+    "description": "Visual indicator icon - USE SPARINGLY (0-2 per slide). Position LEFT of associated text.",
+    "required_props": [
+      "position",
+      "width",
+      "height",
+      "iconLibrary",
+      "iconName",
+      "color"
+    ],
+    "all_props": [
+      "position",
+      "width",
+      "height",
+      "iconLibrary",
+      "iconName",
+      "color",
+      "strokeWidth",
+      "filled",
+      "opacity"
+    ],
+    "positioning_rules": {
+      "CRITICAL": "Icons MUST be positioned LEFT of their associated text with proper spacing",
+      "icon_text_gap": "20-24px gap between icon and text",
+      "vertical_alignment": "Icon center should align with text baseline (icon.y = text.y + (text.fontSize - icon.height) / 2)",
+      "size_relative_to_text": "Icon size = 0.8-1.0 × associated fontSize (e.g., 32pt text → 28-32px icon)",
+      "no_overlap_formula": "text.x = icon.x + icon.width + 24"
+    },
+    "icon_library": {
+      "default": "lucide",
+      "options": [
+        "lucide",
+        "heroicons",
+        "feather",
+        "tabler"
+      ]
+    },
+    "icon_mapping": {
+      "growth_metrics": [
+        "TrendingUp",
+        "ArrowUpRight",
+        "BarChart3",
+        "LineChart"
+      ],
+      "security": [
+        "Shield",
+        "Lock",
+        "Key",
+        "ShieldCheck"
+      ],
+      "speed_performance": [
+        "Rocket",
+        "Zap",
+        "Timer",
+        "Gauge"
+      ],
+      "team_people": [
+        "Users",
+        "User",
+        "UserPlus",
+        "Heart"
+      ],
+      "time_schedule": [
+        "Clock",
+        "Calendar",
+        "CalendarDays",
+        "History"
+      ],
+      "success": [
+        "Trophy",
+        "Award",
+        "Medal",
+        "Star",
+        "Crown"
+      ],
+      "ideas": [
+        "Lightbulb",
+        "Brain",
+        "Sparkles",
+        "Wand2"
+      ],
+      "money": [
+        "DollarSign",
+        "CreditCard",
+        "Wallet",
+        "Coins"
+      ],
+      "settings": [
+        "Settings",
+        "Wrench",
+        "Cog",
+        "SlidersHorizontal"
+      ],
+      "files": [
+        "FileText",
+        "Folder",
+        "ClipboardList",
+        "BookOpen"
+      ]
+    },
+    "usage_rules": {
+      "max_per_slide": "0-2 icons maximum",
+      "when_to_use": "Dashboard metrics, key data points, feature highlights",
+      "when_NOT_to_use": "Every bullet point, headers, decoration",
+      "NEVER_use": "Circle, CheckCircle (too generic)"
+    },
+    "example_with_text": {
+      "description": "Icon positioned correctly with associated text",
+      "icon": {
+        "type": "Icon",
+        "props": {
+          "position": {
+            "x": 120,
+            "y": 306
+          },
+          "width": 32,
+          "height": 32,
+          "iconLibrary": "lucide",
+          "iconName": "TrendingUp",
+          "color": "{{accent}}",
+          "strokeWidth": 2
+        }
+      },
+      "text": {
+        "type": "TiptapTextBlock",
+        "props": {
+          "position": {
+            "x": 176,
+            "y": 300
+          },
+          "width": 600,
+          "height": 44,
+          "texts": [
+            {
+              "text": "Revenue grew 42%",
+              "style": {
+                "textColor": "{{text}}"
+              }
+            }
+          ],
+          "fontSize": 36,
+          "alignment": "left",
+          "verticalAlignment": "middle"
+        }
+      },
+      "calculation": "icon.x=120, icon.width=32, gap=24 → text.x=176; icon.y=text.y+(fontSize×1.15-iconHeight)/2"
     }
   }
 }

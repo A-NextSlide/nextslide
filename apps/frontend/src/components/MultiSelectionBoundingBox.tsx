@@ -150,13 +150,18 @@ const MultiSelectionBoundingBox: React.FC<MultiSelectionBoundingBoxProps> = ({
         const newX = Math.round(startPos.x + deltaX);
         const newY = Math.round(startPos.y + deltaY);
         
+        // Skip updating the draft store during drag to prevent double-movement
+        // (React render + CSS transform). We rely on CSS transforms for smooth
+        // drag, and only commit to store on drag end.
+        /* 
         updateDraftComponent(slideId, componentId, {
           props: {
             position: { x: newX, y: newY }
           }
         }, true); // Skip history for intermediate updates
+        */
         
-        // Dispatch position update event for real-time updates
+        // Dispatch position update event for real-time updates (lines etc)
         const event = new CustomEvent('component-position-updated', {
           detail: {
             componentId,

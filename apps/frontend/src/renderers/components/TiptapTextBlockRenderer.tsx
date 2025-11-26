@@ -622,7 +622,6 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
   return (
     <div
       key={instanceKey}
-      ref={containerRef}
       style={wrapperStyle}
       data-component-id={component.id}
       data-component-type="TiptapTextBlock"

@@ -154,7 +154,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // Test outline creation
   onCreateTestOutline,
   // Auto select images
-  autoSelectImages = false, // Default to false - user must explicitly enable
+  autoSelectImages = true, // Default to true - auto-populate images during generation
   setAutoSelectImages,
   // Detail level
   detailLevel = 'standard',
@@ -448,26 +448,26 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   // Track if we've already initiated outline to prevent infinite loop
   const hasInitiatedOutlineRef = useRef(false);
 
-  // Auto-start outline generation when reaching showOptions, using selected controls
-  useEffect(() => {
-    if (interactionStage === 'showOptions' && !hasInitiatedOutlineRef.current) {
-      hasInitiatedOutlineRef.current = true;
-      (async () => {
-        try {
-          // USE THE MODE DROPDOWN VALUE (detailLevel) - not selectedSlidePreset!
-          console.log('🔴 [ChatInputView] Using detailLevel from Mode dropdown:', detailLevel);
-          await handleInitiateOutline(
-            detailLevel,  // Use the actual dropdown value!
-            selectedSlideCount !== null ? selectedSlideCount : undefined
-          );
-        } catch (error) {
-          console.error('Error initiating outline:', error);
-          // Reset on error to allow retry
-          hasInitiatedOutlineRef.current = false;
-        }
-      })();
-    }
-  }, [interactionStage, selectedSlideCount, selectedSlidePreset, detailLevel]);
+  // Auto-start DISABLED - Let user select via buttons instead
+  // useEffect(() => {
+  //   if (interactionStage === 'showOptions' && !hasInitiatedOutlineRef.current) {
+  //     hasInitiatedOutlineRef.current = true;
+  //     (async () => {
+  //       try {
+  //         // USE THE MODE DROPDOWN VALUE (detailLevel) - not selectedSlidePreset!
+  //         console.log('🔴 [ChatInputView] Using detailLevel from Mode dropdown:', detailLevel);
+  //         await handleInitiateOutline(
+  //           detailLevel,  // Use the actual dropdown value!
+  //           selectedSlideCount !== null ? selectedSlideCount : undefined
+  //         );
+  //       } catch (error) {
+  //         console.error('Error initiating outline:', error);
+  //         // Reset on error to allow retry
+  //         hasInitiatedOutlineRef.current = false;
+  //       }
+  //     })();
+  //   }
+  // }, [interactionStage, selectedSlideCount, selectedSlidePreset, detailLevel]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1443,8 +1443,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                 </div>
               )}
 
-              {/* Options Buttons removed: replaced by structured controls above */}
-              {false && (
+              {/* Options Buttons - Show when in showOptions stage */}
+              {interactionStage === 'showOptions' && (
                 <div className="mt-1 animate-in fade-in duration-300 fill-mode-forwards relative z-0">
                   <div className="flex flex-row gap-3 justify-center w-full">
                     <div

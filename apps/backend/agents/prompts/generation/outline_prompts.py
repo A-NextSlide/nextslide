@@ -110,7 +110,12 @@ Slide types: title, agenda, content, transition, divider, stat, quote, team, qui
 
 📝 Use 'quiz' type for interactive checkpoint slides in educational presentations
 
-Style: {style_context or 'Professional'}
+CONTEXT/HISTORY:
+{style_context or 'None'}
+
+IMPORTANT: If the context above contains a specific plan, list of questions, or structure agreed upon with the user, YOU MUST FOLLOW IT EXACTLY.
+Prioritize the specific details in the context over generic generation.
+Style: Professional
 
 {enforcement}"""
 
@@ -229,62 +234,144 @@ D) Glucose and carbon dioxide
     data_note = "\n\nUSE REAL DATA from files!" if has_data else ""
 
     if detail == 'detailed':
-        mode = """STRUCTURED MODE - EDUCATIONAL/PROFESSIONAL:
+        mode = """STRUCTURED MODE - EDUCATIONAL/PROFESSIONAL APPROACH:
 
-GOAL: Teach concepts clearly with sufficient detail.
+🎓 GOAL: Deep understanding through clear, focused explanations.
+This is NOT about cramming information - it's about TEACHING concepts properly.
 
 CONTENT PER SLIDE:
-- 100-150 words per slide
-- ONE main concept per slide
-- Clear explanations with examples
+- 150-200 words per slide (comprehensive coverage)
+- Multiple concepts allowed if related
+- Use full sentences and paragraphs where appropriate
+- Think "textbook clarity" with sufficient detail
 
 FORMAT:
 ## Concept Title (2-5 words)
-• Main point with detail (15-20 words)
-• Supporting point (15-20 words)
-• Example if helpful (15-20 words)
+• Clear, detailed point (15-25 words)
+• Supporting detail with context (15-25 words)
+• Optional example or case study (15-25 words)
 
-** CRITICAL: IF USER PROVIDED SPECIFIC CONTENT:
+EDUCATIONAL CONTENT RULES:
+✅ Break complex topics into logical sections
+✅ Each slide focuses on a key learning objective
+✅ Use clear, accessible language
+✅ Include concrete examples when helpful
+✅ Progressive complexity: simple → advanced
+✅ For processes: detailed steps
+✅ For concepts: definition → explanation → example
+✅ For comparisons: overview → item A → item B → synthesis
+
+INTERACTIVE ELEMENTS for Educational Content:
+- For key concepts: add "💡 Quick Check: [simple question to test understanding]"
+- For processes: add "✓ Checkpoint: What did we learn?"
+- For complex topics: add "🤔 Think: How would you apply this?"
+
+EXAMPLES BY TOPIC TYPE:
+
+Educational Concept:
+## Photosynthesis Overview
+• Plants convert sunlight into chemical energy through a complex process involving chlorophyll.
+• This occurs primarily in the chloroplasts, which are the green parts of plants responsible for absorbing light.
+• The process produces glucose, which serves as food for the plant, and releases oxygen as a vital byproduct for other life.
+
+💡 Quick Check: What are the two main products of photosynthesis?
+
+Tutorial Step:
+## Step 3: Mixing the Batter
+• Combine dry and wet ingredients separately first to ensure even distribution of leavening agents.
+• Gently fold the wet mixture into the dry ingredients - be careful not to overmix, as this can develop gluten and make the result tough.
+• Stop mixing when just combined; some small lumps are perfectly fine and will disappear during baking.
+
+✓ Checkpoint: The batter should look slightly lumpy, not perfectly smooth.
+
+Technical Concept:
+## What is an API?
+• Application Programming Interface (API) is a set of rules and protocols that allows different software applications to communicate with each other.
+• It acts as an intermediary, similar to a waiter taking your order to the kitchen and bringing the food back to you.
+• APIs enable developers to access functionality or data from other services without needing to understand their internal implementation.
+
+🤔 Think: What are some APIs you might be using right now without realizing it?
+
+** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
-- DO NOT add or expand on their content
+- DO NOT add research, examples, or additional information
+- DO NOT expand or elaborate on their content
+- Your role is to format and structure their exact words, not to add content
 
-CHARTS: Rarely needed - use text explanations instead"""
+CHARTS: ALMOST NEVER in educational/detailed mode
+- Educational content needs TEXT and EXAMPLES, not charts
+- ONLY use charts if you have 15+ quantitative data points showing a clear pattern
+- Default to text explanations and examples"""
     else:
-        mode = """PRESENTATION MODE - VISUAL-FIRST, MINIMAL TEXT:
+        mode = """CREATIVE MODE - DESIGN-FIRST APPROACH:
 
-🚨 CRITICAL: LESS IS MORE! Slides are VISUAL AIDS, not documents.
+GOAL: Visual-first slides that are easy to absorb but provide sufficient context.
 
-CONTENT PER SLIDE:
-- MAXIMUM 40 words per slide (excluding title)
-- 2-3 bullets TOTAL per slide
-- Each bullet: 8-12 words MAX (punchy headlines, not sentences)
+APPROACH: Clean sections with clear, descriptive text.
 
 FORMAT:
-## Section Title (2-4 words)
-• Punchy point (8-12 words)
-• Another key insight (8-12 words)
+## Section Title (2-5 words)
+• Concise but clear point (10-15 words)
+• Another key point with detail (10-15 words)
 
-EXAMPLE - CORRECT:
-## Market Growth
-• Fintech up **340%** driven by digital payments
-• SaaS showing steady **25% YoY** growth
+## Another Section (if needed)
+• Supporting insight (10-15 words)
 
-EXAMPLE - TOO VERBOSE (DON'T DO THIS):
+EXAMPLE - PITCH DECK SLIDE:
 ## Sector Insights
-Fintech has shown notable growth with higher mega outcome incidence, driven by increasing adoption of digital payments and banking solutions across global markets.
-^ THIS IS WAY TOO LONG! Cut it down!
+
+## Fintech
+Fintech has shown **notable growth** with higher mega outcome incidence, driven by increasing adoption of digital payments and banking solutions.
+
+## SaaS
+The SaaS sector has maintained **steady outcomes**, demonstrating resilience even in fluctuating market conditions due to recurring revenue models.
+
+## Consumer
+Consumer sectors exhibit **high variance** in returns, often dependent on shifting consumer trends and brand loyalty.
 
 CONTENT RULES:
-- 40 words MAX per slide (this is a hard limit!)
-- NO paragraphs - only short bullet points
-- Bold key numbers with **
-- If you have more to say, split into multiple slides
+- BREVITY WITH SUBSTANCE: Bullets should be 10-15 words - clear and descriptive.
+- MAXIMUM 60-80 words per slide (excluding title)
+- 2-3 sections max per slide
+- 2-3 bullets per section
+- Bold key numbers and metrics with **
+- DO NOT include IMAGE tags - those are added separately
+- Use short, punchy sentences
+- Avoid wall of text, but avoid vague one-liners
 
-** CRITICAL: IF USER PROVIDED SPECIFIC CONTENT:
+** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
-- DO NOT add or expand on their content
+- DO NOT add research, examples, or additional information
+- DO NOT expand or elaborate on their content
+- Your role is to format and structure their exact words, not to add content
 
-CHARTS: EXTREMELY RARE (5% of slides max)"""
+VISUALS:
+🎨 Images/Icons: PRIMARY visual element (60-80% of slides should have images)
+📊 Charts: EXTREMELY RARE (only 5-10% of slides MAX, and ONLY for truly exceptional data stories)
+
+CHARTS - WHEN TO USE THEM:
+🚫 NO CHARTS FOR (use text/images instead):
+   - Educational/explanatory content (concepts, processes, how-to)
+   - Historical narratives or stories
+   - Feature lists or benefits
+   - Comparisons that work as bullet points
+   - Simple statistics (2-3 numbers)
+   - Qualitative information (opinions, quotes, descriptions)
+   - Product features, team members, testimonials
+   - Vision statements, mission, values
+   - ANY slide where an image or text would work just as well
+
+✅ ONLY USE CHARTS WHEN ALL CONDITIONS MET:
+   - You have 10-20+ QUANTITATIVE data points to compare
+   - The data shows a clear TREND, PATTERN, or DISTRIBUTION
+   - The visual representation reveals insights text CANNOT
+   - The slide's PRIMARY PURPOSE is data analysis/metrics (not storytelling)
+   - Examples: quarterly revenue over 3+ years, market share distribution across 10+ companies, user growth over 12+ months
+   - The presentation is business/data-focused (NOT educational, personal, or creative)
+
+⚠️ ASK YOURSELF: "Is this slide IMPOSSIBLE to understand without a chart?"
+   - If the answer is "no" or "text/images would work" → NO CHART
+   - Default to NO CHART unless you're 100% certain it's necessary"""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):

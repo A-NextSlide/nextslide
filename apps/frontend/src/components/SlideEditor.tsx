@@ -313,12 +313,17 @@ const SlideEditorContent: React.FC = () => {
               for (let i = 0; i < slides.length; i++) {
                 const slide = slides[i] as any;
                 if (slide && slide.id && !processedSlideIdsRef.current.has(slide.id)) {
-                  // Check if slide has Image components with searchQuery metadata
-                  const hasImages = slide.components?.some((c: any) =>
-                    c.type === 'Image' && (c.props?.metadata?.searchQuery || c.props?.metadata?.topic)
-                  );
+                  // Check if slide has Image components with placeholder src that need images
+                  const hasPlaceholderImages = slide.components?.some((c: any) => {
+                    if (c.type !== 'Image') return false;
+                    const src = c.props?.src || '';
+                    const isPlaceholder = !src || src === 'placeholder' || src === '/placeholder.svg';
+                    // Check searchQuery in multiple places (AI may put it in props directly or metadata)
+                    const hasSearchQuery = c.props?.searchQuery || c.props?.metadata?.searchQuery || c.props?.metadata?.topic || c.props?.alt;
+                    return isPlaceholder && hasSearchQuery;
+                  });
 
-                  if (hasImages) {
+                  if (hasPlaceholderImages) {
                     newSlides.push({ slide, index: i });
                     processedSlideIdsRef.current.add(slide.id);
                   }
@@ -1703,7 +1708,7 @@ const SlideEditorContent: React.FC = () => {
     // 2. Either generation is complete or slides are being updated
     // 3. Auto-select images is enabled
     if (deckData.slides.length > 0) {
-      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
       if (autoSelectImages) {
         const imageUpdater = SlideImageUpdater.getInstance();
 
@@ -1726,20 +1731,28 @@ const SlideEditorContent: React.FC = () => {
     }
   }, [deckData.slides.length, deckStatus?.state]);
 
-  // Apply cached images when slides are already loaded (initial mount or preference changes)
+  // Apply images when slides are loaded and autoSelectImages is enabled
+  // This triggers image search and application based on searchQuery metadata
   useEffect(() => {
     // Check if we have slides with Image components that need images
     if (deckData.slides.length === 0) return;
 
-    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
     if (!autoSelectImages) return;
-
-    // Check if we have cached images
-    const imageCache = (window as any).__slideImageCache;
-    if (!imageCache || Object.keys(imageCache).length === 0) return;
 
     // Prevent infinite loop
     if (applyingImagesRef.current) return;
+
+    // Check if any slides have placeholder images that need to be filled
+    const hasPlaceholderImages = deckData.slides.some(slide =>
+      slide.components?.some((c: any) => {
+        if (c.type !== 'Image') return false;
+        const src = c.props?.src || '';
+        return !src || src === 'placeholder' || src === '/placeholder.svg';
+      })
+    );
+
+    if (!hasPlaceholderImages) return;
 
     const imageUpdater = SlideImageUpdater.getInstance();
 
@@ -1747,6 +1760,7 @@ const SlideEditorContent: React.FC = () => {
     const timeoutId = setTimeout(async () => {
       applyingImagesRef.current = true;
       try {
+        // This will search and apply images based on searchQuery metadata
         await imageUpdater.applyAllCachedImages();
       } finally {
         setTimeout(() => {
@@ -1756,7 +1770,7 @@ const SlideEditorContent: React.FC = () => {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [deckData.data?.outline?.stylePreferences?.autoSelectImages]); // Only re-run when preference changes, not slides length
+  }, [deckData.data?.outline?.stylePreferences?.autoSelectImages, deckData.slides.length]); // Re-run when preference or slides change
 
   // Also listen for slide_images_available events directly
   useEffect(() => {
@@ -1770,7 +1784,7 @@ const SlideEditorContent: React.FC = () => {
       }
 
       // Check if auto-select images is enabled
-      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+      const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
 
       // IMPORTANT: If auto-select is enabled, we DON'T use the old cached image system
       // The new system applies images immediately in fetchLatestDeck using searchQuery metadata
@@ -1811,7 +1825,7 @@ const SlideEditorContent: React.FC = () => {
 
     const handleSlideCompleted = async (e: CustomEvent) => {
       try {
-        const autoSelect = (window as any).__slideGenerationPreferences?.autoSelectImages || false;
+        const autoSelect = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
         if (!autoSelect) return;
         const slideIndex: number | undefined = e.detail?.slideIndex;
         if (typeof slideIndex !== 'number') return;

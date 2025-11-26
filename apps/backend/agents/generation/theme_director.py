@@ -33,6 +33,85 @@ class ThemeDirector:
     def __init__(self):
         self.event_bus = get_event_bus()
 
+    async def generate_quick_palette(
+        self,
+        title: str,
+        context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a quick color palette for a topic/title during outline creation.
+        This is a lightweight version that doesn't do full theme generation.
+        """
+        try:
+            logger.info(f"[ThemeDirector] Generating quick palette for: {title}")
+            
+            # Use fast analysis to understand the topic
+            analysis = self._analyze_request_fast(context or "", title, {})
+            
+            # Generate colors based on topic using Huemint
+            # Check if it's a known topic with iconic colors
+            topic_lower = (title + " " + (context or "")).lower()
+            
+            # Well-known topic color mappings
+            ICONIC_COLORS = {
+                "pikachu": {"primary_background": "#FFCC00", "primary_text": "#2D2D2D", "colors": ["#FFCC00", "#FF4500", "#3B4CCA"]},  # Yellow, Red cheeks, Pokemon blue
+                "pokemon": {"primary_background": "#FFCC00", "primary_text": "#2D2D2D", "colors": ["#FFCC00", "#3B4CCA", "#FF0000"]},
+                "mcdonald": {"primary_background": "#FFC72C", "primary_text": "#27251F", "colors": ["#FFC72C", "#DA291C", "#27251F"]},
+                "coca cola": {"primary_background": "#F40009", "primary_text": "#FFFFFF", "colors": ["#F40009", "#FFFFFF", "#000000"]},
+                "starbucks": {"primary_background": "#00704A", "primary_text": "#FFFFFF", "colors": ["#00704A", "#1E3932", "#FFFFFF"]},
+                "christmas": {"primary_background": "#165B33", "primary_text": "#FFFFFF", "colors": ["#165B33", "#BB2528", "#F8B229"]},
+                "halloween": {"primary_background": "#1A1A2E", "primary_text": "#FF6B00", "colors": ["#FF6B00", "#1A1A2E", "#7B2CBF"]},
+                "nature": {"primary_background": "#228B22", "primary_text": "#FFFFFF", "colors": ["#228B22", "#8FBC8F", "#2E8B57"]},
+                "ocean": {"primary_background": "#006994", "primary_text": "#FFFFFF", "colors": ["#006994", "#40E0D0", "#00CED1"]},
+                "fire": {"primary_background": "#FF4500", "primary_text": "#FFFFFF", "colors": ["#FF4500", "#FF6347", "#FFD700"]},
+                "tech": {"primary_background": "#0A0A0A", "primary_text": "#00D4FF", "colors": ["#00D4FF", "#0A0A0A", "#7C3AED"]},
+                "ai": {"primary_background": "#0F0F23", "primary_text": "#10B981", "colors": ["#10B981", "#6366F1", "#8B5CF6"]},
+            }
+            
+            # Check for iconic topic matches
+            for topic_key, colors in ICONIC_COLORS.items():
+                if topic_key in topic_lower:
+                    logger.info(f"[ThemeDirector] ✅ Found iconic colors for topic: {topic_key}")
+                    return {"color_palette": colors}
+            
+            # If no iconic match, try Huemint for a good palette
+            try:
+                from agents.tools.theme import generate_huemint_palette
+                
+                # Generate a palette based on the topic vibe
+                huemint_result = await generate_huemint_palette(
+                    num_colors=4,
+                    variety_seed=str(uuid.uuid4())
+                )
+                
+                huemint_colors = huemint_result.get('colors', []) if huemint_result else []
+                
+                if huemint_colors and len(huemint_colors) >= 3:
+                    logger.info(f"[ThemeDirector] ✅ Huemint generated colors: {huemint_colors}")
+                    return {
+                        "color_palette": {
+                            "primary_background": huemint_colors[0],
+                            "primary_text": "#1F2937",  # Safe dark text
+                            "colors": huemint_colors[:4]
+                        }
+                    }
+            except Exception as e:
+                logger.debug(f"[ThemeDirector] Huemint fallback failed: {e}")
+            
+            # Final fallback: return a default modern palette
+            logger.info("[ThemeDirector] Using default modern palette")
+            return {
+                "color_palette": {
+                    "primary_background": "#FFFFFF",
+                    "primary_text": "#1F2937",
+                    "colors": ["#3B82F6", "#10B981", "#F59E0B"]  # Blue, Green, Amber
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"[ThemeDirector] generate_quick_palette failed: {e}")
+            return {}
+
     async def generate_theme_document(
         self,
         deck_outline: Any,
@@ -1331,15 +1410,40 @@ Brand name:"""
         variety_seed: str
     ) -> Dict[str, str]:
         """AI-driven font selection."""
+        from services.registry_fonts import RegistryFonts
         
-        # Use scraped brand fonts if available
+        # Use scraped brand fonts if available AND locally available
         scraped_fonts = color_result.get('metadata', {}).get('fonts') or []
         if scraped_fonts:
-            return {
-                'hero': scraped_fonts[0],
-                'body': scraped_fonts[1] if len(scraped_fonts) > 1 else 'Roboto',
-                'source': 'brand_fonts'
-            }
+            # CRITICAL: Validate that scraped fonts are available locally
+            # Many brands use custom fonts (e.g., "Flexo-Medium") that we don't have
+            try:
+                all_available = RegistryFonts.get_all_fonts_list(None)
+                available_set = {str(f).lower().strip() for f in all_available}
+                
+                matched_hero = None
+                matched_body = None
+                
+                for font in scraped_fonts:
+                    font_lower = str(font).lower().strip()
+                    if font_lower in available_set:
+                        if not matched_hero:
+                            matched_hero = font
+                        elif not matched_body:
+                            matched_body = font
+                            break
+                
+                if matched_hero:
+                    logger.info(f"[FONT SELECTION] ✅ Using available scraped font: {matched_hero}")
+                    return {
+                        'hero': matched_hero,
+                        'body': matched_body or 'Roboto',
+                        'source': 'brand_fonts_validated'
+                    }
+                else:
+                    logger.warning(f"[FONT SELECTION] ⚠️ Scraped fonts not available locally: {scraped_fonts}")
+            except Exception as e:
+                logger.warning(f"[FONT SELECTION] Font validation error: {e}")
         
         # Use AI to select fonts based on context
         try:

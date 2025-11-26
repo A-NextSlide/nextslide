@@ -31,7 +31,7 @@ export const useOutlineChat = ({
   styleVibeText,
   selectedFont,
   colorConfig,
-  autoSelectImages = false,
+  autoSelectImages = true,
   enableResearch = false,
   referenceLinks = [],
   uploadedFiles,
@@ -536,9 +536,11 @@ export const useOutlineChat = ({
                   window.dispatchEvent(new CustomEvent('theme_preview_update', { detail }));
                 }
 
-                // If we only have 1–2 colors, immediately request a full theme to enrich extras
+                // ALWAYS request full theme to ensure we have complete theme document (typography, visual style)
+                // Backend will use existing brand colors if available, or generate new ones
                 const colorCount = Array.isArray(palette.colors) ? palette.colors.length : 0;
-                if (colorCount < 3 && outline) {
+                console.warn('[useOutlineChat] 🎨 Triggering theme generation after outline_complete', { colorCount, hasMeaningfulPalette, outlineId: outline?.id });
+                if (outline) {
                   try {
                     void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
                       try {
@@ -565,13 +567,10 @@ export const useOutlineChat = ({
                     });
                   } catch { }
                 }
-              }
-
-              // If backend didn't include a meaningful brand palette, fall back to client theme generation
-              const needsTheme = !hasMeaningfulPalette;
-              if (needsTheme && outline) {
+              } else if (outline) {
+                // Even without a meaningful palette from outline, still trigger theme generation
+                console.warn('[useOutlineChat] 🎨 No meaningful palette from outline, triggering theme generation');
                 try {
-                  // Kick off client-side theme generation without blocking
                   void outlineApi.generateThemeFromOutline(outline, deckId, (evt) => {
                     try {
                       let d: any = null;
@@ -579,16 +578,10 @@ export const useOutlineChat = ({
                         const theme = (evt as any)?.content?.deck_theme || (evt as any)?.content?.theme || (evt as any)?.content;
                         const palette2 = theme?.color_palette || (evt as any)?.content?.palette;
                         d = { theme, palette: palette2, typography: theme?.typography };
-                        try {
-                          const colors = (palette2?.colors || theme?.color_palette?.colors || []) as any[];
-                          console.warn('[useOutlineChat] Received theme artifact (no-meaningful fallback)', { colorsCount: colors.length, palette: palette2 });
-                        } catch { }
+                        console.warn('[useOutlineChat] Received theme artifact (fallback)', { palette: palette2 });
                       } else if ((evt as any).type === 'theme_generated') {
                         d = { theme: (evt as any).theme, palette: (evt as any).palette, typography: (evt as any).theme?.typography };
-                        try {
-                          const colors = ((evt as any).palette?.colors || (evt as any).theme?.color_palette?.colors || []) as any[];
-                          console.warn('[useOutlineChat] Received theme_generated (no-meaningful fallback)', { colorsCount: colors.length, palette: (evt as any).palette });
-                        } catch { }
+                        console.warn('[useOutlineChat] Received theme_generated (fallback)', { palette: (evt as any).palette });
                       }
                       if (d) {
                         window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: d }));
@@ -1147,7 +1140,7 @@ export const useOutlineChat = ({
       });
       return null;
     }
-  }, [handleProgressUpdate, toast]);
+  }, [handleProgressUpdate, toast, autoSelectImages]);
 
   return {
     chatInput,

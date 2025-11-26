@@ -782,7 +782,7 @@ export class OutlineAPI {
         const request: CreateDeckFromOutlineRequest = {
           outline,
           style_preferences: stylePreferences,
-          async_images: autoApplyImages !== undefined ? !autoApplyImages : true  // When autoApplyImages=true (user wants auto-apply), send async_images=false (backend auto-apply mode)
+          async_images: autoApplyImages !== undefined ? !autoApplyImages : false  // When autoApplyImages=true (default), send async_images=false (backend auto-apply mode)
         };
 
         // For now, use the streaming approach directly since EventSource endpoint doesn't exist yet
@@ -1102,7 +1102,7 @@ export class OutlineAPI {
         slideCount: typeof options.slideCount === 'number' ? options.slideCount : undefined,
         styleContext: options.styleContext && options.styleContext.trim().length > 0 ? options.styleContext : undefined,
         enableResearch: typeof options.enableResearch === 'boolean' ? options.enableResearch : undefined,
-        async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : true, // When autoSelectImages=true (user wants auto-apply), send async_images=false (backend auto-apply mode)
+        async_images: options.autoSelectImages !== undefined ? !options.autoSelectImages : false, // When autoSelectImages=true (default), send async_images=false (backend auto-apply mode)
       };
 
       console.warn('='.repeat(100));

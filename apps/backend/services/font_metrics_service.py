@@ -27,42 +27,42 @@ class FontMetricsService:
     """
 
     # Character width ratios relative to font size
-    # These are empirically determined averages
+    # These are conservative estimates (slightly overestimate width to prevent overflow)
     FONT_WIDTH_RATIOS = {
-        # Sans-serif fonts (narrower)
-        'inter': 0.50,
-        'roboto': 0.48,
-        'open sans': 0.50,
-        'lato': 0.49,
-        'montserrat': 0.55,
-        'poppins': 0.52,
-        'raleway': 0.50,
-        'nunito': 0.52,
-        'work sans': 0.50,
-        'dm sans': 0.50,
-        'arial': 0.50,
-        'helvetica': 0.50,
+        # Sans-serif fonts - increased by ~10% for safety
+        'inter': 0.55,
+        'roboto': 0.53,
+        'open sans': 0.55,
+        'lato': 0.54,
+        'montserrat': 0.60,
+        'poppins': 0.57,
+        'raleway': 0.55,
+        'nunito': 0.57,
+        'work sans': 0.55,
+        'dm sans': 0.55,
+        'arial': 0.55,
+        'helvetica': 0.55,
 
-        # Serif fonts (slightly wider)
-        'playfair display': 0.52,
-        'merriweather': 0.55,
-        'lora': 0.52,
-        'georgia': 0.55,
-        'times new roman': 0.50,
+        # Serif fonts (wider)
+        'playfair display': 0.57,
+        'merriweather': 0.60,
+        'lora': 0.57,
+        'georgia': 0.60,
+        'times new roman': 0.55,
 
-        # Display fonts (wider)
-        'bebas neue': 0.45,  # Condensed
-        'oswald': 0.42,      # Condensed
-        'anton': 0.48,
+        # Display fonts
+        'bebas neue': 0.50,  # Condensed
+        'oswald': 0.47,      # Condensed
+        'anton': 0.53,
 
         # Monospace (fixed width)
-        'jetbrains mono': 0.60,
-        'fira code': 0.60,
-        'source code pro': 0.60,
-        'courier': 0.60,
+        'jetbrains mono': 0.65,
+        'fira code': 0.65,
+        'source code pro': 0.65,
+        'courier': 0.65,
     }
 
-    DEFAULT_WIDTH_RATIO = 0.50
+    DEFAULT_WIDTH_RATIO = 0.55
     DEFAULT_LINE_HEIGHT_RATIO = 1.2
     DEFAULT_CAP_HEIGHT_RATIO = 0.72
 
@@ -161,8 +161,13 @@ class FontMetricsService:
         num_lines = max(1, text_width / available_width)
 
         # Account for word wrapping (text doesn't wrap mid-word usually)
-        # Add a small buffer for word breaks
-        num_lines = num_lines * 1.1
+        # Use smaller buffer for short text (likely single line), larger for long text
+        if num_lines < 1.5:
+            # Short text - minimal buffer
+            num_lines = num_lines * 1.1
+        else:
+            # Longer text - more buffer for word breaks
+            num_lines = num_lines * 1.25
 
         return metrics.line_height * num_lines
 

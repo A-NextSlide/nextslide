@@ -396,13 +396,12 @@ FONTS: Always set fontFamily to {{bodyFont}} for consistency
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🚨 MANDATORY RULES:
-1. Function signature MUST be: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-2. Use React.createElement ONLY (no JSX, no HTML strings)
-3. Declare variables ONCE at top INSIDE function body: var c1 = props.primaryColor;
-4. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
-5. Use props.primaryColor, props.secondaryColor, props.accentColor (auto-injected!)
-6. NEVER put variable declarations in the parameter destructuring block
-7. TEXT STRINGS: Use single quotes; ESCAPE apostrophes: 'it\'s' 'don\'t' 'user\'s' 'Reese\'s'
+1. MUST be a SINGLE LINE string (use `\n` if needed)
+2. Use `<!DOCTYPE html>` at the start
+3. Use SINGLE QUOTES for HTML attributes (`class='p-4'`)
+4. Root body style MUST have: `h-screen w-screen overflow-hidden`
+5. Use Tailwind CSS via CDN for styling
+6. Use props.primaryColor, props.secondaryColor, props.accentColor (auto-injected!)
 
 TEMPLATE:
 {
@@ -413,7 +412,7 @@ TEMPLATE:
     "height": 400,
     "value": "87.5%",
     "label": "Growth Rate",
-    "render": "function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) { var val = props.value; var lbl = props.label; var c1 = props.primaryColor; var c2 = props.accentColor; var tc = props.textColor; return React.createElement('div', { style: { width: '100%', height: '100%', padding: '32px', background: c1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', overflow: 'hidden' } }, React.createElement('div', { style: { fontSize: '96px', fontWeight: '800', color: c2 } }, val), React.createElement('div', { style: { fontSize: '32px', color: tc, marginTop: '16px' } }, lbl)); }"
+    "render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script></head><body class='flex flex-col items-center justify-center h-screen w-screen p-8 bg-blue-500'><div class='text-9xl font-extrabold text-white'>87.5%</div><div class='text-4xl text-white mt-4 opacity-90'>Growth Rate</div></body></html>"
   }
 }
 

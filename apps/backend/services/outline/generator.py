@@ -1916,8 +1916,18 @@ class OutlineGenerator:
             "- Consider a 'Logo Wall' slide for traction/partners/customers when relevant.\n"
         ) if is_pitch else ""
 
+        # Append style_context/chat history if present - CRITICAL for following chat agreements
+        context_instruction = ""
+        if options.style_context:
+            context_instruction = (
+                f"\nCONTEXT/HISTORY:\n{options.style_context}\n"
+                "IMPORTANT: If the context above contains a specific plan, list of questions, or structure agreed upon with the user, YOU MUST FOLLOW IT EXACTLY. "
+                "Prioritize the specific details in the context over generic generation.\n"
+            )
+
         outline_prompt = f"""Create a clean presentation outline for:
 {options.prompt}
+{context_instruction}
 
 Return STRICT JSON only:
 {{
@@ -3100,7 +3110,15 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                     "FLEXIBILITY: Match content to presentation type. Investor pitch can have more substance than casual topic, but always concise bullets, never paragraphs.\n\n"
                 )
             
-            user = (
+            # Append style_context/chat history if present - CRITICAL for following chat agreements
+            if options.style_context:
+                user += (
+                    f"\nCONTEXT/HISTORY:\n{options.style_context}\n"
+                    "IMPORTANT: If the context above contains a specific plan, list of questions, or structure agreed upon with the user, YOU MUST FOLLOW IT EXACTLY. "
+                    "Prioritize the specific details in the context over generic generation.\n"
+                )
+
+            user += (
                 f"{brevity_enforcement}"
                 f"Topic: {options.prompt}\n"
                 f"Slides: {slide_hint}\n"

@@ -228,7 +228,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
   const [colorConfig, setColorConfig] = useState<ColorConfig | null>(null);
   const [detailLevel, setDetailLevel] = useState<'quick' | 'standard' | 'detailed'>('standard');
   const [slideCount, setSlideCount] = useState<number | null>(null);
-  const [autoSelectImages, setAutoSelectImages] = useState<boolean>(false); // Default to false - user must explicitly enable
+  const [autoSelectImages, setAutoSelectImages] = useState<boolean>(true); // Default to true - auto-populate images during generation
   const [enableResearch, setEnableResearch] = useState<boolean>(false);
   const [partialOutline, setPartialOutline] = useState<Partial<FrontendDeckOutline> | null>(null);
   const [completedSlides, setCompletedSlides] = useState<Set<number>>(() => {
@@ -721,18 +721,26 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
         initialIdea: 'A presentation about Pikachu and why this Electric-type Pokémon is amazing',
         vibeContext: 'Fun, energetic, and colorful like Pikachu!',
         font: 'playful',
-        colors: null
+        colors: null,
+        autoSelectImages: true // Enable auto image selection for test outlines
       }
     };
     setCurrentOutline(testOutline);
-    
+
+    // Set window preference for image auto-selection
+    (window as any).__slideGenerationPreferences = {
+      ...(window as any).__slideGenerationPreferences,
+      autoSelectImages: true
+    };
+
     // Also set some test style preferences
     if (onStylePreferencesUpdate) {
       onStylePreferencesUpdate({
         initialIdea: 'A presentation about Pikachu and why this Electric-type Pokémon is amazing',
         vibeContext: 'Fun, energetic, and colorful like Pikachu!',
         font: 'playful',
-        colors: null
+        colors: null,
+        autoSelectImages: true
       });
     }
     

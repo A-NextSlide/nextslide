@@ -291,7 +291,8 @@ export function useComponentDrag({
         const parentScaleY = slideRectRef.current.height / (slideOffsetSizeRef.current.height || 1);
         const displayDx = (dragOffsetRef.current.x * displayToActualRatioRef.current.x) / (parentScaleX || 1);
         const displayDy = (dragOffsetRef.current.y * displayToActualRatioRef.current.y) / (parentScaleY || 1);
-        // Avoid React state updates per mousemove; rely on CSS variables for visuals
+        
+        // Apply to the dragged component
         const el = containerRef.current as HTMLElement;
         el.style.setProperty('--drag-x', `${displayDx}px`);
         el.style.setProperty('--drag-y', `${displayDy}px`);
@@ -300,6 +301,26 @@ export function useComponentDrag({
         const tf = el.style.transform || '';
         if (!tf.includes('var(--drag-x')) {
           el.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) rotate(${rotation}deg)`;
+        }
+
+        // ALSO apply to ALL other selected components if in multi-selection mode
+        // This ensures visual sync for the whole group
+        if (isInMultiSelection) {
+          selectedComponentIds.forEach(id => {
+            if (id !== component.id) {
+              const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
+              if (peerEl) {
+                peerEl.style.setProperty('--drag-x', `${displayDx}px`);
+                peerEl.style.setProperty('--drag-y', `${displayDy}px`);
+                // Ensure transform uses variables
+                const peerRotation = peerEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
+                // Only update if not already set to use vars
+                if (!peerEl.style.transform.includes('var(--drag-x')) {
+                   peerEl.style.transform = `translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) rotate(${peerRotation})`;
+                }
+              }
+            }
+          });
         }
       }
 
@@ -437,6 +458,22 @@ export function useComponentDrag({
       // Reset inline transform to rotation only to avoid stale var usage
       const rotation = (component.props.rotation || 0);
       el.style.transform = `rotate(${rotation}deg)`;
+    }
+
+    // Clear CSS variables for all other selected components
+    if (isInMultiSelection) {
+      selectedComponentIds.forEach(id => {
+        if (id !== component.id) {
+          const peerEl = document.querySelector(`[data-component-id="${id}"]`) as HTMLElement | null;
+          if (peerEl) {
+            peerEl.style.removeProperty('--drag-x');
+            peerEl.style.removeProperty('--drag-y');
+            // Reset transform to just rotation (position is handled by top/left)
+            const peerRotation = peerEl.style.transform.match(/rotate\(([^)]+)\)/)?.[1] || '0deg';
+            peerEl.style.transform = `rotate(${peerRotation})`;
+          }
+        }
+      });
     }
 
     // Notify selection overlays that drag ended

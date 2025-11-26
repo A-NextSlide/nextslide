@@ -46,13 +46,13 @@ class GlobalThemeSystem:
             for category, fonts in available_fonts.items():
                 if fonts:  # Only show categories with fonts
                     # Show all fonts for important categories, limit others
-                    if category in ["Script", "Bold", "Design", "Designer", "Unique"]:
+                    if category in ["Script", "Bold", "Design", "Designer", "Unique", "PixelBuddha"]:
                         available_fonts_str += f"\n   {category}: {', '.join(fonts)}"
                     else:
-                        # Show first 10 fonts for other categories
-                        display_fonts = fonts[:10]
-                        if len(fonts) > 10:
-                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)} (+ {len(fonts) - 10} more)"
+                        # Show first 50 fonts for other categories (increased from 10)
+                        display_fonts = fonts[:50]
+                        if len(fonts) > 50:
+                            available_fonts_str += f"\n   {category}: {', '.join(display_fonts)} (+ {len(fonts) - 50} more)"
                         else:
                             available_fonts_str += f"\n   {category}: {', '.join(display_fonts)}"
         else:

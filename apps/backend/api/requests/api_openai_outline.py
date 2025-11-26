@@ -300,20 +300,72 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
     try:
         t = text.strip()
         tl = t.lower()
+        
+        # Explicitly ignore generic audience terms that might appear in styleContext
+        # This list must be checked against ANY extracted candidate
+        generic_terms = {
+            'general audience', 'a general audience', 'everyone', 'kids', 'teens', 'adults', 
+            'students', 'teachers', 'investors', 'stakeholders', 'employees', 'team', 
+            'public', 'users', 'customers', 'clients', 'beginners', 'experts', 'pros',
+            'audience', 'target audience', 'people', 'folks', 'guys', 'all', 'any'
+        }
+        
+        def is_valid_candidate(c: str) -> bool:
+            if not c: return False
+            cl = c.lower().strip().strip('.,!?:')
+            if cl in generic_terms: return False
+            if cl in ['a', 'an', 'the', 'my', 'our', 'this', 'that']: return False
+            return True
+
         # 1) If a domain appears, return it
         import re
         m = re.search(r"\b([a-z0-9][a-z0-9\-]+\.[a-z]{2,})(?:/[\w\-./?%&=]*)?\b", tl)
         if m:
             return m.group(1)
-        # 2) Simple known brand shortcuts
+            
+        # 2) Look for "for [Brand]" or "about [Brand]" patterns
+        # Matches: "presentation for McDonald's", "deck about Nike", "org chart for Google"
+        brand_patterns = [
+            r"\bfor\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
+            r"\babout\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
+            r"\bbrand\s+([a-zA-Z0-9'\-\s]{2,30})",
+            r"\bstyle\s+of\s+([a-zA-Z0-9'\-\s]{2,30})"
+        ]
+        
+        for pattern in brand_patterns:
+            m_brand = re.search(pattern, t, re.IGNORECASE) # Use original text to preserve case if possible
+            if m_brand:
+                candidate = m_brand.group(1).strip()
+                # Clean up trailing punctuation
+                candidate = candidate.strip('.,!?:')
+                
+                if is_valid_candidate(candidate):
+                    # If it looks like a valid brand name (not too long, not a sentence)
+                    if len(candidate) < 40 and len(candidate.split()) < 5:
+                        return candidate
+
+        # 3) Simple known brand shortcuts (legacy)
         if 'first round capital' in tl or 'first round' in tl or 'firstround' in tl:
             return 'firstround.com'
-        # 3) Extract words preceding 'branding' or 'brand'
+            
+        # 4) Extract words preceding 'branding' or 'brand'
         m2 = re.search(r"use\s+([a-z0-9'\-\s]{2,})\s+branding", tl)
         if m2:
             name = m2.group(1).strip()
-            # Title-case it for a better search identifier
-            return ' '.join([w.capitalize() for w in name.split()])
+            candidate = ' '.join([w.capitalize() for w in name.split()])
+            if is_valid_candidate(candidate):
+                return candidate
+            
+        # 5) Fallback: If the prompt is short and looks like a brand name, use it
+        # e.g. "McDonald's", "Nike strategy"
+        if len(t) < 50 and len(t.split()) <= 4:
+            # Remove common suffix words
+            cleaned = re.sub(r'\b(presentation|deck|slides|pitch|strategy|report|analysis|chart|org chart)\b', '', t, flags=re.IGNORECASE).strip()
+            
+            if is_valid_candidate(cleaned):
+                if len(cleaned) > 2:
+                    return cleaned
+                
     except Exception:
         return None
     return None
@@ -348,7 +400,38 @@ def _is_reasonable_brand_term(identifier: str) -> bool:
     return alpha_chars >= 2
 
 
-async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem], domain_hint: Optional[str] = None) -> Optional[StylePreferencesItem]:
+def _is_entertainment_topic(title: str, vibe_context: Optional[str] = None) -> bool:
+    """Check if this is an entertainment/fun topic that shouldn't have brand logo treatment.
+    
+    Entertainment topics like Pikachu, Pokemon, movies, games shouldn't have corporate logos.
+    Colors and fonts can still be generated, but we skip brand logo fetching.
+    """
+    if not title:
+        return False
+    
+    combined = f"{title} {vibe_context or ''}".lower()
+    
+    # Entertainment/fun keywords that shouldn't have brand logos
+    entertainment_keywords = [
+        'pikachu', 'pokemon', 'pokémon', 'anime', 'cartoon', 'game', 'games', 'gaming',
+        'movie', 'movies', 'film', 'tv show', 'series', 'superhero', 'marvel', 'dc comics',
+        'disney', 'pixar', 'star wars', 'harry potter', 'lord of the rings', 'hobbit',
+        'minecraft', 'fortnite', 'roblox', 'mario', 'zelda', 'nintendo', 'playstation', 'xbox',
+        'sports', 'football', 'basketball', 'soccer', 'baseball', 'tennis', 'golf',
+        'music', 'band', 'concert', 'festival', 'recipe', 'cooking', 'food',
+        'travel', 'vacation', 'holiday', 'birthday', 'party', 'wedding', 'celebration',
+        'science project', 'school project', 'homework', 'kids', 'children', 'fun',
+        'hobby', 'hobbies', 'craft', 'crafts', 'diy', 'art project',
+    ]
+    
+    for keyword in entertainment_keywords:
+        if keyword in combined:
+            return True
+    
+    return False
+
+
+async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem], domain_hint: Optional[str] = None, outline_title: Optional[str] = None) -> Optional[StylePreferencesItem]:
     """Ensure style preferences include brand colors, font, and logo by refetching brand data when needed."""
     if not style_prefs:
         logger.debug("[STYLE PREF HYDRATE] No style_prefs provided, returning None")
@@ -364,8 +447,22 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
         logger.warning(f"[STYLE PREF HYDRATE] Error checking status: {e}")
         has_colors = has_logo = has_font = False
 
+    # CRITICAL: Even if font is set, override boring fonts for fun topics
     if has_colors and has_logo and has_font:
-        logger.info("[STYLE PREF HYDRATE] All data present, skipping brandfetch")
+        current_font = getattr(style_prefs, 'font', None)
+        boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
+        is_boring = current_font and current_font.lower() in boring_fonts
+        
+        if is_boring and _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None)):
+            # Override boring font with playful font for fun topics
+            import hashlib
+            seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
+            playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
+            selected_font = playful_fonts[seed_hash % len(playful_fonts)]
+            style_prefs.font = selected_font
+            logger.info(f"[STYLE PREF HYDRATE] 🎮 Overriding boring font '{current_font}' with playful font: {selected_font}")
+        else:
+            logger.info("[STYLE PREF HYDRATE] All data present, skipping brandfetch")
         return style_prefs
 
     vibe_context = getattr(style_prefs, 'vibeContext', None)
@@ -398,6 +495,24 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
     if not domain:
         logger.warning("[STYLE PREF HYDRATE] ⚠️ No valid brand identifier found; skipping Brandfetch hydration")
         logger.warning(f"[STYLE PREF HYDRATE] Tried candidates: {candidate_chain}")
+        
+        # CRITICAL: Even without brand data, set appropriate font for fun topics
+        current_font = getattr(style_prefs, 'font', None) if style_prefs else None
+        boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
+        is_boring = not current_font or (current_font and current_font.lower() in boring_fonts)
+        
+        if is_boring and _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None) if style_prefs else None):
+            import hashlib
+            seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
+            playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
+            selected_font = playful_fonts[seed_hash % len(playful_fonts)]
+            if style_prefs:
+                style_prefs.font = selected_font
+            logger.info(f"[STYLE PREF HYDRATE] 🎮 No domain but fun topic! Using playful font: {selected_font}")
+        elif is_boring and style_prefs:
+            style_prefs.font = 'Montserrat'
+            logger.info(f"[STYLE PREF HYDRATE] 📊 No domain, business topic - using Montserrat")
+        
         return style_prefs
 
     brand_data = None
@@ -544,43 +659,103 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
 
         if not has_font:
             fonts = brand_data.get('fonts', {})
+            font_set = False
+            
             if fonts and fonts.get('names'):
-                style_prefs.font = fonts['names'][0]
+                scraped_font = fonts['names'][0]
+                # CRITICAL: Validate font is available locally before using it
+                # Many brands use custom fonts (e.g., "Flexo-Medium") that we don't have
+                try:
+                    from services.registry_fonts import RegistryFonts
+                    available_fonts = RegistryFonts.get_all_fonts_list(None)
+                    font_lower = str(scraped_font).lower().strip()
+                    is_available = any(str(f).lower().strip() == font_lower for f in available_fonts)
+                    if is_available:
+                        style_prefs.font = scraped_font
+                        font_set = True
+                        logger.info(f"[STYLE PREF HYDRATE] ✅ Using scraped font (available): {scraped_font}")
+                    else:
+                        logger.warning(f"[STYLE PREF HYDRATE] ⚠️ Scraped font '{scraped_font}' not available locally")
+                except Exception as font_err:
+                    logger.warning(f"[STYLE PREF HYDRATE] Font validation failed: {font_err}")
+            
+            # CRITICAL: If no valid font, select appropriate fallback based on topic
+            if not font_set:
+                vibe_ctx = getattr(style_prefs, 'vibeContext', None)
+                if _is_entertainment_topic(outline_title or '', vibe_ctx):
+                    # Use playful fonts for fun topics
+                    import hashlib
+                    seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
+                    playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
+                    selected_font = playful_fonts[seed_hash % len(playful_fonts)]
+                    style_prefs.font = selected_font
+                    logger.info(f"[STYLE PREF HYDRATE] 🎮 Fun topic! Using playful font: {selected_font}")
+                else:
+                    # Use professional font for business topics
+                    style_prefs.font = 'Montserrat'
+                    logger.info(f"[STYLE PREF HYDRATE] 📊 Business topic - using professional font: Montserrat")
 
         if not has_logo:
-            logos = brand_data.get('logos', {})
-            logger.info(f"[STYLE PREF HYDRATE] 🖼️ Extracting logo - logos data: {list(logos.keys()) if logos else 'None'}")
-            try:
-                for logo_type in ['light', 'dark', 'icons', 'other']:
-                    items = logos.get(logo_type)
-                    if not items:
-                        continue
-                    first_item = items[0] if isinstance(items, list) and items else None
-                    if isinstance(first_item, dict):
-                        formats = first_item.get('formats')
-                        if isinstance(formats, list) and formats:
-                            url = formats[0].get('url')
+            # CRITICAL: Skip logo for entertainment topics (Pikachu, games, movies, etc.)
+            # These are NOT brands and shouldn't have corporate logos on every slide
+            vibe_ctx = getattr(style_prefs, 'vibeContext', None)
+            if _is_entertainment_topic(outline_title or '', vibe_ctx):
+                logger.info(f"[STYLE PREF HYDRATE] 🎮 Skipping logo for entertainment topic: {outline_title}")
+            else:
+                logos = brand_data.get('logos', {})
+                logger.info(f"[STYLE PREF HYDRATE] 🖼️ Extracting logo - logos data: {list(logos.keys()) if logos else 'None'}")
+                try:
+                    for logo_type in ['light', 'dark', 'icons', 'other']:
+                        items = logos.get(logo_type)
+                        if not items:
+                            continue
+                        first_item = items[0] if isinstance(items, list) and items else None
+                        if isinstance(first_item, dict):
+                            formats = first_item.get('formats')
+                            if isinstance(formats, list) and formats:
+                                url = formats[0].get('url')
+                                if url:
+                                    style_prefs.logoUrl = url
+                                    logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type}: {url[:60]}...")
+                                    break
+                            url = first_item.get('url')
                             if url:
                                 style_prefs.logoUrl = url
-                                logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type}: {url[:60]}...")
+                                logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (direct): {url[:60]}...")
                                 break
-                        url = first_item.get('url')
-                        if url:
-                            style_prefs.logoUrl = url
-                            logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (direct): {url[:60]}...")
+                        elif isinstance(first_item, str) and first_item.startswith('http'):
+                            style_prefs.logoUrl = first_item
+                            logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (string): {first_item[:60]}...")
                             break
-                    elif isinstance(first_item, str) and first_item.startswith('http'):
-                        style_prefs.logoUrl = first_item
-                        logger.info(f"[STYLE PREF HYDRATE] ✅ Logo URL set from {logo_type} (string): {first_item[:60]}...")
-                        break
-                        
-                if not getattr(style_prefs, 'logoUrl', None):
-                    logger.warning(f"[STYLE PREF HYDRATE] ⚠️ No logo URL found in brand_data despite having logos: {logos}")
-            except Exception as logo_err:
-                logger.warning(f"[STYLE PREF HYDRATE] Logo extraction failed: {logo_err}")
+                            
+                    if not getattr(style_prefs, 'logoUrl', None):
+                        logger.warning(f"[STYLE PREF HYDRATE] ⚠️ No logo URL found in brand_data despite having logos: {logos}")
+                except Exception as logo_err:
+                    logger.warning(f"[STYLE PREF HYDRATE] Logo extraction failed: {logo_err}")
 
     except Exception as hydrate_error:
         logger.debug(f"[STYLE PREF HYDRATE] Failed to hydrate style preferences: {hydrate_error}")
+
+    # FINAL CHECK: If we still don't have a font set, select one based on topic
+    # This handles cases where no brand_data was found (like Pikachu presentations)
+    try:
+        current_font = getattr(style_prefs, 'font', None) if style_prefs else None
+        if not current_font and style_prefs:
+            vibe_ctx = getattr(style_prefs, 'vibeContext', None)
+            if _is_entertainment_topic(outline_title or '', vibe_ctx):
+                # Use playful fonts for fun topics
+                import hashlib
+                seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
+                playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
+                selected_font = playful_fonts[seed_hash % len(playful_fonts)]
+                style_prefs.font = selected_font
+                logger.info(f"[STYLE PREF HYDRATE] 🎮 FINAL: Fun topic! Using playful font: {selected_font}")
+            else:
+                # Use professional font for business topics
+                style_prefs.font = 'Montserrat'
+                logger.info(f"[STYLE PREF HYDRATE] 📊 FINAL: Business topic - using professional font: Montserrat")
+    except Exception as font_final_err:
+        logger.warning(f"[STYLE PREF HYDRATE] Final font selection failed: {font_final_err}")
 
     return style_prefs
 
@@ -1145,30 +1320,52 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             pass
 
                         try:
-                            hydrated = await _hydrate_style_preferences(style_prefs, brand_hint)
+                            hydrated = await _hydrate_style_preferences(style_prefs, brand_hint, outline_title=outline.title)
                             outline.stylePreferences = hydrated or style_prefs
                         except Exception as hydrate_error:
                             logger.debug(f"[BRAND STYLEPREFS] Hydration failed: {hydrate_error}")
                             outline.stylePreferences = style_prefs
 
-                        # If we still lack colors and no brand was found, ask ThemeDirector to suggest colors
+                        # FIRST: Check if this is an iconic topic with well-known colors (e.g., Pikachu = yellow)
+                        # This takes priority over Brandfetch which might find an unrelated website
                         try:
-                            if not getattr(outline.stylePreferences, 'colors', None):
-                                logger.info("[API OUTLINE] No brand colors found; requesting AI color suggestions")
-                                # Reuse theme generation service to propose a palette from outline/title
-                                from agents.generation.theme_director import ThemeDirector
-                                director = ThemeDirector()
-                                suggestion = await director.generate_quick_palette(
-                                    title=outline.title,
-                                    context=style_context_value or request.prompt
-                                )
-                                colors = (suggestion or {}).get('color_palette') or {}
+                            from agents.generation.theme_director import ThemeDirector
+                            director = ThemeDirector()
+                            
+                            # Check for iconic topic colors FIRST
+                            logger.info(f"[API OUTLINE] 🔍 Checking for iconic topic colors: {outline.title}")
+                            suggestion = await director.generate_quick_palette(
+                                title=outline.title,
+                                context=style_context_value or request.prompt
+                            )
+                            colors = (suggestion or {}).get('color_palette') or {}
+                            palette_colors = []
+                            try:
+                                palette_colors = colors.get('colors') or []
+                            except Exception:
                                 palette_colors = []
-                                try:
-                                    palette_colors = colors.get('colors') or []
-                                except Exception:
-                                    palette_colors = []
-                                if palette_colors or colors.get('primary_background') or colors.get('primary_text'):
+                            
+                            # Only apply if we got meaningful colors (not just defaults)
+                            # Check if the background is NOT white/gray (indicating iconic colors were found)
+                            bg_color = colors.get('primary_background', '').upper()
+                            is_iconic = bg_color and bg_color not in ['#FFFFFF', '#F5F5F5', '#E8E8E8', '#FAFAFA']
+                            
+                            if is_iconic and (palette_colors or bg_color):
+                                logger.info(f"[API OUTLINE] 🎨 ICONIC TOPIC COLORS FOUND! Overriding Brandfetch: {colors}")
+                                from models.requests import ColorConfigItem
+                                outline.stylePreferences.colors = ColorConfigItem(
+                                    type="custom",
+                                    name="Iconic Colors",
+                                    background=colors.get('primary_background') or "#FFFFFF",
+                                    text=colors.get('primary_text') or "#111827",
+                                    accent1=palette_colors[0] if len(palette_colors) > 0 else colors.get('primary_background'),
+                                    accent2=palette_colors[1] if len(palette_colors) > 1 else None,
+                                    accent3=palette_colors[2] if len(palette_colors) > 2 else None,
+                                )
+                            elif not getattr(outline.stylePreferences, 'colors', None):
+                                # Fallback: No iconic colors and no Brandfetch colors - use defaults
+                                logger.info("[API OUTLINE] No iconic or brand colors found; using defaults")
+                                if palette_colors or colors.get('primary_background'):
                                     from models.requests import ColorConfigItem
                                     outline.stylePreferences.colors = ColorConfigItem(
                                         type="custom",
@@ -1186,6 +1383,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         logger.info(f"[API OUTLINE] After setting - stylePreferences is None: {outline.stylePreferences is None}")
                         if outline.stylePreferences:
                             logger.info(f"[API OUTLINE] StylePreferences vibe after setting: {outline.stylePreferences.vibeContext}")
+                            logger.info(f"[API OUTLINE] 🎨 StylePreferences FONT after setting: {outline.stylePreferences.font}")
                         
                         # Start narrative flow generation in parallel as soon as outline is ready
                         if not narrative_flow_started and outline:

@@ -9,22 +9,27 @@ def get_html_inspired_system_prompt_dynamic() -> str:
 Canvas: 1920×1080px | Output: JSON components
 
 ═══════════════════════════════════════════
-🎯 SPACE-FIRST DESIGN (CRITICAL!)
+🎯 LAYOUT CONSISTENCY (CRITICAL!)
 ═══════════════════════════════════════════
 
-**BEFORE positioning, calculate space:**
-1. Count components needed (title + N bullets + image?)
-2. Calculate minimum space: (N × minHeight) + (N+1 × gap)
-3. Does it fit in 760px? If NO → use split-screen OR reduce items
-4. Adjust font sizes to fit (28-48pt range)
-5. THEN position components
+**STANDARD LAYOUT GRID (Use for ALL slides):**
+• Title zone: y=80-180 (title text)
+• Content zone: y=220-980 (main content)
+• Footer zone: y=1000-1060 (page numbers, logos)
+• Left margin: x=120
+• Right margin: x=1800 (content ends here)
+• Center split: x=960 (for two-column layouts)
 
-**POSITIONING - NO OVERLAPS**
-• Calculate: nextY = currentY + currentHeight + gap
-• Edge margins: 80px minimum
-• Gaps: 60-80px (presentation), 24-32px (detailed)
-• Verify boundaries: x + width ≤ 1840, y + height ≤ 1020
-• Available vertical: 760px (y: 240-1000)
+**CONSISTENT TITLE POSITIONING:**
+• Slide title: x=120, y=100, fontSize=64-72pt, height=80
+• Content starts at: y=220 (title.y + title.height + 40 gap)
+
+**POSITIONING - MANDATORY CALCULATIONS**
+• ALWAYS calculate: nextY = currentY + currentHeight + gap
+• Gap between elements: 40-60px (consistent across slides)
+• Edge margins: 120px left/right, 80px top/bottom
+• Verify: x + width ≤ 1800, y + height ≤ 1000
+• Available content height: 760px (y: 220-980)
 
 **TEXT - TIPTAPTEXTBLOCK**
 • **LISTS** (USE SPARINGLY - only for 3-7 truly list-like items):
@@ -79,9 +84,14 @@ Canvas: 1920×1080px | Output: JSON components
 • For chart data: Use {{accent}}, {{secondary}}, or {{text}} - NEVER {{background}}!
 • Never hardcode: #3B82F6, etc.
 
-**ICONS**
+**ICONS - POSITIONING IS CRITICAL**
 • Use sparingly: 0-2 max per slide
-• Dashboard metrics only, not decoration
+• ALWAYS position LEFT of associated text:
+  - Icon at x=120, text at x=176 (icon.x + icon.width + 24 gap)
+  - Icon vertically centered with text: icon.y = text.y + (fontSize×1.15 - iconHeight)/2
+• Icon size = 0.8-1.0 × text fontSize (32pt text → 28-32px icon)
+• NEVER place icons that overlap with text
+• Match iconName to content: growth→TrendingUp, security→Shield, speed→Rocket
 
 **LINES**
 • Use startPoint/endPoint: {startPoint: {x, y}, endPoint: {x, y}}
@@ -98,17 +108,44 @@ Canvas: 1920×1080px | Output: JSON components
 • Use to ILLUSTRATE concepts instead of generic images!
 • Create: process flows, comparisons, timelines, interactive quizzes
 • Make quizzes/polls FULLY functional with state/updateState
-• Signature: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-• Variables at top INSIDE body: var value = props.value;
+• Signature: "render": "<!DOCTYPE html>..."
 • **EQUAL SIZING FOR CARDS/METRICS:**
-  - Use CSS Grid with equal columns: display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)'
-  - Or Flexbox: display: 'flex', each child has flex: '1', minWidth: '0'
+  - Use Tailwind Grid: class="grid grid-cols-3 gap-4"
+  - Or Flexbox: class="flex w-full space-x-4"
   - Ensure ALL cards have identical padding, border-radius, and styling
-  - NEVER mix fixed widths - always use fractional units (1fr) or flex: 1
-  - Example: gridTemplateColumns: '1fr 1fr 1fr', gap: '12px'
-• Colors: Use getContrastTextColor(bgColor)
-• State: Use for interactivity (quizzes, sliders, toggles)
+  - NEVER mix fixed widths - always use fractional units (w-full, flex-1)
+• Colors: Use Tailwind classes (bg-blue-500, text-white)
+• Interaction: Use standard JS (document.getElementById)
 • NO apostrophes in text (use TiptapTextBlock)
+
+═══════════════════════════════════════════
+🚫 ANTI-OVERLAP RULES (MANDATORY!)
+═══════════════════════════════════════════
+
+**VERTICAL SPACING (Y-axis):**
+• Before placing ANY component, calculate: newY = prevY + prevHeight + gap
+• Minimum gap: 40px between all elements
+• Example sequence:
+  - Title: y=100, height=80 → ends at y=180
+  - Subtitle: y=220 (180+40 gap), height=50 → ends at y=270
+  - Content: y=320 (270+50 gap), height=400 → ends at y=720
+
+**HORIZONTAL SPACING (X-axis):**
+• Icon + Text: text.x = icon.x + icon.width + 24
+• Two columns: col1.x=120, col1.width=780, col2.x=960, col2.width=780
+• Single column: x=120, width=1560
+
+**HEIGHT CALCULATION:**
+• Text height = fontSize × 1.15 × numberOfLines
+• Add 20px buffer for safety
+• Example: 36pt font, 3 lines → 36 × 1.15 × 3 + 20 = 144px height
+
+**OVERLAP VALIDATION CHECKLIST:**
+□ Every component has calculated Y based on previous component
+□ Text blocks have proper heights (not fixed arbitrary values)
+□ Icons are positioned LEFT of text with 24px gap
+□ No component extends past x=1800 or y=1000
+□ All gaps are consistent (40-60px)
 
 ═══════════════════════════════════════════
 📐 SLIDE TYPE PATTERNS
@@ -133,31 +170,45 @@ Canvas: 1920×1080px | Output: JSON components
   TiptapTextBlock on background + optional Image
 
 ═══════════════════════════════════════════
-⚡ VALIDATION CHECKLIST
+⚡ VALIDATION CHECKLIST (CHECK EVERY ITEM!)
 ═══════════════════════════════════════════
 
-Before outputting:
-✅ **TiptapTextBlocks structure** - Combine point-form text in ONE block with rich formatting, separate titles/headers/sections
-✅ **Font sizes** - Body ≥28pt, Headers ≥48pt, Titles ≥64pt
-✅ **Image layout** - ONE large image OR side-by-side (NOT vertical banner stack!)
-✅ **Image aspect** - height 50-100% of width (no 1200×200 banners!)
-✅ **Image styling** - borderRadius/shadow/borders used creatively (vary styles!)
-✅ **Images purposeful** - Only when truly needed (20-30% of slides)
-✅ **Whitespace embraced** - Don't force images on every slide
-✅ **CustomComponent for concepts** - Illustrate with code, not stock photos
-✅ NO overlaps - every position calculated: nextY = prevY + prevHeight + gap
-✅ **EVERY Chart has TiptapTextBlock title** (22-28pt bold, 36-50px above, with units)
-✅ Chart titles include units: "Revenue ($M)", "Growth (%)"
-✅ **Tables use theme fonts** - tableStyles.fontFamily={{bodyFont}}, fontSize 24-32pt
-✅ **Table colors** - headerBackgroundColor={{accent}}20, textColor={{text}}
-✅ Charts ≥ 500×400px minimum
-✅ Images ≥ 400×300px minimum
-✅ All TiptapTextBlock have: alignment, verticalAlignment, padding=0, textColor, fontFamily
+**LAYOUT CONSISTENCY:**
+✅ Title at consistent position: x=120, y=100, fontSize=64-72
+✅ Content starts at y=220 (after title)
+✅ Using one of the 5 layout patterns above
+
+**NO OVERLAPS (CRITICAL!):**
+✅ Every Y calculated: nextY = prevY + prevHeight + gap(40-60px)
+✅ Heights calculated: fontSize × 1.15 × lines + buffer
+✅ Icons positioned LEFT of text: text.x = icon.x + icon.width + 24
+✅ Icons vertically centered with text
+✅ No component extends past x=1800 or y=1000
+
+**TEXT BLOCKS:**
+✅ All TiptapTextBlock have: alignment, verticalAlignment, padding=0
+✅ Font sizes: Body ≥28pt, Headers ≥48pt, Titles ≥64pt
 ✅ Title slides: alignment="left" (NEVER center)
-✅ Theme colors only: {{background}}, {{text}}, {{accent}}
-✅ Heights calculated: fontSize × 1.15
-✅ Boundaries verified: x+width ≤ 1840, y+height ≤ 1020
-✅ Icons: 0-2 max per slide
+
+**IMAGES (20-30% of slides max):**
+✅ ONE large image OR side-by-side (NOT vertical stack!)
+✅ Aspect ratio: height 50-100% of width
+✅ Minimum: 400×300px, src="placeholder"
+
+**ICONS (0-2 max per slide):**
+✅ Positioned LEFT of associated text
+✅ Size matches text: 0.8-1.0 × fontSize
+✅ iconName matches content (growth→TrendingUp, security→Shield)
+✅ NEVER use Circle or CheckCircle
+
+**CHARTS (rare - 1 per 15-20 slides):**
+✅ Has TiptapTextBlock title above (22-28pt bold)
+✅ Title includes units: "Revenue ($M)", "Growth (%)"
+✅ Minimum: 500×400px
+
+**COLORS:**
+✅ Theme colors only: {{background}}, {{text}}, {{accent}}, {{secondary}}
+✅ NEVER hardcode colors like #3B82F6
 
 ❌ REJECT if: Fixed Y positions (y=180/230/240), fontSize <28pt, Chart+Image on same slide, chart overlapping title, vertical banner stack (3+ images), super wide/short images (1200×200), charts without margin prop, splitting bullets into separate blocks
 
@@ -186,21 +237,40 @@ Make slides clean, organized, and impactful!
    - Default to NO CHARTS unless data is impossible to understand otherwise
 
 ═══════════════════════════════════════
-📐 LAYOUT PATTERNS (NO OVERLAPS!)
+📐 LAYOUT PATTERNS (EXACT COORDINATES!)
 ═══════════════════════════════════════
 
-SPLIT-SCREEN (Primary Pattern - Use Most):
-- LEFT: Image (x=80, y=200, width=880, height=680)
-- RIGHT: Text (x=1040, y=300, width=760, height=600)
-- 80px margin from edges, 80px gap between sections
+**PATTERN 1: SPLIT-SCREEN (Most Common)**
+Title:     x=120, y=100, w=1560, h=80, fontSize=64
+Left Col:  x=120, y=220, w=780
+Right Col: x=960, y=220, w=780
+- Use for: Text + Image, Text + CustomComponent
+- Gap between columns: 60px
 
-FULL-IMAGE BACKGROUND:
-- Image as background (x=0, y=0, width=1920, height=1080, opacity=0.4)
-- Text over image (x=120, y=300, width=1680, with proper contrast)
+**PATTERN 2: SINGLE COLUMN (Content Focus)**
+Title:     x=120, y=100, w=1560, h=80
+Content:   x=120, y=220, w=1560
+- Use for: Bullet lists, paragraphs, single focus
 
-TOP-IMAGE:
-- Image (x=0 or 80, y=0, width=1920 or 1760, height=600)
-- Text below (x=120, y=650, width=1680, height=350)
+**PATTERN 3: THREE-COLUMN GRID**
+Title:   x=120, y=100, w=1560, h=80
+Col 1:   x=120, y=220, w=500
+Col 2:   x=650, y=220, w=500
+Col 3:   x=1180, y=220, w=500
+- Use for: 3 features, 3 stats, comparisons
+
+**PATTERN 4: HERO STAT (Big Number)**
+Title:    x=120, y=100, w=1560, h=80
+Big Stat: x=120, y=300, w=1560, h=300, fontSize=200, align=center
+Label:    x=120, y=620, w=1560, h=60, fontSize=48, align=center
+
+**PATTERN 5: ICON + TEXT ROWS**
+Title:  x=120, y=100, w=1560, h=80
+Row 1:  Icon x=120, y=226, size=32 | Text x=176, y=220, w=1500, h=50
+Row 2:  Icon x=120, y=306, size=32 | Text x=176, y=300, w=1500, h=50
+Row 3:  Icon x=120, y=386, size=32 | Text x=176, y=380, w=1500, h=50
+- Icon vertically centered: icon.y = text.y + 6 (for 32px icon with 40pt text)
+- NEVER overlap icons with text - maintain 24px gap
 
 ═══════════════════════════════════════
 🚨 SPACING RULES - PREVENT OVERLAPS
@@ -314,93 +384,31 @@ CLEAN: Text directly on backgrounds. NO unnecessary boxes.
 🚀 CUSTOMCOMPONENT - MANDATORY TEMPLATE
 ═══════════════════════════════════════
 
-🚨 CRITICAL: FUNCTION SIGNATURE MUST BE EXACTLY THIS - DO NOT MODIFY!
+🚨 CRITICAL: MUST BE A SINGLE LINE STRING - DO NOT BREAK JSON!
 
-✅ CORRECT - Complete parameter list, variables declared INSIDE function body:
-function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-  // ✅ Variables go HERE, AFTER the opening brace
-  var c1 = props.primaryColor;
-  var tc = props.textColor;
-  var padding = 24;
+✅ CORRECT - Single line, single quotes for attributes:
+"render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script></head><body class='p-4'><div class='text-4xl font-bold text-blue-600'>Content</div></body></html>"
 
-  return React.createElement('div', {style: {width: '100%', height: '100%'}}, 'Content');
-}
+❌ WRONG - Real newlines break JSON:
+"render": "<!DOCTYPE html>
+<html>
+..."
 
-❌ CATASTROPHICALLY WRONG - NEVER put variables in parameter destructuring:
-function render({
-  const padding = 32;  // ❌ SYNTAX ERROR! Variables CANNOT go here!
-  props
-}) { }
-
-❌ WRONG - Incomplete parameter list:
-function render({props}) { }  // ❌ Missing state, updateState, etc.
+❌ WRONG - Double quotes inside double quotes:
+"render": "<div class="text-red-500">"  // ❌ Syntax Error!
 
 MANDATORY TEMPLATE - COPY THIS EXACTLY:
 
-function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-  var c1 = props.primaryColor;
-  var tc = props.textColor;
-  var ff = props.fontFamily;
-  var padding = 24;
-  var items = [];
-
-  return React.createElement('div', {
-    style: {
-      width: '100%',
-      height: '100%',
-      padding: padding + 'px',
-      fontFamily: ff,
-      background: c1,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      boxSizing: 'border-box',
-      overflow: 'hidden'
-    }
-  },
-    React.createElement('div', {
-      style: { fontSize: '96px', fontWeight: '800', color: tc }
-    }, 'Content')
-  );
-}
+"render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'><style>body{font-family:'Inter',sans-serif;background:transparent;overflow:hidden}</style></head><body class='flex flex-col items-center justify-center h-screen w-screen p-6'><div class='bg-white rounded-2xl shadow-xl p-8 w-full h-full flex flex-col items-center justify-center'><h1 class='text-6xl font-extrabold text-slate-900 mb-4'>Title</h1><p class='text-2xl text-slate-500'>Subtitle</p></div></body></html>"
 
 🚨 MANDATORY RULES - FOLLOW EXACTLY:
-1. Function signature MUST be: function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-2. ALL variables go INSIDE function body AFTER the opening brace
-3. Declare vars ONCE: var c1 = props.primaryColor; var padding = 24;
-4. NEVER use const or let - ONLY var
-5. NEVER put variable declarations in the parameter destructuring block
-6. Use React.createElement(type, {style: {}}, children)
-7. Style uses camelCase: fontSize, fontWeight, backgroundColor
-8. Root style MUST have: width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'hidden'
-9. TEXT STRINGS: Use single quotes for all strings; ESCAPE apostrophes with backslash
-   ✅ 'Reese\'s' 'don\'t' 'it\'s' 'user\'s' | ❌ 'Reese's' (breaks string!)
-
-For loops/multiple items:
-function render({props, state, updateState, id, isThumbnail, containerWidth, containerHeight}) {
-  var items = [{text: 'A'}, {text: 'B'}];
-  var c1 = props.primaryColor;
-  var tc = props.textColor;
-  var children = [];
-
-  for (var i = 0; i < items.length; i++) {
-    children.push(
-      React.createElement('div', {
-        key: i,
-        style: { fontSize: '20px', color: tc }
-      }, items[i].text)
-    );
-  }
-
-  return React.createElement('div', {
-    style: { width: '100%', height: '100%', padding: '24px', display: 'flex', flexDirection: 'column' }
-  }, children);
-}
-
-STYLING: Use React style objects - fontSize (not font-size), backgroundColor (not background-color)
-LAYOUT: display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between'
-ANIMATION: Use CSS-in-JS animations or state-based progress
+1. MUST start with `<!DOCTYPE html>`
+2. MUST be a SINGLE LINE string (use `\n` if absolutely needed, but prefer minified)
+3. MUST use SINGLE QUOTES for HTML attributes (`class='p-4'`)
+4. MUST include Tailwind CDN: `<script src='https://cdn.tailwindcss.com'></script>`
+5. MUST include Google Fonts (Inter)
+6. Root body should have `h-screen w-screen overflow-hidden`
+7. Use Tailwind for ALL styling (flex, grid, colors, typography)
 
 USE FOR: Counters, dashboards, comparisons, timelines, flows, data viz
 

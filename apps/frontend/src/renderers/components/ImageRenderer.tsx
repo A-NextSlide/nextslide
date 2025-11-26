@@ -407,7 +407,6 @@ export const renderImage = (
     // Show generating state
     return (
       <div 
-        ref={containerRef}
         className="relative w-full h-full overflow-hidden"
         style={{ 
           ...containerStyles,
@@ -462,7 +461,6 @@ export const renderImage = (
 
     return (
       <div 
-        ref={containerRef}
         className="relative w-full h-full"
         style={{ 
           ...containerStyles,
@@ -515,7 +513,6 @@ export const renderImage = (
     
     return (
       <div 
-        ref={containerRef}
         className="relative w-full h-full"
         style={{ 
           ...containerStyles,
@@ -741,7 +738,6 @@ export const renderImage = (
         `}
       </style>
       <div 
-        ref={containerRef} 
         style={containerStyles}
         data-image-type={clipShape || 'default'}
         data-has-crop={hasCrop ? 'true' : 'false'}

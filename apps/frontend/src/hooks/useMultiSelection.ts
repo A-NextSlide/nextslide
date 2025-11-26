@@ -67,23 +67,44 @@ export function useMultiSelection({
     const scaleY = slideSize.height / containerRect.height;
 
     // Adjust selection rectangle to slide coordinates
+    // Convert element-relative px (from selectionRectangle) to slide coordinate px (1920x1080)
     const adjustedSelection = {
-      x: selectionRect.x * scaleX,
-      y: selectionRect.y * scaleY,
-      width: selectionRect.width * scaleX,
-      height: selectionRect.height * scaleY
+      x: selectionRect.x * (slideSize.width / container.offsetWidth),
+      y: selectionRect.y * (slideSize.height / container.offsetHeight),
+      width: selectionRect.width * (slideSize.width / container.offsetWidth),
+      height: selectionRect.height * (slideSize.height / container.offsetHeight)
     };
 
     return components.filter(component => {
       // Skip background components
-              if (component.type === 'Background' || (component.id && component.id.toLowerCase().includes('background'))) {
+      if (component.type === 'Background' || (component.id && component.id.toLowerCase().includes('background'))) {
         return false;
       }
 
-      const compX = component.props.position?.x || 0;
-      const compY = component.props.position?.y || 0;
-      const compWidth = component.props.size?.width || component.props.width || 100;
-      const compHeight = component.props.size?.height || component.props.height || 100;
+      let compX = component.props.position?.x || 0;
+      let compY = component.props.position?.y || 0;
+      let compWidth = component.props.size?.width || component.props.width || 100;
+      let compHeight = component.props.size?.height || component.props.height || 100;
+
+      // Special handling for Line components that might not have standard position/size
+      if (component.type === 'Line' || component.type === 'Lines' || component.type === 'line') {
+        const start = component.props.startPoint || { x: 0, y: 0 };
+        const end = component.props.endPoint || { x: 100, y: 100 };
+        
+        // Calculate bounding box from start/end points
+        compX = Math.min(start.x, end.x);
+        compY = Math.min(start.y, end.y);
+        compWidth = Math.abs(end.x - start.x);
+        compHeight = Math.abs(end.y - start.y);
+        
+        // Ensure minimum size for selection (lines can be thin or flat)
+        compWidth = Math.max(compWidth, 10);
+        compHeight = Math.max(compHeight, 10);
+        
+        // Adjust position if we artificially increased size
+        if (compWidth === 10 && Math.abs(end.x - start.x) < 10) compX -= 5;
+        if (compHeight === 10 && Math.abs(end.y - start.y) < 10) compY -= 5;
+      }
 
       const componentRect = {
         x: compX,
@@ -168,24 +189,12 @@ export function useMultiSelection({
     const borderLeftWidth = parseFloat(computedStyle.borderLeftWidth) || 0;
     const borderTopWidth = parseFloat(computedStyle.borderTopWidth) || 0;
     
-    // Find the transformed parent (motion.div with scale and translate)
-    let transformedParent = containerRef.current.parentElement;
-    while (transformedParent && !transformedParent.style.transform && !window.getComputedStyle(transformedParent).transform.includes('matrix')) {
-      transformedParent = transformedParent.parentElement;
-    }
-    
-    // In edit mode, the parent has scale(0.92) and translateX(-140px)
-    // We need to account for this transform
-    let x = e.clientX - containerRect.left - borderLeftWidth;
-    let y = e.clientY - containerRect.top - borderTopWidth;
-    
-    // If we're in edit mode (parent is transformed), we need to invert the scale
-    if (transformedParent && isEditing) {
-      // The parent is scaled to 0.92, so we need to divide by 0.92 to get original coordinates
-      const scale = 0.92;
-      x = x / scale;
-      y = y / scale;
-    }
+    // Calculate scale factor dynamically based on actual dimensions
+    const scaleX = containerRect.width / (containerRef.current.offsetWidth || 1);
+    const scaleY = containerRect.height / (containerRef.current.offsetHeight || 1);
+
+    const x = (e.clientX - containerRect.left - borderLeftWidth) / scaleX;
+    const y = (e.clientY - containerRect.top - borderTopWidth) / scaleY;
 
     isDraggingRef.current = true;
     startPointRef.current = { x, y };
@@ -223,22 +232,12 @@ export function useMultiSelection({
     const borderLeftWidth = parseFloat(computedStyle.borderLeftWidth) || 0;
     const borderTopWidth = parseFloat(computedStyle.borderTopWidth) || 0;
     
-    // Find the transformed parent (motion.div with scale and translate)
-    let transformedParent = containerRef.current.parentElement;
-    while (transformedParent && !transformedParent.style.transform && !window.getComputedStyle(transformedParent).transform.includes('matrix')) {
-      transformedParent = transformedParent.parentElement;
-    }
-    
-    let currentX = e.clientX - containerRect.left - borderLeftWidth;
-    let currentY = e.clientY - containerRect.top - borderTopWidth;
-    
-    // If we're in edit mode (parent is transformed), we need to invert the scale
-    if (transformedParent && isEditing) {
-      // The parent is scaled to 0.92, so we need to divide by 0.92 to get original coordinates
-      const scale = 0.92;
-      currentX = currentX / scale;
-      currentY = currentY / scale;
-    }
+    // Calculate scale factor dynamically based on actual dimensions
+    const scaleX = containerRect.width / (containerRef.current.offsetWidth || 1);
+    const scaleY = containerRect.height / (containerRef.current.offsetHeight || 1);
+
+    const currentX = (e.clientX - containerRect.left - borderLeftWidth) / scaleX;
+    const currentY = (e.clientY - containerRect.top - borderTopWidth) / scaleY;
 
     const x = Math.min(startPointRef.current.x, currentX);
     const y = Math.min(startPointRef.current.y, currentY);

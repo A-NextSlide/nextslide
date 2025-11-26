@@ -150,6 +150,42 @@ async def stream_theme_from_outline(
                 bg_color = background if background else "#FFFFFF"
                 text_color = text if text else "#1F2937"
                 accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
+                
+                # Select appropriate fallback fonts if brand_fonts is not available
+                hero_font = brand_fonts
+                body_font = brand_fonts
+                
+                if not brand_fonts:
+                    # Check if this is a fun/playful topic
+                    title_lower = (outline.title or '').lower()
+                    vibe_lower = (vibe_context or '').lower()
+                    combined_context = f"{title_lower} {vibe_lower}"
+                    
+                    is_fun_topic = any(keyword in combined_context for keyword in [
+                        'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
+                        'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
+                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
+                    ])
+                    
+                    if is_fun_topic:
+                        # Use playful fonts for fun topics
+                        import hashlib
+                        seed_hash = int(hashlib.md5((outline.title or 'fun').encode()).hexdigest(), 16)
+                        playful_combos = [
+                            ('Bebas Neue', 'Nunito'),
+                            ('Fredoka', 'Quicksand'),
+                            ('Righteous', 'Poppins'),
+                            ('Bungee', 'Asap'),
+                            ('Bangers', 'Rubik'),
+                        ]
+                        combo = playful_combos[seed_hash % len(playful_combos)]
+                        hero_font, body_font = combo
+                        logger.info(f"[THEME API] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
+                    else:
+                        # Use professional fonts for business topics
+                        hero_font = 'Montserrat'
+                        body_font = 'Roboto'
+                        logger.info(f"[THEME API] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
 
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -171,8 +207,8 @@ async def stream_theme_from_outline(
                         } if logo_url else {}
                     },
                     "typography": {
-                        "hero_title": {"family": brand_fonts if brand_fonts else "Inter"},
-                        "body_text": {"family": brand_fonts if brand_fonts else "Inter"}
+                        "hero_title": {"family": hero_font},
+                        "body_text": {"family": body_font}
                     },
                     "brandInfo": {
                         "logoUrl": logo_url
@@ -183,7 +219,7 @@ async def stream_theme_from_outline(
                 # Create compatible palette structure
                 palette = {
                     "colors": brand_colors[:6],
-                    "fonts": [brand_fonts] if brand_fonts else [],
+                    "fonts": [hero_font, body_font] if hero_font else [],
                     "logo_url": logo_url
                 }
 
@@ -480,6 +516,42 @@ async def theme_from_outline_json(
                 bg_color = background if background else "#FFFFFF"
                 text_color = text if text else "#1F2937"
                 accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
+                
+                # Select appropriate fallback fonts if brand_fonts is not available
+                hero_font = brand_fonts
+                body_font = brand_fonts
+                
+                if not brand_fonts:
+                    # Check if this is a fun/playful topic
+                    title_lower = (outline.title or '').lower()
+                    vibe_lower = (vibe_context or '').lower()
+                    combined_context = f"{title_lower} {vibe_lower}"
+                    
+                    is_fun_topic = any(keyword in combined_context for keyword in [
+                        'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
+                        'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
+                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
+                    ])
+                    
+                    if is_fun_topic:
+                        # Use playful fonts for fun topics
+                        import hashlib
+                        seed_hash = int(hashlib.md5((outline.title or 'fun').encode()).hexdigest(), 16)
+                        playful_combos = [
+                            ('Bebas Neue', 'Nunito'),
+                            ('Fredoka', 'Quicksand'),
+                            ('Righteous', 'Poppins'),
+                            ('Bungee', 'Asap'),
+                            ('Bangers', 'Rubik'),
+                        ]
+                        combo = playful_combos[seed_hash % len(playful_combos)]
+                        hero_font, body_font = combo
+                        logger.info(f"[THEME JSON] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
+                    else:
+                        # Use professional fonts for business topics
+                        hero_font = 'Montserrat'
+                        body_font = 'Roboto'
+                        logger.info(f"[THEME JSON] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
 
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -501,8 +573,8 @@ async def theme_from_outline_json(
                         } if logo_url else {}
                     },
                     "typography": {
-                        "hero_title": {"family": brand_fonts if brand_fonts else "Inter"},
-                        "body_text": {"family": brand_fonts if brand_fonts else "Inter"}
+                        "hero_title": {"family": hero_font},
+                        "body_text": {"family": body_font}
                     },
                     "brandInfo": {
                         "logoUrl": logo_url

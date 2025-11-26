@@ -541,29 +541,9 @@ class SimpleDeckComposer(IDeckComposer):
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
                             outline_theme = None  # Clear it!
                         
-                        if outline_theme:  # Only use if not cleared
-                            logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
-                            logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
-
-                            try:
-                                theme = ThemeSpec.from_dict(outline_theme)
-                                # Also get palette from outline theme
-                                palette = outline_theme.get('color_palette') or outline_theme.get('palette')
-                                if not palette:
-                                    # Derive palette directly from provided theme without new theme generation
-                                    palette = _palette_from_theme_obj(theme)
-                                logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
-                                logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
-                                
-                                # CRITICAL: Also extract search_terms from outline.notes if present
-                                if isinstance(outline_notes, dict) and 'search_terms' in outline_notes:
-                                    search_terms = outline_notes.get('search_terms', [])
-                                    logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from outline: {search_terms}")
-                            except Exception as e:
-                                logger.error(f"Error creating theme from outline: {e}")
-                                theme = None
-                        else:
-                            logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
+                        # FORCE REGENERATION: Ignore outline theme to ensure we use the full ThemeDirector with new fonts
+                        logger.info(f"[DECK COMPOSER] 🔄 IGNORING OUTLINE THEME to force full ThemeDirector generation")
+                        outline_theme = None
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No theme key in outline.notes")
             except Exception as e:
@@ -647,12 +627,13 @@ class SimpleDeckComposer(IDeckComposer):
                     boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans']
                     has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                     
-                    if is_fun_topic:
-                        logger.debug(f"FUN TOPIC DETECTED!")
+                    if is_fun_topic and has_boring_fonts:
+                        logger.debug(f"FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
                         logger.debug(f"  Title: {deck_outline.title}")
-                        logger.debug(f"  FORCING theme regeneration to get playful colors and fonts!")
+                        logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
+                        logger.debug(f"  FORCING theme regeneration to get playful fonts!")
                         logger.debug(f"  Ignoring cached theme...\n")
-                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' - forcing regeneration")
+                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' has boring cached fonts - forcing regeneration")
                         existing_theme_data = None  # Skip cached theme!
                     else:
                         logger.debug(f"FOUND EXISTING THEME IN DATABASE")
@@ -753,24 +734,17 @@ class SimpleDeckComposer(IDeckComposer):
                             boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
                             has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
                             
-                            if is_fun_topic:
-                                logger.debug(f"FUN TOPIC IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
+                            if is_fun_topic and has_boring_fonts:
+                                logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
                                 logger.debug(f"  Title: '{deck_outline.title}'")
+                                logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
                                 logger.debug(f"  CLEARING outline theme to force regeneration!\n")
-                                logger.info(f"[DECK COMPOSER] 🎮 Fun topic - clearing outline theme (2nd path)")
+                                logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
                                 outline_theme = None  # Clear it!
                             
-                            if outline_theme:  # Only use if not cleared
-                                logger.info(f"[DECK COMPOSER] ✅ REUSING THEME FROM OUTLINE (avoiding regeneration)")
-                                logger.info(f"[DECK COMPOSER] Theme colors from outline: {outline_theme.get('color_palette', {}).get('colors', 'no colors')}")
-                                theme = ThemeSpec.from_dict(outline_theme)
-                                # Also get palette from outline theme
-                                palette = outline_theme.get('color_palette') or outline_theme.get('palette')
-                                if not palette:
-                                    # Derive palette directly from theme without regenerating
-                                    palette = _palette_from_theme_obj(theme)
-                                logger.info(f"[DECK COMPOSER] Theme from outline: {outline_theme.get('theme_name', 'unnamed')}")
-                                logger.info(f"[DECK COMPOSER] Palette from outline: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                            # FORCE REGENERATION: Ignore outline theme to ensure we use the full ThemeDirector with new fonts
+                            logger.info(f"[DECK COMPOSER] 🔄 IGNORING OUTLINE THEME (2nd check) to force full ThemeDirector generation")
+                            outline_theme = None
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
                         
@@ -786,40 +760,82 @@ class SimpleDeckComposer(IDeckComposer):
                     existing_theme_data = get_deck_theme(deck_uuid)
 
                     if existing_theme_data:
-                        # CRITICAL: Check if fun topic again to avoid picking up stale theme
+                        # CRITICAL: Check if this is a fun topic that needs playful fonts
+                        # If so, SKIP cached theme and regenerate!
                         title_lower = deck_outline.title.lower()
                         is_fun_topic = any(kw in title_lower for kw in [
-                            'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
-                            'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
+                            'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
+                            'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation',
+                            'zelda', 'sonic', 'fortnite', 'minecraft', 'roblox', 'lego',
+                            'disney', 'marvel', 'dc', 'superhero', 'batman', 'spiderman',
+                            'anime', 'manga', 'cartoon', 'movie', 'film', 'show', 'tv'
                         ])
                         
-                        if is_fun_topic:
-                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic '{deck_outline.title}' - ignoring database theme (2nd check)")
-                            theme = None
+                        current_hero = existing_theme_data.get('typography', {}).get('hero_title', {}).get('family', 'unknown')
+                        current_body = existing_theme_data.get('typography', {}).get('body_text', {}).get('family', 'unknown')
+                        theme_name = existing_theme_data.get('theme_name', 'Unknown')
+                        
+                        # Check for specific "bad" default colors that indicate a failed previous generation
+                        # #f59e0b is the amber default, #fe1e1c is a generic red default
+                        current_colors = existing_theme_data.get('color_palette', {}).get('colors', [])
+                        has_bad_default_colors = any(c.lower() in ['#f59e0b', '#fe1e1c'] for c in current_colors)
+                        
+                        # Check if cached theme has boring fonts
+                        boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'arial', 'helvetica']
+                        has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
+                        
+                        # Force regeneration conditions:
+                        # 1. Fun topic with boring fonts
+                        # 2. GENERIC THEME NAME (Modern, Default, etc.) - ALWAYS REGENERATE
+                        # 3. ANY topic with known bad default colors
+                        should_regenerate = False
+                        reason = ""
+                        
+                        # Broader check for generic themes - if it's just "Modern", it's likely a fallback
+                        is_generic_theme = theme_name in ["Modern", "Default Theme", "Default", "Standard"]
+                        
+                        if is_fun_topic and has_boring_fonts:
+                            should_regenerate = True
+                            reason = "Fun topic with boring fonts"
+                        elif is_generic_theme:
+                            should_regenerate = True
+                            reason = f"Generic theme name detected: {theme_name}"
+                        elif has_bad_default_colors:
+                            should_regenerate = True
+                            reason = "Detected persistent default colors"
+                        
+                        if should_regenerate:
+                            logger.debug(f"THEME REGENERATION TRIGGERED (DB Check)!")
+                            logger.debug(f"  Title: {deck_outline.title}")
+                            logger.debug(f"  Reason: {reason}")
+                            logger.debug(f"  Cached theme: {theme_name} (Fonts: {current_hero}/{current_body})")
+                            logger.debug(f"  FORCING theme regeneration!")
+                            logger.info(f"[DECK COMPOSER] Forcing regeneration: {reason}")
+                            existing_theme_data = None  # Skip cached theme!
                         else:
                             logger.info(f"[DECK COMPOSER] Found existing theme from database (outline stage)")
                             theme = ThemeSpec.from_dict(existing_theme_data)
 
-                        # Also check for palette and search_terms
-                        existing_deck = get_deck(deck_uuid)
-                        if existing_deck and isinstance(existing_deck.get('data'), dict):
-                            deck_data = existing_deck['data']
+                            # Also check for palette and search_terms
+                            existing_deck = get_deck(deck_uuid)
+                            if existing_deck and isinstance(existing_deck.get('data'), dict):
+                                deck_data = existing_deck['data']
 
-                            # Extract palette
-                            if deck_data.get('style_spec', {}).get('palette'):
-                                palette = deck_data['style_spec']['palette']
-                                logger.info(f"[DECK COMPOSER] Found existing palette: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                                # Extract palette
+                                if deck_data.get('style_spec', {}).get('palette'):
+                                    palette = deck_data['style_spec']['palette']
+                                    logger.info(f"[DECK COMPOSER] Found existing palette: {list(palette.keys()) if isinstance(palette, dict) else palette}")
+                                else:
+                                    # Derive palette from existing theme without regenerating
+                                    palette = _palette_from_theme_obj(theme)
+
+                                # CRITICAL: Extract search_terms from database if present
+                                if 'search_terms' in deck_data and deck_data['search_terms']:
+                                    search_terms = deck_data['search_terms']
+                                    logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from database: {search_terms}")
                             else:
                                 # Derive palette from existing theme without regenerating
                                 palette = _palette_from_theme_obj(theme)
-
-                            # CRITICAL: Extract search_terms from database if present
-                            if 'search_terms' in deck_data and deck_data['search_terms']:
-                                search_terms = deck_data['search_terms']
-                                logger.info(f"[DECK COMPOSER] ✅ EXTRACTED {len(search_terms)} search terms from database: {search_terms}")
-                        else:
-                            # Derive palette from existing theme without regenerating
-                            palette = _palette_from_theme_obj(theme)
                     else:
                         logger.info("[DECK COMPOSER] No existing theme found in database")
                 except Exception as e:
@@ -915,6 +931,45 @@ class SimpleDeckComposer(IDeckComposer):
                             except Exception as e:
                                 logger.warning(f"[DECK COMPOSER] Brand color enhancement failed: {e}, using original colors")
                         
+                        # Select appropriate fonts - override boring fonts for fun topics
+                        hero_font = brand_fonts
+                        body_font = brand_fonts
+                        
+                        # Check if current font is boring (should be overridden for fun topics)
+                        boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
+                        is_boring_font = not brand_fonts or (brand_fonts and brand_fonts.lower() in boring_fonts)
+                        
+                        # Check if this is a fun/playful topic
+                        title_lower = (deck_outline.title or '').lower()
+                        vibe_lower = (vibe_context or '').lower()
+                        combined_context = f"{title_lower} {vibe_lower}"
+                        
+                        is_fun_topic = any(keyword in combined_context for keyword in [
+                            'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
+                            'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
+                            'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
+                        ])
+                        
+                        if is_boring_font and is_fun_topic:
+                            # CRITICAL: Override boring fonts with playful fonts for fun topics
+                            import hashlib
+                            seed_hash = int(hashlib.md5((deck_outline.title or 'fun').encode()).hexdigest(), 16)
+                            playful_combos = [
+                                ('Bebas Neue', 'Nunito'),
+                                ('Fredoka', 'Quicksand'),
+                                ('Righteous', 'Poppins'),
+                                ('Bungee', 'Asap'),
+                                ('Bangers', 'Rubik'),
+                            ]
+                            combo = playful_combos[seed_hash % len(playful_combos)]
+                            hero_font, body_font = combo
+                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic with boring font '{brand_fonts}' - overriding with playful fonts: {hero_font}/{body_font}")
+                        elif is_boring_font:
+                            # Use professional fonts for business topics without fonts
+                            hero_font = 'Montserrat'
+                            body_font = 'Roboto'
+                            logger.info(f"[DECK COMPOSER] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
+                        
                         # Create theme from brand data using EXACT format as working theme API
                         theme_dict = {
                             "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -929,8 +984,8 @@ class SimpleDeckComposer(IDeckComposer):
                                 } if logo_url else {}
                             },
                             "typography": {
-                                "hero_title": {"family": brand_fonts if brand_fonts else "Inter"},
-                                "body_text": {"family": brand_fonts if brand_fonts else "Inter"}
+                                "hero_title": {"family": hero_font},
+                                "body_text": {"family": body_font}
                             },
                             "brandInfo": {
                                 "logoUrl": logo_url
@@ -961,16 +1016,90 @@ class SimpleDeckComposer(IDeckComposer):
                     logger.error(f"Traceback: {traceback.format_exc()}")
             else:
                 logger.info(f"[DECK COMPOSER] ✅ SKIPPING stylePreferences reconstruction - theme already preserved from outline!")
+                
+                # CRITICAL FIX: Even with existing theme, always check if user updated colors in stylePreferences
+                # This allows user color changes from the theme tab to override database theme colors
+                try:
+                    style_prefs = getattr(deck_outline, 'stylePreferences', None)
+                    if style_prefs:
+                        colors_config = getattr(style_prefs, 'colors', None)
+                        if colors_config:
+                            # Get user's selected colors from outline theme tab
+                            user_background = getattr(colors_config, 'background', None)
+                            user_accent1 = getattr(colors_config, 'accent1', None)
+                            user_accent2 = getattr(colors_config, 'accent2', None)
+                            user_accent3 = getattr(colors_config, 'accent3', None)
+                            user_text = getattr(colors_config, 'text', None)
+                            
+                            # Build user colors list
+                            user_colors = []
+                            if user_accent1:
+                                user_colors.append(user_accent1)
+                            if user_accent2:
+                                user_colors.append(user_accent2)
+                            if user_accent3:
+                                user_colors.append(user_accent3)
+                            
+                            if user_colors:
+                                logger.info(f"[DECK COMPOSER] 🎨 USER COLOR OVERRIDE: Applying user's selected colors from theme tab")
+                                logger.info(f"[DECK COMPOSER] User colors: {user_colors}, background: {user_background}, text: {user_text}")
+                                
+                                # Update the existing theme with user's colors
+                                if hasattr(theme, 'color_palette') and theme.color_palette:
+                                    theme.color_palette['accent_1'] = user_colors[0] if len(user_colors) > 0 else theme.color_palette.get('accent_1')
+                                    theme.color_palette['accent_2'] = user_colors[1] if len(user_colors) > 1 else (user_colors[0] if len(user_colors) > 0 else theme.color_palette.get('accent_2'))
+                                    theme.color_palette['colors'] = user_colors
+                                    if user_background:
+                                        theme.color_palette['primary_background'] = user_background
+                                    if user_text:
+                                        theme.color_palette['primary_text'] = user_text
+                                elif hasattr(theme, 'raw') and isinstance(theme.raw, dict):
+                                    cp = theme.raw.get('color_palette', {})
+                                    cp['accent_1'] = user_colors[0] if len(user_colors) > 0 else cp.get('accent_1')
+                                    cp['accent_2'] = user_colors[1] if len(user_colors) > 1 else (user_colors[0] if len(user_colors) > 0 else cp.get('accent_2'))
+                                    cp['colors'] = user_colors
+                                    if user_background:
+                                        cp['primary_background'] = user_background
+                                    if user_text:
+                                        cp['primary_text'] = user_text
+                                    theme.raw['color_palette'] = cp
+                                
+                                # Also update palette if it exists
+                                if palette and isinstance(palette, dict):
+                                    palette['colors'] = user_colors
+                                    if user_background:
+                                        palette['backgrounds'] = [user_background]
+                                    logger.info(f"[DECK COMPOSER] ✅ Updated palette with user colors: {palette.get('colors')}")
+                except Exception as e:
+                    logger.warning(f"[DECK COMPOSER] Error applying user color override: {e}")
             
             
             # ONLY generate new theme if absolutely no theme found anywhere
             logger.info(f"[DECK COMPOSER] DEBUG: Final theme check before generation - theme is None: {theme is None}, theme type: {type(theme)}, theme truthy: {bool(theme)}")
             if not theme:
-                logger.info("[DECK COMPOSER] No theme found - using default theme without regeneration")
-                theme = default_theme
-                palette = _palette_from_theme_obj(theme)
-                if not palette:
-                    palette = dict(default_palette)
+                logger.info("[DECK COMPOSER] No theme found - triggering ThemeDirector generation")
+                try:
+                    # Call theme manager to generate theme
+                    # Pass empty global_theme as second arg since we don't have one
+                    theme_result = await self.theme_manager.generate_theme(deck_outline, {})
+                    theme = theme_result.get('theme')
+                    search_terms = theme_result.get('search_terms', [])
+                    
+                    # Update palette from generated theme
+                    palette = _palette_from_theme_obj(theme)
+                    
+                    logger.info(f"[DECK COMPOSER] ✅ Generated fresh theme: {getattr(theme, 'theme_name', 'Unknown')}")
+                except Exception as e:
+                    logger.error(f"[DECK COMPOSER] Theme generation failed: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    
+                    # Fallback to default ONLY if generation fails
+                    logger.info("[DECK COMPOSER] Using default theme as fallback due to generation error")
+                    theme = default_theme
+                    palette = _palette_from_theme_obj(theme)
+                    if not palette:
+                        palette = dict(default_palette)
             else:
                 logger.info("[DECK COMPOSER] ✅ Using existing theme from outline - skipping theme generation")
                 logger.info(f"[DECK COMPOSER] Preserving theme: {getattr(theme, 'theme_name', 'unnamed') if hasattr(theme, 'theme_name') else 'theme from outline'}")

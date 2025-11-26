@@ -33,7 +33,7 @@ class AdaptiveFontSizer:
     # Configuration
     MIN_FONT_SIZE = 14        # Never go below this
     MAX_FONT_SIZE = 800       # Never go above this
-    SAFETY_MARGIN = 0.95      # Leave 5% margin for safety
+    SAFETY_MARGIN = 0.80      # Leave 20% margin for safety (was 5%, too tight)
     LINE_HEIGHT = 1.2         # Default line height multiplier
 
     def __init__(self, metrics_service: FontMetricsService):
@@ -97,6 +97,22 @@ class AdaptiveFontSizer:
                 original_size=max_font,
                 reduction_percentage=100 * (max_font - min_font) / max_font
             )
+
+        # HARD CAP: Font can never exceed height / line_height (ensures at least 1 line fits)
+        # This is a simple rule that guarantees the font won't overflow vertically
+        height_based_max = available_height / self.LINE_HEIGHT
+        max_font = min(max_font, height_based_max)
+
+        # Also cap based on width for single-line text (rough estimate)
+        # For short text, font shouldn't exceed width / (chars * 0.6)
+        char_count = len(text.strip())
+        if char_count > 0:
+            width_based_max = available_width / (char_count * 0.6)  # Conservative char width
+            max_font = min(max_font, width_based_max)
+
+        # Ensure max_font is still above min_font
+        if max_font < min_font:
+            max_font = min_font
 
         # Binary search for optimal size
         optimal_size = self._binary_search_size(

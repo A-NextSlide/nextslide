@@ -219,21 +219,21 @@ export const CustomComponentRenderer: React.FC<{
   isThumbnail?: boolean;
 }> = ({ component, baseStyles, containerRef, isThumbnail = false }) => {
   const renderCode = component.props.render as string;
-  
+
   // Merge all component props (including width, height, x, y) with the custom props
   const componentProps = {
     ...component.props,
     ...(component.props.props || {})
   };
-  
+
   // Keep last successful compiled render to avoid flicker during recompilation
   const compiledRenderRef = useRef<Function | null>(null);
   const { currentSlideIndex } = useNavigation();
   const lastSlideIndexRef = useRef<number>(currentSlideIndex);
-  
+
   // Get component state
   const { state, updateState, forceUpdate, clearState } = useComponentInstance(component.id);
-  
+
   // Reset state when slide changes
   useEffect(() => {
     if (!isThumbnail && currentSlideIndex !== lastSlideIndexRef.current) {
@@ -241,34 +241,125 @@ export const CustomComponentRenderer: React.FC<{
       lastSlideIndexRef.current = currentSlideIndex;
     }
   }, [currentSlideIndex, isThumbnail, clearState]);
-  
+
   // Compile render function synchronously to prevent initial flash
   const { compiledRender, compilationError } = useMemo(() => {
     if (!renderCode) {
       return { compiledRender: null, compilationError: new Error('No render function provided') };
     }
-    
+
     // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
-    // 1. Check if it's raw HTML (starts with <tag or just contains HTML)
     const trimmedCode = (renderCode as string).trim();
+
+    // 0. IFRAME MODE: Check for Full HTML Document
+    // This allows "do whatever we want" - Tailwind, CDNs, full isolation
+    if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
+      console.log('[CustomComponent] Detected FULL HTML document, rendering in IFRAME');
+      const iframeRenderer = function () {
+        return React.createElement('iframe', {
+          srcDoc: renderCode as string,
+          style: { width: '100%', height: '100%', border: 'none', backgroundColor: 'transparent' },
+          sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
+          title: "Custom Component"
+        });
+      };
+      return { compiledRender: iframeRenderer as Function, compilationError: null };
+    }
+
+    // 0b. IFRAME MODE for render functions that return HTML strings
+    // Much cleaner than React.createElement - AI generates readable HTML/CSS
+    if (trimmedCode.startsWith('function render(') || trimmedCode.startsWith('function render (')) {
+      console.log('[CustomComponent] Detected render function, executing in IFRAME sandbox');
+
+      const iframeFunctionRenderer = function ({ props, state, id, isThumbnail, containerWidth, containerHeight }: any) {
+        // Safely serialize props, filtering out functions and circular refs
+        const safeStringify = (obj: any): string => {
+          try {
+            return JSON.stringify(obj, (key, value) => {
+              if (typeof value === 'function') return undefined;
+              return value;
+            }) || '{}';
+          } catch {
+            return '{}';
+          }
+        };
+
+        // Build HTML document that executes the render function
+        // The render function returns an HTML string, not React elements
+        const htmlDoc = [
+          '<!DOCTYPE html>',
+          '<html>',
+          '<head>',
+          '  <meta charset="UTF-8">',
+          '  <style>',
+          '    * { margin: 0; padding: 0; box-sizing: border-box; }',
+          '    html, body { width: 100%; height: 100%; overflow: hidden; }',
+          '    body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }',
+          '  </style>',
+          '  <link rel="preconnect" href="https://fonts.googleapis.com">',
+          '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+          '  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Poppins:wght@100..900&family=Playfair+Display:wght@400..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">',
+          '</head>',
+          '<body>',
+          '  <script>',
+          '    (function() {',
+          '      try {',
+          '        // Props passed from parent',
+          '        var props = ' + safeStringify(props || {}) + ';',
+          '        var state = ' + safeStringify(state || {}) + ';',
+          '        var id = ' + JSON.stringify(id || '') + ';',
+          '        var isThumbnail = ' + JSON.stringify(!!isThumbnail) + ';',
+          '        var containerWidth = ' + JSON.stringify(containerWidth || 800) + ';',
+          '        var containerHeight = ' + JSON.stringify(containerHeight || 600) + ';',
+          '        var updateState = function() {};',
+          '',
+          '        // Component render function (returns HTML string)',
+          '        ' + renderCode,
+          '',
+          '        // Call render and inject HTML',
+          '        var html = render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight });',
+          '        document.body.innerHTML = html;',
+          '      } catch (err) {',
+          '        document.body.innerHTML = \'<div style="color: #dc2626; padding: 20px; font-family: monospace; background: #fef2f2; height: 100%; box-sizing: border-box;">\' +',
+          '          \'<strong>Error:</strong> \' + (err.message || err) + \'</div>\';',
+          '        console.error("[iframe] Render error:", err);',
+          '      }',
+          '    })();',
+          '  </script>',
+          '</body>',
+          '</html>'
+        ].join('\n');
+
+        return React.createElement('iframe', {
+          srcDoc: htmlDoc,
+          style: { width: '100%', height: '100%', border: 'none', backgroundColor: 'transparent' },
+          sandbox: "allow-scripts allow-same-origin",
+          title: "Custom Component"
+        });
+      };
+
+      return { compiledRender: iframeFunctionRenderer as Function, compilationError: null };
+    }
+
+    // 1. Check if it's raw HTML fragment (starts with <tag or just contains HTML)
     if (trimmedCode.startsWith('<') && trimmedCode.includes('>') && !trimmedCode.includes('function render')) {
       // Check for template variables like {icon}, {category}, etc.
       const hasTemplateVars = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/g.test(trimmedCode);
-      
+
       if (hasTemplateVars) {
         console.warn('[CustomComponent] Detected HTML with template variables - INVALID!', {
           preview: trimmedCode.substring(0, 200),
           variables: trimmedCode.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g)
         });
-        return { 
-          compiledRender: null, 
-          compilationError: new Error('HTML contains template variables like {icon}, {category}. Must use function format with props instead.') 
+        return {
+          compiledRender: null,
+          compilationError: new Error('HTML contains template variables like {icon}, {category}. Must use function format with props instead.')
         };
       }
-      
+
       console.log('[CustomComponent] Detected raw HTML format, converting to React');
       // Return a function that renders the HTML using dangerouslySetInnerHTML
-      const htmlRenderer = function({ props }: any) {
+      const htmlRenderer = function ({ props }: any) {
         return React.createElement('div', {
           style: {
             width: '100%',
@@ -279,7 +370,7 @@ export const CustomComponentRenderer: React.FC<{
       };
       return { compiledRender: htmlRenderer as Function, compilationError: null };
     }
-    
+
     // 2. Allow providing a render function directly instead of a string
     if (typeof renderCode === 'function') {
       const originalRender = renderCode as Function;
@@ -330,10 +421,10 @@ export const CustomComponentRenderer: React.FC<{
       let inString = false;
       let stringChar: string | null = null;
       let escapeNext = false;
-      
+
       for (let i = 0; i < unescapedCode.length; i++) {
         const ch = unescapedCode[i];
-        
+
         if (escapeNext) {
           escapeNext = false;
           continue;
@@ -352,9 +443,9 @@ export const CustomComponentRenderer: React.FC<{
           }
           continue;
         }
-        
+
         if (inString) continue;
-        
+
         if (ch === '(') {
           parenDepth++;
         } else if (ch === ')') {
@@ -379,7 +470,7 @@ export const CustomComponentRenderer: React.FC<{
           }
         }
       }
-      
+
       // Add missing closing brackets at the end if needed
       if (parenDepth > 0) {
         console.warn('[CustomComponent] Adding', parenDepth, 'missing closing parens');
@@ -688,13 +779,13 @@ export const CustomComponentRenderer: React.FC<{
       compiledRenderRef.current = compiledRender;
     }
   }, [compiledRender]);
-  
+
   // Check if we're in presentation mode
   const isPresenting = usePresentationStore(state => state.isPresenting);
-  
+
   // Use standard scale factor (optimization removed)
   const scaleFactor = 1;
-  
+
   // Dynamic fit-to-box scaling (non-persistent): scales content down to fit, back up to 1 when growing
   const contentInnerRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<{ scale: number; offsetX: number; offsetY: number }>({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -703,21 +794,21 @@ export const CustomComponentRenderer: React.FC<{
   const [isResizingNow, setIsResizingNow] = useState(false);
   const isResizingNowRef = useRef(false);
   useEffect(() => { isResizingNowRef.current = isResizingNow; }, [isResizingNow]);
-  
+
   const computeFit = useCallback(() => {
     const containerEl = containerRef?.current as HTMLDivElement | null;
     const contentEl = contentInnerRef.current as HTMLDivElement | null;
     if (!containerEl || !contentEl) return;
-    
+
     // Consider any saved optimization scale so our math uses the pre-transform coordinate space
     const savedScale = (component?.props as any)?._optimizedScale || 1;
     const outerScale = (!isThumbnail && !isPresenting) ? scaleFactor : 1;
     const effectiveParentScale = outerScale * savedScale;
-    
+
     // Container size in the unscaled coordinate system of its absolutely-positioned children
     const containerW = Math.max(0, containerEl.clientWidth / (effectiveParentScale || 1));
     const containerH = Math.max(0, containerEl.clientHeight / (effectiveParentScale || 1));
-    
+
     // Natural content size (scroll* is unaffected by CSS transforms)
     const naturalW = Math.max(0, contentEl.scrollWidth || contentEl.offsetWidth || 0);
     const naturalH = Math.max(0, contentEl.scrollHeight || contentEl.offsetHeight || 0);
@@ -725,20 +816,20 @@ export const CustomComponentRenderer: React.FC<{
       setFit(prev => (prev.scale !== 1 || prev.offsetX !== 0 || prev.offsetY !== 0) ? { scale: 1, offsetX: 0, offsetY: 0 } : prev);
       return;
     }
-    
+
     const s = Math.min(containerW / naturalW, containerH / naturalH, 1);
     const dispW = naturalW * s;
     const dispH = naturalH * s;
     const ox = Math.max(0, (containerW - dispW) / 2);
     const oy = Math.max(0, (containerH - dispH) / 2);
-    
+
     setFit(prev => (prev.scale !== s || prev.offsetX !== ox || prev.offsetY !== oy) ? { scale: s, offsetX: ox, offsetY: oy } : prev);
     // Mark fit ready when not actively resizing
     if (!isResizingNowRef.current) {
       setIsFitReady(true);
     }
   }, [containerRef, scaleFactor, isThumbnail, isPresenting, component?.props]);
-  
+
   useEffect(() => {
     // Initial compute + observe container/content size changes
     computeFit();
@@ -792,12 +883,12 @@ export const CustomComponentRenderer: React.FC<{
       document.removeEventListener('component:resizeend', onResizeEnd as any);
     };
   }, [component.id, computeFit]);
-  
+
   // No optimized styles needed - backend handles font sizing
   const optimizedStyles = useMemo(() => {
     return {};
   }, [component]);
-  
+
   // Render the component
   const content = useMemo(() => {
     // Show error only if we have no prior compiled function
@@ -821,42 +912,42 @@ export const CustomComponentRenderer: React.FC<{
     // Prefer fresh compiled render; fall back to last good render to avoid flash
     const activeRender = compiledRender ?? compiledRenderRef.current;
     if (!activeRender) return null;
-    
+
     try {
       // Create a wrapper component that tracks its own renders
       const ComponentWrapper = React.memo(() => {
         const renderCountRef = useRef(0);
         const renderResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-        
+
         useEffect(() => {
           // Track renders
           renderCountRef.current++;
-          
+
           // Reset count after 1 second of no renders
           if (renderResetTimeoutRef.current) {
             clearTimeout(renderResetTimeoutRef.current);
           }
-          
+
           renderResetTimeoutRef.current = setTimeout(() => {
             renderCountRef.current = 0;
           }, 1000);
-          
+
           // Check for too many renders
           if (renderCountRef.current > 50) {
             throw new Error('Too many renders detected (50+ in 1 second)');
           }
-          
+
           return () => {
             if (renderResetTimeoutRef.current) {
               clearTimeout(renderResetTimeoutRef.current);
             }
           };
         });
-        
+
         // Calculate container dimensions to pass to the render function
         const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
         const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
-        
+
         const element = activeRender!({
           props: componentProps,
           state,
@@ -867,18 +958,18 @@ export const CustomComponentRenderer: React.FC<{
           containerWidth,
           containerHeight
         });
-        
+
         // Handle HTML string returns (from functions that return HTML)
         if (typeof element === 'string' && element.trim().startsWith('<') && element.includes('>')) {
           console.log('[CustomComponent] Detected HTML string return, rendering as HTML');
           return (
-            <div 
+            <div
               style={{ width: '100%', height: '100%' }}
-              dangerouslySetInnerHTML={{ __html: element }} 
+              dangerouslySetInnerHTML={{ __html: element }}
             />
           );
         }
-        
+
         // Validate the result. Allow React elements, arrays, strings, null.
         if (
           React.isValidElement(element) ||
@@ -900,14 +991,14 @@ export const CustomComponentRenderer: React.FC<{
         console.warn('[CustomComponent] Invalid element returned:', element);
         return <div>{String(element)}</div>;
       });
-      
+
       return <ComponentWrapper key={`${component.id}-${currentSlideIndex}`} />;
     } catch (err) {
       console.error('[CustomComponent] Runtime error:', err);
-      
+
       // Provide more helpful error messages for common issues
       let errorMessage = err instanceof Error ? err.message : String(err);
-      
+
       // Check for undefined variable errors
       if (err instanceof ReferenceError) {
         const match = errorMessage.match(/(\w+) is not defined/);
@@ -916,7 +1007,7 @@ export const CustomComponentRenderer: React.FC<{
           errorMessage = `Variable '${varName}' is not defined. Add: const ${varName} = props.${varName} || defaultValue;`;
         }
       }
-      
+
       return (
         <div style={{
           padding: '10px',
@@ -1023,7 +1114,7 @@ export const CustomComponentRenderer: React.FC<{
       el.removeEventListener('scroll', handleScrollSnap as any);
     };
   }, [containerRef]);
-  
+
   return (
     <ErrorBoundary>
       <div
@@ -1166,7 +1257,7 @@ export const renderCustomComponent = (
   isThumbnail?: boolean
 ) => {
   return (
-    <CustomComponentRenderer 
+    <CustomComponentRenderer
       component={component}
       baseStyles={baseStyles}
       containerRef={containerRef}

@@ -392,7 +392,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 slideCount: slideCount,
                 styleContext: styleContext,
                 enableResearch: true, // Always enable research for conversational mode
-                autoSelectImages: false // Default to false
+                autoSelectImages: true // Default to true - auto-populate images
               },
               (event) => {
                 console.log('[ChatPanel] 📥 Stream event:', event.type, event);
@@ -432,9 +432,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     slideIndex: event.slideIndex // Index to merge at
                   });
                 } else if (event.type === 'outline_complete') {
-                  // DON'T pass slides from outline_complete - we already have them from streaming
-                  // Just notify that generation is complete
+                  // Slides were already streamed, but we need to pass stylePreferences from outline_complete!
+                  // This is where the backend sends the theme colors (e.g., Pikachu yellow)
                   console.log('[ChatPanel] ✅ Outline generation complete');
+                  console.log('[ChatPanel] 🎨 Outline stylePreferences:', event.outline?.stylePreferences);
+                  console.log('[ChatPanel] 🎨 Outline font:', event.outline?.stylePreferences?.font);
+                  
+                  // CRITICAL: Pass stylePreferences to DeckList so theme colors are applied!
+                  if (event.outline?.stylePreferences && onOutlineAgentToolCall) {
+                    onOutlineAgentToolCall({
+                      topic: event.outline.title || topic,
+                      slide_count: event.outline.slides?.length || slideCount,
+                      detail_level: detailLevel,
+                      slides: [], // Don't re-pass slides, just the stylePreferences
+                      stylePreferences: event.outline.stylePreferences // 🎨 PASS THE THEME COLORS AND FONT!
+                    });
+                  }
+                  
                   if (onOutlineChatGeneratingChange) {
                     onOutlineChatGeneratingChange(false);
                   }
@@ -1063,9 +1077,63 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const previousMessageCountRef = useRef(messages.length);
   const lastMessageTypeRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [themePreview, setThemePreview] = useState<{ theme?: any; palette?: any; typography?: any; tools?: Array<{ label: string; status: string }>; images?: any[]; logo?: { url?: string; light_variant?: string; dark_variant?: string; source?: string } } | null>(null);
+  
+  // Initialize themePreview from outline's stylePreferences if available
+  // This ensures colors from outline generation are displayed in chat panel
+  const getInitialThemePreview = (): { theme?: any; palette?: any; typography?: any; tools?: Array<{ label: string; status: string }>; images?: any[]; logo?: { url?: string; light_variant?: string; dark_variant?: string; source?: string } } | null => {
+    const sp = outline?.stylePreferences;
+    if (!sp) return null;
+    
+    const colors = sp.colors;
+    if (!colors) return null;
+    
+    // Build palette from outline colors
+    const palette: any = {
+      primary_background: colors.background || '#FFFFFF',
+      primary_text: colors.text || '#1F2937',
+      colors: [colors.accent1, colors.accent2, colors.accent3].filter(Boolean),
+      metadata: sp.logoUrl ? { logo_url: sp.logoUrl } : {}
+    };
+    
+    // Build typography from outline font preference
+    const typography = sp.font ? {
+      hero_title: { family: sp.font },
+      body_text: { family: sp.font }
+    } : undefined;
+    
+    // Build logo if available
+    const logo = sp.logoUrl ? { url: sp.logoUrl, source: 'style_preferences' } : undefined;
+    
+    return {
+      palette,
+      typography,
+      logo,
+      theme: {
+        theme_name: sp.vibeContext ? `${sp.vibeContext} Theme` : 'Brand Theme',
+        color_palette: palette,
+        typography
+      }
+    };
+  };
+  
+  const [themePreview, setThemePreview] = useState<{ theme?: any; palette?: any; typography?: any; tools?: Array<{ label: string; status: string }>; images?: any[]; logo?: { url?: string; light_variant?: string; dark_variant?: string; source?: string } } | null>(getInitialThemePreview);
   const [isThemePreviewOpen, setIsThemePreviewOpen] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
+
+  // Sync themePreview when outline's stylePreferences changes (e.g., navigating from outline page)
+  useEffect(() => {
+    const sp = outline?.stylePreferences;
+    if (!sp?.colors) return;
+    
+    // Only update if we don't have a theme yet OR if this is a new outline
+    if (!themePreview?.palette?.colors?.length) {
+      const initialTheme = getInitialThemePreview();
+      if (initialTheme) {
+        console.log('[ChatPanel] Initializing themePreview from outline stylePreferences:', initialTheme);
+        setThemePreview(initialTheme);
+      }
+    }
+  }, [outline?.stylePreferences?.colors?.accent1, outline?.stylePreferences?.colors?.background]);
 
   // Helpers to normalize palette data safely
   const getColorValue = (val: any): string | null => {

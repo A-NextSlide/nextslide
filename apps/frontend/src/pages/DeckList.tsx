@@ -690,10 +690,16 @@ const DeckList: React.FC = () => {
     // Hide conversational onboarding
     setShowConversationalOnboarding(false);
 
-    // Update style preferences with collected data
+    // CRITICAL: Clear any cached theme data from previous outlines
+    // This ensures fresh theme colors from the API are used, not stale cached colors
+    const themeStore = useThemeStore.getState();
+    themeStore.setThemeReady(false); // Reset theme ready state
+    
+    // Update style preferences with collected data - CLEAR any old colors!
     setStylePreferences({
       initialIdea: data.topic,
       vibeContext: data.stylePreferences,
+      colors: undefined, // Clear old colors so API colors take precedence
     });
 
     // Store conversational data to trigger generation
@@ -741,11 +747,18 @@ const DeckList: React.FC = () => {
 
     // Show outline view - OutlineEditor will see conversationalData and start generation
     // Create a placeholder outline so the view doesn't stay blank
+    const newOutlineId = uuidv4();
     const placeholderOutline: FrontendDeckOutline = {
-      id: uuidv4(),
+      id: newOutlineId,
       title: data.topic || 'Generating Presentation...',
       slides: []
     };
+    
+    // CRITICAL: Clear any cached theme for this new outline ID
+    // This ensures fresh theme from API is used
+    themeStore.setOutlineDeckTheme?.(newOutlineId, null);
+    themeStore.clearOutlineThemeRequested?.(newOutlineId);
+    
     setCurrentOutline(placeholderOutline);
     setIsOutlineChatGenerating(true); // Immediately show loading state
     setShowOutlineView(true);
@@ -1004,7 +1017,7 @@ const DeckList: React.FC = () => {
       const coordinator = GenerationCoordinator.getInstance();
 
       // Store autoSelectImages preference globally
-      // PRIORITY: Use existing window preference (from toggle), then outline preference, then default to FALSE
+      // PRIORITY: Use existing window preference (from toggle), then outline preference, then default to TRUE
       // This prevents overwriting what the toggle already set!
       const existingWindowPref = typeof window !== 'undefined'
         ? (window as any).__slideGenerationPreferences?.autoSelectImages
@@ -1015,7 +1028,7 @@ const DeckList: React.FC = () => {
           ? existingWindowPref // ✅ Use what the toggle already set
           : currentOutline?.stylePreferences?.autoSelectImages !== undefined
             ? currentOutline.stylePreferences.autoSelectImages
-            : false; // Default to FALSE - user must explicitly enable
+            : true; // Default to TRUE - auto-apply images by default for better UX
 
       console.log('[DeckList] 🔴 Setting autoSelectImages preference before generation');
       console.log('[DeckList] 🔴 Existing window preference:', existingWindowPref);
@@ -1558,6 +1571,79 @@ const DeckList: React.FC = () => {
                               return;
                             }
 
+                            // Handle stylePreferences-only update (no slides) - just update theme colors
+                            if ((!params.slides || params.slides.length === 0) && params.stylePreferences) {
+                              console.log('[DeckList] 🎨 STYLE PREFERENCES ONLY UPDATE');
+                              console.log('[DeckList] 🎨 Received stylePreferences:', params.stylePreferences);
+                              console.log('[DeckList] 🎨 Received font:', params.stylePreferences?.font);
+                              
+                              const apiStylePrefs = params.stylePreferences;
+                              const apiColors = apiStylePrefs?.colors;
+                              const apiFont = apiStylePrefs?.font;
+                              
+                              // Update current outline with new stylePreferences (keep existing slides)
+                              setCurrentOutline(prev => {
+                                if (!prev) return prev;
+                                return {
+                                  ...prev,
+                                  stylePreferences: {
+                                    ...prev.stylePreferences,
+                                    ...apiStylePrefs,
+                                    colors: apiColors || prev.stylePreferences?.colors
+                                  }
+                                };
+                              });
+                              
+                              // Apply to theme store if colors present OR font is specified
+                              const hasColors = apiColors && (apiColors.background || apiColors.accent1);
+                              if (hasColors || apiFont) {
+                                console.log('[DeckList] 🎨 APPLYING STYLE-ONLY UPDATE TO THEME STORE:', { colors: apiColors, font: apiFont });
+                                const ts = useThemeStore.getState();
+                                const outlineId = currentOutline?.id || '';
+                                
+                                const themePayload = {
+                                  color_palette: {
+                                    primary_background: apiColors?.background || '#ffffff',
+                                    primary_text: apiColors?.text || '#1f2937',
+                                    accent_1: apiColors?.accent1 || '#FF4301',
+                                    accent_2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301',
+                                    backgrounds: [apiColors?.background || '#ffffff'],
+                                    accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
+                                    text_colors: { primary: apiColors?.text || '#1f2937' }
+                                  }
+                                };
+                                
+                                ts.setOutlineDeckTheme?.(outlineId, themePayload);
+                                
+                                // CRITICAL: Use apiFont directly - don't fall back to Inter for fun topics
+                                const fontToApply = apiFont || 'Inter';
+                                console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME:', fontToApply);
+                                
+                                const builtTheme = {
+                                  name: apiColors?.name || 'Iconic Theme',
+                                  page: { backgroundColor: apiColors?.background || '#ffffff' },
+                                  typography: {
+                                    paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
+                                    heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
+                                  },
+                                  accent1: apiColors?.accent1 || '#FF4301',
+                                  accent2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301'
+                                };
+                                
+                                const addedId = ts.addCustomTheme(builtTheme as any);
+                                ts.setWorkspaceTheme(addedId);
+                                ts.setOutlineTheme(outlineId, { ...builtTheme, id: addedId, isCustom: true } as any);
+                                ts.setThemeReady(true);
+                                
+                                window.dispatchEvent(new CustomEvent('theme_preview_update', {
+                                  detail: { type: 'theme_generated', theme: themePayload }
+                                }));
+                                
+                                console.log('[DeckList] ✅ Theme applied from stylePreferences-only update!');
+                              }
+                              return;
+                            }
+
                             // Map agent slides to frontend slides if available
                             console.log('[DeckList] 🌟 BATCH OUTLINE UPDATE');
                             console.log('[DeckList] 📊 Incoming slides count:', params.slides?.length || 0);
@@ -1587,14 +1673,101 @@ const DeckList: React.FC = () => {
                               };
                             }) : [];
 
+                            // PRIORITY 1: Use stylePreferences from API response (backend sends theme colors here!)
+                            const apiStylePrefs = params.stylePreferences;
+                            const apiColors = apiStylePrefs?.colors;
+                            
+                            // PRIORITY 2: Get current theme data from store to persist to outline
+                            const themeStore = useThemeStore.getState();
+                            const currentDeckTheme = themeStore.getOutlineDeckTheme?.(currentOutline?.id || '');
+                            const cp = currentDeckTheme?.color_palette || {};
+                            
+                            // Build stylePreferences.colors from theme store data
+                            const themeColors = cp.primary_background || cp.accent_1 ? {
+                              type: 'custom' as const,
+                              background: cp.primary_background || '#ffffff',
+                              text: cp.primary_text || '#1f2937',
+                              accent1: cp.accent_1 || '#FF4301',
+                              accent2: cp.accent_2 || cp.accent_1 || '#FF4301',
+                              accent3: cp.accents?.[2]
+                            } : undefined;
+
+                            // Use API colors FIRST (this is where the backend sends Pikachu yellow, etc.)
+                            const finalColors = apiColors || themeColors || currentOutline?.stylePreferences?.colors || stylePreferences?.colors;
+                            
+                            const apiFont = apiStylePrefs?.font;
+                            console.log('[DeckList] 🎨 API stylePreferences:', apiStylePrefs);
+                            console.log('[DeckList] 🎨 API colors:', apiColors);
+                            console.log('[DeckList] 🎨 API font:', apiFont);
+                            console.log('[DeckList] 🎨 Final colors:', finalColors);
+
                             const newOutline: FrontendDeckOutline = {
                               id: currentOutline?.id || uuidv4(), // Preserve ID if updating placeholder
                               title: params.topic || currentOutline?.title || 'Presentation',
-                              slides: initialSlides
+                              slides: initialSlides,
+                              // CRITICAL: Persist stylePreferences so theme tab can load them on revisit
+                              stylePreferences: {
+                                ...currentOutline?.stylePreferences,
+                                ...stylePreferences,
+                                ...apiStylePrefs,  // Include ALL API style prefs (logo, font, etc.)
+                                colors: finalColors
+                              }
                             };
 
                             console.log('[DeckList] ✅ Setting new outline with', newOutline.slides.length, 'slides');
+                            console.log('[DeckList] 🎨 Outline stylePreferences.colors:', newOutline.stylePreferences?.colors);
                             setCurrentOutline(newOutline);
+                            
+                            // CRITICAL: If API sent colors OR font (e.g., Pikachu yellow + Bungee font), apply to theme store NOW
+                            const hasApiColors = apiColors && (apiColors.background || apiColors.accent1);
+                            if (hasApiColors || apiFont) {
+                              console.log('[DeckList] 🎨 APPLYING API THEME TO STORE:', { colors: apiColors, font: apiFont });
+                              const ts = useThemeStore.getState();
+                              
+                              // Build theme payload for theme store
+                              const themePayload = {
+                                color_palette: {
+                                  primary_background: apiColors?.background || '#ffffff',
+                                  primary_text: apiColors?.text || '#1f2937',
+                                  accent_1: apiColors?.accent1 || '#FF4301',
+                                  accent_2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301',
+                                  backgrounds: [apiColors?.background || '#ffffff'],
+                                  accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
+                                  text_colors: { primary: apiColors?.text || '#1f2937' }
+                                }
+                              };
+                              
+                              // Store in outline deck theme
+                              ts.setOutlineDeckTheme?.(newOutline.id, themePayload);
+                              
+                              // Use apiFont - don't default to Inter for fun topics!
+                              const fontToApply = apiFont || 'Inter';
+                              console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME (batch):', fontToApply);
+                              
+                              // Create workspace theme to match
+                              const builtTheme = {
+                                name: apiColors?.name || 'Iconic Theme',
+                                page: { backgroundColor: apiColors?.background || '#ffffff' },
+                                typography: {
+                                  paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
+                                  heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
+                                },
+                                accent1: apiColors?.accent1 || '#FF4301',
+                                accent2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301'
+                              };
+                              
+                              const addedId = ts.addCustomTheme(builtTheme as any);
+                              ts.setWorkspaceTheme(addedId);
+                              ts.setOutlineTheme(newOutline.id, { ...builtTheme, id: addedId, isCustom: true } as any);
+                              ts.setThemeReady(true);
+                              
+                              // Dispatch theme_preview_update event so theme tab updates
+                              window.dispatchEvent(new CustomEvent('theme_preview_update', {
+                                detail: { type: 'theme_generated', theme: themePayload }
+                              }));
+                              
+                              console.log('[DeckList] ✅ Theme applied from API!');
+                            }
                             // Note: We don't manually set isOutlineChatGenerating(false) here anymore.
                             // The ChatPanel component monitors the agent's processing state and updates it automatically.
                             // This ensures the loading state persists during partial updates and clears only when done.

@@ -170,42 +170,81 @@ function extractPartialSlides(text: string): OutlineData | null {
 }
 
 /**
- * Extract JSON blocks from text (between ```json and ```)
+ * Extract JSON blocks from text (between ```json and ```, or raw JSON objects)
  * Returns both the parsed data and the text with JSON removed
  */
 function extractJSONFromText(text: string): { data: OutlineData | null; textWithoutJSON: string } {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-
   let data: OutlineData | null = null;
   let textWithoutJSON = text;
 
+  // Try markdown code block first
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+
   if (jsonMatch && jsonMatch[1]) {
     try {
-      console.log('[OutlineAgent] Found JSON block, attempting parse...');
+      console.log('[OutlineAgent] Found JSON code block, attempting parse...');
       const parsed = JSON.parse(jsonMatch[1]);
-      // Validate it has the expected structure
-      if (parsed.action) {
-        // Valid if it has slides, updated_slides, or theme_changes
-        const hasSlides = parsed.slides && Array.isArray(parsed.slides);
-        const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
-        const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
-
-        if (hasSlides || hasUpdatedSlides || hasThemeChanges) {
-          console.log('[OutlineAgent] Valid JSON action found:', parsed.action);
-          data = parsed as OutlineData;
-          // Remove the JSON block from the text
-          textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
-        } else {
-          console.warn('[OutlineAgent] JSON parsed but missing required fields (slides, updated_slides, or theme_changes)');
-        }
+      if (isValidOutlineData(parsed)) {
+        console.log('[OutlineAgent] Valid JSON action found:', parsed.action);
+        data = parsed as OutlineData;
+        textWithoutJSON = text.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+        return { data, textWithoutJSON };
       }
     } catch (e) {
-      console.error('[OutlineAgent] Failed to parse JSON from text:', e);
-      console.debug('[OutlineAgent] Raw JSON content:', jsonMatch[1]);
+      console.error('[OutlineAgent] Failed to parse JSON code block:', e);
+    }
+  }
+
+  // Fallback: Try to find raw JSON object with "action" field
+  const rawJsonMatch = text.match(/\{[\s\S]*?"action"\s*:\s*"[^"]+"/);
+  if (rawJsonMatch) {
+    // Find the matching closing brace
+    const startIdx = text.indexOf(rawJsonMatch[0]);
+    let braceCount = 0;
+    let endIdx = startIdx;
+
+    for (let i = startIdx; i < text.length; i++) {
+      if (text[i] === '{') braceCount++;
+      else if (text[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          endIdx = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (endIdx > startIdx) {
+      const jsonStr = text.slice(startIdx, endIdx);
+      try {
+        console.log('[OutlineAgent] Found raw JSON object, attempting parse...');
+        const parsed = JSON.parse(jsonStr);
+        if (isValidOutlineData(parsed)) {
+          console.log('[OutlineAgent] Valid raw JSON action found:', parsed.action);
+          data = parsed as OutlineData;
+          textWithoutJSON = (text.slice(0, startIdx) + text.slice(endIdx)).trim();
+          return { data, textWithoutJSON };
+        }
+      } catch (e) {
+        console.debug('[OutlineAgent] Failed to parse raw JSON:', e);
+      }
     }
   }
 
   return { data, textWithoutJSON };
+}
+
+/**
+ * Validate if parsed JSON is valid OutlineData
+ */
+function isValidOutlineData(parsed: any): boolean {
+  if (!parsed.action) return false;
+
+  const hasSlides = parsed.slides && Array.isArray(parsed.slides);
+  const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
+  const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
+
+  return hasSlides || hasUpdatedSlides || hasThemeChanges;
 }
 
 /**

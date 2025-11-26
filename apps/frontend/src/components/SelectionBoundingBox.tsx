@@ -185,40 +185,8 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Listen to drag move events to move the selection border in display pixels
-  React.useEffect(() => {
-    const handleDragMove = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail || !containerRef.current) return;
-      lastDxRef.current = detail.dx || 0;
-      lastDyRef.current = detail.dy || 0;
-      // Move the selection overlay to match the dragged component
-      containerRef.current.style.setProperty('--drag-x', `${lastDxRef.current}px`);
-      containerRef.current.style.setProperty('--drag-y', `${lastDyRef.current}px`);
-    };
-    const handleDragStart = () => {
-      lastDxRef.current = 0;
-      lastDyRef.current = 0;
-      if (containerRef.current) {
-        containerRef.current.style.setProperty('--drag-x', `0px`);
-        containerRef.current.style.setProperty('--drag-y', `0px`);
-      }
-    };
-    const handleDragEnd = () => {
-      if (containerRef.current) {
-        containerRef.current.style.removeProperty('--drag-x');
-        containerRef.current.style.removeProperty('--drag-y');
-      }
-    };
-    document.addEventListener('selection:drag-move', handleDragMove as EventListener);
-    document.addEventListener('selection:drag-start', handleDragStart as EventListener);
-    document.addEventListener('selection:drag-end', handleDragEnd as EventListener);
-    return () => {
-      document.removeEventListener('selection:drag-move', handleDragMove as EventListener);
-      document.removeEventListener('selection:drag-start', handleDragStart as EventListener);
-      document.removeEventListener('selection:drag-end', handleDragEnd as EventListener);
-    };
-  }, []);
+  // Listen to drag move events - REMOVED as selection box now inherits CSS transforms from parent
+  // React.useEffect(() => { ... }, []);
   
   // Handle rotation of the component
   const handleRotationStart = (e: React.MouseEvent) => {
@@ -313,9 +281,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
             boxShadow: isMultiSelected ? 'none' : '0 0 0 1px rgba(255, 0, 123, 0.3)',
             zIndex: 10,
             pointerEvents: 'none',
-            background: 'transparent',
-            // Ensure the selection border follows CSS variable transforms from the wrapper
-            transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))'
+            background: 'transparent'
           }}
         />
       )}
@@ -328,8 +294,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
             boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.3)',
             zIndex: 10,
             pointerEvents: 'none',
-            background: 'transparent',
-            transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))'
+            background: 'transparent'
           }}
         />
       )}
@@ -363,7 +328,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
           <div 
             className="absolute top-0 left-1/2 w-px h-4 bg-[#FF007B] pointer-events-none"
             style={{ 
-              transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, -100%)',
+              transform: 'translate(-50%, -100%)',
               zIndex: 40
             }}
           />
@@ -375,7 +340,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
             style={{ 
               top: '-8px',
               left: '50%',
-              transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, -100%)',
+              transform: 'translate(-50%, -100%)',
               zIndex: 40,
               backgroundColor: 'white'
             }}
@@ -393,44 +358,44 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
           {/* Corner handles (NW, NE, SE, SW) */}
           <div 
             className="absolute top-0 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-nw-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'nw')}
           />
           <div 
             className="absolute top-0 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-ne-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'ne')}
           />
           <div 
             className="absolute bottom-0 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-se-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'se')}
           />
           <div 
             className="absolute bottom-0 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-sw-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'sw')}
           />
           
           {/* Middle handles (N, E, S, W) */}
           <div 
             className="absolute top-0 left-1/2 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-n-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'n')}
           />
           <div 
             className="absolute top-1/2 right-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-e-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'e')}
           />
           <div 
             className="absolute bottom-0 left-1/2 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-s-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(-50%, 50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 's')}
           />
           <div 
             className="absolute top-1/2 left-0 w-3 h-3 border-2 border-[#FF007B] rounded-none cursor-w-resize" 
-            style={{ transform: 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px)) translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
+            style={{ transform: 'translate(-50%, -50%)', zIndex: 40, backgroundColor: 'white' }}
             onMouseDown={(e) => handleResizeStart(e, 'w')}
           />
         </>

@@ -111,16 +111,12 @@ class RegistryFonts:
                         font_id = font.get('id', '')
                         name = font.get('name', '')
                         
-                        # PERFORMANCE: Only include curated fonts
-                        if font_id not in curated_ids:
-                            continue
-                        
                         # Clean up the name - remove description after em dash
                         if '—' in name:
                             name = name.split('—')[0].strip()
                         if name:
                             font_names.append(name)
-                    return font_names  # Returns ~80 curated fonts instead of 701
+                    return font_names  # Returns ALL fonts (700+)
         except Exception as e:
             pass
         return None

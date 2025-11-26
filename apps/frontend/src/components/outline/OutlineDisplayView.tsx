@@ -205,7 +205,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     const hasEvents = (researchEvents?.length || 0) > 0;
     return !hasSlides && hasEvents ? 'thinking' : 'flow';
   });
-  const [isThemeLoading, setIsThemeLoading] = useState<boolean>(false);
+  const [isThemeLoading, setIsThemeLoading] = useState<boolean>(true); // Start true so theme tab shows loading until real theme arrives
   const [themeError, setThemeError] = useState<string | null>(null);
   const setWorkspaceTheme = useThemeStore(state => state.setWorkspaceTheme);
   const addCustomTheme = useThemeStore(state => state.addCustomTheme);
@@ -372,9 +372,123 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     if (!currentOutline) return;
     let cancelled = false;
 
-    // Prevent duplicate calls during quick remounts by using a store/session flag per outline
+    // Check stylePreferences with colors - this is where the user's chosen colors are stored
+    const existingColors = (currentOutline as any)?.stylePreferences?.colors;
+    const hasExistingThemeColors = existingColors && (existingColors.background || existingColors.accent1 || existingColors.text);
+    
+    // Helper function to apply theme from stylePreferences.colors
+    const applyThemeFromColors = (colors: any) => {
+      const pageBg = colors.background || '#ffffff';
+      const textColor = colors.text || '#1f2937';
+      const accent1 = colors.accent1 || '#FF4301';
+      const accent2 = colors.accent2 || accent1;
+      
+      console.log('[OutlineDisplayView] 🎨 Applying theme from stylePreferences.colors:', { pageBg, textColor, accent1 });
+      
+      const themePayload = {
+        color_palette: {
+          primary_background: pageBg,
+          primary_text: textColor,
+          accent_1: accent1,
+          accent_2: accent2,
+          backgrounds: [pageBg],
+          accents: [accent1, accent2].filter(Boolean),
+          text_colors: { primary: textColor },
+          colors: [accent1, accent2].filter(Boolean)
+        }
+      };
+      
+      const state = useThemeStore.getState();
+      state.setOutlineDeckTheme?.(currentOutline.id, themePayload);
+      
+      const headingFamily = (currentOutline as any)?.stylePreferences?.font || 'Inter';
+      const builtTheme = {
+        name: 'Brand Theme',
+        page: { backgroundColor: pageBg },
+        typography: {
+          paragraph: { fontFamily: headingFamily, color: textColor },
+          heading: { fontFamily: headingFamily, color: textColor }
+        },
+        accent1,
+        accent2
+      } as any;
+      
+      const addedId = addCustomTheme(builtTheme);
+      setWorkspaceTheme(addedId);
+      setThemeReady(true);
+      setIsThemeLoading(false);
+    };
+    
+    // FIRST: Check if we already have a REAL theme in the store for this outline
+    // (not just a null/empty placeholder)
+    const state = useThemeStore.getState();
+    const existingDeckTheme = state.getOutlineDeckTheme?.(currentOutline.id);
+    
+    // Helper to check if a color is a real/meaningful color (not white/default)
+    const isRealColor = (color: string | undefined): boolean => {
+      if (!color || typeof color !== 'string') return false;
+      const upper = color.toUpperCase();
+      // Reject common defaults
+      const defaults = ['#FFFFFF', '#FFF', '#FAFAFA', '#F5F5F5', '#E8E8E8'];
+      return !defaults.includes(upper);
+    };
+    
+    // If theme already exists in store AND has real colors, use it - but also ensure font is applied
+    const cachedBg = existingDeckTheme?.color_palette?.primary_background;
+    const cachedAccent = existingDeckTheme?.color_palette?.accent_1;
+    if (existingDeckTheme && (isRealColor(cachedBg) || isRealColor(cachedAccent))) {
+      console.log('[OutlineDisplayView] ✅ Theme already in store with real colors:', { cachedBg, cachedAccent });
+      
+      // CRITICAL: Even with cached theme, ensure font from stylePreferences is applied to workspace theme
+      const styleFont = (currentOutline as any)?.stylePreferences?.font;
+      if (styleFont) {
+        const currentWorkspaceFont = workspaceTheme?.typography?.heading?.fontFamily;
+        if (currentWorkspaceFont !== styleFont) {
+          console.log(`[OutlineDisplayView] 🎨 Updating workspace theme font: ${currentWorkspaceFont} → ${styleFont}`);
+          // Build theme with the correct font
+          const pageBg = cachedBg || '#FFFFFF';
+          const textColor = existingDeckTheme?.color_palette?.primary_text || '#1f2937';
+          const accent1 = cachedAccent || '#FF4301';
+          const builtTheme = {
+            name: 'Brand Theme',
+            page: { backgroundColor: pageBg },
+            typography: {
+              paragraph: { fontFamily: styleFont, color: textColor },
+              heading: { fontFamily: styleFont, color: textColor }
+            },
+            accent1,
+            accent2: accent1
+          } as any;
+          const addedId = addCustomTheme(builtTheme);
+          setWorkspaceTheme(addedId);
+        }
+      }
+      
+      setThemeReady(true);
+      setIsThemeLoading(false);
+      return;
+    }
+    
+    // If we have stylePreferences.colors, apply them immediately WITHOUT any dedup checks
+    // This ensures the theme tab shows real colors, not a default
+    if (hasExistingThemeColors) {
+      console.log('[OutlineDisplayView] Found stylePreferences.colors - applying immediately');
+      applyThemeFromColors(existingColors);
+      
+      // Still set up event listener for any future updates during generation
+      const onThemePreview = (e: CustomEvent) => {
+        // Handle theme updates from generation if they come
+      };
+      window.addEventListener('theme_preview_update', onThemePreview as any);
+      return () => {
+        window.removeEventListener('theme_preview_update', onThemePreview as any);
+      };
+    }
+    
+    // FALLBACK: No colors in stylePreferences - mark as requested and wait for events
     try {
       if (hasOutlineThemeRequested?.(currentOutline.id)) {
+        // Already requested, just set ready (will show loading spinner until events come)
         return;
       }
       markOutlineThemeRequested?.(currentOutline.id);
@@ -383,12 +497,12 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     try {
       const key = `__theme_requested_${currentOutline.id}`;
       if ((window as any)[key]) {
-        // Already requested in this session; rely on cached theme or store
         return;
       }
       (window as any)[key] = true;
     } catch { }
 
+    // No existing colors - set up async theme loading from events
     (async () => {
       try {
         try {
@@ -487,6 +601,29 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
             // Always store the theme to ensure swatches appear (do this FIRST before any logic)
             setOutlineDeckTheme(currentOutline.id, themePayload);
+            
+            // CRITICAL: Also persist colors to outline.stylePreferences so they survive page refreshes
+            try {
+              setCurrentOutline(prev => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  stylePreferences: {
+                    ...prev.stylePreferences,
+                    colors: {
+                      type: 'custom' as const,
+                      background: pageBg,
+                      text: textColor,
+                      accent1: accent1,
+                      accent2: colors.accent_2 || accent1
+                    }
+                  }
+                };
+              });
+              console.log('[OutlineDisplayView] 🎨 Persisted theme colors to outline.stylePreferences');
+            } catch (err) {
+              console.warn('[OutlineDisplayView] Failed to persist colors to outline:', err);
+            }
 
             // Helper to determine if color is neutral (needed for richness calculation)
             const isNeutralHex = (hex?: string) => {
@@ -586,18 +723,18 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           }
         };
         window.addEventListener('theme_preview_update', onThemePreview as any);
+        // DON'T set isThemeLoading(false) here - keep loading until theme_preview_update arrives
         return;
       } catch (e: any) {
-        if (!cancelled) setThemeError(e?.message || 'Failed to load theme');
-      } finally {
         if (!cancelled) {
-          setIsThemeLoading(false);
-          // Do not mark theme ready until a real theme_preview_update arrives
+          setThemeError(e?.message || 'Failed to load theme');
+          setIsThemeLoading(false); // Only stop loading on error
         }
       }
+      // Removed the finally block that was prematurely setting isThemeLoading(false)
     })();
     return () => { cancelled = true; };
-  }, [currentOutline?.id, currentOutline?.slides?.length]);
+  }, [currentOutline?.id, currentOutline?.slides?.length, (currentOutline as any)?.stylePreferences?.colors?.background, (currentOutline as any)?.stylePreferences?.colors?.accent1, (currentOutline as any)?.notes?.theme]);
 
   useEffect(() => {
     try {

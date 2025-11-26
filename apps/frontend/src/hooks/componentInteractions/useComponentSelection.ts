@@ -76,6 +76,12 @@ export function useComponentSelection({
     const isInMultiSelection = editorStore.selectedComponentIds.size > 1 && 
                               editorStore.isComponentSelected(effectiveId);
     
+    // CRITICAL FIX: If just dragged a multi-selected item, do NOT clear selection
+    // This prevents the accidental deselection on drag end
+    if (didJustDrag.current && isInMultiSelection) {
+      return;
+    }
+
     // If already part of multi-selection, don't change selection
     // This allows dragging to work properly with multi-selected items
     if (!isInMultiSelection) {

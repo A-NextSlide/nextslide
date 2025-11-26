@@ -325,7 +325,18 @@ class ThemeStyleManager:
             
             # Check if this is a known brand first
             brand_name = self._extract_brand_name(title, vibe)
-            if brand_name:
+            
+            # CRITICAL: Bypass Brandfetch for "fun" or "character" topics
+            # Brandfetch often returns corporate colors (e.g. Pokemon Company blue) instead of character colors (Pikachu yellow)
+            is_fun_topic = any(kw in title.lower() for kw in [
+                'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
+                'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation',
+                'zelda', 'sonic', 'fortnite', 'minecraft', 'roblox', 'lego',
+                'disney', 'marvel', 'dc', 'superhero', 'batman', 'spiderman',
+                'anime', 'manga', 'cartoon', 'movie', 'film', 'show', 'tv'
+            ])
+            
+            if brand_name and not is_fun_topic:
                 logger.info(f"[THEME SIMPLE] Detected brand: {brand_name} — fetching Brandfetch theme")
                 # Try Brandfetch cache first to ensure official colors/logos
                 try:
@@ -442,18 +453,8 @@ class ThemeStyleManager:
                                         'accent_2': accent_2,
                                         'colors': brandfetch_palette['colors']
                                     },
-                                    'typography': {
-                                        'hero_title': {
-                                            'family': 'BEBAS NEUE',
-                                            'size': 180,
-                                            'weight': '700'
-                                        },
-                                        'body_text': {
-                                            'family': 'ROBOTO',
-                                            'size': 36,
-                                            'weight': '400'
-                                        }
-                                    }
+                                    # Don't hardcode fonts - let AI select them later or use defaults
+                                    'typography': {}
                                 }
 
                 except Exception as e:

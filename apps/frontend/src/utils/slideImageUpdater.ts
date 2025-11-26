@@ -124,8 +124,8 @@ export class SlideImageUpdater {
   private async applyImagesToSlide(imageData: SlideImageData) {
     // Check if auto-select images is enabled
     const preferences = (window as any).__slideGenerationPreferences;
-    // Only apply if EXPLICITLY set to TRUE
-    const autoSelectImages = preferences?.autoSelectImages === true;
+    // Default to TRUE - apply images unless explicitly disabled
+    const autoSelectImages = preferences?.autoSelectImages !== false;
 
     if (!autoSelectImages) {
       console.log('[SlideImageUpdater] Auto-select images is disabled, skipping application');
@@ -210,8 +210,8 @@ export class SlideImageUpdater {
             };
           }
 
-          // Get search query from component metadata (same priority as ImagePicker)
-          const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+          // Get search query from component props (AI may put it directly on props or in metadata)
+          const searchQuery = component.props.searchQuery || component.props.metadata?.searchQuery || component.props.metadata?.topic || component.props.alt;
 
           if (searchQuery) {
             console.log(`[SlideImageUpdater] 🔍 Searching for "${searchQuery}" for component ${component.id}...`);
@@ -311,7 +311,7 @@ export class SlideImageUpdater {
       const imageComponents = slide.components.filter(c => c.type === 'Image');
 
       for (const component of imageComponents) {
-        const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+        const searchQuery = component.props.searchQuery || component.props.metadata?.searchQuery || component.props.metadata?.topic || component.props.alt;
 
         if (searchQuery && !this.searchCache.has(searchQuery) && !queriesFound.has(searchQuery)) {
           queriesFound.add(searchQuery);
@@ -344,7 +344,8 @@ export class SlideImageUpdater {
   public async applyImagesToNewSlide(slideId: string, slideIndex: number) {
     // Check if auto-select images is enabled
     const preferences = (window as any).__slideGenerationPreferences;
-    const autoSelectImages = preferences?.autoSelectImages === true;
+    // Default to TRUE - apply images unless explicitly disabled
+    const autoSelectImages = preferences?.autoSelectImages !== false;
 
     if (!autoSelectImages) {
       console.log('[SlideImageUpdater] Auto-apply disabled, skipping immediate application');
@@ -368,9 +369,19 @@ export class SlideImageUpdater {
     this.processingSlides.add(slide.id);
     console.log(`[SlideImageUpdater] 🎨 Immediately applying images to new slide ${slide.id}...`);
 
-    // Find Image components with searchQuery metadata
-    const imageComponents = slide.components.filter(c => {
-      if (c.type !== 'Image') return false;
+    // Find Image components with searchQuery (check both props.searchQuery and props.metadata.searchQuery)
+    const allImageComponents = slide.components.filter(c => c.type === 'Image');
+    console.log(`[SlideImageUpdater] 📊 Found ${allImageComponents.length} total Image components in slide ${slide.id}`);
+    
+    // Debug: log each image component's searchQuery status
+    allImageComponents.forEach((c, idx) => {
+      const sq = c.props.searchQuery || c.props.metadata?.searchQuery || c.props.metadata?.topic || c.props.alt;
+      const needsImg = this.needsImage(c);
+      const alreadyApplied = this.appliedImages.has(`${slide.id}-${c.id}`);
+      console.log(`[SlideImageUpdater]   Image ${idx + 1}: searchQuery="${sq || 'NONE'}", needsImage=${needsImg}, alreadyApplied=${alreadyApplied}, src="${(c.props.src || '').substring(0, 30)}..."`);
+    });
+    
+    const imageComponents = allImageComponents.filter(c => {
       const componentKey = `${slide.id}-${c.id}`;
 
       // Skip if already applied
@@ -378,13 +389,13 @@ export class SlideImageUpdater {
         return false;
       }
 
-      // Must have searchQuery metadata
-      const searchQuery = c.props.metadata?.searchQuery || c.props.metadata?.topic;
+      // Check searchQuery in multiple places (AI may put it in props directly or in metadata)
+      const searchQuery = c.props.searchQuery || c.props.metadata?.searchQuery || c.props.metadata?.topic || c.props.alt;
       return !!searchQuery && this.needsImage(c);
     });
 
     if (imageComponents.length === 0) {
-      console.log(`[SlideImageUpdater] ℹ️ No images to apply for slide ${slide.id}`);
+      console.log(`[SlideImageUpdater] ℹ️ No images to apply for slide ${slide.id} (${allImageComponents.length} total images, but none need applying)`);
       this.processingSlides.delete(slide.id);
       return;
     }
@@ -402,7 +413,7 @@ export class SlideImageUpdater {
             return component;
           }
 
-          const searchQuery = component.props.metadata?.searchQuery || component.props.metadata?.topic;
+          const searchQuery = component.props.searchQuery || component.props.metadata?.searchQuery || component.props.metadata?.topic || component.props.alt;
 
           if (searchQuery) {
             console.log(`[SlideImageUpdater] 🔍 Searching for "${searchQuery}" for component ${component.id}...`);
@@ -472,6 +483,36 @@ export class SlideImageUpdater {
   }
 
   /**
+   * Apply images to all slides by searching based on searchQuery metadata.
+   * This method does NOT rely on cached images - it searches for each slide directly.
+   */
+  public async applyImagesToAllSlides() {
+    // Default to TRUE - apply images unless explicitly disabled
+    const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
+
+    if (!autoSelectImages) {
+      console.log('[SlideImageUpdater] Auto-select images disabled, skipping');
+      return;
+    }
+
+    const { deckData } = useDeckStore.getState();
+    if (!deckData.slides || deckData.slides.length === 0) {
+      console.log('[SlideImageUpdater] No slides to process');
+      return;
+    }
+
+    console.log(`[SlideImageUpdater] 🔍 Applying images to ${deckData.slides.length} slides...`);
+
+    // Process each slide
+    for (let i = 0; i < deckData.slides.length; i++) {
+      const slide = deckData.slides[i];
+      await this.applyImagesToNewSlide(slide.id, i);
+    }
+
+    console.log('[SlideImageUpdater] ✅ Finished applying images to all slides');
+  }
+
+  /**
    * Apply images to all slides that have cached images
    * Note: This now performs fresh searches instead of using cached images
    */
@@ -483,16 +524,18 @@ export class SlideImageUpdater {
       console.log('[SlideImageUpdater] Auto-select images is explicitly disabled, skipping automatic image application');
       return;
     }
-    
+
     const imageCache = (window as any).__slideImageCache;
-    
+
     console.log('[SlideImageUpdater] applyAllCachedImages called', {
       hasCacheObject: !!imageCache,
       cacheKeys: imageCache ? Object.keys(imageCache) : []
     });
-    
-    if (!imageCache) {
-      console.log('[SlideImageUpdater] No image cache found');
+
+    // If no cache, try direct application based on searchQuery metadata
+    if (!imageCache || Object.keys(imageCache).length === 0) {
+      console.log('[SlideImageUpdater] No image cache found, trying direct search application...');
+      await this.applyImagesToAllSlides();
       return;
     }
 
@@ -555,7 +598,7 @@ if (typeof window !== 'undefined') {
   (window as any).__applyImagesNow = async () => {
     console.log('[DEBUG] Manually triggering image application with fresh searches...');
     const updater = SlideImageUpdater.getInstance();
-    await updater.applyAllCachedImages();
+    await updater.applyImagesToAllSlides();
     console.log('[DEBUG] Image application complete!');
   };
 

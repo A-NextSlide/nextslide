@@ -1393,6 +1393,20 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
                 timestamp: Date.now()
               }
             }));
+            
+            // AUTO-APPLY IMAGES: Trigger image search and application for newly completed slide
+            // This searches based on searchQuery in component props and applies images immediately
+            // Use setTimeout to ensure deck store update has propagated before reading back
+            const autoSelectImages = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
+            if (autoSelectImages) {
+              console.log(`[SlideGeneration] 🖼️ Auto-applying images to slide ${resolvedIndex + 1}`);
+              setTimeout(() => {
+                import('@/utils/slideImageUpdater').then(({ SlideImageUpdater }) => {
+                  const updater = SlideImageUpdater.getInstance();
+                  updater.applyImagesToNewSlide(slideId, resolvedIndex);
+                }).catch(err => console.error('[SlideGeneration] Failed to auto-apply images:', err));
+              }, 100); // Small delay to ensure store update propagates
+            }
           }
         } catch {}
         
