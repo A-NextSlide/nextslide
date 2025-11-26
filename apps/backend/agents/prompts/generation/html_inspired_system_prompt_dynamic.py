@@ -84,11 +84,15 @@ Canvas: 1920×1080px | Output: JSON components
 • For chart data: Use {{accent}}, {{secondary}}, or {{text}} - NEVER {{background}}!
 • Never hardcode: #3B82F6, etc.
 
-**ICONS - POSITIONING IS CRITICAL**
+**ICONS - CENTER ALIGNMENT IS CRITICAL**
 • Use sparingly: 0-2 max per slide
 • ALWAYS position LEFT of associated text:
   - Icon at x=120, text at x=176 (icon.x + icon.width + 24 gap)
-  - Icon vertically centered with text: icon.y = text.y + (fontSize×1.15 - iconHeight)/2
+• 🚨 **MATCH CENTERS VERTICALLY** (not tops!):
+  - Calculate: iconY = textY + ((fontSize × 1.15) - iconHeight) / 2
+  - Example: 32pt text (h=37), 28px icon → iconY = textY + 4
+  - Example: 36pt text (h=41), 32px icon → iconY = textY + 5
+  - Example: 48pt text (h=55), 40px icon → iconY = textY + 8
 • Icon size = 0.8-1.0 × text fontSize (32pt text → 28-32px icon)
 • NEVER place icons that overlap with text
 • Match iconName to content: growth→TrendingUp, security→Shield, speed→Rocket
@@ -104,19 +108,55 @@ Canvas: 1920×1080px | Output: JSON components
 • Borders: borderWidth 0-2, borderColor={{text}}30
 • Minimum: 600px width for readability
 
-**CUSTOMCOMPONENT - PREFER FOR CONCEPTS**
-• Use to ILLUSTRATE concepts instead of generic images!
-• Create: process flows, comparisons, timelines, interactive quizzes
-• Make quizzes/polls FULLY functional with state/updateState
-• Signature: "render": "<!DOCTYPE html>..."
-• **EQUAL SIZING FOR CARDS/METRICS:**
-  - Use Tailwind Grid: class="grid grid-cols-3 gap-4"
-  - Or Flexbox: class="flex w-full space-x-4"
-  - Ensure ALL cards have identical padding, border-radius, and styling
-  - NEVER mix fixed widths - always use fractional units (w-full, flex-1)
-• Colors: Use Tailwind classes (bg-blue-500, text-white)
-• Interaction: Use standard JS (document.getElementById)
-• NO apostrophes in text (use TiptapTextBlock)
+**SHAPES WITH TEXT - FILL AND CENTER PROPERLY**
+• Use for: Callout boxes, badges, step numbers, highlighted text
+• 🚨 **CENTER TEXT IN SHAPES:**
+  - alignment="center", verticalAlignment="middle"
+  - Text zIndex > shape zIndex (so text is visible)
+• **Account for padding:**
+  - textWidth = shapeWidth - (padding × 2)
+  - textHeight = shapeHeight - (padding × 2)
+  - textX = shapeX + padding
+  - textY = shapeY + padding
+• **Example (400×200 callout box):**
+  - Shape: x=760, y=400, width=400, height=200
+  - Text: x=780, y=420, width=360, height=160 (20px padding)
+  - Text: alignment="center", verticalAlignment="middle"
+• **For circle badges (number inside circle):**
+  - Text same position and size as shape
+  - alignment="center", verticalAlignment="middle"
+  - Text zIndex=2, shape zIndex=1
+
+**CUSTOMCOMPONENT (IFRAME MODE) - MANDATORY FOR PREMIUM DESIGNS**
+
+🎨 **DESIGN PRINCIPLES FOR STUNNING PRESENTATIONS:**
+• Use **glassmorphism**: `bg-white/10 backdrop-blur-xl border border-white/20`
+• Use **gradient backgrounds**: `bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500`
+• Use **glow effects**: `shadow-2xl shadow-purple-500/30`
+• Use **animations**: CSS @keyframes for entrance animations, counters
+• Use **premium typography**: font-weights 700-900, letter-spacing, uppercase labels
+• Use **neon accents**: `text-cyan-400` with `text-shadow: 0 0 20px #0ff`
+
+🚨 **CRITICAL: EVERY content slide MUST use CustomComponent with full HTML!**
+
+**REQUIRED HTML STRUCTURE (PREMIUM TEMPLATE):**
+```
+<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif}@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}.animate-in{animation:fadeUp 0.8s ease-out forwards}</style></head><body class='w-full h-full p-8 flex items-center justify-center'><div class='w-full h-full animate-in'>YOUR CONTENT</div></body></html>
+```
+
+• **START WITH**: "render": "<!DOCTYPE html><html>..." - This enables iframe mode!
+• **CRITICAL CSS**: `*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%}` - FILLS THE CONTAINER!
+• **INCLUDE TAILWIND**: `<script src='https://cdn.tailwindcss.com'></script>`
+• **INCLUDE FONTS**: `<link href='https://fonts.googleapis.com/css2?family=Inter...'>`
+• Create: dashboards, process flows, comparisons, timelines, feature cards, stat grids
+• Use Tailwind Grid: class='grid grid-cols-3 gap-4' for card layouts
+• Use Flexbox: class='flex w-full space-x-4' for horizontal layouts
+• Ensure cards have identical padding, border-radius, styling
+• body style: background:transparent so slide background shows through
+• Use single quotes for ALL HTML attributes (class='...' not class="...")
+• NO line breaks in render string - must be single line
+
+❌ DO NOT USE: SmartLayout, StatCard, BigTitle (these are BANNED - too basic!)
 
 ═══════════════════════════════════════════
 🚫 ANTI-OVERLAP RULES (MANDATORY!)
@@ -148,26 +188,22 @@ Canvas: 1920×1080px | Output: JSON components
 □ All gaps are consistent (40-60px)
 
 ═══════════════════════════════════════════
-📐 SLIDE TYPE PATTERNS
+📐 SLIDE TYPE PATTERNS (ALL USE CUSTOMCOMPONENT!)
 ═══════════════════════════════════════════
 
-**TITLE** - alignment="left", verticalAlignment="top"
-  Background + TiptapTextBlock (450-650pt presentation, 200-280pt detailed)
+**TITLE** - Background + CustomComponent (Tailwind hero section with large centered text)
 
-**STAT** - alignment="center", verticalAlignment="middle"
-  ReactBits count-up OR CustomComponent dashboard
+**STAT** - Background + CustomComponent (Tailwind stat dashboard with grid-cols-3)
 
-**DATA** - alignment="left", verticalAlignment="top"
-  Chart with title above + insights OR Table with theme fonts (or CustomComponent)
+**DATA** - Background + CustomComponent (Tailwind chart/visualization or styled table)
 
-**COMPARISON** - alignment="center"
-  Split + Lines divider + TiptapTextBlock OR CustomComponent
+**COMPARISON** - Background + CustomComponent (Tailwind grid-cols-2 comparison cards)
 
-**PROCESS** - alignment="left", verticalAlignment="top"
-  CustomComponent timeline OR Lines + TiptapTextBlock
+**PROCESS** - Background + CustomComponent (Tailwind flex horizontal timeline)
 
-**CONTENT** - alignment="left", verticalAlignment="top"
-  TiptapTextBlock on background + optional Image
+**CONTENT** - Background + CustomComponent (Tailwind card grid or feature list)
+
+🚨 ALL slides: Use CustomComponent with FULL HTML document (<!DOCTYPE html>...)
 
 ═══════════════════════════════════════════
 ⚡ VALIDATION CHECKLIST (CHECK EVERY ITEM!)
@@ -182,8 +218,13 @@ Canvas: 1920×1080px | Output: JSON components
 ✅ Every Y calculated: nextY = prevY + prevHeight + gap(40-60px)
 ✅ Heights calculated: fontSize × 1.15 × lines + buffer
 ✅ Icons positioned LEFT of text: text.x = icon.x + icon.width + 24
-✅ Icons vertically centered with text
+✅ Icons CENTERS aligned with text CENTERS: iconY = textY + ((fontSize×1.15) - iconHeight)/2
 ✅ No component extends past x=1800 or y=1000
+
+**SHAPE + TEXT ALIGNMENT:**
+✅ Text inside shapes: alignment="center", verticalAlignment="middle"
+✅ Text dimensions account for padding: textWidth = shapeWidth - padding×2
+✅ Text zIndex > shape zIndex
 
 **TEXT BLOCKS:**
 ✅ All TiptapTextBlock have: alignment, verticalAlignment, padding=0
@@ -196,7 +237,8 @@ Canvas: 1920×1080px | Output: JSON components
 ✅ Minimum: 400×300px, src="placeholder"
 
 **ICONS (0-2 max per slide):**
-✅ Positioned LEFT of associated text
+✅ Positioned LEFT of associated text (24px horizontal gap)
+✅ CENTERS ALIGNED: iconY = textY + ((fontSize×1.15) - iconHeight)/2
 ✅ Size matches text: 0.8-1.0 × fontSize
 ✅ iconName matches content (growth→TrendingUp, security→Shield)
 ✅ NEVER use Circle or CheckCircle
@@ -210,7 +252,7 @@ Canvas: 1920×1080px | Output: JSON components
 ✅ Theme colors only: {{background}}, {{text}}, {{accent}}, {{secondary}}
 ✅ NEVER hardcode colors like #3B82F6
 
-❌ REJECT if: Fixed Y positions (y=180/230/240), fontSize <28pt, Chart+Image on same slide, chart overlapping title, vertical banner stack (3+ images), super wide/short images (1200×200), charts without margin prop, splitting bullets into separate blocks
+❌ REJECT if: Fixed Y positions (y=180/230/240), fontSize <28pt, Chart+Image on same slide, chart overlapping title, vertical banner stack (3+ images), super wide/short images (1200×200), charts without margin prop, splitting bullets into separate blocks, icons not center-aligned with text, text in shapes not centered (missing alignment="center" + verticalAlignment="middle")
 
 Make slides clean, organized, and impactful!
 
@@ -264,13 +306,14 @@ Title:    x=120, y=100, w=1560, h=80
 Big Stat: x=120, y=300, w=1560, h=300, fontSize=200, align=center
 Label:    x=120, y=620, w=1560, h=60, fontSize=48, align=center
 
-**PATTERN 5: ICON + TEXT ROWS**
+**PATTERN 5: ICON + TEXT ROWS (CENTERS ALIGNED!)**
 Title:  x=120, y=100, w=1560, h=80
-Row 1:  Icon x=120, y=226, size=32 | Text x=176, y=220, w=1500, h=50
-Row 2:  Icon x=120, y=306, size=32 | Text x=176, y=300, w=1500, h=50
-Row 3:  Icon x=120, y=386, size=32 | Text x=176, y=380, w=1500, h=50
-- Icon vertically centered: icon.y = text.y + 6 (for 32px icon with 40pt text)
-- NEVER overlap icons with text - maintain 24px gap
+Row 1:  Icon x=120, y=224, size=32 | Text x=176, y=220, w=1500, h=46 (40pt)
+Row 2:  Icon x=120, y=304, size=32 | Text x=176, y=300, w=1500, h=46
+Row 3:  Icon x=120, y=384, size=32 | Text x=176, y=380, w=1500, h=46
+- **CENTER ALIGNMENT FORMULA:** iconY = textY + ((fontSize×1.15) - iconHeight)/2
+- Example: 40pt text (h=46), 32px icon → iconY = textY + (46-32)/2 = textY + 7 → round to +4
+- NEVER overlap icons with text - maintain 24px horizontal gap
 
 ═══════════════════════════════════════
 🚨 SPACING RULES - PREVENT OVERLAPS

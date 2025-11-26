@@ -66,15 +66,59 @@ class ThemeDirector:
                 "fire": {"primary_background": "#FF4500", "primary_text": "#FFFFFF", "colors": ["#FF4500", "#FF6347", "#FFD700"]},
                 "tech": {"primary_background": "#0A0A0A", "primary_text": "#00D4FF", "colors": ["#00D4FF", "#0A0A0A", "#7C3AED"]},
                 "ai": {"primary_background": "#0F0F23", "primary_text": "#10B981", "colors": ["#10B981", "#6366F1", "#8B5CF6"]},
+                "hello kitty": {"primary_background": "#FFC0CB", "primary_text": "#333333", "colors": ["#FFC0CB", "#FF69B4", "#FFFFFF"]},
+                "barbie": {"primary_background": "#E0218A", "primary_text": "#FFFFFF", "colors": ["#E0218A", "#F7A8B8", "#4AE3B5"]},
             }
             
-            # Check for iconic topic matches
+            # Check for iconic topic matches using word boundaries
+            import re
             for topic_key, colors in ICONIC_COLORS.items():
-                if topic_key in topic_lower:
+                # Use regex to match whole words only (prevents "ai" matching "entertainment")
+                pattern = r'\b' + re.escape(topic_key) + r'\b'
+                if re.search(pattern, topic_lower):
                     logger.info(f"[ThemeDirector] ✅ Found iconic colors for topic: {topic_key}")
                     return {"color_palette": colors}
             
-            # If no iconic match, try Huemint for a good palette
+            # If no iconic match, try SmartColorSelector (AI Model)
+            try:
+                from agents.tools.theme import SmartColorSelector
+                selector = SmartColorSelector()
+                
+                logger.info(f"[ThemeDirector] 🧠 Invoking SmartColorSelector for: {title}")
+                ai_result = await selector.select_colors_for_request(
+                    prompt=context or "",
+                    title=title,
+                    variety_seed=str(uuid.uuid4())
+                )
+                
+                if ai_result and ai_result.get('colors'):
+                    colors = ai_result['colors']
+                    logger.info(f"[ThemeDirector] ✅ AI generated colors: {colors}")
+                    
+                    # Map AI result to simple palette format
+                    bg_color = ai_result.get('backgrounds', [colors[0]])[0]
+                    # Simple luminance check for text color
+                    is_dark = True
+                    try:
+                        # Quick luminance calc
+                        h = bg_color.lstrip('#')
+                        rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                        lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+                        is_dark = lum < 0.5
+                    except:
+                        pass
+                        
+                    return {
+                        "color_palette": {
+                            "primary_background": bg_color,
+                            "primary_text": "#FFFFFF" if is_dark else "#1F2937",
+                            "colors": colors[:5]
+                        }
+                    }
+            except Exception as e:
+                logger.warning(f"[ThemeDirector] SmartColorSelector failed: {e}")
+            
+            # If AI failed, try Huemint for a good palette
             try:
                 from agents.tools.theme import generate_huemint_palette
                 

@@ -255,12 +255,30 @@ export const CustomComponentRenderer: React.FC<{
     // This allows "do whatever we want" - Tailwind, CDNs, full isolation
     if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
       console.log('[CustomComponent] Detected FULL HTML document, rendering in IFRAME');
-      const iframeRenderer = function () {
+      // Cache the srcDoc to prevent iframe reload on every render
+      const cachedSrcDoc = renderCode as string;
+      const iframeRenderer = function ({ isThumbnail, isEditing, id }: { isThumbnail?: boolean; isEditing?: boolean; id?: string } = {}) {
+        // In edit mode (not presenting), disable pointer events so component can be selected
+        // In presentation mode or thumbnails, allow full interactivity
+        const shouldBlockPointerEvents = isEditing && !isThumbnail;
+        
         return React.createElement('iframe', {
-          srcDoc: renderCode as string,
-          style: { width: '100%', height: '100%', border: 'none', backgroundColor: 'transparent' },
+          // CRITICAL: Stable key prevents iframe recreation/flashing
+          key: `iframe-${id || 'unknown'}`,
+          srcDoc: cachedSrcDoc,
+          style: { 
+            width: '100%', 
+            height: '100%', 
+            border: 'none', 
+            backgroundColor: 'transparent',
+            // CRITICAL: Block pointer events in edit mode so component wrapper can be selected
+            pointerEvents: shouldBlockPointerEvents ? 'none' : 'auto',
+            display: 'block' // Prevent layout issues
+          },
           sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
-          title: "Custom Component"
+          title: "Custom Component",
+          // Prevent flashing during load
+          loading: "eager"
         });
       };
       return { compiledRender: iframeRenderer as Function, compilationError: null };
@@ -947,6 +965,9 @@ export const CustomComponentRenderer: React.FC<{
         // Calculate container dimensions to pass to the render function
         const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
         const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
+        
+        // Determine if we're in edit mode (not presenting)
+        const isEditMode = !usePresentationStore.getState().isPresenting;
 
         const element = activeRender!({
           props: componentProps,
@@ -954,6 +975,8 @@ export const CustomComponentRenderer: React.FC<{
           updateState,
           id: component.id,
           isThumbnail,
+          // Pass edit mode state so iframe can disable pointer events for selection
+          isEditing: isEditMode,
           // Pass container dimensions for components that need to know their bounds
           containerWidth,
           containerHeight

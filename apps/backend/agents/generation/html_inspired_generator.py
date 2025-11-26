@@ -481,20 +481,36 @@ COMPONENT EXAMPLES - COPY THESE PROP VALUES EXACTLY:
 Background component:
 {{"type": "Background", "props": {{"backgroundColor": "{theme_colors['background']}", "backgroundType": "color", "gradient": null}}}}
 
-💎 SMART LAYOUT (Standard Option - Safe & Clean):
-{{"type": "SmartLayout", "props": {{"layout": "SplitRight", "slots": {{"left": {{"type": "BigTitle", "props": {{"text": "Title", "highlight": "Title"}}}}, "right": {{"type": "StatCard", "props": {{"label": "Label", "value": "Value"}}}}}}}}}}
+🚨🚨🚨 MANDATORY: USE CUSTOMCOMPONENT (IFRAME MODE) FOR ALL CONTENT 🚨🚨🚨
 
-✨ CUSTOM COMPONENT (Premium Option - Unique & Interactive):
-{{"type": "CustomComponent", "props": {{"width": 800, "height": 600, "render": "<!DOCTYPE html><html>... (GENERATE UNIQUE HTML BASED ON SLIDE CONTENT) ...</html>"}}}}
+**YOU MUST CREATE A FULL HTML DOCUMENT** starting with `<!DOCTYPE html>` for EVERY content slide!
+This renders in an isolated iframe with full Tailwind CSS, fonts, and animation support.
 
-🚨 DYNAMIC GENERATION RULES:
-1. DO NOT COPY THE EXAMPLE HTML.
+✅ **REQUIRED FORMAT - CUSTOMCOMPONENT WITH FULL HTML:**
+{{"type": "CustomComponent", "props": {{"position": {{"x": 80, "y": 180}}, "width": 1760, "height": 800, "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}body{{font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;padding:32px}}</style></head><body><div class='w-full h-full'><!-- YOUR TAILWIND CONTENT HERE --></div></body></html>"}}}}
+
+🚨 **CRITICAL RULES FOR CUSTOMCOMPONENT:**
+1. **START WITH** `<!DOCTYPE html>` - This enables iframe mode with full capabilities
+2. **INCLUDE TAILWIND**: `<script src='https://cdn.tailwindcss.com'></script>`
+3. **INCLUDE FONTS**: `<link href='https://fonts.googleapis.com/css2?family=Inter...'>`
+4. **USE SINGLE QUOTES** for all HTML attributes (class='...' not class="...")
+5. **NO LINE BREAKS** in the render string - must be a single line
+6. **body style**: `background:transparent` so slide background shows through
+
+🎨 **DYNAMIC GENERATION RULES:**
+1. DO NOT COPY THE EXAMPLE HTML - CREATE UNIQUE DESIGNS!
 2. ANALYZE the Slide Content below.
 3. GENERATE a unique HTML/Tailwind visualization specifically for THIS content.
-4. IF slide has data/stats -> Create a Dashboard or Chart.
-5. IF slide has process/steps -> Create a Timeline or Flow.
-6. IF slide has comparison -> Create a Comparison Grid.
-7. USE the style_context below to match User Preferences.
+4. IF slide has data/stats -> Create a Dashboard with stat cards using Tailwind Grid
+5. IF slide has process/steps -> Create a Timeline or Step Flow
+6. IF slide has comparison -> Create a Comparison Grid with 2-3 columns
+7. IF slide has features/benefits -> Create a Card Grid layout
+8. USE the style_context below to match User Preferences.
+
+❌ **DO NOT USE THESE (BANNED):**
+- SmartLayout (too basic, no custom styling)
+- StatCard, BigTitle, SmartImage (use HTML in CustomComponent instead)
+- React.createElement (use full HTML documents only)
 
 **USER STYLE PREFERENCES (Chat History):**
 {style_context}
@@ -558,8 +574,8 @@ Line/Lines (dividers only):
 
 📏 FONT SIZE REQUIREMENTS:
 • Headers/topics: 48-72pt (large, bold)
-• Body/details: 32-42pt (readable)
-• Minimum: NEVER go below 28pt for any body text!
+• Body/details: 24-42pt (readable)
+• Minimum: NEVER go below 18pt for any body text!
 
 📐 POSITIONING STRATEGY:
 1. PREFERRED: Use SmartLayout (SplitRight, GridLayout) - NO manual positioning needed!
@@ -573,7 +589,7 @@ Line/Lines (dividers only):
 🔴 TEXT STRUCTURE (CHECK FIRST):
 ✅ Content broken into MULTIPLE TiptapTextBlock components (one per section/bullet)
 ✅ NO \\n newlines in any text (that causes tiny fonts!)
-✅ Each TiptapTextBlock has proper fontSize: ≥28pt for body, ≥48pt for headers
+✅ Each TiptapTextBlock has proper fontSize: ≥18pt for body, ≥48pt for headers
 ✅ Font sizes are READABLE (not 10-15pt!)
 
 🔴 COLOR VALIDATION (CHECK EVERY COMPONENT):
@@ -661,29 +677,29 @@ Output valid JSON component array now (using the 3 colors above EXACTLY + alignm
         return full_prompt
     
     def _get_concise_slide_guidance(self, slide_type: str) -> str:
-        """Ultra-concise slide-type specific guidance"""
+        """Ultra-concise slide-type specific guidance - ALWAYS prefers CustomComponent iframe mode"""
         slide_type = slide_type.lower()
         
         if slide_type == 'title' or slide_type == 'cover':
-            return "TITLE: Use SmartLayout with layout='HeroLayout'. Slot 'title' for main text, 'subtitle' for subtext."
+            return "TITLE: 🚨 USE CustomComponent (Iframe Mode)! Create a stunning hero section with Tailwind: large centered title, subtle animations, gradient overlays. Full HTML document starting with <!DOCTYPE html>."
         
         elif 'stat' in slide_type:
-            return "STAT: 🚨 USE CustomComponent! Create a D3 visualization or animated dashboard. Do NOT use simple text."
+            return "STAT: 🚨 USE CustomComponent (Iframe Mode)! Create an animated dashboard with stat cards using Tailwind Grid. Include large numbers, icons, trend indicators. Full HTML document!"
         
         elif 'comparison' in slide_type:
-            return "COMPARISON: 🚨 USE CustomComponent! Create an interactive comparison card or animated table."
+            return "COMPARISON: 🚨 USE CustomComponent (Iframe Mode)! Create a side-by-side comparison grid with Tailwind. Use grid-cols-2 or flex layout. Full HTML document!"
         
         elif 'process' in slide_type or 'timeline' in slide_type:
-            return "PROCESS: 🚨 USE CustomComponent! Create a GSAP animated timeline or step-by-step flow."
+            return "PROCESS: 🚨 USE CustomComponent (Iframe Mode)! Create a horizontal timeline or step flow with Tailwind flex/grid and numbered badges. Full HTML document!"
         
         elif 'quiz' in slide_type or 'game' in slide_type or 'interactive' in slide_type:
-             return "INTERACTIVE: 🚨 USE CustomComponent! Create a fully functional React app (Quiz, Poll, Game) using `state`."
+             return "INTERACTIVE: 🚨 USE CustomComponent (Iframe Mode)! Create clickable buttons/options with JS onclick handlers. Full HTML document with Tailwind!"
 
         elif 'data' in slide_type or 'chart' in slide_type:
-            return "DATA: 🚨 USE CustomComponent (Iframe Mode)! Create a D3 chart or animated visualization using full HTML/Tailwind."
+            return "DATA: 🚨 USE CustomComponent (Iframe Mode)! Create custom bar/donut charts using SVG or CSS, or a stat dashboard. Full HTML document with Tailwind!"
         
         else:
-            return "CONTENT: 💎 TRY CustomComponent (Iframe Mode) FIRST! Create a unique card layout or grid using Tailwind CSS. Use SmartLayout ONLY if content is very simple text."
+            return "CONTENT: 🚨 MANDATORY - USE CustomComponent (Iframe Mode)! Create a unique Tailwind layout: card grids, feature lists, or information hierarchy. MUST be full HTML document starting with <!DOCTYPE html>. DO NOT use SmartLayout."
     
     def _get_blueprint_from_theme(self, context: SlideGenerationContext) -> str:
         """Extract and format LayoutArchitect blueprint if available"""

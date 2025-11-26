@@ -42,31 +42,22 @@ def get_optimized_component_schemas() -> str:
   • Simple dividers and connectors
   • Calculate Y position: previousComponent.y + previousComponent.height + gap
 
-═══ SMART COMPONENTS (Preferred for Layouts) ═══
+**Shape** { position, width, height, shapeType: "rectangle"|"circle", fill, stroke, strokeWidth, borderRadius }
+  • Use for: Callout boxes, badges, step numbers, highlighted sections
+  • 🚨 **TEXT INSIDE SHAPES - MUST CENTER:**
+    - Text alignment="center", verticalAlignment="middle"
+    - Text zIndex > shape zIndex
+    - Account for padding: textWidth = shapeWidth - (padding×2)
+    - Example: 400×200 shape → text at 360×160 with 20px padding
 
+═══ BANNED COMPONENTS (DO NOT USE) ═══
 
-**SmartLayout** { layout: "SplitRight"|"SplitLeft"|"GridLayout"|"HeroLayout"|"CenterLayout", slots: { [slotName]: { type, props } } }
-  • USE ONLY FOR BASIC TEXT LAYOUTS.
-  • layout="SplitRight": Left=content, Right=visual. Slots: "left", "right".
-  • layout="SplitLeft": Left=visual, Right=content. Slots: "left", "right".
-  • layout="GridLayout": Auto-grid for items. Slots: "item1", "item2", etc.
-  • layout="HeroLayout": Centered title + subtitle. Slots: "title", "subtitle".
-  • layout="CenterLayout": Centered content. Slots: "center".
-  • Example:
-    {
-      "type": "SmartLayout",
-      "props": {
-        "layout": "SplitRight",
-        "slots": {
-          "left": { "type": "TiptapTextBlock", "props": { "texts": [{"text": "Title"}] } },
-          "right": { "type": "CustomComponent", "props": { "render": "..." } }
-        }
-      }
-    }
+🚫 **SmartLayout** - BANNED. Too basic. Use CustomComponent with full HTML/Tailwind instead.
+🚫 **StatCard** - BANNED. Use CustomComponent with Tailwind stat cards.
+🚫 **BigTitle** - BANNED. Use CustomComponent with styled headings.
+🚫 **SmartImage** - BANNED. Use Image or CustomComponent.
 
-🚫 **StatCard** - DO NOT USE. Use CustomComponent to build your own card.
-🚫 **BigTitle** - DO NOT USE. Use TiptapTextBlock with large font.
-🚫 **SmartImage** - DO NOT USE. Use Image or CustomComponent.
+These "smart" components produce generic, boring designs. Always use CustomComponent (Iframe Mode) for unique, branded layouts!
 
 
 ═══ CUSTOMCOMPONENT (Preferred for Complex UI) ═══
@@ -83,10 +74,31 @@ def get_optimized_component_schemas() -> str:
   3. Add Fonts: `<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">`
   4. Write standard HTML/JS (no React complexity needed!)
   
-  📦 **EXAMPLE (Tailwind Card) - MUST BE A SINGLE LINE STRING:**
+  📦 **PREMIUM DESIGN TEMPLATES - USE THESE AS INSPIRATION:**
+
+  🔥 **GLASSMORPHISM STATS GRID (Dark Theme):**
   ```json
-  "render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' rel='stylesheet'><style>body{font-family:'Inter',sans-serif;background:transparent;overflow:hidden}</style></head><body class='flex items-center justify-center h-screen w-screen p-4'><div class='bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-full h-full flex flex-col border border-white/20'><div class='flex justify-between items-start mb-8'><div><h1 class='text-5xl font-extrabold text-slate-900 tracking-tight'>Revenue Growth</h1><p class='text-xl text-slate-500 mt-2 font-medium'>Year over Year Analysis</p></div><div class='bg-blue-600 text-white px-6 py-2 rounded-full font-bold text-lg shadow-lg shadow-blue-600/30'>+127%</div></div><div class='flex-1 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden group'><div class='absolute inset-0 flex items-center justify-center text-slate-400 font-medium'>Chart Visualization Here</div></div></div></body></html>"
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif}@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,0.3)}50%{box-shadow:0 0 40px rgba(99,102,241,0.6)}}@keyframes countUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.stat-card{animation:countUp 0.6s ease-out forwards;opacity:0}.stat-card:nth-child(1){animation-delay:0.1s}.stat-card:nth-child(2){animation-delay:0.2s}.stat-card:nth-child(3){animation-delay:0.3s}.glow{animation:glow 2s ease-in-out infinite}</style></head><body class='w-full h-full p-8 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'><div class='grid grid-cols-3 gap-6 w-full max-w-5xl'><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 glow'><div class='text-indigo-400 text-sm font-semibold uppercase tracking-wider mb-2'>Market Cap</div><div class='text-5xl font-black text-white mb-1'>$2.4T</div><div class='text-emerald-400 text-lg font-medium'>+18.5% YoY</div></div><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10'><div class='text-pink-400 text-sm font-semibold uppercase tracking-wider mb-2'>Growth Rate</div><div class='text-5xl font-black text-white mb-1'>127%</div><div class='text-white/60 text-lg'>vs 89% industry avg</div></div><div class='stat-card bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 shadow-2xl shadow-indigo-500/30'><div class='text-white/80 text-sm font-semibold uppercase tracking-wider mb-2'>Projection</div><div class='text-5xl font-black text-white mb-1'>$8.1T</div><div class='text-white/80 text-lg font-medium'>by 2034</div></div></div></body></html>"
   ```
+  
+  🌈 **GRADIENT HERO STATS (Light Theme):**
+  ```json
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}body{font-family:'Plus Jakarta Sans',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;padding:40px}</style></head><body><div class='w-full h-full flex flex-col items-center justify-center text-center'><h1 class='text-7xl font-extrabold text-white mb-4 drop-shadow-2xl'>$1.74 Trillion</h1><p class='text-2xl text-white/90 font-medium mb-8'>2025 Global Market Size</p><div class='flex gap-8'><div class='bg-white/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-white/30'><div class='text-4xl font-bold text-white'>17.2%</div><div class='text-white/80 text-sm'>CAGR</div></div><div class='bg-white/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-white/30'><div class='text-4xl font-bold text-white'>4.2x</div><div class='text-white/80 text-sm'>Growth by 2034</div></div></div></div></body></html>"
+  ```
+  
+  ⚡ **NEON METRICS (Cyberpunk Style):**
+  ```json
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}body{font-family:system-ui;background:#0a0a0f}@keyframes neon{0%,100%{text-shadow:0 0 10px #0ff,0 0 20px #0ff,0 0 30px #0ff}50%{text-shadow:0 0 20px #0ff,0 0 40px #0ff,0 0 60px #0ff}}.neon-text{animation:neon 2s ease-in-out infinite}</style></head><body class='w-full h-full p-10 flex items-center justify-center'><div class='grid grid-cols-2 gap-8 w-full'><div class='bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-3xl p-8 border border-cyan-500/30'><div class='text-cyan-400 text-xs uppercase tracking-[0.3em] mb-4'>Market Size 2025</div><div class='text-6xl font-black text-white neon-text'>$1.74T</div></div><div class='bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-3xl p-8 border border-purple-500/30'><div class='text-purple-400 text-xs uppercase tracking-[0.3em] mb-4'>Growth Rate</div><div class='text-6xl font-black text-white' style='text-shadow:0 0 30px #f0f'>17.23%</div></div><div class='col-span-2 bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl p-8 border border-emerald-500/20'><div class='flex justify-between items-center'><div><div class='text-emerald-400 text-xs uppercase tracking-[0.3em] mb-2'>Asia Pacific Dominance</div><div class='text-4xl font-bold text-white'>40.71% Market Share</div></div><div class='text-right'><div class='text-3xl font-black text-emerald-400'>$2.96T</div><div class='text-white/60'>by 2034</div></div></div></div></div></body></html>"
+  ```
+  
+  🔴 **CRITICAL - ALWAYS INCLUDE THESE STYLES:**
+  `<style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;padding:32px}</style>`
+  
+  This ensures:
+  • Content fills 100% of the container (not tiny)
+  • No unwanted margins/padding
+  • Content is centered with padding
+  • Background is transparent (shows slide background)
   
   🚨 **CRITICAL JSON FORMATTING RULES:**
   1. **NO REAL NEWLINES**: The `render` string must be a SINGLE LINE. Use `\n` for newlines if needed.
@@ -145,6 +157,7 @@ def get_optimized_component_schemas() -> str:
   • Dashboard metric icons (1-2 per slide MAX)
   • Critical semantic indicators
   • NEVER for bullets or decoration
+  • 🚨 **CENTER-ALIGN with text:** iconY = textY + ((fontSize×1.15) - iconHeight)/2
 
 ✅ **Use Image for:**
   • Visual content (photos, diagrams, illustrations)

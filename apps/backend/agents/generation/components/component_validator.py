@@ -978,6 +978,29 @@ class ComponentValidator:
         # Prefer explicit render; fall back to data (older format)
         render = props.get('render') or props.get('data') or ''
         
+        # 0. IFRAME MODE DETECTION: Check for Full HTML Document
+        # If detected, we MUST allow document/window APIs and skip function-based sanitization
+        if isinstance(render, str):
+            trimmed = render.strip().lower()
+            if trimmed.startswith('<!doctype html') or trimmed.startswith('<html'):
+                logger.debug("[CustomComponent Fix] Detected FULL HTML document (Iframe Mode) - skipping strict API sanitization")
+                
+                # Still perform basic text sanitization (emojis, newlines)
+                try:
+                    # Remove emojis but KEEP newlines and structure
+                    render = self._remove_emojis(render)
+                    # Normalize CRLF
+                    render = render.replace('\r\n', '\n').replace('\r', '\n')
+                    # Escape literal newlines for JSON transport if not already escaped
+                    if '\n' in render and '\\n' not in render:
+                        render = render.replace('\n', '\\n')
+                    
+                    props['render'] = render
+                except Exception as e:
+                    logger.warning(f"[CustomComponent Fix] Error sanitizing HTML document: {e}")
+                
+                return component
+
         # DISABLED: Auto-injection of padding/availableWidth/availableHeight
         # The AI should generate these itself based on the prompt
         # Keeping this code commented out for reference

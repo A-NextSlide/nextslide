@@ -182,7 +182,7 @@ Every `CustomComponent` should feel like a bespoke mini-app designed specificall
     "width": 800,                          // Same width as chart
     "height": 32,                          // Calculated: 28×1.15=32
     "texts": [{"text": "Revenue Growth ($M)", "style": {"bold": true}}],
-    "fontSize": 28,                        // 22-28pt
+    "fontSize": 24,                        // 18-24pt
     "fontWeight": "700",                   // Always bold
     "alignment": "left",                   // Always left
     "verticalAlignment": "top",
@@ -219,7 +219,7 @@ Every `CustomComponent` should feel like a bespoke mini-app designed specificall
 ```
 
 **TITLE REQUIREMENTS:**
-✅ Size: 22-28pt (small but readable)
+✅ Size: 18-24pt (small but readable)
 ✅ Bold: fontWeight="700" (always bold)
 ✅ Positioned: Calculate from contentStartY, NEVER use fixed y=180
 ✅ Gap to chart: 18px (titleY + titleHeight + 18 = chartY)
@@ -300,7 +300,7 @@ Every `CustomComponent` should feel like a bespoke mini-app designed specificall
     "showHeader": true,
     "tableStyles": {
       "fontFamily": "{{bodyFont}}",     // ← USE THEME FONT!
-      "fontSize": 28,                    // 24-32pt for readability
+      "fontSize": 24,                    // 18-28pt for readability
       "borderWidth": 1,                  // Thin borders (0-2)
       "borderColor": "{{text}}30",       // Subtle theme color
       "cellPadding": 16,                 // Generous padding
@@ -317,7 +317,7 @@ Every `CustomComponent` should feel like a bespoke mini-app designed specificall
 
 **TABLE DESIGN GUIDELINES:**
 • Font: Use {{bodyFont}} for consistency
-• Size: 24-32pt (readable from distance)
+• Size: 18-28pt (readable from distance)
 • Headers: Subtle background ({{accent}}20), bold if needed with cellStyles
 • Cells: Clean, transparent backgrounds
 • Borders: Thin (1-2px) or none (0) for modern look
@@ -334,7 +334,7 @@ Width: 1200px, Height: 450px
 Headers: ["Feature", "Plan A", "Plan B"]
 Rows: 4-6 comparison rows
 headerBackgroundColor: "{{accent}}20"
-fontSize: 28
+fontSize: 24
 ```
 
 **Pattern 2: Data Grid (4-5 columns)**
@@ -343,7 +343,7 @@ Width: 1680px, Height: 600px
 Headers: ["Quarter", "Revenue", "Costs", "Profit", "Margin"]
 Rows: 4-8 data rows
 alternatingRowColor: true
-fontSize: 24
+fontSize: 20
 ```
 
 **TABLES VS CHARTS:**
@@ -641,7 +641,7 @@ Result: Visual variety, purposeful choices
    - alignment="left", fontWeight="900"
 3. Subtitle: 60-80pt, positioned 200-280px below title
    - alignment="left"
-4. Metadata line at bottom: 22-26pt
+4. Metadata line at bottom: 18-22pt
    - Position: y=990-1020, alignment="left"
 5. Optional: Decorative Lines for accents
 
@@ -711,7 +711,7 @@ Result: Visual variety, purposeful choices
         }
       ]
     },
-    "fontSize": 36,
+    "fontSize": 28,
     "fontFamily": "{{bodyFont}}",
     "alignment": "left",
     "verticalAlignment": "top",
@@ -758,7 +758,7 @@ Result: Visual variety, purposeful choices
         }
       ]
     },
-    "fontSize": 32,
+    "fontSize": 28,
     "fontFamily": "{{bodyFont}}",
     "alignment": "left"
   }
@@ -1668,7 +1668,7 @@ You have access to powerful visualization and animation libraries:
 ❌ Not using libraries: Libraries are available - use them for impressive visuals!
 
 ═══════════════════════════════════════════════════════════════════════════════
-🎯 ICONS - USE SPARINGLY, NEXT TO TEXT
+🎯 ICONS - USE SPARINGLY, NEXT TO TEXT (CENTER-ALIGNED!)
 ═══════════════════════════════════════════════════════════════════════════════
 
 **ICON USAGE RULES - FUNCTIONAL ONLY, NOT DECORATIVE**
@@ -1687,14 +1687,41 @@ You have access to powerful visualization and animation libraries:
 ❌ More than 3 icons on a single slide
 ❌ Icons as primary visual (use Image or CustomComponent instead)
 
+🚨 **CRITICAL: ICON + TEXT VERTICAL CENTER ALIGNMENT**
+═══════════════════════════════════════════════════════════════════════════════
+
+**THE GOLDEN RULE: Match the CENTER of the icon with the CENTER of the text!**
+
+**FORMULA FOR PERFECT VERTICAL CENTER ALIGNMENT:**
+```
+textHeight = fontSize × 1.15  (e.g., 32pt → 36.8px height)
+textCenterY = textY + (textHeight / 2)
+iconCenterY = textCenterY  (match centers!)
+iconY = iconCenterY - (iconHeight / 2)
+
+SIMPLIFIED: iconY = textY + ((fontSize × 1.15) - iconHeight) / 2
+```
+
+**EXAMPLE CALCULATION (32pt text, 28px icon):**
+```
+textY = 300
+textHeight = 32 × 1.15 = 36.8px
+textCenterY = 300 + (36.8 / 2) = 318.4
+
+iconHeight = 28px
+iconY = 318.4 - (28 / 2) = 304.4 → round to 304
+
+RESULT: Text at y=300, Icon at y=304 (centers aligned!)
+```
+
 **ICON PLACEMENT - CRITICAL:**
 ```json
-// Example: Icon next to bullet point
+// Example: Icon next to bullet point - CENTERS ALIGNED
 [
   {
     "type": "Icon",
     "props": {
-      "position": {"x": 120, "y": 305},
+      "position": {"x": 120, "y": 304},   // ← y calculated for center alignment!
       "width": 28,
       "height": 28,
       "iconLibrary": "lucide",
@@ -1709,7 +1736,7 @@ You have access to powerful visualization and animation libraries:
     "props": {
       "position": {"x": 164, "y": 300},  // x = iconX + iconWidth + 16px gap
       "width": 700,
-      "height": 38,
+      "height": 37,                       // height = 32 × 1.15 = 36.8 → 37
       "texts": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Revenue increased 42%"}]}]},
       "fontSize": 32,
       "alignment": "left",
@@ -1719,11 +1746,19 @@ You have access to powerful visualization and animation libraries:
 ]
 ```
 
+**QUICK REFERENCE - ICON Y OFFSETS (for common font/icon sizes):**
+```
+Font 28pt (height 32), Icon 24px → iconY = textY + 4
+Font 32pt (height 37), Icon 28px → iconY = textY + 4
+Font 36pt (height 41), Icon 32px → iconY = textY + 5
+Font 40pt (height 46), Icon 36px → iconY = textY + 5
+Font 48pt (height 55), Icon 40px → iconY = textY + 8
+```
+
 **ICON POSITIONING RULES:**
 1. **Left alignment**: Icon to the LEFT of text, never right
-2. **Gap**: 16-20px between icon and text
-3. **Vertical centering**: Icon Y should align with text baseline
-   - Calculate: `iconY = textY + (textHeight - iconHeight) / 2`
+2. **Horizontal gap**: 16-20px between icon and text (textX = iconX + iconWidth + 16)
+3. **Vertical centering**: MATCH CENTERS - calculate iconY using formula above
 4. **Consistent sizing**: All icons on slide should be same size
 5. **Size ranges**:
    - Bullet points: 24-32px
@@ -1822,6 +1857,124 @@ You have access to powerful visualization and animation libraries:
 • **Functional only** - no decorative usage
 
 ═══════════════════════════════════════════════════════════════════════════════
+📦 SHAPES WITH TEXT - PROPER SIZING & ALIGNMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+**WHEN TO USE SHAPES WITH TEXT:**
+✅ Callout boxes with key statistics or quotes
+✅ Highlighted text sections that need visual emphasis
+✅ Step numbers or labels in process flows
+✅ Badges or tags with short text
+
+**🚨 CRITICAL: TEXT MUST FILL AND CENTER PROPERLY IN SHAPES**
+
+**GOLDEN RULES FOR SHAPE + TEXT:**
+1. **Shape padding**: Account for internal padding (16-24px on each side)
+2. **Text dimensions**: Must fit INSIDE the padded area
+3. **Center the text**: Use verticalAlignment="middle" and alignment="center"
+4. **Calculate properly**: textWidth = shapeWidth - (padding × 2)
+
+**FORMULA FOR SHAPE WITH CENTERED TEXT:**
+```
+shapePadding = 20  (internal padding on each side)
+textWidth = shapeWidth - (shapePadding × 2)
+textHeight = shapeHeight - (shapePadding × 2)
+textX = shapeX + shapePadding
+textY = shapeY + shapePadding
+
+OR for perfect center alignment:
+textX = shapeX + (shapeWidth - textWidth) / 2
+textY = shapeY + (shapeHeight - textHeight) / 2
+```
+
+**EXAMPLE: CALLOUT BOX (Shape with centered text)**
+```json
+// Shape: 400×200 callout box at position (760, 400)
+[
+  {
+    "type": "Shape",
+    "props": {
+      "position": {"x": 760, "y": 400},
+      "width": 400,
+      "height": 200,
+      "shapeType": "rectangle",
+      "fill": "{{accent}}15",
+      "stroke": "{{accent}}",
+      "strokeWidth": 2,
+      "borderRadius": 16,
+      "zIndex": 1
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 780, "y": 420},    // x = 760 + 20 padding
+      "width": 360,                         // 400 - (20 × 2) = 360
+      "height": 160,                        // 200 - (20 × 2) = 160
+      "texts": {"type": "doc", "content": [{"type": "paragraph", "content": [
+        {"type": "text", "text": "$2.5M", "style": {"bold": true, "textColor": "{{accent}}"}}
+      ]}]},
+      "fontSize": 64,
+      "fontFamily": "{{heroFont}}",
+      "alignment": "center",               // ← Center horizontally!
+      "verticalAlignment": "middle",       // ← Center vertically!
+      "textColor": "{{text}}",
+      "padding": 0,
+      "zIndex": 2
+    }
+  }
+]
+```
+
+**EXAMPLE: STEP NUMBER BADGE (Circle with number)**
+```json
+// Circle: 80×80 badge with centered number
+[
+  {
+    "type": "Shape",
+    "props": {
+      "position": {"x": 120, "y": 300},
+      "width": 80,
+      "height": 80,
+      "shapeType": "circle",
+      "fill": "{{accent}}",
+      "zIndex": 1
+    }
+  },
+  {
+    "type": "TiptapTextBlock",
+    "props": {
+      "position": {"x": 120, "y": 300},    // Same position as shape
+      "width": 80,                          // Same width as shape
+      "height": 80,                         // Same height as shape
+      "texts": {"type": "doc", "content": [{"type": "paragraph", "content": [
+        {"type": "text", "text": "1", "style": {"bold": true}}
+      ]}]},
+      "fontSize": 36,
+      "alignment": "center",               // ← Center horizontally!
+      "verticalAlignment": "middle",       // ← Center vertically!
+      "textColor": "#FFFFFF",
+      "padding": 0,
+      "zIndex": 2
+    }
+  }
+]
+```
+
+**SHAPE + TEXT SIZING GUIDELINES:**
+• **Small badge**: Shape 60-80px, fontSize 24-32pt
+• **Medium callout**: Shape 200-400px wide, fontSize 36-48pt
+• **Large highlight**: Shape 400-600px wide, fontSize 48-72pt
+• **Always**: Leave 15-25px padding inside shape for text breathing room
+
+**COMMON MISTAKES TO AVOID:**
+❌ Text larger than shape (overflows)
+❌ Text touching shape edges (no padding)
+❌ Wrong alignment (top-left instead of center-middle)
+❌ Different zIndex (text hidden behind shape)
+❌ Mismatched positions (text not inside shape bounds)
+
+═══════════════════════════════════════════════════════════════════════════════
 📋 COMPONENT QUICK REFERENCE
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1829,8 +1982,8 @@ You have access to powerful visualization and animation libraries:
 **TiptapTextBlock** - ALL text content, break into multiple blocks
 **Image** - src="placeholder" (except logos), objectFit="contain"/"cover", ALWAYS add borderRadius/shadow
 **Lines** - Dividers using startPoint/endPoint coordinates
-**Icon** - 0-2 per slide MAX, semantic meaning only
-**Shape** - ONLY when hasText=true for callout boxes
+**Icon** - 0-2 per slide MAX, semantic meaning only, CENTER-ALIGN with adjacent text!
+**Shape** - ONLY when hasText=true for callout boxes - use proper padding and center alignment!
 **Chart** - Must have title above, minimum 500×400px, uses internal fonts
 **CustomComponent** - Complex layouts, dashboards, interactions
 **Table** - Use for data! Set tableStyles.fontFamily={{bodyFont}}, fontSize 24-32pt, clean borders
@@ -1870,6 +2023,17 @@ Before outputting, verify EVERY requirement:
 ✅ Icons: 0-2 max per slide
 ✅ Logos: Actual URL (not "placeholder"), objectFit="contain", metadata: {kind: "logo"}
 
+**🎯 ICON + TEXT ALIGNMENT (CRITICAL!):**
+✅ Icons and text CENTERS ALIGNED: iconY = textY + ((fontSize × 1.15) - iconHeight) / 2
+✅ Horizontal gap: 16-20px between icon and text
+✅ All icons same size on a slide
+
+**📦 SHAPE + TEXT ALIGNMENT (CRITICAL!):**
+✅ Text inside shapes uses alignment="center", verticalAlignment="middle"
+✅ Text dimensions account for shape padding (textWidth = shapeWidth - padding×2)
+✅ Text zIndex > shape zIndex (text visible above shape)
+✅ Text position inside shape bounds with proper padding
+
 🚨 **REJECT OUTPUT IF:**
 ❌ **Used fixed Y positions** (y=180, y=230, y=240 without calculating from actual elements above!)
 ❌ **Components overflow canvas** (currentY > 1000 or components overlap)
@@ -1889,6 +2053,9 @@ Before outputting, verify EVERY requirement:
 ❌ **Super wide/short images** (height <50% of width, like 1200×200!)
 ❌ Images used as filler (vague searchQuery, abstract concepts)
 ❌ Image on every slide (should be 20-30% max)
+❌ **Icons NOT center-aligned with text** (icon tops aligned instead of centers!)
+❌ **Text in shapes NOT centered** (missing alignment="center", verticalAlignment="middle")
+❌ **Text overflowing shape bounds** (text dimensions larger than shape with padding)
 
 ═══════════════════════════════════════════════════════════════════════════════
 🎯 LOGO PLACEMENT (IF PROVIDED)
