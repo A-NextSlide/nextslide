@@ -78,7 +78,6 @@ const OutlineHeader: React.FC<OutlineHeaderProps> = ({
         <div className="flex items-center gap-2">
           <Button
             onClick={() => {
-              
               // Check for rapid clicks (within 1 second)
               const now = Date.now();
               if (now - lastClickTimeRef.current < 1000) {

@@ -16,6 +16,8 @@ interface SimpleSlideDisplayProps {
   onComponentSelect: (component: ComponentInstance) => void;
   updateSlide: (id: string, data: Partial<SlideData>) => void;
   deckStatus?: DeckStatus;
+  containerWidth?: number;
+  containerHeight?: number;
 }
 
 const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
@@ -27,7 +29,9 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
   selectedComponentId,
   onComponentSelect,
   updateSlide,
-  deckStatus
+  deckStatus,
+  containerWidth,
+  containerHeight
 }) => {
   if (!slide) return null;
   
@@ -50,8 +54,25 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
   
   // If has any components (including just background), show the slide
   if (hasComponents) {
+    // Use explicit pixel dimensions if provided, otherwise fall back to 100%
+    const slideStyle: React.CSSProperties = containerWidth && containerHeight 
+      ? {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: `${containerWidth}px`,
+          height: `${containerHeight}px`
+        }
+      : {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%'
+        };
+    
     return (
-      <div>
+      <div className="absolute inset-0 w-full h-full">
         <Slide 
           key={slide.id}
           slide={slide}
@@ -63,6 +84,7 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
           }} 
           selectedComponentId={selectedComponentId}
           onComponentSelect={onComponentSelect}
+          style={slideStyle}
         />
       </div>
     );

@@ -1,7 +1,6 @@
-import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback } from "react";
+import React, { useRef, useEffect, RefObject, useMemo, useState } from "react";
 import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
-import { DEFAULT_SLIDE_WIDTH } from '../../utils/deckUtils';
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
@@ -211,20 +210,26 @@ class ErrorBoundary extends React.Component<
 
 /**
  * Simplified custom component renderer
+ * CRITICAL FIXES:
+ * 1. Stable iframe rendering to prevent flashing
+ * 2. Click-through overlay for selection in edit mode
+ * 3. Proper content fitting
  */
 export const CustomComponentRenderer: React.FC<{
   component: ComponentInstance;
   baseStyles: React.CSSProperties;
   containerRef: RefObject<HTMLDivElement | null>;
   isThumbnail?: boolean;
-}> = ({ component, baseStyles, containerRef, isThumbnail = false }) => {
+  isSelected?: boolean;
+  isEditing?: boolean;
+}> = ({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const renderCode = component.props.render as string;
 
-  // Merge all component props (including width, height, x, y) with the custom props
-  const componentProps = {
+  // Stable component props - memoize to prevent unnecessary re-renders
+  const componentProps = useMemo(() => ({
     ...component.props,
     ...(component.props.props || {})
-  };
+  }), [component.props]);
 
   // Keep last successful compiled render to avoid flicker during recompilation
   const compiledRenderRef = useRef<Function | null>(null);
@@ -232,7 +237,7 @@ export const CustomComponentRenderer: React.FC<{
   const lastSlideIndexRef = useRef<number>(currentSlideIndex);
 
   // Get component state
-  const { state, updateState, forceUpdate, clearState } = useComponentInstance(component.id);
+  const { state, updateState, clearState } = useComponentInstance(component.id);
 
   // Reset state when slide changes
   useEffect(() => {
@@ -254,34 +259,15 @@ export const CustomComponentRenderer: React.FC<{
     // 0. IFRAME MODE: Check for Full HTML Document
     // This allows "do whatever we want" - Tailwind, CDNs, full isolation
     if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
-      console.log('[CustomComponent] Detected FULL HTML document, rendering in IFRAME');
-      // Cache the srcDoc to prevent iframe reload on every render
+      // Cache the srcDoc string - this is the ONLY thing that should cause iframe to reload
       const cachedSrcDoc = renderCode as string;
-      const iframeRenderer = function ({ isThumbnail, isEditing, id }: { isThumbnail?: boolean; isEditing?: boolean; id?: string } = {}) {
-        // In edit mode (not presenting), disable pointer events so component can be selected
-        // In presentation mode or thumbnails, allow full interactivity
-        const shouldBlockPointerEvents = isEditing && !isThumbnail;
-        
-        return React.createElement('iframe', {
-          // CRITICAL: Stable key prevents iframe recreation/flashing
-          key: `iframe-${id || 'unknown'}`,
-          srcDoc: cachedSrcDoc,
-          style: { 
-            width: '100%', 
-            height: '100%', 
-            border: 'none', 
-            backgroundColor: 'transparent',
-            // CRITICAL: Block pointer events in edit mode so component wrapper can be selected
-            pointerEvents: shouldBlockPointerEvents ? 'none' : 'auto',
-            display: 'block' // Prevent layout issues
-          },
-          sandbox: "allow-scripts allow-same-origin allow-popups allow-forms",
-          title: "Custom Component",
-          // Prevent flashing during load
-          loading: "eager"
-        });
+
+      // Return a special marker object that the renderer will use to create an iframe
+      // We return an object instead of a function to enable stable iframe rendering
+      return {
+        compiledRender: { __isIframe: true, srcDoc: cachedSrcDoc } as any,
+        compilationError: null
       };
-      return { compiledRender: iframeRenderer as Function, compilationError: null };
     }
 
     // 0b. IFRAME MODE for render functions that return HTML strings
@@ -798,117 +784,52 @@ export const CustomComponentRenderer: React.FC<{
     }
   }, [compiledRender]);
 
-  // Check if we're in presentation mode
+  // Check if we're in presentation mode - subscribe to store changes
   const isPresenting = usePresentationStore(state => state.isPresenting);
 
-  // Use standard scale factor (optimization removed)
-  const scaleFactor = 1;
+  // Determine effective edit mode
+  // Edit mode = explicitly editing in the editor (not presenting, not thumbnail)
+  // View mode = presenting OR viewing without editing (should allow interaction)
+  // CRITICAL FIX: Only set effectiveIsEditMode=true when actually editing
+  // Previously this was incorrectly true in view mode, blocking clicks
+  const effectiveIsEditMode = !isPresenting && !isThumbnail && isEditing;
 
-  // Dynamic fit-to-box scaling (non-persistent): scales content down to fit, back up to 1 when growing
+  // Debug logging for interaction issues
+  useEffect(() => {
+    if (component.props.debug || component.id.includes('custom')) {
+      console.log(`[CustomComponent:${component.id}] Interaction Debug:`, {
+        effectiveIsEditMode,
+        isPresenting,
+        isThumbnail,
+        isSelected,
+        isEditingProp: isEditing,
+        baseStylesPointerEvents: baseStyles.pointerEvents,
+        computedPointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
+      });
+    }
+  }, [effectiveIsEditMode, isPresenting, isThumbnail, isSelected, isEditing, baseStyles.pointerEvents, component.id, component.props.debug]);
+
+  // Ref for the content wrapper
   const contentInnerRef = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<{ scale: number; offsetX: number; offsetY: number }>({ scale: 1, offsetX: 0, offsetY: 0 });
-  // Hide content until first fit is computed, and during active resizing
-  const [isFitReady, setIsFitReady] = useState(false);
-  const [isResizingNow, setIsResizingNow] = useState(false);
-  const isResizingNowRef = useRef(false);
-  useEffect(() => { isResizingNowRef.current = isResizingNow; }, [isResizingNow]);
 
-  const computeFit = useCallback(() => {
-    const containerEl = containerRef?.current as HTMLDivElement | null;
-    const contentEl = contentInnerRef.current as HTMLDivElement | null;
-    if (!containerEl || !contentEl) return;
+  // Container dimensions for non-iframe rendering
+  const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
+  const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
 
-    // Consider any saved optimization scale so our math uses the pre-transform coordinate space
-    const savedScale = (component?.props as any)?._optimizedScale || 1;
-    const outerScale = (!isThumbnail && !isPresenting) ? scaleFactor : 1;
-    const effectiveParentScale = outerScale * savedScale;
+  // Check if this is an iframe-based component (detected during compilation)
+  const isIframeComponent = compiledRender && typeof compiledRender === 'object' && (compiledRender as any).__isIframe;
+  const iframeSrcDoc = isIframeComponent ? (compiledRender as any).srcDoc : null;
 
-    // Container size in the unscaled coordinate system of its absolutely-positioned children
-    const containerW = Math.max(0, containerEl.clientWidth / (effectiveParentScale || 1));
-    const containerH = Math.max(0, containerEl.clientHeight / (effectiveParentScale || 1));
+  // Memoize srcDoc to prevent iframe reload
+  const stableIframeSrcDoc = useMemo(() => iframeSrcDoc, [iframeSrcDoc]);
 
-    // Natural content size (scroll* is unaffected by CSS transforms)
-    const naturalW = Math.max(0, contentEl.scrollWidth || contentEl.offsetWidth || 0);
-    const naturalH = Math.max(0, contentEl.scrollHeight || contentEl.offsetHeight || 0);
-    if (naturalW === 0 || naturalH === 0 || containerW === 0 || containerH === 0) {
-      setFit(prev => (prev.scale !== 1 || prev.offsetX !== 0 || prev.offsetY !== 0) ? { scale: 1, offsetX: 0, offsetY: 0 } : prev);
-      return;
-    }
-
-    const s = Math.min(containerW / naturalW, containerH / naturalH, 1);
-    const dispW = naturalW * s;
-    const dispH = naturalH * s;
-    const ox = Math.max(0, (containerW - dispW) / 2);
-    const oy = Math.max(0, (containerH - dispH) / 2);
-
-    setFit(prev => (prev.scale !== s || prev.offsetX !== ox || prev.offsetY !== oy) ? { scale: s, offsetX: ox, offsetY: oy } : prev);
-    // Mark fit ready when not actively resizing
-    if (!isResizingNowRef.current) {
-      setIsFitReady(true);
-    }
-  }, [containerRef, scaleFactor, isThumbnail, isPresenting, component?.props]);
-
-  useEffect(() => {
-    // Initial compute + observe container/content size changes
-    computeFit();
-    const containerEl = containerRef?.current as HTMLDivElement | null;
-    const contentEl = contentInnerRef.current as HTMLDivElement | null;
-    const ro: ResizeObserver | null = (typeof ResizeObserver !== 'undefined') ? new ResizeObserver(() => {
-      if (typeof requestAnimationFrame !== 'undefined') {
-        requestAnimationFrame(() => computeFit());
-      } else {
-        computeFit();
-      }
-    }) : null;
-    if (ro) {
-      if (containerEl) ro.observe(containerEl);
-      if (contentEl) ro.observe(contentEl);
-    }
-    const onResize = () => computeFit();
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      if (ro) ro.disconnect();
-    };
-  }, [computeFit]);
-
-  // Listen for resize start/end events to recompute fit on resize end
-  useEffect(() => {
-    const onResizeStart = (e: Event) => {
-      const anyEvent = e as any;
-      if (anyEvent?.detail?.componentId === component.id) {
-        setIsResizingNow(true);
-        // Don't hide content during resize - keep it visible
-      }
-    };
-    const onResizeEnd = (e: Event) => {
-      const anyEvent = e as any;
-      if (anyEvent?.detail?.componentId === component.id) {
-        setIsResizingNow(false);
-        // Recompute fit immediately and reveal on next frame
-        computeFit();
-        if (typeof requestAnimationFrame !== 'undefined') {
-          requestAnimationFrame(() => setIsFitReady(true));
-        } else {
-          setIsFitReady(true);
-        }
-      }
-    };
-    document.addEventListener('component:resizestart', onResizeStart as any);
-    document.addEventListener('component:resizeend', onResizeEnd as any);
-    return () => {
-      document.removeEventListener('component:resizestart', onResizeStart as any);
-      document.removeEventListener('component:resizeend', onResizeEnd as any);
-    };
-  }, [component.id, computeFit]);
-
-  // No optimized styles needed - backend handles font sizing
-  const optimizedStyles = useMemo(() => {
-    return {};
-  }, [component]);
-
-  // Render the component
+  // Render the component content (non-iframe path)
   const content = useMemo(() => {
+    // If this is an iframe component, we render it separately (outside useMemo) to prevent flashing
+    if (isIframeComponent) {
+      return null; // Iframe is rendered separately below
+    }
+
     // Show error only if we have no prior compiled function
     if (compilationError && !compiledRenderRef.current) {
       return (
@@ -929,100 +850,53 @@ export const CustomComponentRenderer: React.FC<{
 
     // Prefer fresh compiled render; fall back to last good render to avoid flash
     const activeRender = compiledRender ?? compiledRenderRef.current;
-    if (!activeRender) return null;
+    if (!activeRender || typeof activeRender !== 'function') return null;
 
     try {
-      // Create a wrapper component that tracks its own renders
-      const ComponentWrapper = React.memo(() => {
-        const renderCountRef = useRef(0);
-        const renderResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-        useEffect(() => {
-          // Track renders
-          renderCountRef.current++;
-
-          // Reset count after 1 second of no renders
-          if (renderResetTimeoutRef.current) {
-            clearTimeout(renderResetTimeoutRef.current);
-          }
-
-          renderResetTimeoutRef.current = setTimeout(() => {
-            renderCountRef.current = 0;
-          }, 1000);
-
-          // Check for too many renders
-          if (renderCountRef.current > 50) {
-            throw new Error('Too many renders detected (50+ in 1 second)');
-          }
-
-          return () => {
-            if (renderResetTimeoutRef.current) {
-              clearTimeout(renderResetTimeoutRef.current);
-            }
-          };
-        });
-
-        // Calculate container dimensions to pass to the render function
-        const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
-        const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
-        
-        // Determine if we're in edit mode (not presenting)
-        const isEditMode = !usePresentationStore.getState().isPresenting;
-
-        const element = activeRender!({
-          props: componentProps,
-          state,
-          updateState,
-          id: component.id,
-          isThumbnail,
-          // Pass edit mode state so iframe can disable pointer events for selection
-          isEditing: isEditMode,
-          // Pass container dimensions for components that need to know their bounds
-          containerWidth,
-          containerHeight
-        });
-
-        // Handle HTML string returns (from functions that return HTML)
-        if (typeof element === 'string' && element.trim().startsWith('<') && element.includes('>')) {
-          console.log('[CustomComponent] Detected HTML string return, rendering as HTML');
-          return (
-            <div
-              style={{ width: '100%', height: '100%' }}
-              dangerouslySetInnerHTML={{ __html: element }}
-            />
-          );
-        }
-
-        // Validate the result. Allow React elements, arrays, strings, null.
-        if (
-          React.isValidElement(element) ||
-          element === null ||
-          Array.isArray(element) ||
-          typeof element === 'string'
-        ) {
-          return element as any;
-        }
-
-        // Check if it's a DOM element
-        if (element instanceof HTMLElement) {
-          // Convert DOM element to React element by wrapping in dangerouslySetInnerHTML
-          const htmlString = element.outerHTML;
-          console.log('[CustomComponent] Converting DOM element to React element');
-          return <div dangerouslySetInnerHTML={{ __html: htmlString }} />;
-        }
-
-        console.warn('[CustomComponent] Invalid element returned:', element);
-        return <div>{String(element)}</div>;
+      const element = activeRender({
+        props: componentProps,
+        state,
+        updateState,
+        id: component.id,
+        isThumbnail,
+        isEditing: effectiveIsEditMode,
+        containerWidth,
+        containerHeight
       });
 
-      return <ComponentWrapper key={`${component.id}-${currentSlideIndex}`} />;
+      // Handle HTML string returns (from functions that return HTML)
+      if (typeof element === 'string' && element.trim().startsWith('<') && element.includes('>')) {
+        return (
+          <div
+            style={{ width: '100%', height: '100%' }}
+            dangerouslySetInnerHTML={{ __html: element }}
+          />
+        );
+      }
+
+      // Validate the result. Allow React elements, arrays, strings, null.
+      if (
+        React.isValidElement(element) ||
+        element === null ||
+        Array.isArray(element) ||
+        typeof element === 'string'
+      ) {
+        return element as any;
+      }
+
+      // Check if it's a DOM element
+      if (element instanceof HTMLElement) {
+        const htmlString = element.outerHTML;
+        return <div dangerouslySetInnerHTML={{ __html: htmlString }} />;
+      }
+
+      console.warn('[CustomComponent] Invalid element returned:', element);
+      return <div>{String(element)}</div>;
     } catch (err) {
       console.error('[CustomComponent] Runtime error:', err);
 
-      // Provide more helpful error messages for common issues
       let errorMessage = err instanceof Error ? err.message : String(err);
 
-      // Check for undefined variable errors
       if (err instanceof ReferenceError) {
         const match = errorMessage.match(/(\w+) is not defined/);
         if (match) {
@@ -1046,224 +920,112 @@ export const CustomComponentRenderer: React.FC<{
         </div>
       );
     }
-  }, [compilationError, compiledRender, componentProps, state, updateState, component.id, currentSlideIndex]);
+  }, [compilationError, compiledRender, isIframeComponent, componentProps, state, updateState, component.id, isThumbnail, effectiveIsEditMode, containerWidth, containerHeight]);
 
-  // Prevent scroll chaining/bounce with native non-passive listeners and clamped scrolling
+  // Scaling Logic
+  const [scale, setScale] = useState(1);
+  const rootRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const el = containerRef?.current as HTMLDivElement | null;
-    if (!el) return;
+    const element = rootRef.current;
+    if (!element) return;
 
-    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-    const isScrollableEl = (node: HTMLElement) => {
-      const style = window.getComputedStyle(node);
-      const overflowY = style.overflowY;
-      const canScroll = node.scrollHeight > node.clientHeight;
-      return canScroll && overflowY !== 'visible' && overflowY !== 'hidden';
-    };
-
-    const findScrollableAncestor = (target: EventTarget | null): HTMLElement => {
-      let node = (target as HTMLElement) || el;
-      while (node && node !== el && node !== document.body && node.nodeType === 1) {
-        if (isScrollableEl(node)) return node;
-        node = (node.parentElement as HTMLElement) || el;
-      }
-      return el;
-    };
-
-    const handleWheelNative = (e: WheelEvent) => {
-      const scroller = findScrollableAncestor(e.target);
-      const maxScrollTop = scroller.scrollHeight - scroller.clientHeight;
-      if (maxScrollTop <= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      let deltaY = e.deltaY;
-      // Normalize delta for line/page scrolling
-      if ((e as any).deltaMode === 1) deltaY *= 16; // lines → px
-      else if ((e as any).deltaMode === 2) deltaY *= scroller.clientHeight; // pages → px
-
-      const next = clamp(scroller.scrollTop + deltaY, 0, maxScrollTop);
-      if (next !== scroller.scrollTop) {
-        scroller.scrollTop = next;
-      }
-      // Always consume so parent/viewport never bounces
-      e.preventDefault();
-      e.stopPropagation();
-    };
-
-    let lastTouchY = 0;
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches && e.touches.length > 0) {
-        lastTouchY = e.touches[0].clientY;
-      }
-    };
-    const handleTouchMove = (e: TouchEvent) => {
-      const maxScrollTop = el.scrollHeight - el.clientHeight;
-      if (maxScrollTop <= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      if (e.touches && e.touches.length > 0) {
-        const currentY = e.touches[0].clientY;
-        const deltaY = lastTouchY - currentY; // positive when moving up
-        lastTouchY = currentY;
-        const next = clamp(el.scrollTop + deltaY, 0, maxScrollTop);
-        if (next !== el.scrollTop) {
-          el.scrollTop = next;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        // Calculate scale based on the ratio of current container width to the design width
+        // If containerWidth (design width) is 0 or invalid, default to 1 to avoid division by zero
+        if (containerWidth > 0) {
+          const newScale = width / containerWidth;
+          setScale(newScale);
         }
-        e.preventDefault();
-        e.stopPropagation();
       }
-    };
+    });
 
-    const handleScrollSnap = () => {
-      const maxScrollTop = el.scrollHeight - el.clientHeight;
-      if (maxScrollTop > 0 && (maxScrollTop - el.scrollTop) <= 1) {
-        el.scrollTop = maxScrollTop;
-      }
-    };
-
-    el.addEventListener('wheel', handleWheelNative, { passive: false, capture: true });
-    el.addEventListener('touchstart', handleTouchStart, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
-    el.addEventListener('scroll', handleScrollSnap, { passive: true });
-    return () => {
-      el.removeEventListener('wheel', handleWheelNative, true as any);
-      el.removeEventListener('touchstart', handleTouchStart);
-      el.removeEventListener('touchmove', handleTouchMove, true as any);
-      el.removeEventListener('scroll', handleScrollSnap as any);
-    };
-  }, [containerRef]);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [containerWidth]);
 
   return (
     <ErrorBoundary>
       <div
-        ref={containerRef}
+        ref={rootRef}
         data-scroll-guard="true"
         data-interactive-component={!isThumbnail ? "true" : undefined}
+        data-custom-component="true"
         style={{
           ...baseStyles,
-          fontSize: `${16 * scaleFactor}px`,
           overflow: 'hidden',
-          overscrollBehavior: 'none',
-          overscrollBehaviorY: 'none',
-          overscrollBehaviorX: 'none',
-          WebkitOverflowScrolling: 'auto',
-          scrollbarGutter: 'stable both-edges',
-          touchAction: 'pan-y',
           position: 'relative',
           boxSizing: 'border-box',
-          // Ensure the container fills its allocated space
-          width: baseStyles.width || '100%',
+          width: baseStyles.width || '100%', // Revert to 100% to fill the parent slot
           height: baseStyles.height || '100%',
-          // CRITICAL: Enable pointer events in presentation mode for interactivity
-          // In edit mode, the component layer handles selection
-          pointerEvents: isPresenting ? 'auto' : undefined
+          // CRITICAL: In edit mode, disable pointer events so clicks pass through
+          // to the parent ComponentRenderer wrapper for selection
+          // UNLESS it is selected, then we allow interaction
+          pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
         }}
       >
-        {/* Apply optimization styles if present (existing persistent optimization) */}
-        {Object.keys(optimizedStyles).length > 0 ? (
-          <div style={optimizedStyles}>
-            {/* Slide scale wrapper (kept for viewport responsiveness) */}
-            {!isThumbnail && scaleFactor !== 1 ? (
-              <div style={{
-                transform: `scale(${scaleFactor})`,
-                transformOrigin: 'top left',
-                width: `${100 / scaleFactor}%`,
-                height: `${100 / scaleFactor}%`,
+        {/* Content wrapper that applies the scale */}
+        <div
+          ref={contentInnerRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: `${containerWidth}px`, // Force design width
+            height: `${containerHeight}px`, // Force design height
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            boxSizing: 'border-box',
+            pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' // Inner content shouldn't block clicks in edit mode (handled by overlay) unless selected
+          }}
+        >
+          {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
+          {isIframeComponent && stableIframeSrcDoc && (
+            <iframe
+              key={component.id}
+              srcDoc={stableIframeSrcDoc}
+              style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                boxSizing: 'border-box'
-              }}>
-                {/* Fit-to-box wrapper */}
-                <div style={{ position: 'absolute', inset: 0 }}>
-                  <div
-                    ref={contentInnerRef}
-                    style={{
-                      position: 'absolute',
-                      left: `${fit.offsetX}px`,
-                      top: `${fit.offsetY}px`,
-                      transform: `scale(${fit.scale})`,
-                      transformOrigin: 'top left',
-                      boxSizing: 'border-box',
-                      visibility: isFitReady ? 'visible' : 'hidden'
-                    }}
-                  >
-                    {content}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ position: 'absolute', inset: 0 }}>
-                <div
-                  ref={contentInnerRef}
-                  style={{
-                    position: 'absolute',
-                    left: `${fit.offsetX}px`,
-                    top: `${fit.offsetY}px`,
-                    transform: `scale(${fit.scale})`,
-                    transformOrigin: 'top left',
-                    boxSizing: 'border-box',
-                    visibility: isFitReady ? 'visible' : 'hidden'
-                  }}
-                >
-                  {content}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* No optimization styles - still apply slide scale and fit-to-box */
-          !isThumbnail && scaleFactor !== 1 ? (
-            <div style={{
-              transform: `scale(${scaleFactor})`,
-              transformOrigin: 'top left',
-              width: `${100 / scaleFactor}%`,
-              height: `${100 / scaleFactor}%`,
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                backgroundColor: 'transparent',
+                display: 'block',
+                pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' // Allow interaction in view mode or when selected
+              }}
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              title="Custom Component"
+            />
+          )}
+
+          {/* Non-iframe content */}
+          {!isIframeComponent && (
+            <div style={{ width: '100%', height: '100%', pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' }}>
+              {content}
+            </div>
+          )}
+        </div>
+
+        {/* 
+          CLICK-THROUGH OVERLAY for iframe selection in edit mode
+          This overlay sits on top of everything and has pointerEvents: none
+          so clicks pass through to the parent ComponentRenderer
+        */}
+        {effectiveIsEditMode && isIframeComponent && (
+          <div
+            style={{
               position: 'absolute',
-              top: 0,
-              left: 0,
-              boxSizing: 'border-box'
-            }}>
-              <div style={{ position: 'absolute', inset: 0 }}>
-                <div
-                  ref={contentInnerRef}
-                  style={{
-                    position: 'absolute',
-                    left: `${fit.offsetX}px`,
-                    top: `${fit.offsetY}px`,
-                    transform: `scale(${fit.scale})`,
-                    transformOrigin: 'top left',
-                    boxSizing: 'border-box',
-                    visibility: isFitReady ? 'visible' : 'hidden'
-                  }}
-                >
-                  {content}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ position: 'absolute', inset: 0 }}>
-              <div
-                ref={contentInnerRef}
-                style={{
-                  position: 'absolute',
-                  left: `${fit.offsetX}px`,
-                  top: `${fit.offsetY}px`,
-                  transform: `scale(${fit.scale})`,
-                  transformOrigin: 'top left',
-                  boxSizing: 'border-box',
-                  visibility: isFitReady ? 'visible' : 'hidden'
-                }}
-              >
-                {content}
-              </div>
-            </div>
-          )
+              inset: 0,
+              zIndex: 10,
+              // This overlay catches nothing - clicks go through to parent
+              pointerEvents: 'none',
+              background: 'transparent'
+            }}
+          />
         )}
       </div>
     </ErrorBoundary>
@@ -1277,7 +1039,9 @@ export const renderCustomComponent = (
   component: ComponentInstance,
   baseStyles: React.CSSProperties,
   containerRef: RefObject<HTMLDivElement | null>,
-  isThumbnail?: boolean
+  isThumbnail?: boolean,
+  isSelected?: boolean,
+  isEditing?: boolean
 ) => {
   return (
     <CustomComponentRenderer
@@ -1285,6 +1049,8 @@ export const renderCustomComponent = (
       baseStyles={baseStyles}
       containerRef={containerRef}
       isThumbnail={isThumbnail}
+      isSelected={isSelected}
+      isEditing={isEditing}
     />
   );
 };
@@ -1294,7 +1060,14 @@ import { registerRenderer } from '../utils';
 import type { RendererFunction } from '../index';
 
 const CustomComponentRendererWrapper: RendererFunction = (props) => {
-  return renderCustomComponent(props.component, props.styles || {}, props.containerRef, props.isThumbnail);
+  return renderCustomComponent(
+    props.component,
+    props.styles || {},
+    props.containerRef,
+    props.isThumbnail,
+    props.isSelected,
+    props.isEditing
+  );
 };
 
 registerRenderer('CustomComponent', CustomComponentRendererWrapper); 

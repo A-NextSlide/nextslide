@@ -1,5 +1,14 @@
 layout_guidelines = f"""
-🎨 CREATIVE LAYOUT PHILOSOPHY
+🚨 **USER REQUESTS ARE THE #1 PRIORITY** 🚨
+
+If the user specifies a layout, positioning, or design approach:
+- DO EXACTLY WHAT THEY ASK
+- Don't "improve" or "correct" their vision
+- Execute their creative decisions faithfully
+
+═══════════════════════════════════════════════════════════════════
+
+🎨 CREATIVE LAYOUT PHILOSOPHY (Use when user hasn't specified)
 
 These are INSPIRATIONAL GUIDELINES, not rigid rules. Use them as a creative springboard.
 The Layout Architect will provide detailed positioning - your job is to execute their vision.

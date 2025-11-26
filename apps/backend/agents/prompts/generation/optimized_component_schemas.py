@@ -74,11 +74,17 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   3. Add Fonts: `<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">`
   4. Write standard HTML/JS (no React complexity needed!)
   
+  🎮 **INTERACTIVITY & DESIGN RULES:**
+  • **HOVER EFFECTS**: MANDATORY! Use `hover:scale-105`, `hover:bg-white/10`, `transition-all duration-300`.
+  • **CLICKABLE**: Make cards/buttons look clickable (`cursor-pointer`).
+  • **CONTENT FITTING**: 🚨 CRITICAL! Text MUST fit the box. Use `truncate`, `line-clamp-2`, or keep text short.
+  • **SCROLLING**: Avoid scrolling if possible. Fit content to the container height.
+  
   📦 **PREMIUM DESIGN TEMPLATES - USE THESE AS INSPIRATION:**
 
   🔥 **GLASSMORPHISM STATS GRID (Dark Theme):**
   ```json
-  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif}@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,0.3)}50%{box-shadow:0 0 40px rgba(99,102,241,0.6)}}@keyframes countUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.stat-card{animation:countUp 0.6s ease-out forwards;opacity:0}.stat-card:nth-child(1){animation-delay:0.1s}.stat-card:nth-child(2){animation-delay:0.2s}.stat-card:nth-child(3){animation-delay:0.3s}.glow{animation:glow 2s ease-in-out infinite}</style></head><body class='w-full h-full p-8 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'><div class='grid grid-cols-3 gap-6 w-full max-w-5xl'><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 glow'><div class='text-indigo-400 text-sm font-semibold uppercase tracking-wider mb-2'>Market Cap</div><div class='text-5xl font-black text-white mb-1'>$2.4T</div><div class='text-emerald-400 text-lg font-medium'>+18.5% YoY</div></div><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10'><div class='text-pink-400 text-sm font-semibold uppercase tracking-wider mb-2'>Growth Rate</div><div class='text-5xl font-black text-white mb-1'>127%</div><div class='text-white/60 text-lg'>vs 89% industry avg</div></div><div class='stat-card bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 shadow-2xl shadow-indigo-500/30'><div class='text-white/80 text-sm font-semibold uppercase tracking-wider mb-2'>Projection</div><div class='text-5xl font-black text-white mb-1'>$8.1T</div><div class='text-white/80 text-lg font-medium'>by 2034</div></div></div></body></html>"
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif}@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,0.3)}50%{box-shadow:0 0 40px rgba(99,102,241,0.6)}}@keyframes countUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.stat-card{animation:countUp 0.6s ease-out forwards;opacity:0;transition:all 0.3s ease}.stat-card:hover{transform:translateY(-5px) scale(1.02);background:rgba(255,255,255,0.1);cursor:pointer}.stat-card:nth-child(1){animation-delay:0.1s}.stat-card:nth-child(2){animation-delay:0.2s}.stat-card:nth-child(3){animation-delay:0.3s}.glow{animation:glow 2s ease-in-out infinite}</style></head><body class='w-full h-full p-8 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'><div class='grid grid-cols-3 gap-6 w-full max-w-5xl'><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 glow'><div class='text-indigo-400 text-sm font-semibold uppercase tracking-wider mb-2'>Market Cap</div><div class='text-5xl font-black text-white mb-1'>$2.4T</div><div class='text-emerald-400 text-lg font-medium'>+18.5% YoY</div></div><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10'><div class='text-pink-400 text-sm font-semibold uppercase tracking-wider mb-2'>Growth Rate</div><div class='text-5xl font-black text-white mb-1'>127%</div><div class='text-white/60 text-lg'>vs 89% industry avg</div></div><div class='stat-card bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 shadow-2xl shadow-indigo-500/30'><div class='text-white/80 text-sm font-semibold uppercase tracking-wider mb-2'>Projection</div><div class='text-5xl font-black text-white mb-1'>$8.1T</div><div class='text-white/80 text-lg font-medium'>by 2034</div></div></div></body></html>"
   ```
   
   🌈 **GRADIENT HERO STATS (Light Theme):**
@@ -121,6 +127,15 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   • Write standard JavaScript inside `<script>` tags.
   • Use `document.getElementById` to manipulate DOM.
   • Add event listeners normally.
+
+  ⚠️ **CRITICAL JAVASCRIPT RULES:**
+  • 🚨 **NEVER use `<` in JavaScript comparisons!** It can break HTML parsing.
+    - ❌ BAD: `if (x < 10)` or `for (i < arr.length)`
+    - ✅ GOOD: `if (x <= 9)` or `for (i <= arr.length - 1)`
+    - ✅ GOOD: Use `>=` instead: `if (10 > x)` or flip the comparison
+  • 🚨 **Place `<script>` tags BEFORE `</body>`** - never after!
+  • Use `var` instead of `let`/`const` for maximum compatibility.
+  • For loops: `for (var i = 0; i <= items.length - 1; i++)` instead of `i < items.length`
 
 ═══ BANNED COMPONENTS IN CREATIVE MODE ═══
 

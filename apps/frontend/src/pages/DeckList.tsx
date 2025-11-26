@@ -62,6 +62,78 @@ import ConversationalOnboarding from '@/components/onboarding/ConversationalOnbo
 import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
 
+// Rotating words animation for hero heading - vertical slot machine style
+const WORDS = ['PROJECTS', 'PITCH DECKS', 'DEADLINES', 'REPORTS', 'IDEAS'];
+
+const RotatingWords = () => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const hasStartedRef = useRef(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // Prevent double-execution in React StrictMode
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+
+    // Start animation after a short delay
+    const startDelay = setTimeout(() => {
+      timerRef.current = setInterval(() => {
+        setCurrentIndex(i => {
+          const nextIndex = i + 1;
+          if (nextIndex >= WORDS.length - 1) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            return WORDS.length - 1;
+          }
+          return nextIndex;
+        });
+      }, 2000); // 2 seconds per word - slower for more visible rotation
+    }, 800); // Wait 0.8s before starting
+
+    return () => {
+      clearTimeout(startDelay);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Approximate character widths for each word to animate container width
+  const wordWidths: Record<string, string> = {
+    'PROJECTS': '8.5ch',
+    'PITCH DECKS': '11ch', 
+    'DEADLINES': '9.5ch',
+    'REPORTS': '7.5ch',
+    'IDEAS': '5.5ch',
+  };
+  
+  return (
+    <span 
+      className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300"
+      style={{ 
+        height: '1.2em',
+        width: wordWidths[WORDS[currentIndex]],
+        verticalAlign: '-0.1em', // Fine-tune baseline alignment
+      }}
+    >
+      <span
+        className="flex flex-col"
+        style={{ 
+          transform: `translateY(-${currentIndex * 1.2}em)`,
+          transition: 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        {WORDS.map((word) => (
+          <span 
+            key={word}
+            className="whitespace-nowrap"
+            style={{ height: '1.2em', lineHeight: '1.2em' }}
+          >
+            {word}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+};
+
 // Virtualized deck grid component for better performance with many decks
 const VirtualizedDeckGrid = React.memo(({
   decks,
@@ -1858,7 +1930,7 @@ const DeckList: React.FC = () => {
                                 className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                TURN IDEAS INTO<br />BEAUTIFUL PRESENTATIONS
+                                TURN{' '}<RotatingWords />{' '}INTO<br />BEAUTIFUL PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">

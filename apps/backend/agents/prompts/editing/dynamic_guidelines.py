@@ -123,7 +123,13 @@ class DynamicGuidelinesGenerator:
         design_props: Dict[str, Any] = None
     ) -> str:
         """Enhance layout guidelines with template-specific insights"""
-        enhanced = [base_guidelines, "\n\nTEMPLATE-BASED RECOMMENDATIONS:"]
+        enhanced = [
+            "🚨 **USER REQUESTS ARE THE #1 PRIORITY** 🚨\n",
+            "If the user specifies a layout, design, or approach - DO EXACTLY WHAT THEY ASK.\n",
+            "These template recommendations are just inspiration when user hasn't specified.\n",
+            "\n" + base_guidelines, 
+            "\n\nTEMPLATE-BASED RECOMMENDATIONS:"
+        ]
         
         # Add template-specific layout insights
         for i, template in enumerate(templates[:3], 1):
@@ -322,7 +328,13 @@ class DynamicGuidelinesGenerator:
         design_props: Dict[str, Any] = None
     ) -> str:
         """Enhance style guidelines with template-specific insights"""
-        enhanced = [base_guidelines, "\n\nTEMPLATE-DERIVED STYLES:"]
+        enhanced = [
+            "🚨 **USER REQUESTS ARE THE #1 PRIORITY** 🚨\n",
+            "If the user specifies styles, fonts, colors, or effects - DO EXACTLY WHAT THEY ASK.\n",
+            "These template recommendations are just inspiration when user hasn't specified.\n",
+            "\n" + base_guidelines, 
+            "\n\nTEMPLATE-DERIVED STYLES:"
+        ]
         
         # Extract and summarize style properties from all template slides
         all_font_sizes = []

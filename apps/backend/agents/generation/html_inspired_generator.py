@@ -459,6 +459,9 @@ Item 1: metadata: {{"topic": "{item_names[0]}", "searchQuery": "{item_names[0]} 
 ═══════════════════════════════════════════════════════════
 🎯 SLIDE {context.slide_index + 1} OF {context.total_slides} - CREATE NOW
 ═══════════════════════════════════════════════════════════
+
+🚨 **USER REQUEST IS #1 PRIORITY** - Check style_context below for user's specific requests!
+If user asked for a specific style, design, or approach → FOLLOW THEIR REQUEST EXACTLY
 {design_style_section}
 **SLIDE TITLE:** {context.slide_outline.title}
 
@@ -497,15 +500,52 @@ This renders in an isolated iframe with full Tailwind CSS, fonts, and animation 
 5. **NO LINE BREAKS** in the render string - must be a single line
 6. **body style**: `background:transparent` so slide background shows through
 
-🎨 **DYNAMIC GENERATION RULES:**
-1. DO NOT COPY THE EXAMPLE HTML - CREATE UNIQUE DESIGNS!
-2. ANALYZE the Slide Content below.
-3. GENERATE a unique HTML/Tailwind visualization specifically for THIS content.
-4. IF slide has data/stats -> Create a Dashboard with stat cards using Tailwind Grid
-5. IF slide has process/steps -> Create a Timeline or Step Flow
-6. IF slide has comparison -> Create a Comparison Grid with 2-3 columns
-7. IF slide has features/benefits -> Create a Card Grid layout
-8. USE the style_context below to match User Preferences.
+🎨 **CREATIVE GENERATION RULES - MAKE IT STUNNING!**
+
+🚨 CRITICAL: Each CustomComponent must be VISUALLY UNIQUE - never use the same layout twice!
+
+**ANALYZE the content and CHOOSE a fitting design pattern:**
+
+📊 **STATS/METRICS** - Make numbers pop!
+   • Glowing stat cards with backdrop-blur glassmorphism
+   • Circular progress indicators with animated SVG
+   • Large hero numbers with gradient text effects
+   • Dashboard-style grid with varied card sizes (bento grid)
+   • Comparison bars with percentage fills
+
+📋 **PROCESS/TIMELINE** - Show the journey!
+   • Horizontal connected nodes with gradient lines
+   • Vertical step ladder with animated connectors
+   • Circular journey around a center point
+   • Branching flowchart with decision points
+   • Numbered cards with directional arrows
+
+🔄 **COMPARISON** - Visualize differences!
+   • Split screen with diagonal divider using clip-path
+   • Progress bars showing relative values
+   • Side-by-side cards with connecting elements
+   • Scale/balance visualization
+   • Before/After with visual indicators
+
+🎯 **FEATURES/BENEFITS** - Make each memorable!
+   • Floating cards with animation delay stagger
+   • Bento grid with mixed sizes (some 2x2, some 1x1)
+   • Icon-forward cards with glowing icon backgrounds
+   • Hexagonal honeycomb arrangement
+   • Cards with gradient borders and glow effects
+
+**DESIGN TECHNIQUES TO USE:**
+• Glassmorphism: `bg-white/10 backdrop-blur-xl border border-white/20`
+• Gradient text: `bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent`
+• Glow effects: `shadow-[0_0_30px_rgba(59,130,246,0.4)]`
+• Floating animation: `@keyframes float{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-8px)}}}}`
+• Staggered delays: `style='animation-delay:0.2s'`
+
+❌ **BANNED - BORING DESIGNS:**
+• Plain rounded cards with just text
+• Basic 3-column grids with identical cards
+• Simple bullet lists in boxes
+• Reusing the same layout from other slides
 
 ❌ **DO NOT USE THESE (BANNED):**
 - SmartLayout (too basic, no custom styling)

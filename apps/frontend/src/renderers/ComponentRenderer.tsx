@@ -48,10 +48,10 @@ type Props = {
  * Main component renderer that delegates to specialized renderers.
  * Handles positioning, selection, dragging, resizing, and rotation.
  */
-export const ComponentRenderer: React.FC<Props> = ({ 
-  component, 
-  isSelected = false, 
-  onSelect = () => {}, // Provide default empty function
+export const ComponentRenderer: React.FC<Props> = ({
+  component,
+  isSelected = false,
+  onSelect = () => { }, // Provide default empty function
   allComponents = [],
   isThumbnail = false // Destructure isThumbnail
 }) => {
@@ -83,7 +83,7 @@ export const ComponentRenderer: React.FC<Props> = ({
   const selectedComponentIds = useEditorStore(state => state.selectedComponentIds);
   const isInMultiSelection = selectedComponentIds.size > 1 && isComponentMultiSelected;
   const effectiveIsSelected = isSelected || isComponentMultiSelected;
-  
+
   // Extract props with fallbacks from TypeBox schema defaults or basic defaults
   let {
     position = { x: 50, y: 50 },
@@ -95,7 +95,7 @@ export const ComponentRenderer: React.FC<Props> = ({
     textColor = "#000000",
     debug = false
   } = componentProps;
-  
+
   // For Lines components, calculate position/width/height from endpoints
   if (componentType === "Lines" || componentType === 'Line' || componentType === 'line') {
     // For lines, use full slide dimensions to avoid resize artifacts when endpoints move
@@ -121,16 +121,16 @@ export const ComponentRenderer: React.FC<Props> = ({
   // This ensures text editing doesn't stick when user selects another component
   useEffect(() => {
     if (!effectiveIsSelected) return;
-    
+
     const settings = useEditorSettingsStore.getState();
     if (!settings.isTextEditing) return;
-    
+
     const activeEditor: any = useEditorStore.getState().activeTiptapEditor;
     const activeId = activeEditor?.view?.dom?.getAttribute?.('data-component-id');
-    
+
     // If a different component was being edited, blur it and clear text editing state
     if (activeId && activeId !== componentId) {
-      try { activeEditor.commands?.blur?.(); } catch {}
+      try { activeEditor.commands?.blur?.(); } catch { }
       settings.setTextEditing(false);
     }
   }, [effectiveIsSelected, componentId]);
@@ -144,10 +144,10 @@ export const ComponentRenderer: React.FC<Props> = ({
   const { editingGroupId } = useEditorStore.getState();
   const isInGroup = component.props.parentId && component.type !== 'Group';
   const isEditingThisGroup = isInGroup && editingGroupId === component.props.parentId;
-  
+
   // Always allow dragging - the drag handler will determine if it should drag the group or individual
   const effectiveDraggable = isDraggable;
-  
+
   // Use component drag hook with proper interface
   const { isDragging, visualDragOffset, snapGuides: dragSnapGuides, handleDragStart, didJustDrag } = useComponentDrag({
     component,
@@ -196,7 +196,7 @@ export const ComponentRenderer: React.FC<Props> = ({
 
   // Combine snap guides from drag and resize
   const snapGuides = isDragging ? dragSnapGuides : isResizing ? localSnapGuides : [];
-  
+
   // Ensure snap guides are cleared when resize/drag ends
   useEffect(() => {
     if (!isResizing && !isDragging && localSnapGuides.length > 0) {
@@ -218,33 +218,33 @@ export const ComponentRenderer: React.FC<Props> = ({
   const slideHeight = slideSize?.height || DEFAULT_SLIDE_HEIGHT;
   const positionX = (normalizedPosition.x / slideWidth) * 100;
   const positionY = (normalizedPosition.y / slideHeight) * 100;
-  
+
   // Use component's actual dimensions (they're being updated in real-time during resize)
   const effectiveWidth = width;
   const effectiveHeight = height;
-  
+
   const widthPercentage = typeof effectiveWidth === 'number' ? (effectiveWidth / slideWidth * 100) : effectiveWidth;
   const heightPercentage = typeof effectiveHeight === 'number' ? (effectiveHeight / slideHeight * 100) : effectiveHeight;
-  
+
   // Check if this is a placeholder image
   const isPlaceholderImage = componentType === 'Image' && (
-    !componentProps.src || 
-    componentProps.src === 'placeholder' || 
-    componentProps.src === '/placeholder.svg' || 
+    !componentProps.src ||
+    componentProps.src === 'placeholder' ||
+    componentProps.src === '/placeholder.svg' ||
     componentProps.src === '/placeholder.png' ||
     (typeof componentProps.src === 'string' && (componentProps.src.includes('/api/placeholder/') || componentProps.src.includes('via.placeholder.com')))
   );
   const isLogoComponent = componentType === 'Image' && (
     (componentProps?.metadata?.kind === 'logo') || (componentProps?.alt === 'Logo')
   );
-  
+
   // If it's a placeholder image, use a high z-index for the selection button except for logos
   const effectiveZIndex = isBackground
     ? 0
     : (isPlaceholderImage && !isLogoComponent)
       ? 999999
       : (Number(zIndex) || 0);
-  
+
   // Style for the main component wrapper div
   const componentWrapperStyle: React.CSSProperties = isBackground ? {
     // Special handling for Background components - they should fill the entire slide
@@ -286,6 +286,9 @@ export const ComponentRenderer: React.FC<Props> = ({
     height: '100%',
     position: 'relative',
     overflow: 'visible', // Allow content to render properly without clipping
+    // CRITICAL: Ensure this container is a valid click target
+    // even when children have pointerEvents: none
+    background: 'transparent',
   };
 
   // Style applied directly to the specific renderer's output
@@ -295,8 +298,15 @@ export const ComponentRenderer: React.FC<Props> = ({
     boxSizing: 'border-box',
     border: debug ? '1px dashed #aaa' : 'none', // Only show border if explicit debug prop
     color: textColor,
-    // Allow pointer events on TextBlock, TiptapTextBlock, Table, CustomComponent, Video, and Background to enable interaction
-    pointerEvents: ['TextBlock', 'TiptapTextBlock', 'Table', 'CustomComponent', 'Video', 'Background'].includes(componentType) ? 'auto' : 'none',
+    // In edit mode: CustomComponent needs pointerEvents: none so clicks reach wrapper for selection
+    // UNLESS it is selected, then we allow interaction (pointerEvents: auto)
+    // In non-edit mode: CustomComponent can be interactive
+    // Other interactive components (TextBlock, TiptapTextBlock, Table, Video) keep auto for their editing needs
+    pointerEvents: isEditing && componentType === 'CustomComponent'
+      ? (effectiveIsSelected ? 'auto' : 'none')
+      : ['CustomComponent', 'TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
+        ? 'auto'
+        : 'none',
   };
 
   // --- Rendering Logic ---
@@ -306,7 +316,7 @@ export const ComponentRenderer: React.FC<Props> = ({
     // First check if the renderer exists in the registry
     if (rendererRegistry[componentType]) {
       const Renderer = rendererRegistry[componentType];
-      
+
       // Ensure all necessary props, including interaction states are passed
       const rendererProps: RendererProps = {
         component,
@@ -319,7 +329,7 @@ export const ComponentRenderer: React.FC<Props> = ({
         styles: componentContentStyle,
         slideId: activeSlideId,
       };
-      
+
       // Special handling for TextBlock component
       if (componentType === "TextBlock") {
         // Add text editing specific props
@@ -328,22 +338,22 @@ export const ComponentRenderer: React.FC<Props> = ({
           // When text changes during editing
           onTextChange: (text: string) => {
             textUpdateAppliedRef.current = true;
-            
+
             // Ensure we have valid text (defensive programming)
             const safeText = text || '';
-            
+
             // Use try-catch to ensure we don't lose updates
             try {
-              updateComponent(componentId, { 
-                props: { ...componentProps, text: safeText } 
+              updateComponent(componentId, {
+                props: { ...componentProps, text: safeText }
               }, true); // Skip history for intermediate changes
-              
+
               // Also mark the slide as changed to ensure it gets saved
               if (activeSlideId) {
                 useEditorStore.getState().markSlideAsChanged(activeSlideId);
               }
             } catch (err) {
-              console.error(`Error updating text for ${componentId}:`, err);
+              console.error(`Error updating text for ${componentId}: `, err);
             }
           },
           // When editing starts
@@ -360,10 +370,10 @@ export const ComponentRenderer: React.FC<Props> = ({
               useEditorSettingsStore.getState().setTextEditing(false);
               return;
             }
-            
+
             // Get the final text from the DOM element
             const finalText = currentNode.innerText || '';
-            
+
             // CRITICAL FIX: Always apply the update with a setTimeout to ensure it happens after
             // any state transitions that might be occurring during click handling
             setTimeout(() => {
@@ -373,19 +383,19 @@ export const ComponentRenderer: React.FC<Props> = ({
                   props: { ...componentProps, text: finalText }
                 }, false); // Don't skip history for final change
               } catch (err) {
-                console.error(`Error updating text for ${componentId}:`, err);
+                console.error(`Error updating text for ${componentId}: `, err);
               }
             }, 10);
-            
+
             // Exit text editing mode
             useEditorSettingsStore.getState().setTextEditing(false);
-            
+
             // CRITICAL FIX: Directly save when finishing text editing
             // This ensures text changes are committed when clicking away
             setTimeout(() => {
               try {
                 // Correctly call applyDraftChanges via getState()
-                useEditorStore.getState().applyDraftChanges(); 
+                useEditorStore.getState().applyDraftChanges();
               } catch (error) {
                 console.error('Error in text saving operation:', error);
               }
@@ -393,23 +403,23 @@ export const ComponentRenderer: React.FC<Props> = ({
           },
         });
       }
-      
+
       // Special handling for TiptapTextBlock and CustomComponent to pass isThumbnail
       if (componentType === "TiptapTextBlock" || componentType === "CustomComponent") {
-          (rendererProps as any).isThumbnail = isThumbnail;
+        (rendererProps as any).isThumbnail = isThumbnail;
       }
-      
+
       // Also pass isThumbnail to Table renderer so it can adjust spacing logic
       if (componentType === "Table") {
-          (rendererProps as any).isThumbnail = isThumbnail;
+        (rendererProps as any).isThumbnail = isThumbnail;
       }
-      
+
       // Check if we have a validated component definition from TypeBox
       if (componentDefinition) {
         // Attach TypeBox schema to renderer props as a custom property
         (rendererProps as any).typeBoxSchema = componentDefinition.schema;
       }
-      
+
       // For logo images, render nothing if it's a placeholder/no real src
       if (isLogoComponent && isPlaceholderImage) {
         return null;
@@ -420,19 +430,19 @@ export const ComponentRenderer: React.FC<Props> = ({
     // If renderer not found in registry
     return (
       <div style={componentContentStyle}>
-        <div style={{padding: '10px', backgroundColor: '#f8f9fa', color: '#333', fontFamily: 'monospace', fontSize: '12px'}}>
+        <div style={{ padding: '10px', backgroundColor: '#f8f9fa', color: '#333', fontFamily: 'monospace', fontSize: '12px' }}>
           <h3>Component Creation Adaptation</h3>
           <p>Component type: <strong>{componentType}</strong></p>
           <p>Registered renderers: {Object.keys(rendererRegistry).join(', ')}</p>
-          
-          {componentDefinition ? 
+
+          {componentDefinition ?
             <div>
               <p>Has TypeBox definition with {Object.keys(componentDefinition.schema.properties || {}).length} props</p>
               <p>Schema type: {componentDefinition.schema.type}</p>
-            </div> 
+            </div>
             : <div>No TypeBox definition found</div>
           }
-          
+
           <p>This likely indicates a mismatch between TypeBox registry and component renderers.</p>
         </div>
       </div>
@@ -443,7 +453,7 @@ export const ComponentRenderer: React.FC<Props> = ({
     <div
       ref={containerRef}
       style={componentWrapperStyle}
-      className={`component-wrapper component-type-${componentType}`}
+      className={`component - wrapper component - type - ${componentType} `}
       data-component-id={componentId}
       data-component-type={componentType}
       data-position-x={(normalizedPosition as any).x}
@@ -455,12 +465,12 @@ export const ComponentRenderer: React.FC<Props> = ({
         const isButton = target.tagName === 'BUTTON' || target.closest('button');
         const isButtonArea = target.closest('[data-button-area="true"]');
         const isLink = target.tagName === 'A' || target.closest('a');
-        
+
         if (isButton || isButtonArea || isLink) {
           // Don't handle the click if it's on the button or link
           return;
         }
-        
+
         // Always handle clicks, including for background components
         handleClick(e);
       }}
@@ -468,42 +478,97 @@ export const ComponentRenderer: React.FC<Props> = ({
       onMouseDown={(e) => {
         const targetElement = e.target as HTMLElement;
         if (targetElement.closest('[data-rotation-handle="true"]')) {
-          return; 
+          return;
         }
-        
+
         // Check if the mousedown is on the button, link, or button area
         const isButton = targetElement.tagName === 'BUTTON' || targetElement.closest('button');
         const isButtonArea = targetElement.closest('[data-button-area="true"]');
         const isLink = targetElement.tagName === 'A' || targetElement.closest('a');
-        
+
         if (isButton || isButtonArea || isLink) {
           // Don't start drag if it's on the button or link
           return;
         }
 
-        if (isEditing && e.button === 0 && !isBackground) { 
+        if (isEditing && e.button === 0 && !isBackground) {
           handleDragStart(e);
         }
-      }} 
-      tabIndex={isEditing && !isTextEditing ? 0 : -1} 
+      }}
+      tabIndex={isEditing && !isTextEditing ? 0 : -1}
     >
-      {/* Render snap guides within the slide container */} 
+      {/* Render snap guides within the slide container */}
       {isDragging && snapGuides.length > 0 && createPortal(
-         <SnapGuides guides={snapGuides} />, 
-         document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
-       )}
-       {isResizing && localSnapGuides.length > 0 && createPortal(
-         <SnapGuides guides={localSnapGuides} />, 
-         document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
-       )}
+        <SnapGuides guides={snapGuides} />,
+        document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
+      )}
+      {isResizing && localSnapGuides.length > 0 && createPortal(
+        <SnapGuides guides={localSnapGuides} />,
+        document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
+      )}
 
-      {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */} 
+      {/* 
+        CLICK CAPTURE OVERLAY for CustomComponents in edit mode
+        This invisible overlay captures clicks since iframes have pointerEvents: none.
+        Only render when NOT selected - when selected, SelectionBoundingBox handles interactions.
+      */}
+      {isEditing && componentType === 'CustomComponent' && !effectiveIsSelected && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 5, // Below selection UI but above content
+            background: 'transparent',
+            cursor: effectiveDraggable ? 'move' : 'default',
+            pointerEvents: 'auto',
+          }}
+          onClick={handleClick}
+          onMouseDown={(e) => {
+            if (e.button === 0) {
+              handleDragStart(e);
+            }
+          }}
+        />
+      )}
+
+      {/* 
+        DRAG OVERLAY for selected CustomComponents
+        When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
+      */}
+      {/* 
+        DRAG OVERLAY for selected CustomComponents
+        When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
+        CRITICAL: Disabled for CustomComponent to allow interaction when selected.
+        User must drag via the SelectionBoundingBox border.
+      */}
+      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && false && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 15, // Below resize handles (40) but above content
+            background: 'transparent',
+            cursor: isDragging ? 'grabbing' : 'move',
+            pointerEvents: 'auto',
+          }}
+          onMouseDown={(e) => {
+            // Don't interfere with resize handles
+            const target = e.target as HTMLElement;
+            if (target.style.cursor?.includes('resize')) return;
+            if (e.button === 0) {
+              handleDragStart(e);
+            }
+          }}
+        />
+      )}
+
+      {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */}
       {isEditing && (effectiveIsSelected || isTextEditing) && !isBackground && !isLines && !isCroppingThis && (
-                  <SelectionBoundingBox
-            component={component}
-            isSelected={effectiveIsSelected}
+        <SelectionBoundingBox
+          component={component}
+          isSelected={effectiveIsSelected}
           onDragStart={handleDragStart}
-          onDragEnd={() => {}}
+          onDragEnd={() => { }}
           onResize={handleResize}
           isResizable={isResizable}
           isRotatable={isRotatable}
@@ -512,16 +577,16 @@ export const ComponentRenderer: React.FC<Props> = ({
           isMultiSelected={isInMultiSelection} // Pass multi-selection state
         >
           <div style={contentContainerStyle}>
-             {renderSpecificComponent()}
+            {renderSpecificComponent()}
           </div>
         </SelectionBoundingBox>
       )}
 
       {/* Render component directly if not editing/selected, background/lines, or actively cropping this image */}
       {((!isEditing || (!effectiveIsSelected && !isTextEditing) || isBackground || isLines) || isCroppingThis) && (
-          <div style={contentContainerStyle}>
-              {renderSpecificComponent()}
-          </div>
+        <div style={contentContainerStyle}>
+          {renderSpecificComponent()}
+        </div>
       )}
     </div>
   );

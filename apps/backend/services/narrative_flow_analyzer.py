@@ -35,6 +35,12 @@ class NarrativeFlowAnalyzer:
         Analyze the narrative flow of a presentation outline
         """
         try:
+            # Early return for empty outlines - avoid sending to AI
+            slides = outline.get('slides', [])
+            if not slides or len(slides) == 0:
+                logger.warning("Empty outline provided, returning fallback narrative")
+                return self._generate_fallback_narrative(outline)
+            
             # Import the model adapter
             from agents.ai.clients import get_client, MODELS, CLIENTS
             from google.genai import Client as Gemini

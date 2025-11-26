@@ -378,63 +378,66 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
             </image_search_context>
             """
     elif component_args.component_type == "CustomComponent":
-        # Add specific guidance for CustomComponent to enforce React.createElement syntax
+        # Add specific guidance for CustomComponent - now supports FULL HTML with Tailwind!
         dynamic_context = f"""
             <customcomponent_rules>
-            CRITICAL: CustomComponent render MUST use React.createElement syntax ONLY.
-
-            ❌ NEVER use JSX syntax: <div>, <svg>, <circle>
-            ✅ ALWAYS use: React.createElement('div', ...), React.createElement('svg', ...)
-
-            Example structure:
+            🚀 **CustomComponent - UNLIMITED CREATIVE POWER**
+            
+            CustomComponent now supports TWO modes:
+            
+            ═══════════════════════════════════════════════════════════════
+            MODE 1: FULL HTML (RECOMMENDED - Maximum flexibility!)
+            ═══════════════════════════════════════════════════════════════
+            
+            Start your render string with `<!DOCTYPE html>` to enable FULL HTML mode!
+            This gives you complete control with Tailwind CSS, Google Fonts, animations, and more.
+            
+            TEMPLATE:
+            "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}body{{font-family:'Inter',sans-serif}}</style></head><body class='w-full h-full flex items-center justify-center p-6'><div class='w-full h-full'>YOUR CONTENT HERE</div></body></html>"
+            
+            CRITICAL RULES:
+            - MUST be a SINGLE LINE string (no line breaks!)
+            - Use SINGLE QUOTES for all HTML attributes: class='...' not class="..."
+            - Include Tailwind CDN: <script src='https://cdn.tailwindcss.com'></script>
+            - Set background:transparent so slide background shows through
+            - Use html,body{{width:100%;height:100%}} to fill the container
+            
+            WHAT YOU CAN DO:
+            - Any Tailwind CSS classes for styling
+            - Google Fonts (just add the link tag)
+            - CSS animations with @keyframes
+            - Flexbox and Grid layouts
+            - Glassmorphism (bg-white/10 backdrop-blur-xl)
+            - Gradient text (bg-gradient-to-r ... bg-clip-text text-transparent)
+            - Glow effects (shadow-[0_0_30px_rgba(59,130,246,0.4)])
+            - Complex SVG graphics
+            - Any HTML structure you want!
+            
+            EXAMPLE - Stat Dashboard:
+            "render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}</style></head><body class='w-full h-full p-6'><div class='grid grid-cols-3 gap-4 h-full'><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>$2.4B</span><span class='text-lg text-white/70 mt-2'>Revenue</span></div><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>+47%</span><span class='text-lg text-white/70 mt-2'>Growth</span></div><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>12M</span><span class='text-lg text-white/70 mt-2'>Users</span></div></div></body></html>"
+            
+            ═══════════════════════════════════════════════════════════════
+            MODE 2: React.createElement (For complex interactivity)
+            ═══════════════════════════════════════════════════════════════
+            
+            For interactive components that need state, use function render with React.createElement:
+            
             function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
-              var padding = props.padding || 32;
-              var value = props.value || 75;
-              var primaryColor = props.primaryColor || props.color || '#3B82F6';
-              var secondaryColor = props.secondaryColor || '#8B5CF6';
-              var textColor = props.textColor || '#FFFFFF';
-
               return React.createElement('div', {{
-                style: {{
-                  width: '100%', height: '100%', boxSizing: 'border-box',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  padding: padding + 'px'
-                }}
+                style: {{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               }}, [
-                React.createElement('div', {{
-                  key: 'value',
-                  style: {{fontSize: '48px', fontWeight: '900', color: primaryColor}}
-                }}, String(value) + '%')
+                React.createElement('span', {{ key: 'text', style: {{ fontSize: '48px', fontWeight: '900' }} }}, 'Hello')
               ]);
             }}
-
-            For D3 visualizations, use d3.select() on refs, NOT JSX.
-            For animations, use anime() or gsap() with refs, NOT JSX.
-            NO imports, NO JSX, NO template literals with backticks.
-
-            EQUAL SIZING FOR MULTIPLE CARDS/ITEMS:
-            When creating multiple cards, metrics, or items in a grid/list:
-            - Use CSS Grid or Flexbox with equal sizing: 'display: grid; grid-template-columns: repeat(3, 1fr)'
-            - For cards: Ensure ALL cards have identical width/height dimensions
-            - For flex layouts: Use 'flex: 1' on each item to ensure equal distribution
-            - Example for 3 equal columns:
-              gridTemplateColumns: '1fr 1fr 1fr' OR 'repeat(3, 1fr)'
-              gap: '12px'
-            - For card grids, each card should have:
-              flex: '1' (if using flexbox)
-              minWidth: '0' (to prevent overflow)
-              Equal padding/margin values
-            - NEVER use fixed widths that vary between cards
-            - ALWAYS ensure visual balance and symmetry
-
-            Example for equal-sized cards:
-            var cardStyle = {{
-              flex: '1',
-              minWidth: '0',
-              padding: '16px',
-              borderRadius: '8px',
-              background: 'rgba(255,255,255,0.1)'
-            }};
+            
+            ═══════════════════════════════════════════════════════════════
+            
+            🎨 **DESIGN FREEDOM - DO WHATEVER THE USER WANTS!**
+            - If user wants glassmorphism → USE FULL HTML with Tailwind classes
+            - If user wants animations → ADD CSS @keyframes
+            - If user wants a specific layout → CREATE THAT EXACT LAYOUT
+            - If user provides inspiration → REPLICATE IT FAITHFULLY
+            
             </customcomponent_rules>
             """
 

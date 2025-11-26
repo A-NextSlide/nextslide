@@ -14,7 +14,7 @@ export const BigTitle: React.FC<BigTitleProps> = ({ text, highlight }) => {
 
     return (
         <h1 style={{
-            fontSize: '64px',
+            fontSize: '4cqw',
             fontWeight: 800,
             fontFamily: theme.fonts.heading,
             lineHeight: 1.1,

@@ -10,7 +10,9 @@
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "dev:backend": "cd apps/backend && ./venv/bin/python -m api.chat_server",
     "build:frontend": "npm run build --workspace=apps/frontend",
-    "test:frontend": "npm run test --workspace=apps/frontend"
+    "test:frontend": "npm run test --workspace=apps/frontend",
+    "kill": "cd apps/backend && make kill-all",
+    "restart": "npm run kill && npm run dev"
   },
   "devDependencies": {},
   "description": "NextSlide monorepo - AI-powered slide generation platform",

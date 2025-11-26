@@ -36,7 +36,7 @@ export const StatCard: React.FC<StatCardProps> = ({ label, value, trend, trendDi
             }}
         >
             <span style={{
-                fontSize: '16px',
+                fontSize: '1cqw',
                 color: theme.colors.muted,
                 fontFamily: theme.fonts.body,
                 marginBottom: theme.spacing.xs
@@ -46,7 +46,7 @@ export const StatCard: React.FC<StatCardProps> = ({ label, value, trend, trendDi
 
             <div style={{ display: 'flex', alignItems: 'baseline', gap: theme.spacing.sm }}>
                 <span style={{
-                    fontSize: '48px',
+                    fontSize: '3cqw',
                     fontWeight: 700,
                     color: theme.colors.primary,
                     fontFamily: theme.fonts.heading
@@ -56,7 +56,7 @@ export const StatCard: React.FC<StatCardProps> = ({ label, value, trend, trendDi
 
                 {trend && (
                     <span style={{
-                        fontSize: '14px',
+                        fontSize: '0.8cqw',
                         fontWeight: 600,
                         color: getTrendColor(),
                         backgroundColor: getTrendColor() + '20',

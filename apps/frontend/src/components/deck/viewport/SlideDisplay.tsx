@@ -451,6 +451,8 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             onComponentSelect={onComponentSelect}
             updateSlide={updateSlide}
             deckStatus={deckStatus}
+            containerWidth={slideWidth}
+            containerHeight={slideHeight}
           />
         </div>
         

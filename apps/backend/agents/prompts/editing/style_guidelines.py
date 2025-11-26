@@ -1,13 +1,18 @@
 style_guidelines = """
-1. Typography
-	•	Max 2 fonts: One for headings, one for body text.
-	•	**RECOMMENDED FONT SIZES:**
+🚨 **USER REQUESTS OVERRIDE ALL GUIDELINES BELOW** 🚨
+If the user asks for specific styles, fonts, colors, or effects - DO EXACTLY WHAT THEY ASK.
+These guidelines are just defaults when the user hasn't specified preferences.
+
+═══════════════════════════════════════════════════════════════════
+
+1. Typography (Flexible Defaults)
+	•	Suggested: 2 fonts max, but break this rule if it improves the design
+	•	**RECOMMENDED FONT SIZES (adjust as needed):**
 		- Slide-wide Impact Text: 250-300pt (for 1-2 words across slide)
 		- Hero Titles: 80-120pt (main slide titles)
 		- Subtitles/Headers: 70-90pt (section headings)
 		- Body text/Bullets: 30-36pt (main content)
 		- Captions/Labels/Sources: 24-30pt (smallest text)
-		- **24pt is the absolute minimum for any text**
 
 CREATIVE FONT GUIDELINES:
 • BE ADVENTUROUS: Choose fonts with personality that match your content
@@ -19,8 +24,7 @@ CREATIVE FONT GUIDELINES:
   - Content slides: Readable with character (Outfit, Work Sans, Plus Jakarta Sans)
   - Creative slides: Unique/Contemporary fonts (Bricolage Grotesque, Clash Display)
 • WEIGHT VARIETY: Use different weights (light, regular, bold) for hierarchy
-• AVOID DEFAULTS: Skip Arial, Helvetica, Times New Roman unless specifically requested
-• **READABILITY FIRST**: Large, clear text is preferred, but dense content may require smaller sizes
+• NO RULES ARE ABSOLUTE: If the user wants tiny text or huge text, do it
 
 ⸻
 

@@ -6,6 +6,17 @@ def get_editor_notes(canvas_size: Tuple[int, int]) -> str:
     # Component guidelines are now in slide_generation_prompts.py
     
     return f"""
+🚨 **CRITICAL: USER REQUESTS ARE THE #1 PRIORITY** 🚨
+
+ALWAYS execute what the user asks for. Their requests override ALL guidelines below.
+- If user wants a specific style → CREATE THAT STYLE
+- If user wants specific colors → USE THOSE COLORS
+- If user wants a specific layout → CREATE THAT LAYOUT
+- If user wants something unusual → DO IT WITHOUT QUESTIONING
+- You are a TOOL to execute their vision, not a gatekeeper
+
+═══════════════════════════════════════════════════════════════════
+
 Editor's notes on coordinate system:
 - Canvas size: {width}x{height} pixels
 - Origin (0,0) is at the top-left corner

@@ -15,7 +15,7 @@ export const SmartLayoutRenderer: React.FC<RendererProps> = ({ component, styles
     }
 
     return (
-        <div style={{ ...styles, width: '100%', height: '100%', overflow: 'hidden' }}>
+        <div style={{ ...styles, width: '100%', height: '100%', overflow: 'hidden', containerType: 'size' }}>
             <SmartSlide data={{ layout, slots }} />
         </div>
     );
