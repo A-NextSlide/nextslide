@@ -32,6 +32,15 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Debug: Log API key availability at module load time
+_google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+if _google_key:
+    # Log first/last 4 chars for debugging without exposing full key
+    key_preview = f"{_google_key[:4]}...{_google_key[-4:]}" if len(_google_key) > 8 else "***"
+    print(f"[CLIENTS] Google API key loaded: {key_preview} (len={len(_google_key)})")
+else:
+    print("[CLIENTS] ⚠️ No GOOGLE_API_KEY or GEMINI_API_KEY found in environment")
+
 # Instructor patch removed - no longer needed
 
 # Clients and their configuration
@@ -55,6 +64,7 @@ CLIENTS = {
         "instructor_fn": getattr(instructor, "from_genai", None) or (lambda c, **kw: c),
         "client_class": Gemini,
         "instructor_kwargs": {"mode": getattr(instructor, "Mode", object()).GENAI_TOOLS} if hasattr(instructor, "Mode") else {},
+        "api_key": os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"),
     },
     "samba": {
         "instructor_fn": instructor.from_openai,
@@ -315,6 +325,11 @@ def get_client(model_name: str, api_key: str = None, base_url: str = None, wrap_
             if not pplx_key:
                 raise ValueError("PPLX_API_KEY or PERPLEXITY_API_KEY environment variable is not set")
             client_kwargs["api_key"] = pplx_key
+        elif client_type == "gemini":
+            gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            if not gemini_key:
+                raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set")
+            client_kwargs["api_key"] = gemini_key
         else:
             client_kwargs["api_key"] = client_config["api_key"]
     

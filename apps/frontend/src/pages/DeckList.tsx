@@ -871,10 +871,11 @@ const DeckList: React.FC = () => {
         themeStore.setWorkspaceTheme(newThemeId);
       } else if (data.themeChanges.colors) {
         // If just colors were requested, we might want to trigger a theme generation
-        // For now, we'll just ensure the theme is marked as ready so the UI updates
+        // Theme will be marked ready when the actual theme is applied in OutlineDisplayView
       }
 
-      themeStore.setThemeReady(true);
+      // DON'T set themeReady(true) here - let OutlineDisplayView show loading until actual theme arrives
+      // themeStore.setThemeReady(true);
     }
 
     // Show outline view - OutlineEditor will see conversationalData and start generation
@@ -1969,10 +1970,10 @@ const DeckList: React.FC = () => {
                               themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
                               themeStore.setThemeReady(true);
                             } else {
-                              // No theme changes, ensure default theme is ready
+                              // No theme changes - OutlineDisplayView will handle showing loading until theme is ready
                               const themeStore = useThemeStore.getState();
                               themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
-                              themeStore.setThemeReady(true);
+                              // DON'T set themeReady here - let OutlineDisplayView control this
                             }
                           }}
                         />

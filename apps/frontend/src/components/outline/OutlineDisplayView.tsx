@@ -436,41 +436,82 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       return !defaults.includes(upper);
     };
     
-    // If theme already exists in store AND has real colors, use it - but also ensure font is applied
+    // If theme already exists in store AND has real colors, show loading briefly while fonts load
     const cachedBg = existingDeckTheme?.color_palette?.primary_background;
     const cachedAccent = existingDeckTheme?.color_palette?.accent_1;
     if (existingDeckTheme && (isRealColor(cachedBg) || isRealColor(cachedAccent))) {
-      console.log('[OutlineDisplayView] ✅ Theme already in store with real colors:', { cachedBg, cachedAccent });
+      console.log('[OutlineDisplayView] ✅ Theme in store with real colors - showing loading while fonts load');
 
-      // CRITICAL: Even with cached theme, ensure fonts from stylePreferences are applied to workspace theme
-      const styleHeadingFont = (currentOutline as any)?.stylePreferences?.font;
-      const styleBodyFont = (currentOutline as any)?.stylePreferences?.bodyFont || styleHeadingFont;
-      if (styleHeadingFont) {
-        const currentWorkspaceHeadingFont = workspaceTheme?.typography?.heading?.fontFamily;
-        const currentWorkspaceBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily;
-        if (currentWorkspaceHeadingFont !== styleHeadingFont || currentWorkspaceBodyFont !== styleBodyFont) {
-          console.log(`[OutlineDisplayView] 🎨 Updating workspace theme fonts: Heading ${currentWorkspaceHeadingFont} → ${styleHeadingFont}, Body ${currentWorkspaceBodyFont} → ${styleBodyFont}`);
-          // Build theme with the correct fonts
-          const pageBg = cachedBg || '#FFFFFF';
-          const textColor = existingDeckTheme?.color_palette?.primary_text || '#1f2937';
-          const accent1 = cachedAccent || '#FF4301';
-          const builtTheme = {
-            name: 'Brand Theme',
-            page: { backgroundColor: pageBg },
-            typography: {
-              paragraph: { fontFamily: styleBodyFont, color: textColor },
-              heading: { fontFamily: styleHeadingFont, color: textColor }
-            },
-            accent1,
-            accent2: accent1
-          } as any;
-          const addedId = addCustomTheme(builtTheme);
-          setWorkspaceTheme(addedId);
+      // Show loading state first
+      setIsThemeLoading(true);
+      setThemeReady(false);
+
+      // Apply cached theme after fonts load
+      const applyCachedTheme = async () => {
+        try {
+          // Get fonts from stylePreferences
+          const styleHeadingFont = (currentOutline as any)?.stylePreferences?.font;
+          const styleBodyFont = (currentOutline as any)?.stylePreferences?.bodyFont || styleHeadingFont;
+
+          // Load fonts if specified
+          if (styleHeadingFont) {
+            await FontLoadingService.syncDesignerFonts?.();
+            try {
+              await FontLoadingService.loadFont(styleHeadingFont);
+              if ('fonts' in document) {
+                await document.fonts.load(`bold 24px "${styleHeadingFont}"`).catch(() => {});
+              }
+            } catch (err) {
+              console.warn('[OutlineDisplayView] Failed to load heading font:', styleHeadingFont, err);
+            }
+          }
+          if (styleBodyFont && styleBodyFont !== styleHeadingFont) {
+            try {
+              await FontLoadingService.loadFont(styleBodyFont);
+              if ('fonts' in document) {
+                await document.fonts.load(`14px "${styleBodyFont}"`).catch(() => {});
+              }
+            } catch (err) {
+              console.warn('[OutlineDisplayView] Failed to load body font:', styleBodyFont, err);
+            }
+          }
+
+          // Small delay to ensure smooth transition and visible loading state
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          if (cancelled) return;
+
+          // Apply the cached theme with correct fonts
+          if (styleHeadingFont) {
+            const pageBg = cachedBg || '#FFFFFF';
+            const textColor = existingDeckTheme?.color_palette?.primary_text || '#1f2937';
+            const accent1 = cachedAccent || '#FF4301';
+            const builtTheme = {
+              name: 'Brand Theme',
+              page: { backgroundColor: pageBg },
+              typography: {
+                paragraph: { fontFamily: styleBodyFont || 'Inter', color: textColor },
+                heading: { fontFamily: styleHeadingFont, color: textColor }
+              },
+              accent1,
+              accent2: accent1
+            } as any;
+            const addedId = addCustomTheme(builtTheme);
+            setWorkspaceTheme(addedId);
+          }
+
+          setThemeReady(true);
+          setIsThemeLoading(false);
+        } catch (err) {
+          console.warn('[OutlineDisplayView] Error applying cached theme:', err);
+          if (!cancelled) {
+            setThemeReady(true);
+            setIsThemeLoading(false);
+          }
         }
-      }
+      };
 
-      setThemeReady(true);
-      setIsThemeLoading(false);
+      applyCachedTheme();
 
       // Still set up event listener for theme_loading during NEW generation
       const onThemePreview = (e: CustomEvent) => {

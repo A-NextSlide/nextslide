@@ -34,8 +34,8 @@ export const useThemeStore = create<ThemeStore>()(
     (set, get) => ({
       workspaceThemeId: initialWorkspaceTheme.id || '',
       availableThemes: defaultThemes,
-      // Default to ready so the app is themed unless a flow explicitly disables it
-      isThemeReady: true,
+      // Default to NOT ready - loading state shows until theme is applied
+      isThemeReady: false,
       outlineThemes: {},
       outlineDeckThemes: {},
       outlineThemeRequestFlags: {},
