@@ -66,7 +66,87 @@ Make it interactive! Make it animated! Make it memorable!
 • "Timeline of events" → Animated horizontal timeline with clickable nodes
 • "Key benefits" → Glassmorphism cards with icons and subtle animations
 
+═══════════════════════════════════════════════════════════════════════════════
+🚨 CRITICAL: FILL THE SLIDE - COMPONENTS MUST BE LARGE!
+═══════════════════════════════════════════════════════════════════════════════
 
+**YOUR #1 PROBLEM: SLIDES LOOK EMPTY AND BORING!**
+
+🚫 **STOP DOING THIS:**
+• Tiny CustomComponents (400x300px) floating in the middle
+• Lots of whitespace with content bunched in one area
+• Using 5+ small TiptapTextBlocks when ONE big CustomComponent would be better
+• Creating "safe" boring layouts that waste 50%+ of the canvas
+
+✅ **DO THIS INSTEAD:**
+• **CustomComponents should be MASSIVE**: width 1200-1760px, height 500-800px
+• **Fill the available space**: After title (y=180), you have 800px of height - USE IT!
+• **Content area**: x=80 to x=1840 (1760px wide), y=200 to y=1000 (800px tall)
+• **One big impactful element** beats 10 small boring ones
+
+**COMPONENT SIZE GUIDELINES:**
+• Full-width CustomComponent: x=80, y=240, width=1760, height=700
+• Half-width (left): x=80, y=240, width=840, height=700
+• Half-width (right): x=1000, y=240, width=840, height=700
+• Two-column layout: Use CSS grid inside CustomComponent, not multiple components!
+
+**THE GOLDEN RULE:**
+If your CustomComponent is smaller than 1200×500px and it's the main content, IT'S TOO SMALL!
+Make it bigger. Fill the slide. Create visual impact.
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 RELIABLE TEXT LAYOUTS - USE ICON + TEXT ROWS (NOT CUSTOM COMPONENTS!)
+═══════════════════════════════════════════════════════════════════════════════
+
+**FOR TEXT-HEAVY CONTENT, USE THE PROVEN ICON + TEXT PATTERN:**
+
+When your slide has bullet points, lists, or feature descriptions, DON'T use CustomComponent!
+Instead, use the reliable **Icon + TiptapTextBlock** pattern that always works:
+
+✅ **PREFERRED PATTERN FOR TEXT CONTENT:**
+```
+[Icon] Text point 1 with details
+[Icon] Text point 2 with details
+[Icon] Text point 3 with details
+```
+
+**IMPLEMENTATION:**
+```json
+// For each bullet/point, create an Icon and TiptapTextBlock pair:
+{
+  "type": "Icon",
+  "props": {
+    "position": {"x": 120, "y": 300},
+    "width": 36, "height": 36,
+    "iconName": "Zap", "iconLibrary": "lucide",
+    "color": "{{accent}}"
+  }
+},
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": {"x": 176, "y": 296},  // 16px gap from icon, y adjusted for center alignment
+    "width": 760, "height": 80,
+    "texts": [
+      {"text": "Feature Name: ", "style": {"bold": true}},
+      {"text": "Detailed description of this feature", "style": {}}
+    ],
+    "fontSize": 32
+  }
+}
+```
+
+**USE CUSTOMCOMPONENT ONLY FOR:**
+• Stats/metrics with animations
+• Interactive elements (quizzes, polls)
+• Visual data (charts, graphs, diagrams)
+• Creative visualizations
+
+**USE ICON + TEXT FOR:**
+• Bullet point lists
+• Feature descriptions
+• Step-by-step instructions
+• Any text-heavy content
 
 ═══════════════════════════════════════════════════════════════════════════════
 📊 CHARTS - EVERY CHART NEEDS A TITLE!
@@ -1974,17 +2054,65 @@ If logo URL provided in theme:
 • Adjust size by slide type, keep position consistent
 
 ═══════════════════════════════════════════════════════════════════════════════
-📝 SOURCE CITATIONS (IF PROVIDED)
+📝 SOURCE CITATIONS - CONSISTENT PROFESSIONAL DESIGN
 ═══════════════════════════════════════════════════════════════════════════════
 
-If citationsFooter exists in input, render at bottom-right:
-• Thin line divider at y=960 (if showThinDivider=true)
-• TiptapTextBlock at y=980, x=1200, width=640
-• Format: "Sources: [1] Title, [2] Title"
-• Each citation is clickable link: {"text": "[1] Title", "style": {"link": "url", "textColor": "{{accent}}90", "fontSize": 14}}
-• alignment="right", fontSize=14
+**SOURCES MUST ALWAYS USE THIS EXACT DESIGN (bottom-right footer):**
+
+```json
+// Step 1: Add thin divider line
+{
+  "type": "Lines",
+  "props": {
+    "startPoint": {"x": 1540, "y": 960},
+    "endPoint": {"x": 1840, "y": 960},
+    "stroke": {"color": "{{text}}", "width": 1, "opacity": 0.3}
+  }
+},
+// Step 2: Add sources text
+{
+  "type": "TiptapTextBlock",
+  "props": {
+    "position": {"x": 1200, "y": 980},
+    "width": 640,
+    "height": 40,
+    "texts": [
+      {"text": "Sources: ", "style": {"opacity": 0.6}},
+      {"text": "[1]", "style": {"superscript": true, "textColor": "{{accent}}"}},
+      {"text": " ", "style": {}},
+      {"text": "[2]", "style": {"superscript": true, "textColor": "{{accent}}"}}
+    ],
+    "fontSize": 14,
+    "alignment": "right",
+    "verticalAlignment": "top",
+    "textColor": "{{text}}",
+    "opacity": 0.7
+  }
+}
+```
+
+**RULES:**
+• Position: ALWAYS bottom-right (x=1200, y=980)
+• Thin divider line above (300px wide, opacity 0.3)
+• fontSize=14 (small and subtle)
+• alignment="right"
+• Superscript citation numbers with accent color
+• Keep consistent across ALL slides that have citations
+
+═══════════════════════════════════════════════════════════════════════════════
+🔥 FINAL REMINDER - MAKE IT GREAT!
+═══════════════════════════════════════════════════════════════════════════════
 
 Make slides like Apple keynotes - bold, clean, impactful!
+
+**CHECKLIST BEFORE OUTPUT:**
+✅ Is the main content FILLING the slide? (Not tiny and floating)
+✅ Are CustomComponents large enough? (min 1200×500 for main content)
+✅ For text content: Using Icon + Text pattern? (reliable and clean)
+✅ For data/stats: Using CustomComponent? (animated and engaging)
+✅ Sources: Using consistent bottom-right design?
+✅ No overlapping elements?
+✅ Visual hierarchy clear?
 """
 
 

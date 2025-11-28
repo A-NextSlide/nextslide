@@ -355,15 +355,33 @@ class SlidePromptBuilder:
             return False
 
     def _add_text_heavy_layout_rules(self, sections: List[str]) -> None:
-        """Encourage creative visualization even for content-rich slides."""
+        """Guide text-heavy slides to use reliable Icon + Text patterns."""
         sections.extend([
-            "\nCONTENT-RICH SLIDE - GET CREATIVE:",
-            "- This slide has substantial content - a PERFECT opportunity for creative visualization!",
-            "- Consider: Can this content become an interactive CustomComponent? Cards? Timeline? Visual flow?",
-            "- Split layout works well: LEFT for key text, RIGHT for CustomComponent visualization.",
-            "- Transform bullet points into styled cards, comparison grids, or visual hierarchies.",
-            "- Use CustomComponent to make dense information engaging and scannable.",
-            "- If using text + visual, keep ≥60px gaps and use split-screen layout.",
+            "\n🎯 TEXT-HEAVY SLIDE - USE RELIABLE ICON + TEXT PATTERN:",
+            "- This slide has substantial text content - use the PROVEN Icon + Text row pattern!",
+            "- DON'T use CustomComponent for text lists - it often breaks or overflows!",
+            "",
+            "✅ RECOMMENDED LAYOUT:",
+            "- Create Icon + TiptapTextBlock PAIRS for each bullet point",
+            "- Icon: 32-36px, positioned left (x=120)",
+            "- Text: 16px gap from icon (x=172), width=700-800px",
+            "- Vertical spacing: 80-100px between rows",
+            "- Start content at y=280 (after title)",
+            "",
+            "EXAMPLE ROW POSITIONS:",
+            "- Row 1: Icon y=300, Text y=296 (centered)",
+            "- Row 2: Icon y=400, Text y=396",
+            "- Row 3: Icon y=500, Text y=496",
+            "- Row 4: Icon y=600, Text y=596",
+            "",
+            "✅ IF YOU NEED TWO COLUMNS:",
+            "- Left column: x=120 to x=900",
+            "- Right column: x=1000 to x=1780",
+            "- Both columns use same Icon + Text pattern",
+            "",
+            "🚫 DON'T use CustomComponent for text lists - use Icon + TiptapTextBlock pairs!",
+            "🚫 DON'T bunch all content at the top - spread it across the 800px content area!",
+            "✅ DO fill the slide - content should span from y=280 to y=900",
         ])
 
     def _add_market_sizing_guidance(self, sections: List[str], context: SlideGenerationContext) -> None:

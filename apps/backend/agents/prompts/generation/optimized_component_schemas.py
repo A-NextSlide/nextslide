@@ -63,7 +63,18 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
 ═══ CUSTOMCOMPONENT (Preferred for Complex UI) ═══
 
 **CustomComponent** { position, width, height, render: "HTML String OR Function", [custom props] }
-  
+
+🚨 **CRITICAL SIZE REQUIREMENTS:**
+• **MINIMUM SIZE**: width=1200px, height=500px for main content
+• **RECOMMENDED**: width=1760px (full width), height=700px
+• **Position**: x=80, y=240 (after title area)
+• **NEVER create tiny CustomComponents** - they look bad and waste space!
+
+📏 **SIZE PRESETS:**
+• Full-width: x=80, y=240, width=1760, height=700
+• Left half: x=80, y=240, width=840, height=700
+• Right half: x=1000, y=240, width=840, height=700
+
   🚀 **UNLIMITED CREATIVE FREEDOM (IFRAME MODE):**
   You can now output a **FULL HTML DOCUMENT** (starting with `<!DOCTYPE html>`).
   This runs in an **isolated IFRAME**, so you can use **Tailwind CSS**, **Framer Motion**, or ANY library via CDN!
@@ -157,16 +168,29 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   • All text content (headlines, body, bullets)
   • Multi-color formatted text
 
-✅ **Use CustomComponent for (MANDATORY FOR DATA):**
-  • 📊 ALL data visualizations in creative mode (bars, lines, pies, etc.)
-  • 📈 Stats/metrics (ALWAYS prefer over standalone numbers)
-  • 🎴 Card layouts (features, pricing, team members)
+✅ **Use Icon + TiptapTextBlock PAIRS for:**
+  • 📝 Bullet point lists (MOST RELIABLE!)
+  • 📋 Feature descriptions
+  • 📌 Step-by-step instructions
+  • 🔖 Any content with 3+ text items
+
+  WHY: This pattern ALWAYS works and never overflows!
+  HOW: Icon (36px) at x=120, Text at x=172 (16px gap), repeat vertically with 80-100px spacing
+
+✅ **Use CustomComponent ONLY for:**
+  • 📊 Data visualizations (bars, lines, pies, gauges)
+  • 📈 Stats/metrics with ANIMATIONS (counters, progress rings)
+  • 🎴 Visual card layouts (NOT text lists!)
   • 📱 Dashboards (2+ metrics in a grid)
-  • 🎯 Any complex UI pattern
-  • ⚡ Interactive elements, animations
-  • 🎨 Unique, branded designs that stand out
-  • 🔄 Processes, flows, timelines
-  • 📚 Educational concepts and explanations
+  • ⚡ Interactive elements (quizzes, polls, calculators)
+  • 🎨 Creative visualizations that need custom styling
+
+🚫 **DON'T use CustomComponent for:**
+  • Simple text lists (use Icon + Text instead!)
+  • Bullet points (use Icon + TiptapTextBlock!)
+  • Feature descriptions (use Icon + Text pairs!)
+
+  CustomComponent often BREAKS with text-heavy content - the text overflows!
 
 ✅ **Use Icon for:**
   • Dashboard metric icons (1-2 per slide MAX)
