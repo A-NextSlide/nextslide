@@ -19,6 +19,66 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/outline-theme", tags=["outline-theme"])
 
 
+async def _ai_select_body_font(hero_font: str, context: str) -> str:
+    """Use AI to select a complementary body font from 700+ available fonts."""
+    try:
+        import anthropic
+        from services.registry_fonts import RegistryFonts
+
+        # Get categorized fonts
+        font_categories = RegistryFonts.get_available_fonts()
+
+        # Build font list string
+        font_list_parts = []
+        for category, fonts_in_cat in font_categories.items():
+            if fonts_in_cat:
+                font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:30])}")
+        available_fonts_str = "\n".join(font_list_parts)
+
+        prompt = f"""The hero/header font is: "{hero_font}"
+
+Select a DIFFERENT complementary body font for a {context} presentation.
+
+RULES:
+1. Body font MUST be DIFFERENT from "{hero_font}"
+2. Body font should be highly readable (prefer sans-serif for body)
+3. Should complement the hero font stylistically
+
+Available fonts:
+{available_fonts_str}
+
+Return ONLY the exact font name, nothing else."""
+
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=50,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        body_font = response.content[0].text.strip().strip('"\'')
+
+        # Validate font exists
+        all_fonts = RegistryFonts.get_all_fonts_list()
+        if body_font in all_fonts and body_font.lower() != hero_font.lower():
+            logger.info(f"[OutlineTheme] AI selected body font: {body_font}")
+            return body_font
+
+        # Fuzzy match
+        for font in all_fonts:
+            if body_font.lower() in font.lower() or font.lower() in body_font.lower():
+                if font.lower() != hero_font.lower():
+                    return font
+
+        # Fallback
+        return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
+    except Exception as e:
+        logger.error(f"[OutlineTheme] AI font selection error: {e}")
+        return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
+
 class ThemeChanges(BaseModel):
     """Theme changes from outline agent"""
     colors: Optional[Dict[str, Any]] = Field(default=None)
@@ -189,14 +249,22 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                                 theme_updates['color_palette']['metadata'] = {}
                             theme_updates['color_palette']['metadata']['logo_url'] = logo_url
 
-                        # Extract fonts
+                        # Extract fonts - CRITICAL: hero and body MUST be different!
                         if brand_data.get('fonts') and len(brand_data['fonts']) > 0:
-                            font_family = brand_data['fonts'][0]
-                            style_preferences['font'] = font_family
+                            hero_font = brand_data['fonts'][0]
+                            # Use second brand font if available, otherwise use AI to pick complementary body font
+                            if len(brand_data['fonts']) >= 2:
+                                body_font = brand_data['fonts'][1]
+                            else:
+                                body_font = await _ai_select_body_font(hero_font, brand_name or 'brand')
+
+                            style_preferences['font'] = hero_font
+                            style_preferences['bodyFont'] = body_font
                             theme_updates['typography'] = {
-                                'hero_title': {'family': font_family},
-                                'body_text': {'family': font_family}
+                                'hero_title': {'family': hero_font},
+                                'body_text': {'family': body_font}
                             }
+                            logger.info(f"[OutlineTheme] Brand fonts: hero={hero_font}, body={body_font}")
 
                         messages.append(f"Applied {brand_name or brand_url} brand theme")
                     else:
@@ -331,16 +399,32 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
 
                         selected = playful_combos[seed_hash % len(playful_combos)]
                         font_family = selected['hero']
-                        logger.info(f"[OutlineTheme] Fun topic detected! Using playful font: {font_family}")
+                        body_font_preset = selected['body']  # Use the pre-defined body font
+                        logger.info(f"[OutlineTheme] Fun topic detected! Using playful fonts: {font_family} / {body_font_preset}")
+
+                        # Apply playful fonts directly (no AI needed - already paired)
+                        style_preferences['font'] = font_family
+                        style_preferences['bodyFont'] = body_font_preset
+                        theme_updates['typography'] = {
+                            'hero_title': {'family': font_family},
+                            'body_text': {'family': body_font_preset}
+                        }
+                        messages.append(f"Applied playful fonts: {font_family} / {body_font_preset}")
+                        font_family = None  # Skip the general font_family handling below
 
             if font_family:
-                logger.info(f"[OutlineTheme] Applying font: {font_family}")
+                # CRITICAL: hero and body MUST be different fonts!
+                # Use AI to pick a complementary body font
+                body_font = await _ai_select_body_font(font_family, 'presentation')
+
+                logger.info(f"[OutlineTheme] Applying fonts: hero={font_family}, body={body_font}")
                 style_preferences['font'] = font_family
+                style_preferences['bodyFont'] = body_font
                 theme_updates['typography'] = {
                     'hero_title': {'family': font_family},
-                    'body_text': {'family': font_family}
+                    'body_text': {'family': body_font}
                 }
-                messages.append(f"Applied font: {font_family}")
+                messages.append(f"Applied fonts: {font_family} / {body_font}")
 
         # Handle logo changes
         if request.theme_changes.logo:
