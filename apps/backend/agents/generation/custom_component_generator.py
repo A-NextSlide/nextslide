@@ -30,12 +30,10 @@ async def prefetch_images_for_content(
     max_images: int = 5
 ) -> Dict[str, str]:
     """
-    Pre-fetch HIGH QUALITY images for slide content BEFORE generation.
+    Pre-fetch images for slide content BEFORE generation.
 
-    Analyzes content to extract meaningful search terms, searches for images,
-    and returns a dict of {propName: imageUrl} that can be passed to the AI.
-
-    Uses simple numbered prop names (image1, image2, etc.) for guaranteed matching.
+    Searches for images via SerpAPI, uploads them to our Supabase bucket,
+    and returns our own hosted URLs (reliable, no external dependencies).
 
     Args:
         content: The slide content to analyze
@@ -43,133 +41,86 @@ async def prefetch_images_for_content(
         max_images: Maximum number of images to fetch
 
     Returns:
-        Dict mapping prop names to image URLs, e.g.:
-        {"image1": "https://...", "image2": "https://..."}
-        Also includes search term hints: {"image1_query": "Elon Musk", ...}
+        Dict mapping prop names to our Supabase URLs, e.g.:
+        {"image1": "https://auth.nextslide.ai/storage/...", ...}
+        Also includes search term hints: {"image1_query": "Tesla", ...}
     """
-    # Use SerpAPI directly since CombinedImageService.search_images is disabled
+    from services.serpapi_service import SerpAPIService
+    from services.image_storage_service import ImageStorageService
+
+    # Initialize SerpAPI
     try:
-        from services.serpapi_service import SerpAPIService
-        from services.image_validator import ImageValidator
         serpapi = SerpAPIService()
         if not serpapi.is_available:
             logger.warning("[PREFETCH] SerpAPI not available (no API key)")
-            print("[PREFETCH] ❌ SerpAPI not available - no API key configured")
+            print("[PREFETCH] ❌ SerpAPI not available")
             return {}
     except Exception as e:
-        logger.warning(f"[PREFETCH] Could not initialize SerpAPI service: {e}")
-        print(f"[PREFETCH] ❌ Failed to init SerpAPI: {e}")
+        logger.warning(f"[PREFETCH] Could not init SerpAPI: {e}")
         return {}
 
-    # Extract search terms from content - now returns better quality terms
+    # Extract search terms
     search_terms = _extract_image_search_terms(content, slide_title)
-
     if not search_terms:
-        logger.info("[PREFETCH] No image search terms extracted from content")
-        print("[PREFETCH] ⚠️ No search terms extracted from content")
+        print("[PREFETCH] ⚠️ No search terms extracted")
         return {}
 
-    logger.info(f"[PREFETCH] Extracted {len(search_terms)} search terms: {search_terms[:5]}")
-    print(f"[PREFETCH] 🔍 Search terms: {search_terms[:5]}")
-
-    # Limit to max_images
+    print(f"[PREFETCH] 🔍 Search terms: {search_terms[:max_images]}")
     search_terms = search_terms[:max_images]
-
-    # Search for images in parallel - use numbered props for guaranteed matching
     prefetched = {}
 
-    # Domains to avoid (game sites, wikis, meme sites, etc.)
-    BAD_DOMAINS = [
-        'wikia.nocookie.net', 'fandom.com', 'wiki', 'pinterest', 'giphy',
-        'tenor.com', 'memegenerator', 'imgflip', 'knowyourmeme', 'deviantart',
-        'tumblr', 'reddit', 'imgur', 'facebook', 'instagram', 'twitter',
-        'tiktok', 'snapchat', 'ebay', 'amazon', 'aliexpress', 'alibaba'
-    ]
+    # Use ImageStorageService to upload to our bucket
+    async with ImageStorageService() as storage:
 
-    async def search_one(index: int, term: str) -> Tuple[int, str, Optional[str]]:
-        """Search for a single term and return (index, term, url)."""
-        try:
-            # Build a professional search query
-            professional_query = f"{term} professional high quality photo"
+        async def search_and_upload(index: int, term: str) -> Tuple[int, str, Optional[str]]:
+            """Search SerpAPI, upload first good result to our bucket."""
+            try:
+                # Search for images
+                result = await serpapi.search_images(
+                    query=f"{term} high quality",
+                    per_page=5,
+                    size="large"
+                )
 
-            # Use SerpAPI to search for images - get multiple results to filter
-            result = await serpapi.search_images(
-                query=professional_query,
-                per_page=10,  # Get more results to filter bad ones
-                size="large"  # Prefer larger images
-            )
+                photos = result.get('photos', [])
 
-            photos = result.get('photos', [])
+                # Try each result until one uploads successfully
+                for photo in photos:
+                    url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
+                    if not url or url.startswith('data:'):
+                        continue
 
-            # Filter out bad domains and find a good image
-            for photo in photos:
-                url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
-                if not url:
-                    continue
+                    # Upload to our Supabase bucket
+                    try:
+                        upload_result = await storage.upload_image_from_url(url)
+                        if 'error' not in upload_result and upload_result.get('url'):
+                            our_url = upload_result['url']
+                            print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> uploaded")
+                            return (index, term, our_url)
+                    except Exception as e:
+                        logger.debug(f"[PREFETCH] Upload failed: {e}")
+                        continue
 
-                # Skip bad domains
-                url_lower = url.lower()
-                if any(bad in url_lower for bad in BAD_DOMAINS):
-                    logger.debug(f"[PREFETCH] Skipping bad domain: {url[:50]}")
-                    continue
+                print(f"[PREFETCH] ⚠️ No image for: {term}")
+                return (index, term, None)
 
-                # Skip obviously bad file types
-                if any(ext in url_lower for ext in ['.svg', '.gif', '.webp']):
-                    continue
+            except Exception as e:
+                print(f"[PREFETCH] ❌ Error for '{term}': {e}")
+                return (index, term, None)
 
-                # Skip data URIs and base64
-                if url.startswith('data:'):
-                    continue
+        # Run all searches in parallel
+        tasks = [search_and_upload(i, term) for i, term in enumerate(search_terms)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Found a good image!
-                logger.info(f"[PREFETCH] Found image for '{term}': {url[:60]}...")
-                print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> {url[:50]}...")
-                return (index, term, url)
+        # Build result dict
+        for result in results:
+            if isinstance(result, tuple) and len(result) == 3 and result[2]:
+                index, term, url = result
+                prefetched[f"image{index + 1}"] = url
+                prefetched[f"image{index + 1}_query"] = term
 
-            # If no good images found with professional query, try original term
-            logger.info(f"[PREFETCH] Trying original term: {term}")
-            result2 = await serpapi.search_images(query=term, per_page=10, size="large")
-
-            for photo in result2.get('photos', []):
-                url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
-                if not url:
-                    continue
-                url_lower = url.lower()
-                if any(bad in url_lower for bad in BAD_DOMAINS):
-                    continue
-                if any(ext in url_lower for ext in ['.svg', '.gif', '.webp']):
-                    continue
-                if url.startswith('data:'):
-                    continue
-
-                logger.info(f"[PREFETCH] Found image for '{term}': {url[:60]}...")
-                print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> {url[:50]}...")
-                return (index, term, url)
-
-            logger.warning(f"[PREFETCH] No good image found for '{term}'")
-            print(f"[PREFETCH] ⚠️ No good image found for: {term}")
-            return (index, term, None)
-        except Exception as e:
-            logger.warning(f"[PREFETCH] Error searching for '{term}': {e}")
-            print(f"[PREFETCH] ❌ Error searching for '{term}': {e}")
-            return (index, term, None)
-
-    # Run all searches in parallel
-    tasks = [search_one(i, term) for i, term in enumerate(search_terms)]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Use simple numbered prop names: image1, image2, etc.
-    for result in results:
-        if isinstance(result, tuple) and len(result) == 3 and result[2]:
-            index, term, url = result
-            prop_name = f"image{index + 1}"
-            prefetched[prop_name] = url
-            # Also store the query term so AI knows what each image is
-            prefetched[f"{prop_name}_query"] = term
-
-    logger.info(f"[PREFETCH] Successfully fetched {len([k for k in prefetched if not k.endswith('_query')])}/{len(search_terms)} images")
-    print(f"[PREFETCH] 📸 Fetched {len([k for k in prefetched if not k.endswith('_query')])} images")
-
+    count = len([k for k in prefetched if not k.endswith('_query')])
+    print(f"[PREFETCH] 📸 Uploaded {count} images to our bucket")
     return prefetched
 
 
