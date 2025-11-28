@@ -1317,9 +1317,11 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         logger.warning(f"[OutlineAgent] Media scrape failed: {error_msg}")
 
             # Attach uploaded files to generate_outline action so they're used in slide generation
+            logger.info(f"[OutlineAgent] 📎 Checking file attachment: action={outline_data.get('action')}, has_files={bool(request.files)}, file_count={len(request.files) if request.files else 0}")
             if outline_data.get('action') == 'generate_outline' and request.files:
                 uploaded_media = []
                 for f in request.files:
+                    logger.info(f"[OutlineAgent] 📄 Processing file: {f.name}, type={f.type}, is_image={f.type and f.type.startswith('image/')}")
                     # Only include images for now (they're the ones that should appear on slides)
                     if f.type and f.type.startswith('image/'):
                         uploaded_media.append({
@@ -1333,6 +1335,8 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 if uploaded_media:
                     outline_data['uploadedMedia'] = uploaded_media
                     logger.info(f"[OutlineAgent] 📎 Attached {len(uploaded_media)} uploaded images to outline")
+                else:
+                    logger.warning(f"[OutlineAgent] ⚠️ No image files to attach (files had non-image types)")
 
             yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
 

@@ -115,6 +115,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       previewUrl: f.type.startsWith('image/') ? createImagePreview(f) : undefined
     }))
   );
+  // Persistent files that have been sent but need to be resent with each message until outline is generated
+  const [persistentFiles, setPersistentFiles] = useState<FileAttachment[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -208,17 +210,17 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     // Add user message WITH attachments shown in the message
     addMessage('user', userMessage || (hasFiles ? `Shared ${currentFiles.length} file${currentFiles.length > 1 ? 's' : ''}` : ''), undefined, undefined, messageAttachments.length > 0 ? messageAttachments : undefined);
 
-    // Clear uploaded files after adding to message (but keep references for API call)
+    // Clear uploaded files UI after adding to message (but keep references for API call)
     setUploadedFiles([]);
 
     try {
       setIsAgentTyping(true);
 
-      // Convert files to base64 for API
-      let filesToSend: FileAttachment[] | undefined;
+      // Convert new files to base64 and add to persistent files
+      let newFilesToAdd: FileAttachment[] = [];
       if (hasFiles) {
-        console.log('[ConversationalOnboarding] Converting', currentFiles.length, 'files to base64...');
-        filesToSend = await Promise.all(
+        console.log('[ConversationalOnboarding] Converting', currentFiles.length, 'new files to base64...');
+        newFilesToAdd = await Promise.all(
           currentFiles.map(async (f, idx) => {
             const content = await fileToBase64(f.file);
             console.log('[ConversationalOnboarding] Converted:', f.file.name, 'base64 length:', content.length);
@@ -231,19 +233,24 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
             };
           })
         );
-        console.log('[ConversationalOnboarding] Prepared', filesToSend.length, 'files for API');
+        // Add to persistent files so they're sent with every message
+        setPersistentFiles(prev => [...prev, ...newFilesToAdd]);
       }
+
+      // Always send ALL persistent files (including newly added ones) with each message
+      const filesToSend = [...persistentFiles, ...newFilesToAdd];
+      console.log('[ConversationalOnboarding] Sending', filesToSend.length, 'total files (persistent:', persistentFiles.length, ', new:', newFilesToAdd.length, ')');
 
       // Stream agent response
       let assistantMessage = '';
       let outlineData: OutlineData | null = null;
 
-      console.log('[ConversationalOnboarding] Calling streamOutlineAgentChat with', filesToSend?.length || 0, 'files');
+      console.log('[ConversationalOnboarding] Calling streamOutlineAgentChat with', filesToSend.length, 'files');
       const generator = streamOutlineAgentChat({
         message: userMessage || 'Please analyze these files for my presentation.',
         chat_history: chatHistory,
         context: collectedData,
-        files: filesToSend
+        files: filesToSend.length > 0 ? filesToSend : undefined
       });
 
       for await (const event of generator) {
@@ -308,6 +315,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
         // Agent has created the flow! Show it and ask for presentation type
         setStage('planning');
         setOutlineFlow(outlineData);
+        // Clear persistent files now that outline is generated - they're included in outlineData.uploadedMedia
+        console.log('[ConversationalOnboarding] Outline generated, clearing', persistentFiles.length, 'persistent files');
+        setPersistentFiles([]);
 
         // Show the planning message
         addAgentMessage(
