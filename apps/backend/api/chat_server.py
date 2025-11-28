@@ -159,6 +159,7 @@ from api.requests.api_theme import router as theme_router
 from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
 from api.requests.api_google_integration import router as google_router
+from api.requests.api_file_analysis import router as file_analysis_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -258,6 +259,7 @@ app.include_router(uploads_router)
 app.include_router(agent_messages_router)
 app.include_router(google_router)
 app.include_router(theme_router)
+app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analysis"])
 
 # Global registry storage
 REGISTRY = None

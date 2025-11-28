@@ -12,8 +12,13 @@ class FastSlidePromptBuilder:
     """Builds minimal prompts for fast slide generation."""
     
     # Minimal system prompt
-    SYSTEM_PROMPT = """You are a slide designer. Generate JSON slides with these components: 
-Background, TiptapTextBlock, Image, Icon, Shape, CustomComponent.
+    SYSTEM_PROMPT = """You are a slide designer. Generate JSON slides with these components:
+Background, TiptapTextBlock, Image, Icon, Shape, Lines, CustomComponent.
+
+CRITICAL: Use Lines component for all dividers - NEVER use Shape as a line!
+- Lines: startPoint/endPoint coordinates, subtle stroke (1-3px, opacity 0.2-0.4)
+- Position lines BELOW titles with 30-50px gap (never cut through text!)
+- Maximum 0-2 lines per slide, use sparingly for elegance
 
 Output format:
 {

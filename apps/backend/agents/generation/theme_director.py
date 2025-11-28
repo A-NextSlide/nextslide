@@ -48,38 +48,8 @@ class ThemeDirector:
             # Use fast analysis to understand the topic
             analysis = self._analyze_request_fast(context or "", title, {})
             
-            # Generate colors based on topic using Huemint
-            # Check if it's a known topic with iconic colors
-            topic_lower = (title + " " + (context or "")).lower()
-            
-            # Well-known topic color mappings
-            ICONIC_COLORS = {
-                "pikachu": {"primary_background": "#FFCC00", "primary_text": "#2D2D2D", "colors": ["#FFCC00", "#FF4500", "#3B4CCA"]},  # Yellow, Red cheeks, Pokemon blue
-                "pokemon": {"primary_background": "#FFCC00", "primary_text": "#2D2D2D", "colors": ["#FFCC00", "#3B4CCA", "#FF0000"]},
-                "mcdonald": {"primary_background": "#FFC72C", "primary_text": "#27251F", "colors": ["#FFC72C", "#DA291C", "#27251F"]},
-                "coca cola": {"primary_background": "#F40009", "primary_text": "#FFFFFF", "colors": ["#F40009", "#FFFFFF", "#000000"]},
-                "starbucks": {"primary_background": "#00704A", "primary_text": "#FFFFFF", "colors": ["#00704A", "#1E3932", "#FFFFFF"]},
-                "christmas": {"primary_background": "#165B33", "primary_text": "#FFFFFF", "colors": ["#165B33", "#BB2528", "#F8B229"]},
-                "halloween": {"primary_background": "#1A1A2E", "primary_text": "#FF6B00", "colors": ["#FF6B00", "#1A1A2E", "#7B2CBF"]},
-                "nature": {"primary_background": "#228B22", "primary_text": "#FFFFFF", "colors": ["#228B22", "#8FBC8F", "#2E8B57"]},
-                "ocean": {"primary_background": "#006994", "primary_text": "#FFFFFF", "colors": ["#006994", "#40E0D0", "#00CED1"]},
-                "fire": {"primary_background": "#FF4500", "primary_text": "#FFFFFF", "colors": ["#FF4500", "#FF6347", "#FFD700"]},
-                "tech": {"primary_background": "#0A0A0A", "primary_text": "#00D4FF", "colors": ["#00D4FF", "#0A0A0A", "#7C3AED"]},
-                "ai": {"primary_background": "#0F0F23", "primary_text": "#10B981", "colors": ["#10B981", "#6366F1", "#8B5CF6"]},
-                "hello kitty": {"primary_background": "#FFC0CB", "primary_text": "#333333", "colors": ["#FFC0CB", "#FF69B4", "#FFFFFF"]},
-                "barbie": {"primary_background": "#E0218A", "primary_text": "#FFFFFF", "colors": ["#E0218A", "#F7A8B8", "#4AE3B5"]},
-            }
-            
-            # Check for iconic topic matches using word boundaries
-            import re
-            for topic_key, colors in ICONIC_COLORS.items():
-                # Use regex to match whole words only (prevents "ai" matching "entertainment")
-                pattern = r'\b' + re.escape(topic_key) + r'\b'
-                if re.search(pattern, topic_lower):
-                    logger.info(f"[ThemeDirector] ✅ Found iconic colors for topic: {topic_key}")
-                    return {"color_palette": colors}
-            
-            # If no iconic match, try SmartColorSelector (AI Model)
+            # Use SmartColorSelector (AI-driven) to understand the topic and pick colors
+            # This uses: semantic palette DB search, theme detection, and Huemint AI generation
             try:
                 from agents.tools.theme import SmartColorSelector
                 selector = SmartColorSelector()
@@ -94,24 +64,51 @@ class ThemeDirector:
                 if ai_result and ai_result.get('colors'):
                     colors = ai_result['colors']
                     logger.info(f"[ThemeDirector] ✅ AI generated colors: {colors}")
-                    
-                    # Map AI result to simple palette format
+
+                    # Map AI result to simple palette format with all 3 distinct roles
                     bg_color = ai_result.get('backgrounds', [colors[0]])[0]
-                    # Simple luminance check for text color
-                    is_dark = True
-                    try:
-                        # Quick luminance calc
-                        h = bg_color.lstrip('#')
-                        rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-                        lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
-                        is_dark = lum < 0.5
-                    except:
-                        pass
-                        
+
+                    # Get accent color - must be distinct from background
+                    accents = ai_result.get('accents', [])
+                    accent_color = None
+                    for acc in accents:
+                        if acc and acc.upper() != bg_color.upper():
+                            accent_color = acc
+                            break
+                    # Fallback: find a saturated color from the palette that's not the background
+                    if not accent_color:
+                        for c in colors:
+                            if c and c.upper() != bg_color.upper():
+                                accent_color = c
+                                break
+                    if not accent_color:
+                        accent_color = "#2563EB"  # Default blue accent
+
+                    # Get text color from AI result or calculate based on background
+                    text_color = ai_result.get('text_colors', {}).get('primary')
+                    if not text_color:
+                        # Simple luminance check for text color
+                        is_dark = True
+                        try:
+                            h = bg_color.lstrip('#')
+                            rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                            lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+                            is_dark = lum < 0.5
+                        except:
+                            pass
+                        text_color = "#FFFFFF" if is_dark else "#1F2937"
+
+                    # Ensure text color is different from background
+                    if text_color.upper() == bg_color.upper():
+                        text_color = "#FFFFFF" if bg_color.upper() != "#FFFFFF" else "#1F2937"
+
+                    logger.info(f"[ThemeDirector] 🎨 Final palette: bg={bg_color}, text={text_color}, accent={accent_color}")
+
                     return {
                         "color_palette": {
                             "primary_background": bg_color,
-                            "primary_text": "#FFFFFF" if is_dark else "#1F2937",
+                            "primary_text": text_color,
+                            "accent_1": accent_color,
                             "colors": colors[:5]
                         }
                     }
@@ -132,23 +129,39 @@ class ThemeDirector:
                 
                 if huemint_colors and len(huemint_colors) >= 3:
                     logger.info(f"[ThemeDirector] ✅ Huemint generated colors: {huemint_colors}")
+                    # Assign distinct roles: background, text (contrast), accent
+                    bg = huemint_colors[0]
+                    # Calculate text based on background brightness
+                    try:
+                        h = bg.lstrip('#')
+                        rgb = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+                        lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+                        text = "#FFFFFF" if lum < 0.5 else "#1F2937"
+                    except:
+                        text = "#1F2937"
+                    # Accent: pick a color that's distinct from background
+                    accent = huemint_colors[2] if len(huemint_colors) > 2 else huemint_colors[1]
+                    if accent.upper() == bg.upper():
+                        accent = huemint_colors[1] if huemint_colors[1].upper() != bg.upper() else "#2563EB"
                     return {
                         "color_palette": {
-                            "primary_background": huemint_colors[0],
-                            "primary_text": "#1F2937",  # Safe dark text
+                            "primary_background": bg,
+                            "primary_text": text,
+                            "accent_1": accent,
                             "colors": huemint_colors[:4]
                         }
                     }
             except Exception as e:
                 logger.debug(f"[ThemeDirector] Huemint fallback failed: {e}")
-            
-            # Final fallback: return a default modern palette
+
+            # Final fallback: return a default modern palette with 3 distinct colors
             logger.info("[ThemeDirector] Using default modern palette")
             return {
                 "color_palette": {
                     "primary_background": "#FFFFFF",
                     "primary_text": "#1F2937",
-                    "colors": ["#3B82F6", "#10B981", "#F59E0B"]  # Blue, Green, Amber
+                    "accent_1": "#3B82F6",
+                    "colors": ["#FFFFFF", "#1F2937", "#3B82F6"]  # Background, Text, Accent
                 }
             }
             
@@ -307,15 +320,9 @@ class ThemeDirector:
         except Exception as e:
             logger.warning(f"[THEME] Brand detection failed: {e}")
             
-        # Simple brand detection fallback for known brands
-        known_brands = ['first round capital', 'spotify', 'netflix', 'google', 'apple', 'microsoft']
-        if not analysis['is_brand']:
-            for brand in known_brands:
-                if brand in full_text:
-                    analysis['is_brand'] = True
-                    analysis['brand_name'] = brand.title()
-                    break
-        
+        # No hardcoded brand fallback - AI detection handles all brands
+        # Brandfetch DB will provide colors for any detected brand
+
         # Topic will be determined by palettesdb search or model if needed
         
         # Extract style keywords
@@ -377,17 +384,25 @@ class ThemeDirector:
             # Quick AI-based brand detection - single fast API call
             from agents.ai.clients import get_client, invoke
             
-            brand_detection_prompt = f"""Extract the main company/brand name from this text if present:
+            brand_detection_prompt = f"""Extract ANY brand/company name mentioned in this text:
 
 Text: "{full_text[:200]}"
 
+IMPORTANT: Detect brands even if the context is:
+- "How to make a [BRAND]" → extract the brand name
+- "History of [BRAND]" → extract the brand name
+- "Why [BRAND] is successful" → extract the brand name
+- "[BRAND] presentation" → extract the brand name
+
 Look for:
-- Company names (e.g. "Nike", "Spotify", "First Round Capital")
-- Investment firms (e.g. "Andreessen Horowitz", "Sequoia Capital")
-- Well-known brands mentioned for theming
+- Luxury brands (Rolex, Louis Vuitton, Ferrari, Gucci, Chanel, etc.)
+- Tech companies (Apple, Google, Microsoft, Tesla, etc.)
+- Consumer brands (Nike, Adidas, Coca-Cola, McDonald's, etc.)
+- Investment firms (Sequoia, a16z, First Round Capital, etc.)
+- ANY well-known company or product brand
 
 Respond with ONLY the brand name or "none":
-Examples: "Nike", "First Round Capital", "Google", "none"
+Examples: "Rolex", "Nike", "First Round Capital", "Tesla", "none"
 
 Brand name:"""
 
@@ -415,28 +430,7 @@ Brand name:"""
                 logger.warning(f"Quick brand detection failed: {e}")
                 logger.info("AI brand detection failed, proceeding with general theme: brand_detection_failed")
             
-            # If AI failed to detect brand, try simple keyword matching for known brands
-            if not detected_brand:
-                text_lower = full_text.lower()
-                known_brands = {
-                    'first round capital': 'first round capital',
-                    'firstround': 'first round capital', 
-                    'first round': 'first round capital',
-                    'spotify': 'spotify',
-                    'netflix': 'netflix',
-                    'airbnb': 'airbnb',
-                    'google': 'google',
-                    'apple': 'apple',
-                    'microsoft': 'microsoft'
-                }
-                
-                for keyword, brand_name in known_brands.items():
-                    if keyword in text_lower:
-                        detected_brand = brand_name
-                        logger.info(f"Keyword matching detected brand: {detected_brand}")
-                        break
-            
-            # If still no brand detected, skip brand processing
+            # If no brand detected, skip brand processing
             if not detected_brand:
                 logger.info("No brand detected, using general theme")
                 raise RuntimeError("no_brand_detected")

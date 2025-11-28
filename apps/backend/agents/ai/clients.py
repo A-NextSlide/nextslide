@@ -111,6 +111,8 @@ MODELS = {
     "gemini-2.5-pro": ("gemini", "gemini-2.5-pro-preview-06-05"),
     "gemini-2.5-flash": ("gemini", "gemini-2.5-flash-preview-05-20"),
     "gemini-2.5-flash-lite": ("gemini", "gemini-2.5-flash-lite-preview-06-17"),
+    # Gemini 3 Pro - latest model (November 2025)
+    "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
     # DeepSeek models
     "deepseek-chat": ("deepseek", "deepseek-chat"),  # Non-thinking mode (DeepSeek-V3.1)
     "deepseek-reasoner": ("deepseek", "deepseek-reasoner"),  # Thinking mode (DeepSeek-V3.1)
@@ -135,7 +137,8 @@ MAX_PARAM = {
     "gpt-5-nano-2025-08-07": "max_completion_tokens",
     "gemini-2.5-pro-preview-06-05": None,
     "gemini-2.5-flash-preview-05-20": None,
-    "gemini-2.5-flash-lite-preview-06-17": None 
+    "gemini-2.5-flash-lite-preview-06-17": None,
+    "gemini-3-pro-preview": None,
 }
 
 # Max token limits for each model (based on official documentation)
@@ -182,6 +185,7 @@ MODEL_MAX_TOKENS = {
     "gemini-2.5-pro-preview-06-05": 8192,
     "gemini-2.5-flash-preview-05-20": 8192,
     "gemini-2.5-flash-lite-preview-06-17": 65536,  # Gemini 2.5 Flash Lite supports 64k output
+    "gemini-3-pro-preview": 65536,  # Gemini 3 Pro
     
     # Samba models
     "Meta-Llama-3.1-405B-Instruct": 4096,
@@ -701,13 +705,22 @@ def invoke(
         try:
             # If no response_model, use a direct provider-specific call WITHOUT instructor wrappers
             if response_model is None:
+                print(f"[INVOKE FREEFORM] 🔍 No response_model - using freeform mode for model: {model}")
                 # Recreate a raw (unwrapped) client to avoid Instructor requiring response_model
                 try:
                     raw_client, _actual_model = get_client(model, wrap_with_instructor=False)
                     freeform_client = raw_client
-                except Exception:
+                    print(f"[INVOKE FREEFORM] ✅ Got raw client: {type(freeform_client)}")
+                except Exception as get_client_err:
+                    print(f"[INVOKE FREEFORM] ⚠️ Failed to get raw client: {get_client_err}, using provided client")
                     # Fallback to the provided client if reconstruction fails
                     freeform_client = client
+
+                # Debug: check client capabilities
+                has_chat = hasattr(freeform_client, 'chat') and hasattr(getattr(freeform_client, 'chat', None), 'completions')
+                has_messages = hasattr(freeform_client, 'messages') and hasattr(getattr(freeform_client, 'messages', None), 'create')
+                has_models = hasattr(freeform_client, 'models') and hasattr(getattr(freeform_client, 'models', None), 'generate_content')
+                print(f"[INVOKE FREEFORM] 📊 Client capabilities: chat.completions={has_chat}, messages.create={has_messages}, models.generate_content={has_models}")
 
                 # Prefer OpenAI-style chat.completions if available (OpenAI/Perplexity/Groq/Samba)
                 if hasattr(freeform_client, 'chat') and hasattr(freeform_client.chat, 'completions'):
@@ -904,11 +917,23 @@ def invoke(
                     # Add system content if present
                     if system_content:
                         prompt = f"System: {system_content}\n{prompt}"
-                    result = freeform_client.models.generate_content(
-                        model=f"models/{model}",
-                        contents=prompt
-                    )
-                    content = result.text
+
+                    print(f"[GEMINI FREEFORM] 🎯 Using model: {model}")
+                    print(f"[GEMINI FREEFORM] 📝 Prompt length: {len(prompt)} chars")
+
+                    try:
+                        result = freeform_client.models.generate_content(
+                            model=model,  # Google GenAI SDK doesn't need models/ prefix
+                            contents=prompt
+                        )
+                        content = result.text
+                        print(f"[GEMINI FREEFORM] ✅ Response length: {len(content)} chars")
+                        print(f"[GEMINI FREEFORM] 📄 Response preview: {content[:500] if content else 'EMPTY'}")
+                    except Exception as gemini_err:
+                        print(f"[GEMINI FREEFORM] ❌ API error: {gemini_err}")
+                        import traceback
+                        traceback.print_exc()
+                        raise
                 else:
                     raise AttributeError(f"Unknown client type: {type(freeform_client)}")
 

@@ -12,6 +12,18 @@ import roughImport from 'roughjs';
 import confettiImport from 'canvas-confetti';
 import * as gsapImport from 'gsap';
 
+/**
+ * Ensure HTML document has proper blank line after <html> tag.
+ * Some browsers/iframes need this to render correctly.
+ */
+function ensureHtmlNewlines(html: string): string {
+  if (!html || typeof html !== 'string') return html;
+
+  // Ensure blank line (two newlines) after <html> tag
+  // First normalize: remove any whitespace after <html>, then add proper blank line
+  return html.replace(/(<html[^>]*>)\s*\n?\s*/gi, '$1\n\n');
+}
+
 // Escape raw newlines that appear inside single/double quoted string literals.
 // This prevents accidental split string literals (e.g., 'Calvin\nCycle' becoming two lines)
 // and keeps generated code valid for parsing.
@@ -253,14 +265,29 @@ export const CustomComponentRenderer: React.FC<{
       return { compiledRender: null, compilationError: new Error('No render function provided') };
     }
 
+    // CRITICAL: Unescape the code FIRST before any detection
+    // The stored code may have escaped newlines (\n as literal backslash-n)
+    let code = renderCode as string;
+    if (code.includes('\\n') || code.includes('\\t') || code.includes('\\"') || code.includes("\\'")) {
+      code = code
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\');
+    }
+
     // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
-    const trimmedCode = (renderCode as string).trim();
+    const trimmedCode = code.trim();
 
     // 0. IFRAME MODE: Check for Full HTML Document
     // This allows "do whatever we want" - Tailwind, CDNs, full isolation
     if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
+      // Ensure proper newlines in HTML (fixes iframe rendering issues)
+      const formattedHtml = ensureHtmlNewlines(code);
+
       // Cache the srcDoc string - this is the ONLY thing that should cause iframe to reload
-      const cachedSrcDoc = renderCode as string;
+      const cachedSrcDoc = formattedHtml;
 
       // Return a special marker object that the renderer will use to create an iframe
       // We return an object instead of a function to enable stable iframe rendering
@@ -318,7 +345,7 @@ export const CustomComponentRenderer: React.FC<{
           '        var updateState = function() {};',
           '',
           '        // Component render function (returns HTML string)',
-          '        ' + renderCode,
+          '        ' + code,
           '',
           '        // Call render and inject HTML',
           '        var html = render({ props, state, updateState, id, isThumbnail, containerWidth, containerHeight });',
@@ -369,7 +396,7 @@ export const CustomComponentRenderer: React.FC<{
             width: '100%',
             height: '100%'
           },
-          dangerouslySetInnerHTML: { __html: renderCode as string }
+          dangerouslySetInnerHTML: { __html: code }
         });
       };
       return { compiledRender: htmlRenderer as Function, compilationError: null };
@@ -404,15 +431,8 @@ export const CustomComponentRenderer: React.FC<{
       return { compiledRender: wrapped, compilationError: null };
     }
 
-    let unescapedCode = renderCode;
-    if (renderCode.includes('\n') || renderCode.includes('\t') || renderCode.includes('\"') || renderCode.includes("\'")) {
-      unescapedCode = renderCode
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t')
-        .replace(/\\\"/g, '"')
-        .replace(/\\'/g, "'")
-        .replace(/\\\\/g, '\\');
-    }
+    // Use already-unescaped code from above
+    let unescapedCode = code;
 
     // Harden: ensure raw newlines inside quoted string literals are converted to \n
     unescapedCode = escapeRawNewlinesInStringLiterals(unescapedCode);
@@ -607,7 +627,7 @@ export const CustomComponentRenderer: React.FC<{
     } catch (_) { /* noop */ }
 
     try {
-      if (renderCode.includes('import ') || renderCode.includes('require(')) {
+      if (code.includes('import ') || code.includes('require(')) {
         throw new Error('Imports are not allowed in custom components');
       }
 

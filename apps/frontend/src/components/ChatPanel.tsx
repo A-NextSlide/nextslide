@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Sparkles, XCircle, Plus, Image, ArrowUp, ChevronUp, ChevronDown, Target, Loader2 } from 'lucide-react';
+import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, Target, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,6 +32,15 @@ import { v4 as uuidv4 } from 'uuid';
 // Removed font optimization service
 import { BROWSER } from '@/utils/browser';
 import { streamOutlineAgentChat } from '@/services/outlineApi';
+import {
+  getFileCategory,
+  formatFileSize,
+  createImagePreview,
+  revokeImagePreview,
+  fileToBase64,
+  chatWithFiles,
+  FileInput
+} from '@/services/fileAnalysisService';
 
 
 
@@ -592,9 +601,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     overlaps: string[];
     bounds?: { x: number; y: number; width: number; height: number } | null;
   }>>([]);
-  type PendingAttachment = { name: string; type: string; size: number; file: File };
-  type RegisteredAttachment = { name: string; mimeType: string; size: number; url: string; attachmentId?: string };
+  type PendingAttachment = { name: string; type: string; size: number; file: File; previewUrl?: string };
+  type RegisteredAttachment = { name: string; mimeType: string; size: number; url: string; attachmentId?: string; previewUrl?: string };
   const [attachments, setAttachments] = useState<Array<PendingAttachment | RegisteredAttachment>>([]);
+  const [filePreviewUrls, setFilePreviewUrls] = useState<Map<string, string>>(new Map());
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2350,7 +2360,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     // Immediately add pending attachments as badges and start upload + registration
-    const pending = files.map(file => ({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, file }));
+    // Create image previews for image files
+    const pending = files.map(file => {
+      const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
+      return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
+    });
     setAttachments(prev => [...prev, ...pending]);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     processAndRegisterFiles(files);
@@ -2386,7 +2400,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length === 0) return;
     // Show pending badges immediately and start upload
-    const pending = files.map(file => ({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, file }));
+    // Create image previews for image files
+    const pending = files.map(file => {
+      const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
+      return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
+    });
     setAttachments(prev => [...prev, ...pending]);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     processAndRegisterFiles(files);
@@ -2797,6 +2815,118 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
+  // Determine if we should show the fallback "Generate" button
+  // Shows after 2+ user messages when no outline is being generated and no slides exist yet
+  const userMessageCount = messages.filter(m => m.type === 'user').length;
+  const hasOutlineSlides = outline?.slides && outline.slides.length > 0 && outline.slides.some((s: any) => s.content || s.title);
+  const showFallbackGenerate = outlineMode && useOutlineAgent && onOutlineAgentToolCall &&
+    userMessageCount >= 2 &&
+    !isGenerating &&
+    !outlineIsGenerating &&
+    !hasOutlineSlides;
+
+  // Handle fallback generate - extract topic from conversation and trigger generation
+  const handleFallbackGenerate = async () => {
+    if (!onOutlineAgentToolCall) return;
+
+    console.log('[ChatPanel] Fallback generate triggered');
+
+    // Extract topic from conversation - look for user messages
+    const userMessages = messages.filter(m => m.type === 'user').map(m => m.message);
+    const topic = userMessages.join(' ').substring(0, 500); // Combine all user inputs as context
+
+    // Add a system message indicating we're generating
+    setMessages(prev => [...prev, {
+      id: `fallback-gen-${Date.now()}`,
+      type: 'ai',
+      message: 'Great, let me generate your presentation now...',
+      timestamp: new Date(),
+      feedback: null
+    }]);
+
+    setIsGenerating(true);
+    if (onOutlineChatGeneratingChange) {
+      onOutlineChatGeneratingChange(true);
+    }
+
+    try {
+      const { outlineApi } = await import('@/services/outlineApi');
+
+      // Use the conversation as context for the outline generation
+      const chatHistory = messages.map(m => ({
+        role: m.type === 'user' ? 'user' : 'assistant',
+        content: m.message
+      }));
+
+      await outlineApi.generateOutlineStream(
+        topic,
+        [],
+        {
+          detailLevel: 'standard',
+          styleContext: `Context from conversation:\n${chatHistory.map(m => `${m.role}: ${m.content}`).join('\n')}`,
+          enableResearch: true,
+          autoSelectImages: true
+        },
+        (event) => {
+          console.log('[ChatPanel] Fallback stream event:', event.type);
+
+          if (event.type === 'outline_structure') {
+            const placeholderSlides = (event.slideTitles || []).map((title: string, idx: number) => ({
+              id: `placeholder-${idx}`,
+              title: title,
+              content: '',
+              deepResearch: false,
+              status: 'pending'
+            }));
+
+            onOutlineAgentToolCall({
+              topic: event.title,
+              slide_count: event.slideCount,
+              detail_level: 'standard',
+              slides: placeholderSlides
+            });
+          } else if (event.type === 'slide_complete' && event.slide) {
+            onOutlineAgentToolCall({
+              topic: topic,
+              slide_count: 10,
+              detail_level: 'standard',
+              slides: [event.slide],
+              slideIndex: event.slideIndex
+            });
+          } else if (event.type === 'outline_complete') {
+            if (event.outline?.stylePreferences && onOutlineAgentToolCall) {
+              onOutlineAgentToolCall({
+                topic: event.outline.title || topic,
+                slide_count: event.outline.slides?.length || 10,
+                detail_level: 'standard',
+                slides: [],
+                stylePreferences: event.outline.stylePreferences
+              });
+            }
+
+            setIsGenerating(false);
+            if (onOutlineChatGeneratingChange) {
+              onOutlineChatGeneratingChange(false);
+            }
+          }
+        }
+      );
+    } catch (error) {
+      console.error('[ChatPanel] Fallback generate error:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        type: 'ai',
+        message: 'Sorry, I encountered an error generating your presentation. Please try again.',
+        timestamp: new Date(),
+        feedback: null
+      }]);
+      setIsGenerating(false);
+      if (onOutlineChatGeneratingChange) {
+        onOutlineChatGeneratingChange(false);
+      }
+    }
+  };
+
   // Send message to AI assistant via API
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -2815,6 +2945,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     // Snapshot current selections/attachments for tagging in the message
     const previewSelections = selectedElements.map(s => ({ id: s.elementId, label: s.label }));
     const previewAttachments = attachments.map(a => a.name);
+    // Include full attachment data for nice display in chat
+    const fullAttachments = attachments.map(a => ({
+      name: a.name,
+      type: (a as any).type || (a as any).mimeType,
+      size: a.size,
+      url: (a as any).url,
+      previewUrl: (a as any).previewUrl || (a as any).url
+    }));
 
     // Create the user message object
     const userMessage: ExtendedChatMessageProps = {
@@ -2825,7 +2963,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       feedback: null,
       metadata: {
         selectionsPreview: previewSelections,
-        attachmentNames: previewAttachments
+        attachmentNames: previewAttachments,
+        attachments: fullAttachments
       }
     };
 
@@ -2841,11 +2980,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         type: 'user',
         message: currentInput,
         timestamp: new Date(),
-        feedback: null
+        feedback: null,
+        metadata: {
+          selectionsPreview: previewSelections,
+          attachmentNames: previewAttachments,
+          attachments: fullAttachments
+        }
       }]);
 
       setInput('');
-      setIsGenerating(true);
+      // Clear attachments and revoke preview URLs
+      attachments.forEach(a => {
+        const preview = (a as any).previewUrl;
+        if (preview) revokeImagePreview(preview);
+      });
+      setAttachments([]);
+      // NOTE: Don't set isGenerating(true) here - it causes all slides to show loading
+      // We only set isGenerating when the agent actually triggers generation (generate_outline action)
 
       // STEP 2: Add AI placeholder message
       const aiMessageId = `ai-${Date.now()}`;
@@ -2891,7 +3042,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           chat_history: convertMessagesToApiFormat(messages),
           context: context
         })) {
-          if (event.type === 'text') {
+          if (event.type === 'status') {
+            // Handle status events (researching, etc.)
+            if (event.status === 'researching') {
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `🔍 Researching: ${event.query || 'your topic'}...`, metadata: { isTyping: true, isResearching: true } }
+                  : m
+              ));
+            }
+          } else if (event.type === 'research') {
+            // Research completed - clear researching state
+            setMessages(prev => prev.map(m =>
+              m.id === aiMessageId
+                ? { ...m, message: '', metadata: { isTyping: true, isResearching: false } }
+                : m
+            ));
+          } else if (event.type === 'text') {
             fullResponse += event.content;
 
             // Remove JSON from display
@@ -3129,6 +3296,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }));
             onOutlineUpdate({ ...outline, slides: updatedSlides });
           } else if (outlineData.action === 'generate_outline' && onOutlineUpdate) {
+            // NOW we set isGenerating because actual generation is starting
+            setIsGenerating(true);
+
             const newOutline = {
               id: outline?.id || uuidv4(),
               title: outlineData.topic || 'Presentation',
@@ -3233,7 +3403,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         feedback: null,
         metadata: {
           selectionsPreview: previewSelections,
-          attachmentNames: previewAttachments
+          attachmentNames: previewAttachments,
+          attachments: fullAttachments
         }
       }]);
 
@@ -3287,6 +3458,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // Immediately clear UI selection bubbles and highlights before network call
       clearSelections();
+      // Revoke preview URLs before clearing attachments
+      attachments.forEach(a => {
+        const preview = (a as any).previewUrl;
+        if (preview) revokeImagePreview(preview);
+      });
       setAttachments([]);
       setIsSelecting(false);
 
@@ -3357,8 +3533,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       // Add the complete AI message to the UI
       setMessages(prevMessages => [...prevMessages, aiMessage]);
 
-      // Clear uploaded attachments after sending
-      setAttachments([]);
+      // Clear uploaded attachments after sending (already revoked preview URLs above)
       // Already cleared above; nothing else to do here
 
     } catch (error) {
@@ -3458,109 +3633,80 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
               // Otherwise render normal chat message
               const inline = (msg.metadata?.isStreamingUpdate && themePreview) ? (
-                <div>
+                <div className="mt-1">
                   <button
-                    className="w-full text-left text-[11px] px-2 py-1 rounded-md glass-panel border border-[#929292]"
+                    className="w-full text-left text-[10px] px-2 py-1 rounded bg-white/5 border border-zinc-300/50 dark:border-neutral-700/50 hover:bg-white/10 transition-colors"
                     onClick={() => setIsThemePreviewOpen(v => !v)}
                     aria-expanded={isThemePreviewOpen}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold">Theme & assets</span>
-                      <ChevronDown className={`w-3 h-3 transition-transform ${isThemePreviewOpen ? 'rotate-180' : ''}`} />
+                      <span className="font-medium text-muted-foreground">Theme & assets</span>
+                      <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform ${isThemePreviewOpen ? 'rotate-180' : ''}`} />
                     </div>
                   </button>
                   {isThemePreviewOpen && (
-                    <div className="mt-2 p-2 rounded-md glass-panel border border-[#929292]">
+                    <div className="mt-1.5 p-2 rounded bg-white/5 border border-zinc-300/50 dark:border-neutral-700/50 space-y-2">
+                      {/* Colors */}
                       {themePreview?.palette && (() => {
-                        // Build clean swatch list: Background, Text, and brand colors (no duplicates)
                         const palette = themePreview.palette;
                         const swatches: Array<{ label: string; color: string }> = [];
-
-                        // Background color
                         const bgColor = palette.primary_background || (Array.isArray(palette.backgrounds) ? palette.backgrounds[0] : null);
-                        if (bgColor) swatches.push({ label: 'Background', color: String(bgColor) });
-
-                        // Text color
+                        if (bgColor) swatches.push({ label: 'BG', color: String(bgColor) });
                         const textColor = palette.primary_text;
                         if (textColor) swatches.push({ label: 'Text', color: String(textColor) });
-
-                        // Brand colors from the colors array (skip duplicates)
-                        const reservedSet = new Set([
-                          String(bgColor || '').toLowerCase(),
-                          String(textColor || '').toLowerCase()
-                        ].filter(Boolean));
-
+                        const reservedSet = new Set([String(bgColor || '').toLowerCase(), String(textColor || '').toLowerCase()].filter(Boolean));
                         const brandColors: string[] = Array.isArray(palette.colors) ? palette.colors.map(String) : [];
                         const seen = new Set<string>();
                         let brandIdx = 0;
-
-                        for (let i = 0; i < brandColors.length && swatches.length < 14; i++) {
+                        for (let i = 0; i < brandColors.length && swatches.length < 8; i++) {
                           const hex = String(brandColors[i] || '').toLowerCase();
-                          if (!hex) continue;
-                          if (reservedSet.has(hex)) continue; // Skip if it's background or text
-                          if (seen.has(hex)) continue; // Skip duplicates
+                          if (!hex || reservedSet.has(hex) || seen.has(hex)) continue;
                           seen.add(hex);
-
-                          // Label first two as "Accent 1" and "Accent 2", rest as "Color 3", "Color 4", etc.
-                          const label = brandIdx === 0 ? 'Accent 1' : brandIdx === 1 ? 'Accent 2' : `Color ${brandIdx + 1}`;
-
-                          swatches.push({ label, color: brandColors[i] });
+                          swatches.push({ label: `A${brandIdx + 1}`, color: brandColors[i] });
                           brandIdx++;
                         }
-
                         if (swatches.length === 0) return null;
                         return (
-                          <div className="mb-2">
-                            <div className="text-xs mb-1 opacity-80">Colors</div>
-                            <div className="overflow-x-auto" style={{ WebkitMaskImage: 'none', maskImage: 'none' }}>
-                              <div className="flex gap-2 min-w-max pr-2">
-                                {swatches.map((s, i) => {
-                                  return (
-                                    <div key={`${s.label}-${i}`} className="flex flex-col items-center w-10">
-                                      <div className="w-7 h-7 rounded border border-zinc-200 dark:border-neutral-700" style={{ background: s.color }} title={`${s.label}: ${s.color}`} />
-                                      <div className="text-[9px] mt-0.5 opacity-70 truncate max-w-[40px]" title={s.label}>{s.label}</div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-muted-foreground w-10 flex-shrink-0">Colors</span>
+                            <div className="flex gap-1">
+                              {swatches.map((s, i) => (
+                                <div key={`${s.label}-${i}`} className="w-5 h-5 rounded-sm border border-zinc-300/50 dark:border-neutral-600/50" style={{ background: s.color }} title={`${s.label}: ${s.color}`} />
+                              ))}
                             </div>
                           </div>
                         );
                       })()}
+                      {/* Fonts */}
                       {themePreview?.typography && (
-                        <div className="mb-2">
-                          <div className="text-xs mb-1 opacity-80">Fonts</div>
-                          <div className="flex gap-3 text-[11px] items-center">
-                            <span
-                              className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-white/10 border border-zinc-200 dark:border-neutral-700"
-                              style={{ fontFamily: `${themePreview.typography?.hero_title?.family || 'Inter'}, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`, fontWeight: 700 }}
-                            >
-                              {themePreview.typography?.hero_title?.family || 'Heading'}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] text-muted-foreground w-10 flex-shrink-0">Fonts</span>
+                          <div className="flex gap-1.5 text-[10px]">
+                            <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100/50 dark:bg-white/5 border border-zinc-200/50 dark:border-neutral-700/50" style={{ fontFamily: `${themePreview.typography?.hero_title?.family || 'Inter'}, sans-serif`, fontWeight: 600 }}>
+                              {themePreview.typography?.hero_title?.family || 'H'}
                             </span>
-                            <span
-                              className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-white/10 border border-zinc-200 dark:border-neutral-700"
-                              style={{ fontFamily: `${themePreview.typography?.body_text?.family || 'Inter'}, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`, fontWeight: 500 }}
-                            >
-                              {themePreview.typography?.body_text?.family || 'Body'}
+                            <span className="px-1.5 py-0.5 rounded-sm bg-zinc-100/50 dark:bg-white/5 border border-zinc-200/50 dark:border-neutral-700/50" style={{ fontFamily: `${themePreview.typography?.body_text?.family || 'Inter'}, sans-serif` }}>
+                              {themePreview.typography?.body_text?.family || 'B'}
                             </span>
                           </div>
                         </div>
                       )}
-                      {/* Logo preview (if extracted) */}
+                      {/* Logo */}
                       {themePreview?.logo?.url && (
-                        <div className="mb-2">
-                          <div className="text-xs mb-1 opacity-80">Logo</div>
-                          <div className="h-8 flex items-center">
-                            <img src={themePreview.logo.url} alt="Brand logo" className="h-8 object-contain rounded border border-zinc-200 dark:border-neutral-700 bg-white" />
-                          </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] text-muted-foreground w-10 flex-shrink-0">Logo</span>
+                          <img src={themePreview.logo.url} alt="Logo" className="h-5 object-contain rounded-sm border border-zinc-200/50 dark:border-neutral-700/50 bg-white" />
                         </div>
                       )}
+                      {/* Tools status */}
                       {Array.isArray(themePreview?.tools) && themePreview.tools.length > 0 && (
-                        <div className="mb-2">
-                          <div className="text-xs mb-1 opacity-80">Tools</div>
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[9px] text-muted-foreground w-10 flex-shrink-0 pt-0.5">Tools</span>
                           <div className="flex flex-wrap gap-1">
                             {themePreview.tools.map((t, i) => (
-                              <span key={`${t.label}-${i}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${t.status === 'finish' ? 'border-green-300 bg-green-50/50 dark:border-green-700/60 dark:bg-green-900/20' : 'border-zinc-300 bg-zinc-50/50 dark:border-neutral-700 dark:bg-white/5'}`}>{t.status === 'finish' ? '✓' : '…'} {t.label}</span>
+                              <span key={`${t.label}-${i}`} className={`text-[9px] px-1 py-0.5 rounded-sm ${t.status === 'finish' ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-zinc-100/50 dark:bg-white/5 text-muted-foreground'}`}>
+                                {t.status === 'finish' ? '✓' : '...'} {t.label}
+                              </span>
                             ))}
                           </div>
                         </div>
@@ -3579,6 +3725,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 />
               );
             })}
+
+            {/* Fallback generate button - subtle, appears after 2+ messages without generation */}
+            {showFallbackGenerate && (
+              <div className="flex justify-start ml-11 mb-2 animate-fade-in">
+                <button
+                  onClick={handleFallbackGenerate}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 group"
+                >
+                  <span>Ready to generate?</span>
+                  <Sparkles size={12} className="opacity-50 group-hover:opacity-100 transition-opacity" style={{ color: COLORS.SUGGESTION_PINK }} />
+                </button>
+              </div>
+            )}
 
             {isLoading && <ChatMessage type="ai" message="" isLoading={true} timestamp={new Date()} />}
 
@@ -3611,33 +3770,88 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 </div>
               )}
 
-              {/* Attachment chips */}
+              {/* Attachment previews */}
               {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-3">
+                <div className="flex flex-wrap gap-2 pt-3 pb-2">
                   {attachments.map((att, idx) => {
                     const pending = (att as any).file && !(att as any).url;
+                    const fileType = (att as any).type || (att as any).mimeType || '';
+                    const isImage = fileType.startsWith('image/');
+                    const previewUrl = (att as any).previewUrl || ((att as any).url && isImage ? (att as any).url : null);
+                    const category = getFileCategory({ name: att.name, type: fileType });
+
+                    // Get appropriate icon for file type
+                    const FileIcon = category === 'image' ? ImageIcon
+                      : category === 'document' ? FileText
+                      : category === 'spreadsheet' ? Table
+                      : category === 'presentation' ? Presentation
+                      : File;
+
                     return (
                       <div
                         key={`${att.name}-${idx}`}
-                        className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs border ${pending
-                          ? 'bg-orange-50/40 dark:bg-orange-900/20 border-orange-300/70 dark:border-orange-700/60 text-orange-700 dark:text-orange-300'
-                          : 'bg-neutral-900/5 dark:bg-white/10 border-neutral-300/60 dark:border-neutral-700'
+                        className={`relative group rounded-lg overflow-hidden border transition-all ${pending
+                          ? 'border-orange-300/70 dark:border-orange-700/60 bg-orange-50/40 dark:bg-orange-900/20'
+                          : 'border-neutral-300/60 dark:border-neutral-700 bg-neutral-900/5 dark:bg-white/10 hover:border-neutral-400 dark:hover:border-neutral-600'
                           }`}
-                        aria-busy={pending}
+                        style={{ minWidth: isImage && previewUrl ? 80 : 'auto' }}
                       >
-                        {pending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                        <span className="truncate max-w-[180px]">
-                          {pending ? `Processing ${att.name}` : att.name}
-                        </span>
+                        {/* Image preview */}
+                        {isImage && previewUrl ? (
+                          <div className="relative">
+                            <img
+                              src={previewUrl}
+                              alt={att.name}
+                              className="w-20 h-16 object-cover"
+                            />
+                            {pending && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <Loader2 className="w-5 h-5 animate-spin text-white" />
+                              </div>
+                            )}
+                            {/* File name overlay */}
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 py-1">
+                              <span className="text-[10px] text-white truncate block">{att.name}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Non-image file display */
+                          <div className="flex items-center gap-2 px-3 py-2">
+                            <div className={`flex-shrink-0 w-8 h-8 rounded flex items-center justify-center ${
+                              category === 'document' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                              category === 'spreadsheet' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                              category === 'presentation' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' :
+                              'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400'
+                            }`}>
+                              {pending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <FileIcon className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div className="flex flex-col min-w-0 max-w-[120px]">
+                              <span className="text-xs font-medium truncate">{att.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{formatFileSize(att.size)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Remove button */}
                         <button
                           aria-label="Remove attachment"
-                          className={`hover:opacity-80 ${pending ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
-                          onClick={() => {
+                          className={`absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center transition-opacity ${
+                            pending ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (pending) return;
+                            // Revoke preview URL if it exists
+                            const preview = (att as any).previewUrl;
+                            if (preview) revokeImagePreview(preview);
                             setAttachments(prev => prev.filter((_, i) => i !== idx));
                           }}
                         >
-                          <XCircle size={14} />
+                          <XCircle size={12} className="text-white" />
                         </button>
                       </div>
                     );
@@ -3663,7 +3877,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               {/* Bottom Row: Suggestions and Buttons */}
               <div className="mt-auto pt-2 relative flex flex-col min-w-0" onClick={() => inputRef.current?.focus()}>
                 {/* Suggestions (top-left) with fade/collapse when typing */}
-                {!isLoading && messages.length === 1 && (
+                {!isLoading && messages.length <= 1 && (
                   <div
                     className="mr-2 overflow-hidden"
                     style={{

@@ -160,6 +160,20 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       handlePropChangeRef.current('props', {}, true);
     }
   }, [component.id, component.props.props]);
+
+  // Fix HTML rendering issue: ensure blank line after <html> tag
+  // This fixes iframe rendering issues with custom components
+  useEffect(() => {
+    const raw = (component.props.render as string) || '';
+    // Check if it's an HTML document that needs fixing
+    if (raw.toLowerCase().includes('<html')) {
+      // Ensure blank line (two newlines) after <html> tag
+      const fixed = raw.replace(/(<html[^>]*>)\s*\n?\s*/gi, '$1\n\n');
+      if (fixed !== raw) {
+        handlePropChangeRef.current('render', fixed, true);
+      }
+    }
+  }, [component.id]);
   
   // Handle prop updates
   const updateProp = useCallback((propName: string, value: any) => {

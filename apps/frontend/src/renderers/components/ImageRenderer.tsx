@@ -709,13 +709,36 @@ export const renderImage = (
     }
   }
   
-  // Apply crop using inset clip-path when not in crop mode
+  // Apply crop by scaling and positioning the image
+  // When cropped, the component has been resized to the cropped area
+  // We need to scale the image up and position it so the cropped portion fills the component
   if (hasCrop && !isCroppingThis) {
-    const clipLeft = (cropRect?.left || 0) * 100;
-    const clipTop = (cropRect?.top || 0) * 100;
-    const clipRight = (cropRect?.right || 0) * 100;
-    const clipBottom = (cropRect?.bottom || 0) * 100;
-    imageStyles.clipPath = `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`;
+    const cropLeft = cropRect?.left || 0;
+    const cropTop = cropRect?.top || 0;
+    const cropRight = cropRect?.right || 0;
+    const cropBottom = cropRect?.bottom || 0;
+
+    // The visible portion as a fraction (e.g., 0.5 means we're showing 50% of the image)
+    const visibleWidth = 1 - cropLeft - cropRight;
+    const visibleHeight = 1 - cropTop - cropBottom;
+
+    // Scale the image up so the visible portion fills the container
+    // e.g., if showing 50%, scale to 200%
+    const scaleX = 1 / visibleWidth;
+    const scaleY = 1 / visibleHeight;
+
+    // Position the image so the cropped portion is visible
+    // The crop left/top as a percentage of the scaled image size
+    const posX = -(cropLeft * scaleX * 100);
+    const posY = -(cropTop * scaleY * 100);
+
+    imageStyles.width = `${scaleX * 100}%`;
+    imageStyles.height = `${scaleY * 100}%`;
+    imageStyles.objectFit = 'cover';
+    imageStyles.objectPosition = 'top left';
+    imageStyles.position = 'absolute';
+    imageStyles.left = `${posX}%`;
+    imageStyles.top = `${posY}%`;
   }
 
   // Ensure outer container has overflow visible for shadow
@@ -983,12 +1006,33 @@ export const renderImage = (
           <button
             onClick={(e) => {
               e.stopPropagation();
-                updateComponent(component.id, { 
-                  props: { 
-                    ...props, 
-                  cropRect: { left: 0, top: 0, right: 0, bottom: 0 }
-                  } 
+              // Restore original frame if stored
+              const originalFrame = props.cropOriginalFrame;
+              if (originalFrame) {
+                updateComponent(component.id, {
+                  frame: {
+                    ...component.frame,
+                    width: originalFrame.width,
+                    height: originalFrame.height,
+                    position: originalFrame.position
+                  },
+                  props: {
+                    ...props,
+                    cropRect: { left: 0, top: 0, right: 0, bottom: 0 },
+                    cropOriginalFrame: undefined,
+                    width: originalFrame.width,
+                    height: originalFrame.height
+                  }
                 }, true);
+              } else {
+                // Just reset cropRect if no original frame stored
+                updateComponent(component.id, {
+                  props: {
+                    ...props,
+                    cropRect: { left: 0, top: 0, right: 0, bottom: 0 }
+                  }
+                }, true);
+              }
             }}
             className="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white hover:bg-black/75"
             style={{ zIndex: 50 }}
@@ -1002,18 +1046,82 @@ export const renderImage = (
         {isCroppingThis && (
             <CropOverlay
             initialCropRect={cropRect || { left: 0, top: 0, right: 0, bottom: 0 }}
+            componentWidth={component.frame?.width || width || 200}
+            componentHeight={component.frame?.height || height || 200}
             onConfirm={(newCropRect) => {
-                  updateComponent(component.id, { 
-                    props: { 
-                      ...props,
-                  cropRect: newCropRect
-                } 
+              // Check if any actual crop is being applied
+              const hasCropValues = newCropRect.left > 0.001 || newCropRect.top > 0.001 ||
+                                    newCropRect.right > 0.001 || newCropRect.bottom > 0.001;
+
+              if (!hasCropValues) {
+                // No crop applied, just exit crop mode
+                stopImageCrop();
+                return;
+              }
+
+              // Calculate the visible area after cropping
+              const cropWidth = 1 - newCropRect.left - newCropRect.right;
+              const cropHeight = 1 - newCropRect.top - newCropRect.bottom;
+
+              // Get current component dimensions
+              const currentWidth = component.frame?.width || width || 200;
+              const currentHeight = component.frame?.height || height || 200;
+              const currentX = component.frame?.position?.x || 0;
+              const currentY = component.frame?.position?.y || 0;
+
+              // Store original frame if this is the first crop (no existing cropOriginalFrame)
+              const originalFrame = props.cropOriginalFrame || {
+                width: currentWidth,
+                height: currentHeight,
+                position: { x: currentX, y: currentY }
+              };
+
+              // Calculate the original image dimensions (before any crop was applied)
+              // Use stored original frame if available
+              const existingCrop = cropRect || { left: 0, top: 0, right: 0, bottom: 0 };
+              const existingCropWidth = 1 - existingCrop.left - existingCrop.right;
+              const existingCropHeight = 1 - existingCrop.top - existingCrop.bottom;
+
+              // The original full image size (from the stored original frame)
+              const originalImageWidth = originalFrame.width;
+              const originalImageHeight = originalFrame.height;
+
+              // New component dimensions based on the new crop
+              const newWidth = originalImageWidth * cropWidth;
+              const newHeight = originalImageHeight * cropHeight;
+
+              // Calculate position offset - the new crop area's top-left in the original image
+              const newCropLeftInOriginal = newCropRect.left * originalImageWidth;
+              const newCropTopInOriginal = newCropRect.top * originalImageHeight;
+
+              // Position from the original frame's position
+              const newX = originalFrame.position.x + newCropLeftInOriginal;
+              const newY = originalFrame.position.y + newCropTopInOriginal;
+
+              // Update component with new crop, size, and position
+              updateComponent(component.id, {
+                frame: {
+                  ...component.frame,
+                  width: Math.round(newWidth),
+                  height: Math.round(newHeight),
+                  position: {
+                    x: Math.round(newX),
+                    y: Math.round(newY)
+                  }
+                },
+                props: {
+                  ...props,
+                  cropRect: newCropRect,
+                  cropOriginalFrame: originalFrame,
+                  width: Math.round(newWidth),
+                  height: Math.round(newHeight)
+                }
               }, true);
-                stopImageCrop();
-              }}
-              onCancel={() => {
-                stopImageCrop();
-              }}
+              stopImageCrop();
+            }}
+            onCancel={() => {
+              stopImageCrop();
+            }}
             />
         )}
       </div>
@@ -1040,9 +1148,13 @@ const CropOverlay: React.FC<{
   initialCropRect: CropRect;
   onConfirm: (rect: CropRect) => void;
   onCancel: () => void;
+  componentWidth: number;
+  componentHeight: number;
 }> = ({ initialCropRect, onConfirm, onCancel }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [crop, setCrop] = useState<CropRect>(initialCropRect);
+  // Initialize crop selection to show the full visible area (what's currently visible after any existing crop)
+  const [crop, setCrop] = useState<CropRect>({ left: 0, top: 0, right: 0, bottom: 0 });
+  const isDraggingRef = useRef(false);
   const dragState = useRef<{
     type: 'move' | 'resize';
     handle?: 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -1059,16 +1171,69 @@ const CropOverlay: React.FC<{
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        onConfirm(crop);
+        e.stopPropagation();
+        // Combine initial crop with new selection
+        const finalCrop = combineCrops(initialCropRect, crop);
+        onConfirm(finalCrop);
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onCancel();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [crop, onConfirm, onCancel]);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [crop, initialCropRect, onConfirm, onCancel]);
+
+  // Click outside handler - attached to document
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Don't dismiss if we're dragging
+      if (isDraggingRef.current || dragState.current) return;
+
+      const target = e.target as HTMLElement;
+      const overlay = overlayRef.current;
+
+      // Check if click is inside the overlay
+      if (overlay && overlay.contains(target)) {
+        return;
+      }
+
+      // Click was outside - apply the crop
+      e.preventDefault();
+      e.stopPropagation();
+      const finalCrop = combineCrops(initialCropRect, crop);
+      onConfirm(finalCrop);
+    };
+
+    // Use mousedown instead of click to catch clicks before they propagate
+    // Small delay to avoid catching the double-click that opened crop mode
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside, true);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [crop, initialCropRect, onConfirm]);
+
+  // Combine initial crop with new selection crop
+  // The new crop is relative to the currently visible area
+  const combineCrops = (initial: CropRect, selection: CropRect): CropRect => {
+    // Calculate the visible area dimensions (0-1 range)
+    const visibleWidth = 1 - initial.left - initial.right;
+    const visibleHeight = 1 - initial.top - initial.bottom;
+
+    // Map the selection (which is relative to visible area) back to full image coordinates
+    return {
+      left: initial.left + selection.left * visibleWidth,
+      top: initial.top + selection.top * visibleHeight,
+      right: initial.right + selection.right * visibleWidth,
+      bottom: initial.bottom + selection.bottom * visibleHeight
+    };
+  };
 
   // Handle mouse move
   const handleMouseMove = (e: MouseEvent) => {
@@ -1085,14 +1250,14 @@ const CropOverlay: React.FC<{
       // Move the entire crop region
       const cropWidth = 1 - startCrop.left - startCrop.right;
       const cropHeight = 1 - startCrop.top - startCrop.bottom;
-      
+
       let newLeft = clamp(startCrop.left + dx);
       let newTop = clamp(startCrop.top + dy);
-      
+
       // Keep within bounds
       if (newLeft + cropWidth > 1) newLeft = 1 - cropWidth;
       if (newTop + cropHeight > 1) newTop = 1 - cropHeight;
-      
+
       newCrop.left = newLeft;
       newCrop.top = newTop;
       newCrop.right = 1 - newLeft - cropWidth;
@@ -1135,6 +1300,10 @@ const CropOverlay: React.FC<{
   // Handle mouse up
   const handleMouseUp = () => {
     dragState.current = null;
+    // Small delay before clearing dragging flag to prevent click-outside from firing
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 50);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
   };
@@ -1143,7 +1312,8 @@ const CropOverlay: React.FC<{
   const startDrag = (e: React.MouseEvent, type: 'move' | 'resize', handle?: 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w') => {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    isDraggingRef.current = true;
     dragState.current = {
       type,
       handle,
@@ -1156,7 +1326,7 @@ const CropOverlay: React.FC<{
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Calculate positions
+  // Calculate positions for the crop selection box
   const left = crop.left * 100;
   const top = crop.top * 100;
   const width = (1 - crop.left - crop.right) * 100;
@@ -1167,6 +1337,7 @@ const CropOverlay: React.FC<{
       ref={overlayRef}
       className="absolute inset-0 z-50"
       style={{ pointerEvents: 'auto' }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Dark overlay with hole for crop area */}
       <div
@@ -1176,12 +1347,21 @@ const CropOverlay: React.FC<{
           top: `${top}%`,
           width: `${width}%`,
           height: `${height}%`,
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
           border: '2px solid white',
-          cursor: 'move'
+          cursor: 'move',
+          boxSizing: 'border-box'
         }}
         onMouseDown={(e) => startDrag(e, 'move')}
-      />
+      >
+        {/* Rule of thirds grid */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
+          <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/30" />
+          <div className="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
+          <div className="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
+        </div>
+      </div>
 
       {/* Corner and edge handles */}
       {[
@@ -1196,7 +1376,7 @@ const CropOverlay: React.FC<{
       ].map(({ pos, cursor, left, top }) => (
         <div
           key={pos}
-          className="absolute w-3 h-3 bg-white border-2 border-black rounded-sm"
+          className="absolute w-3 h-3 bg-white border border-gray-400 rounded-sm shadow-sm"
           style={{
             left: `${left * 100}%`,
             top: `${top * 100}%`,
@@ -1207,9 +1387,34 @@ const CropOverlay: React.FC<{
         />
       ))}
 
+      {/* Confirm/Cancel buttons */}
+      <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 flex gap-2">
+        <button
+          className="px-3 py-1.5 bg-white text-black text-xs font-medium rounded shadow-lg hover:bg-gray-100 transition-colors"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const finalCrop = combineCrops(initialCropRect, crop);
+            onConfirm(finalCrop);
+          }}
+        >
+          Apply
+        </button>
+        <button
+          className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded shadow-lg hover:bg-gray-700 transition-colors"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+
       {/* Instructions */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/75 text-white text-xs px-3 py-2 rounded">
-        Press <kbd className="px-1.5 py-0.5 bg-white/20 rounded">Enter</kbd> to apply or <kbd className="px-1.5 py-0.5 bg-white/20 rounded">Esc</kbd> to cancel
+      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-3 py-1.5 rounded whitespace-nowrap">
+        Drag to adjust • <kbd className="px-1 py-0.5 bg-white/20 rounded text-[10px]">Enter</kbd> apply • <kbd className="px-1 py-0.5 bg-white/20 rounded text-[10px]">Esc</kbd> cancel
       </div>
     </div>
   );

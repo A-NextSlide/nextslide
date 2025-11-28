@@ -80,11 +80,25 @@ export interface AgentDoneEvent {
   type: 'done';
 }
 
+export interface AgentStatusEvent {
+  type: 'status';
+  status: 'researching' | 'thinking';
+  query?: string;
+}
+
+export interface AgentResearchEvent {
+  type: 'research';
+  content: string;
+  citations: string[];
+}
+
 export type AgentEvent =
   | AgentTextEvent
   | AgentOutlineEvent
   | AgentErrorEvent
-  | AgentDoneEvent;
+  | AgentDoneEvent
+  | AgentStatusEvent
+  | AgentResearchEvent;
 
 /**
  * Try to extract partial slide data from streaming JSON text

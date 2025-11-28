@@ -38,12 +38,26 @@ def get_optimized_component_schemas() -> str:
   • objectFit="cover" for backgrounds, "contain" for logos
   • Creative borders: borderRadius can be "50%" (circle), "20px", asymmetric "20px 80px 20px 80px"
 
-**Lines** { startPoint: {x, y}, endPoint: {x, y}, stroke: {color, width, opacity} }
-  • Simple dividers and connectors
-  • Calculate Y position: previousComponent.y + previousComponent.height + gap
+**Lines** { startPoint: {x, y}, endPoint: {x, y}, stroke: {color, width, opacity}, strokeWidth, connectionType }
+  • 🚨 **ALWAYS use Lines for dividers and visual separators - NEVER use Shape!**
+  • Simple horizontal/vertical dividers and connectors
+  • strokeWidth: 1-4px (subtle), stroke color with opacity 0.2-0.5 for elegance
+  • connectionType: "straight" (default) | "curved" | "elbow"
+  • **PLACEMENT RULES:**
+    - Position lines BELOW titles with 30-50px gap (never cut through text!)
+    - Common Y positions: y=250 (below title), y=950 (footer separator)
+    - Horizontal dividers: startPoint.y === endPoint.y
+    - Keep lines SHORT for elegance (300-600px), not full-width unless separating major sections
+  • **TASTEFUL USAGE:**
+    - Use sparingly (0-2 lines per slide MAX)
+    - Subtle colors: "{{text}}" with opacity 0.2-0.4
+    - Never place lines where they visually cut through or touch titles/text
+    - Good: Below title to separate from content, above footer for citations
+    - Bad: Random decorative lines, lines crossing content areas
 
 **Shape** { position, width, height, shapeType: "rectangle"|"circle", fill, stroke, strokeWidth, borderRadius }
-  • Use for: Callout boxes, badges, step numbers, highlighted sections
+  • 🚫 **NEVER use Shape as a line/divider** - use the Lines component instead!
+  • Use for: Callout boxes, badges, step numbers, highlighted sections ONLY
   • 🚨 **TEXT INSIDE SHAPES - MUST CENTER:**
     - Text alignment="center", verticalAlignment="middle"
     - Text zIndex > shape zIndex

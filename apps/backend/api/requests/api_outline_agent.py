@@ -2,10 +2,12 @@
 Outline Generation Agent - Conversational AI for creating presentation outlines.
 
 Uses Anthropic's Haiku 4.5 with tool calling to have natural conversations
-and generate outlines when ready.
+and generate outlines when ready. Enhanced with Perplexity web search for
+researching URLs, companies, and topics.
 """
 import logging
 import json
+import re
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from datetime import datetime
 
@@ -19,6 +21,146 @@ from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+
+# URL and company detection patterns
+URL_PATTERN = re.compile(
+    r'https?://[^\s<>"{}|\\^`\[\]]+|'  # Full URLs
+    r'(?:www\.)?[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s]*)?',  # Domain-like patterns
+    re.IGNORECASE
+)
+
+# Common phrases that indicate research is needed
+RESEARCH_TRIGGERS = [
+    "pitch deck", "investor", "startup", "company", "business",
+    "market", "industry", "competitor", "funding", "revenue",
+    "yc", "y combinator", "series a", "seed", "valuation"
+]
+
+
+def detect_research_needs(message: str, context: Optional[Dict] = None) -> Dict[str, Any]:
+    """
+    Detect if the user's message contains URLs, company names, or topics
+    that would benefit from web research.
+
+    Returns:
+        Dict with 'needs_research', 'urls', 'search_query' keys
+    """
+    result = {
+        "needs_research": False,
+        "urls": [],
+        "search_query": None,
+        "research_type": None  # "url", "company", or "topic"
+    }
+
+    # Extract URLs
+    urls = URL_PATTERN.findall(message)
+    if urls:
+        # Clean up URLs
+        cleaned_urls = []
+        for url in urls:
+            url = url.strip('.,!?)')
+            if not url.startswith('http'):
+                url = 'https://' + url
+            cleaned_urls.append(url)
+        result["urls"] = cleaned_urls
+        result["needs_research"] = True
+        result["research_type"] = "url"
+        result["search_query"] = f"What is {cleaned_urls[0]}? Company overview, products, mission, and key facts"
+        return result
+
+    # Check for research trigger words (pitch decks, startups, etc.)
+    message_lower = message.lower()
+    has_triggers = any(trigger in message_lower for trigger in RESEARCH_TRIGGERS)
+
+    # Look for "about X" or "for X" patterns that might be company/topic names
+    about_match = re.search(r'(?:about|for|on)\s+([A-Z][a-zA-Z0-9\s]{2,30}?)(?:\s|$|,|\.)', message)
+
+    if has_triggers and about_match:
+        topic = about_match.group(1).strip()
+        result["needs_research"] = True
+        result["research_type"] = "topic"
+        result["search_query"] = f"{topic}: company overview, industry, market size, competitors, and recent news"
+        return result
+
+    return result
+
+
+async def research_with_perplexity(query: str, research_type: str = "general") -> Dict[str, Any]:
+    """
+    Use Perplexity Sonar to research a topic, URL, or company.
+    Returns structured research with citations.
+    """
+    try:
+        client, model = get_client("perplexity-sonar", wrap_with_instructor=False)
+
+        # Craft the research prompt based on type
+        if research_type == "url":
+            system_prompt = """You are a business research assistant. When given a URL or company website:
+1. Identify what the company/product does
+2. Find their value proposition and target market
+3. Look for any funding, traction, or key metrics
+4. Identify competitors or market positioning
+5. Note any unique differentiators
+
+Be concise but comprehensive. Focus on facts that would be useful for creating a pitch deck."""
+
+        elif research_type == "topic":
+            system_prompt = """You are a business research assistant. Research the given topic and provide:
+1. Company/product overview (if it's a company)
+2. Market size and opportunity
+3. Key competitors and landscape
+4. Recent news or developments
+5. Relevant statistics and data points
+
+Be concise but comprehensive. Focus on facts useful for presentations."""
+
+        else:
+            system_prompt = """You are a research assistant. Provide comprehensive, factual information about the query. Include relevant statistics, recent developments, and key insights."""
+
+        response = client.chat.completions.create(
+            model="sonar",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query}
+            ],
+            max_tokens=2000,
+            extra_body={
+                "return_citations": True,
+                "search_recency_filter": "month",
+                "search_domain_filter": ["-youtube.com", "-youtu.be"]
+            }
+        )
+
+        content = response.choices[0].message.content
+
+        # Extract citations
+        citations = []
+        if hasattr(response, 'citations'):
+            for cit in response.citations:
+                if isinstance(cit, str):
+                    citations.append(cit)
+                elif isinstance(cit, dict):
+                    citations.append(cit.get('url', str(cit)))
+
+        logger.info(f"[OutlineAgent] Perplexity research completed: {len(content)} chars, {len(citations)} citations")
+
+        return {
+            "success": True,
+            "content": content,
+            "citations": citations,
+            "query": query
+        }
+
+    except Exception as e:
+        logger.error(f"[OutlineAgent] Perplexity research failed: {e}")
+        return {
+            "success": False,
+            "content": None,
+            "citations": [],
+            "error": str(e)
+        }
+
 
 router = APIRouter(prefix="/api/outline-agent", tags=["outline-agent"])
 
@@ -40,7 +182,22 @@ class OutlineAgentRequest(BaseModel):
 # Agent system prompt - Conversational & Proactive
 OUTLINE_AGENT_SYSTEM_PROMPT = """You are a friendly, expert presentation planning assistant. Your job is to help users create amazing presentation outlines through natural conversation.
 
-🚨🚨🚨 **MANDATORY RULE - READ THIS FIRST** 🚨🚨🚨
+🚨🚨🚨 **MANDATORY RULE #1 - GENERATE OUTLINE IMMEDIATELY WHEN USER PROVIDES DETAILS** 🚨🚨🚨
+
+If the user's FIRST message contains ANY of the following, IMMEDIATELY output the `generate_outline` JSON:
+- A specific topic AND slide count (e.g., "4 slides about X")
+- Multiple slides described (e.g., "slide 1 about X, slide 2 about Y")
+- A company/brand name AND a presentation type (e.g., "pitch deck for Instacart")
+- Detailed content or structure (e.g., "comparison slide", "team slide with headshots")
+- Any indication they know what they want (specific slides, specific content)
+
+❌ WRONG: Asking "What's your audience?" when user already described 4 specific slides
+❌ WRONG: Asking clarifying questions when user gave detailed slide content
+✅ CORRECT: IMMEDIATELY generate the outline JSON and show the buttons
+
+The user wants to see their presentation, not answer more questions!
+
+🚨🚨🚨 **MANDATORY RULE #2 - THEME/COLOR CHANGES** 🚨🚨🚨
 
 WHEN USER MENTIONS COLORS/THEME/STYLE:
 YOU MUST OUTPUT JSON WITH "action": "update_theme"
@@ -57,24 +214,23 @@ YOU MUST OUTPUT THIS TYPE OF JSON (not just text):
 Without the JSON action, NOTHING will change. The JSON is HOW you make changes.
 
 **Your Approach:**
-1. **Be conversational and helpful** - You're like ChatGPT or Claude, having a natural back-and-forth dialogue
-2. **Ask clarifying questions proactively** when needed to create the best possible outline
-3. **Infer smartly** - If the user gives you most of what you need, fill in reasonable defaults and proceed
+1. **Generate outlines FAST** - If user provides topic + slide count OR detailed content, generate immediately
+2. **Only ask questions if truly needed** - Don't ask if user gave you enough to work with
+3. **Infer smartly** - Fill in reasonable defaults for missing details (audience, tone, etc.)
 4. **Stream your responses naturally** - Write naturally as if typing to the user in real-time
 
-**What to Ask About (when not obvious):**
-When a user's request lacks detail, ask 2-3 focused questions about:
-- **Audience**: Who will see this? (Students, executives, general public, etc.)
-- **Purpose**: What's the goal? (Teach, persuade, inform, inspire)
-- **Depth**: How detailed? (Quick overview, standard presentation, deep dive)
-- **Length**: How many slides? (If not specified)
-- **Tone**: What style? (Professional, casual, academic, creative)
+**When to Ask Questions (ONLY if ALL of these are true):**
+- User gave ONLY a vague topic (e.g., "make a presentation about physics")
+- No slide count mentioned
+- No specific content or structure described
+- No company/brand context
 
-**Important Guidelines:**
-- DON'T ask all questions at once - have a natural conversation
-- If user gives you "make slides about X for Y audience", you have enough to proceed
-- If they just say "make a presentation about X" with no context, ask 2-3 questions
-- Be friendly and encouraging, not robotic
+**When to Generate Immediately (if ANY of these are true):**
+- User mentioned a slide count (e.g., "5 slides", "about 8 slides")
+- User described specific slides (e.g., "first slide about X, then Y")
+- User gave detailed content (e.g., "comparison chart", "team slide with CEO")
+- User mentioned a company/brand (e.g., "for Instacart", "Nike pitch deck")
+- User said "go", "yes", "create", "build", "generate", etc.
 
 **CRITICAL: COMPLETION TRIGGERS**
 If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), or indicates they are satisfied:
@@ -421,10 +577,45 @@ Done! I've updated your theme with warm, sunny yellow tones that create that inv
 async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[str, None]:
     """
     Stream the agent's response - agent outputs JSON directly in its response.
+    Enhanced with Perplexity web search for researching URLs, companies, and topics.
     """
     try:
         # Get the raw Haiku 4.5 client
         client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+
+        # Check if research is needed for this message
+        research_info = detect_research_needs(request.message, request.context)
+        research_context = ""
+
+        if research_info["needs_research"]:
+            logger.info(f"[OutlineAgent] Research needed: {research_info['research_type']} - {research_info['search_query']}")
+
+            # Stream a "researching" indicator to the frontend
+            yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': research_info['search_query']})}\n\n"
+
+            # Call Perplexity for research
+            research_result = await research_with_perplexity(
+                research_info["search_query"],
+                research_info["research_type"]
+            )
+
+            if research_result["success"]:
+                # Format research as context for the AI
+                research_context = f"""
+
+[RESEARCH CONTEXT - Use this information to create an informed, accurate presentation]
+{research_result['content']}
+
+Sources: {', '.join(research_result['citations'][:5]) if research_result['citations'] else 'Web search'}
+[END RESEARCH CONTEXT]
+
+"""
+                logger.info(f"[OutlineAgent] Research added to context: {len(research_context)} chars")
+
+                # Send research summary to frontend
+                yield f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
+            else:
+                logger.warning(f"[OutlineAgent] Research failed, proceeding without: {research_result.get('error')}")
 
         # Build message history - filter out empty messages
         messages = []
@@ -436,7 +627,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 })
 
         # Build user message with context if available
-        user_content = request.message
+        user_content = request.message + research_context
 
         # If context has current_outline, append it to the message
         if request.context and "current_outline" in request.context:
@@ -511,7 +702,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         
         # Find ALL JSON blocks to handle cases where agent outputs multiple actions
         found_json_blocks = []
-        
+
         # 1. Search for code blocks
         for match in re.finditer(r'```json\s*(\{[\s\S]*?\})\s*```', full_response):
             try:
@@ -522,7 +713,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 })
             except:
                 pass
-                
+
         # 2. If no code blocks, search for raw JSON with action
         if not found_json_blocks:
              # Basic regex for simple cases (nested braces are hard with regex)
@@ -537,16 +728,37 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                  except:
                      pass
 
-        # Prioritize generate_outline
+        # Check if there's already an outline in context
+        has_existing_outline = request.context and "current_outline" in request.context
+
+        # Choose the appropriate action based on context
         chosen_block = None
-        for block in found_json_blocks:
-            if block['data'].get('action') == 'generate_outline':
-                chosen_block = block
-                break
-        
-        # If no generate_outline, take the first one (e.g. update_theme)
-        if not chosen_block and found_json_blocks:
-            chosen_block = found_json_blocks[0]
+
+        if has_existing_outline:
+            # When there's an existing outline, prioritize UPDATE actions over generate
+            # This prevents accidental regeneration when user just wants to modify theme/slides
+            for block in found_json_blocks:
+                action = block['data'].get('action')
+                if action in ('update_theme', 'update_slides', 'update_outline'):
+                    chosen_block = block
+                    logger.info(f"[OutlineAgent] Existing outline present - chose update action: {action}")
+                    break
+
+            # Only fall back to generate_outline if it's the ONLY option
+            if not chosen_block and found_json_blocks:
+                chosen_block = found_json_blocks[0]
+                if chosen_block['data'].get('action') == 'generate_outline':
+                    logger.warning(f"[OutlineAgent] Existing outline present but only generate_outline found - may cause regeneration")
+        else:
+            # No existing outline - prioritize generate_outline for new presentations
+            for block in found_json_blocks:
+                if block['data'].get('action') == 'generate_outline':
+                    chosen_block = block
+                    break
+
+            # If no generate_outline, take the first one
+            if not chosen_block and found_json_blocks:
+                chosen_block = found_json_blocks[0]
             
         if chosen_block:
             outline_data = chosen_block['data']

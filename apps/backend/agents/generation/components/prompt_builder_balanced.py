@@ -19,9 +19,16 @@ Available components:
 - TiptapTextBlock: Rich text content (multiple blocks, each with props and texts[] styles)
 - Image: Display images with positioning
 - Icon: Functional icons next to text (bullets, headers, process labels). NEVER decorative
-- Shape: Functional containers/dividers only. NEVER decorative
+- Shape: Functional containers for text ONLY (callout boxes, badges). NEVER as lines or dividers!
+- Lines: 🚨 USE FOR ALL DIVIDERS! startPoint/endPoint coordinates, position BELOW titles (y=250), max 0-2 per slide
 - Chart: Data visualization component (preferred for quantitative content)
 - CustomComponent: Special visualizations and infographics when justified by data/content
+
+CRITICAL LINES RULES:
+- ALWAYS use Lines component for dividers - NEVER use Shape (thin rectangle)!
+- Position lines BELOW titles with 30-50px gap (never cut through text!)
+- Subtle styling: strokeWidth 1-3px, stroke opacity 0.2-0.4
+- Maximum 0-2 lines per slide, use sparingly for elegance
 
 IMPORTANT RULES:
 1. Title slides: Background (image or gradient). Content/data slides: prefer NO Background unless necessary for readability
@@ -199,7 +206,7 @@ Output valid JSON with this structure:
             "- Make it visually appealing and professional",
             "- If numbers/percentages are present, include a LARGE chart (dominant visual)",
             "- Icons (optional) should sit beside text when used; never decorative; do NOT add icons to every text block",
-            "- Shapes only as containers/dividers (never decorative)",
+            "- Shapes ONLY for text containers (callout boxes, badges) - NEVER as dividers! Use Lines component for dividers!",
             "",
             "Generate the complete slide JSON."
         ])

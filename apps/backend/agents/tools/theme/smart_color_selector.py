@@ -253,51 +253,16 @@ class SmartColorSelector:
     ) -> Dict[str, Any]:
         """Get colors based on the topic.
 
-        Now uses Huemint AI for better palette generation when no specific
-        brand/entity is detected, falling back to database search only if needed.
+        PRIORITY ORDER:
+        1. Semantic palette DB search (understands context like "American" → red/white/blue)
+        2. Huemint AI generation (for generic topics with no semantic match)
 
-        IMPORTANT: Uses the SAME logic as frontend ThemePanel dropdown:
-        - palette[0] = background
-        - palette[1] = text
-        - palette[2] = accent
-        No complex post-processing to avoid black/white slides!
+        This ensures contextual topics get appropriate colors from the DB,
+        while generic topics still get aesthetically pleasing Huemint palettes.
         """
-        # First, try Huemint AI palette generation (better than database search)
-        try:
-            logger.info("Using Huemint AI to generate palette")
-            huemint_palette = await generate_huemint_palette(
-                num_colors=3,
-                variety_seed=variety_seed
-            )
-
-            if huemint_palette and huemint_palette.get('colors'):
-                raw_colors = huemint_palette.get('colors', [])
-
-                # Filter out pink if not wanted
-                if style_preferences and not self._check_wants_pink(str(style_preferences)):
-                    filtered_colors = filter_out_pink_colors(raw_colors)
-                    if filtered_colors and len(filtered_colors) >= 3:
-                        raw_colors = filtered_colors
-
-                # IMPORTANT: Huemint returns colors in arbitrary order, NOT semantic order!
-                # We need to intelligently assign them to background, text, and accent roles
-                colors = self._assign_semantic_roles(raw_colors[:3])
-
-                logger.info(f"✅ Assigned Huemint colors semantically: bg={colors[0]}, text={colors[1]}, accent={colors[2]}")
-
-                return {
-                    'colors': colors[:3],  # Only 3 colors like frontend
-                    'backgrounds': [colors[0]],  # palette[0] = background
-                    'accents': [colors[2]] if len(colors) > 2 else [colors[0]],  # palette[2] = accent
-                    'text_colors': {'primary': colors[1]} if len(colors) > 1 else {},  # palette[1] = text
-                    'source': 'huemint_ai',
-                    'confidence': 0.9,
-                    'palette_name': 'AI Generated Palette'
-                }
-        except Exception as e:
-            logger.warning(f"Huemint palette generation failed, falling back to database: {e}")
-        
-        # Fallback to topic-based database search
+        # FIRST: Try semantic database search - this understands context!
+        # For topics like "American", "Christmas", "Ocean" etc., the embedding search
+        # will find palettes with matching semantic meaning
         results = search_palette_by_topic(title, style_preferences, limit=5)
         
         if results:
@@ -316,11 +281,46 @@ class SmartColorSelector:
                     selected = results[0]
                 return self._format_color_result(selected, "topic match")
         
-        # Fallback to random palette from database
+        # SECOND: If semantic search found nothing, try Huemint AI for a harmonious palette
+        # Huemint doesn't understand context but generates aesthetically pleasing colors
+        try:
+            logger.info(f"[SmartColorSelector] No semantic match for '{title}', trying Huemint AI")
+            huemint_palette = await generate_huemint_palette(
+                num_colors=3,
+                variety_seed=variety_seed
+            )
+
+            if huemint_palette and huemint_palette.get('colors'):
+                raw_colors = huemint_palette.get('colors', [])
+
+                # Filter out pink if not wanted
+                if style_preferences and not self._check_wants_pink(str(style_preferences)):
+                    filtered_colors = filter_out_pink_colors(raw_colors)
+                    if filtered_colors and len(filtered_colors) >= 3:
+                        raw_colors = filtered_colors
+
+                # Assign semantic roles: background, text, accent
+                colors = self._assign_semantic_roles(raw_colors[:3])
+
+                logger.info(f"[SmartColorSelector] ✅ Huemint colors: bg={colors[0]}, text={colors[1]}, accent={colors[2]}")
+
+                return {
+                    'colors': colors[:3],
+                    'backgrounds': [colors[0]],
+                    'accents': [colors[2]] if len(colors) > 2 else [colors[0]],
+                    'text_colors': {'primary': colors[1]} if len(colors) > 1 else {},
+                    'source': 'huemint_ai',
+                    'confidence': 0.9,
+                    'palette_name': 'AI Generated Palette'
+                }
+        except Exception as e:
+            logger.warning(f"[SmartColorSelector] Huemint failed: {e}")
+
+        # THIRD: Fallback to random palette from database
         random_palette = get_random_palette(exclude_pink=True, variety_seed=variety_seed)
         if random_palette:
             return self._format_color_result(random_palette, "random selection")
-        
+
         # Ultimate fallback
         return self._get_default_palette()
     

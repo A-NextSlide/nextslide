@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { Progress } from '@/components/ui/progress';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { CheckCircle2 } from 'lucide-react';
 
 interface EnhancedDeckProgressProps {
@@ -183,253 +182,112 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
   };
 
   return (
-    <div className="space-y-4 w-full" style={{ minWidth: 0 }}>
-      {/* Vertical Phase Timeline - Always show this */}
-      <div className="relative pl-4 w-full" style={{ minWidth: 0 }}>
+    <div className="space-y-3 w-full" style={{ minWidth: 0 }}>
+      {/* Current step - prominent */}
+      <div className="flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse flex-shrink-0" />
+        <span className="text-xs font-medium text-foreground">
+          {phases[Math.max(currentPhaseIndex, progressPhaseIndex)]?.label || 'Starting'}
+        </span>
+        {substep && !isComplete && (() => {
+          const label = getSubstepLabel(substep, currentSlide);
+          return label ? (
+            <span className="text-xs text-orange-500">{label}</span>
+          ) : null;
+        })()}
+      </div>
+
+      {/* Phase dots - horizontal row */}
+      <div className="flex items-center gap-1.5">
         {phases.map((p, index) => {
-          // Determine if this phase is active, completed, or pending
           let isPhaseCompleted = false;
           let isPhaseActive = false;
-          
+
           if (isComplete) {
-            // If generation is complete, all phases are completed
             isPhaseCompleted = true;
-            isPhaseActive = false;
           } else {
-            // Use the actual current phase index for active state
             const effectivePhaseIndex = Math.max(currentPhaseIndex, progressPhaseIndex);
-            
-            // A phase is completed if we've passed it
             isPhaseCompleted = index < effectivePhaseIndex;
-            
-            // A phase is active if it matches our current phase
             isPhaseActive = index === effectivePhaseIndex;
           }
-          
-          const isLast = index === phases.length - 1;
-          
+
           return (
-            <div key={p.key} className="relative" style={{ marginBottom: isLast ? '0' : '2rem' }}>
-              {/* Phase Row */}
-              <div className="flex items-center gap-3 relative w-full" style={{ minWidth: 0 }}>
-                {/* Phase Dot - Animated fill */}
-                <div className="relative">
-                  {/* Outer ring */}
-                  <div
-                    className={cn(
-                      "w-3 h-3 rounded-full border-2 transition-all duration-500 z-10 relative",
-                      isPhaseCompleted || isPhaseActive ? "border-orange-500" : "border-muted-foreground"
-                    )}
-                  />
-                  {/* Inner fill - animated */}
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ 
-                      scale: isPhaseCompleted ? 1 : isPhaseActive ? 0.5 : 0,
-                      opacity: isPhaseCompleted ? 1 : isPhaseActive ? 1 : 0
-                    }}
-                    transition={{ 
-                      duration: 0.3,
-                      delay: isPhaseCompleted ? index * 0.1 : 0,
-                      ease: "easeOut"
-                    }}
-                    className={cn(
-                      "absolute inset-0.5 rounded-full",
-                      isPhaseCompleted ? "bg-orange-500" : 
-                       isPhaseActive ? "bg-orange-500" : 
-                      "bg-transparent"
-                    )}
-                  />
-                  {/* Active pulse ring */}
-                  {false && isPhaseActive && !isComplete && (
-                    <motion.div
-                      initial={{ scale: 1, opacity: 0.5 }}
-                      animate={{ 
-                        scale: 1.5,
-                        opacity: 0
-                      }}
-                      transition={{
-                        duration: 1.5,
-                        repeat: Infinity,
-                        ease: "easeOut"
-                      }}
-                      className="absolute inset-0 w-3 h-3 rounded-full border-2 border-orange-500"
-                    />
-                  )}
-                </div>
-                
-                {/* Phase Label - hide when showing a substep to avoid duplicated/truncated leading character */}
-                {!(isPhaseActive && substep && !isComplete) && (
-                  <motion.span
-                    initial={{ opacity: 0.5 }}
-                    animate={{ 
-                      opacity: isPhaseActive || isPhaseCompleted ? 1 : 0.5,
-                      x: isPhaseActive || isPhaseCompleted ? 0 : -5
-                    }}
-                    transition={{ duration: 0.3 }}
-                    className={cn(
-                      "text-sm font-medium truncate flex-1",
-                      isPhaseActive || isPhaseCompleted ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    {p.label}
-                  </motion.span>
+            <React.Fragment key={p.key}>
+              <div
+                className={cn(
+                  "w-2.5 h-2.5 rounded-full transition-all duration-300",
+                  isPhaseCompleted ? "bg-orange-500" :
+                  isPhaseActive ? "bg-orange-500" :
+                  "bg-muted-foreground/25"
                 )}
-                
-                {/* Substep indicator - shows inline */}
-                {isPhaseActive && substep && !isComplete && (() => {
-                  const label = getSubstepLabel(substep, currentSlide);
-                  if (!label) return null;
-                  return (
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={label}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                        className="text-xs text-orange-600 dark:text-orange-400 ml-2 truncate flex-1"
-                        style={{ maxWidth: '100%', minHeight: '16px', display: 'inline-flex', alignItems: 'center' }}
-                      >
-                        {label}
-                      </motion.span>
-                    </AnimatePresence>
-                  );
-                })()}
-              </div>
-              
-              {/* Connecting Line - Animated fill */}
-              {!isLast && (
-                <div className="absolute left-[5px] top-4 w-0.5 h-8" style={{ height: '2rem' }}>
-                  {/* Background line */}
-                  <div className="absolute inset-0 bg-muted-foreground/30" />
-                  {/* Animated fill line */}
-                  <motion.div
-                    initial={{ height: 0 }}
-                    animate={{ 
-                      height: isPhaseCompleted ? '100%' : '0%'
-                    }}
-                    transition={{ 
-                      duration: 0.5,
-                      delay: isPhaseCompleted ? index * 0.1 + 0.2 : 0,
-                      ease: "easeInOut"
-                    }}
-                    className="absolute top-0 left-0 w-full bg-orange-500"
-                  />
-                </div>
+                title={p.label}
+              />
+              {index < phases.length - 1 && (
+                <div className={cn(
+                  "w-3 h-0.5 rounded-full transition-colors",
+                  isPhaseCompleted ? "bg-orange-500" : "bg-muted-foreground/20"
+                )} />
               )}
-            </div>
+            </React.Fragment>
           );
         })}
+        <span className="text-[10px] text-muted-foreground ml-2">
+          {Math.max(currentPhaseIndex, progressPhaseIndex) + 1}/{phases.length}
+        </span>
       </div>
 
-      {/* Progress Bar and Status at Bottom */}
-      <div className="space-y-2">
-        {/* Progress Bar - show only when we have measurable progress (> 0) */}
-        {animatedProgress > 0 && (
-          <div className="relative">
-            <div className="h-3 bg-muted rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${isComplete ? 100 : Math.min(100, Math.max(0, animatedProgress))}%` }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                className="h-full bg-gradient-to-r from-orange-500 to-orange-600"
-              />
-            </div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-foreground">
-                {isComplete ? '100' : Math.round(Math.max(0, animatedProgress))}%
-              </span>
-            </div>
-          </div>
-        )}
-        
-        {/* Status Message - Hide when complete */}
-        {!isComplete && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={message}
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="text-sm text-muted-foreground text-center"
-            >
-              {message}
-            </motion.div>
-          </AnimatePresence>
-        )}
+      {/* Progress bar */}
+      {animatedProgress > 0 && (
+        <div className="relative h-2 bg-muted rounded-full overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${isComplete ? 100 : Math.min(100, Math.max(0, animatedProgress))}%` }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="h-full bg-gradient-to-r from-orange-500 to-orange-400"
+          />
+        </div>
+      )}
 
-        {/* Slide Grid - Only show during slide generation */}
-        {phase === 'slide_generation' && totalSlides > 0 && !isComplete && (
-          <div className="space-y-2 mt-3">
-            <div className="grid grid-cols-8 gap-1">
-              {Array.from({ length: totalSlides }, (_, i) => {
-                const isCompleted = completedSlides.has(i);
-                const isInProgress = slidesInProgress.has(i);
-                const hasError = errors.has(i);
-                
-                return (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: Math.min(i * 0.02, 0.2) }}
-                    className={cn(
-                      "aspect-[16/9] rounded-sm flex items-center justify-center text-[10px] font-medium transition-all duration-300",
-                      isCompleted && "bg-green-500 text-white",
-                      isInProgress && "bg-blue-500 text-white animate-pulse",
-                      hasError && "bg-red-500 text-white",
-                      !isCompleted && !isInProgress && !hasError && "bg-muted border border-border"
-                    )}
-                    title={
-                      hasError ? `Error: ${errors.get(i)}` : 
-                      isCompleted ? `Slide ${i + 1} completed` :
-                      isInProgress ? `Generating slide ${i + 1}` :
-                      `Slide ${i + 1} pending`
-                    }
-                  >
-                    {i + 1}
-                  </motion.div>
-                );
-              })}
-            </div>
-            
-            {/* Slide Stats */}
-            <div className="flex gap-4 text-xs text-muted-foreground justify-center">
-              <span>{completedSlides.size} of {totalSlides} completed</span>
-              {slidesInProgress.size > 0 && (
-                <span className="text-blue-600 dark:text-blue-400">
-                  ({slidesInProgress.size} generating)
-                </span>
-              )}
-              {errors.size > 0 && (
-                <span className="text-red-600 dark:text-red-400">
-                  Errors: {errors.size}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Slide grid */}
+      {phase === 'slide_generation' && totalSlides > 0 && !isComplete && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1 flex-wrap">
+            {Array.from({ length: totalSlides }, (_, i) => {
+              const isSlideCompleted = completedSlides.has(i);
+              const isInProgress = slidesInProgress.has(i);
+              const hasError = errors.has(i);
 
-      {/* Completion Message - Show below progress when complete */}
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "w-5 h-4 rounded text-[9px] flex items-center justify-center font-medium transition-colors",
+                    isSlideCompleted && "bg-green-500 text-white",
+                    isInProgress && "bg-orange-500 text-white",
+                    hasError && "bg-red-500 text-white",
+                    !isSlideCompleted && !isInProgress && !hasError && "bg-muted border border-muted-foreground/20 text-muted-foreground"
+                  )}
+                >
+                  {i + 1}
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            {completedSlides.size} of {totalSlides} slides complete
+          </div>
+        </div>
+      )}
+
+      {/* Completion */}
       {isComplete && (
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="space-y-3"
+          className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-500/10 px-2.5 py-1.5 rounded-md"
         >
-          {/* Success message - smaller and simpler */}
-          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-700">
-            <div className="flex items-center justify-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span className="text-xs font-medium text-green-700 dark:text-green-300">
-                Your presentation is ready!
-              </span>
-            </div>
-          </div>
-
-
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span className="font-medium">Your presentation is ready</span>
         </motion.div>
       )}
     </div>

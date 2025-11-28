@@ -54,3 +54,5 @@ resend==2.11.0  # For professional email sending
 # sendgrid==6.11.0  # Uncomment if using SendGrid
 # boto3==1.34.0     # Uncomment if using AWS SES
 
+jsbeautifier>=1.15.0
+cssbeautifier>=1.15.0

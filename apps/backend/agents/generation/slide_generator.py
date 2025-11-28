@@ -20,6 +20,8 @@ from setup_logging_optimized import get_logger
 from agents.generation.theme_adapter import ThemeAdapter
 from agents.generation.components.layout_integrator import LayoutIntegrator
 from services.user_info_service import get_user_info_service
+from agents.generation.custom_component_generator import CustomComponentGenerator
+from agents.config import ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
 
 logger = get_logger(__name__)
 
@@ -47,7 +49,9 @@ class SlideGeneratorV2(ISlideGenerator):
         # Structured layout integration removed for model-only refactor
         self.layout_integrator = None
         self._enhanced_layout_cache = {}
-        
+        # Dedicated CustomComponent generator using Gemini 3 Pro
+        self.custom_component_generator = CustomComponentGenerator()
+
         logger.debug("SlideGeneratorV2 initialized - improved architecture")
     
     async def generate_slide(
@@ -108,7 +112,17 @@ class SlideGeneratorV2(ISlideGenerator):
             slide_data = await self._generate_with_ai(
                 system_prompt, user_prompt, context, rag_context
             )
-            
+
+            # Step 3.5: Enhance CustomComponents with Gemini 3 Pro if enabled
+            if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN:
+                try:
+                    slide_data = await self._enhance_custom_components_with_gemini(
+                        slide_data, context
+                    )
+                except Exception as cc_err:
+                    logger.warning(f"CustomComponent enhancement failed: {cc_err}")
+                    print(f"[CUSTOM_COMPONENT] ❌ Enhancement failed: {cc_err}")
+
             # Step 4: Post-process and validate
             substep_event = {
                 'type': 'slide_substep',
@@ -1542,7 +1556,68 @@ class SlideGeneratorV2(ISlideGenerator):
             return new_logo_comp
             
         return None
-    
+
+    async def _enhance_custom_components_with_gemini(
+        self,
+        slide_data: Dict[str, Any],
+        context: SlideGenerationContext
+    ) -> Dict[str, Any]:
+        """
+        Generate a FULL-SLIDE CustomComponent using Gemini 3 Pro.
+
+        The entire slide becomes one beautiful HTML/CSS/JS component that:
+        - Covers the full 1920x1080 slide
+        - Handles its own background
+        - Contains all content with proper theme styling
+        - Is interactive and animated
+        """
+        components = slide_data.get('components', [])
+
+        # Check if this is a title slide
+        layout = getattr(context.slide_outline, 'layout', 'content')
+        is_title_slide = context.slide_index == 0 or 'title' in layout.lower() or 'cover' in layout.lower()
+
+        if is_title_slide:
+            print(f"[GEMINI 3 PRO] 🎬 TITLE SLIDE - generating stunning animated title!")
+        else:
+            print(f"[GEMINI 3 PRO] 🎨 Generating FULL-SLIDE CustomComponent for slide {context.slide_index + 1}")
+        print(f"[GEMINI 3 PRO] 📦 Replacing components: {[c.get('type') for c in components]}")
+
+        theme_dict = context.theme.to_dict() if context.theme and hasattr(context.theme, 'to_dict') else (context.theme or {})
+        content = context.slide_outline.content or context.slide_outline.title
+
+        # Get background color from theme for the CustomComponent to use
+        colors = theme_dict.get('color_palette', {})
+        bg_color = colors.get('primary_background', '#0a0e27')
+
+        # Generate a FULL-SLIDE CustomComponent (1920x1080, position 0,0)
+        enhanced = await self.custom_component_generator.generate(
+            content=content,
+            theme=theme_dict,
+            slide_context={
+                'title': context.slide_outline.title,
+                'slide_index': context.slide_index,
+                'total_slides': context.total_slides,
+                'slide_type': getattr(context.slide_outline, 'layout', 'content'),
+                'is_full_slide': True,  # Signal this is a full-slide component
+                'background_color': bg_color
+            },
+            width=1920,
+            height=1080,
+            position={'x': 0, 'y': 0}
+        )
+
+        if enhanced:
+            # The CustomComponent IS the entire slide - no separate background needed
+            slide_data['components'] = [enhanced]
+
+            print(f"[GEMINI 3 PRO] ✅ Created FULL-SLIDE CustomComponent!")
+            print(f"[GEMINI 3 PRO] 📦 Slide is now: [CustomComponent] (1920x1080)")
+        else:
+            print(f"[GEMINI 3 PRO] ⚠️ Generation returned None, keeping original content")
+
+        return slide_data
+
     def _inject_intelligent_logo(self, slide_data: Dict[str, Any], slide_info: Dict[str, Any], theme: Dict[str, Any], context: Optional[SlideGenerationContext] = None) -> Dict[str, Any]:
         """Intelligently inject logo based on slide type and context if AI didn't create one."""
         

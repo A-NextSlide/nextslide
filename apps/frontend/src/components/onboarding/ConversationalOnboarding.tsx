@@ -62,7 +62,8 @@ type ConversationStage =
   | 'conversing'
   | 'planning'
   | 'presentation_type_selection'
-  | 'confirmed';
+  | 'confirmed'
+  | 'chat';
 
 interface ConversationalOnboardingProps {
   onComplete: (data: CollectedData) => void;
@@ -534,6 +535,21 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                 <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Fallback: Show "Ready to Generate" button after 1+ user messages if no outline generated yet */}
+        {!isAgentTyping && !isProcessing && (stage === 'conversing' || stage === 'chat') && messages.filter(m => m.role === 'user').length >= 1 && (
+          <div className="flex justify-center mt-4 animate-in fade-in">
+            <button
+              onClick={() => {
+                setStage('presentation_type_selection');
+                addMessage('assistant', "Choose your presentation style:", undefined, true);
+              }}
+              className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors"
+            >
+              Ready to generate →
+            </button>
           </div>
         )}
 

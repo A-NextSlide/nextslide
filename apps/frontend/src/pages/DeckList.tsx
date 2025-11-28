@@ -62,8 +62,8 @@ import ConversationalOnboarding from '@/components/onboarding/ConversationalOnbo
 import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
 
-// Rotating words animation for hero heading - vertical slot machine style
-const WORDS = ['REPORTS', 'DATA', 'MEETINGS', 'NOTES', 'IDEAS'];
+// Rotating words animation for hero heading - vertical slot machine style  
+const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
 
 const RotatingWords = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -97,9 +97,10 @@ const RotatingWords = () => {
 
   // Character widths for each word to animate container width
   const wordWidths: Record<string, string> = {
+    'PROPOSALS': '10ch',
+    'STRATEGIES': '11ch',
     'REPORTS': '8ch',
-    'DATA': '5ch',
-    'MEETINGS': '9.5ch', 
+    'DOCS': '5ch', 
     'NOTES': '6ch',
     'IDEAS': '5.5ch',
   };
@@ -1720,6 +1721,27 @@ const DeckList: React.FC = () => {
                             console.log('[DeckList] 🌟 BATCH OUTLINE UPDATE');
                             console.log('[DeckList] 📊 Incoming slides count:', params.slides?.length || 0);
                             console.log('[DeckList] 📋 Current outline slides count:', currentOutline?.slides?.length || 0);
+
+                            // SAFETY CHECK: Don't clear existing slides if incoming params have no slides
+                            // This prevents accidental data loss when only theme/style updates are intended
+                            if ((!params.slides || params.slides.length === 0) && currentOutline?.slides?.length > 0) {
+                              console.log('[DeckList] ⚠️ SAFETY: Incoming params have no slides but current outline has slides');
+                              console.log('[DeckList] ⚠️ Preserving existing slides, only updating metadata');
+
+                              // Only update outline metadata (title, stylePreferences), preserve existing slides
+                              setCurrentOutline(prev => {
+                                if (!prev) return prev;
+                                return {
+                                  ...prev,
+                                  title: params.topic || prev.title,
+                                  stylePreferences: params.stylePreferences ? {
+                                    ...prev.stylePreferences,
+                                    ...params.stylePreferences
+                                  } : prev.stylePreferences
+                                };
+                              });
+                              return;
+                            }
 
                             const initialSlides: FrontendSlideOutline[] = params.slides ? params.slides.map((s: any, i: number) => {
                               // Try to find existing slide at this index to preserve ID for smooth streaming

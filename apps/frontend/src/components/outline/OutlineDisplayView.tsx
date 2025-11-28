@@ -2098,9 +2098,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   >
                                     Heading Sample
                                   </div>
-                                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400 -mt-1">
-                                    {workspaceTheme.typography.heading?.fontFamily || 'Inter'}
-                                  </div>
                                 </div>
                                 <div
                                   className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
@@ -2108,9 +2105,6 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   onClick={(e) => openFontPanelAt(e, 'body')}
                                 >
                                   Body sample text shows the selected body font.
-                                </div>
-                                <div className="text-[10px] text-zinc-500 dark:text-zinc-400 -mt-1">
-                                  {workspaceTheme.typography.paragraph?.fontFamily || 'Inter'}
                                 </div>
                                 {/* Logo block anchored at bottom with replace/remove */}
                                 <div className="mt-auto">

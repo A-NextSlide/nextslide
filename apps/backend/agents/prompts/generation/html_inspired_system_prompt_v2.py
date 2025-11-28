@@ -353,10 +353,16 @@ fontSize: 20
 
 🚨 **CRITICAL RULES FOR IMAGES:**
 
-**1. USE SPARINGLY (20-30% of slides)**
+**1. USE IMAGES GENEROUSLY (50-70% of slides should have images!)**
+Images make slides ENGAGING. Use them liberally!
 ✅ Product screenshots, teaching visuals, photo-driven content
-❌ NOT for abstract concepts, filler, generic stock photos
-❌ NOT on title slides, text-heavy slides, or to fill empty space
+✅ Illustrations for concepts, icons for features
+✅ Supporting visuals that reinforce your message
+✅ ALWAYS check `available_images` in context - USE THOSE FIRST!
+
+**IMPORTANT: Images are PRE-LOADED!**
+When `available_images` is provided in the slide context, these images are ALREADY
+loaded and ready to use. Just reference them by their URL - don't use "placeholder"!
 
 **2. PROPER ASPECT RATIOS (Avoid super wide/short images!)**
 ```
@@ -621,8 +627,19 @@ Result: Visual variety, purposeful choices
 • **Detailed Mode**: Max 6-8 bullet points per slide.
 • **Don't overcrowd!** Split content across multiple slides if needed.
 
-**5. LINES**
-• Use Lines only for separating distinct sections, not for decoration.
+**5. LINES (Use Lines component - NEVER Shape for dividers!)**
+• 🚨 **ALWAYS use the Lines component** for dividers - NEVER use Shape (thin rectangle)!
+• Use Lines only for separating distinct sections, not for random decoration.
+• **PLACEMENT - CRITICAL:**
+  - Position lines BELOW titles with 30-50px gap (titleY + titleHeight + 40)
+  - NEVER place a line where it cuts through or touches title text!
+  - Common positions: y=250 (below slide title), y=950 (footer separator)
+• **TASTEFUL USAGE:**
+  - Maximum 0-2 lines per slide
+  - Keep lines SHORT for elegance (300-600px), not always full-width
+  - Use subtle styling: strokeWidth 1-3px, stroke opacity 0.2-0.4
+  - Good: Short accent line below title, separator above citations
+  - Bad: Full-width lines everywhere, lines crossing content areas
 
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -873,14 +890,35 @@ Result: Visual variety, purposeful choices
 • Proper indentation and spacing automatically handled
 • Allows rich TipTap formatting: bold, colors, highlights
 
-**Rich TipTap Formatting (within texts array):**
-Use these formatting options for emphasis:
-• Bold: {"bold": true}
-• Colors: {"textColor": "{{accent}}"}
-• Highlighting: {"backgroundColor": "{{accent}}20"}
-• Underline: {"underline": true}
-• Italic: {"italic": true}
-• Example: [{"text": "• Revenue grew ", "style": {}}, {"text": "42%", "style": {"bold": true, "textColor": "{{accent}}", "backgroundColor": "{{accent}}15"}}]
+**🚨 MANDATORY: USE RICH TEXT FORMATTING - NO BORING PLAIN TEXT!**
+
+Plain text blocks are BORING and look unprofessional. ALWAYS use formatting:
+
+✅ **EVERY slide MUST have:**
+• **Bold** for key terms, names, numbers: {"bold": true}
+• **Accent colors** for important values: {"textColor": "{{accent}}"}
+• **Highlighting** for emphasis: {"backgroundColor": "{{accent}}20"}
+• **Italic** for quotes, emphasis: {"italic": true}
+
+**EXAMPLE - Transform boring text:**
+```
+❌ BORING: [{"text": "Revenue grew 42% in Q4", "style": {}}]
+
+✅ ENGAGING: [
+  {"text": "Revenue grew ", "style": {}},
+  {"text": "42%", "style": {"bold": true, "textColor": "{{accent}}", "backgroundColor": "{{accent}}15"}},
+  {"text": " in ", "style": {}},
+  {"text": "Q4", "style": {"bold": true}}
+]
+```
+
+**FORMAT THESE ALWAYS:**
+• Numbers/stats → bold + accent color
+• Company/product names → bold
+• Dates/timeframes → bold
+• Key terms → bold or italic
+• Quotes → italic
+• Important phrases → highlight background
 
 **Font Mixing:**
 • Set fontFamily on each TiptapTextBlock
@@ -1978,9 +2016,9 @@ textY = shapeY + (shapeHeight - textHeight) / 2
 **Background** - Full 1920×1080, gradient or solid
 **TiptapTextBlock** - ALL text content, break into multiple blocks
 **Image** - src="placeholder" (except logos), objectFit="contain"/"cover", ALWAYS add borderRadius/shadow
-**Lines** - Dividers using startPoint/endPoint coordinates
+**Lines** - 🚨 USE FOR ALL DIVIDERS! startPoint/endPoint, position BELOW titles (y=250), max 0-2 per slide
 **Icon** - 0-2 per slide MAX, semantic meaning only, CENTER-ALIGN with adjacent text!
-**Shape** - ONLY when hasText=true for callout boxes - use proper padding and center alignment!
+**Shape** - ONLY for callout boxes with text (hasText=true) - NEVER use as lines/dividers!
 **Chart** - Must have title above, minimum 500×400px, uses internal fonts
 **CustomComponent** - Complex layouts, dashboards, interactions
 **Table** - Use for data! Set tableStyles.fontFamily={{bodyFont}}, fontSize 24-32pt, clean borders

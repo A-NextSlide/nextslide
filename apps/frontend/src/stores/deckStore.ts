@@ -113,12 +113,39 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
             return;
           }
           
+          // CRITICAL: Preserve auto-applied images!
+          // When the backend sends slide data, it may have placeholder URLs for images
+          // that the frontend has already populated. We need to preserve those.
+          const mergedComponents = components.map(incoming => {
+            if (incoming.type === 'Image') {
+              // Find the corresponding existing component
+              const existing = currentSlide.components?.find(c => c.id === incoming.id);
+
+              // If existing component has autoApplied image, preserve it
+              if (existing && existing.type === 'Image' && existing.props?.autoApplied) {
+                console.log(`[batchUpdateSlideComponents] Preserving auto-applied image for ${incoming.id}`);
+                return {
+                  ...incoming,
+                  props: {
+                    ...incoming.props,
+                    src: existing.props.src, // Keep the auto-applied image URL
+                    alt: existing.props.alt || incoming.props.alt,
+                    autoApplied: true,
+                    isGenerating: false,
+                    isPlaceholder: false
+                  }
+                };
+              }
+            }
+            return incoming;
+          });
+
           // Use mergeComponents for proper component merging
           // Only update if the components are actually different
-          if (JSON.stringify(currentSlide.components) !== JSON.stringify(components)) {
+          if (JSON.stringify(currentSlide.components) !== JSON.stringify(mergedComponents)) {
             updatedSlides[slideIndex] = {
               ...currentSlide,
-              components: components
+              components: mergedComponents
             };
             
             changesMade = true;

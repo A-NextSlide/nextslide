@@ -8,7 +8,9 @@ from agents.domain.models import SlideGenerationContext
 from agents.generation.components.ai_generator import AISlideGenerator
 from agents.generation.components.component_validator import ComponentValidator
 from agents.generation.components.prompt_builder_balanced import BalancedSlidePromptBuilder
+from agents.generation.custom_component_generator import CustomComponentGenerator
 from agents.rag.slide_context_retriever import SlideContextRetriever
+from agents.config import ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
 from models.slide_minimal import MinimalSlide
 from setup_logging_optimized import get_logger
 
@@ -17,7 +19,7 @@ logger = get_logger(__name__)
 
 class BalancedSlideGenerator(ISlideGenerator):
     """Balanced slide generator with good content and performance."""
-    
+
     def __init__(self, registry, theme_system=None):
         self.registry = registry
         self.theme_system = theme_system
@@ -26,6 +28,8 @@ class BalancedSlideGenerator(ISlideGenerator):
         self.component_validator = ComponentValidator(registry)
         # Simple RAG for component prediction
         self.rag = SlideContextRetriever()
+        # Dedicated CustomComponent generator using Gemini 3 Pro
+        self.custom_component_generator = CustomComponentGenerator()
         
     async def generate_slide(
         self,
@@ -85,7 +89,16 @@ class BalancedSlideGenerator(ISlideGenerator):
                 theme=theme_dict  # Pass theme for font sizing
             )
             slide_data['components'] = validated_components
-            
+
+            # Step 5: Enhance CustomComponents with Gemini 3 Pro if enabled
+            if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN and 'CustomComponent' in predicted_components:
+                try:
+                    slide_data = await self._enhance_custom_components(
+                        slide_data, context, theme_dict
+                    )
+                except Exception as cc_err:
+                    logger.warning(f"CustomComponent enhancement failed: {cc_err}")
+
             # Add slide metadata
             slide_data['id'] = context.slide_outline.id
             slide_data['title'] = slide_data.get('title', context.slide_outline.title)
@@ -116,35 +129,29 @@ class BalancedSlideGenerator(ISlideGenerator):
     def _get_smart_rag_context(self, context: SlideGenerationContext) -> Dict[str, Any]:
         """Get smart RAG context based on slide type."""
         layout = getattr(context.slide_outline, 'layout', 'title_and_content')
-        
-        # Smart component prediction based on layout and content
-        components = ['Background', 'TiptapTextBlock']  # Always include these
-        
-        # Title slide: keep it minimal and clean
-        if 'title' in layout.lower() or context.slide_index == 0:
-            # Prefer a hero treatment; include Image only if images are available or requested
-            if context.available_images or getattr(context, 'async_images', False):
-                components.append('Image')
+
+        # Check if this is a title/cover slide
+        is_title_slide = context.slide_index == 0 or 'title' in layout.lower() or 'cover' in layout.lower()
+
+        # USE CUSTOMCOMPONENT FOR ALL CONTENT SLIDES!
+        if is_title_slide:
+            # Title slides: CustomComponent for hero effect
+            components = ['Background', 'CustomComponent']
         elif 'image' in layout.lower():
-            components.append('Image')
-        
-        # Charts/Tables: choose based on data shape
-        if 'chart' in layout.lower() or context.has_chart_data:
+            components = ['Background', 'Image', 'CustomComponent']
+        elif 'chart' in layout.lower() or context.has_chart_data:
             if getattr(context, 'has_tabular_data', False):
-                components.append('Table')
+                components = ['Background', 'TiptapTextBlock', 'Table']
             else:
-                components.append('Chart')
-                # Allow a CustomComponent for rich data viz if the model chooses
-                components.append('CustomComponent')
-            
-        # Remove duplicates while preserving order
-        seen = set()
-        components = [x for x in components if not (x in seen or seen.add(x))]
-        
+                components = ['Background', 'CustomComponent']
+        else:
+            # ALL OTHER CONTENT SLIDES: Use CustomComponent!
+            components = ['Background', 'CustomComponent']
+
         return {
             'predicted_components': components,
             'layout_type': layout,
-            'design_guidelines': ['professional', 'modern', 'clean']
+            'design_guidelines': ['interactive', 'dynamic', 'engaging']
         }
         
     def _ensure_minimum_viable_slide(self, slide_data: Dict[str, Any], context: SlideGenerationContext) -> Dict[str, Any]:
@@ -235,3 +242,118 @@ class BalancedSlideGenerator(ISlideGenerator):
                 }
             ]
         }
+
+    async def _enhance_custom_components(
+        self,
+        slide_data: Dict[str, Any],
+        context: SlideGenerationContext,
+        theme_dict: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Replace slide content with an interactive CustomComponent using Gemini 3 Pro.
+
+        This method generates a rich, interactive CustomComponent that REPLACES
+        all the boring TiptapTextBlock cards with a single stunning visualization.
+
+        Args:
+            slide_data: The generated slide data
+            context: Slide generation context
+            theme_dict: Theme dictionary
+
+        Returns:
+            Updated slide_data with CustomComponent replacing content
+        """
+        components = slide_data.get('components', [])
+
+        # Determine the purpose of the CustomComponent based on content
+        content = context.slide_outline.content or ''
+        purpose = self._detect_component_purpose(content, context.slide_outline.title)
+
+        # Build slide context for the generator
+        slide_context = {
+            'title': context.slide_outline.title,
+            'slide_index': context.slide_index,
+            'total_slides': context.total_slides,
+            'slide_type': getattr(context.slide_outline, 'layout', 'content')
+        }
+
+        # Check if this is a title slide (needs full-screen positioning)
+        layout = getattr(context.slide_outline, 'layout', 'content')
+        is_title_slide = context.slide_index == 0 or 'title' in layout.lower() or 'cover' in layout.lower()
+
+        if is_title_slide:
+            # Title slides get FULL SCREEN - no margins, the CustomComponent IS the slide
+            width = 1920
+            height = 1080
+            position = {'x': 0, 'y': 0}
+            logger.info(f"[CUSTOM_COMPONENT] 🎬 TITLE SLIDE - using full-screen mode ({width}x{height})")
+        else:
+            # Content slides get positioned below title area
+            width = 1760
+            height = 800
+            position = {'x': 80, 'y': 160}
+
+        logger.info(f"[CUSTOM_COMPONENT] Generating interactive component for slide {context.slide_index + 1}")
+        logger.info(f"[CUSTOM_COMPONENT] Purpose: {purpose}, Content preview: {content[:100]}...")
+
+        # Generate the CustomComponent
+        enhanced = await self.custom_component_generator.generate(
+            content=content,
+            theme=theme_dict,
+            slide_context=slide_context,
+            component_purpose=purpose,
+            width=width,
+            height=height,
+            position=position
+        )
+
+        if enhanced:
+            # REPLACE all content components with the CustomComponent
+            # Keep only Background, remove all TiptapTextBlocks/Shapes/etc
+            background = next(
+                (c for c in components if c.get('type') == 'Background'),
+                None
+            )
+
+            # Build new components list: Background + CustomComponent only
+            new_components = []
+            if background:
+                new_components.append(background)
+            else:
+                # Create a default background if none exists
+                colors = theme_dict.get('color_palette', {})
+                new_components.append({
+                    'id': 'bg-custom',
+                    'type': 'Background',
+                    'props': {
+                        'backgroundType': 'color',
+                        'backgroundColor': colors.get('primary_background', '#0a0e27')
+                    }
+                })
+
+            new_components.append(enhanced)
+            slide_data['components'] = new_components
+            logger.info(f"[CUSTOM_COMPONENT] ✅ Replaced content with interactive CustomComponent")
+        else:
+            logger.warning(f"[CUSTOM_COMPONENT] ⚠️ Generation failed, keeping original content")
+
+        return slide_data
+
+    def _detect_component_purpose(self, content: str, title: str) -> str:
+        """Detect the purpose of a CustomComponent based on content."""
+        content_lower = (content + ' ' + title).lower()
+
+        if any(word in content_lower for word in ['stat', 'number', 'percent', '%', 'growth', 'revenue', 'metric', 'kpi']):
+            return 'stats'
+        if any(word in content_lower for word in ['compare', 'vs', 'versus', 'before', 'after', 'difference']):
+            return 'compare'
+        if any(word in content_lower for word in ['timeline', 'roadmap', 'journey', 'phase', 'step', 'process']):
+            return 'timeline'
+        if any(word in content_lower for word in ['quote', 'said', 'says', '"', "'"]):
+            return 'quote'
+        if any(word in content_lower for word in ['explain', 'how', 'why', 'what is', 'understand']):
+            return 'explain'
+        if any(word in content_lower for word in ['feature', 'benefit', 'advantage', 'highlight']):
+            return 'emphasize'
+
+        return 'visualize'

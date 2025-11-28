@@ -134,7 +134,8 @@ class ColorConfigItem(BaseModel):
 class StylePreferencesItem(BaseModel):
     initialIdea: Optional[str] = Field(None, description="The original user prompt or idea for the presentation content.")
     vibeContext: Optional[str] = Field(None, description="User's description of the desired vibe, occasion, or audience for the presentation.")
-    font: Optional[str] = Field(None, description="Preferred font name (e.g., 'Arial', 'Roboto').")
+    font: Optional[str] = Field(None, description="Preferred hero/heading font name (e.g., 'Montserrat', 'Bebas Neue').")
+    bodyFont: Optional[str] = Field(None, description="Preferred body/paragraph font name (e.g., 'Open Sans', 'Roboto'). Should complement the hero font.")
     colors: Optional[ColorConfigItem] = Field(None, description="Color preferences for the deck.")
     logoUrl: Optional[str] = Field(None, description="URL to a company/brand logo to place consistently on slides.")
     autoSelectImages: Optional[bool] = Field(None, description="When True, frontend handles image search/application; backend skips SerpAPI search.")

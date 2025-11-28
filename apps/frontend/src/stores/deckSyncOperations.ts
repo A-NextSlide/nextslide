@@ -855,6 +855,23 @@ export const createSyncOperations = (set: Function, get: Function) => {
         console.log(`[loadDeck] Sorted ${transformedDeck.slides.length} slides by order field`);
       }
 
+      // Fix CustomComponent HTML rendering issues (ensure blank line after <html> tag)
+      if (transformedDeck.slides && Array.isArray(transformedDeck.slides)) {
+        for (const slide of transformedDeck.slides) {
+          if (slide.components && Array.isArray(slide.components)) {
+            for (const component of slide.components) {
+              if (component.type === 'CustomComponent' && component.props?.render) {
+                const html = component.props.render as string;
+                if (html.toLowerCase().includes('<html')) {
+                  // Ensure blank line (two newlines) after <html> tag
+                  component.props.render = html.replace(/(<html[^>]*>)\s*\n?\s*/gi, '$1\n\n');
+                }
+              }
+            }
+          }
+        }
+      }
+
       // Set current deck ID globally for position sync filtering
       if (typeof window !== 'undefined') {
         (window as any).__currentDeckId = deckId;

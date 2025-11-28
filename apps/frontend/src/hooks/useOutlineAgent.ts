@@ -16,6 +16,8 @@ export interface OutlineAgentMessage {
   content: string;
   timestamp: Date;
   isTyping?: boolean;
+  isResearching?: boolean;
+  researchQuery?: string;
 }
 
 export type { OutlineData };
@@ -145,13 +147,41 @@ export function useOutlineAgent() {
             if (onOutlineGenerated) {
               onOutlineGenerated(event.data);
             }
+          } else if (event.type === 'status') {
+            // Handle status events (researching, thinking, etc.)
+            console.log('[OutlineAgent] Status:', event.status, event.query);
+            if (event.status === 'researching') {
+              setMessages((prev) => {
+                const newMessages = prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, isResearching: true, researchQuery: event.query, content: '' }
+                    : m
+                );
+                messagesRef.current = newMessages;
+                return newMessages;
+              });
+              setUpdateTrigger(prev => prev + 1);
+            }
+          } else if (event.type === 'research') {
+            // Research completed - update message with research indicator
+            console.log('[OutlineAgent] Research completed:', event.content?.slice(0, 100));
+            setMessages((prev) => {
+              const newMessages = prev.map((m) =>
+                m.id === aiMsgId
+                  ? { ...m, isResearching: false, researchQuery: undefined }
+                  : m
+              );
+              messagesRef.current = newMessages;
+              return newMessages;
+            });
+            setUpdateTrigger(prev => prev + 1);
           } else if (event.type === 'error') {
             console.error('[OutlineAgent] Error:', event.message);
             accumulatedText = event.message;
             setMessages((prev) => {
               const newMessages = prev.map((m) =>
                 m.id === aiMsgId
-                  ? { ...m, content: accumulatedText, isTyping: false }
+                  ? { ...m, content: accumulatedText, isTyping: false, isResearching: false }
                   : m
               );
               messagesRef.current = newMessages; // Update ref directly

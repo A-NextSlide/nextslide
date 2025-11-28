@@ -304,10 +304,14 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
         # Explicitly ignore generic audience terms that might appear in styleContext
         # This list must be checked against ANY extracted candidate
         generic_terms = {
-            'general audience', 'a general audience', 'everyone', 'kids', 'teens', 'adults', 
-            'students', 'teachers', 'investors', 'stakeholders', 'employees', 'team', 
+            'general audience', 'a general audience', 'everyone', 'kids', 'teens', 'adults',
+            'students', 'teachers', 'investors', 'stakeholders', 'employees', 'team',
             'public', 'users', 'customers', 'clients', 'beginners', 'experts', 'pros',
-            'audience', 'target audience', 'people', 'folks', 'guys', 'all', 'any'
+            'audience', 'target audience', 'people', 'folks', 'guys', 'all', 'any',
+            # Generic activity/context words that are NOT brand names
+            'teaching', 'learning', 'training', 'coaching', 'presenting', 'working',
+            'class', 'course', 'lesson', 'tutorial', 'workshop', 'seminar',
+            'undefined', 'none', 'null', 'unknown', 'default', 'test'
         }
         
         def is_valid_candidate(c: str) -> bool:
@@ -323,9 +327,13 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
         if m:
             return m.group(1)
             
-        # 2) Look for "for [Brand]" or "about [Brand]" patterns
-        # Matches: "presentation for McDonald's", "deck about Nike", "org chart for Google"
+        # 2) Look for "for [Brand]" or "about [Brand]" or "[Brand] theme" patterns
+        # Matches: "presentation for McDonald's", "deck about Nike", "McDonald's themed", "a mcdonalds theme"
         brand_patterns = [
+            # "[Brand] theme/themed" - HIGHEST priority for explicit theming requests
+            r"\ba?\s*([a-zA-Z0-9'\-]+(?:'s)?)\s+theme[d]?\b",
+            r"\b([a-zA-Z0-9'\-]+(?:'s)?)[- ]themed\b",
+            # "for [Brand]" / "about [Brand]"
             r"\bfor\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
             r"\babout\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
             r"\bbrand\s+([a-zA-Z0-9'\-\s]{2,30})",
@@ -431,6 +439,58 @@ def _is_entertainment_topic(title: str, vibe_context: Optional[str] = None) -> b
     return False
 
 
+def _select_complementary_body_font(hero_font: str, is_fun_topic: bool = False) -> str:
+    """Select a complementary body font for the given hero font.
+
+    Uses pre-defined pairings for common fonts, with fallbacks for unknown fonts.
+    """
+    hero_lower = (hero_font or '').lower().strip()
+
+    # Pre-defined font pairings (hero -> body)
+    font_pairings = {
+        # Display/Fun fonts
+        'bebas neue': 'Nunito',
+        'fredoka': 'Quicksand',
+        'righteous': 'Poppins',
+        'bungee': 'Asap',
+        'bangers': 'Rubik',
+        'titan one': 'Cabin',
+        'pacifico': 'Comfortaa',
+        'press start 2p': 'Space Mono',
+        # Professional fonts
+        'montserrat': 'Open Sans',
+        'raleway': 'Lato',
+        'oswald': 'Source Sans Pro',
+        'playfair display': 'Lora',
+        'roboto slab': 'Roboto',
+        'merriweather': 'Source Sans Pro',
+        'poppins': 'Inter',
+        'inter': 'Roboto',
+        'lato': 'Open Sans',
+        'open sans': 'Lato',
+        'roboto': 'Open Sans',
+        'source sans pro': 'Lato',
+        'nunito': 'Open Sans',
+        'work sans': 'Inter',
+        'dm sans': 'Inter',
+        'ibm plex sans': 'Inter',
+    }
+
+    # Check for exact match
+    if hero_lower in font_pairings:
+        return font_pairings[hero_lower]
+
+    # Check for partial match (e.g., "Bebas Neue Bold" matches "bebas neue")
+    for key, value in font_pairings.items():
+        if key in hero_lower or hero_lower in key:
+            return value
+
+    # Default fallbacks based on topic type
+    if is_fun_topic:
+        return 'Nunito'  # Friendly, readable body font for fun content
+    return 'Open Sans'  # Clean, professional body font for business content
+
+
 async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem], domain_hint: Optional[str] = None, outline_title: Optional[str] = None) -> Optional[StylePreferencesItem]:
     """Ensure style preferences include brand colors, font, and logo by refetching brand data when needed."""
     if not style_prefs:
@@ -450,18 +510,31 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
     # CRITICAL: Even if font is set, override boring fonts for fun topics
     if has_colors and has_logo and has_font:
         current_font = getattr(style_prefs, 'font', None)
+        current_body_font = getattr(style_prefs, 'bodyFont', None)
         boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
         is_boring = current_font and current_font.lower() in boring_fonts
-        
+
         if is_boring and _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None)):
-            # Override boring font with playful font for fun topics
+            # Override boring font with playful font for fun topics - use pre-defined pairings
             import hashlib
             seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
-            playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
-            selected_font = playful_fonts[seed_hash % len(playful_fonts)]
-            style_prefs.font = selected_font
-            logger.info(f"[STYLE PREF HYDRATE] 🎮 Overriding boring font '{current_font}' with playful font: {selected_font}")
+            playful_combos = [
+                {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                {'hero': 'Fredoka', 'body': 'Quicksand'},
+                {'hero': 'Righteous', 'body': 'Poppins'},
+                {'hero': 'Bungee', 'body': 'Asap'},
+                {'hero': 'Bangers', 'body': 'Rubik'},
+            ]
+            selected = playful_combos[seed_hash % len(playful_combos)]
+            style_prefs.font = selected['hero']
+            style_prefs.bodyFont = selected['body']
+            logger.info(f"[STYLE PREF HYDRATE] 🎮 Overriding boring font '{current_font}' with playful fonts: hero={selected['hero']}, body={selected['body']}")
         else:
+            # Ensure bodyFont is set even when skipping brandfetch
+            if not current_body_font:
+                is_fun = _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None))
+                style_prefs.bodyFont = _select_complementary_body_font(current_font, is_fun)
+                logger.info(f"[STYLE PREF HYDRATE] Setting complementary body font: {style_prefs.bodyFont} for hero: {current_font}")
             logger.info("[STYLE PREF HYDRATE] All data present, skipping brandfetch")
         return style_prefs
 
@@ -495,24 +568,38 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
     if not domain:
         logger.warning("[STYLE PREF HYDRATE] ⚠️ No valid brand identifier found; skipping Brandfetch hydration")
         logger.warning(f"[STYLE PREF HYDRATE] Tried candidates: {candidate_chain}")
-        
+
         # CRITICAL: Even without brand data, set appropriate font for fun topics
         current_font = getattr(style_prefs, 'font', None) if style_prefs else None
         boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
         is_boring = not current_font or (current_font and current_font.lower() in boring_fonts)
-        
-        if is_boring and _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None) if style_prefs else None):
+        is_fun_topic = _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None) if style_prefs else None)
+
+        if is_boring and is_fun_topic:
             import hashlib
             seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
-            playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
-            selected_font = playful_fonts[seed_hash % len(playful_fonts)]
+            playful_combos = [
+                {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                {'hero': 'Fredoka', 'body': 'Quicksand'},
+                {'hero': 'Righteous', 'body': 'Poppins'},
+                {'hero': 'Bungee', 'body': 'Asap'},
+                {'hero': 'Bangers', 'body': 'Rubik'},
+            ]
+            selected = playful_combos[seed_hash % len(playful_combos)]
             if style_prefs:
-                style_prefs.font = selected_font
-            logger.info(f"[STYLE PREF HYDRATE] 🎮 No domain but fun topic! Using playful font: {selected_font}")
+                style_prefs.font = selected['hero']
+                style_prefs.bodyFont = selected['body']
+            logger.info(f"[STYLE PREF HYDRATE] 🎮 No domain but fun topic! Using playful fonts: hero={selected['hero']}, body={selected['body']}")
         elif is_boring and style_prefs:
             style_prefs.font = 'Montserrat'
-            logger.info(f"[STYLE PREF HYDRATE] 📊 No domain, business topic - using Montserrat")
-        
+            style_prefs.bodyFont = 'Open Sans'
+            logger.info(f"[STYLE PREF HYDRATE] 📊 No domain, business topic - using fonts: hero=Montserrat, body=Open Sans")
+        elif style_prefs:
+            # Font is already set and not boring - just ensure bodyFont is set
+            if not getattr(style_prefs, 'bodyFont', None):
+                style_prefs.bodyFont = _select_complementary_body_font(current_font, is_fun_topic)
+                logger.info(f"[STYLE PREF HYDRATE] Setting complementary body font: {style_prefs.bodyFont}")
+
         return style_prefs
 
     brand_data = None
@@ -683,17 +770,31 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
             if not font_set:
                 vibe_ctx = getattr(style_prefs, 'vibeContext', None)
                 if _is_entertainment_topic(outline_title or '', vibe_ctx):
-                    # Use playful fonts for fun topics
+                    # Use playful fonts for fun topics - pre-defined pairings
                     import hashlib
                     seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
-                    playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
-                    selected_font = playful_fonts[seed_hash % len(playful_fonts)]
-                    style_prefs.font = selected_font
-                    logger.info(f"[STYLE PREF HYDRATE] 🎮 Fun topic! Using playful font: {selected_font}")
+                    playful_combos = [
+                        {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                        {'hero': 'Fredoka', 'body': 'Quicksand'},
+                        {'hero': 'Righteous', 'body': 'Poppins'},
+                        {'hero': 'Bungee', 'body': 'Asap'},
+                        {'hero': 'Bangers', 'body': 'Rubik'},
+                    ]
+                    selected = playful_combos[seed_hash % len(playful_combos)]
+                    style_prefs.font = selected['hero']
+                    style_prefs.bodyFont = selected['body']
+                    logger.info(f"[STYLE PREF HYDRATE] 🎮 Fun topic! Using playful fonts: hero={selected['hero']}, body={selected['body']}")
                 else:
                     # Use professional font for business topics
                     style_prefs.font = 'Montserrat'
-                    logger.info(f"[STYLE PREF HYDRATE] 📊 Business topic - using professional font: Montserrat")
+                    style_prefs.bodyFont = 'Open Sans'
+                    logger.info(f"[STYLE PREF HYDRATE] 📊 Business topic - using professional fonts: hero=Montserrat, body=Open Sans")
+            else:
+                # Font was set from brand data - now select complementary body font
+                hero_font = style_prefs.font
+                body_font = _select_complementary_body_font(hero_font, _is_entertainment_topic(outline_title or '', getattr(style_prefs, 'vibeContext', None)))
+                style_prefs.bodyFont = body_font
+                logger.info(f"[STYLE PREF HYDRATE] 🎨 Selected complementary body font: {body_font} for hero: {hero_font}")
 
         if not has_logo:
             # CRITICAL: Skip logo for entertainment topics (Pikachu, games, movies, etc.)
@@ -736,24 +837,40 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
     except Exception as hydrate_error:
         logger.debug(f"[STYLE PREF HYDRATE] Failed to hydrate style preferences: {hydrate_error}")
 
-    # FINAL CHECK: If we still don't have a font set, select one based on topic
+    # FINAL CHECK: If we still don't have fonts set, select them based on topic
     # This handles cases where no brand_data was found (like Pikachu presentations)
     try:
         current_font = getattr(style_prefs, 'font', None) if style_prefs else None
-        if not current_font and style_prefs:
+        current_body_font = getattr(style_prefs, 'bodyFont', None) if style_prefs else None
+        if style_prefs:
             vibe_ctx = getattr(style_prefs, 'vibeContext', None)
-            if _is_entertainment_topic(outline_title or '', vibe_ctx):
-                # Use playful fonts for fun topics
-                import hashlib
-                seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
-                playful_fonts = ['Bebas Neue', 'Fredoka', 'Righteous', 'Bungee', 'Bangers']
-                selected_font = playful_fonts[seed_hash % len(playful_fonts)]
-                style_prefs.font = selected_font
-                logger.info(f"[STYLE PREF HYDRATE] 🎮 FINAL: Fun topic! Using playful font: {selected_font}")
-            else:
-                # Use professional font for business topics
-                style_prefs.font = 'Montserrat'
-                logger.info(f"[STYLE PREF HYDRATE] 📊 FINAL: Business topic - using professional font: Montserrat")
+            is_fun = _is_entertainment_topic(outline_title or '', vibe_ctx)
+
+            if not current_font:
+                if is_fun:
+                    # Use playful fonts for fun topics - pre-defined pairings
+                    import hashlib
+                    seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
+                    playful_combos = [
+                        {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                        {'hero': 'Fredoka', 'body': 'Quicksand'},
+                        {'hero': 'Righteous', 'body': 'Poppins'},
+                        {'hero': 'Bungee', 'body': 'Asap'},
+                        {'hero': 'Bangers', 'body': 'Rubik'},
+                    ]
+                    selected = playful_combos[seed_hash % len(playful_combos)]
+                    style_prefs.font = selected['hero']
+                    style_prefs.bodyFont = selected['body']
+                    logger.info(f"[STYLE PREF HYDRATE] 🎮 FINAL: Fun topic! Using playful fonts: hero={selected['hero']}, body={selected['body']}")
+                else:
+                    # Use professional font for business topics
+                    style_prefs.font = 'Montserrat'
+                    style_prefs.bodyFont = 'Open Sans'
+                    logger.info(f"[STYLE PREF HYDRATE] 📊 FINAL: Business topic - using professional fonts: hero=Montserrat, body=Open Sans")
+            elif not current_body_font:
+                # Font is set but bodyFont is not - select complementary body font
+                style_prefs.bodyFont = _select_complementary_body_font(current_font, is_fun)
+                logger.info(f"[STYLE PREF HYDRATE] 🎨 FINAL: Setting complementary body font: {style_prefs.bodyFont} for hero: {current_font}")
     except Exception as font_final_err:
         logger.warning(f"[STYLE PREF HYDRATE] Final font selection failed: {font_final_err}")
 
@@ -1349,9 +1466,38 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             # Check if the background is NOT white/gray (indicating iconic colors were found)
                             bg_color = colors.get('primary_background', '').upper()
                             is_iconic = bg_color and bg_color not in ['#FFFFFF', '#F5F5F5', '#E8E8E8', '#FAFAFA']
-                            
-                            if is_iconic and (palette_colors or bg_color):
-                                logger.info(f"[API OUTLINE] 🎨 ICONIC TOPIC COLORS FOUND! Overriding Brandfetch: {colors}")
+
+                            # CRITICAL: Check if we already have valid Brandfetch colors
+                            existing_colors = getattr(outline.stylePreferences, 'colors', None)
+                            has_brandfetch_colors = existing_colors and (existing_colors.accent1 or existing_colors.accent2 or existing_colors.background)
+
+                            # Check if the iconic brand appears in the user's request/title
+                            # This helps detect when Brandfetch returned colors from an unrelated domain
+                            import re
+                            prompt_text = (style_context_value or request.prompt or '').lower()
+                            title_text = (outline.title or '').lower()
+                            combined_text = f"{prompt_text} {title_text}"
+
+                            # Well-known brands with iconic colors that ThemeDirector detects
+                            iconic_brand_patterns = [
+                                r'\bmcdonald', r'\bmac\s*donald', r'\bmcds?\b',  # McDonald's
+                                r'\bstarbucks?\b', r'\bcoca[\s-]*cola\b', r'\bcoke\b',
+                                r'\bpepsi\b', r'\bburger\s*king\b', r'\bkfc\b',
+                                r'\bwendy', r'\bsubway\b', r'\btaco\s*bell\b',
+                                r'\bnike\b', r'\badidas\b', r'\bpuma\b',
+                                r'\bapple\b', r'\bgoogle\b', r'\bmicrosoft\b',
+                                r'\bferrari\b', r'\blamborghini\b', r'\bporsche\b',
+                                r'\bnetflix\b', r'\bspotify\b', r'\bamazon\b',
+                            ]
+                            user_mentioned_iconic_brand = any(re.search(p, combined_text) for p in iconic_brand_patterns)
+
+                            # Also check if Brandfetch colors seem unrelated (generic domain name check)
+                            brandfetch_color_name = getattr(existing_colors, 'name', '') if existing_colors else ''
+                            brandfetch_seems_unrelated = has_brandfetch_colors and user_mentioned_iconic_brand
+
+                            if is_iconic and (palette_colors or bg_color) and (not has_brandfetch_colors or brandfetch_seems_unrelated):
+                                reason = "unrelated Brandfetch domain" if brandfetch_seems_unrelated else "no Brandfetch"
+                                logger.info(f"[API OUTLINE] 🎨 ICONIC TOPIC COLORS ({reason}): {colors}")
                                 from models.requests import ColorConfigItem
                                 outline.stylePreferences.colors = ColorConfigItem(
                                     type="custom",
@@ -1362,6 +1508,9 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                     accent2=palette_colors[1] if len(palette_colors) > 1 else None,
                                     accent3=palette_colors[2] if len(palette_colors) > 2 else None,
                                 )
+                            elif has_brandfetch_colors:
+                                # Brandfetch colors exist for the correct brand - preserve them
+                                logger.info(f"[API OUTLINE] ✅ PRESERVING Brandfetch colors: {existing_colors.background}, {existing_colors.accent1}")
                             elif not getattr(outline.stylePreferences, 'colors', None):
                                 # Fallback: No iconic colors and no Brandfetch colors - use defaults
                                 logger.info("[API OUTLINE] No iconic or brand colors found; using defaults")
@@ -1383,7 +1532,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         logger.info(f"[API OUTLINE] After setting - stylePreferences is None: {outline.stylePreferences is None}")
                         if outline.stylePreferences:
                             logger.info(f"[API OUTLINE] StylePreferences vibe after setting: {outline.stylePreferences.vibeContext}")
-                            logger.info(f"[API OUTLINE] 🎨 StylePreferences FONT after setting: {outline.stylePreferences.font}")
+                            logger.info(f"[API OUTLINE] 🎨 StylePreferences FONTS after setting: hero={outline.stylePreferences.font}, body={outline.stylePreferences.bodyFont}")
                         
                         # Start narrative flow generation in parallel as soon as outline is ready
                         if not narrative_flow_started and outline:

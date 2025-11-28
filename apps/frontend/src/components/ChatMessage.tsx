@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { BROWSER } from '@/utils/browser';
-import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Sparkles, Palette, Layers } from 'lucide-react';
+import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Image as ImageIcon, FileText, Table, Presentation, File } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { COLORS } from '@/utils/colors';
 import { Progress } from '@/components/ui/progress';
@@ -24,45 +24,6 @@ export interface ChatMessageProps {
   inlineBelow?: React.ReactNode;
 }
 
-// Helper function to get icon based on stage/type
-const getStageIcon = (stage?: string, type?: string) => {
-  // Check type first for more specific icons
-  if (type) {
-    switch (type) {
-      case 'theme_and_style_generated':
-      case 'style_analysis_complete':
-      case 'final_palette':
-        return <Palette className="w-4 h-4 text-orange-500" />;
-      case 'slide_started':
-      case 'slide_generated':
-      case 'slide_completed':
-      case 'component_generated':
-        return <Layers className="w-4 h-4 text-orange-500" />;
-      case 'images_search_started':
-      case 'topic_images_found':
-      case 'slide_images_found':
-      case 'slide_images_ready':
-      case 'images_ready_for_selection':
-      case 'images_collected':
-      case 'images_collection_complete':
-        return <Sparkles className="w-4 h-4 text-orange-500" />;
-    }
-  }
-  
-  // Fall back to stage-based icons
-  switch (stage) {
-    case 'palette_found':
-    case 'design_system_ready':
-      return <Palette className="w-4 h-4 text-orange-500" />;
-    case 'slide_started':
-    case 'slide_completed':
-      return <Layers className="w-4 h-4 text-orange-500" />;
-    case 'image_collection':
-      return <Sparkles className="w-4 h-4 text-orange-500" />;
-    default:
-      return <Sparkles className="w-4 h-4 text-orange-500" />;
-  }
-};
 
 /**
  * Helper function to render text with **bold** markdown
@@ -335,47 +296,40 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         <div className="flex flex-col">
           <div className="text-sm min-w-0">
             {isLoading ? (
-              <div className="flex items-center space-x-2" style={{ minHeight: '24px' }}>
-                <div className="w-2 h-2 rounded-full bg-current animate-pulse"></div>
-                <div className="w-2 h-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                <div className="w-2 h-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+              <div className="flex items-center gap-2" style={{ minHeight: '20px' }}>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
+                <span className="text-xs text-muted-foreground">Thinking...</span>
               </div>
             ) : isStreamingMessage ? (
-              <div className="space-y-2 min-w-0 w-full" style={{ minHeight: '24px' }}>
-                <div className="flex flex-col gap-1 min-w-0">
-                  <div className="flex items-start gap-2 min-w-0">
-                    {/* Only show icon if message doesn't already have an emoji */}
-                    {!primaryMessage.match(/^[🎨📐⏳✅🎉❌]/) && getStageIcon(metadata?.stage, metadata?.type)}
-                    <span className={cn(
-                       "font-medium flex-1 break-words min-w-0",
-                      isCompleted ? "text-green-600 dark:text-green-400" : "text-orange-600 dark:text-orange-400"
-                    )}>
-                      {(/^\d+$/.test(primaryMessage.trim())) ? '' : primaryMessage}
-                    </span>
-                    {isCompleted && !primaryMessage.includes('🎉') && <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />}
-                  </div>
-                  
+              <div className="space-y-1.5 min-w-0 w-full" style={{ minHeight: '20px' }}>
+                {/* Status row */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {!isCompleted && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500 flex-shrink-0" />}
+                  {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
+                  <span className={cn(
+                    "text-xs font-medium flex-1 break-words min-w-0",
+                    isCompleted ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  )}>
+                    {(/^\d+$/.test(primaryMessage.trim())) ? '' : primaryMessage}
+                  </span>
                 </div>
-                
-                {/* Special rendering for images_collected events */}
-                {metadata?.type === 'images_collected' && metadata?.images_by_slide && (() => {
 
-                  return (
-                    <div className="mt-2">
-                      <ImageCarouselWithLoading 
-                        slides={metadata.images_by_slide}
-                        totalImages={metadata.total_images || 0}
-                        isLoading={metadata.isLoading !== false}
-                        showDuration={metadata.showDuration || 10000}
-                        maxPreviewImages={10}
-                      />
-                    </div>
-                  );
-                })()}
-                
+                {/* Special rendering for images_collected events */}
+                {metadata?.type === 'images_collected' && metadata?.images_by_slide && (
+                  <div className="mt-1.5">
+                    <ImageCarouselWithLoading
+                      slides={metadata.images_by_slide}
+                      totalImages={metadata.total_images || 0}
+                      isLoading={metadata.isLoading !== false}
+                      showDuration={metadata.showDuration || 10000}
+                      maxPreviewImages={10}
+                    />
+                  </div>
+                )}
+
                 {/* Enhanced progress display for streaming messages */}
                 {metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted && (
-                  <div className="mt-3 w-full" style={{ minWidth: 0 }}>
+                  <div className="mt-2 w-full" style={{ minWidth: 0 }}>
                     <EnhancedDeckProgress
                       phase={metadata.phase || metadata.stage || 'status_update'}
                       progress={metadata.progress}
@@ -392,17 +346,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
                 {/* Inline custom content (e.g., Theme & assets panel) */}
                 {inlineBelow && (
-                  <div className="mt-3 w-full" style={{ minWidth: 0 }}>
+                  <div className="mt-2 w-full" style={{ minWidth: 0 }}>
                     {inlineBelow}
                   </div>
                 )}
 
-                {/* Font optimization removed */}
-                
-                
                 {/* Slide info - only show if not already in message */}
                 {metadata?.slideTitle && Number.isFinite(metadata?.slideIndex) && metadata?.slideIndex! >= 0 && !primaryMessage.includes(metadata.slideTitle) && (
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="text-[10px] text-muted-foreground mt-1">
                     Slide {(metadata.slideIndex || 0) + 1}: {metadata.slideTitle}
                   </div>
                 )}
@@ -520,16 +471,81 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             </div>
           )}
 
-          {/* Small tags for selections/attachments on user messages */}
-          {type === 'user' && (((metadata?.selectionsPreview?.length ?? 0) > 0) || ((metadata?.attachmentNames?.length ?? 0) > 0)) && (
+          {/* Selections on user messages */}
+          {type === 'user' && (metadata?.selectionsPreview?.length ?? 0) > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {(metadata?.selectionsPreview || []).map((s: any) => (
                 <span key={`sel-${s.id}`} className="px-2 py-0.5 rounded-full text-[10px] border border-neutral-300/70 dark:border-neutral-700 bg-neutral-900/5 dark:bg-white/10">
                   {s.label}
                 </span>
               ))}
+            </div>
+          )}
+
+          {/* File attachments with nice preview */}
+          {type === 'user' && (metadata?.attachments?.length ?? 0) > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(metadata?.attachments || []).map((att: any, i: number) => {
+                const isImage = att.type?.startsWith('image/') || att.mimeType?.startsWith('image/');
+                const previewUrl = att.previewUrl || att.url;
+                const filename = att.name || `File ${i + 1}`;
+                const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+                // Determine file category and icon
+                const isDoc = ['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext);
+                const isSheet = ['csv', 'xls', 'xlsx'].includes(ext);
+                const isPpt = ['ppt', 'pptx'].includes(ext);
+
+                const FileIcon = isImage ? ImageIcon
+                  : isDoc ? FileText
+                  : isSheet ? Table
+                  : isPpt ? Presentation
+                  : File;
+
+                const iconBg = isImage ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600'
+                  : isDoc ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
+                  : isSheet ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                  : isPpt ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600'
+                  : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600';
+
+                return (
+                  <div
+                    key={`att-${i}`}
+                    className="flex items-center gap-2 rounded-lg border border-neutral-300/70 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50 overflow-hidden"
+                  >
+                    {isImage && previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt={filename}
+                        className="w-12 h-12 object-cover"
+                      />
+                    ) : (
+                      <div className={`w-10 h-10 flex items-center justify-center ${iconBg}`}>
+                        <FileIcon size={18} />
+                      </div>
+                    )}
+                    <div className="pr-3 py-1">
+                      <span className="text-xs font-medium truncate block max-w-[120px]">{filename}</span>
+                      {att.size && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {att.size < 1024 ? `${att.size} B` :
+                           att.size < 1024 * 1024 ? `${(att.size / 1024).toFixed(1)} KB` :
+                           `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Fallback: Simple attachment names if no full attachment data */}
+          {type === 'user' && !(metadata?.attachments?.length) && (metadata?.attachmentNames?.length ?? 0) > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
               {(metadata?.attachmentNames || []).map((n: string, i: number) => (
-                <span key={`att-${i}`} className="px-2 py-0.5 rounded-full text-[10px] border border-neutral-300/70 dark:border-neutral-700 bg-neutral-900/5 dark:bg-white/10">
+                <span key={`att-name-${i}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-neutral-300/70 dark:border-neutral-700 bg-neutral-900/5 dark:bg-white/10">
+                  <File size={10} />
                   {n}
                 </span>
               ))}
