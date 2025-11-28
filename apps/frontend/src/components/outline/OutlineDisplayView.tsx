@@ -400,13 +400,16 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
       
       const state = useThemeStore.getState();
       state.setOutlineDeckTheme?.(currentOutline.id, themePayload);
-      
+
+      // Read BOTH font (hero) and bodyFont from stylePreferences - they MUST be different!
       const headingFamily = (currentOutline as any)?.stylePreferences?.font || 'Inter';
+      const bodyFamily = (currentOutline as any)?.stylePreferences?.bodyFont || headingFamily;
+      console.log(`[OutlineDisplayView] 🎨 Brand fonts - Heading: ${headingFamily}, Body: ${bodyFamily}`);
       const builtTheme = {
         name: 'Brand Theme',
         page: { backgroundColor: pageBg },
         typography: {
-          paragraph: { fontFamily: headingFamily, color: textColor },
+          paragraph: { fontFamily: bodyFamily, color: textColor },
           heading: { fontFamily: headingFamily, color: textColor }
         },
         accent1,
@@ -439,13 +442,15 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     if (existingDeckTheme && (isRealColor(cachedBg) || isRealColor(cachedAccent))) {
       console.log('[OutlineDisplayView] ✅ Theme already in store with real colors:', { cachedBg, cachedAccent });
       
-      // CRITICAL: Even with cached theme, ensure font from stylePreferences is applied to workspace theme
-      const styleFont = (currentOutline as any)?.stylePreferences?.font;
-      if (styleFont) {
-        const currentWorkspaceFont = workspaceTheme?.typography?.heading?.fontFamily;
-        if (currentWorkspaceFont !== styleFont) {
-          console.log(`[OutlineDisplayView] 🎨 Updating workspace theme font: ${currentWorkspaceFont} → ${styleFont}`);
-          // Build theme with the correct font
+      // CRITICAL: Even with cached theme, ensure fonts from stylePreferences are applied to workspace theme
+      const styleHeadingFont = (currentOutline as any)?.stylePreferences?.font;
+      const styleBodyFont = (currentOutline as any)?.stylePreferences?.bodyFont || styleHeadingFont;
+      if (styleHeadingFont) {
+        const currentWorkspaceHeadingFont = workspaceTheme?.typography?.heading?.fontFamily;
+        const currentWorkspaceBodyFont = workspaceTheme?.typography?.paragraph?.fontFamily;
+        if (currentWorkspaceHeadingFont !== styleHeadingFont || currentWorkspaceBodyFont !== styleBodyFont) {
+          console.log(`[OutlineDisplayView] 🎨 Updating workspace theme fonts: Heading ${currentWorkspaceHeadingFont} → ${styleHeadingFont}, Body ${currentWorkspaceBodyFont} → ${styleBodyFont}`);
+          // Build theme with the correct fonts
           const pageBg = cachedBg || '#FFFFFF';
           const textColor = existingDeckTheme?.color_palette?.primary_text || '#1f2937';
           const accent1 = cachedAccent || '#FF4301';
@@ -453,8 +458,8 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             name: 'Brand Theme',
             page: { backgroundColor: pageBg },
             typography: {
-              paragraph: { fontFamily: styleFont, color: textColor },
-              heading: { fontFamily: styleFont, color: textColor }
+              paragraph: { fontFamily: styleBodyFont, color: textColor },
+              heading: { fontFamily: styleHeadingFont, color: textColor }
             },
             accent1,
             accent2: accent1
@@ -2093,6 +2098,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   >
                                     Heading Sample
                                   </div>
+                                  <div className="text-[10px] text-zinc-500 dark:text-zinc-400 -mt-1">
+                                    {workspaceTheme.typography.heading?.fontFamily || 'Inter'}
+                                  </div>
                                 </div>
                                 <div
                                   className="text-sm whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer select-none"
@@ -2100,6 +2108,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                                   onClick={(e) => openFontPanelAt(e, 'body')}
                                 >
                                   Body sample text shows the selected body font.
+                                </div>
+                                <div className="text-[10px] text-zinc-500 dark:text-zinc-400 -mt-1">
+                                  {workspaceTheme.typography.paragraph?.fontFamily || 'Inter'}
                                 </div>
                                 {/* Logo block anchored at bottom with replace/remove */}
                                 <div className="mt-auto">

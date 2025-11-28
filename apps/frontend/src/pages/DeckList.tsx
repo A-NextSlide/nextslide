@@ -63,7 +63,7 @@ import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
 
 // Rotating words animation for hero heading - vertical slot machine style
-const WORDS = ['LECTURES', 'NOTES', 'RESEARCH', 'BRIEFS', 'IDEAS'];
+const WORDS = ['REPORTS', 'DATA', 'MEETINGS', 'NOTES', 'IDEAS'];
 
 const RotatingWords = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -97,10 +97,10 @@ const RotatingWords = () => {
 
   // Character widths for each word to animate container width
   const wordWidths: Record<string, string> = {
-    'LECTURES': '9ch',
+    'REPORTS': '8ch',
+    'DATA': '5ch',
+    'MEETINGS': '9.5ch', 
     'NOTES': '6ch',
-    'RESEARCH': '9ch', 
-    'BRIEFS': '6.5ch',
     'IDEAS': '5.5ch',
   };
   
