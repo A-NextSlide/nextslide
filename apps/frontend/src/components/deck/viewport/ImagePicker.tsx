@@ -345,25 +345,55 @@ const ImagePicker: React.FC<ImagePickerProps> = ({
   };
 
   // Handle media selection from tabs - images, gifs, and videos
-  const handleMediaSelect = (url: string, type: 'image' | 'video' | 'icon' | 'other') => {
+  const handleMediaSelect = async (url: string, type: 'image' | 'video' | 'icon' | 'other') => {
+    let finalUrl = url;
+
+    // For images that aren't already from Supabase, proxy through backend
+    if (type === 'image' && url.startsWith('http') && !url.includes('supabase')) {
+      try {
+        toast({
+          title: "Processing image...",
+          description: "Uploading to our servers for reliability",
+        });
+
+        const response = await fetch('/api/media/proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.url) {
+            finalUrl = data.url;
+          }
+        }
+      } catch (error) {
+        console.error('Error proxying image:', error);
+        // Continue with original URL as fallback
+      }
+    }
+
     // Apply any visual media (images, gifs, videos) to image placeholders
-    onImageSelect(url);
-    
-    // Add to recent images
+    onImageSelect(finalUrl);
+
+    // Add to recent images (store the Supabase URL)
     const selectedImage = images.find(img => img.url === url) || {
       id: `recent-${Date.now()}`,
-      url,
-      thumbnail: url,
+      url: finalUrl,
+      thumbnail: finalUrl,
       alt: 'Recent image'
     };
-    
-    const newRecent = [selectedImage, ...recentImages.filter(img => img.url !== url)].slice(0, 12);
+
+    const newRecent = [selectedImage, ...recentImages.filter(img => img.url !== finalUrl)].slice(0, 12);
     setRecentImages(newRecent);
     localStorage.setItem('recentlySelectedImages', JSON.stringify(newRecent));
 
     // Mark as used to avoid future auto-selection repeats
     if (type === 'image') {
-      markUrlUsed(url);
+      markUrlUsed(finalUrl);
     }
   };
   

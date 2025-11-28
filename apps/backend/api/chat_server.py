@@ -646,6 +646,76 @@ async def api_media_search_endpoint(request: MediaSearchRequest):
             type=request.type
         )
 
+
+class MediaProxyRequest(BaseModel):
+    """Request model for proxying/uploading external media to our storage"""
+    url: str = Field(..., description="External image URL to proxy")
+
+
+class MediaProxyResponse(BaseModel):
+    """Response model for media proxy endpoint"""
+    success: bool
+    url: str = Field(..., description="Supabase storage URL")
+    original_url: str = Field(..., description="Original external URL")
+    error: Optional[str] = None
+
+
+@app.post("/api/media/proxy", response_model=MediaProxyResponse)
+async def api_media_proxy_endpoint(request: MediaProxyRequest):
+    """
+    Proxy external images through our backend and upload to Supabase storage.
+    This prevents broken images from sites that block external linking.
+    """
+    try:
+        from services.image_storage_service import ImageStorageService
+
+        # Validate URL
+        if not request.url or not request.url.startswith('http'):
+            return MediaProxyResponse(
+                success=False,
+                url=request.url,
+                original_url=request.url,
+                error="Invalid URL"
+            )
+
+        # Skip if already a Supabase URL
+        if 'supabase' in request.url:
+            return MediaProxyResponse(
+                success=True,
+                url=request.url,
+                original_url=request.url
+            )
+
+        # Upload to Supabase
+        async with ImageStorageService() as storage:
+            result = await storage.upload_image_from_url(request.url)
+
+            if 'error' in result:
+                logger.warning(f"Failed to proxy image {request.url}: {result['error']}")
+                return MediaProxyResponse(
+                    success=False,
+                    url=request.url,  # Return original as fallback
+                    original_url=request.url,
+                    error=result['error']
+                )
+
+            logger.info(f"Proxied image: {request.url} -> {result['url']}")
+            return MediaProxyResponse(
+                success=True,
+                url=result['url'],
+                original_url=request.url
+            )
+
+    except Exception as e:
+        logger.error(f"Error in media proxy endpoint: {str(e)}", exc_info=True)
+        return MediaProxyResponse(
+            success=False,
+            url=request.url,
+            original_url=request.url,
+            error=str(e)
+        )
+
+
 @app.post("/api/deck/compose-stream")
 async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: Optional[str] = Depends(get_auth_header)):
     print("="*100)

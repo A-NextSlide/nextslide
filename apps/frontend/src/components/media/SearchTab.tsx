@@ -215,9 +215,47 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore, defa
         }
     };
 
-    const handleSelect = (result: SearchResult) => {
+    const handleSelect = async (result: SearchResult) => {
         const type = activeTab === 'videos' ? 'video' : 'image';
-        onSelect(result.link, type);
+
+        // For images, proxy through our backend to avoid broken external links
+        if (type === 'image') {
+            try {
+                // Show loading state
+                toast({
+                    title: "Processing image...",
+                    description: "Uploading to our servers for reliability",
+                });
+
+                const response = await fetch(`${API_CONFIG.BASE_URL}/media/proxy`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: result.link })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.url) {
+                        // Use the proxied Supabase URL
+                        onSelect(data.url, type);
+                        return;
+                    }
+                }
+
+                // Fallback to original URL if proxy fails
+                console.warn('Image proxy failed, using original URL');
+                onSelect(result.link, type);
+            } catch (error) {
+                console.error('Error proxying image:', error);
+                // Fallback to original URL
+                onSelect(result.link, type);
+            }
+        } else {
+            // Videos don't need proxying
+            onSelect(result.link, type);
+        }
     };
     
     // Check if we have more results to show
