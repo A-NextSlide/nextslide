@@ -1542,7 +1542,14 @@ Brand name:"""
             matched = self._match_fonts(scraped_fonts, available_fonts)
             if matched:
                 font_result = matched
-        
+                # If body needs AI selection (only 1 brand font found)
+                if font_result.get('needs_ai_body') and font_result.get('body') == '__AI_SELECT__':
+                    hero_font = font_result['hero']
+                    vibe = analysis.get('vibe', 'professional')
+                    body_font = await self._ai_select_complementary_body_font(hero_font, title, vibe, available_fonts)
+                    font_result['body'] = body_font
+                    logger.info(f"[THEME] AI selected body font '{body_font}' to complement hero '{hero_font}'")
+
         if not font_result:
             # CRITICAL: Check if this is a fun/playful entity (Pikachu, Pokemon, etc.)
             entity_name = (analysis.get('entity_name') or '').lower() if analysis.get('entity_name') else ''
@@ -2236,28 +2243,72 @@ Generate a creative, specific design style description (1-2 sentences):"""
                 result['body'] = matched_fonts[1]
             else:
                 # CRITICAL: Hero and body MUST be different fonts!
-                # Pick a complementary body font that pairs well with the brand's hero font
-                complementary_body_fonts = {
-                    'Montserrat': 'Open Sans',
-                    'Roboto': 'Lato',
-                    'Open Sans': 'Roboto',
-                    'Lato': 'Open Sans',
-                    'Poppins': 'Inter',
-                    'Inter': 'Roboto',
-                    'Raleway': 'Open Sans',
-                    'Playfair Display': 'Lato',
-                    'Oswald': 'Open Sans',
-                    'Bebas Neue': 'Roboto',
-                    'Source Sans Pro': 'Lato',
-                    'Nunito': 'Open Sans',
-                    'Work Sans': 'Roboto',
-                }
-                result['body'] = complementary_body_fonts.get(matched_fonts[0], 'Roboto' if matched_fonts[0] != 'Roboto' else 'Open Sans')
-                logger.info(f"[THEME] Single brand font '{matched_fonts[0]}' - using complementary body font '{result['body']}'")
+                # Mark for AI selection - will be handled in _select_fonts
+                result['body'] = '__AI_SELECT__'
+                result['needs_ai_body'] = True
             result['source'] = 'brand_scraped'
 
         return result
-    
+
+    async def _ai_select_complementary_body_font(self, hero_font: str, title: str, vibe: str, available_fonts: List[str]) -> str:
+        """Use AI to intelligently select a complementary body font from 700+ available fonts."""
+        try:
+            # Get categorized fonts for better AI context
+            font_categories = RegistryFonts.get_available_fonts()
+
+            # Build font list string for AI
+            font_list_parts = []
+            for category, fonts_in_cat in font_categories.items():
+                if fonts_in_cat:
+                    font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:30])}")
+            available_fonts_str = "\n".join(font_list_parts)
+
+            prompt = f"""The hero/header font is already set to: "{hero_font}"
+
+Select a DIFFERENT complementary body font for a {vibe} presentation titled "{title}".
+
+CRITICAL RULES:
+1. Body font MUST be DIFFERENT from "{hero_font}"
+2. Body font should complement the hero font stylistically
+3. Body font should be highly readable for body text
+4. Consider the vibe: {vibe}
+
+Available fonts by category:
+{available_fonts_str}
+
+Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
+
+            response = await self.client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=50,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            body_font = response.content[0].text.strip().strip('"\'')
+
+            # Validate the font exists
+            all_fonts = RegistryFonts.get_all_fonts_list()
+            if body_font in all_fonts and body_font.lower() != hero_font.lower():
+                logger.info(f"[AI FONT] Selected body font '{body_font}' to complement '{hero_font}'")
+                return body_font
+
+            # Try fuzzy match
+            for font in all_fonts:
+                if body_font.lower() in font.lower() or font.lower() in body_font.lower():
+                    if font.lower() != hero_font.lower():
+                        logger.info(f"[AI FONT] Fuzzy matched body font '{font}' to complement '{hero_font}'")
+                        return font
+
+            # Fallback - pick a different readable font
+            fallback = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+            logger.warning(f"[AI FONT] Could not validate '{body_font}', using fallback '{fallback}'")
+            return fallback
+
+        except Exception as e:
+            logger.error(f"[AI FONT] Error selecting body font: {e}")
+            return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
     def _select_contextual_fonts(
         self,
         analysis: Dict[str, Any],

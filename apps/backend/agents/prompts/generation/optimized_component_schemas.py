@@ -90,7 +90,18 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   • **CLICKABLE**: Make cards/buttons look clickable (`cursor-pointer`).
   • **CONTENT FITTING**: 🚨 CRITICAL! Text MUST fit the box. Use `truncate`, `line-clamp-2`, or keep text short.
   • **SCROLLING**: Avoid scrolling if possible. Fit content to the container height.
-  
+
+  🚫🚫🚫 **BANNED DESIGNS - NEVER CREATE THESE:** 🚫🚫🚫
+  • ❌ **RAINBOW GRADIENT CARDS** - NO basic colored cards (blue, purple, red, orange, green) in a grid!
+  • ❌ **SOLID COLOR CARDS WITH JUST TEXT** - These look cheap and amateur
+  • ❌ **6-CARD GRIDS** - Don't create 2x3 or 3x2 grids of simple colored boxes
+  • ❌ **BASIC GRADIENTS** - Linear gradients on cards without depth, shadows, or effects
+
+  ✅ **FOR TEXT CONTENT (bullet points, features, descriptions):**
+  • DON'T use CustomComponent at all - use Icon + TiptapTextBlock pairs instead!
+  • Icon+Text is MORE RELIABLE and looks cleaner than CustomComponent cards
+  • CustomComponent should ONLY be used for: animated stats, interactive elements, data visualizations
+
   📦 **PREMIUM DESIGN TEMPLATES - USE THESE AS INSPIRATION:**
 
   🔥 **GLASSMORPHISM STATS GRID (Dark Theme):**

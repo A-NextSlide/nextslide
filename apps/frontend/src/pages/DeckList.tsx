@@ -63,7 +63,7 @@ import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
 
 // Rotating words animation for hero heading - vertical slot machine style
-const WORDS = ['PROJECTS', 'PITCH DECKS', 'DEADLINES', 'REPORTS', 'IDEAS'];
+const WORDS = ['NOTES', 'RESEARCH', 'DATA', 'BRIEFS', 'IDEAS'];
 
 const RotatingWords = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -95,12 +95,12 @@ const RotatingWords = () => {
     };
   }, []);
 
-  // Approximate character widths for each word to animate container width
+  // Character widths for each word to animate container width
   const wordWidths: Record<string, string> = {
-    'PROJECTS': '8.5ch',
-    'PITCH DECKS': '11ch', 
-    'DEADLINES': '9.5ch',
-    'REPORTS': '7.5ch',
+    'NOTES': '6ch',
+    'RESEARCH': '9ch', 
+    'DATA': '5ch',
+    'BRIEFS': '6.5ch',
     'IDEAS': '5.5ch',
   };
   
@@ -108,15 +108,15 @@ const RotatingWords = () => {
     <span 
       className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300"
       style={{ 
-        height: '1.2em',
+        height: '1em',
         width: wordWidths[WORDS[currentIndex]],
-        verticalAlign: '-0.1em', // Fine-tune baseline alignment
+        verticalAlign: 'baseline',
       }}
     >
       <span
         className="flex flex-col"
         style={{ 
-          transform: `translateY(-${currentIndex * 1.2}em)`,
+          transform: `translateY(-${currentIndex * 1}em)`,
           transition: 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
@@ -124,7 +124,7 @@ const RotatingWords = () => {
           <span 
             key={word}
             className="whitespace-nowrap"
-            style={{ height: '1.2em', lineHeight: '1.2em' }}
+            style={{ height: '1em', lineHeight: '1em' }}
           >
             {word}
           </span>

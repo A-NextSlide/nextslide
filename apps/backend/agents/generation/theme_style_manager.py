@@ -1449,22 +1449,10 @@ Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
                 elif len(db_fonts) == 1:
                     validated_font = self._validate_font_name(db_fonts[0])
                     # CRITICAL: Hero and body MUST be different fonts!
-                    # Pick a complementary body font that pairs well with the brand's hero font
-                    complementary_body_fonts = {
-                        'Montserrat': 'Open Sans',
-                        'Roboto': 'Lato',
-                        'Open Sans': 'Roboto',
-                        'Lato': 'Open Sans',
-                        'Poppins': 'Inter',
-                        'Inter': 'Roboto',
-                        'Raleway': 'Open Sans',
-                        'Playfair Display': 'Lato',
-                        'Oswald': 'Open Sans',
-                        'Bebas Neue': 'Roboto',
-                    }
-                    body_font = complementary_body_fonts.get(validated_font, 'Roboto' if validated_font != 'Roboto' else 'Open Sans')
+                    # Use AI to intelligently pick a complementary body font from 700+ available fonts
+                    body_font = await self._ai_select_complementary_body_font(validated_font, title, vibe)
                     fonts = {"hero": validated_font, "body": body_font}
-                    logger.info(f"[THEME] Single brand font '{validated_font}' - using complementary body font '{body_font}'")
+                    logger.info(f"[THEME] Single brand font '{validated_font}' - AI selected body font '{body_font}'")
                 logger.info(f"[THEME] Palette fonts override - Hero: {fonts.get('hero')}, Body: {fonts.get('body')}")
             
             # Tag source in color_palette for downstream precedence logic
@@ -1828,7 +1816,69 @@ Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
         
         logger.info(f"Final font selection: Hero='{fonts.get('hero')}', Body='{fonts.get('body')}'")
         return fonts
-    
+
+    async def _ai_select_complementary_body_font(self, hero_font: str, title: str, vibe: str) -> str:
+        """Use AI to intelligently select a complementary body font from 700+ available fonts."""
+        try:
+            from services.registry_fonts import RegistryFonts
+
+            # Get all available fonts categorized
+            font_categories = RegistryFonts.get_available_fonts()
+
+            # Build font list string for AI
+            font_list_parts = []
+            for category, fonts_in_cat in font_categories.items():
+                if fonts_in_cat:
+                    font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:30])}")
+            available_fonts_str = "\n".join(font_list_parts)
+
+            prompt = f"""The hero/header font is already set to: "{hero_font}"
+
+Select a DIFFERENT complementary body font for a {vibe} presentation titled "{title}".
+
+CRITICAL RULES:
+1. Body font MUST be DIFFERENT from "{hero_font}"
+2. Body font should complement the hero font stylistically
+3. Body font should be highly readable for body text
+4. Consider the vibe: {vibe}
+
+Available fonts by category:
+{available_fonts_str}
+
+Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
+
+            response = await self._async_invoke(
+                self.client,
+                "claude-3-5-haiku-20241022",
+                [{"role": "user", "content": prompt}],
+                max_tokens=50,
+                temperature=0.3
+            )
+
+            body_font = response.strip().strip('"\'')
+
+            # Validate the font exists
+            all_fonts = RegistryFonts.get_all_fonts_list()
+            if body_font in all_fonts and body_font.lower() != hero_font.lower():
+                logger.info(f"[AI FONT] Selected body font '{body_font}' to complement '{hero_font}'")
+                return body_font
+
+            # Try fuzzy match
+            for font in all_fonts:
+                if body_font.lower() in font.lower() or font.lower() in body_font.lower():
+                    if font.lower() != hero_font.lower():
+                        logger.info(f"[AI FONT] Fuzzy matched body font '{font}' to complement '{hero_font}'")
+                        return font
+
+            # Fallback - pick a different readable font
+            fallback = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+            logger.warning(f"[AI FONT] Could not validate '{body_font}', using fallback '{fallback}'")
+            return fallback
+
+        except Exception as e:
+            logger.error(f"[AI FONT] Error selecting body font: {e}")
+            return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
     def _validate_font_name(self, font_name: str) -> str:
         """Validate font name and return safe fallback if invalid."""
         if not font_name or not isinstance(font_name, str):
