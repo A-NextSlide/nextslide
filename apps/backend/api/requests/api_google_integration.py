@@ -2023,8 +2023,51 @@ async def import_slides(body: SlidesImportRequest, token: Optional[str] = Depend
     return JobResponse(jobId=job_id)
 
 
+class ImportPptxUrlRequest(BaseModel):
+    """Request to import a PPTX file from URL."""
+    fileUrl: str = Field(..., description="URL to the uploaded PPTX file")
+    fileName: Optional[str] = Field(default=None, description="Original filename")
+    deckId: Optional[str] = Field(default=None, description="Target deck ID")
+
+
+@router.post("/import/pptx", response_model=JobResponse)
+async def import_pptx_from_url(body: ImportPptxUrlRequest, token: Optional[str] = Depends(get_auth_header)):
+    """Import a PPTX file from a URL (e.g., from Supabase storage)."""
+    auth_service = get_auth_service()
+    user = auth_service.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user_id = user["id"]
+
+    # Download the file from URL
+    import httpx
+    import tempfile
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(body.fileUrl, follow_redirects=True, timeout=60.0)
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to download file: {response.status_code}")
+            content = response.content
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to download file: {str(e)}")
+
+    # Save to temp file
+    filename = body.fileName or "imported.pptx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    job_id = jobs_store.create(user_id=user_id, job_type=JobType.IMPORT_PPTX, input_payload={"filename": filename, "deckId": body.deckId})
+    import asyncio
+
+    asyncio.create_task(_run_import_pptx_job(user_id=user_id, job_id=job_id, uploaded_file_path=tmp_path))
+    return JobResponse(jobId=job_id)
+
+
 @router.post("/import/pptx/upload", response_model=JobResponse)
 async def import_pptx_upload(file: UploadFile = File(...), token: Optional[str] = Depends(get_auth_header)):
+    """Import a PPTX file via direct upload."""
     auth_service = get_auth_service()
     user = auth_service.get_user_with_token(token) if token else None
     if not user:

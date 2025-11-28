@@ -244,3 +244,104 @@ def firecrawl_outline_fetch(args: FirecrawlOutlineArgs, outline: Dict[str, Any])
     return outline, f"Updated slide {(slide or {}).get('id') or idx} with Firecrawl results"
 
 
+# ---------------------------------------------
+# Scrape media for custom component generation
+# ---------------------------------------------
+class ScrapeMediaForSlideArgs(ToolModel):
+    tool_name: Literal["scrape_media_for_slide"] = Field(
+        description=(
+            "Scrape images, GIFs, and media from a website URL to use in slide generation. "
+            "Use this when users want to pull content from a specific website (e.g., 'pull GIFs from dyna.co'). "
+            "The scraped media will be used by the custom component generator to create interactive displays."
+        )
+    )
+    slide_id: Optional[str] = Field(default=None, description="Slide id to attach media to")
+    slide_index: Optional[int] = Field(default=None, description="Slide index to attach media to")
+    url: str = Field(description="Website URL to scrape for media")
+    media_filter: Optional[str] = Field(
+        default=None,
+        description="Filter for specific media types: 'gifs', 'images', 'all'. Defaults to 'all'"
+    )
+    content_context: Optional[str] = Field(
+        default=None,
+        description="Additional context about how to use this media (e.g., 'product showcase', 'demo reel')"
+    )
+
+
+def scrape_media_for_slide(args: ScrapeMediaForSlideArgs, outline: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    """
+    Scrape media from a URL and store it in the slide for custom component generation.
+    """
+    idx = _find_slide_index(outline, args.slide_id, args.slide_index)
+    if idx is None:
+        return outline, "No-op: slide not found"
+
+    slides = outline.get("slides", [])
+    slide = slides[idx]
+
+    try:
+        from services.firecrawl_service import get_firecrawl_service
+        svc = get_firecrawl_service()
+        if not svc.is_configured():
+            return outline, "No-op: Firecrawl not configured"
+
+        # Use the new extract_site_content method
+        result = svc.extract_site_content(args.url)
+        if not result.get("success"):
+            return outline, f"No-op: Failed to scrape {args.url}: {result.get('error', 'Unknown error')}"
+
+        data = result.get("data", {})
+
+        # Filter media based on user preference
+        media_filter = (args.media_filter or "all").lower()
+        if media_filter == "gifs":
+            media_urls = data.get("gifs", [])
+            media_type = "gifs"
+        elif media_filter == "images":
+            media_urls = data.get("images", [])
+            media_type = "images"
+        else:
+            media_urls = data.get("all_media", [])
+            media_type = "all"
+
+        if not media_urls:
+            return outline, f"No-op: No {media_type} found at {args.url}"
+
+        # Store scraped media in slide metadata for custom component generation
+        scraped_media = {
+            "source_url": args.url,
+            "gifs": data.get("gifs", []),
+            "images": data.get("images", []),
+            "all_media": data.get("all_media", []),
+            "markdown": data.get("markdown", "")[:1000],  # Truncate for context
+            "metadata": data.get("metadata", {}),
+            "content_context": args.content_context or "",
+            "media_filter": media_filter,
+        }
+
+        # Store in slide's scrapedMedia field
+        slide["scrapedMedia"] = scraped_media
+
+        # Also add to taggedMedia for visibility
+        for url in media_urls[:5]:  # Limit to first 5
+            is_gif = ".gif" in url.lower()
+            tm = slide.setdefault("taggedMedia", [])
+            tm.append({
+                "type": "gif" if is_gif else "image",
+                "url": url,
+                "source": "firecrawl_scrape",
+                "source_url": args.url
+            })
+
+        # Update slide content to mention the scraped media
+        media_note = f"\n[Scraped {len(media_urls)} {media_type} from {args.url}]"
+        body = slide.get("content") or ""
+        if media_note not in body:
+            slide["content"] = (body + media_note).strip()
+
+        return outline, f"Scraped {len(media_urls)} {media_type} from {args.url} for slide {slide.get('id') or idx}"
+
+    except Exception as e:
+        return outline, f"No-op: Error scraping media: {str(e)}"
+
+

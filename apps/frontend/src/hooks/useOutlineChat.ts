@@ -616,8 +616,45 @@ export const useOutlineChat = ({
 
           case 'narrative_flow_pending':
             setLoadingStatus({ message: 'Narrative is still generating…', stage: 'narrative_pending' });
-
             break;
+
+          case 'theme_loading':
+            // Signal that theme detection is in progress
+            console.log('[useOutlineChat] 🎨 Theme loading started');
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('theme_preview_update', {
+                detail: { type: 'theme_loading', message: (event as any).message || 'Detecting brand and colors...' }
+              }));
+            }
+            break;
+
+          case 'theme_ready':
+            // Theme detection complete - dispatch the theme data
+            console.log('[useOutlineChat] 🎨 Theme ready:', (event as any).theme);
+            if (typeof window !== 'undefined') {
+              const themeData = (event as any).theme || {};
+              const themePayload = {
+                color_palette: {
+                  primary_background: themeData.colors?.background || '#ffffff',
+                  primary_text: themeData.colors?.text || '#1f2937',
+                  accent_1: themeData.colors?.accent1 || '#FF4301',
+                  accent_2: themeData.colors?.accent2 || themeData.colors?.accent1 || '#FF4301',
+                  backgrounds: [themeData.colors?.background || '#ffffff'],
+                  accents: [themeData.colors?.accent1, themeData.colors?.accent2, themeData.colors?.accent3].filter(Boolean),
+                  text_colors: { primary: themeData.colors?.text || '#1f2937' }
+                },
+                typography: {
+                  hero_title: { family: themeData.font || 'Inter' },
+                  body_text: { family: themeData.bodyFont || themeData.font || 'Inter' }
+                },
+                ...(themeData.logoUrl ? { brandInfo: { logoUrl: themeData.logoUrl }, metadata: { logo_url: themeData.logoUrl } } : {})
+              };
+              window.dispatchEvent(new CustomEvent('theme_preview_update', {
+                detail: { type: 'theme_generated', theme: themePayload, palette: themePayload.color_palette, typography: themePayload.typography }
+              }));
+            }
+            break;
+
             // Finalize slide-based progress to all slides completed if we know expectedCount
             if (outlineStructureInfo?.expectedCount) {
               setProgress({ current: outlineStructureInfo.expectedCount, total: outlineStructureInfo.expectedCount });

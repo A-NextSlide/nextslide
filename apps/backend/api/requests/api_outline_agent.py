@@ -115,6 +115,310 @@ Always cite your sources. Focus on what would be useful for presentation slides.
         }
 
 
+async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[str, Any]:
+    """
+    Analyze uploaded files using Anthropic Claude for presentation creation.
+    Supports: images (vision), PDFs, Excel/CSV, PPTX, documents.
+    Returns structured analysis that can be used in outline generation.
+    """
+    if not files:
+        return {"success": False, "analyses": [], "combined_context": ""}
+
+    try:
+        import base64
+        from io import BytesIO
+
+        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+        analyses = []
+        combined_context_parts = []
+
+        for file in files:
+            file_type = file.type.lower() if file.type else ""
+            filename = file.name.lower()
+            analysis = {
+                "file_id": file.id,
+                "filename": file.name,
+                "file_type": "unknown",
+                "summary": "",
+                "key_insights": [],
+                "suggested_slides": [],
+                "extracted_data": None
+            }
+
+            try:
+                # Determine file category
+                is_image = file_type.startswith("image/")
+                is_pdf = file_type == "application/pdf" or filename.endswith(".pdf")
+                is_excel = "spreadsheet" in file_type or "excel" in file_type or filename.endswith((".xlsx", ".xls", ".csv"))
+                is_pptx = "presentation" in file_type or filename.endswith((".pptx", ".ppt"))
+                is_doc = "document" in file_type or "word" in file_type or filename.endswith((".doc", ".docx", ".txt", ".md"))
+
+                content_blocks = []
+
+                if is_image and file.content:
+                    # Use Claude vision for images
+                    analysis["file_type"] = "image"
+                    content_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": file_type,
+                            "data": file.content
+                        }
+                    })
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"""Analyze this image for creating a presentation. Provide:
+1. **Description**: What does this image show?
+2. **Key Elements**: Important subjects, text, data, or objects
+3. **Suggested Use**: Which slide types would this fit? (intro, data visualization, team, product, etc.)
+4. **Extracted Text**: Any visible text (OCR)
+5. **Data/Charts**: If it contains charts/graphs, extract the key data points
+
+Be concise but thorough. This will be used to create presentation slides."""
+                    })
+
+                elif is_pdf and file.content:
+                    # Use Claude's PDF understanding
+                    analysis["file_type"] = "document"
+                    content_blocks.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": file.content
+                        }
+                    })
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"""Analyze this PDF document for creating a presentation. Extract:
+1. **Main Topic**: What is this document about?
+2. **Key Points**: The most important facts, statistics, and insights (bullet points)
+3. **Structure**: How is the content organized?
+4. **Slide Suggestions**: What slides should be created from this content?
+5. **Data/Charts**: Any numerical data that could be visualized
+
+Focus on content that would make great presentation slides."""
+                    })
+
+                elif is_excel and file.content:
+                    # Parse Excel/CSV data
+                    analysis["file_type"] = "spreadsheet"
+                    raw_bytes = base64.b64decode(file.content)
+                    data_preview = ""
+                    extracted_data = None
+
+                    if filename.endswith(".csv"):
+                        import csv
+                        from io import StringIO
+                        text = raw_bytes.decode('utf-8', errors='ignore')
+                        reader = csv.reader(StringIO(text))
+                        rows = list(reader)[:30]  # First 30 rows
+                        if rows:
+                            headers = rows[0]
+                            data_rows = rows[1:] if len(rows) > 1 else []
+                            data_preview = f"Headers: {', '.join(headers[:10])}\n"
+                            for i, row in enumerate(data_rows[:10]):
+                                data_preview += f"Row {i+1}: {', '.join(row[:8])}\n"
+                            extracted_data = {"headers": headers, "sample_rows": data_rows[:20], "total_rows": len(rows)-1}
+                    else:
+                        try:
+                            import openpyxl
+                            wb = openpyxl.load_workbook(BytesIO(raw_bytes), read_only=True)
+                            sheet = wb.active
+                            rows = []
+                            for i, row in enumerate(sheet.iter_rows(values_only=True)):
+                                if i >= 30: break
+                                rows.append([str(c) if c is not None else "" for c in row])
+                            wb.close()
+                            if rows:
+                                headers = rows[0]
+                                data_rows = rows[1:]
+                                data_preview = f"Headers: {', '.join(headers[:10])}\n"
+                                for i, row in enumerate(data_rows[:10]):
+                                    data_preview += f"Row {i+1}: {', '.join(row[:8])}\n"
+                                extracted_data = {"headers": headers, "sample_rows": data_rows[:20], "total_rows": len(rows)-1}
+                        except Exception as e:
+                            data_preview = f"Could not parse Excel: {str(e)}"
+
+                    analysis["extracted_data"] = extracted_data
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"""Analyze this spreadsheet data for creating presentation slides:
+
+{data_preview}
+
+Provide:
+1. **Data Summary**: What does this data represent?
+2. **Key Insights**: Notable trends, patterns, or statistics
+3. **Chart Recommendations**: Best chart types (bar, line, pie, etc.) for this data
+4. **Slide Suggestions**: What slides should be created? (e.g., "Market Growth slide with line chart")
+5. **Key Metrics**: The most important numbers to highlight"""
+                    })
+
+                elif is_pptx and file.content:
+                    # Parse PPTX content
+                    analysis["file_type"] = "presentation"
+                    raw_bytes = base64.b64decode(file.content)
+                    slides_content = ""
+
+                    try:
+                        from pptx import Presentation
+                        prs = Presentation(BytesIO(raw_bytes))
+                        slides_content = f"Total slides: {len(prs.slides)}\n\n"
+                        for i, slide in enumerate(prs.slides[:15]):  # First 15 slides
+                            slides_content += f"Slide {i+1}:\n"
+                            for shape in slide.shapes:
+                                if hasattr(shape, "text") and shape.text.strip():
+                                    slides_content += f"  - {shape.text[:300]}\n"
+                            slides_content += "\n"
+                    except Exception as e:
+                        slides_content = f"Could not parse PPTX: {str(e)}"
+
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"""Analyze this PowerPoint presentation:
+
+{slides_content}
+
+Provide:
+1. **Overview**: Main topic and purpose
+2. **Structure**: How is it organized?
+3. **Key Content**: Most important points from each slide
+4. **Design Notes**: Any notable design patterns or themes
+5. **Improvement Suggestions**: How could this be improved?"""
+                    })
+
+                elif is_doc and file.content:
+                    # Parse document text
+                    analysis["file_type"] = "document"
+                    raw_bytes = base64.b64decode(file.content)
+                    text_content = raw_bytes.decode('utf-8', errors='ignore')[:15000]  # First 15k chars
+
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"""Analyze this document for creating a presentation:
+
+{text_content}
+
+Provide:
+1. **Main Topic**: What is this about?
+2. **Key Points**: Most important facts and insights
+3. **Slide Suggestions**: What slides should be created from this?
+4. **Data/Statistics**: Any numbers that should be highlighted"""
+                    })
+
+                else:
+                    # Unknown file type
+                    analysis["summary"] = f"File type '{file_type}' not fully supported for deep analysis"
+                    analyses.append(analysis)
+                    continue
+
+                # Call Claude for analysis
+                if content_blocks:
+                    messages = [{"role": "user", "content": content_blocks}]
+                    result = client.messages.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=2000,
+                        system="You are an expert at analyzing content for presentation creation. Be concise and focus on actionable insights."
+                    )
+                    analysis_text = result.content[0].text if result.content else ""
+                    analysis["summary"] = analysis_text
+
+                    # Extract key insights as bullet points
+                    lines = analysis_text.split('\n')
+                    key_insights = []
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith(('- ', '• ', '* ', '1.', '2.', '3.', '4.', '5.')):
+                            key_insights.append(line.lstrip('-•* 0123456789.').strip())
+                    analysis["key_insights"] = key_insights[:10]  # Top 10 insights
+
+                    # Add to combined context
+                    combined_context_parts.append(f"=== {file.name} ({analysis['file_type']}) ===\n{analysis_text}\n")
+
+            except Exception as file_err:
+                logger.error(f"[OutlineAgent] Error analyzing file {file.name}: {file_err}")
+                analysis["summary"] = f"Error analyzing file: {str(file_err)}"
+
+            analyses.append(analysis)
+
+        return {
+            "success": True,
+            "analyses": analyses,
+            "combined_context": "\n".join(combined_context_parts),
+            "file_count": len(analyses)
+        }
+
+    except Exception as e:
+        logger.error(f"[OutlineAgent] File analysis failed: {e}")
+        return {
+            "success": False,
+            "analyses": [],
+            "combined_context": "",
+            "error": str(e)
+        }
+
+
+async def scrape_media_from_url(url: str, media_filter: str = "all") -> Dict[str, Any]:
+    """
+    Scrape media (GIFs, images) from a website URL using Firecrawl.
+    Returns structured media data for use in slide generation.
+    """
+    results = {
+        "success": False,
+        "gifs": [],
+        "images": [],
+        "all_media": [],
+        "markdown": "",
+        "source_url": url,
+        "error": None
+    }
+
+    try:
+        from services.firecrawl_service import get_firecrawl_service
+        svc = get_firecrawl_service()
+
+        if not svc.is_configured():
+            logger.warning("[OutlineAgent] Firecrawl not configured, skipping media scrape")
+            results["error"] = "Firecrawl not configured"
+            return results
+
+        logger.info(f"[OutlineAgent] Scraping media from URL: {url}, filter: {media_filter}")
+
+        # Use the new extract_site_content method
+        result = svc.extract_site_content(url)
+
+        if result.get("success"):
+            data = result.get("data", {})
+            results["success"] = True
+            results["gifs"] = data.get("gifs", [])
+            results["images"] = data.get("images", [])
+            results["all_media"] = data.get("all_media", [])
+            results["markdown"] = data.get("markdown", "")[:2000]  # Truncate for context
+            results["metadata"] = data.get("metadata", {})
+
+            # Apply filter
+            if media_filter == "gifs":
+                results["filtered_media"] = results["gifs"]
+            elif media_filter == "images":
+                results["filtered_media"] = results["images"]
+            else:
+                results["filtered_media"] = results["all_media"]
+
+            logger.info(f"[OutlineAgent] Scraped media: {len(results['gifs'])} GIFs, {len(results['images'])} images")
+        else:
+            results["error"] = result.get("error", "Unknown error")
+            logger.warning(f"[OutlineAgent] Media scrape failed: {results['error']}")
+
+    except Exception as e:
+        logger.error(f"[OutlineAgent] Media scraping error: {e}")
+        results["error"] = str(e)
+
+    return results
+
+
 async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
     """
     Scrape content from reference links using Firecrawl. Keep it simple.
@@ -182,11 +486,22 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class FileAttachment(BaseModel):
+    """A file attached to the message."""
+    id: str = Field(description="Unique file ID")
+    name: str = Field(description="Original filename")
+    type: str = Field(description="MIME type")
+    content: Optional[str] = Field(default=None, description="Base64 encoded content")
+    url: Optional[str] = Field(default=None, description="URL to the file")
+    size: Optional[int] = Field(default=None, description="File size in bytes")
+
+
 class OutlineAgentRequest(BaseModel):
     """Request to the outline generation agent."""
     message: str = Field(..., description="User's message")
     chat_history: List[ChatMessage] = Field(default_factory=list, description="Previous conversation")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Additional context (preferences, etc.)")
+    files: Optional[List[FileAttachment]] = Field(default=None, description="Attached files to analyze")
 
 
 # Agent system prompt - Conversational & Proactive
@@ -404,6 +719,35 @@ When user wants to change the theme, colors, fonts, or logos (e.g., "change the 
 - "Remove the logo" → `{"action": "update_theme", "theme_changes": {"logo": {"action": "remove"}}}`
 - "Change font to Roboto" → `{"action": "update_theme", "theme_changes": {"fonts": {"family": "Roboto"}}}`
 
+4. **Scraping Media from Websites** (GIFs, images, content):
+When user wants to pull content from a specific website for their slides:
+```json
+{
+  "action": "scrape_media",
+  "url": "https://example.com",
+  "media_filter": "all",
+  "slide_index": 0,
+  "content_context": "product showcase"
+}
+```
+
+**When to use scrape_media:**
+- User says "pull GIFs from [website]" or "get images from [url]"
+- User wants to showcase content from a specific company website
+- User mentions a company domain and wants visual content from it
+- Examples: "pull gifs from dyna.co", "get images from stripe.com", "use visuals from tesla.com"
+
+**scrape_media parameters:**
+- `url`: The website URL to scrape (required)
+- `media_filter`: "gifs", "images", or "all" (default: "all")
+- `slide_index`: Which slide to attach the media to (0-based, optional)
+- `content_context`: How to use the media, e.g., "product demo", "showcase", "hero section"
+
+**scrape_media examples:**
+- "pull gifs from dyna.co" → `{"action": "scrape_media", "url": "https://dyna.co", "media_filter": "gifs", "content_context": "product demo showcase"}`
+- "get images from their website for the product slide" → `{"action": "scrape_media", "url": "[url from context]", "media_filter": "images", "slide_index": 2, "content_context": "product features"}`
+- "use content from stripe.com" → `{"action": "scrape_media", "url": "https://stripe.com", "media_filter": "all", "content_context": "company showcase"}`
+
 **IMPORTANT: Brand Requests**
 When user mentions a company/brand name (Nike, Stripe, Instacart, Apple, etc.) and asks to use their theme/colors/branding:
 → Use `"brand": {"name": "CompanyName", "url": "companyname.com"}`
@@ -599,6 +943,29 @@ Assistant: ```json
 ```
 Done! I've updated your theme with warm, sunny yellow tones that create that inviting, energetic atmosphere! ☀️
 
+User: "pull GIFs from dyna.co for the product demo slide"
+Assistant: ```json
+{
+  "action": "scrape_media",
+  "url": "https://dyna.co",
+  "media_filter": "gifs",
+  "slide_index": 2,
+  "content_context": "robotics product demo showcase"
+}
+```
+I'm pulling the GIFs from dyna.co now! These will be used to create an interactive showcase on your product demo slide. The component will feature the actual GIFs from their website in an engaging display.
+
+User: "get images from stripe.com"
+Assistant: ```json
+{
+  "action": "scrape_media",
+  "url": "https://stripe.com",
+  "media_filter": "images",
+  "content_context": "company showcase visuals"
+}
+```
+Fetching images from Stripe's website! I'll pull their visual assets to create a stunning component for your slide.
+
 **Remember**: You're having a conversation, not just generating outlines. Be warm, helpful, and responsive!
 """
 
@@ -610,12 +977,42 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
     Stream the agent's response - agent outputs JSON directly in its response.
     Enhanced with Perplexity web search for researching URLs, companies, and topics.
     Also scrapes reference links provided by user for content extraction.
+    Now also analyzes uploaded files (images, PDFs, Excel, PPTX, etc.)
     """
     try:
+        # Send immediate thinking status to confirm streaming works
+        yield f"data: {json.dumps({'type': 'status', 'status': 'thinking', 'message': 'Processing your request...'})}\n\n"
+        logger.info("[OutlineAgent] Sent initial thinking status")
+
         # Get the raw Haiku 4.5 client
         client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
 
         scraped_context = ""
+        file_context = ""
+
+        # Analyze uploaded files if present
+        if request.files and len(request.files) > 0:
+            file_names = [f.name for f in request.files]
+            logger.info(f"[OutlineAgent] Analyzing {len(request.files)} files: {file_names}")
+
+            # Send status event for each file
+            for i, file in enumerate(request.files):
+                yield f"data: {json.dumps({'type': 'status', 'status': 'analyzing_file', 'message': f'Analyzing {file.name}...', 'file_index': i, 'file_name': file.name, 'total_files': len(request.files)})}\n\n"
+
+            # Analyze all files
+            file_analysis = await analyze_files_for_presentation(request.files)
+
+            if file_analysis["success"] and file_analysis["combined_context"]:
+                file_context = f"\n\n[UPLOADED FILES ANALYSIS]\n{file_analysis['combined_context']}\n[END FILES ANALYSIS]\n"
+                file_count = file_analysis['file_count']
+                logger.info(f"[OutlineAgent] File analysis complete: {file_count} files, {len(file_context)} chars context")
+
+                # Send file analysis complete event with results
+                event_data = {'type': 'status', 'status': 'files_analyzed', 'message': f'Analyzed {file_count} file(s)', 'analyses': file_analysis['analyses']}
+                yield f"data: {json.dumps(event_data)}\n\n"
+            else:
+                logger.warning(f"[OutlineAgent] File analysis failed or empty: {file_analysis.get('error', 'No context')}")
+                yield f"data: {json.dumps({'type': 'status', 'status': 'file_analysis_error', 'message': file_analysis.get('error', 'Could not analyze files')})}\n\n"
 
         # Detect URLs in the message and auto-scrape them
         url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)', re.IGNORECASE)
@@ -671,7 +1068,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 })
 
         # Build user message with context if available
-        user_content = request.message + scraped_context
+        user_content = request.message + scraped_context + file_context
 
         # If context has current_outline, append it to the message
         if request.context and "current_outline" in request.context:
@@ -739,7 +1136,9 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         logger.info(f"[OutlineAgent] Model requested search: {query}")
 
                         # Tell frontend we're researching
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': query})}\n\n"
+                        status_event = f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': query})}\n\n"
+                        logger.info(f"[OutlineAgent] Sending status event: researching - {query}")
+                        yield status_event
 
                         # Do the search
                         research_result = await research_with_perplexity(query)
@@ -747,7 +1146,9 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         if research_result["success"]:
                             tool_result = research_result["content"]
                             logger.info(f"[OutlineAgent] Search success, returning {len(tool_result)} chars to model")
-                            yield f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
+                            research_event = f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
+                            logger.info(f"[OutlineAgent] Sending research event")
+                            yield research_event
                         else:
                             tool_result = f"Search failed: {research_result.get('error', 'Unknown error')}"
                             logger.warning(f"[OutlineAgent] Search failed: {tool_result}")
@@ -799,6 +1200,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         async for result in call_model_with_tools(messages):
             if isinstance(result, str) and result.startswith("data:"):
                 # This is a status event, yield it directly
+                logger.info(f"[OutlineAgent] Yielding status event: {result[:100]}...")
                 yield result
             elif isinstance(result, tuple) and result[0] == "text":
                 text = result[1]
@@ -853,7 +1255,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             # This prevents accidental regeneration when user just wants to modify theme/slides
             for block in found_json_blocks:
                 action = block['data'].get('action')
-                if action in ('update_theme', 'update_slides', 'update_outline'):
+                if action in ('update_theme', 'update_slides', 'update_outline', 'scrape_media'):
                     chosen_block = block
                     logger.info(f"[OutlineAgent] Existing outline present - chose update action: {action}")
                     break
@@ -877,10 +1279,63 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         if chosen_block:
             outline_data = chosen_block['data']
             text_after_json = full_response[chosen_block['end_index']:].strip()
-            
+
             logger.info(f"[OutlineAgent] Extracted outline data: {outline_data.get('action')}")
+
+            # Handle scrape_media action - scrape media from URL before sending response
+            if outline_data.get('action') == 'scrape_media':
+                url = outline_data.get('url')
+                media_filter = outline_data.get('media_filter', 'all')
+                slide_index = outline_data.get('slide_index')
+                content_context = outline_data.get('content_context', '')
+
+                if url:
+                    # Send status event
+                    yield f"data: {json.dumps({'type': 'status', 'status': 'scraping_media', 'message': f'Pulling media from {url}...'})}\n\n"
+
+                    # Scrape the media
+                    media_result = await scrape_media_from_url(url, media_filter)
+
+                    if media_result.get('success'):
+                        # Include scraped media in the action data
+                        outline_data['scraped_media'] = {
+                            'gifs': media_result.get('gifs', []),
+                            'images': media_result.get('images', []),
+                            'all_media': media_result.get('all_media', []),
+                            'filtered_media': media_result.get('filtered_media', []),
+                            'source_url': url,
+                            'markdown': media_result.get('markdown', ''),
+                            'content_context': content_context,
+                        }
+                        gif_count = len(media_result.get('gifs', []))
+                        img_count = len(media_result.get('images', []))
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'media_scraped', 'message': f'Found {gif_count} GIFs, {img_count} images'})}\n\n"
+                        logger.info(f"[OutlineAgent] Scraped media attached: {gif_count} GIFs, {img_count} images")
+                    else:
+                        error_msg = media_result.get('error', 'Unknown error')
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'media_scrape_failed', 'message': f'Could not fetch media: {error_msg}'})}\n\n"
+                        logger.warning(f"[OutlineAgent] Media scrape failed: {error_msg}")
+
+            # Attach uploaded files to generate_outline action so they're used in slide generation
+            if outline_data.get('action') == 'generate_outline' and request.files:
+                uploaded_media = []
+                for f in request.files:
+                    # Only include images for now (they're the ones that should appear on slides)
+                    if f.type and f.type.startswith('image/'):
+                        uploaded_media.append({
+                            'id': f.id,
+                            'name': f.name,
+                            'type': f.type,
+                            'content': f.content,  # Base64 content for rendering
+                            'size': f.size
+                        })
+
+                if uploaded_media:
+                    outline_data['uploadedMedia'] = uploaded_media
+                    logger.info(f"[OutlineAgent] 📎 Attached {len(uploaded_media)} uploaded images to outline")
+
             yield f"data: {json.dumps({'type': 'outline', 'data': outline_data})}\n\n"
-            
+
             if text_after_json:
                  yield f"data: {json.dumps({'type': 'text', 'content': text_after_json})}\n\n"
 
@@ -904,6 +1359,10 @@ async def outline_agent_chat(
     """
     try:
         logger.info(f"[OutlineAgent] Received chat request: {request.message[:100]}")
+        logger.info(f"[OutlineAgent] 📎 FILES RECEIVED: {len(request.files) if request.files else 0}")
+        if request.files:
+            for f in request.files:
+                logger.info(f"[OutlineAgent] 📄 File: {f.name}, type={f.type}, has_content={bool(f.content)}, content_len={len(f.content) if f.content else 0}")
 
         return StreamingResponse(
             stream_agent_response(request),

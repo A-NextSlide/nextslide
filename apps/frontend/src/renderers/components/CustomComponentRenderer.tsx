@@ -321,6 +321,78 @@ export const CustomComponentRenderer: React.FC<{
       'placeholder', 'img', 'figure', 'illustration'
     ];
 
+    // Extract search query from prop name (e.g., "elonMuskImage" -> "elon musk")
+    const extractSearchQueryFromPropName = (propName: string): string => {
+      // Remove common image suffixes
+      let query = propName
+        .replace(/Image$|Photo$|Picture$|Src$|Url$|Img$|Thumbnail$|Avatar$|Icon$/i, '')
+        .replace(/^(hero|feature|background|banner|main|primary|secondary)/i, '');
+
+      // Convert camelCase to spaces: "elonMusk" -> "elon Musk" -> "elon musk"
+      query = query
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .toLowerCase()
+        .trim();
+
+      // If too generic, return empty to trigger fallback
+      const genericTerms = ['hero', 'feature', 'background', 'banner', 'main', 'primary', 'secondary', 'image', 'photo', ''];
+      if (genericTerms.includes(query)) {
+        return '';
+      }
+
+      return query;
+    };
+
+    // CRITICAL: Parse JavaScript to extract image prop names (e.g., props.elonMuskImage)
+    // This is where the AI puts the actual search terms, NOT in alt attributes
+    const extractImagePropsFromJS = (htmlContent: string): Map<string, string> => {
+      const propNameToSearchQuery = new Map<string, string>();
+
+      // Pattern 1: const varName = props.propName || 'placeholder'
+      const propPattern1 = /(?:const|let|var)\s+(\w+)\s*=\s*props\??\.(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Ii]con\w*|\w*[Aa]vatar\w*|\w*[Bb]anner\w*|\w*[Hh]eadshot\w*)\s*(?:\|\||&&|\?\?)/gi;
+      let match;
+
+      while ((match = propPattern1.exec(htmlContent)) !== null) {
+        const propName = match[2];
+        const searchQuery = extractSearchQueryFromPropName(propName);
+        if (searchQuery && searchQuery.length > 2) {
+          propNameToSearchQuery.set(propName, searchQuery);
+          console.log('[CustomComponentRenderer] Found image prop from JS:', propName, '->', searchQuery);
+        }
+      }
+
+      // Pattern 2: props.propNameImage (direct access in template)
+      const propPattern2 = /\$\{+\s*(?:props\??\.)?(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Ii]con\w*|\w*[Aa]vatar\w*|\w*[Bb]anner\w*|\w*[Hh]eadshot\w*)\s*\}+/gi;
+
+      while ((match = propPattern2.exec(htmlContent)) !== null) {
+        const propName = match[1];
+        if (!propNameToSearchQuery.has(propName)) {
+          const searchQuery = extractSearchQueryFromPropName(propName);
+          if (searchQuery && searchQuery.length > 2) {
+            propNameToSearchQuery.set(propName, searchQuery);
+            console.log('[CustomComponentRenderer] Found image prop from template:', propName, '->', searchQuery);
+          }
+        }
+      }
+
+      // Pattern 3: src="${propName}" where propName looks like an image prop
+      const propPattern3 = /src=["']\$\{+\s*(\w*[Ii]mage\w*|\w*[Pp]hoto\w*|\w*[Ll]ogo\w*|\w*[Aa]vatar\w*)\s*\}+["']/gi;
+
+      while ((match = propPattern3.exec(htmlContent)) !== null) {
+        const propName = match[1];
+        if (!propNameToSearchQuery.has(propName)) {
+          const searchQuery = extractSearchQueryFromPropName(propName);
+          if (searchQuery && searchQuery.length > 2) {
+            propNameToSearchQuery.set(propName, searchQuery);
+            console.log('[CustomComponentRenderer] Found image prop from src template:', propName, '->', searchQuery);
+          }
+        }
+      }
+
+      return propNameToSearchQuery;
+    };
+
     // Get slide context for fallback search terms
     const getSlideContext = () => {
       try {
@@ -338,10 +410,15 @@ export const CustomComponentRenderer: React.FC<{
       }
     };
 
+    // FIRST: Extract image props from JavaScript (these have the actual descriptive names)
+    const imagePropSearchQueries = extractImagePropsFromJS(html);
+    console.log('[CustomComponentRenderer] Extracted image props:', Array.from(imagePropSearchQueries.entries()));
+
     // Check for placeholder images in the HTML
     const imgRegex = /<img[^>]*>/gi;
-    const placeholders: Array<{ alt: string; searchQuery: string }> = [];
+    const placeholders: Array<{ alt: string; searchQuery: string; propName?: string }> = [];
     let match;
+    let imgIndex = 0;
 
     while ((match = imgRegex.exec(html)) !== null) {
       const imgTag = match[0];
@@ -356,16 +433,58 @@ export const CustomComponentRenderer: React.FC<{
 
       if (isPlaceholder) {
         // Create a unique key for this placeholder
-        const placeholderKey = `${component.id}-${alt || 'unnamed'}`;
+        const placeholderKey = `${component.id}-${alt || imgIndex}`;
 
         // Skip if we've already auto-applied for this placeholder
-        if (autoAppliedRef.current.has(placeholderKey)) continue;
+        if (autoAppliedRef.current.has(placeholderKey)) {
+          imgIndex++;
+          continue;
+        }
 
-        // Convert alt to search query
-        let searchQuery = alt
-          .replace(/[^a-zA-Z0-9\s]/g, ' ')
-          .trim()
-          .toLowerCase();
+        // PRIORITY 1: Use search query from JS prop names (most descriptive)
+        // Try to match this img to a prop by checking if src contains a variable reference
+        let searchQuery = '';
+        let matchedPropName = '';
+
+        // Check if src references a prop variable (e.g., src="${elonMuskImage}")
+        const srcPropMatch = src.match(/\$\{+\s*(\w+)\s*\}+/);
+        if (srcPropMatch) {
+          const varName = srcPropMatch[1];
+          // Find matching prop from our extracted props
+          for (const [propName, query] of imagePropSearchQueries.entries()) {
+            if (propName.toLowerCase() === varName.toLowerCase() ||
+                propName.toLowerCase().includes(varName.toLowerCase()) ||
+                varName.toLowerCase().includes(propName.toLowerCase().replace('image', ''))) {
+              searchQuery = query;
+              matchedPropName = propName;
+              console.log('[CustomComponentRenderer] Matched img to prop:', varName, '->', propName, '->', searchQuery);
+              break;
+            }
+          }
+        }
+
+        // If no match from src variable, try to find any unused prop that matches alt text
+        if (!searchQuery && imagePropSearchQueries.size > 0) {
+          for (const [propName, query] of imagePropSearchQueries.entries()) {
+            // Check if alt contains parts of the prop name
+            const altLower = alt.toLowerCase();
+            const propLower = propName.toLowerCase().replace('image', '').replace('photo', '');
+            if (altLower.includes(propLower) || propLower.includes(altLower.split(' ')[0])) {
+              searchQuery = query;
+              matchedPropName = propName;
+              console.log('[CustomComponentRenderer] Matched img alt to prop:', alt, '->', propName, '->', searchQuery);
+              break;
+            }
+          }
+        }
+
+        // PRIORITY 2: Use alt text if it's descriptive
+        if (!searchQuery) {
+          searchQuery = alt
+            .replace(/[^a-zA-Z0-9\s]/g, ' ')
+            .trim()
+            .toLowerCase();
+        }
 
         // Check if the search query is bad/generic
         const isBadSearchTerm = !searchQuery ||
@@ -373,14 +492,29 @@ export const CustomComponentRenderer: React.FC<{
           BAD_SEARCH_TERMS.some(bad => searchQuery === bad || searchQuery.startsWith(bad + ' ') || searchQuery.match(new RegExp(`^${bad}\\d*$`)));
 
         if (isBadSearchTerm) {
-          // Use slide context as fallback
-          const slideContext = getSlideContext();
-          searchQuery = `${slideContext} professional photo`;
-          console.log('[CustomComponentRenderer] Bad alt text detected, using fallback:', { original: alt, fallback: searchQuery });
+          // PRIORITY 3: Use any remaining image prop that hasn't been used
+          if (imagePropSearchQueries.size > 0) {
+            const unusedProps = Array.from(imagePropSearchQueries.entries())
+              .filter(([prop]) => !placeholders.some(p => p.propName === prop));
+            if (unusedProps.length > 0) {
+              const [propName, query] = unusedProps[imgIndex % unusedProps.length] || unusedProps[0];
+              searchQuery = query;
+              matchedPropName = propName;
+              console.log('[CustomComponentRenderer] Using unused prop for generic img:', propName, '->', searchQuery);
+            }
+          }
+
+          // PRIORITY 4: Use slide context as last resort
+          if (!searchQuery || BAD_SEARCH_TERMS.includes(searchQuery)) {
+            const slideContext = getSlideContext();
+            searchQuery = `${slideContext} professional photo`;
+            console.log('[CustomComponentRenderer] Bad alt text detected, using slide context:', { original: alt, fallback: searchQuery });
+          }
         }
 
-        placeholders.push({ alt: alt || 'image', searchQuery });
+        placeholders.push({ alt: alt || 'image', searchQuery, propName: matchedPropName || undefined });
         autoAppliedRef.current.add(placeholderKey);
+        imgIndex++;
       }
     }
 
@@ -390,9 +524,14 @@ export const CustomComponentRenderer: React.FC<{
 
     // Auto-fetch and apply images for each placeholder
     const autoApplyImages = async () => {
-      for (const { alt, searchQuery } of placeholders) {
+      // Track all props that need to be updated
+      const propsToUpdate: Record<string, string> = {};
+      let currentHtml = component.props.render as string;
+      let anyReplaced = false;
+
+      for (const { alt, searchQuery, propName } of placeholders) {
         try {
-          console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery);
+          console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery, 'propName:', propName);
 
           // Search for images using the media search API
           const response = await fetch('/api/media/search', {
@@ -447,8 +586,14 @@ export const CustomComponentRenderer: React.FC<{
             }
           }
 
-          // Update the HTML to replace the placeholder with the actual image
-          let currentHtml = component.props.render as string;
+          // CRITICAL: If we have a prop name, store it for updating component props
+          // This is the key fix - we need to update props so iframe JS can access them
+          if (propName) {
+            propsToUpdate[propName] = imageUrl;
+            console.log('[CustomComponentRenderer] Will update prop:', propName, '=', imageUrl.substring(0, 50));
+          }
+
+          // Also update the HTML to replace placeholder src values
           const altLower = alt.toLowerCase();
           let replaced = false;
 
@@ -460,16 +605,24 @@ export const CustomComponentRenderer: React.FC<{
             const imgSrcMatch = attrs.match(/src=["']([^"']*)["']/i);
             const imgSrc = imgSrcMatch ? imgSrcMatch[1] : '';
 
-            // Check if this is the placeholder we're looking for
-            const isThisPlaceholder = imgAlt === altLower &&
-              (!imgSrc || imgSrc === 'placeholder' || imgSrc.includes('placeholder') ||
-               (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:')));
+            // Check if this is the placeholder we're looking for by:
+            // 1. Matching alt text
+            // 2. Or matching src that contains ${propName} pattern
+            // 3. Or matching src that equals 'placeholder' or is empty
+            const srcContainsProp = propName && imgSrc.includes(`\${${propName}}`);
+            const srcContainsAnyVar = imgSrc.match(/\$\{+\s*\w+\s*\}+/);
+            const isPlaceholderSrc = !imgSrc || imgSrc === 'placeholder' || imgSrc.includes('placeholder');
+
+            const isThisPlaceholder = (imgAlt === altLower || srcContainsProp) &&
+              (isPlaceholderSrc || srcContainsAnyVar ||
+               (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:') && !imgSrc.startsWith('blob:')));
 
             if (isThisPlaceholder) {
               replaced = true;
+              anyReplaced = true;
               if (attrs.includes('src=')) {
                 const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
-                console.log('[CustomComponentRenderer] Auto-replaced image for:', alt);
+                console.log('[CustomComponentRenderer] Auto-replaced image src for:', alt || propName);
                 return `<img${newAttrs}>`;
               } else {
                 return `<img src="${imageUrl}"${attrs}>`;
@@ -478,20 +631,26 @@ export const CustomComponentRenderer: React.FC<{
             return imgMatch;
           });
 
-          if (replaced) {
-            // Update the component with the new HTML
-            updateComponent(component.id, {
-              props: {
-                ...component.props,
-                render: currentHtml,
-              }
-            });
-            console.log('[CustomComponentRenderer] Auto-applied image for:', alt);
-          }
-
         } catch (error) {
           console.error('[CustomComponentRenderer] Error auto-applying image:', error);
         }
+      }
+
+      // Update component with both new HTML AND new props
+      if (anyReplaced || Object.keys(propsToUpdate).length > 0) {
+        const currentProps = component.props.props || {};
+        const updatedProps = { ...currentProps, ...propsToUpdate };
+
+        console.log('[CustomComponentRenderer] Updating component with props:', Object.keys(propsToUpdate));
+
+        updateComponent(component.id, {
+          props: {
+            ...component.props,
+            render: currentHtml,
+            props: updatedProps, // This is CRITICAL - iframe reads from props.props
+          }
+        });
+        console.log('[CustomComponentRenderer] Auto-applied images, updated props:', Object.keys(propsToUpdate));
       }
     };
 
@@ -503,6 +662,18 @@ export const CustomComponentRenderer: React.FC<{
 
   // Track proxied URLs to avoid re-processing
   const proxiedUrlsRef = useRef<Set<string>>(new Set());
+
+  // Helper to decode HTML entities in URLs
+  const decodeHtmlEntities = (str: string): string => {
+    return str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&#x2F;/g, '/');
+  };
 
   // Proxy any external image URLs in the HTML (handles cases where AI embeds direct URLs)
   useEffect(() => {
@@ -517,11 +688,14 @@ export const CustomComponentRenderer: React.FC<{
 
     // Find external image URLs that need proxying
     const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
-    const externalUrls: Array<{ originalUrl: string; fullMatch: string }> = [];
+    const externalUrls: Array<{ originalUrl: string; decodedUrl: string; fullMatch: string }> = [];
     let match;
 
     while ((match = imgRegex.exec(html)) !== null) {
-      const src = match[1];
+      const rawSrc = match[1];
+      // CRITICAL: Decode HTML entities to get the actual URL
+      const src = decodeHtmlEntities(rawSrc);
+
       // Check if this is an external URL that needs proxying
       const isExternalUrl = src.startsWith('http') &&
         !src.includes('supabase') &&
@@ -530,28 +704,29 @@ export const CustomComponentRenderer: React.FC<{
         !proxiedUrlsRef.current.has(src);
 
       if (isExternalUrl) {
-        externalUrls.push({ originalUrl: src, fullMatch: match[0] });
+        externalUrls.push({ originalUrl: rawSrc, decodedUrl: src, fullMatch: match[0] });
         proxiedUrlsRef.current.add(src); // Mark as being processed
+        console.log('[CustomComponentRenderer] Found external URL to proxy:', src.substring(0, 80));
       }
     }
 
     if (externalUrls.length === 0) return;
 
-    console.log('[CustomComponentRenderer] Found external URLs to proxy:', externalUrls.map(e => e.originalUrl.substring(0, 50)));
+    console.log('[CustomComponentRenderer] External URLs to proxy:', externalUrls.length);
 
     // Proxy all external URLs
     const proxyExternalUrls = async () => {
       let currentHtml = component.props.render as string;
       let updated = false;
 
-      for (const { originalUrl } of externalUrls) {
+      for (const { originalUrl, decodedUrl } of externalUrls) {
         try {
-          console.log('[CustomComponentRenderer] Proxying external URL:', originalUrl.substring(0, 60));
+          console.log('[CustomComponentRenderer] Proxying:', decodedUrl.substring(0, 80));
 
           const proxyResponse = await fetch('/api/media/proxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: originalUrl })
+            body: JSON.stringify({ url: decodedUrl }) // Use decoded URL for API call
           });
 
           const proxyData = await proxyResponse.json();
@@ -560,19 +735,21 @@ export const CustomComponentRenderer: React.FC<{
             const proxiedUrl = proxyData.url;
             console.log('[CustomComponentRenderer] Proxied to:', proxiedUrl.substring(0, 60));
 
-            // Replace the URL in the HTML
-            // Use a regex that handles HTML entities like &amp;
-            const escapedOriginal = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const urlRegex = new RegExp(escapedOriginal.replace(/&/g, '(&|&amp;)'), 'gi');
-            const newHtml = currentHtml.replace(urlRegex, proxiedUrl);
-
-            if (newHtml !== currentHtml) {
-              currentHtml = newHtml;
+            // Replace BOTH the original (with &amp;) and decoded (with &) versions
+            // First try exact match with original
+            if (currentHtml.includes(originalUrl)) {
+              currentHtml = currentHtml.split(originalUrl).join(proxiedUrl);
               updated = true;
-              console.log('[CustomComponentRenderer] Replaced URL in HTML');
+              console.log('[CustomComponentRenderer] Replaced original URL in HTML');
+            }
+            // Also try with decoded URL (in case HTML was already decoded somewhere)
+            if (currentHtml.includes(decodedUrl)) {
+              currentHtml = currentHtml.split(decodedUrl).join(proxiedUrl);
+              updated = true;
+              console.log('[CustomComponentRenderer] Replaced decoded URL in HTML');
             }
           } else {
-            console.warn('[CustomComponentRenderer] Proxy failed for:', originalUrl.substring(0, 50), proxyData.error);
+            console.warn('[CustomComponentRenderer] Proxy failed for:', decodedUrl.substring(0, 50), proxyData.error);
           }
         } catch (error) {
           console.error('[CustomComponentRenderer] Error proxying URL:', error);
@@ -591,10 +768,8 @@ export const CustomComponentRenderer: React.FC<{
       }
     };
 
-    // Run proxy after a delay to avoid blocking and allow other operations to complete
-    const timeoutId = setTimeout(proxyExternalUrls, 1000);
-
-    return () => clearTimeout(timeoutId);
+    // Run proxy immediately (not delayed) to avoid CORS issues on first render
+    proxyExternalUrls();
   }, [component.id, renderCode, isThumbnail, updateComponent, component.props]);
 
   // Reset state when slide changes
@@ -1325,7 +1500,26 @@ export const CustomComponentRenderer: React.FC<{
 
     let result = html;
 
-    // Find all img tags with placeholder src and replace with prop values
+    // PATTERN 1: Find all img tags with ${propName} in src (AI-generated pattern)
+    // Example: <img src="${storeClosingSignImage}" alt="Store closing sign">
+    const varSrcRegex = /<img\s+([^>]*?)src=["']\$\{+\s*(\w+)\s*\}+["']([^>]*?)>/gi;
+
+    result = result.replace(varSrcRegex, (match, before, varName, after) => {
+      // Check if we have this prop (exact match or with Image suffix)
+      const propName = props[varName] ? varName :
+                       props[varName + 'Image'] ? varName + 'Image' :
+                       props[varName.replace(/Image$/, '')] ? varName.replace(/Image$/, '') : null;
+
+      if (propName && props[propName] && props[propName] !== 'placeholder' && props[propName].startsWith('http')) {
+        const newSrc = props[propName];
+        console.log(`[CustomComponent] Injecting image from \${${varName}}: ${propName} = ${newSrc.substring(0, 50)}...`);
+        return `<img ${before}src="${newSrc}"${after}>`;
+      }
+
+      return match;
+    });
+
+    // PATTERN 2: Find all img tags with placeholder src and replace with prop values
     // Pattern: <img ... src="placeholder" ... alt="Some Alt Text" ...>
     const imgRegex = /<img\s+([^>]*?)src=["'](?:placeholder|)["']([^>]*?)>/gi;
 
@@ -1348,7 +1542,7 @@ export const CustomComponentRenderer: React.FC<{
       }
 
       // Check if we have this prop
-      if (propName && props[propName] && props[propName] !== 'placeholder') {
+      if (propName && props[propName] && props[propName] !== 'placeholder' && props[propName].startsWith('http')) {
         const newSrc = props[propName];
         console.log(`[CustomComponent] Injecting image prop: ${propName} = ${newSrc.substring(0, 50)}...`);
         return `<img ${before}src="${newSrc}"${after}>`;
@@ -1356,6 +1550,20 @@ export const CustomComponentRenderer: React.FC<{
 
       return match;
     });
+
+    // PATTERN 3: Also inject props into JavaScript variable declarations
+    // const varName = props.propName || 'placeholder' -> inject actual URL
+    for (const [propName, propValue] of Object.entries(props)) {
+      if (typeof propValue === 'string' && propValue.startsWith('http')) {
+        // Replace occurrences in JS where the prop is referenced
+        // Pattern: props.propName || 'placeholder' or props?.propName ?? 'placeholder'
+        const jsPattern = new RegExp(
+          `(props\\??\\.${propName}\\s*(?:\\|\\||\\?\\?)\\s*)['"\`]placeholder['"\`]`,
+          'gi'
+        );
+        result = result.replace(jsPattern, `$1'${propValue}'`);
+      }
+    }
 
     return result;
   };

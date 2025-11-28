@@ -139,7 +139,7 @@ Follow the design guidelines and use only the predicted components."""
 **Slide Title**: {context.outline.title}
 **Slide Content**: {context.outline.content}
 
-**Theme**: {context.theme.theme_name if context.theme else 'Modern'}
+**Theme**: {context.theme.theme_name if context.theme else 'Adaptive'}
 **Color Palette**: {self._format_palette(context.palette)}
 
 **Predicted Components**: {', '.join(rag_context.get('predicted_components', []))}

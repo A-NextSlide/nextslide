@@ -73,6 +73,7 @@ interface ChatInputViewProps {
   animatingOutUploadedFileKeys: Set<string>;
   handleRemoveUploadedFile: (fileKey: string) => void;
   handleClearAllUploadedFiles: () => void;
+  onDragEnterChatZone?: (e: React.DragEvent) => void;
   onDragOverChatZone?: (e: React.DragEvent) => void;
   onDragLeaveChatZone?: (e: React.DragEvent) => void;
   onDropChatZone?: (e: React.DragEvent) => void;
@@ -127,6 +128,7 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
   animatingOutUploadedFileKeys,
   handleRemoveUploadedFile,
   handleClearAllUploadedFiles,
+  onDragEnterChatZone,
   onDragOverChatZone,
   onDragLeaveChatZone,
   onDropChatZone,
@@ -909,8 +911,9 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                   style={{
                     transition: interactionStage === 'typingMessage' ? 'none' : 'border-color 300ms, box-shadow 300ms'
                   }}
-                  onDragOver={onDragOverChatZone} 
-                  onDragLeave={onDragLeaveChatZone} 
+                  onDragEnter={onDragEnterChatZone}
+                  onDragOver={onDragOverChatZone}
+                  onDragLeave={onDragLeaveChatZone}
                   onDrop={onDropChatZone}
                 >
                   {/* Orange accent line */}
@@ -998,8 +1001,8 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                     })()
                   )}
                   
-                  {isDraggingOver && interactionStage === 'initial' && (
-                    <div className="absolute inset-0 bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center rounded-[24px] bg-opacity-70 backdrop-blur-sm">
+                  {isDraggingOver && (
+                    <div className="absolute inset-0 bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center rounded-[24px] bg-opacity-70 backdrop-blur-sm z-20">
                       <p className="text-orange-600 dark:text-orange-400 font-medium flex items-center flex-col">
                         <Upload className="h-5 w-5 mb-1" />
                         <span className="text-center">Drop images, documents, or spreadsheets here</span>

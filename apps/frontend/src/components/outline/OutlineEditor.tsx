@@ -792,6 +792,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
     isDraggingOverChatInput,
     handleDragStart,
     handleDragOverSlide, // For SlideCard
+    handleDragEnterChatZone, // For ChatInputView
     handleDragOverChatZone, // For ChatInputView
     handleDragLeaveChatZone, // For ChatInputView
     handleDrop, // Composite handler from the hook
@@ -1130,6 +1131,7 @@ const OutlineEditor: React.FC<OutlineEditorProps> = ({
                   animatingOutUploadedFileKeys={animatingOutUploadedFileKeys}
                   handleRemoveUploadedFile={handleRemoveUploadedFile}
                   handleClearAllUploadedFiles={handleClearAllUploadedFiles}
+                  onDragEnterChatZone={handleDragEnterChatZone}
                   onDragOverChatZone={handleDragOverChatZone}
                   onDragLeaveChatZone={handleDragLeaveChatZone}
                   onDropChatZone={(e) => handleDrop(e, null)}

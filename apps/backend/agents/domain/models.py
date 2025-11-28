@@ -40,7 +40,7 @@ class ThemeSpec:
     def from_dict(cls, data: Dict[str, Any]) -> 'ThemeSpec':
         """Create ThemeSpec from dictionary."""
         return cls(
-            theme_name=data.get('theme_name', 'Modern'),
+            theme_name=data.get('theme_name', 'Huemint AI'),
             design_philosophy=data.get('design_philosophy', ''),
             color_palette=data.get('color_palette', {}),
             typography=data.get('typography', {}),

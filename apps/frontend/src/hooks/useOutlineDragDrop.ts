@@ -27,17 +27,33 @@ export const useOutlineDragDrop = ({
     }
   }, [draggedSlideId]);
 
-  // Drag over handler for the main chat input drop zone
-  const handleDragOverChatZone = useCallback((e: React.DragEvent) => {
+  // Drag enter handler for the main chat input drop zone
+  const handleDragEnterChatZone = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOverChatInput(true);
   }, []);
 
+  // Drag over handler for the main chat input drop zone
+  const handleDragOverChatZone = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Keep setting true in case dragEnter didn't fire
+    if (!isDraggingOverChatInput) {
+      setIsDraggingOverChatInput(true);
+    }
+  }, [isDraggingOverChatInput]);
+
   const handleDragLeaveChatZone = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDraggingOverChatInput(false);
+    // Only set false if we're actually leaving the element (not entering a child)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDraggingOverChatInput(false);
+    }
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent, targetSlideId: string | null) => {
@@ -72,6 +88,7 @@ export const useOutlineDragDrop = ({
     setIsDraggingOverChatInput, // Expose for direct control of chat input drop zone visual
     handleDragStart,
     handleDragOverSlide,
+    handleDragEnterChatZone,
     handleDragOverChatZone,
     handleDragLeaveChatZone,
     handleDrop,

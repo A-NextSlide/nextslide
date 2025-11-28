@@ -47,7 +47,9 @@ class CustomComponentGenerator:
         component_purpose: str = "visualize",
         width: int = 1760,
         height: int = 700,
-        position: Dict[str, int] = None
+        position: Dict[str, int] = None,
+        external_media: Optional[Dict[str, Any]] = None,
+        uploaded_media: Optional[list] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a creative CustomComponent.
@@ -60,6 +62,16 @@ class CustomComponentGenerator:
             width: Component width in pixels
             height: Component height in pixels
             position: Optional dict with x, y coordinates
+            external_media: Optional dict with media from external sources (Firecrawl):
+                - 'images': List of image URLs
+                - 'gifs': List of GIF URLs
+                - 'source_url': The source website
+                - 'markdown': Content extracted from the site
+            uploaded_media: Optional list of user-uploaded files (taggedMedia):
+                - Each item has: id, filename, type, content (base64), previewUrl, interpretation
+                - Types: 'image' (photos/graphics), 'drawing' (mockups/sketches), 'data' (charts/tables)
+                - For drawings: use as design reference, don't place directly
+                - For photos: can be placed as images on the slide
 
         Returns:
             CustomComponent dict with type, props, position, etc.
@@ -103,7 +115,9 @@ class CustomComponentGenerator:
                     colors=colors,
                     typography=typography,
                     width=width,
-                    height=height
+                    height=height,
+                    external_media=external_media,
+                    uploaded_media=uploaded_media
                 )
 
             # Get client and generate
@@ -475,7 +489,22 @@ const iphone15Image = props.iphone15Image || 'placeholder';
 ❌ Tiny text (minimum 16px body, 24px+ headers)
 ❌ Empty space (fill the canvas beautifully)
 ❌ Basic flexbox columns of text (boring!)
-❌ Hardcoded image URLs (use props.imageName || 'placeholder' instead)
+
+⛔ CRITICAL: IMAGE URL RULES ⛔
+
+**DEFAULT (no external media provided):**
+- NEVER use direct URLs like "https://images.unsplash.com/..."
+- ALWAYS use: const imageName = props.imageName || 'placeholder';
+- ALWAYS use: <img src="${{imageName}}" alt="descriptive alt">
+- The system will automatically fetch images based on the prop name!
+- Example: props.elonMuskImage will auto-fetch an Elon Musk photo
+
+**EXCEPTION - EXTERNAL MEDIA FROM FIRECRAWL:**
+When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
+- ✅ USE those URLs DIRECTLY in <img src="...">
+- ✅ These are REAL, verified URLs from the scraped site
+- ✅ Do NOT use props pattern for these - hardcode them!
+- ✅ Feature these prominently - they are the main content!
 
 ═══════════════════════════════════════════════════════════════
 🎯 CRITICAL: CONTENT MUST FIT IN SLIDE (1920×1080)
@@ -565,7 +594,9 @@ const iphone15Image = props.iphone15Image || 'placeholder';
         colors: Dict[str, str],
         typography: Dict[str, str],
         width: int,
-        height: int
+        height: int,
+        external_media: Optional[Dict[str, Any]] = None,
+        uploaded_media: Optional[list] = None
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -651,6 +682,131 @@ The user originally requested: "{presentation_context}"
 DO NOT use this for content - the slide content is provided separately below.
 """
 
+        # Build external media section if media URLs were provided (from Firecrawl scraping)
+        external_media_section = ""
+        if external_media:
+            gifs = external_media.get('gifs', [])
+            images = external_media.get('images', [])
+            source_url = external_media.get('source_url', '')
+            site_content = external_media.get('markdown', '')[:500] if external_media.get('markdown') else ''
+
+            media_list = []
+            if gifs:
+                media_list.append(f"GIFs ({len(gifs)} found):\n" + "\n".join([f"  - {url}" for url in gifs[:10]]))
+            if images:
+                media_list.append(f"Images ({len(images)} found):\n" + "\n".join([f"  - {url}" for url in images[:10]]))
+
+            external_media_section = f"""
+═══════════════════════════════════════════════════════════════
+🌐 EXTERNAL MEDIA FROM WEBSITE (USE THESE DIRECTLY!)
+═══════════════════════════════════════════════════════════════
+
+Source: {source_url}
+
+{chr(10).join(media_list)}
+
+⚠️ CRITICAL: These are REAL URLs from the source website!
+- Use these URLs DIRECTLY in your HTML with <img src="URL">
+- DO NOT use props.imageName pattern for these - use the actual URLs!
+- These GIFs/images are the PRIMARY content for this component
+- Create a stunning showcase, gallery, or interactive display featuring these
+
+💡 DESIGN IDEAS FOR EXTERNAL MEDIA:
+- Animated GIF showcase with auto-cycling carousel
+- Interactive gallery with hover zoom effects
+- Hero display with floating/animated GIFs
+- Grid layout with staggered animations
+- Click-to-expand lightbox viewer
+- Parallax scrolling effect with multiple GIFs
+
+{f"SITE CONTEXT (for design inspiration):{chr(10)}{site_content}" if site_content else ""}
+"""
+
+        # Build uploaded media section for user-uploaded files
+        uploaded_media_section = ""
+        if uploaded_media and len(uploaded_media) > 0:
+            # Categorize uploaded media
+            reference_images = []  # Drawings, mockups, screenshots for design guidance
+            photos_to_place = []   # Actual photos/graphics to place on slide
+            data_files = []        # Charts, tables, data to extract
+
+            for media in uploaded_media:
+                if isinstance(media, dict):
+                    filename = media.get('filename', media.get('name', 'file'))
+                    media_type = media.get('type', 'image')
+                    interpretation = media.get('interpretation', '')
+                    content_b64 = media.get('content', '')
+                    preview_url = media.get('previewUrl', '')
+                    metadata = media.get('metadata', {})
+                    source = metadata.get('source', '') if metadata else ''
+
+                    # Detect if it's a reference/drawing vs actual photo
+                    is_drawing = any(kw in filename.lower() for kw in ['sketch', 'drawing', 'mockup', 'wireframe', 'draft', 'layout', 'design'])
+                    is_screenshot = any(kw in filename.lower() for kw in ['screenshot', 'screen', 'capture'])
+                    is_data = media_type in ['data', 'chart'] or any(kw in filename.lower() for kw in ['chart', 'table', 'data', 'csv', 'excel'])
+
+                    if is_data:
+                        data_files.append({
+                            'filename': filename,
+                            'interpretation': interpretation
+                        })
+                    elif is_drawing or is_screenshot:
+                        reference_images.append({
+                            'filename': filename,
+                            'interpretation': interpretation,
+                            'content': content_b64[:100] + '...' if content_b64 else None  # Truncate for prompt
+                        })
+                    else:
+                        # It's a photo/graphic to potentially place on the slide
+                        photos_to_place.append({
+                            'filename': filename,
+                            'interpretation': interpretation,
+                            'preview_url': preview_url,
+                            'content': content_b64  # Full content for placement
+                        })
+
+            # Build the prompt section
+            sections = []
+
+            if reference_images:
+                refs = "\n".join([f"  - {r['filename']}: {r['interpretation'] or 'No description'}" for r in reference_images])
+                sections.append(f"""📐 DESIGN REFERENCES (use as inspiration, DON'T place these directly):
+{refs}
+
+These are sketches/mockups/screenshots the user provided as design inspiration.
+Use their layout, structure, and style as a GUIDE for your design.""")
+
+            if photos_to_place:
+                photos = "\n".join([f"  - {p['filename']}: {p['interpretation'] or 'Photo/graphic'}" for p in photos_to_place])
+                sections.append(f"""📷 PHOTOS/GRAPHICS TO INCLUDE (place these on the slide):
+{photos}
+
+These are actual images the user wants displayed on this slide.
+Include them prominently in your design using the props pattern:
+  const image = props.uploadedImage_FILENAME || 'placeholder';
+  <img src="${{image}}" ...>""")
+
+            if data_files:
+                data = "\n".join([f"  - {d['filename']}: {d['interpretation'] or 'Data file'}" for d in data_files])
+                sections.append(f"""📊 DATA TO VISUALIZE (extract and display as charts/tables):
+{data}
+
+Create appropriate visualizations (charts, tables, graphs) for this data.""")
+
+            if sections:
+                uploaded_media_section = f"""
+═══════════════════════════════════════════════════════════════
+📎 USER-UPLOADED MEDIA (IMPORTANT!)
+═══════════════════════════════════════════════════════════════
+
+{chr(10).join(sections)}
+
+⚠️ KEY RULES FOR UPLOADED MEDIA:
+1. REFERENCE IMAGES (drawings/mockups): Use for design inspiration ONLY. Don't place as images.
+2. PHOTOS/GRAPHICS: Include these on the slide - they're the user's content!
+3. DATA FILES: Visualize as charts/tables, don't show raw data.
+"""
+
         return f"""{full_slide_instructions}═══════════════════════════════════════════════════════════════
 🎯 YOUR MISSION
 ═══════════════════════════════════════════════════════════════
@@ -658,7 +814,7 @@ DO NOT use this for content - the slide content is provided separately below.
 Create a STUNNING {"full presentation slide" if is_full_slide else "interactive component"} for:
 
 SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_context_section}
+{design_context_section}{external_media_section}{uploaded_media_section}
 CONTENT:
 {content}
 
@@ -1791,6 +1947,7 @@ async def generate_custom_component(
     theme: Dict[str, Any],
     slide_context: Dict[str, Any],
     purpose: str = "visualize",
+    external_media: Optional[Dict[str, Any]] = None,
     **kwargs
 ) -> Optional[Dict[str, Any]]:
     """
@@ -1801,6 +1958,11 @@ async def generate_custom_component(
         theme: Theme dictionary
         slide_context: Slide context info
         purpose: What the component should do
+        external_media: Optional dict with media from external sources (Firecrawl):
+            - 'images': List of image URLs
+            - 'gifs': List of GIF URLs
+            - 'source_url': The source website
+            - 'markdown': Content extracted from the site
         **kwargs: Additional args (width, height, position)
 
     Returns:
@@ -1812,5 +1974,67 @@ async def generate_custom_component(
         theme=theme,
         slide_context=slide_context,
         component_purpose=purpose,
+        external_media=external_media,
+        **kwargs
+    )
+
+
+async def generate_custom_component_from_url(
+    url: str,
+    content: str,
+    theme: Dict[str, Any],
+    slide_context: Dict[str, Any],
+    purpose: str = "showcase",
+    media_types: Optional[list] = None,
+    **kwargs
+) -> Optional[Dict[str, Any]]:
+    """
+    Convenience function to scrape a URL and generate a CustomComponent from its media.
+
+    Args:
+        url: Website URL to scrape for media
+        content: Additional content/context for the component
+        theme: Theme dictionary
+        slide_context: Slide context info
+        purpose: What the component should do (default: showcase)
+        media_types: Optional filter for media types (e.g., ['gif', 'png'])
+        **kwargs: Additional args (width, height, position)
+
+    Returns:
+        CustomComponent dict or None
+    """
+    from services.firecrawl_service import get_firecrawl_service
+
+    # Scrape media from URL
+    service = get_firecrawl_service()
+    if not service.is_configured():
+        logger.warning("Firecrawl not configured, cannot scrape URL for media")
+        return None
+
+    result = service.extract_site_content(url)
+    if not result.get("success"):
+        logger.warning(f"Failed to extract media from {url}: {result.get('error')}")
+        return None
+
+    external_media = result.get("data", {})
+
+    # Filter by media types if specified
+    if media_types:
+        all_media = external_media.get("all_media", [])
+        filtered = [
+            img for img in all_media
+            if any(f".{mt}" in img.lower() for mt in media_types)
+        ]
+        if "gif" in media_types:
+            external_media["gifs"] = [img for img in filtered if ".gif" in img.lower()]
+        external_media["images"] = [img for img in filtered if ".gif" not in img.lower()]
+
+    generator = CustomComponentGenerator()
+    return await generator.generate(
+        content=content,
+        theme=theme,
+        slide_context=slide_context,
+        component_purpose=purpose,
+        external_media=external_media,
         **kwargs
     )

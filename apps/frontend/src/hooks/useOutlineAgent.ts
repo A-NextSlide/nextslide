@@ -7,7 +7,8 @@ import {
   streamOutlineAgentChat,
   ChatMessage,
   AgentEvent,
-  OutlineData
+  OutlineData,
+  FileAttachment
 } from '@/services/outlineAgentService';
 
 export interface OutlineAgentMessage {
@@ -18,6 +19,13 @@ export interface OutlineAgentMessage {
   isTyping?: boolean;
   isResearching?: boolean;
   researchQuery?: string;
+  isAnalyzingFiles?: boolean;
+  analyzingFileName?: string;
+  fileAnalyses?: Array<{
+    filename: string;
+    file_type: string;
+    summary: string;
+  }>;
 }
 
 export type { OutlineData };
@@ -44,7 +52,8 @@ export function useOutlineAgent() {
     async (
       userMessage: string,
       onOutlineGenerated?: (data: OutlineData) => void,
-      context?: { [key: string]: any }
+      context?: { [key: string]: any },
+      files?: FileAttachment[]
     ) => {
       if (!userMessage.trim() || isProcessing) return;
 
@@ -110,6 +119,7 @@ export function useOutlineAgent() {
           message: userMessage,
           chat_history: chatHistory,
           context: context,
+          files: files,
         })) {
           if (event.type === 'text') {
             accumulatedText += event.content;
@@ -148,13 +158,47 @@ export function useOutlineAgent() {
               onOutlineGenerated(event.data);
             }
           } else if (event.type === 'status') {
-            // Handle status events (researching, thinking, etc.)
-            console.log('[OutlineAgent] Status:', event.status, event.query);
+            // Handle status events (researching, thinking, file analysis, etc.)
+            console.log('[OutlineAgent] Status:', event.status, event.message || event.query);
             if (event.status === 'researching') {
               setMessages((prev) => {
                 const newMessages = prev.map((m) =>
                   m.id === aiMsgId
                     ? { ...m, isResearching: true, researchQuery: event.query, content: '' }
+                    : m
+                );
+                messagesRef.current = newMessages;
+                return newMessages;
+              });
+              setUpdateTrigger(prev => prev + 1);
+            } else if (event.status === 'analyzing_file') {
+              // File analysis in progress
+              setMessages((prev) => {
+                const newMessages = prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, isAnalyzingFiles: true, analyzingFileName: event.file_name, content: `Analyzing ${event.file_name}...` }
+                    : m
+                );
+                messagesRef.current = newMessages;
+                return newMessages;
+              });
+              setUpdateTrigger(prev => prev + 1);
+            } else if (event.status === 'files_analyzed') {
+              // File analysis complete
+              setMessages((prev) => {
+                const newMessages = prev.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                        ...m,
+                        isAnalyzingFiles: false,
+                        analyzingFileName: undefined,
+                        fileAnalyses: event.analyses?.map(a => ({
+                          filename: a.filename,
+                          file_type: a.file_type,
+                          summary: a.summary.slice(0, 200) + (a.summary.length > 200 ? '...' : '')
+                        })),
+                        content: ''
+                      }
                     : m
                 );
                 messagesRef.current = newMessages;

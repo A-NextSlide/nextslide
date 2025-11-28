@@ -14,12 +14,22 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface FileAttachment {
+  id: string;
+  name: string;
+  type: string;
+  content?: string; // Base64 encoded
+  url?: string;
+  size?: number;
+}
+
 export interface OutlineAgentRequest {
   message: string;
   chat_history: ChatMessage[];
   context?: {
     [key: string]: any;
   };
+  files?: FileAttachment[];
 }
 
 export interface AgentTextEvent {
@@ -50,6 +60,15 @@ export interface ThemeChanges {
   };
 }
 
+export interface UploadedMedia {
+  id: string;
+  name: string;
+  type: string;
+  content?: string;  // Base64 encoded
+  url?: string;
+  size?: number;
+}
+
 export interface OutlineData {
   action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme';
   slide_count?: number;
@@ -64,6 +83,7 @@ export interface OutlineData {
     key_points?: string[];
   }>;
   theme_changes?: ThemeChanges;
+  uploadedMedia?: UploadedMedia[];  // Files uploaded through chat that should be used in slides
 }
 
 export interface AgentOutlineEvent {
@@ -80,11 +100,25 @@ export interface AgentDoneEvent {
   type: 'done';
 }
 
+export interface FileAnalysis {
+  file_id: string;
+  filename: string;
+  file_type: string;
+  summary: string;
+  key_insights: string[];
+  suggested_slides: string[];
+  extracted_data?: any;
+}
+
 export interface AgentStatusEvent {
   type: 'status';
-  status: 'researching' | 'thinking' | 'scraping' | 'scraped' | 'research_failed';
+  status: 'researching' | 'thinking' | 'scraping' | 'scraped' | 'research_failed' | 'analyzing_file' | 'files_analyzed' | 'file_analysis_error';
   query?: string;
   message?: string;
+  file_index?: number;
+  file_name?: string;
+  total_files?: number;
+  analyses?: FileAnalysis[];
 }
 
 export interface AgentResearchEvent {
@@ -306,6 +340,9 @@ export async function* streamOutlineAgentChat(
           const data = line.slice(6);
           try {
             const event = JSON.parse(data) as AgentEvent;
+
+            // Log all events for debugging
+            console.log('[OutlineAgentService] Received event:', event.type, event);
 
             // If it's a text event, accumulate and check for JSON
             if (event.type === 'text') {

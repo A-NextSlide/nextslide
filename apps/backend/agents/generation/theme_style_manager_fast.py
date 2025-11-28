@@ -238,7 +238,7 @@ class FastThemeStyleManager:
         theme = style_spec.get('theme', {})
         palette = style_spec.get('palette', {})
         
-        return f"""Theme: {theme.get('theme_name', 'Modern')}
+        return f"""Theme: {theme.get('theme_name', 'Adaptive')}
 Primary: {palette.get('primary', '#2563EB')}
 Secondary: {palette.get('secondary', '#7C3AED')}
 Background: {palette.get('background', '#FFFFFF')}"""

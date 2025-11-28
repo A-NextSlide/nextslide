@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Sparkles, ArrowLeft, BarChart3, FileText, Upload, X, Link as LinkIcon } from 'lucide-react';
-import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData } from '@/services/outlineAgentService';
+import { Send, Sparkles, ArrowLeft, BarChart3, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
+import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment } from '@/services/outlineAgentService';
+import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 
 // Helper to render markdown-like formatting
 const renderText = (text: string) => {
@@ -36,6 +37,14 @@ const renderText = (text: string) => {
   return parts.length > 0 ? parts : text;
 };
 
+interface AttachmentPreview {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  previewUrl?: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -46,6 +55,7 @@ interface Message {
     action: string;
   }>;
   showPresentationSelection?: boolean;
+  attachments?: AttachmentPreview[];
 }
 
 interface CollectedData {
@@ -56,6 +66,15 @@ interface CollectedData {
   presentationType?: 'simple' | 'detailed';
   chatHistory?: { role: 'user' | 'assistant'; content: string }[];
   themeChanges?: any;
+  uploadedFiles?: File[];
+  uploadedMedia?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    content?: string;
+    url?: string;
+    size?: number;
+  }>;
 }
 
 type ConversationStage =
@@ -71,6 +90,7 @@ interface ConversationalOnboardingProps {
   initialMessage?: string;
   slideCount?: number;
   onProcessingChange?: (isProcessing: boolean) => void;
+  initialUploadedFiles?: File[];
 }
 
 const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
@@ -78,7 +98,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   onCancel,
   initialMessage,
   slideCount,
-  onProcessingChange
+  onProcessingChange,
+  initialUploadedFiles = []
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -88,8 +109,16 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [collectedData, setCollectedData] = useState<CollectedData>({ slideCount });
   const [stage, setStage] = useState<ConversationStage>('conversing');
   const [outlineFlow, setOutlineFlow] = useState<any>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file: File; previewUrl?: string }>>(
+    initialUploadedFiles.map(f => ({
+      file: f,
+      previewUrl: f.type.startsWith('image/') ? createImagePreview(f) : undefined
+    }))
+  );
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusPhase, setStatusPhase] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -123,14 +152,21 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     }
   }, []);
 
-  const addMessage = (role: 'user' | 'assistant', content: string, buttons?: Array<{ label: string; action: string }>, showPresentationSelection?: boolean) => {
+  const addMessage = (
+    role: 'user' | 'assistant',
+    content: string,
+    buttons?: Array<{ label: string; action: string }>,
+    showPresentationSelection?: boolean,
+    attachments?: AttachmentPreview[]
+  ) => {
     const newMessage: Message = {
       id: `${Date.now()}-${Math.random()}`,
       role,
       content,
       timestamp: new Date(),
       buttons,
-      showPresentationSelection
+      showPresentationSelection,
+      attachments
     };
     setMessages(prev => [...prev, newMessage]);
 
@@ -150,37 +186,112 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
   const handleSendMessage = async (messageText?: string) => {
     const userMessage = messageText || input.trim();
-    if (!userMessage || isProcessing) return;
+    if ((!userMessage && uploadedFiles.length === 0) || isProcessing) return;
+
+    // Snapshot current files for this message
+    const currentFiles = [...uploadedFiles];
+    const hasFiles = currentFiles.length > 0;
+
+    // Create attachment previews for the message before clearing
+    const messageAttachments: AttachmentPreview[] = currentFiles.map((f, idx) => ({
+      id: `file-${Date.now()}-${idx}`,
+      name: f.file.name,
+      type: f.file.type || 'application/octet-stream',
+      size: f.file.size,
+      previewUrl: f.previewUrl
+    }));
 
     setInput('');
     setIsProcessing(true);
     onProcessingChange?.(true);
-    addMessage('user', userMessage);
 
-    // Auto-focus input after sending
-    // Focus is handled in finally block to ensure input is enabled
+    // Add user message WITH attachments shown in the message
+    addMessage('user', userMessage || (hasFiles ? `Shared ${currentFiles.length} file${currentFiles.length > 1 ? 's' : ''}` : ''), undefined, undefined, messageAttachments.length > 0 ? messageAttachments : undefined);
+
+    // Clear uploaded files after adding to message (but keep references for API call)
+    setUploadedFiles([]);
 
     try {
       setIsAgentTyping(true);
+
+      // Convert files to base64 for API
+      let filesToSend: FileAttachment[] | undefined;
+      if (hasFiles) {
+        console.log('[ConversationalOnboarding] Converting', currentFiles.length, 'files to base64...');
+        filesToSend = await Promise.all(
+          currentFiles.map(async (f, idx) => {
+            const content = await fileToBase64(f.file);
+            console.log('[ConversationalOnboarding] Converted:', f.file.name, 'base64 length:', content.length);
+            return {
+              id: `file-${Date.now()}-${idx}`,
+              name: f.file.name,
+              type: f.file.type || 'application/octet-stream',
+              content,
+              size: f.file.size
+            };
+          })
+        );
+        console.log('[ConversationalOnboarding] Prepared', filesToSend.length, 'files for API');
+      }
 
       // Stream agent response
       let assistantMessage = '';
       let outlineData: OutlineData | null = null;
 
+      console.log('[ConversationalOnboarding] Calling streamOutlineAgentChat with', filesToSend?.length || 0, 'files');
       const generator = streamOutlineAgentChat({
-        message: userMessage,
+        message: userMessage || 'Please analyze these files for my presentation.',
         chat_history: chatHistory,
-        context: collectedData
+        context: collectedData,
+        files: filesToSend
       });
 
       for await (const event of generator) {
         if (event.type === 'text') {
           assistantMessage += event.content;
+          // Clear status when we get actual text
+          setStatusMessage(null);
+          setStatusPhase(null);
+        } else if (event.type === 'status') {
+          // Handle status updates - show to user
+          console.log('[ConversationalOnboarding] Status:', event.status, event.message);
+          const status = (event as any).status;
+          const message = (event as any).message || (event as any).query;
+
+          // Map status to user-friendly messages
+          if (status === 'thinking') {
+            setStatusPhase('thinking');
+            setStatusMessage('Processing your request...');
+          } else if (status === 'analyzing_file') {
+            setStatusPhase('analyzing');
+            setStatusMessage(`Analyzing ${(event as any).file_name || 'file'}...`);
+          } else if (status === 'files_analyzed') {
+            setStatusPhase('analyzed');
+            setStatusMessage(`Analyzed ${(event as any).analyses?.length || 1} file(s)`);
+          } else if (status === 'file_analysis_error') {
+            setStatusPhase('error');
+            setStatusMessage(message || 'Could not analyze file');
+          } else if (status === 'researching') {
+            setStatusPhase('researching');
+            setStatusMessage(`Searching: ${(event as any).query || 'web'}...`);
+          } else if (status === 'scraping') {
+            setStatusPhase('scraping');
+            setStatusMessage(message || 'Reading content...');
+          } else if (status === 'scraped') {
+            setStatusPhase('scraped');
+            setStatusMessage(message || 'Content extracted');
+          } else {
+            setStatusMessage(message || status);
+          }
         } else if (event.type === 'outline') {
           outlineData = event.data;
           console.log('[ConversationalOnboarding] Received outline data:', outlineData);
+          setStatusMessage(null);
+          setStatusPhase(null);
         } else if (event.type === 'error') {
           console.error('[ConversationalOnboarding] Agent error:', event.message);
+          setStatusMessage(null);
+          setStatusPhase(null);
           addAgentMessage("I apologize, but I encountered an error. Let's try again. What would you like your presentation to be about?");
           setIsAgentTyping(false);
           setIsProcessing(false);
@@ -189,6 +300,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       }
 
       setIsAgentTyping(false);
+      setStatusMessage(null);
+      setStatusPhase(null);
 
       // Check if agent wants to generate outline
       if (outlineData && outlineData.action === 'generate_outline') {
@@ -263,6 +376,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       addAgentMessage("I'm sorry, I encountered an issue. Could you please try rephrasing that?");
     } finally {
       setIsProcessing(false);
+      setStatusMessage(null);
+      setStatusPhase(null);
       // Auto-focus input after processing is done and input is re-enabled
       setTimeout(() => {
         inputRef.current?.focus();
@@ -290,16 +405,45 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   }, [input]);
 
   // File upload handlers
+  const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB limit (Anthropic supports up to 32MB)
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setUploadedFiles(prev => [...prev, ...files]);
+    const validFiles: Array<{ file: File; previewUrl?: string }> = [];
+    const oversizedFiles: string[] = [];
+
+    files.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        oversizedFiles.push(file.name);
+      } else {
+        validFiles.push({
+          file,
+          previewUrl: file.type.startsWith('image/') ? createImagePreview(file) : undefined
+        });
+      }
+    });
+
+    if (oversizedFiles.length > 0) {
+      // Show a message about oversized files
+      addMessage('assistant', `⚠️ ${oversizedFiles.join(', ')} ${oversizedFiles.length > 1 ? 'are' : 'is'} too large (max 30MB). Please use smaller files or compress them.`);
+    }
+
+    if (validFiles.length > 0) {
+      setUploadedFiles(prev => [...prev, ...validFiles]);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   const handleRemoveFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadedFiles(prev => {
+      const toRemove = prev[index];
+      if (toRemove?.previewUrl) {
+        revokeImagePreview(toRemove.previewUrl);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -320,7 +464,27 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     setIsDraggingOver(false);
 
     const files = Array.from(e.dataTransfer.files);
-    setUploadedFiles(prev => [...prev, ...files]);
+    const validFiles: Array<{ file: File; previewUrl?: string }> = [];
+    const oversizedFiles: string[] = [];
+
+    files.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        oversizedFiles.push(file.name);
+      } else {
+        validFiles.push({
+          file,
+          previewUrl: file.type.startsWith('image/') ? createImagePreview(file) : undefined
+        });
+      }
+    });
+
+    if (oversizedFiles.length > 0) {
+      addMessage('assistant', `⚠️ ${oversizedFiles.join(', ')} ${oversizedFiles.length > 1 ? 'are' : 'is'} too large (max 30MB). Please use smaller files or compress them.`);
+    }
+
+    if (validFiles.length > 0) {
+      setUploadedFiles(prev => [...prev, ...validFiles]);
+    }
   };
 
   return (
@@ -359,6 +523,48 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     : 'bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100 border border-zinc-200/50 dark:border-zinc-700/50'
                 )}
               >
+                {/* File attachments - shown INSIDE the message bubble */}
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className={cn(
+                    "flex flex-wrap gap-2 mb-3",
+                    message.attachments.length === 1 ? "justify-center" : ""
+                  )}>
+                    {message.attachments.map((att, attIdx) => {
+                      const isImage = att.type.startsWith('image/');
+                      const category = getFileCategory({ name: att.name, type: att.type });
+                      const FileIcon = isImage ? ImageIcon
+                        : category === 'document' ? FileText
+                        : category === 'spreadsheet' ? Table
+                        : category === 'presentation' ? Presentation
+                        : File;
+
+                      return (
+                        <div
+                          key={att.id || attIdx}
+                          className={cn(
+                            "rounded-lg overflow-hidden",
+                            isImage && att.previewUrl
+                              ? "w-full max-w-[200px]"
+                              : "flex items-center gap-2 px-3 py-2 bg-white/20 backdrop-blur-sm"
+                          )}
+                        >
+                          {isImage && att.previewUrl ? (
+                            <img
+                              src={att.previewUrl}
+                              alt={att.name}
+                              className="w-full h-auto rounded-lg max-h-[150px] object-cover"
+                            />
+                          ) : (
+                            <>
+                              <FileIcon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                              <span className="text-xs truncate max-w-[120px]">{att.name}</span>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="text-sm whitespace-pre-wrap leading-relaxed font-['Inter',system-ui,sans-serif]">
                   {renderText(message.content)}
                 </div>
@@ -405,7 +611,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           detailLevel: 'quick',
                           presentationType: 'simple',
                           chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges
+                          themeChanges: collectedData.themeChanges,
+                          uploadedFiles: uploadedFiles.map(f => f.file),
+                          uploadedMedia: outlineFlow?.uploadedMedia
                         });
                       }, 1500);
                     }}
@@ -453,7 +661,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           detailLevel: 'detailed',
                           presentationType: 'detailed',
                           chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges
+                          themeChanges: collectedData.themeChanges,
+                          uploadedFiles: uploadedFiles.map(f => f.file),
+                          uploadedMedia: outlineFlow?.uploadedMedia
                         });
                       }, 1500);
                     }}
@@ -525,15 +735,65 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           </div>
         ))}
 
-        {/* Agent Typing Indicator */}
+        {/* Agent Typing/Status Indicator */}
         {isAgentTyping && (
           <div className="flex justify-start animate-in slide-in-from-bottom-4">
-            <div className="bg-white dark:bg-zinc-800 rounded-2xl px-4 py-3 border border-zinc-200 dark:border-zinc-700">
-              <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
+            <div className="bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 rounded-2xl px-4 py-3 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+              {statusMessage ? (
+                <div className="flex items-center gap-3">
+                  {/* Animated icon based on phase */}
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+                    statusPhase === 'analyzing' && "bg-purple-100 dark:bg-purple-900/30",
+                    statusPhase === 'analyzed' && "bg-green-100 dark:bg-green-900/30",
+                    statusPhase === 'researching' && "bg-blue-100 dark:bg-blue-900/30",
+                    statusPhase === 'scraping' && "bg-indigo-100 dark:bg-indigo-900/30",
+                    statusPhase === 'error' && "bg-red-100 dark:bg-red-900/30",
+                    (!statusPhase || statusPhase === 'thinking') && "bg-orange-100 dark:bg-orange-900/30"
+                  )}>
+                    {statusPhase === 'analyzing' ? (
+                      <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400 animate-pulse" />
+                    ) : statusPhase === 'analyzed' ? (
+                      <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    ) : statusPhase === 'researching' ? (
+                      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    ) : statusPhase === 'scraping' ? (
+                      <LinkIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400 animate-pulse" />
+                    ) : statusPhase === 'error' ? (
+                      <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    ) : (
+                      <Loader2 className="w-4 h-4 text-orange-600 dark:text-orange-400 animate-spin" />
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className={cn(
+                      "text-[10px] font-semibold uppercase tracking-wider",
+                      statusPhase === 'analyzing' && "text-purple-600 dark:text-purple-400",
+                      statusPhase === 'analyzed' && "text-green-600 dark:text-green-400",
+                      statusPhase === 'researching' && "text-blue-600 dark:text-blue-400",
+                      statusPhase === 'scraping' && "text-indigo-600 dark:text-indigo-400",
+                      statusPhase === 'error' && "text-red-600 dark:text-red-400",
+                      (!statusPhase || statusPhase === 'thinking') && "text-orange-600 dark:text-orange-400"
+                    )}>
+                      {statusPhase === 'analyzing' ? 'Analyzing' :
+                       statusPhase === 'analyzed' ? 'Done' :
+                       statusPhase === 'researching' ? 'Searching' :
+                       statusPhase === 'scraping' ? 'Reading' :
+                       statusPhase === 'scraped' ? 'Done' :
+                       statusPhase === 'error' ? 'Error' :
+                       'Processing'}
+                    </span>
+                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{statusMessage}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
+                  <span className="text-sm text-zinc-500">Thinking...</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -560,25 +820,58 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       {stage !== 'presentation_type_selection' && stage !== 'confirmed' && (
         <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800">
           <div className="px-6 py-4">
-            {/* File uploads preview */}
+            {/* Pending files preview - shown before sending */}
             {uploadedFiles.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {uploadedFiles.map((file, index) => (
-                  <div
-                    key={index}
-                    className="inline-flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <span className="text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">
-                      {file.name}
-                    </span>
-                    <button
-                      onClick={() => handleRemoveFile(index)}
-                      className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              <div className="mb-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2">
+                {uploadedFiles.map((fileData, index) => {
+                  const isImage = fileData.file.type.startsWith('image/');
+                  const category = getFileCategory({ name: fileData.file.name, type: fileData.file.type });
+                  const FileIcon = isImage ? ImageIcon
+                    : category === 'document' ? FileText
+                    : category === 'spreadsheet' ? Table
+                    : category === 'presentation' ? Presentation
+                    : File;
+
+                  return (
+                    <div
+                      key={index}
+                      className="group relative flex items-center gap-2 bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 rounded-xl px-3 py-2 text-sm border border-zinc-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-shadow"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                      {/* Image thumbnail or icon */}
+                      {isImage && fileData.previewUrl ? (
+                        <img
+                          src={fileData.previewUrl}
+                          alt={fileData.file.name}
+                          className="w-10 h-10 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className={cn(
+                          "w-10 h-10 rounded-lg flex items-center justify-center",
+                          category === 'document' ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                          : category === 'spreadsheet' ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
+                          : category === 'presentation' ? "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400"
+                          : "bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400"
+                        )}>
+                          <FileIcon className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-zinc-800 dark:text-zinc-200 truncate max-w-[140px] text-sm font-medium">
+                          {fileData.file.name}
+                        </span>
+                        <span className="text-zinc-500 dark:text-zinc-500 text-xs">
+                          {formatFileSize(fileData.file.size)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveFile(index)}
+                        className="absolute -top-2 -right-2 p-1 bg-zinc-700 dark:bg-zinc-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -610,16 +903,26 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                   multiple
                   className="hidden"
                   onChange={handleFileUpload}
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                  accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.gif,.webp,.svg,.csv,.xls,.xlsx,.ppt,.pptx"
                 />
                 <Button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isAgentTyping || isProcessing}
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                  className={cn(
+                    "h-8 w-8 rounded-lg relative transition-colors",
+                    uploadedFiles.length > 0
+                      ? "text-orange-600 dark:text-orange-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                      : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                  )}
                 >
-                  <Upload className="w-4 h-4" />
+                  <Paperclip className="w-4 h-4" />
+                  {uploadedFiles.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {uploadedFiles.length}
+                    </span>
+                  )}
                 </Button>
                 <Button
                   onClick={() => {

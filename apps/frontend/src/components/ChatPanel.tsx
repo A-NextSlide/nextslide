@@ -41,6 +41,8 @@ import {
   chatWithFiles,
   FileInput
 } from '@/services/fileAnalysisService';
+// Future: import { useChatAttachments } from './chat/hooks';
+// Future: import type { Attachment, PendingAttachment, RegisteredAttachment } from './chat/types';
 
 
 
@@ -356,6 +358,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const detailLevel = initialConversationalData.detailLevel || 'standard';
         const chatHistory = initialConversationalData.chatHistory;
         const themeChanges = initialConversationalData.themeChanges;
+        const uploadedFilesFromConversation = initialConversationalData.uploadedFiles || [];
+        const uploadedMediaFromAgent = initialConversationalData.uploadedMedia || [];
+
+        console.log('[ChatPanel] 📸 Uploaded media from agent:', uploadedMediaFromAgent.length, uploadedMediaFromAgent);
 
         let prompt = `Create a presentation about ${topic}.`;
         if (slideCount) {
@@ -385,23 +391,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         (async () => {
           try {
             console.log('[ChatPanel] 🚀 Calling REAL streaming outline endpoint with Perplexity');
+            console.log('[ChatPanel] 📁 Files from conversation:', uploadedFilesFromConversation.length);
             const { outlineApi } = await import('@/services/outlineApi');
-            
+
             // Notify parent that generation is starting
             if (onOutlineChatGeneratingChange) {
               onOutlineChatGeneratingChange(true);
             }
-            
-            // Start streaming generation
+
+            console.log('[ChatPanel] 📤 Sending files to API:', uploadedFilesFromConversation.length);
+            console.log('[ChatPanel] 📸 Sending uploaded media to API:', uploadedMediaFromAgent.length);
+
+            // Start streaming generation (API expects raw File objects, it handles base64 conversion)
             const outline = await outlineApi.generateOutlineStream(
               prompt,
-              [], // No files from conversational onboarding
+              uploadedFilesFromConversation,
               {
                 detailLevel: detailLevel,
                 slideCount: slideCount,
                 styleContext: styleContext,
                 enableResearch: true, // Always enable research for conversational mode
-                autoSelectImages: true // Default to true - auto-populate images
+                autoSelectImages: true, // Default to true - auto-populate images
+                uploadedMedia: uploadedMediaFromAgent // Pre-processed media from agent
               },
               (event) => {
                 console.log('[ChatPanel] 📥 Stream event:', event.type, event);
@@ -604,6 +615,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   type PendingAttachment = { name: string; type: string; size: number; file: File; previewUrl?: string };
   type RegisteredAttachment = { name: string; mimeType: string; size: number; url: string; attachmentId?: string; previewUrl?: string };
   const [attachments, setAttachments] = useState<Array<PendingAttachment | RegisteredAttachment>>([]);
+  // Ref to mirror attachments state - ensures sendMessage always gets latest value
+  const attachmentsRef = useRef<Array<PendingAttachment | RegisteredAttachment>>([]);
+  // Keep ref in sync with state
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
   const [filePreviewUrls, setFilePreviewUrls] = useState<Map<string, string>>(new Map());
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -2334,19 +2351,32 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           return { name: meta.name, mimeType: meta.mimeType, size: meta.size, url: meta.url } as RegisteredAttachment;
         }
       }));
-      // Replace pending attachments with the registered ones
-      setAttachments(prev => {
-        const next = [...prev];
-        uploaded.forEach(reg => {
-          const idx = next.findIndex(a => (a as any).file && a.name === reg.name && (a as any).size === reg.size);
-          if (idx !== -1) {
-            next[idx] = reg;
-          } else {
-            next.push(reg);
-          }
-        });
-        return next;
+      // Replace pending attachments with the registered ones, but PRESERVE the file and previewUrl
+      // Build the new attachments array synchronously from current ref
+      const next = [...attachmentsRef.current];
+      uploaded.forEach(reg => {
+        const idx = next.findIndex(a => (a as any).file && a.name === reg.name && (a as any).size === reg.size);
+        if (idx !== -1) {
+          // IMPORTANT: Preserve the file reference and previewUrl from the original pending attachment
+          // These are needed for base64 conversion and visual preview
+          const original = next[idx] as any;
+          next[idx] = {
+            ...reg,
+            file: original.file,
+            previewUrl: original.previewUrl,
+            type: original.type || reg.mimeType // Ensure type is preserved
+          };
+          console.log('[ChatPanel] 📎 processAndRegisterFiles - Updated attachment, hasFile:', !!(next[idx] as any).file);
+        } else {
+          next.push(reg);
+        }
       });
+
+      // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
+      attachmentsRef.current = next;
+      console.log('[ChatPanel] 📎 processAndRegisterFiles - Ref synced with', next.length, 'attachments, files:', next.map(a => ({ name: a.name, hasFile: !!(a as any).file })));
+
+      setAttachments(next);
     } catch (err) {
       console.error('Attachment upload/register failed', err);
       setMessages(prev => [...prev, { id: `sys-${Date.now()}`, type: 'system', message: 'File upload failed. Please try again.', timestamp: new Date(), feedback: null }]);
@@ -2361,11 +2391,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (files.length === 0) return;
     // Immediately add pending attachments as badges and start upload + registration
     // Create image previews for image files
-    const pending = files.map(file => {
+    const pending: PendingAttachment[] = files.map(file => {
       const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
       return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
     });
-    setAttachments(prev => [...prev, ...pending]);
+    console.log('[ChatPanel] 📎 handleFileChange - Adding', pending.length, 'files with file refs:', pending.map(p => ({ name: p.name, hasFile: !!p.file })));
+
+    // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
+    const newAttachments = [...attachmentsRef.current, ...pending];
+    attachmentsRef.current = newAttachments;
+    console.log('[ChatPanel] 📎 Ref updated SYNCHRONOUSLY, now has', attachmentsRef.current.length, 'items');
+
+    setAttachments(newAttachments);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     processAndRegisterFiles(files);
     // reset for same-name file selection again
@@ -2401,11 +2438,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (files.length === 0) return;
     // Show pending badges immediately and start upload
     // Create image previews for image files
-    const pending = files.map(file => {
+    const pending: PendingAttachment[] = files.map(file => {
       const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
       return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
     });
-    setAttachments(prev => [...prev, ...pending]);
+    console.log('[ChatPanel] 📎 onDropPanel - Adding', pending.length, 'files');
+
+    // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
+    const newAttachments = [...attachmentsRef.current, ...pending];
+    attachmentsRef.current = newAttachments;
+
+    setAttachments(newAttachments);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     processAndRegisterFiles(files);
   }, [processAndRegisterFiles, setMessages]);
@@ -2943,16 +2986,35 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const userMessageId = `user-${Date.now()}`;
 
     // Snapshot current selections/attachments for tagging in the message
+    // CRITICAL: Use attachmentsRef.current to get latest value and avoid stale closure
+    const currentAttachments = attachmentsRef.current;
     const previewSelections = selectedElements.map(s => ({ id: s.elementId, label: s.label }));
-    const previewAttachments = attachments.map(a => a.name);
-    // Include full attachment data for nice display in chat
-    const fullAttachments = attachments.map(a => ({
+    const previewAttachments = currentAttachments.map(a => a.name);
+    // Include full attachment data for nice display in chat AND for file analysis
+    // IMPORTANT: Store the file reference so we can convert to base64 later
+    const fullAttachments = currentAttachments.map(a => ({
       name: a.name,
       type: (a as any).type || (a as any).mimeType,
       size: a.size,
       url: (a as any).url,
-      previewUrl: (a as any).previewUrl || (a as any).url
+      previewUrl: (a as any).previewUrl || (a as any).url,
+      file: (a as any).file // Keep file reference for base64 conversion
     }));
+
+    console.log('[ChatPanel] 📎 ATTACHMENTS DEBUG:', {
+      attachmentsStateCount: attachments.length,
+      attachmentsRefCount: currentAttachments.length,
+      attachmentsRaw: JSON.stringify(currentAttachments.map(a => ({ name: a.name, hasFile: !!(a as any).file }))),
+      fullAttachmentsCount: fullAttachments.length,
+      fullAttachments: fullAttachments.map(a => ({ name: a.name, type: a.type, hasFile: !!a.file, hasPreviewUrl: !!a.previewUrl }))
+    });
+
+    // CRITICAL DEBUG: Check if attachments is actually populated
+    if (currentAttachments.length === 0) {
+      console.error('[ChatPanel] ❌ ATTACHMENTS IS EMPTY! File badge might be stale UI state.');
+    } else {
+      console.log('[ChatPanel] ✅ Found', currentAttachments.length, 'attachment(s)');
+    }
 
     // Create the user message object
     const userMessage: ExtendedChatMessageProps = {
@@ -2969,8 +3031,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     };
 
     // Handle outline mode with conversational agent
+    console.log('[ChatPanel] 🔍 MODE CHECK:', {
+      outlineMode,
+      useOutlineAgent,
+      hasOnOutlineAgentToolCall: !!onOutlineAgentToolCall,
+      willUseOutlineMode: outlineMode && useOutlineAgent && !!onOutlineAgentToolCall
+    });
+
     if (outlineMode && useOutlineAgent && onOutlineAgentToolCall) {
-      console.log('[ChatPanel] Entering outline agent mode');
+      console.log('[ChatPanel] ✅ Entering outline agent mode');
       const currentInput = input;
 
       // STEP 1: Add user message to UI IMMEDIATELY
@@ -2990,22 +3059,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       setInput('');
       // Clear attachments and revoke preview URLs
-      attachments.forEach(a => {
+      console.log('[ChatPanel] 🧹 CLEARING ATTACHMENTS:', currentAttachments.length);
+      currentAttachments.forEach(a => {
         const preview = (a as any).previewUrl;
         if (preview) revokeImagePreview(preview);
       });
       setAttachments([]);
+      attachmentsRef.current = []; // Also clear the ref immediately
+      console.log('[ChatPanel] ✅ Attachments cleared');
       // NOTE: Don't set isGenerating(true) here - it causes all slides to show loading
       // We only set isGenerating when the agent actually triggers generation (generate_outline action)
 
       // STEP 2: Add AI placeholder message with thinking indicator
       const aiMessageId = `ai-${Date.now()}`;
       const thinkingMessages = [
-        '🤔 Hmm, let me think...',
-        '💭 Pondering this one...',
-        '🧠 Processing...',
-        '✨ Cooking up something good...',
-        '🎯 Working on it...',
+        'Hmm, let me think about this...',
+        'Analyzing your request...',
+        'Processing your idea...',
+        'Cooking up something good...',
+        'Working on it...',
+        'Let me figure this out...',
+        'Considering the best approach...',
       ];
       const initialThinking = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
       setMessages(prev => [...prev, {
@@ -3014,7 +3088,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         message: initialThinking,
         timestamp: new Date(),
         feedback: null,
-        metadata: { isTyping: true, thinkingPhase: 'initial' }
+        metadata: { isTyping: true, thinkingPhase: 'initial', isStreamingUpdate: true }
       }]);
 
       // STEP 3: Build context
@@ -3052,39 +3126,110 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
         console.log('[ChatPanel] Starting stream with context:', context);
 
+        // Prepare files for analysis if any are attached
+        // Use fullAttachments snapshot since attachments state is cleared before this runs
+        console.log('[ChatPanel] 📤 PREPARING FILES FOR ANALYSIS:', {
+          fullAttachmentsCount: fullAttachments.length,
+          fullAttachments: fullAttachments.map(a => ({ name: a.name, type: a.type, hasFile: !!a.file }))
+        });
+
+        const filesToAnalyze = fullAttachments.length > 0 ? await Promise.all(
+          fullAttachments.map(async (att) => {
+            const file = att.file as File | undefined;
+            let content: string | undefined;
+
+            // Convert file to base64 if we have the raw file
+            if (file) {
+              console.log('[ChatPanel] 📄 Converting file to base64:', att.name);
+              content = await fileToBase64(file);
+              console.log('[ChatPanel] ✅ File converted:', att.name, 'base64 length:', content?.length || 0);
+            } else {
+              console.log('[ChatPanel] ⚠️ No file object for:', att.name);
+            }
+
+            return {
+              id: `file-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              name: att.name,
+              type: att.type || 'application/octet-stream',
+              content: content,
+              url: att.url,
+              size: att.size
+            };
+          })
+        ) : undefined;
+
+        console.log('[ChatPanel] 📤 FILES TO SEND TO BACKEND:', {
+          count: filesToAnalyze?.length || 0,
+          files: filesToAnalyze?.map(f => ({ name: f.name, type: f.type, hasContent: !!f.content, contentLength: f.content?.length || 0 }))
+        });
+
         for await (const event of streamOutlineAgentChat({
           message: currentInput,
           chat_history: convertMessagesToApiFormat(messages),
-          context: context
+          context: context,
+          files: filesToAnalyze
         })) {
           // Debug: log all events
           console.log('[ChatPanel] Event received:', event.type, event.type === 'status' ? (event as any).status : '', event.type === 'text' ? `"${(event as any).content?.slice(0, 50)}..."` : '');
 
           if (event.type === 'status') {
             // Handle status events (researching, scraping, etc.)
-            if (event.status === 'researching') {
+            console.log('[ChatPanel] 🔔 STATUS EVENT:', event.status, (event as any).message || (event as any).query || '');
+
+            if (event.status === 'thinking') {
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `💭 ${(event as any).message || 'Thinking...'}`, metadata: { isTyping: true, thinkingPhase: 'thinking', isStreamingUpdate: true } }
+                  : m
+              ));
+            } else if (event.status === 'researching') {
               const query = (event as any).query || 'your topic';
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `🔍 **Searching the web** for "${query}"`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'researching' } }
+                  ? { ...m, message: `🔍 Searching the web for "${query}"`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'researching', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'scraping') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `📄 **Reading website**... ${(event as any).message || ''}`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'scraping' } }
+                  ? { ...m, message: `📄 Reading website... ${(event as any).message || ''}`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'scraping', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'scraped') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `✓ **Got it!** Now thinking...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking' } }
+                  ? { ...m, message: `✓ Got it! Now thinking...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'research_failed') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `⚠️ Couldn't find info online, winging it...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking' } }
+                  ? { ...m, message: `⚠️ Couldn't find info online, winging it...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking', isStreamingUpdate: true } }
+                  : m
+              ));
+            } else if (event.status === 'analyzing_file') {
+              // File analysis in progress
+              const fileName = (event as any).file_name || 'file';
+              const fileIndex = ((event as any).file_index || 0) + 1;
+              const totalFiles = (event as any).total_files || 1;
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `📎 Analyzing ${fileName} (${fileIndex}/${totalFiles})...`, metadata: { isTyping: true, isAnalyzingFiles: true, thinkingPhase: 'analyzing', isStreamingUpdate: true } }
+                  : m
+              ));
+            } else if (event.status === 'files_analyzed') {
+              // File analysis complete
+              const analyses = (event as any).analyses || [];
+              const fileCount = analyses.length;
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `✓ Analyzed ${fileCount} file(s)! Now creating your presentation...`, metadata: { isTyping: true, isAnalyzingFiles: false, fileAnalyses: analyses, thinkingPhase: 'generating', isStreamingUpdate: true } }
+                  : m
+              ));
+            } else if (event.status === 'file_analysis_error') {
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `⚠️ Couldn't analyze some files, continuing anyway...`, metadata: { isTyping: true, isAnalyzingFiles: false, thinkingPhase: 'generating', isStreamingUpdate: true } }
                   : m
               ));
             }
@@ -3092,7 +3237,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             // Research completed - show brief "processing" then continue
             setMessages(prev => prev.map(m =>
               m.id === aiMessageId
-                ? { ...m, message: `🧠 **Found info!** Processing...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing' } }
+                ? { ...m, message: `🧠 Found info! Processing...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing', isStreamingUpdate: true } }
                 : m
             ));
           } else if (event.type === 'text') {
@@ -3106,21 +3251,29 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
             displayText = displayText.trim();
 
-            // Update AI message in real-time, but preserve isResearching state
+            // Update AI message in real-time, but preserve thinking/researching states
             setMessages(prev => prev.map(m => {
               if (m.id !== aiMessageId) return m;
 
-              // If we're researching, only show text if we have meaningful content
-              // (not empty/whitespace-only text from before tool call)
-              const isResearching = m.metadata?.isResearching;
-              if (isResearching && !displayText) {
-                return m; // Keep the "Researching..." message
+              // Preserve thinking/researching states when there's no meaningful text yet
+              const isInThinkingState = m.metadata?.isResearching || m.metadata?.thinkingPhase;
+              if (isInThinkingState && !displayText) {
+                return m; // Keep the current thinking/researching message
               }
+
+              // Only clear thinking state when we have substantial content (more than just whitespace)
+              const hasSubstantialContent = displayText.length > 10;
 
               return {
                 ...m,
-                message: displayText,
-                metadata: { ...m.metadata, isTyping: true, isResearching: false }
+                message: displayText || m.message, // Keep existing message if displayText is empty
+                metadata: {
+                  ...m.metadata,
+                  isTyping: true,
+                  isResearching: hasSubstantialContent ? false : m.metadata?.isResearching,
+                  thinkingPhase: hasSubstantialContent ? undefined : m.metadata?.thinkingPhase,
+                  isStreamingUpdate: hasSubstantialContent ? false : m.metadata?.isStreamingUpdate
+                }
               };
             }));
           } else if (event.type === 'outline') {
@@ -3131,7 +3284,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         // STEP 5: Finalize message
         setMessages(prev => prev.map(m =>
           m.id === aiMessageId
-            ? { ...m, metadata: { isTyping: false } }
+            ? { ...m, metadata: { ...m.metadata, isTyping: false, isStreamingUpdate: false, thinkingPhase: undefined, isResearching: false } }
             : m
         ));
 
@@ -3406,7 +3559,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     // Handle outline mode without agent (legacy/fallback)
     if (outlineMode && onOutlineGenerate) {
-      console.log('[ChatPanel] Outline generation mode (non-agent)');
+      console.log('[ChatPanel] ⚠️ Outline generation mode (non-agent) - ATTACHMENTS NOT SUPPORTED HERE!');
 
       // Add user message immediately
       setMessages(prev => [...prev, {
@@ -3439,7 +3592,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
 
     try {
-      console.log('[ChatPanel] Slide edit mode - sending message');
+      console.log('[ChatPanel] 🎨 Slide edit mode - sending message with', fullAttachments.length, 'attachments');
 
       // STEP 1: Add user message to UI IMMEDIATELY (just like outline mode)
       const userMsgId = `user-${Date.now()}`;
@@ -3494,24 +3647,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // Prepare lightweight attachment metadata
       // Ensure any pending attachments without URL are processed now
-      const pending = attachments.filter((a: any) => (a as any).file && !(a as any).url) as PendingAttachment[];
+      // Use currentAttachments which was captured at the start of sendMessage
+      const pending = currentAttachments.filter((a: any) => (a as any).file && !(a as any).url) as PendingAttachment[];
       if (pending.length > 0) {
         try {
           await processAndRegisterFiles(pending.map(p => p.file));
         } catch { }
       }
 
-      const finalized = (attachments as Array<PendingAttachment | RegisteredAttachment>).filter((a: any) => (a as any).url) as RegisteredAttachment[];
+      // Re-read from ref after potential registration update
+      const latestAttachments = attachmentsRef.current;
+      const finalized = (latestAttachments as Array<PendingAttachment | RegisteredAttachment>).filter((a: any) => (a as any).url) as RegisteredAttachment[];
       const attachmentMeta = finalized.map(a => ({ name: a.name, mimeType: a.mimeType, size: a.size, url: a.url }));
 
       // Immediately clear UI selection bubbles and highlights before network call
       clearSelections();
       // Revoke preview URLs before clearing attachments
-      attachments.forEach(a => {
+      latestAttachments.forEach(a => {
         const preview = (a as any).previewUrl;
         if (preview) revokeImagePreview(preview);
       });
       setAttachments([]);
+      attachmentsRef.current = []; // Also clear the ref immediately
       setIsSelecting(false);
 
       // Send the message to the API with selections and attachments
@@ -3764,10 +3921,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 </div>
               ) : undefined;
 
+              // Show thinking status when isTyping and message has thinking content
+              const isThinkingStatus = msg.metadata?.isTyping && msg.metadata?.thinkingPhase;
+              const showAsLoading = msg.metadata?.isTyping && !msg.message?.trim();
+
               return (
                 <ChatMessage
                   key={msg.id}
                   {...msg}
+                  // Override message to show thinking status with nice formatting
+                  message={isThinkingStatus && msg.message ? msg.message : msg.message}
+                  isLoading={showAsLoading}
                   inlineBelow={inline}
                   onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
                 />
@@ -3910,7 +4074,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                             // Revoke preview URL if it exists
                             const preview = (att as any).previewUrl;
                             if (preview) revokeImagePreview(preview);
-                            setAttachments(prev => prev.filter((_, i) => i !== idx));
+                            // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
+                            const next = attachmentsRef.current.filter((_, i) => i !== idx);
+                            attachmentsRef.current = next;
+                            setAttachments(next);
                           }}
                         >
                           <XCircle size={12} className="text-white" />

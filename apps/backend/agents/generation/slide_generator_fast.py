@@ -215,6 +215,28 @@ class FastSlideGenerator(ISlideGenerator):
         logger.info(f"[CUSTOM_COMPONENT] Generating interactive component for slide {context.slide_index + 1}")
         logger.info(f"[CUSTOM_COMPONENT] Purpose: {purpose}, Content preview: {content[:100]}...")
 
+        # Check for scraped media from Firecrawl (e.g., GIFs from a website)
+        external_media = None
+        if hasattr(context.slide_outline, 'scrapedMedia') and context.slide_outline.scrapedMedia:
+            scraped = context.slide_outline.scrapedMedia
+            external_media = {
+                'gifs': scraped.get('gifs', []),
+                'images': scraped.get('images', []),
+                'all_media': scraped.get('all_media', []),
+                'source_url': scraped.get('source_url', ''),
+                'markdown': scraped.get('markdown', ''),
+            }
+            logger.info(f"[CUSTOM_COMPONENT] 🌐 Found scraped media: {len(external_media.get('gifs', []))} GIFs, {len(external_media.get('images', []))} images")
+
+        # Get user-uploaded media (taggedMedia) from the slide outline
+        uploaded_media = None
+        if hasattr(context.slide_outline, 'taggedMedia') and context.slide_outline.taggedMedia:
+            uploaded_media = [
+                media.model_dump() if hasattr(media, 'model_dump') else media
+                for media in context.slide_outline.taggedMedia
+            ]
+            logger.info(f"[CUSTOM_COMPONENT] 📎 Found {len(uploaded_media)} user-uploaded media items")
+
         # Generate the CustomComponent
         enhanced = await self.custom_component_generator.generate(
             content=content,
@@ -223,7 +245,9 @@ class FastSlideGenerator(ISlideGenerator):
             component_purpose=purpose,
             width=width,
             height=height,
-            position=position
+            position=position,
+            external_media=external_media,
+            uploaded_media=uploaded_media
         )
 
         if enhanced:

@@ -1596,6 +1596,29 @@ class SlideGeneratorV2(ISlideGenerator):
         colors = theme_dict.get('color_palette', {})
         bg_color = colors.get('primary_background', '#0a0e27')
 
+        # Check for scraped media from Firecrawl (e.g., GIFs from a website)
+        external_media = None
+        if hasattr(context.slide_outline, 'scrapedMedia') and context.slide_outline.scrapedMedia:
+            scraped = context.slide_outline.scrapedMedia
+            external_media = {
+                'gifs': scraped.get('gifs', []),
+                'images': scraped.get('images', []),
+                'all_media': scraped.get('all_media', []),
+                'source_url': scraped.get('source_url', ''),
+                'markdown': scraped.get('markdown', ''),
+            }
+            print(f"[GEMINI 3 PRO] 🌐 Found scraped media: {len(external_media.get('gifs', []))} GIFs, {len(external_media.get('images', []))} images from {external_media.get('source_url')}")
+
+        # Get user-uploaded media (taggedMedia) from the slide outline
+        uploaded_media = None
+        if hasattr(context.slide_outline, 'taggedMedia') and context.slide_outline.taggedMedia:
+            # Convert to list of dicts if they're Pydantic models
+            uploaded_media = [
+                media.model_dump() if hasattr(media, 'model_dump') else media
+                for media in context.slide_outline.taggedMedia
+            ]
+            print(f"[GEMINI 3 PRO] 📎 Found {len(uploaded_media)} user-uploaded media items for slide")
+
         # Generate a FULL-SLIDE CustomComponent (1920x1080, position 0,0)
         enhanced = await self.custom_component_generator.generate(
             content=content,
@@ -1611,7 +1634,9 @@ class SlideGeneratorV2(ISlideGenerator):
             },
             width=1920,
             height=1080,
-            position={'x': 0, 'y': 0}
+            position={'x': 0, 'y': 0},
+            external_media=external_media,
+            uploaded_media=uploaded_media
         )
 
         if enhanced:

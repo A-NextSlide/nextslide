@@ -339,7 +339,9 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
             r"\bfor\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
             r"\babout\s+([a-zA-Z0-9'\-\s]{2,30})(?:\s+presentation|\s+deck|\s+slides|\s+org|\s+chart|\s+strategy)?",
             r"\bbrand\s+([a-zA-Z0-9'\-\s]{2,30})",
-            r"\bstyle\s+of\s+([a-zA-Z0-9'\-\s]{2,30})"
+            r"\bstyle\s+of\s+([a-zA-Z0-9'\-\s]{2,30})",
+            # Brand at START of text followed by business words (e.g., "Instacart UK Expansion", "Nike Market Strategy")
+            r"^([A-Z][a-zA-Z0-9]+)(?:\s+(?:UK|US|EU|Asia|Europe|Global|Market|Expansion|Strategy|Integration|Analysis|Growth|Launch|Partnership|Quarterly|Annual|Overview|Presentation|Pitch))",
         ]
         
         for pattern in brand_patterns:
@@ -406,6 +408,12 @@ def _is_reasonable_brand_term(identifier: str) -> bool:
     # Avoid multi-sentence fragments
     if cleaned.count(" ") >= 6:
         return False
+
+    # Reject slide count patterns like "10 slides", "5 slide", etc.
+    import re
+    if re.match(r'^\d+\s*slides?$', cleaned, re.IGNORECASE):
+        return False
+
     alpha_chars = sum(1 for c in cleaned if c.isalpha())
     return alpha_chars >= 2
 
@@ -513,6 +521,93 @@ def _select_complementary_body_font(hero_font: str, is_fun_topic: bool = False) 
     if is_fun_topic:
         return 'Nunito'  # Friendly, readable body font for fun content
     return 'Open Sans'  # Clean, professional body font for business content
+
+
+async def _ai_extract_brand(title: str, context: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """Use AI to intelligently extract brand information from a presentation title.
+
+    This replaces regex-based brand detection with AI understanding of context.
+    For example:
+    - "Google Q3 2025 Earnings Breakdown" → {"brand": "Google", "domain": "google.com"}
+    - "5 slides about marketing" → None (no brand)
+    - "Amazon rainforest documentary" → None (not Amazon.com)
+    - "Amazon Web Services tutorial" → {"brand": "Amazon Web Services", "domain": "aws.amazon.com"}
+
+    Args:
+        title: The presentation title
+        context: Optional additional context (vibe, prompt, etc.)
+
+    Returns:
+        Dict with 'brand' and 'domain' keys, or None if no brand detected
+    """
+    if not title:
+        return None
+
+    try:
+        from agents.ai.clients import get_client, invoke
+        import json as json_module
+
+        # Build the text to analyze
+        text_to_analyze = title
+        if context and len(context) < 200:  # Only add short context
+            text_to_analyze = f"{title}. Context: {context}"
+
+        brand_prompt = f"""Analyze this presentation title and extract brand information.
+
+Title: "{text_to_analyze}"
+
+Your task:
+1. Determine if a real company/brand is the SUBJECT of this presentation
+2. If yes, provide the brand's official website domain
+
+Be smart about context - distinguish common words from brand references:
+- "Google Q3 2025 Earnings" → YES, Google is a company → google.com
+- "Apple Vision Pro review" → YES → apple.com
+- "Apple pie recipe" → NO, just food → null
+- "Amazon quarterly earnings" → YES → amazon.com
+- "Amazon rainforest documentary" → NO, just a place → null
+- "10 slides about marketing" → NO brand → null
+- "Nike marketing strategy" → YES → nike.com
+- "Target Q4 sales analysis" → YES, Target store → target.com
+- "Target practice tips" → NO, not the store → null
+
+Return ONLY valid JSON: {{"brand": "Brand Name", "domain": "brand.com"}} or {{"brand": null, "domain": null}}"""
+
+        client = get_client("claude-3-5-haiku-20241022")
+        response = invoke(
+            client=client,
+            model="claude-3-5-haiku-20241022",
+            messages=[{"role": "user", "content": brand_prompt}],
+            max_tokens=100,
+            temperature=0
+        )
+
+        # Parse JSON response - handle models that add extra text after JSON
+        result_text = response.strip()
+        if result_text.startswith("```"):
+            result_text = result_text.split("```")[1]
+            if result_text.startswith("json"):
+                result_text = result_text[4:]
+        result_text = result_text.strip()
+
+        # Extract just the JSON object - stop at first closing brace
+        # This handles cases where model adds "Reasoning:" after the JSON
+        import re
+        json_match = re.search(r'\{[^{}]*\}', result_text)
+        if json_match:
+            result_text = json_match.group(0)
+
+        brand_info = json_module.loads(result_text)
+        if brand_info.get('brand') and brand_info.get('domain'):
+            logger.info(f"[AI BRAND] Detected brand from title: {brand_info['brand']} → {brand_info['domain']}")
+            return brand_info
+        else:
+            logger.info(f"[AI BRAND] No brand detected in title: {title[:50]}...")
+            return None
+
+    except Exception as e:
+        logger.warning(f"[AI BRAND] AI brand extraction failed: {e}")
+        return None
 
 
 async def _select_brand_appropriate_fonts(brand_name: str, brand_domain: Optional[str] = None) -> Dict[str, str]:
@@ -660,35 +755,35 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
         return style_prefs
 
     vibe_context = getattr(style_prefs, 'vibeContext', None)
-    candidate_chain: List[str] = []
-    if domain_hint:
-        candidate_chain.append(domain_hint)
-    if vibe_context:
-        candidate_chain.append(vibe_context)
-        # If vibe context is verbose, try to extract a cleaner identifier from it
-        guessed = _guess_brand_identifier(vibe_context)
-        if guessed:
-            candidate_chain.append(guessed)
-    
-    logger.info(f"[STYLE PREF HYDRATE] Domain extraction - domain_hint: {domain_hint}, vibeContext: {vibe_context}")
-    logger.info(f"[STYLE PREF HYDRATE] Candidate chain: {candidate_chain}")
+
+    # Use AI to intelligently extract brand from the title
+    # This replaces regex-based guessing with proper AI understanding
+    logger.info(f"[STYLE PREF HYDRATE] 🤖 Using AI brand extraction for title: {outline_title}")
 
     domain = None
-    for candidate in candidate_chain:
-        if not candidate:
-            continue
-        if _looks_like_domain(candidate):
-            domain = candidate.strip()
-            logger.info(f"[STYLE PREF HYDRATE] ✅ Found domain (looks_like_domain): {domain}")
-            break
-        if _is_reasonable_brand_term(candidate):
-            domain = candidate.strip()
-            logger.info(f"[STYLE PREF HYDRATE] ✅ Found domain (reasonable_brand_term): {domain}")
-            break
+    brand_name = None
+
+    # PRIORITY 1: AI-based brand extraction from title (most accurate)
+    if outline_title:
+        ai_brand = await _ai_extract_brand(outline_title)
+        if ai_brand and ai_brand.get('domain'):
+            domain = ai_brand['domain']
+            brand_name = ai_brand.get('brand')
+            logger.info(f"[STYLE PREF HYDRATE] ✅ AI detected brand: {brand_name} → {domain}")
+
+    # PRIORITY 2: If domain_hint looks like an actual domain (e.g., google.com), use it
+    if not domain and domain_hint and _looks_like_domain(domain_hint):
+        domain = domain_hint.strip()
+        logger.info(f"[STYLE PREF HYDRATE] ✅ Using domain_hint: {domain}")
+
+    # PRIORITY 3: Fallback to regex extraction only if AI failed and domain_hint is reasonable
+    if not domain and domain_hint and _is_reasonable_brand_term(domain_hint):
+        domain = domain_hint.strip()
+        logger.info(f"[STYLE PREF HYDRATE] ✅ Fallback to domain_hint: {domain}")
 
     if not domain:
         logger.warning("[STYLE PREF HYDRATE] ⚠️ No valid brand identifier found; skipping Brandfetch hydration")
-        logger.warning(f"[STYLE PREF HYDRATE] Tried candidates: {candidate_chain}")
+        logger.warning(f"[STYLE PREF HYDRATE] Title: {outline_title}, domain_hint: {domain_hint}")
 
         # CRITICAL: Even without brand data, set appropriate font for fun topics
         current_font = getattr(style_prefs, 'font', None) if style_prefs else None
@@ -789,6 +884,8 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
         return style_prefs
     
     logger.info(f"[STYLE PREF HYDRATE] ✅ Successfully retrieved brand data for: {domain}")
+    logger.info(f"[STYLE PREF HYDRATE] 🔍 Brand data keys: {list(brand_data.keys()) if brand_data else 'None'}")
+    logger.info(f"[STYLE PREF HYDRATE] 🔍 has_font={has_font}, has_colors={has_colors}, domain={domain}, brand_name={brand_name}")
 
     try:
         colors_data = brand_data.get('colors', {})
@@ -866,11 +963,14 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
             style_prefs.colors = color_config
 
         if not has_font:
+            logger.info(f"[STYLE PREF HYDRATE] 🔤 Entering font selection section (has_font={has_font})")
             fonts = brand_data.get('fonts', {})
+            font_names = fonts.get('names', []) if fonts else []
+            logger.info(f"[STYLE PREF HYDRATE] 🔤 Font data from brand: fonts={bool(fonts)}, names={font_names}")
             font_set = False
-            
-            if fonts and fonts.get('names'):
-                scraped_font = fonts['names'][0]
+
+            if font_names:
+                scraped_font = font_names[0]
                 # CRITICAL: Validate font is available locally before using it
                 # Many brands use custom fonts (e.g., "Flexo-Medium") that we don't have
                 try:
@@ -889,8 +989,11 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
             
             # CRITICAL: If no valid font, select appropriate fallback based on topic or brand
             if not font_set:
+                logger.info(f"[STYLE PREF HYDRATE] 🔤 No valid scraped font, checking fallbacks. domain={domain}, brand_name={brand_name}")
                 vibe_ctx = getattr(style_prefs, 'vibeContext', None)
-                if _is_entertainment_topic(outline_title or '', vibe_ctx):
+                is_entertainment = _is_entertainment_topic(outline_title or '', vibe_ctx)
+                logger.info(f"[STYLE PREF HYDRATE] 🔤 is_entertainment={is_entertainment}, will use brand fonts={bool(domain and not is_entertainment)}")
+                if is_entertainment:
                     # Use playful fonts for fun topics - pre-defined pairings
                     import hashlib
                     seed_hash = int(hashlib.md5((outline_title or 'fun').encode()).hexdigest(), 16)
@@ -907,8 +1010,8 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
                     logger.info(f"[STYLE PREF HYDRATE] 🎮 Fun topic! Using playful fonts: hero={selected['hero']}, body={selected['body']}")
                 elif domain:
                     # THIS IS A BRAND - use AI to select brand-appropriate fonts
-                    # Extract brand name from domain or use domain_hint
-                    brand_name_for_fonts = domain.replace('.com', '').replace('.org', '').replace('.net', '').replace('.', ' ').title()
+                    # Use the AI-detected brand name if available, otherwise clean from domain
+                    brand_name_for_fonts = brand_name or domain.replace('.com', '').replace('.org', '').replace('.net', '').replace('.', ' ').title()
                     logger.info(f"[STYLE PREF HYDRATE] 🏷️ Brand detected ({brand_name_for_fonts}), selecting brand-appropriate fonts...")
                     try:
                         brand_fonts = await _select_brand_appropriate_fonts(brand_name_for_fonts, domain)
@@ -1026,6 +1129,7 @@ class OutlineRequest(BaseModel):
     visualDensity: Optional[str] = Field(None, description="Visual density preference: minimal | moderate | rich | dense")
     enableResearch: Optional[bool] = Field(None, description="Enable web research (Thinking) during outline creation")
     async_images: Optional[bool] = Field(default=True, description="If True, images are placeholders; if False, images are auto-applied (default: True = placeholders)")
+    uploadedMedia: Optional[List[Dict[str, Any]]] = Field(default=None, description="Pre-processed uploaded media from OutlineAgent to include in deck")
 
     @validator('async_images', pre=True, always=True)
     def debug_async_images(cls, v):
@@ -1310,7 +1414,23 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
 
             # Log basic request info
             logger.info(f"Outline generation started (detail={request.detailLevel}, slides={request.slideCount}, async_images={request.async_images})")
-            
+
+            # Start ThemeAgent in parallel with outline generation
+            # This detects brand/colors/fonts while outline is being generated
+            from agents.theme import run_theme_agent_parallel
+            theme_task = asyncio.create_task(
+                run_theme_agent_parallel(
+                    title=request.prompt[:100],  # Use prompt as initial title
+                    prompt=request.prompt,
+                    context=request.styleContext
+                )
+            )
+            logger.info(f"[PARALLEL THEME] Started ThemeAgent in background")
+
+            # Emit theme_loading event so frontend shows spinner in theme tab
+            yield _sse({'type': 'theme_loading', 'message': 'Detecting brand and colors...'})
+            await asyncio.sleep(0)
+
             generator = OutlineGenerator(registry)
             
             # Normalize colorPreference: allow dict input and map into color_scheme string or structured dict
@@ -1535,132 +1655,163 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         outline_id = result_data.get('id') or str(uuid.uuid4())
                         logger.info(f"[UUID_FIX] Creating outline with ID: {outline_id}")
 
+                        # Convert uploadedMedia dicts to TaggedMediaItem objects if provided
+                        uploaded_media_items = None
+                        logger.info(f"[OUTLINE] 📎 request.uploadedMedia = {request.uploadedMedia}")
+                        logger.info(f"[OUTLINE] 📎 request.uploadedMedia is None: {request.uploadedMedia is None}")
+                        logger.info(f"[OUTLINE] 📎 request.uploadedMedia length: {len(request.uploadedMedia) if request.uploadedMedia else 0}")
+                        if request.uploadedMedia:
+                            from models.requests import TaggedMediaItem
+                            uploaded_media_items = []
+                            for media in request.uploadedMedia:
+                                try:
+                                    uploaded_media_items.append(TaggedMediaItem(
+                                        id=media.get('id', str(uuid.uuid4())),
+                                        filename=media.get('filename') or media.get('name', 'uploaded_file'),
+                                        type=media.get('type', 'image'),
+                                        content=media.get('content'),
+                                        previewUrl=media.get('previewUrl') or media.get('url'),
+                                        interpretation=media.get('interpretation'),
+                                        status=media.get('status', 'processed'),
+                                        metadata=media.get('metadata', {})
+                                    ))
+                                except Exception as media_err:
+                                    logger.warning(f"[OUTLINE] Failed to convert media item: {media_err}")
+                            logger.info(f"[OUTLINE] 📎 Including {len(uploaded_media_items)} uploadedMedia items in outline")
+
                         outline = DeckOutline(
                             id=outline_id,
                             title=result_data.get('title', 'Untitled Presentation'),
                             slides=simple_slides,
+                            uploadedMedia=uploaded_media_items,
                             stylePreferences=None,
                             notes=None
                         )
                         
-                        # Always construct and hydrate style preferences for outline_complete
-                        # Build style_prefs even when request provides no explicit context
-                        # Try to infer a brand identifier from prompt or context
-                        style_context_value = request.styleContext or detected_style_context or _guess_brand_identifier(request.prompt)
-                        # Derive a clean brand/domain hint from either styleContext or prompt for Brandfetch hydration
-                        brand_hint = _guess_brand_identifier(request.styleContext) or _guess_brand_identifier(request.prompt)
+                        # ========================================================================
+                        # USE PARALLEL THEME AGENT RESULTS
+                        # The ThemeAgent has been running in parallel - now collect its results
+                        # ========================================================================
+                        style_context_value = request.styleContext or detected_style_context
+
+                        # Wait for ThemeAgent to complete (it's been running in parallel)
+                        theme_result = None
+                        try:
+                            theme_result = await asyncio.wait_for(theme_task, timeout=10.0)
+                            logger.info(f"[PARALLEL THEME] ✅ ThemeAgent completed: source={theme_result.get('source')}, colors={len(theme_result.get('colors', []))}")
+                        except asyncio.TimeoutError:
+                            logger.warning("[PARALLEL THEME] ⚠️ ThemeAgent timed out, using defaults")
+                        except Exception as theme_err:
+                            logger.warning(f"[PARALLEL THEME] ⚠️ ThemeAgent failed: {theme_err}")
+
+                        # Build style preferences from ThemeAgent result
+                        from models.requests import ColorConfigItem
                         style_prefs = StylePreferencesItem(
                             vibeContext=style_context_value,
                             initialIdea=request.prompt,
                             font=request.fontPreference
                         )
-                        # If user provided colorPreference as dict, try to map minimal fields
-                        try:
-                            if isinstance(request.colorPreference, dict):
-                                from models.requests import ColorConfigItem
-                                outline_colors = ColorConfigItem(
-                                    type=str(request.colorPreference.get('type') or 'custom'),
-                                    name=request.colorPreference.get('name'),
-                                    background=request.colorPreference.get('background'),
-                                    text=request.colorPreference.get('text'),
-                                    accent1=request.colorPreference.get('accent1'),
-                                    accent2=request.colorPreference.get('accent2'),
-                                    accent3=request.colorPreference.get('accent3'),
+
+                        # Apply theme result if available
+                        if theme_result:
+                            # Set fonts from theme agent
+                            fonts = theme_result.get('fonts', {})
+                            if fonts.get('hero') and not request.fontPreference:
+                                style_prefs.font = fonts['hero']
+                            if fonts.get('body'):
+                                style_prefs.bodyFont = fonts['body']
+                            logger.info(f"[PARALLEL THEME] 🔤 Fonts: hero={style_prefs.font}, body={style_prefs.bodyFont}")
+
+                            # Set colors from theme agent (guaranteed 3+ distinct colors)
+                            theme_colors = theme_result.get('colors', [])
+                            if theme_colors and len(theme_colors) >= 3:
+                                color_source = theme_result.get('source', 'unknown')
+                                style_prefs.colors = ColorConfigItem(
+                                    type="custom",
+                                    name=f"Theme Colors ({color_source})",
+                                    background=theme_result.get('background', theme_colors[0]),
+                                    text=theme_result.get('text', '#1A1A1A'),
+                                    accent1=theme_result.get('accent', theme_colors[1] if len(theme_colors) > 1 else None),
+                                    accent2=theme_colors[2] if len(theme_colors) > 2 else None,
+                                    accent3=theme_colors[3] if len(theme_colors) > 3 else None,
                                 )
-                                style_prefs.colors = outline_colors
-                        except Exception:
-                            pass
+                                logger.info(f"[PARALLEL THEME] 🎨 Colors ({color_source}): {theme_colors[:3]}")
 
-                        try:
-                            hydrated = await _hydrate_style_preferences(style_prefs, brand_hint, outline_title=outline.title)
-                            outline.stylePreferences = hydrated or style_prefs
-                        except Exception as hydrate_error:
-                            logger.debug(f"[BRAND STYLEPREFS] Hydration failed: {hydrate_error}")
-                            outline.stylePreferences = style_prefs
+                            # Set logo from theme agent
+                            if theme_result.get('logo_url'):
+                                style_prefs.logoUrl = theme_result['logo_url']
+                                logger.info(f"[PARALLEL THEME] 🖼️ Logo URL set")
 
-                        # FIRST: Check if this is an iconic topic with well-known colors (e.g., Pikachu = yellow)
-                        # This takes priority over Brandfetch which might find an unrelated website
-                        try:
-                            from agents.generation.theme_director import ThemeDirector
-                            director = ThemeDirector()
-                            
-                            # Check for iconic topic colors FIRST
-                            logger.info(f"[API OUTLINE] 🔍 Checking for iconic topic colors: {outline.title}")
-                            suggestion = await director.generate_quick_palette(
-                                title=outline.title,
-                                context=style_context_value or request.prompt
+                        # User-provided colors override theme agent
+                        if isinstance(request.colorPreference, dict) and request.colorPreference.get('accent1'):
+                            style_prefs.colors = ColorConfigItem(
+                                type=str(request.colorPreference.get('type') or 'custom'),
+                                name=request.colorPreference.get('name'),
+                                background=request.colorPreference.get('background'),
+                                text=request.colorPreference.get('text'),
+                                accent1=request.colorPreference.get('accent1'),
+                                accent2=request.colorPreference.get('accent2'),
+                                accent3=request.colorPreference.get('accent3'),
                             )
-                            colors = (suggestion or {}).get('color_palette') or {}
-                            palette_colors = []
+                            logger.info(f"[PARALLEL THEME] 📦 User colors override: {request.colorPreference.get('accent1')}")
+
+                        outline.stylePreferences = style_prefs
+
+                        # Log final theme result
+                        final_colors = getattr(style_prefs.colors, 'accent1', None) if style_prefs.colors else None
+                        logger.info(f"[PARALLEL THEME] ✅ Final: font={style_prefs.font}, accent={final_colors}, logo={bool(getattr(style_prefs, 'logoUrl', None))}")
+
+                        # Emit theme_ready event so frontend can update theme tab
+                        theme_ready_data = {
+                            'type': 'theme_ready',
+                            'theme': {
+                                'font': style_prefs.font,
+                                'bodyFont': getattr(style_prefs, 'bodyFont', None),
+                                'logoUrl': getattr(style_prefs, 'logoUrl', None),
+                                'colors': None
+                            }
+                        }
+                        if style_prefs.colors:
+                            theme_ready_data['theme']['colors'] = {
+                                'background': getattr(style_prefs.colors, 'background', None),
+                                'text': getattr(style_prefs.colors, 'text', None),
+                                'accent1': getattr(style_prefs.colors, 'accent1', None),
+                                'accent2': getattr(style_prefs.colors, 'accent2', None),
+                                'accent3': getattr(style_prefs.colors, 'accent3', None),
+                            }
+                        yield _sse(theme_ready_data)
+                        await asyncio.sleep(0)
+
+                        # Skip the old ThemeDirector logic - ThemeAgent already handled everything
+                        # Only run ThemeDirector as fallback if ThemeAgent completely failed
+                        if not theme_result or not theme_result.get('colors'):
+                            logger.info("[PARALLEL THEME] No theme result, falling back to ThemeDirector...")
                             try:
-                                palette_colors = colors.get('colors') or []
-                            except Exception:
-                                palette_colors = []
-                            
-                            # AI-generated colors from ThemeDirector (uses Claude Haiku 4.5 for cultural understanding)
-                            # These colors understand topics like "Stranger Things" → dark red theme
-                            bg_color = colors.get('primary_background', '').upper()
-                            text_color = colors.get('primary_text', '').upper()
-                            accent_color = colors.get('accent_1', '').upper()
+                                from agents.generation.theme_director import ThemeDirector
+                                director = ThemeDirector()
+                                suggestion = await director.generate_quick_palette(
+                                    title=outline.title,
+                                    context=style_context_value or request.prompt
+                                )
+                                colors = (suggestion or {}).get('color_palette') or {}
+                                bg_color = colors.get('primary_background', '#FFFFFF')
+                                text_color = colors.get('primary_text', '#1A1A1A')
+                                accent_color = colors.get('accent_1', '#3B82F6')
 
-                            # AI colors are meaningful if we got a non-default background OR accent
-                            has_ai_colors = bool(bg_color or accent_color)
-                            ai_colors_are_meaningful = has_ai_colors and (
-                                bg_color not in ['', '#FFFFFF', '#F5F5F5'] or  # Non-white background
-                                accent_color not in ['', '#3B82F6', '#2563EB']  # Non-default accent
-                            )
-
-                            # Check if we have Brandfetch colors (from _hydrate_style_preferences)
-                            existing_colors = getattr(outline.stylePreferences, 'colors', None)
-                            has_brandfetch_colors = existing_colors and (existing_colors.accent1 or existing_colors.background)
-
-                            # Check if existing colors came from Brandfetch (not just defaults)
-                            # Brandfetch colors have a source marker or were set by hydration
-                            existing_color_name = getattr(existing_colors, 'name', '') if existing_colors else ''
-                            is_brandfetch_source = existing_color_name and ('Brand' in existing_color_name or 'brandfetch' in existing_color_name.lower())
-
-                            # Detect if this is an explicit brand request (user said "[brand] branded" or brand_hint was extracted)
-                            is_explicit_brand_request = bool(brand_hint) and len(brand_hint) > 2
-
-                            # NEW PRIORITY: For explicit brand requests, prefer Brandfetch colors over AI colors
-                            # For cultural/topic requests (no brand_hint), prefer AI colors which understand context
-                            if has_brandfetch_colors and (is_explicit_brand_request or is_brandfetch_source):
-                                # User explicitly requested a brand OR we have verified Brandfetch colors
-                                # Keep the existing Brandfetch colors - DON'T override with AI
-                                logger.info(f"[API OUTLINE] 📦 KEEPING Brandfetch brand colors (explicit brand request): bg={existing_colors.background}, accent={existing_colors.accent1}")
-                            elif ai_colors_are_meaningful:
-                                # No explicit brand request, AI understood the topic culturally
-                                logger.info(f"[API OUTLINE] 🎨 USING AI COLORS (culturally-aware): bg={bg_color}, text={text_color}, accent={accent_color}")
-                                from models.requests import ColorConfigItem
-                                outline.stylePreferences.colors = ColorConfigItem(
+                                style_prefs.colors = ColorConfigItem(
                                     type="custom",
                                     name="AI Theme Colors",
-                                    background=colors.get('primary_background') or "#FFFFFF",
-                                    text=colors.get('primary_text') or "#111827",
-                                    accent1=colors.get('accent_1') or (palette_colors[0] if palette_colors else None),
-                                    accent2=palette_colors[1] if len(palette_colors) > 1 else colors.get('primary_background'),
-                                    accent3=palette_colors[2] if len(palette_colors) > 2 else None,
+                                    background=bg_color,
+                                    text=text_color,
+                                    accent1=accent_color,
+                                    accent2=colors.get('accent_2'),
+                                    accent3=colors.get('accent_3'),
                                 )
-                            elif has_brandfetch_colors:
-                                # AI didn't return meaningful colors, use existing Brandfetch colors
-                                logger.info(f"[API OUTLINE] 📦 Using Brandfetch colors (AI returned defaults): {existing_colors.background}, {existing_colors.accent1}")
-                            elif has_ai_colors:
-                                # Use AI colors even if they're defaults (better than nothing)
-                                logger.info(f"[API OUTLINE] 🎨 Using AI default colors: {colors}")
-                                from models.requests import ColorConfigItem
-                                outline.stylePreferences.colors = ColorConfigItem(
-                                    type="custom",
-                                    name="AI Suggested",
-                                    background=colors.get('primary_background') or "#FFFFFF",
-                                    text=colors.get('primary_text') or "#111827",
-                                    accent1=colors.get('accent_1') or (palette_colors[0] if palette_colors else None),
-                                    accent2=palette_colors[1] if len(palette_colors) > 1 else None,
-                                    accent3=palette_colors[2] if len(palette_colors) > 2 else None,
-                                )
-                            else:
-                                logger.info("[API OUTLINE] No colors from AI or Brandfetch")
-                        except Exception as e:
-                            logger.debug(f"[API OUTLINE] AI color suggestion failed: {e}")
+                                logger.info(f"[PARALLEL THEME] 🎨 ThemeDirector fallback: bg={bg_color}, accent={accent_color}")
+                            except Exception as td_err:
+                                logger.warning(f"[PARALLEL THEME] ThemeDirector fallback failed: {td_err}")
+
+                        # Old theme logic removed - ThemeAgent handles everything now
 
                         # Additional debug to verify it was actually set
                         logger.info(f"[API OUTLINE] After setting - stylePreferences is None: {outline.stylePreferences is None}")

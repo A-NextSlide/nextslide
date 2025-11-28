@@ -50,6 +50,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   metadata,
   inlineBelow,
 }) => {
+  // Debug: log what we're rendering for AI messages with thinking state
+  if (type === 'ai' && (metadata?.isTyping || metadata?.thinkingPhase)) {
+    console.log('[ChatMessage] Rendering AI message:', { message: message?.slice(0, 50), isLoading, thinkingPhase: metadata?.thinkingPhase, isTyping: metadata?.isTyping });
+  }
   const [feedback, setFeedback] = useState<FeedbackType>(null);
   const isToolRow = metadata?.type === 'agent_tool';
   const isPlanRow = metadata?.type === 'agent_plan';
@@ -298,12 +302,80 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             {isLoading ? (
               <div className="flex items-center gap-2" style={{ minHeight: '20px' }}>
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
-                <span className="text-xs text-muted-foreground">Thinking...</span>
+                <span className="text-xs text-muted-foreground">
+                  {/* Show actual message if provided, otherwise default to Thinking... */}
+                  {safeMessage && safeMessage.trim().length > 0 ? renderMarkdown(safeMessage) : 'Thinking...'}
+                </span>
               </div>
             ) : isStreamingMessage ? (
               <div className="space-y-1.5 min-w-0 w-full" style={{ minHeight: '20px' }}>
-                {/* Status row - only show message text if EnhancedDeckProgress is NOT being shown (to avoid redundancy) */}
-                {!(metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted) && (
+                {/* Enhanced status display for thinking/researching phases */}
+                {metadata?.thinkingPhase && !(metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted) && (
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Animated icon based on phase */}
+                    <div className={cn(
+                      "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                      metadata.thinkingPhase === 'researching' && "bg-blue-500/10 dark:bg-blue-500/20",
+                      metadata.thinkingPhase === 'scraping' && "bg-purple-500/10 dark:bg-purple-500/20",
+                      metadata.thinkingPhase === 'processing' && "bg-green-500/10 dark:bg-green-500/20",
+                      metadata.thinkingPhase === 'analyzing' && "bg-amber-500/10 dark:bg-amber-500/20",
+                      (metadata.thinkingPhase === 'thinking' || metadata.thinkingPhase === 'initial') && "bg-orange-500/10 dark:bg-orange-500/20"
+                    )}>
+                      {metadata.thinkingPhase === 'researching' ? (
+                        <svg className="w-4 h-4 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      ) : metadata.thinkingPhase === 'scraping' ? (
+                        <svg className="w-4 h-4 text-purple-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      ) : metadata.thinkingPhase === 'processing' ? (
+                        <svg className="w-4 h-4 text-green-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      ) : metadata.thinkingPhase === 'analyzing' ? (
+                        <svg className="w-4 h-4 text-amber-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      ) : (
+                        <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
+                      )}
+                    </div>
+
+                    {/* Status text with phase label */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                          metadata.thinkingPhase === 'researching' && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                          metadata.thinkingPhase === 'scraping' && "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                          metadata.thinkingPhase === 'processing' && "bg-green-500/10 text-green-600 dark:text-green-400",
+                          metadata.thinkingPhase === 'analyzing' && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                          (metadata.thinkingPhase === 'thinking' || metadata.thinkingPhase === 'initial' || metadata.thinkingPhase === 'generating') && "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                        )}>
+                          {metadata.thinkingPhase === 'researching' ? 'Searching' :
+                           metadata.thinkingPhase === 'scraping' ? 'Reading' :
+                           metadata.thinkingPhase === 'processing' ? 'Processing' :
+                           metadata.thinkingPhase === 'analyzing' ? 'Analyzing' :
+                           metadata.thinkingPhase === 'generating' ? 'Creating' :
+                           'Thinking'}
+                        </span>
+                        {/* Animated dots */}
+                        <span className="flex gap-0.5">
+                          <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground/80 mt-0.5 break-words">
+                        {primaryMessage.replace(/^[🔍📄✓🧠💭🤔✨🎯📎⚠️]\s*/, '')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Fallback status row for non-thinking streaming messages */}
+                {!metadata?.thinkingPhase && !(metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted) && (
                   <div className="flex items-center gap-2 min-w-0">
                     {!isCompleted && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500 flex-shrink-0" />}
                     {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}

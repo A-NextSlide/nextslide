@@ -654,6 +654,45 @@ const DeckList: React.FC = () => {
     }
   };
 
+  // Hero section drag and drop state and handlers
+  const [isHeroDraggingOver, setIsHeroDraggingOver] = useState(false);
+  const heroDragCounterRef = useRef(0);
+
+  const handleHeroDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    heroDragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsHeroDraggingOver(true);
+    }
+  };
+
+  const handleHeroDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleHeroDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    heroDragCounterRef.current--;
+    if (heroDragCounterRef.current === 0) {
+      setIsHeroDraggingOver(false);
+    }
+  };
+
+  const handleHeroDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    heroDragCounterRef.current = 0;
+    setIsHeroDraggingOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      setUploadedFiles(prev => [...prev, ...files]);
+    }
+  };
+
   const handleLinkAdd = () => {
     if (linkInput.trim()) {
       // For now just clear it, in real app we'd validate and add to a list
@@ -743,6 +782,15 @@ const DeckList: React.FC = () => {
     stylePreferences?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
+    uploadedFiles?: File[];
+    uploadedMedia?: Array<{
+      id: string;
+      name: string;
+      type: string;
+      content?: string;
+      url?: string;
+      size?: number;
+    }>;
   } | null>(null);
 
   // Handle "Create with AI" - show conversational onboarding
@@ -757,8 +805,19 @@ const DeckList: React.FC = () => {
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
     themeChanges?: any;
+    uploadedFiles?: File[];
+    uploadedMedia?: Array<{
+      id: string;
+      name: string;
+      type: string;
+      content?: string;
+      url?: string;
+      size?: number;
+    }>;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
+    console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
+    console.log('[DeckList] Uploaded media from agent:', data.uploadedMedia?.length || 0, data.uploadedMedia);
 
     // Hide conversational onboarding
     setShowConversationalOnboarding(false);
@@ -1529,11 +1588,16 @@ const DeckList: React.FC = () => {
                   <ConversationalOnboarding
                     initialMessage={heroInput}
                     slideCount={slideCount}
+                    initialUploadedFiles={uploadedFiles}
                     onComplete={(data) => {
                       setShowConversationalOnboarding(false);
+                      setUploadedFiles([]); // Clear files after handoff
                       handleConversationalComplete(data);
                     }}
-                    onCancel={() => setShowConversationalOnboarding(false)}
+                    onCancel={() => {
+                      setShowConversationalOnboarding(false);
+                      // Keep uploadedFiles so user can try again
+                    }}
                     onProcessingChange={setIsAgentThinking}
                   />
                 </div>
@@ -1973,7 +2037,26 @@ const DeckList: React.FC = () => {
                           <div className="relative max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
                             <div className="relative group">
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
-                              <div className="relative flex items-center bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10">
+                              <div
+                                className={cn(
+                                  "relative flex items-center bg-white rounded-2xl shadow-xl shadow-slate-200/50 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50" : "border-slate-200"
+                                )}
+                                onDragEnter={handleHeroDragEnter}
+                                onDragOver={handleHeroDragOver}
+                                onDragLeave={handleHeroDragLeave}
+                                onDrop={handleHeroDrop}
+                              >
+                                {/* Drop Zone Overlay */}
+                                {isHeroDraggingOver && (
+                                  <div className="absolute inset-0 bg-orange-50 flex items-center justify-center rounded-2xl bg-opacity-90 backdrop-blur-sm z-20">
+                                    <p className="text-orange-600 font-medium flex items-center flex-col">
+                                      <Upload className="h-6 w-6 mb-2" />
+                                      <span className="text-center">Drop files here</span>
+                                      <span className="text-xs mt-1 text-orange-500/70">Images, PDFs, Excel, PowerPoint</span>
+                                    </p>
+                                  </div>
+                                )}
 
                                 {/* Input Field with Typewriter Placeholder */}
                                 <div className="flex-1 relative">

@@ -564,18 +564,19 @@ class SimpleDeckComposer(IDeckComposer):
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
             
-            # Default theme as fallback only
+            # Default theme as fallback only - used when ThemeDirector/Huemint fails
+            # This should rarely be used since ThemeDirector generates via Huemint
             default_theme = ThemeSpec.from_dict({
-                "theme_name": "Modern Professional",
+                "theme_name": "Huemint Fallback",
                 "visual_style": {
-                    "background_style": "gradient",
+                    "background_style": "solid",
                     "image_effects": ["ken-burns"],
                     "transition_style": "smooth"
                 },
                 "color_palette": {
-                    "primary": "#2563eb",
-                    "secondary": "#7c3aed",
-                    "accent": "#f59e0b",
+                    "primary": "#10b981",
+                    "secondary": "#059669",
+                    "accent": "#f97316",
                     "background": "#ffffff",
                     "text": "#1f2937"
                 }
@@ -632,21 +633,34 @@ class SimpleDeckComposer(IDeckComposer):
                         'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
                         'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation'
                     ])
-                    
+
                     current_hero = existing_theme_data.get('typography', {}).get('hero_title', {}).get('family', 'unknown')
                     current_body = existing_theme_data.get('typography', {}).get('body_text', {}).get('family', 'unknown')
-                    
+                    theme_name = existing_theme_data.get('theme_name', 'Unknown')
+
                     # Check if cached theme has boring fonts
                     boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans']
                     has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
-                    
-                    if is_fun_topic and has_boring_fonts:
-                        logger.debug(f"FUN TOPIC WITH BORING CACHED FONTS DETECTED!")
+
+                    # CRITICAL: Check for generic/default theme names - these should ALWAYS regenerate with Huemint
+                    is_generic_theme = theme_name in ["Modern", "Modern Professional", "Default Theme", "Default", "Standard", "Generic", "Huemint Fallback"]
+
+                    should_skip = False
+                    skip_reason = ""
+
+                    if is_generic_theme:
+                        should_skip = True
+                        skip_reason = f"Generic theme '{theme_name}' detected - forcing Huemint regeneration"
+                    elif is_fun_topic and has_boring_fonts:
+                        should_skip = True
+                        skip_reason = f"Fun topic with boring fonts ({current_hero}/{current_body})"
+
+                    if should_skip:
+                        logger.debug(f"THEME REGENERATION TRIGGERED (1st DB check)!")
                         logger.debug(f"  Title: {deck_outline.title}")
-                        logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
-                        logger.debug(f"  FORCING theme regeneration to get playful fonts!")
-                        logger.debug(f"  Ignoring cached theme...\n")
-                        logger.info(f"[DECK COMPOSER] Fun topic '{deck_outline.title}' has boring cached fonts - forcing regeneration")
+                        logger.debug(f"  Reason: {skip_reason}")
+                        logger.debug(f"  FORCING theme regeneration!")
+                        logger.info(f"[DECK COMPOSER] {skip_reason} - forcing regeneration")
                         existing_theme_data = None  # Skip cached theme!
                     else:
                         logger.debug(f"FOUND EXISTING THEME IN DATABASE")
@@ -804,8 +818,8 @@ class SimpleDeckComposer(IDeckComposer):
                         should_regenerate = False
                         reason = ""
                         
-                        # Broader check for generic themes - if it's just "Modern", it's likely a fallback
-                        is_generic_theme = theme_name in ["Modern", "Default Theme", "Default", "Standard"]
+                        # Broader check for generic themes - if it's a known fallback/default, regenerate with Huemint
+                        is_generic_theme = theme_name in ["Modern", "Modern Professional", "Default Theme", "Default", "Standard", "Generic", "Huemint Fallback"]
                         
                         if is_fun_topic and has_boring_fonts:
                             should_regenerate = True

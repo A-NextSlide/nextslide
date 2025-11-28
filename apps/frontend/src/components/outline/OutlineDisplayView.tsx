@@ -531,6 +531,14 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
         const onThemePreview = (e: CustomEvent) => {
           try {
             const d: any = (e as any).detail || {};
+
+            // Handle theme_loading event - keep loading state active
+            if (d?.type === 'theme_loading') {
+              console.log('[OutlineDisplayView] 🎨 Theme loading started:', d?.message);
+              setIsThemeLoading(true);
+              return;
+            }
+
             const isThemeArtifact = d?.type === 'artifact' && String(d?.kind).toLowerCase() === 'theme_json';
             const isThemeGenerated = d?.type === 'theme_generated' || (!!d?.theme && (d?.palette || d?.theme?.color_palette));
             if (!isThemeArtifact && !isThemeGenerated) return;

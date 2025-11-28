@@ -179,7 +179,8 @@ export interface StreamingEvent {
   'outline_complete' | 'deck_ready' | 'deck_created' | 'deck_created_with_warning' |
   'narrative_flow_started' | 'narrative_flow_ready' | 'narrative_flow_pending' |
   'error' | 'images_collected' | 'images_ready_for_selection' | 'data' | 'complete' |
-  'deck_creation_started' | 'deck_complete' | 'creating_deck';
+  'deck_creation_started' | 'deck_complete' | 'creating_deck' |
+  'theme_loading' | 'theme_ready';
 
   // Common fields
   message?: string;
@@ -219,6 +220,20 @@ export interface StreamingEvent {
       data: any[];
     };
     taggedMedia?: TaggedMedia[];
+  };
+
+  // For theme_ready event
+  theme?: {
+    font?: string;
+    bodyFont?: string;
+    logoUrl?: string;
+    colors?: {
+      background?: string;
+      text?: string;
+      accent1?: string;
+      accent2?: string;
+      accent3?: string;
+    };
   };
 
   // For outline_complete event (Progress: 85%)
@@ -1055,6 +1070,14 @@ export class OutlineAPI {
       colorPreference?: ColorConfig | null;
       enableResearch?: boolean;
       autoSelectImages?: boolean;
+      uploadedMedia?: Array<{
+        id: string;
+        name: string;
+        type: string;
+        content?: string;
+        url?: string;
+        size?: number;
+      }>;
     } = {},
     onProgress?: StreamingCallback
   ): Promise<DeckOutline> {
@@ -1117,6 +1140,10 @@ export class OutlineAPI {
       console.warn('[outlineApi] request.async_images:', request.async_images);
       console.warn('[outlineApi] Full request:', JSON.stringify(request, null, 2));
       if (filesData.length > 0) request.files = filesData;
+      if (options.uploadedMedia && options.uploadedMedia.length > 0) {
+        request.uploadedMedia = options.uploadedMedia;
+        console.warn('[outlineApi] 📸 Including uploadedMedia:', options.uploadedMedia.length, 'items');
+      }
       if (options.fontPreference != null && options.fontPreference !== '') request.fontPreference = options.fontPreference;
       if (options.colorPreference != null) request.colorPreference = options.colorPreference;
       if (chatCompletionSystemPrompt && chatCompletionSystemPrompt.trim().length > 0) request.chatCompletionSystemPrompt = chatCompletionSystemPrompt;
@@ -1475,7 +1502,8 @@ export async function* streamOutlineAgentChat(request: {
   message: string;
   chat_history: Array<{ role: string; content: string }>;
   context?: any;
-}): AsyncGenerator<{ type: string; content?: string; data?: any; message?: string }, void, unknown> {
+  files?: Array<{ id: string; name: string; type: string; content?: string; url?: string; size?: number }>;
+}): AsyncGenerator<{ type: string; content?: string; data?: any; message?: string; status?: string; file_name?: string; file_index?: number; total_files?: number; analyses?: any[] }, void, unknown> {
   const url = `${API_CONFIG.BASE_URL}/outline-agent/chat`;
 
   const response = await fetch(url, {
@@ -1526,6 +1554,17 @@ export async function* streamOutlineAgentChat(request: {
             } catch (e) {
               console.error('Failed to parse outline data:', e);
             }
+          } else if (event.type === 'status') {
+            // Pass through status events (researching, file analysis, etc.)
+            yield {
+              type: 'status',
+              status: event.status,
+              message: event.message,
+              file_name: event.file_name,
+              file_index: event.file_index,
+              total_files: event.total_files,
+              analyses: event.analyses
+            };
           } else if (event.type === 'error') {
             yield { type: 'error', message: event.message };
           } else if (event.type === 'done') {

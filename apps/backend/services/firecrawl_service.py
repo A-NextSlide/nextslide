@@ -138,6 +138,144 @@ class _FirecrawlService:
             logger.warning(f"Firecrawl crawl error: {e}")
             return {"success": False, "error": str(e)}
 
+    def extract_media(
+        self,
+        url: str,
+        media_types: Optional[List[str]] = None,
+        include_markdown: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Extract media URLs (images, GIFs, videos) from a website.
+
+        Args:
+            url: The URL to scrape
+            media_types: Filter for specific types like ['gif', 'png', 'jpg', 'mp4', 'webm']
+                        If None, returns all media
+            include_markdown: Also return markdown content for context
+
+        Returns:
+            Dict with 'images' (list of URLs), 'markdown' (optional), and 'metadata'
+        """
+        media_types = media_types or []
+        formats = ["images"]
+        if include_markdown:
+            formats.append("markdown")
+
+        try:
+            result = self.scrape(url, formats=formats)
+            if not result.get("success"):
+                return result
+
+            data = result.get("data", {})
+
+            # Extract image URLs from the response
+            images = []
+
+            # Handle different response shapes from Firecrawl
+            if isinstance(data, dict):
+                # Direct images array
+                raw_images = data.get("images", [])
+                if not raw_images:
+                    # Try nested under 'data'
+                    raw_images = (data.get("data") or {}).get("images", [])
+
+                for img in raw_images:
+                    img_url = None
+                    if isinstance(img, str):
+                        img_url = img
+                    elif isinstance(img, dict):
+                        img_url = img.get("src") or img.get("url") or img.get("imageUrl")
+                    else:
+                        # Pydantic model from SDK
+                        img_url = getattr(img, "src", None) or getattr(img, "url", None) or getattr(img, "imageUrl", None)
+
+                    if img_url:
+                        # Filter by media type if specified
+                        if media_types:
+                            img_lower = img_url.lower()
+                            if any(f".{mt}" in img_lower or f"/{mt}" in img_lower for mt in media_types):
+                                images.append(img_url)
+                        else:
+                            images.append(img_url)
+
+            return {
+                "success": True,
+                "data": {
+                    "images": images,
+                    "markdown": data.get("markdown", ""),
+                    "metadata": data.get("metadata", {}),
+                    "source_url": url,
+                }
+            }
+        except Exception as e:
+            logger.warning(f"Firecrawl extract_media error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def extract_gifs(self, url: str) -> Dict[str, Any]:
+        """
+        Convenience method to extract only GIF URLs from a website.
+
+        Args:
+            url: The URL to scrape
+
+        Returns:
+            Dict with 'gifs' list and metadata
+        """
+        result = self.extract_media(url, media_types=["gif"])
+        if result.get("success"):
+            result["data"]["gifs"] = result["data"].pop("images", [])
+        return result
+
+    def extract_site_content(
+        self,
+        url: str,
+        extract_prompt: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Extract rich content from a site including media and structured data.
+        Useful for pulling content to use in presentations.
+
+        Args:
+            url: The URL to scrape
+            extract_prompt: Optional prompt for AI-powered extraction
+
+        Returns:
+            Dict with images, gifs, markdown, and optionally extracted JSON
+        """
+        try:
+            # Get media and markdown
+            media_result = self.extract_media(url, include_markdown=True)
+            if not media_result.get("success"):
+                return media_result
+
+            data = media_result.get("data", {})
+
+            # Separate GIFs from other images
+            all_images = data.get("images", [])
+            gifs = [img for img in all_images if ".gif" in img.lower()]
+            static_images = [img for img in all_images if ".gif" not in img.lower()]
+
+            result_data = {
+                "images": static_images,
+                "gifs": gifs,
+                "all_media": all_images,
+                "markdown": data.get("markdown", ""),
+                "metadata": data.get("metadata", {}),
+                "source_url": url,
+            }
+
+            # If a prompt is provided, also do AI extraction
+            if extract_prompt:
+                json_result = self.extract_json(url, extract_prompt)
+                if json_result.get("success"):
+                    result_data["extracted"] = json_result.get("data", {}).get("json", {})
+
+            return {"success": True, "data": result_data}
+
+        except Exception as e:
+            logger.warning(f"Firecrawl extract_site_content error: {e}")
+            return {"success": False, "error": str(e)}
+
     def extract_json(self, url: str, prompt: str, timeout: int = 120000) -> Dict[str, Any]:
         """Extract without schema using a prompt.
         See: Extracting without schema in Firecrawl docs.

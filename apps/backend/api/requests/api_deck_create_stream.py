@@ -123,6 +123,45 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                     slide.setdefault('speaker_notes', "")
                     slide.setdefault('media_items', [])
 
+                # ✅ CRITICAL: Distribute uploadedMedia from outline to slides as taggedMedia
+                # This ensures images uploaded through chat are available for slide generation
+                uploaded_media = outline_dict.get('uploadedMedia', [])
+                if uploaded_media:
+                    logger.info(f"[DECK_CREATE] 📎 Found {len(uploaded_media)} uploadedMedia items at outline level")
+                    # Convert to TaggedMediaItem format and distribute to all slides
+                    for i, slide in enumerate(outline_dict.get('slides', [])):
+                        # Only add to slides that don't already have taggedMedia
+                        if not slide.get('taggedMedia'):
+                            slide['taggedMedia'] = []
+
+                        # Add all uploaded images to this slide's taggedMedia
+                        for media in uploaded_media:
+                            if isinstance(media, dict):
+                                # Get MIME type and base64 content
+                                mime_type = media.get('type', 'image/png')
+                                content_b64 = media.get('content', '')
+
+                                # Create a data URL for preview if we have base64 content
+                                preview_url = media.get('url') or media.get('previewUrl')
+                                if not preview_url and content_b64:
+                                    # Create a data URL from base64 content
+                                    preview_url = f"data:{mime_type};base64,{content_b64}"
+
+                                # Convert uploadedMedia format to TaggedMediaItem format
+                                tagged_item = {
+                                    'id': media.get('id', str(uuid.uuid4())),
+                                    'filename': media.get('name', media.get('filename', 'uploaded_file')),
+                                    'type': 'image' if mime_type.startswith('image/') else 'other',
+                                    'content': content_b64,  # Base64 content
+                                    'previewUrl': preview_url,  # Data URL for frontend rendering
+                                    'interpretation': None,
+                                    'status': 'processed',
+                                    'metadata': {'source': 'user_upload', 'originalType': mime_type}
+                                }
+                                slide['taggedMedia'].append(tagged_item)
+
+                        logger.info(f"[DECK_CREATE] 📎 Slide {i+1} now has {len(slide['taggedMedia'])} taggedMedia items")
+
                 deck_outline = DeckOutline(**outline_dict)
                 
                 # Debug logging for taggedMedia

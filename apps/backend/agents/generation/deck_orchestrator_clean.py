@@ -681,7 +681,7 @@ class DeckOrchestrator(IDeckOrchestrator):
         parts = []
         
         # Theme info
-        parts.append(f"Theme: {theme.get('theme_name', 'Modern')}")
+        parts.append(f"Theme: {theme.get('theme_name', 'Adaptive')}")
         parts.append(f"Philosophy: {theme.get('design_philosophy', 'Clean and professional')}")
         
         # Colors
