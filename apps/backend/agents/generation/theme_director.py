@@ -2232,9 +2232,30 @@ Generate a creative, specific design style description (1-2 sentences):"""
         
         if matched_fonts:
             result['hero'] = matched_fonts[0]
-            result['body'] = matched_fonts[1] if len(matched_fonts) > 1 else 'Roboto'
+            if len(matched_fonts) > 1:
+                result['body'] = matched_fonts[1]
+            else:
+                # CRITICAL: Hero and body MUST be different fonts!
+                # Pick a complementary body font that pairs well with the brand's hero font
+                complementary_body_fonts = {
+                    'Montserrat': 'Open Sans',
+                    'Roboto': 'Lato',
+                    'Open Sans': 'Roboto',
+                    'Lato': 'Open Sans',
+                    'Poppins': 'Inter',
+                    'Inter': 'Roboto',
+                    'Raleway': 'Open Sans',
+                    'Playfair Display': 'Lato',
+                    'Oswald': 'Open Sans',
+                    'Bebas Neue': 'Roboto',
+                    'Source Sans Pro': 'Lato',
+                    'Nunito': 'Open Sans',
+                    'Work Sans': 'Roboto',
+                }
+                result['body'] = complementary_body_fonts.get(matched_fonts[0], 'Roboto' if matched_fonts[0] != 'Roboto' else 'Open Sans')
+                logger.info(f"[THEME] Single brand font '{matched_fonts[0]}' - using complementary body font '{result['body']}'")
             result['source'] = 'brand_scraped'
-        
+
         return result
     
     def _select_contextual_fonts(

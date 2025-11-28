@@ -1448,7 +1448,23 @@ Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
                     }
                 elif len(db_fonts) == 1:
                     validated_font = self._validate_font_name(db_fonts[0])
-                    fonts = {"hero": validated_font, "body": validated_font}
+                    # CRITICAL: Hero and body MUST be different fonts!
+                    # Pick a complementary body font that pairs well with the brand's hero font
+                    complementary_body_fonts = {
+                        'Montserrat': 'Open Sans',
+                        'Roboto': 'Lato',
+                        'Open Sans': 'Roboto',
+                        'Lato': 'Open Sans',
+                        'Poppins': 'Inter',
+                        'Inter': 'Roboto',
+                        'Raleway': 'Open Sans',
+                        'Playfair Display': 'Lato',
+                        'Oswald': 'Open Sans',
+                        'Bebas Neue': 'Roboto',
+                    }
+                    body_font = complementary_body_fonts.get(validated_font, 'Roboto' if validated_font != 'Roboto' else 'Open Sans')
+                    fonts = {"hero": validated_font, "body": body_font}
+                    logger.info(f"[THEME] Single brand font '{validated_font}' - using complementary body font '{body_font}'")
                 logger.info(f"[THEME] Palette fonts override - Hero: {fonts.get('hero')}, Body: {fonts.get('body')}")
             
             # Tag source in color_palette for downstream precedence logic
