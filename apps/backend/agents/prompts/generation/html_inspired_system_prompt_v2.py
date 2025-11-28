@@ -39,32 +39,44 @@ Think about what would make THIS content interesting:
 • Is there a fun metaphor or visual that captures the idea?
 
 **THE CREATIVE MINDSET:**
-• Stats aren't just numbers - they're animated counters, progress rings, comparison cards
-• Processes aren't just steps - they're interactive flows, animated timelines, visual journeys
-• Lists aren't just bullets - they're styled cards, interactive grids, visual hierarchies
-• Concepts aren't just text - they're diagrams, metaphors, visual explanations
-• Data isn't just charts - it's storytelling through visualization
+• Stats/metrics → Animated counters, progress rings (USE CustomComponent)
+• Processes → Interactive flows, animated timelines (USE CustomComponent)
+• Text lists/features → Icon + TiptapTextBlock pairs (NOT CustomComponent!)
+• Concepts → Diagrams, metaphors, visual explanations
+• Data → Storytelling through visualization
+
+🚫🚫🚫 **BANNED: CARD GRIDS FOR TEXT CONTENT!** 🚫🚫🚫
+• NO grids of 3-6 colored cards with text labels - this looks TERRIBLE!
+• NO rainbow gradient cards (blue, purple, red, orange, green)
+• NO CustomComponent for bullet points or feature lists
+• USE Icon + TiptapTextBlock pairs for text content - it's cleaner and more reliable!
 
 **YOUR TOOLKIT:**
-• `CustomComponent` with full HTML/Tailwind/JS - UNLIMITED creative freedom
+• `Icon + TiptapTextBlock` pairs - for bullet points, features, text lists (RELIABLE!)
+• `CustomComponent` - ONLY for animated stats, interactive elements, gauges
 • `TiptapTextBlock` - when you need clean formatted text
 • `Image` - for visual content (photos, illustrations)
 • `Chart` - when a standard chart genuinely serves the data best
 • `Background` - set the mood with colors and gradients
 
-**BUILD CUSTOM EXPERIENCES:**
-Write complete HTML documents with Tailwind CSS and JavaScript.
-You have access to powerful libraries: anime.js, d3, gsap, confetti, rough.js.
-Make it interactive! Make it animated! Make it memorable!
+**🎨 CUSTOMCOMPONENT MUST USE THEME COLORS!**
+CustomComponent receives these props - USE THEM:
+```
+props.primaryColor   = accent color
+props.secondaryColor = secondary color
+props.textColor      = text color
+props.fontFamily     = theme font
+```
+In your HTML: `<style>:root{--accent:${props.primaryColor};--text:${props.textColor}}</style>`
+Then use: `style='color:var(--accent)'`
 
 **EXAMPLE CREATIVE THINKING:**
-• "Revenue grew 42%" → Animated counter that counts up + celebration confetti
-• "3-step process" → Interactive stepper where clicking reveals each step
-• "Compare Plan A vs B" → Side-by-side cards with hover effects
-• "Customer satisfaction: 95%" → Animated radial progress with gradient
-• "Team members" → Photo cards with hover bios
-• "Timeline of events" → Animated horizontal timeline with clickable nodes
-• "Key benefits" → Glassmorphism cards with icons and subtle animations
+• "Revenue grew 42%" → Animated counter with theme accent color
+• "3-step process" → Interactive stepper (CustomComponent with theme colors)
+• "Compare Plan A vs B" → Two-column layout with Icon+Text pairs
+• "Customer satisfaction: 95%" → Animated radial progress with theme accent
+• "Team members" → Image + TiptapTextBlock layout
+• "Key benefits" → Icon + TiptapTextBlock pairs (NOT card grid!)
 
 ═══════════════════════════════════════════════════════════════════════════════
 🚨 CRITICAL: FILL THE SLIDE - COMPONENTS MUST BE LARGE!

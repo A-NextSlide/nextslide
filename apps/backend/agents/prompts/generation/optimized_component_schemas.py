@@ -91,32 +91,54 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   • **CONTENT FITTING**: 🚨 CRITICAL! Text MUST fit the box. Use `truncate`, `line-clamp-2`, or keep text short.
   • **SCROLLING**: Avoid scrolling if possible. Fit content to the container height.
 
-  🚫🚫🚫 **BANNED DESIGNS - NEVER CREATE THESE:** 🚫🚫🚫
-  • ❌ **RAINBOW GRADIENT CARDS** - NO basic colored cards (blue, purple, red, orange, green) in a grid!
-  • ❌ **SOLID COLOR CARDS WITH JUST TEXT** - These look cheap and amateur
-  • ❌ **6-CARD GRIDS** - Don't create 2x3 or 3x2 grids of simple colored boxes
-  • ❌ **BASIC GRADIENTS** - Linear gradients on cards without depth, shadows, or effects
+  🚫🚫🚫 **ABSOLUTELY BANNED - NEVER CREATE:** 🚫🚫🚫
+  • ❌ **CARD GRIDS FOR TEXT** - NO grids of 3-6 colored cards with text! Use Icon+Text instead!
+  • ❌ **RAINBOW COLORS** - NO blue/purple/red/orange/green card grids - looks TERRIBLE
+  • ❌ **HARDCODED COLORS** - NO `from-indigo-500`, `text-cyan-400` - USE THEME PROPS!
+  • ❌ **CONTENT IN CARDS** - Text content should be Icon+TiptapTextBlock, NOT CustomComponent!
 
-  ✅ **FOR TEXT CONTENT (bullet points, features, descriptions):**
-  • DON'T use CustomComponent at all - use Icon + TiptapTextBlock pairs instead!
-  • Icon+Text is MORE RELIABLE and looks cleaner than CustomComponent cards
-  • CustomComponent should ONLY be used for: animated stats, interactive elements, data visualizations
+  🎨🎨🎨 **MANDATORY: USE THEME COLORS IN CUSTOMCOMPONENT!** 🎨🎨🎨
 
-  📦 **PREMIUM DESIGN TEMPLATES - USE THESE AS INSPIRATION:**
-
-  🔥 **GLASSMORPHISM STATS GRID (Dark Theme):**
-  ```json
-  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:'Inter',sans-serif}@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,0.3)}50%{box-shadow:0 0 40px rgba(99,102,241,0.6)}}@keyframes countUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.stat-card{animation:countUp 0.6s ease-out forwards;opacity:0;transition:all 0.3s ease}.stat-card:hover{transform:translateY(-5px) scale(1.02);background:rgba(255,255,255,0.1);cursor:pointer}.stat-card:nth-child(1){animation-delay:0.1s}.stat-card:nth-child(2){animation-delay:0.2s}.stat-card:nth-child(3){animation-delay:0.3s}.glow{animation:glow 2s ease-in-out infinite}</style></head><body class='w-full h-full p-8 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'><div class='grid grid-cols-3 gap-6 w-full max-w-5xl'><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10 glow'><div class='text-indigo-400 text-sm font-semibold uppercase tracking-wider mb-2'>Market Cap</div><div class='text-5xl font-black text-white mb-1'>$2.4T</div><div class='text-emerald-400 text-lg font-medium'>+18.5% YoY</div></div><div class='stat-card bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/10'><div class='text-pink-400 text-sm font-semibold uppercase tracking-wider mb-2'>Growth Rate</div><div class='text-5xl font-black text-white mb-1'>127%</div><div class='text-white/60 text-lg'>vs 89% industry avg</div></div><div class='stat-card bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 shadow-2xl shadow-indigo-500/30'><div class='text-white/80 text-sm font-semibold uppercase tracking-wider mb-2'>Projection</div><div class='text-5xl font-black text-white mb-1'>$8.1T</div><div class='text-white/80 text-lg font-medium'>by 2034</div></div></div></body></html>"
+  CustomComponent receives these props - YOU MUST USE THEM:
   ```
-  
-  🌈 **GRADIENT HERO STATS (Light Theme):**
-  ```json
-  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap' rel='stylesheet'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}body{font-family:'Plus Jakarta Sans',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;padding:40px}</style></head><body><div class='w-full h-full flex flex-col items-center justify-center text-center'><h1 class='text-7xl font-extrabold text-white mb-4 drop-shadow-2xl'>$1.74 Trillion</h1><p class='text-2xl text-white/90 font-medium mb-8'>2025 Global Market Size</p><div class='flex gap-8'><div class='bg-white/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-white/30'><div class='text-4xl font-bold text-white'>17.2%</div><div class='text-white/80 text-sm'>CAGR</div></div><div class='bg-white/20 backdrop-blur-md rounded-2xl px-8 py-4 border border-white/30'><div class='text-4xl font-bold text-white'>4.2x</div><div class='text-white/80 text-sm'>Growth by 2034</div></div></div></div></body></html>"
+  props.primaryColor   = "{{accent}}"      // Main accent color
+  props.secondaryColor = "{{secondary}}"   // Secondary color
+  props.textColor      = "{{text}}"        // Text color
+  props.fontFamily     = "{{bodyFont}}"    // Theme font
   ```
-  
-  ⚡ **NEON METRICS (Cyberpunk Style):**
+
+  **HOW TO USE IN IFRAME HTML:**
+  ```html
+  <style>
+    :root {
+      --accent: ${props.primaryColor || '#6366f1'};
+      --text: ${props.textColor || '#1f2937'};
+      --font: ${props.fontFamily || 'Inter'};
+    }
+    .accent-text { color: var(--accent); }
+    .main-text { color: var(--text); font-family: var(--font); }
+  </style>
+  ```
+
+  ✅ **WHEN TO USE CUSTOMCOMPONENT:**
+  • Animated counters/stats with numbers counting up
+  • Interactive elements (quizzes, calculators, polls)
+  • Animated progress bars/gauges
+  • Visual data displays (NOT for text lists!)
+
+  ❌ **WHEN NOT TO USE CUSTOMCOMPONENT:**
+  • Bullet point lists → Use Icon + TiptapTextBlock pairs
+  • Feature descriptions → Use Icon + TiptapTextBlock pairs
+  • Any text-heavy content → Use Icon + TiptapTextBlock pairs
+
+  📦 **THEME-AWARE TEMPLATE - ANIMATED STAT COUNTER:**
   ```json
-  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}body{font-family:system-ui;background:#0a0a0f}@keyframes neon{0%,100%{text-shadow:0 0 10px #0ff,0 0 20px #0ff,0 0 30px #0ff}50%{text-shadow:0 0 20px #0ff,0 0 40px #0ff,0 0 60px #0ff}}.neon-text{animation:neon 2s ease-in-out infinite}</style></head><body class='w-full h-full p-10 flex items-center justify-center'><div class='grid grid-cols-2 gap-8 w-full'><div class='bg-gradient-to-br from-cyan-500/10 to-blue-500/10 rounded-3xl p-8 border border-cyan-500/30'><div class='text-cyan-400 text-xs uppercase tracking-[0.3em] mb-4'>Market Size 2025</div><div class='text-6xl font-black text-white neon-text'>$1.74T</div></div><div class='bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-3xl p-8 border border-purple-500/30'><div class='text-purple-400 text-xs uppercase tracking-[0.3em] mb-4'>Growth Rate</div><div class='text-6xl font-black text-white' style='text-shadow:0 0 30px #f0f'>17.23%</div></div><div class='col-span-2 bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl p-8 border border-emerald-500/20'><div class='flex justify-between items-center'><div><div class='text-emerald-400 text-xs uppercase tracking-[0.3em] mb-2'>Asia Pacific Dominance</div><div class='text-4xl font-bold text-white'>40.71% Market Share</div></div><div class='text-right'><div class='text-3xl font-black text-emerald-400'>$2.96T</div><div class='text-white/60'>by 2034</div></div></div></div></div></body></html>"
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><style>:root{--accent:${props.primaryColor || '#6366f1'};--text:${props.textColor || '#1f2937'};--font:'${props.fontFamily || 'Inter'}',sans-serif}*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:var(--font);display:flex;align-items:center;justify-content:center}@keyframes countUp{from{opacity:0;transform:scale(0.5)}to{opacity:1;transform:scale(1)}}.stat{animation:countUp 0.8s ease-out forwards}</style></head><body><div class='text-center'><div class='stat text-8xl font-black' style='color:var(--accent)'>$2.5B</div><div class='mt-4 text-2xl font-medium' style='color:var(--text);opacity:0.8'>Annual Revenue</div></div></body></html>"
+  ```
+
+  📦 **THEME-AWARE TEMPLATE - PROGRESS GAUGE:**
+  ```json
+  "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><style>:root{--accent:${props.primaryColor || '#6366f1'};--text:${props.textColor || '#1f2937'}}*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden;background:transparent}.progress-ring{transform:rotate(-90deg)}.progress-ring circle{transition:stroke-dashoffset 1s ease-out}</style></head><body class='flex items-center justify-center h-full'><div class='text-center'><svg class='progress-ring w-48 h-48'><circle cx='96' cy='96' r='80' stroke='#e5e7eb' stroke-width='12' fill='none'/><circle cx='96' cy='96' r='80' stroke='var(--accent)' stroke-width='12' fill='none' stroke-dasharray='502' stroke-dashoffset='125' stroke-linecap='round'/></svg><div class='text-5xl font-bold mt-4' style='color:var(--text)'>75%</div><div class='text-xl mt-2' style='color:var(--text);opacity:0.7'>Completion Rate</div></div></body></html>"
   ```
   
   🔴 **CRITICAL - ALWAYS INCLUDE THESE STYLES:**
