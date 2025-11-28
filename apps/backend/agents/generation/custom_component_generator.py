@@ -340,6 +340,129 @@ animation: fadeIn 0.5s ease-out forwards;
 animation-delay: calc(var(--i) * 0.1s);
 
 ═══════════════════════════════════════════════════════════════
+🖼️ IMAGES - MAKE SLIDES VISUAL WITH SEARCHABLE IMAGES!
+═══════════════════════════════════════════════════════════════
+
+**ALWAYS ADD IMAGES when the content involves:**
+- People, characters, celebrities, historical figures → USE THEIR NAME as search!
+- Products, technology, objects → USE SPECIFIC PRODUCT/TECH NAME!
+- Places, cities, landmarks → USE LOCATION NAME!
+- Concepts that can be visualized → USE DESCRIPTIVE SEARCH TERM!
+- Team slides, about pages → USE "professional headshot" or role-specific search!
+
+**🎯 NAME YOUR PROPS WITH THE SEARCH QUERY!**
+The prop name becomes the search query. Be SPECIFIC:
+
+<script>
+  // ✅ GOOD - Specific, searchable names:
+  const elonMuskImage = props.elonMuskImage || 'placeholder';  // Searches "elon musk"
+  const teslaModelSImage = props.teslaModelSImage || 'placeholder';  // Searches "tesla model s"
+  const newYorkCityImage = props.newYorkCityImage || 'placeholder';  // Searches "new york city"
+  const professionalHeadshotImage = props.professionalHeadshotImage || 'placeholder';
+  const aiRobotImage = props.aiRobotImage || 'placeholder';  // Searches "ai robot"
+  const steveJobsImage = props.steveJobsImage || 'placeholder';  // Searches "steve jobs"
+
+  // ❌ BAD - Generic, unhelpful names:
+  const image1 = props.image1 || 'placeholder';  // What should this show??
+  const heroImage = props.heroImage || 'placeholder';  // Too vague!
+</script>
+
+**USE IMAGES EVERYWHERE - Including in interactive elements:**
+
+<!-- In collapsible panels/accordions -->
+<div class="panel" onclick="this.classList.toggle('open')">
+  <div class="panel-header">
+    <img src="${{steveJobsImage}}" class="avatar" style="width:60px;height:60px;border-radius:50%;object-fit:cover;">
+    <span>Steve Jobs</span>
+  </div>
+  <div class="panel-content">Biography content here...</div>
+</div>
+
+<!-- In animated cards -->
+<div class="card" style="animation: fadeIn 0.5s ease-out;">
+  <img src="${{productImage}}" style="width:100%;height:200px;object-fit:cover;border-radius:12px;">
+  <h3>Product Name</h3>
+</div>
+
+<!-- In timeline items -->
+<div class="timeline-item">
+  <img src="${{historicalEventImage}}" class="timeline-image">
+  <div class="timeline-content">...</div>
+</div>
+
+<!-- In comparison layouts -->
+<div class="compare-grid">
+  <div class="option-a">
+    <img src="${{option1Image}}" style="width:100%;height:150px;object-fit:cover;">
+    <h4>Option A</h4>
+  </div>
+  <div class="option-b">
+    <img src="${{option2Image}}" style="width:100%;height:150px;object-fit:cover;">
+    <h4>Option B</h4>
+  </div>
+</div>
+
+**IMAGE STYLING FOR INTERACTIVE ELEMENTS:**
+```css
+/* Smooth loading */
+img {{ opacity: 0; transition: opacity 0.3s; }}
+img[src]:not([src="placeholder"]) {{ opacity: 1; }}
+
+/* Hover effects */
+.card img {{ transition: transform 0.3s; }}
+.card:hover img {{ transform: scale(1.05); }}
+
+/* Circular avatars */
+.avatar {{ border-radius: 50%; object-fit: cover; }}
+
+/* Aspect ratio containers */
+.image-container {{ aspect-ratio: 16/9; overflow: hidden; }}
+.image-container img {{ width: 100%; height: 100%; object-fit: cover; }}
+```
+
+**WHEN TO ADD IMAGES:**
+✅ Character/person slides → Use their name: `elonMuskImage`, `beyonceImage`
+✅ Product showcases → Use product: `iphone15ProImage`, `teslaModelYImage`
+✅ Location/travel → Use place: `parisEiffelTowerImage`, `tokyoSkylineImage`
+✅ Team/about pages → Use role: `ceoHeadshotImage`, `professionalTeamImage`
+✅ Concept explanations → Use visual: `aiNeuralNetworkImage`, `cloudComputingImage`
+✅ Historical content → Use event/person: `moonLanding1969Image`, `martinLutherKingImage`
+✅ Comparisons → Use each option: `macbookProImage`, `surfaceLaptopImage`
+
+**REQUIRED IMAGE STYLES:**
+- Set explicit width/height or use aspect-ratio container
+- Add border-radius for modern look (8-16px for cards, 50% for avatars)
+- Use transition for smooth hover effects
+
+**SMART OBJECT-FIT SELECTION:**
+- `object-fit: cover` (DEFAULT) - photos, headshots, backgrounds - fills space, may crop edges
+- `object-fit: contain` - logos, icons, diagrams - shows complete image, may have gaps
+- `object-fit: fill` - rarely use, stretches/distorts
+
+```css
+/* Headshots/portraits/photos - COVER */
+.avatar, .headshot, .photo {{ object-fit: cover; }}
+
+/* Logos/icons/diagrams - CONTAIN */
+.logo, .icon, .diagram {{ object-fit: contain; }}
+```
+
+Examples:
+```javascript
+// Headshot (cover - fills circle, crops edges)
+const ceoHeadshotImage = props.ceoHeadshotImage || 'placeholder';
+<img src="${{ceoHeadshotImage}}" style="object-fit:cover; width:80px; height:80px; border-radius:50%;">
+
+// Logo (contain - shows full logo)
+const companyLogoImage = props.companyLogoImage || 'placeholder';
+<img src="${{companyLogoImage}}" style="object-fit:contain; width:120px; height:60px;">
+
+// Product photo (cover - fills card uniformly)
+const iphone15Image = props.iphone15Image || 'placeholder';
+<img src="${{iphone15Image}}" style="object-fit:cover; width:100%; height:200px; border-radius:12px;">
+```
+
+═══════════════════════════════════════════════════════════════
 🚫 ABSOLUTELY FORBIDDEN
 ═══════════════════════════════════════════════════════════════
 
@@ -352,6 +475,44 @@ animation-delay: calc(var(--i) * 0.1s);
 ❌ Tiny text (minimum 16px body, 24px+ headers)
 ❌ Empty space (fill the canvas beautifully)
 ❌ Basic flexbox columns of text (boring!)
+❌ Hardcoded image URLs (use props.imageName || 'placeholder' instead)
+
+═══════════════════════════════════════════════════════════════
+🎯 CRITICAL: CONTENT MUST FIT IN SLIDE (1920×1080)
+═══════════════════════════════════════════════════════════════
+
+**SLIDE CANVAS RULES (MANDATORY):**
+1. Content area after padding: ~1760×920px (with 80px body padding)
+2. ALL content MUST be visible without scrolling
+3. Use overflow: hidden on html,body - content that overflows is CUT OFF
+
+**FONT SIZE CONSTRAINTS:**
+- Main title (h1): MAX 56px (not 64px!) for slides with multiple sections
+- Subtitle: 20-24px
+- Card titles: 18-20px
+- Body text: 14-16px
+- Labels/metadata: 12-14px
+
+**LAYOUT FITTING RULES:**
+1. When using grids with multiple sections:
+   - Use `grid-template-rows: auto 1fr auto` with `minHeight: 0` on flex children
+   - Limit card/section heights - use `max-height` where needed
+2. For multi-section slides, calculate:
+   - Header area: ~100px max
+   - Main content: ~680-720px
+   - Footer/bottom bar: ~80-100px
+3. Use `min-height: 0` on grid/flex children to allow proper shrinking
+
+**CONTENT DENSITY:**
+- If content has 3+ info cards: reduce padding (24px instead of 40px)
+- If content has SVG/visualization + text: limit text to 2-3 cards max
+- Truncate long text with `text-overflow: ellipsis` where appropriate
+
+**TESTING CHECKLIST:**
+✓ Does everything fit in 1920×1080 without scrolling?
+✓ Is all content visible (no clipping)?
+✓ Are font sizes readable but not oversized?
+✓ Did you use `overflow: hidden` on html/body?
 
 ═══════════════════════════════════════════════════════════════
 📐 OUTPUT STRUCTURE
@@ -422,6 +583,9 @@ animation-delay: calc(var(--i) * 0.1s);
         hero_font = typography.get('hero_font', 'Inter')
         body_font = typography.get('body_font', 'Inter')
 
+        # Get presentation context (user's original request) for design cues
+        presentation_context = slide_context.get('presentation_context', '')
+
         # Analyze content to determine best component type
         content_analysis = self._analyze_content_for_component(content, slide_title)
 
@@ -436,18 +600,55 @@ animation-delay: calc(var(--i) * 0.1s);
 You are creating the ENTIRE slide, not just a component within it.
 - Dimensions: {width}x{height} (standard presentation slide)
 - YOU handle the background (use --bg: {bg_color})
-- Include proper margins/padding (80-120px from edges)
+- Include proper margins/padding (60-80px from edges)
 - This is a COMPLETE presentation slide design
+
+⚠️ CRITICAL - ALL CONTENT MUST FIT (NO OVERFLOW):
+- With 60px top/bottom + 80px left/right padding = content area is ~1760×960px
+- Content WILL BE CUT OFF if it exceeds this - there is NO scrolling
+- Plan your layout: Title (~80px) + Main (~700-750px) + Footer (~80px) = ~900px max
+
+FONT SIZE LIMITS (for multi-section slides):
+- Title: 48-56px max (NOT 64px)
+- Subtitle: 20-24px
+- Section headers: 18-22px
+- Body/cards: 14-16px
+- Small labels: 12-14px
+
+LAYOUT SAFETY:
+- Use min-height: 0 on flex/grid children to allow shrinking
+- Use max-height on sections that could grow
+- For 3+ cards: use smaller padding (20-24px instead of 40px)
+- For visualization + cards: limit to 2-3 cards max
 
 SLIDE STRUCTURE:
 1. Background: Use the theme background color with optional gradients/patterns
-2. Title Area: Prominent slide title at top
-3. Content Area: Main visualization/interaction in center
-4. Supporting Elements: Any icons, decorations that enhance the design
+2. Title Area: Prominent slide title at top (~80-100px)
+3. Content Area: Main visualization/interaction in center (~700px)
+4. Supporting Elements: Footer/takeaway bar (~80-100px)
 
 CRITICAL: Make it look like a premium keynote/presentation slide.
 Think Apple keynote, Stripe presentation, or TED talk quality.
 
+"""
+
+        # Build design context section if user provided design cues
+        design_context_section = ""
+        if presentation_context:
+            design_context_section = f"""
+═══════════════════════════════════════════════════════════════
+🎨 USER'S DESIGN PREFERENCES (Review for style/design cues ONLY)
+═══════════════════════════════════════════════════════════════
+
+The user originally requested: "{presentation_context}"
+
+⚠️ IMPORTANT: Review this ONLY for design/style hints such as:
+- Visual style preferences (minimalist, bold, playful, corporate, etc.)
+- Animation preferences (subtle, dramatic, none, etc.)
+- Layout preferences (clean, dense, spacious, etc.)
+- Mood/tone (professional, fun, serious, energetic, etc.)
+
+DO NOT use this for content - the slide content is provided separately below.
 """
 
         return f"""{full_slide_instructions}═══════════════════════════════════════════════════════════════
@@ -457,7 +658,7 @@ Think Apple keynote, Stripe presentation, or TED talk quality.
 Create a STUNNING {"full presentation slide" if is_full_slide else "interactive component"} for:
 
 SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-
+{design_context_section}
 CONTENT:
 {content}
 
@@ -1295,6 +1496,9 @@ animation-delay: calc(var(--i) * 0.1s);
         hero_font = typography.get('hero_font', 'Inter')
         body_font = typography.get('body_font', 'Inter')
 
+        # Get presentation context (user's original request) for design cues
+        presentation_context = slide_context.get('presentation_context', '')
+
         # Parse content for subtitle/presenter info
         subtitle = ""
         presenter = ""
@@ -1303,6 +1507,25 @@ animation-delay: calc(var(--i) * 0.1s);
             if lines:
                 subtitle = lines[0] if len(lines) > 0 else ""
                 presenter = lines[1] if len(lines) > 1 else ""
+
+        # Build design context section if user provided design cues
+        design_context_section = ""
+        if presentation_context:
+            design_context_section = f"""
+═══════════════════════════════════════════════════════════════
+🎨 USER'S DESIGN PREFERENCES (Review for style/design cues ONLY)
+═══════════════════════════════════════════════════════════════
+
+The user originally requested: "{presentation_context}"
+
+⚠️ IMPORTANT: Review this ONLY for design/style hints such as:
+- Visual style preferences (minimalist, bold, playful, corporate, etc.)
+- Animation preferences (subtle, dramatic, none, etc.)
+- Layout preferences (clean, dense, spacious, etc.)
+- Mood/tone (professional, fun, serious, energetic, etc.)
+
+DO NOT use this for content - the title slide content is provided separately.
+"""
 
         return f"""═══════════════════════════════════════════════════════════════
 🎬 CREATE A STUNNING TITLE SLIDE
@@ -1314,6 +1537,7 @@ PRESENTER/INFO: "{presenter}"
 TOTAL SLIDES: {total_slides}
 
 DIMENSIONS: {width}px × {height}px (FILL THE ENTIRE SPACE!)
+{design_context_section}
 
 ═══════════════════════════════════════════════════════════════
 🎨 DESIGN TOKENS

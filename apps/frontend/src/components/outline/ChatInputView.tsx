@@ -1153,9 +1153,9 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <PopoverTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 className="h-6 w-6 rounded-md text-[#383636]/70 dark:text-gray-300/70 hover:text-[#383636] dark:hover:text-gray-100 hover:bg-[#383636]/5 dark:hover:bg-gray-100/5 relative"
                               >
                                 <Link className="h-3 w-3" />
@@ -1168,15 +1168,49 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                             </PopoverTrigger>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="backdrop-blur-md bg-white/10 dark:bg-neutral-800/10 border border-[#383636]/30">
-                            <p className="text-xs">Reference websites, articles, or online resources</p>
+                            <p className="text-xs">Add reference links to pull content & branding</p>
                           </TooltipContent>
                         </Tooltip>
-                        <PopoverContent className="w-80" sideOffset={6} onCloseAutoFocus={(e) => e.preventDefault()}>
-                          <div className="space-y-2">
-                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Reference links</div>
+                        <PopoverContent className="w-96" sideOffset={6} onCloseAutoFocus={(e) => e.preventDefault()}>
+                          <div className="space-y-3">
+                            {/* Header */}
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500/10 to-purple-500/10 dark:from-blue-500/20 dark:to-purple-500/20 flex items-center justify-center">
+                                <Link className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Reference Links</div>
+                                <div className="text-[11px] text-neutral-500 dark:text-neutral-400">Add websites to extract content & style</div>
+                              </div>
+                            </div>
+
+                            {/* Features description */}
+                            <div className="bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg p-2.5 border border-blue-100/50 dark:border-blue-800/30">
+                              <div className="text-[10px] font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-1.5">What we'll extract</div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div className="flex items-center gap-1.5 text-[11px] text-neutral-600 dark:text-neutral-300">
+                                  <span className="h-1 w-1 rounded-full bg-blue-500"></span>
+                                  Content & facts
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] text-neutral-600 dark:text-neutral-300">
+                                  <span className="h-1 w-1 rounded-full bg-purple-500"></span>
+                                  Brand colors
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] text-neutral-600 dark:text-neutral-300">
+                                  <span className="h-1 w-1 rounded-full bg-green-500"></span>
+                                  Key data & stats
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] text-neutral-600 dark:text-neutral-300">
+                                  <span className="h-1 w-1 rounded-full bg-orange-500"></span>
+                                  Company info
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Input */}
                             <div className="flex gap-2">
                               <Input
-                                placeholder="https://example.com/article"
+                                placeholder="Paste a website URL..."
                                 value={linkDraft}
                                 onChange={(e) => setLinkDraft(e.target.value)}
                                 onKeyDown={(e) => {
@@ -1185,20 +1219,59 @@ const ChatInputView: React.FC<ChatInputViewProps> = ({
                                     handleAddReferenceLink();
                                   }
                                 }}
-                                className="h-8"
+                                className="h-9 text-sm"
                               />
-                              <Button size="sm" className="h-8" onClick={handleAddReferenceLink}>Add</Button>
+                              <Button
+                                size="sm"
+                                className="h-9 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
+                                onClick={handleAddReferenceLink}
+                              >
+                                Add
+                              </Button>
                             </div>
+
+                            {/* Links list */}
                             {Array.isArray(referenceLinks) && referenceLinks.length > 0 && (
-                              <div className="max-h-40 overflow-auto space-y-1">
-                                {referenceLinks.map((u, idx) => (
-                                  <div key={`${u}-${idx}`} className="flex items-center justify-between text-xs bg-zinc-100/60 dark:bg-white/5 border border-zinc-200 dark:border-zinc-700/50 rounded px-2 py-1">
-                                    <span className="truncate mr-2" title={u}>{u}</span>
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleRemoveReferenceLink(u)}>
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                ))}
+                              <div className="space-y-1.5">
+                                <div className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Added links ({referenceLinks.length})</div>
+                                <div className="max-h-32 overflow-auto space-y-1.5">
+                                  {referenceLinks.map((u, idx) => {
+                                    // Extract domain for display
+                                    let displayUrl = u;
+                                    try {
+                                      const urlObj = new URL(u);
+                                      displayUrl = urlObj.hostname.replace('www.', '');
+                                    } catch {}
+                                    return (
+                                      <div key={`${u}-${idx}`} className="flex items-center justify-between text-xs bg-white dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 py-1.5 group">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className="h-5 w-5 rounded bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                                            <Link className="h-2.5 w-2.5 text-neutral-500" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <div className="font-medium text-neutral-700 dark:text-neutral-200 truncate">{displayUrl}</div>
+                                            <div className="text-[10px] text-neutral-400 truncate" title={u}>{u}</div>
+                                          </div>
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                          onClick={() => handleRemoveReferenceLink(u)}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Empty state hint */}
+                            {(!referenceLinks || referenceLinks.length === 0) && (
+                              <div className="text-[11px] text-neutral-400 dark:text-neutral-500 text-center py-1">
+                                Add company websites, articles, or reports to inform your presentation
                               </div>
                             )}
                           </div>

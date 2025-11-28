@@ -970,6 +970,7 @@ const DeckList: React.FC = () => {
 
     // Clear any persisted outline state when navigating back to deck list
     resetOutline(); // Use the reset function to ensure clean state
+    setShowOutlineView(false);
     setIsOutlineChatGenerating(false);
     setIsOutlineProcessing(false);
 
@@ -1507,7 +1508,10 @@ const DeckList: React.FC = () => {
                 researchingSlides={new Set(researchingSlides)}
                 completedResearchSlides={completedResearchSlides.length}
                 totalResearchSlides={totalResearchSlides}
-                onBack={() => setCurrentOutline(null)}
+                onBack={() => {
+                  setCurrentOutline(null);
+                  setShowOutlineView(false);
+                }}
                 onGenerateDeck={handleGenerateDeck}
                 uploadedFiles={uploadedFiles}
                 generationProgress={generationProgress}

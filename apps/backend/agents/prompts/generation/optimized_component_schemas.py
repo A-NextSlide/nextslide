@@ -105,6 +105,32 @@ These "smart" components produce generic, boring designs. Always use CustomCompo
   • **CONTENT FITTING**: 🚨 CRITICAL! Text MUST fit the box. Use `truncate`, `line-clamp-2`, or keep text short.
   • **SCROLLING**: Avoid scrolling if possible. Fit content to the container height.
 
+  🚨🚨🚨 **CRITICAL: CONTENT MUST FIT IN SLIDE (1920×1080)** 🚨🚨🚨
+
+  **SLIDE CANVAS CONSTRAINTS:**
+  • Canvas size: 1920×1080 pixels (NO scrolling, overflow is CUT OFF)
+  • With 60-80px padding: content area is ~1760×920px
+  • Layout budget: Header 80-100px + Main 700-750px + Footer 80-100px = 900px max
+
+  **FONT SIZE LIMITS FOR MULTI-SECTION SLIDES:**
+  • Title (h1): MAX 48-56px (NOT 64px!)
+  • Subtitle: 20-24px
+  • Section headers: 18-22px
+  • Body/card text: 14-16px
+  • Labels/metadata: 12-14px
+
+  **LAYOUT SAFETY RULES:**
+  • Use `min-height: 0` on grid/flex children to allow shrinking
+  • For 3+ cards: use smaller padding (20-24px, not 40px)
+  • Add `max-height` constraints on sections that could grow
+  • Truncate long text with `text-overflow: ellipsis; overflow: hidden;`
+
+  **MANDATORY BASE STYLES:**
+  ```css
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body { padding: 48px 60px; } /* Leaves ~1800×984 content area */
+  ```
+
   🚫🚫🚫 **ABSOLUTELY BANNED - NEVER CREATE:** 🚫🚫🚫
   • ❌ **CARD GRIDS FOR TEXT** - NO grids of 3-6 colored cards with text! Use Icon+Text instead!
   • ❌ **RAINBOW COLORS** - NO blue/purple/red/orange/green card grids - looks TERRIBLE

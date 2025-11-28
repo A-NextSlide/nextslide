@@ -53,6 +53,13 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
 - Write bespoke JavaScript using React.createElement only.
 - Pass and use theme props explicitly: primaryColor, secondaryColor, textColor, fontFamily.
 
+IMAGES IN CUSTOMCOMPONENTS - NAME PROPS WITH SEARCH QUERIES:
+- For people/characters: const elonMuskImage = props.elonMuskImage || 'placeholder';
+- For products: const teslaModelSImage = props.teslaModelSImage || 'placeholder';
+- For places: const newYorkCityImage = props.newYorkCityImage || 'placeholder';
+- The prop name becomes the search query! Use specific names, not generic "image1".
+- Use in HTML: React.createElement('img', {src: elonMuskImage, style: {objectFit: 'cover'}})
+
 BOUNDARY RULES (STRICT — NO OVERLAP):
 - Canvas: 1920×1080. Text edges ≥80px; images/charts/custom ≥60px
 - Compute rightEdge = x + width; bottomEdge = y + height

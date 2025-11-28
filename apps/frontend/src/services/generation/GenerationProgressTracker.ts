@@ -676,11 +676,8 @@ export class GenerationProgressTracker extends EventEmitter {
   private formatMessage(message: string, phase?: string, substep?: string): string {
     // Normalize raw backend tokens (e.g., ai_generation)
     const normalized = this.normalizeTokens(message, substep, phase);
-    // Add emoji if not already present
-    if (phase && this.phases[phase] && !normalized.match(/^[🚀🎨🖼️📝✨]/)) {
-      return `${this.phases[phase].emoji} ${normalized}`;
-    }
-    return normalized;
+    // Strip any existing emojis from the message
+    return normalized.replace(/^[🚀🎨📐🖼️📝✨]\s*/, '');
   }
   
   private setTargetProgress(progress: number) {

@@ -3030,6 +3030,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         context.target_slide_index = outlineSlideTarget;
       }
 
+      // Include reference links from stylePreferences if available
+      const stylePrefs = (outline as any)?.stylePreferences;
+      if (stylePrefs?.referenceLinks && Array.isArray(stylePrefs.referenceLinks) && stylePrefs.referenceLinks.length > 0) {
+        context.reference_links = stylePrefs.referenceLinks;
+        console.log('[ChatPanel] Including reference links in context:', stylePrefs.referenceLinks);
+      }
+
       // STEP 4: Stream response from agent
       try {
         let fullResponse = '';
@@ -3043,11 +3050,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           context: context
         })) {
           if (event.type === 'status') {
-            // Handle status events (researching, etc.)
+            // Handle status events (researching, scraping, etc.)
             if (event.status === 'researching') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
                   ? { ...m, message: `🔍 Researching: ${event.query || 'your topic'}...`, metadata: { isTyping: true, isResearching: true } }
+                  : m
+              ));
+            } else if (event.status === 'scraping') {
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `📥 ${event.message || 'Reading reference links...'}`, metadata: { isTyping: true, isResearching: true } }
+                  : m
+              ));
+            } else if (event.status === 'scraped') {
+              // Scraping complete - show brief success message then continue
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `✓ ${event.message || 'Content extracted'}`, metadata: { isTyping: true, isResearching: false } }
+                  : m
+              ));
+            } else if (event.status === 'research_failed') {
+              // Research failed - show warning
+              setMessages(prev => prev.map(m =>
+                m.id === aiMessageId
+                  ? { ...m, message: `⚠️ Research unavailable: ${event.message || 'API not configured'}`, metadata: { isTyping: true, isResearching: false } }
                   : m
               ));
             }
@@ -3748,10 +3775,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="px-2.5 pb-2.5 pt-6 min-w-0">
             <div
               className={
-                `border rounded-xl px-3.5 pb-3.5 flex flex-col justify-between min-h-[230px] min-w-0 ${isDraggingOver ? 'border-orange-500 border-dashed border-2' : 'border-zinc-300 dark:border-[#929292]'
+                `relative border rounded-xl px-3.5 pb-3.5 flex flex-col justify-between min-h-[230px] min-w-0 transition-colors ${isDraggingOver ? 'border-orange-500 border-dashed border-2 bg-orange-50/10 dark:bg-orange-900/10' : 'border-zinc-300 dark:border-[#929292]'
                 }`
               }
+              onDragEnter={onDragEnterPanel}
+              onDragOver={onDragOverPanel}
+              onDragLeave={onDragLeavePanel}
+              onDrop={onDropPanel}
             >
+              {/* Drop zone indicator */}
+              {isDraggingOver && (
+                <div className="absolute inset-0 flex items-center justify-center bg-orange-50/80 dark:bg-orange-900/40 rounded-xl z-10 pointer-events-none">
+                  <div className="flex flex-col items-center gap-2 text-orange-600 dark:text-orange-400">
+                    <Plus size={32} className="animate-bounce" />
+                    <span className="text-sm font-medium">Drop files here</span>
+                  </div>
+                </div>
+              )}
+
               {/* Selection bubbles */}
               {selectedElements.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-3">

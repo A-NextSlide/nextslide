@@ -46,6 +46,13 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
 - Write bespoke JavaScript using React.createElement only.
 - Pass and use theme props explicitly: primaryColor, secondaryColor, textColor, fontFamily.
 
+IMAGES IN CUSTOMCOMPONENTS - NAME PROPS WITH SEARCH QUERIES:
+- For people/characters: const elonMuskImage = props.elonMuskImage || 'placeholder';
+- For products: const teslaModelSImage = props.teslaModelSImage || 'placeholder';
+- For places: const newYorkCityImage = props.newYorkCityImage || 'placeholder';
+- The prop name becomes the search query! Use specific names, not generic "image1".
+- Use: React.createElement('img', {src: elonMuskImage, style: {objectFit: 'cover', width: '100%', height: '200px'}})
+
 Output valid JSON with this structure:
 {
   "id": "slide-id",

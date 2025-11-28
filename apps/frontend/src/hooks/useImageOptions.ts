@@ -176,16 +176,7 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
       cachedResponse.metadata.successful_searches = cachedResponse.metadata.total_topics_searched;
       
       setImageOptions(cachedResponse);
-      
-      // Show notification
-      if (cachedResponse.metadata.total_images_found > 0) {
-        toast({
-          title: "Images Ready for Selection",
-          description: `Found ${cachedResponse.metadata.total_images_found} images across ${cachedResponse.metadata.total_topics_searched} topics`,
-          duration: 5000,
-        });
-      }
-      
+      // Toast removed - too noisy for auto-selection
       setIsLoading(false);
       return cachedResponse;
     }
@@ -216,16 +207,7 @@ export const useImageOptions = (deckId: string, deckUuid: string) => {
 
       const data: ImageOptionsResponse = await response.json();
       setImageOptions(data);
-
-      // Show notification about available images
-      if (data.metadata.total_images_found > 0) {
-        toast({
-          title: "Images Ready for Selection",
-          description: `Found ${data.metadata.total_images_found} images across ${data.metadata.total_topics_searched} topics`,
-          duration: 5000,
-        });
-      }
-
+      // Toast removed - too noisy for auto-selection
       return data;
     } catch (error) {
       console.error('❌ Error fetching image options:', error);

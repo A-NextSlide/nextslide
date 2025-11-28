@@ -116,6 +116,18 @@ class SlideGeneratorAdapter:
             if tagged_media_for_context:
                 logger.info(f"   - First tagged_media URL: {tagged_media_for_context[0].get('previewUrl', 'none')[:100]}")
 
+            # Extract presentation context from user's initial request (for design context)
+            presentation_context = None
+            if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                style_prefs = deck_outline.stylePreferences
+                parts = []
+                if hasattr(style_prefs, 'initialIdea') and style_prefs.initialIdea:
+                    parts.append(style_prefs.initialIdea)
+                if hasattr(style_prefs, 'vibeContext') and style_prefs.vibeContext:
+                    parts.append(style_prefs.vibeContext)
+                if parts:
+                    presentation_context = " | ".join(parts)
+
             context = SlideGenerationContext(
                 slide_outline=slide_outline,
                 slide_index=slide_index,
@@ -126,7 +138,8 @@ class SlideGeneratorAdapter:
                 deck_uuid=deck_uuid or "",
                 available_images=available_images or [],
                 async_images=async_images,
-                tagged_media=tagged_media_for_context
+                tagged_media=tagged_media_for_context,
+                presentation_context=presentation_context
             )
             
             # Generate using new system

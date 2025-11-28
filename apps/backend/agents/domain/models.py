@@ -115,6 +115,8 @@ class SlideGenerationContext:
     visual_density: Optional[str] = "moderate"
     # User ID for personalization
     user_id: Optional[str] = None
+    # Presentation context from user's initial request (for design context only)
+    presentation_context: Optional[str] = None
     
     @property
     def total_slides(self) -> int:

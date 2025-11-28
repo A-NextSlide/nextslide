@@ -299,15 +299,89 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
         />
       )}
       
+      {/* Draggable edge strips for CustomComponents (since iframe has pointerEvents: auto when selected) */}
+      {isSelected && isDraggable && component.type === 'CustomComponent' && !isTextEditing && (
+        <>
+          {/* Top edge */}
+          <div
+            style={{
+              position: 'absolute',
+              top: -8,
+              left: 0,
+              right: 0,
+              height: 16,
+              cursor: 'move',
+              zIndex: 15,
+              background: 'transparent',
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onDragStart(e);
+            }}
+          />
+          {/* Bottom edge */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: -8,
+              left: 0,
+              right: 0,
+              height: 16,
+              cursor: 'move',
+              zIndex: 15,
+              background: 'transparent',
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onDragStart(e);
+            }}
+          />
+          {/* Left edge */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: -8,
+              bottom: 0,
+              width: 16,
+              cursor: 'move',
+              zIndex: 15,
+              background: 'transparent',
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onDragStart(e);
+            }}
+          />
+          {/* Right edge */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: -8,
+              bottom: 0,
+              width: 16,
+              cursor: 'move',
+              zIndex: 15,
+              background: 'transparent',
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onDragStart(e);
+            }}
+          />
+        </>
+      )}
+
       {/* Drag overlay - REMOVED */}
       {/* {isSelected && isDraggable && (
         <div
-          className="absolute inset-0" 
-          style={{ 
+          className="absolute inset-0"
+          style={{
             backgroundColor: 'transparent',
             zIndex: 20, // Higher than the border but lower than handles
             cursor: 'move',
-            pointerEvents: component.type === 'TextBlock' ? 'none' : 'auto' 
+            pointerEvents: component.type === 'TextBlock' ? 'none' : 'auto'
           }}
           onMouseDown={(e) => {
             // This handler might not fire for TextBlocks now due to pointerEvents: none,

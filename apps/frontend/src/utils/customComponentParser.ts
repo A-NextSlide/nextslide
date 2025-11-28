@@ -1,6 +1,6 @@
 export interface ParsedVariable {
   name: string;
-  type: 'text' | 'number' | 'color' | 'boolean' | 'select';
+  type: 'text' | 'number' | 'color' | 'boolean' | 'select' | 'image';
   defaultValue: any;
   label?: string;
   min?: number;
@@ -11,6 +11,8 @@ export interface ParsedVariable {
   suggestion?: boolean; // Indicates this is a suggested variable from hardcoded values
   lineNumber?: number;
   originalCode?: string;
+  searchQuery?: string; // For image type - suggested search query
+  objectFit?: 'cover' | 'contain' | 'fill'; // For image type - suggested object-fit mode
 }
 
 export interface ParseResult {
@@ -66,7 +68,26 @@ const HARDCODED_PATTERNS = {
 // Helper to infer variable type from name and value
 function inferVariableType(name: string, value: any): ParsedVariable['type'] {
   const lowerName = name.toLowerCase();
-  
+
+  // Check for image props first (most specific)
+  if (lowerName.includes('image') || lowerName.includes('photo') || lowerName.includes('picture') ||
+      lowerName.includes('thumbnail') || lowerName.includes('avatar') || lowerName.includes('logo') ||
+      lowerName.includes('banner') || lowerName.includes('hero') && (lowerName.includes('src') || lowerName.includes('url')) ||
+      lowerName === 'src' || lowerName.endsWith('src') || lowerName.endsWith('url') && !lowerName.includes('color')) {
+    // Check if value looks like an image URL or placeholder
+    if (typeof value === 'string' && (
+      value === 'placeholder' ||
+      value.includes('placeholder') ||
+      value.startsWith('http') ||
+      value.startsWith('data:image') ||
+      value.endsWith('.jpg') || value.endsWith('.jpeg') || value.endsWith('.png') ||
+      value.endsWith('.gif') || value.endsWith('.webp') || value.endsWith('.svg') ||
+      value === ''
+    )) {
+      return 'image';
+    }
+  }
+
   // Check name patterns
   if (lowerName.includes('color') || lowerName.includes('background') || lowerName.includes('fill') || lowerName.includes('stroke')) {
     return 'color';
@@ -81,7 +102,7 @@ function inferVariableType(name: string, value: any): ParsedVariable['type'] {
   if (lowerName.startsWith('is') || lowerName.startsWith('has') || lowerName.startsWith('show') || lowerName.includes('enabled')) {
     return 'boolean';
   }
-  
+
   // Check value type
   if (
     typeof value === 'string' && (
@@ -96,8 +117,87 @@ function inferVariableType(name: string, value: any): ParsedVariable['type'] {
   if (typeof value === 'number') {
     return 'number';
   }
-  
+
   return 'text';
+}
+
+// Check if a prop name looks like an image prop
+function isImagePropName(name: string): boolean {
+  const lowerName = name.toLowerCase();
+  return lowerName.includes('image') || lowerName.includes('photo') || lowerName.includes('picture') ||
+         lowerName.includes('thumbnail') || lowerName.includes('avatar') || lowerName.includes('logo') ||
+         lowerName.includes('banner') || lowerName.includes('icon') && lowerName.includes('src') ||
+         (lowerName.includes('hero') && !lowerName.includes('font')) ||
+         lowerName === 'src' || lowerName.endsWith('src') ||
+         (lowerName.endsWith('url') && !lowerName.includes('color'));
+}
+
+// Check if a value looks like an image URL or placeholder
+function isImageValue(value: any): boolean {
+  if (typeof value !== 'string') return false;
+  return value === 'placeholder' ||
+         value === '' ||
+         value.includes('placeholder') ||
+         value.startsWith('http') ||
+         value.startsWith('data:image') ||
+         value.startsWith('//') ||
+         /\.(jpg|jpeg|png|gif|webp|svg|avif)($|\?)/.test(value.toLowerCase());
+}
+
+// Suggest object-fit mode based on prop name
+// - Logos, icons, diagrams → contain (show full image)
+// - Headshots, photos, backgrounds → cover (fill space, crop if needed)
+function suggestObjectFit(propName: string): 'cover' | 'contain' | 'fill' {
+  const lowerName = propName.toLowerCase();
+
+  // CONTAIN - for logos, icons, diagrams where you need to see the whole image
+  if (lowerName.includes('logo') ||
+      lowerName.includes('icon') ||
+      lowerName.includes('diagram') ||
+      lowerName.includes('chart') ||
+      lowerName.includes('graph') ||
+      lowerName.includes('badge') ||
+      lowerName.includes('symbol')) {
+    return 'contain';
+  }
+
+  // COVER (default) - for photos, headshots, backgrounds, products
+  return 'cover';
+}
+
+// Extract a meaningful search query from an image prop name
+// e.g., "elonMuskImage" → "elon musk"
+// e.g., "teslaModelSImage" → "tesla model s"
+// e.g., "professionalHeadshotImage" → "professional headshot"
+function extractImageSearchQuery(propName: string): string {
+  // Remove common image suffixes
+  let query = propName
+    .replace(/Image$|Photo$|Picture$|Src$|Url$|Img$|Thumbnail$|Avatar$|Icon$/i, '')
+    .replace(/^(hero|feature|background|banner|main|primary|secondary)/i, (match) => {
+      // Keep these as they might be meaningful, but mark for potential removal if nothing else
+      return match;
+    });
+
+  // Convert camelCase to spaces: "elonMusk" → "elon Musk" → "elon musk"
+  query = query
+    .replace(/([a-z])([A-Z])/g, '$1 $2')  // camelCase to spaces
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')  // Handle consecutive caps like "USAFlag" → "USA Flag"
+    .toLowerCase()
+    .trim();
+
+  // If the result is too generic (hero, feature, background, etc.), return a better default
+  const genericTerms = ['hero', 'feature', 'background', 'banner', 'main', 'primary', 'secondary', 'image', 'photo', ''];
+  if (genericTerms.includes(query)) {
+    // Fall back to the full prop name converted to readable form
+    return propName
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .toLowerCase()
+      .replace(/image$|photo$|picture$|src$|url$|img$/i, '')
+      .trim() || 'image';
+  }
+
+  return query || 'image';
 }
 
 // Create a human-readable label from variable name
@@ -373,19 +473,36 @@ export function parseCustomComponentCode(code: string): ParseResult {
     }
   }
 
-  // Finally parse generic text variables
+  // Finally parse generic text variables (may also be images)
   VARIABLE_PATTERNS.text.lastIndex = 0;
   while ((match = VARIABLE_PATTERNS.text.exec(code)) !== null) {
     const [, varName, dotProp, bracketProp, defaultValue] = match;
     const propName = dotProp || bracketProp;
     if (!foundVariables.has(propName)) {
       foundVariables.add(propName);
-      variables.push({
-        name: propName,
-        type: 'text',
-        defaultValue,
-        label: createLabel(propName),
-      });
+
+      // Check if this is an image prop
+      if (isImagePropName(propName) || isImageValue(defaultValue)) {
+        // Extract search query from prop name (e.g., elonMuskImage -> "elon musk")
+        const searchQuery = extractImageSearchQuery(propName);
+        const objectFit = suggestObjectFit(propName);
+
+        variables.push({
+          name: propName,
+          type: 'image',
+          defaultValue,
+          label: createLabel(propName),
+          searchQuery,
+          objectFit,
+        });
+      } else {
+        variables.push({
+          name: propName,
+          type: 'text',
+          defaultValue,
+          label: createLabel(propName),
+        });
+      }
     }
   }
   
@@ -396,7 +513,24 @@ export function parseCustomComponentCode(code: string): ParseResult {
     const propName = match[1] || match[2];
     if (!foundVariables.has(propName) && propName !== 'props' && propName !== 'id' && propName !== 'state' && propName !== 'updateState' && propName !== 'forceUpdate') {
       foundVariables.add(propName);
-      
+
+      // Check if this looks like an image prop
+      if (isImagePropName(propName)) {
+        // Extract search query from prop name (e.g., elonMuskImage -> "elon musk")
+        const searchQuery = extractImageSearchQuery(propName);
+        const objectFit = suggestObjectFit(propName);
+
+        variables.push({
+          name: propName,
+          type: 'image',
+          defaultValue: 'placeholder',
+          label: createLabel(propName),
+          searchQuery,
+          objectFit,
+        });
+        continue;
+      }
+
       // Try to infer type from name
       const type = inferVariableType(propName, '');
       const variable: ParsedVariable = {
@@ -405,7 +539,7 @@ export function parseCustomComponentCode(code: string): ParseResult {
         defaultValue: type === 'number' ? 0 : type === 'boolean' ? false : '',
         label: createLabel(propName),
       };
-      
+
       // Add appropriate constraints based on type and name
       if (type === 'number') {
         const lowerName = propName.toLowerCase();
@@ -419,7 +553,7 @@ export function parseCustomComponentCode(code: string): ParseResult {
           variable.step = 1;
         }
       }
-      
+
       variables.push(variable);
     }
   }

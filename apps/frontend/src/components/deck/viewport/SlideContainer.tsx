@@ -64,6 +64,13 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   const [slidesInProgress, setSlidesInProgress] = useState<Set<number>>(new Set());
   const [completedSlides, setCompletedSlides] = useState<Set<number>>(new Set());
   const [isChatSelecting, setIsChatSelecting] = useState(false);
+
+  // Track CustomComponent prop selection (for image injection into CustomComponents)
+  const [customComponentPropInfo, setCustomComponentPropInfo] = useState<{
+    propName: string;
+    componentId: string;
+    searchQuery?: string; // Converted search term (e.g., "elon musk" from "elonMuskImage")
+  } | null>(null);
   
   // Check if deck is generating - but not if slides already have content
   const hasSlideContent = slides.some(slide => 
@@ -209,21 +216,31 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   // Listen for image placeholder selection event
   useEffect(() => {
     const handleSelectPlaceholder = (event: any) => {
-      const { componentId, slideId } = event.detail || {};
-      
+      const { componentId, slideId, propName, searchQuery, topic, isCustomComponentProp } = event.detail || {};
+
       // Make sure we're on the right slide
       if (currentSlide && (slideId === currentSlide.id || !slideId)) {
         // Ensure crop mode is not active when opening the picker
         try { useEditorSettingsStore.getState().stopImageCrop(); } catch {}
 
+        // Track CustomComponent prop info if this is for a CustomComponent
+        if (isCustomComponentProp && propName && componentId) {
+          setCustomComponentPropInfo({
+            propName,
+            componentId,
+            searchQuery: searchQuery || topic || propName,
+          });
+        } else {
+          setCustomComponentPropInfo(null);
+        }
+
         // Open the image picker with component ID if available
-        const componentId = (event as any).detail?.componentId;
         openImagePicker(currentSlide.id, componentId);
       }
     };
-    
+
     window.addEventListener('image:select-placeholder', handleSelectPlaceholder);
-    
+
     return () => {
       window.removeEventListener('image:select-placeholder', handleSelectPlaceholder);
     };
@@ -291,14 +308,68 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   }, [isPickerOpen, closeImagePicker]);
   
   // Handle image selection
-  const handleImageSelect = (imageUrl: string) => {
+  const handleImageSelect = async (imageUrl: string) => {
     if (!currentSlide) {
       return;
     }
-    
+
     // Cancel any active crop mode when selecting an image (except for generating placeholder)
     if (imageUrl !== 'generating://ai-image') {
       try { useEditorSettingsStore.getState().stopImageCrop(); } catch {}
+    }
+
+    // Handle CustomComponent prop selection - dispatch callback event
+    if (customComponentPropInfo && imageUrl !== 'generating://ai-image') {
+      const { propName, componentId } = customComponentPropInfo;
+      console.log('[SlideContainer] CustomComponent image selection:', { propName, componentId, imageUrl: imageUrl.substring(0, 60) });
+
+      let finalUrl = imageUrl;
+
+      // Proxy external images through our backend to Supabase for reliability
+      if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
+        try {
+          console.log('[SlideContainer] Proxying external image to Supabase...');
+          toast({
+            title: "Processing image...",
+            description: "Uploading to our servers for reliability",
+          });
+
+          const response = await fetch('/api/media/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: imageUrl })
+          });
+
+          const data = await response.json();
+          console.log('[SlideContainer] Proxy response:', data);
+
+          if (response.ok && data.success && data.url) {
+            finalUrl = data.url;
+            console.log('[SlideContainer] Proxied URL:', finalUrl);
+          } else {
+            console.warn('[SlideContainer] Proxy failed, using original URL:', data.error || 'Unknown error');
+          }
+        } catch (error) {
+          console.error('[SlideContainer] Error proxying image for CustomComponent:', error);
+          // Continue with original URL as fallback
+        }
+      }
+
+      console.log('[SlideContainer] Dispatching customcomponent:image-selected with:', { componentId, propName, imageUrl: finalUrl.substring(0, 60) });
+
+      // Dispatch event for CustomComponentRenderer to receive
+      window.dispatchEvent(new CustomEvent('customcomponent:image-selected', {
+        detail: {
+          componentId,
+          propName,
+          imageUrl: finalUrl,
+        }
+      }));
+
+      // Clear the prop info and close picker
+      setCustomComponentPropInfo(null);
+      closeImagePicker();
+      return;
     }
 
     // Reset potentially masking image effects when a real image is applied
@@ -606,15 +677,7 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       const { slideId, images } = customEvent.detail;
       
       console.log('[SlideContainer] Images available for slide:', slideId, images?.length);
-      
-      // Show a subtle toast notification
-      if (images && images.length > 0) {
-        toast({
-          title: "Images Ready",
-          description: `Found ${images.length} recommended images for your slides`,
-          duration: 3000,
-        });
-      }
+      // Toast removed - too noisy for auto-selection
     };
     
     window.addEventListener('slide_images_available', handleSlideImagesAvailable as EventListener);
@@ -650,7 +713,18 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
           let componentInfo = null;
           if (currentComponentId) {
             const component = currentSlide.components?.find((c: any) => c.id === currentComponentId);
-            if (component && component.type === 'Image' && component.props.metadata) {
+
+            // Check if this is for a CustomComponent prop
+            if (customComponentPropInfo && customComponentPropInfo.componentId === currentComponentId) {
+              // Use the converted searchQuery (e.g., "elon musk" instead of "elonMuskImage")
+              const searchTerm = customComponentPropInfo.searchQuery || customComponentPropInfo.propName;
+              componentInfo = {
+                componentId: currentComponentId,
+                topic: searchTerm,
+                searchQuery: searchTerm,
+                isCustomComponentProp: true,
+              };
+            } else if (component && component.type === 'Image' && component.props.metadata) {
               componentInfo = {
                 componentId: currentComponentId,
                 topic: component.props.metadata.topic,
@@ -659,12 +733,15 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
               };
             }
           }
-          
+
           return (
             <ImagePicker
               images={getCurrentSlideImages(currentSlide.id)}
               onImageSelect={handleImageSelect}
-              onClose={closeImagePicker}
+              onClose={() => {
+                setCustomComponentPropInfo(null);
+                closeImagePicker();
+              }}
               onLoadMore={(topic) => {
                 // If picking for specific component, search for its topic
                 const searchTopic = componentInfo?.topic || componentInfo?.searchQuery || topic;

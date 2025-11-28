@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Gamepad2 } from 'lucide-react';
 
 interface EnhancedDeckProgressProps {
   phase: string;
@@ -128,6 +128,21 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
 
   const isComplete = phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || progress >= 100;
 
+  // Game state - tracks if user has opened the game
+  const [gameOpen, setGameOpen] = useState(false);
+
+  // Listen for game close events
+  useEffect(() => {
+    const handleGameClose = () => setGameOpen(false);
+    window.addEventListener('hide-waiting-game', handleGameClose);
+    return () => window.removeEventListener('hide-waiting-game', handleGameClose);
+  }, []);
+
+  const openGame = () => {
+    setGameOpen(true);
+    window.dispatchEvent(new CustomEvent('show-waiting-game'));
+  };
+
   // Track the maximum phase index we've reached to prevent going backwards
   const [maxPhaseIndex, setMaxPhaseIndex] = useState(-1);
   
@@ -149,52 +164,14 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
 
   const progressPhaseIndex = getPhaseFromProgress(animatedProgress);
 
-  // Map backend substep keys to human-friendly labels (and remove bullet dot)
-  const getSubstepLabel = (key?: string, slideIndex?: number): string | undefined => {
-    if (!key) return undefined;
-    switch (key) {
-      case 'theme_creation':
-        return 'Creating visual theme';
-      case 'palette_generation':
-        return 'Generating color palette';
-      case 'designing_layouts':
-        return 'Designing editorial layouts';
-      case 'designing_slide_layout':
-        return 'Creating slide structures';
-      case 'layouts_complete':
-        return 'Blueprint complete';
-      case 'preparing_context':
-        return 'Preparing slide context';
-      case 'rag_lookup':
-        return 'Finding best design patterns';
-      case 'ai_generation':
-        return 'AI Generation';
-      case 'saving':
-        return 'Saving slide';
-      default:
-        // Fallback: convert snake_case to Title Case
-        try {
-          return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        } catch {
-          return undefined;
-        }
-    }
-  };
-
   return (
-    <div className="space-y-3 w-full" style={{ minWidth: 0 }}>
+    <div className="space-y-2 w-full" style={{ minWidth: 0 }}>
       {/* Current step - prominent */}
       <div className="flex items-center gap-2">
         <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse flex-shrink-0" />
         <span className="text-xs font-medium text-foreground">
           {phases[Math.max(currentPhaseIndex, progressPhaseIndex)]?.label || 'Starting'}
         </span>
-        {substep && !isComplete && (() => {
-          const label = getSubstepLabel(substep, currentSlide);
-          return label ? (
-            <span className="text-xs text-orange-500">{label}</span>
-          ) : null;
-        })()}
       </div>
 
       {/* Phase dots - horizontal row */}
@@ -246,6 +223,23 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
             className="h-full bg-gradient-to-r from-orange-500 to-orange-400"
           />
         </div>
+      )}
+
+      {/* Play game button - small, grey, left-aligned */}
+      {!isComplete && !gameOpen && (
+        <button
+          onClick={openGame}
+          className="mt-1 py-1 px-2 rounded text-[10px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50 transition-all flex items-center gap-1.5"
+        >
+          <Gamepad2 className="w-3 h-3" />
+          <span>This takes a minute. Play a game?</span>
+        </button>
+      )}
+      {gameOpen && !isComplete && (
+        <span className="mt-1 text-[10px] text-muted-foreground/50 flex items-center gap-1.5">
+          <Gamepad2 className="w-3 h-3" />
+          Game running in slide area
+        </span>
       )}
 
       {/* Slide grid */}

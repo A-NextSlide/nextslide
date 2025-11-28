@@ -302,17 +302,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               </div>
             ) : isStreamingMessage ? (
               <div className="space-y-1.5 min-w-0 w-full" style={{ minHeight: '20px' }}>
-                {/* Status row */}
-                <div className="flex items-center gap-2 min-w-0">
-                  {!isCompleted && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500 flex-shrink-0" />}
-                  {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
-                  <span className={cn(
-                    "text-xs font-medium flex-1 break-words min-w-0",
-                    isCompleted ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
-                  )}>
-                    {(/^\d+$/.test(primaryMessage.trim())) ? '' : primaryMessage}
-                  </span>
-                </div>
+                {/* Status row - only show message text if EnhancedDeckProgress is NOT being shown (to avoid redundancy) */}
+                {!(metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted) && (
+                  <div className="flex items-center gap-2 min-w-0">
+                    {!isCompleted && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500 flex-shrink-0" />}
+                    {isCompleted && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
+                    <span className={cn(
+                      "text-xs font-medium flex-1 break-words min-w-0",
+                      isCompleted ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                    )}>
+                      {(/^\d+$/.test(primaryMessage.trim())) ? '' : primaryMessage}
+                    </span>
+                  </div>
+                )}
 
                 {/* Special rendering for images_collected events */}
                 {metadata?.type === 'images_collected' && metadata?.images_by_slide && (

@@ -23,6 +23,7 @@ import {
 import { HexColorPicker } from 'react-colorful';
 import EditableDropdown from '@/components/settings/EditableDropdown';
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
+import ImageSlotEditor from '@/components/settings/ImageSlotEditor';
 import { FONT_CATEGORIES } from '@/registry/library/fonts';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -360,7 +361,22 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </Select>
           </div>
         );
-      
+
+      case 'image':
+        return (
+          <ImageSlotEditor
+            key={variable.name}
+            propName={variable.name}
+            label={variable.label || variable.name}
+            value={currentValue}
+            searchQuery={variable.searchQuery}
+            objectFit={variable.objectFit}
+            componentId={component.id}
+            onUpdate={updateProp}
+            onSave={saveChanges}
+          />
+        );
+
       default:
         return null;
     }
@@ -374,14 +390,15 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       color: [],
       boolean: [],
       select: [],
+      image: [],
     };
-    
+
     variables.forEach((variable) => {
       if (groups[variable.type]) {
         groups[variable.type].push(variable);
       }
     });
-    
+
     return groups;
   }, [variables]);
 
@@ -497,7 +514,17 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
               </div>
             </div>
           )}
-          
+
+          {/* Image Properties */}
+          {groupedVariables.image.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium text-muted-foreground">Image Properties</h4>
+              <div className="grid grid-cols-1 gap-3">
+                {groupedVariables.image.map(renderVariableControl)}
+              </div>
+            </div>
+          )}
+
           {/* Numeric Properties */}
           {groupedVariables.number.length > 0 && (
             <div className="space-y-2">
@@ -551,6 +578,9 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </code>
             <code className="block font-mono text-xs bg-muted px-2 py-1 rounded text-left">
               const size = props.size || 24; // px
+            </code>
+            <code className="block font-mono text-xs bg-muted px-2 py-1 rounded text-left">
+              const heroImage = props.heroImage || "placeholder";
             </code>
           </div>
           <Button

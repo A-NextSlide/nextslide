@@ -410,32 +410,54 @@ def _is_reasonable_brand_term(identifier: str) -> bool:
 
 def _is_entertainment_topic(title: str, vibe_context: Optional[str] = None) -> bool:
     """Check if this is an entertainment/fun topic that shouldn't have brand logo treatment.
-    
+
     Entertainment topics like Pikachu, Pokemon, movies, games shouldn't have corporate logos.
     Colors and fonts can still be generated, but we skip brand logo fetching.
+
+    IMPORTANT: Only check the TITLE, not the full vibe_context (which contains conversation history
+    and could have false positive matches like 'fun' in 'fundraising' or 'fundamentals').
     """
     if not title:
         return False
-    
-    combined = f"{title} {vibe_context or ''}".lower()
-    
+
+    # Only check title (not vibe_context) to avoid false positives from conversation history
+    title_lower = title.lower()
+
+    # Business/corporate indicators that should NEVER be treated as entertainment
+    # These override any entertainment keyword matches
+    business_indicators = [
+        'earnings', 'revenue', 'quarterly', 'annual', 'report', 'investor',
+        'founding', 'founder', 'startup', 'company', 'business', 'strategy',
+        'financial', 'growth', 'market', 'q1', 'q2', 'q3', 'q4', 'ipo', 'valuation',
+        'pitch deck', 'board meeting', 'stakeholder', 'corporate', 'enterprise',
+        'roi', 'kpi', 'metrics', 'analytics', 'sales', 'marketing', 'b2b', 'saas',
+    ]
+
+    for indicator in business_indicators:
+        if indicator in title_lower:
+            return False  # Definitely NOT entertainment
+
     # Entertainment/fun keywords that shouldn't have brand logos
+    # Use word boundary matching to avoid false positives (e.g., 'fun' in 'fundraising')
     entertainment_keywords = [
-        'pikachu', 'pokemon', 'pokémon', 'anime', 'cartoon', 'game', 'games', 'gaming',
+        'pikachu', 'pokemon', 'pokémon', 'anime', 'cartoon', 'gaming',
         'movie', 'movies', 'film', 'tv show', 'series', 'superhero', 'marvel', 'dc comics',
         'disney', 'pixar', 'star wars', 'harry potter', 'lord of the rings', 'hobbit',
-        'minecraft', 'fortnite', 'roblox', 'mario', 'zelda', 'nintendo', 'playstation', 'xbox',
-        'sports', 'football', 'basketball', 'soccer', 'baseball', 'tennis', 'golf',
-        'music', 'band', 'concert', 'festival', 'recipe', 'cooking', 'food',
-        'travel', 'vacation', 'holiday', 'birthday', 'party', 'wedding', 'celebration',
-        'science project', 'school project', 'homework', 'kids', 'children', 'fun',
+        'minecraft', 'fortnite', 'roblox', 'mario', 'zelda', 'playstation', 'xbox',
+        'football', 'basketball', 'soccer', 'baseball', 'tennis', 'golf',
+        'concert', 'festival', 'recipe', 'cooking',
+        'vacation', 'holiday', 'birthday', 'party', 'wedding', 'celebration',
+        'science project', 'school project', 'homework', 'kids', 'children',
         'hobby', 'hobbies', 'craft', 'crafts', 'diy', 'art project',
     ]
-    
+
+    # Use word boundary regex to avoid partial matches
+    import re
     for keyword in entertainment_keywords:
-        if keyword in combined:
+        # Use word boundaries to match whole words only
+        if re.search(rf'\b{re.escape(keyword)}\b', title_lower):
             return True
-    
+
     return False
 
 
@@ -1462,69 +1484,56 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             except Exception:
                                 palette_colors = []
                             
-                            # Only apply if we got meaningful colors (not just defaults)
-                            # Check if the background is NOT white/gray (indicating iconic colors were found)
+                            # AI-generated colors from ThemeDirector (uses Claude Haiku 4.5 for cultural understanding)
+                            # These colors understand topics like "Stranger Things" → dark red theme
                             bg_color = colors.get('primary_background', '').upper()
-                            is_iconic = bg_color and bg_color not in ['#FFFFFF', '#F5F5F5', '#E8E8E8', '#FAFAFA']
+                            text_color = colors.get('primary_text', '').upper()
+                            accent_color = colors.get('accent_1', '').upper()
 
-                            # CRITICAL: Check if we already have valid Brandfetch colors
+                            # AI colors are meaningful if we got a non-default background OR accent
+                            has_ai_colors = bool(bg_color or accent_color)
+                            ai_colors_are_meaningful = has_ai_colors and (
+                                bg_color not in ['', '#FFFFFF', '#F5F5F5'] or  # Non-white background
+                                accent_color not in ['', '#3B82F6', '#2563EB']  # Non-default accent
+                            )
+
+                            # Check if we have Brandfetch colors
                             existing_colors = getattr(outline.stylePreferences, 'colors', None)
-                            has_brandfetch_colors = existing_colors and (existing_colors.accent1 or existing_colors.accent2 or existing_colors.background)
+                            has_brandfetch_colors = existing_colors and (existing_colors.accent1 or existing_colors.background)
 
-                            # Check if the iconic brand appears in the user's request/title
-                            # This helps detect when Brandfetch returned colors from an unrelated domain
-                            import re
-                            prompt_text = (style_context_value or request.prompt or '').lower()
-                            title_text = (outline.title or '').lower()
-                            combined_text = f"{prompt_text} {title_text}"
-
-                            # Well-known brands with iconic colors that ThemeDirector detects
-                            iconic_brand_patterns = [
-                                r'\bmcdonald', r'\bmac\s*donald', r'\bmcds?\b',  # McDonald's
-                                r'\bstarbucks?\b', r'\bcoca[\s-]*cola\b', r'\bcoke\b',
-                                r'\bpepsi\b', r'\bburger\s*king\b', r'\bkfc\b',
-                                r'\bwendy', r'\bsubway\b', r'\btaco\s*bell\b',
-                                r'\bnike\b', r'\badidas\b', r'\bpuma\b',
-                                r'\bapple\b', r'\bgoogle\b', r'\bmicrosoft\b',
-                                r'\bferrari\b', r'\blamborghini\b', r'\bporsche\b',
-                                r'\bnetflix\b', r'\bspotify\b', r'\bamazon\b',
-                            ]
-                            user_mentioned_iconic_brand = any(re.search(p, combined_text) for p in iconic_brand_patterns)
-
-                            # Also check if Brandfetch colors seem unrelated (generic domain name check)
-                            brandfetch_color_name = getattr(existing_colors, 'name', '') if existing_colors else ''
-                            brandfetch_seems_unrelated = has_brandfetch_colors and user_mentioned_iconic_brand
-
-                            if is_iconic and (palette_colors or bg_color) and (not has_brandfetch_colors or brandfetch_seems_unrelated):
-                                reason = "unrelated Brandfetch domain" if brandfetch_seems_unrelated else "no Brandfetch"
-                                logger.info(f"[API OUTLINE] 🎨 ICONIC TOPIC COLORS ({reason}): {colors}")
+                            # PRIORITY: AI-generated colors > Brandfetch colors (when AI understood the topic)
+                            # The AI understands cultural context (Stranger Things, American, etc.) that Brandfetch can't
+                            # Brandfetch often returns wrong colors due to bad domain extraction (e.g., "you" → YouTube)
+                            if ai_colors_are_meaningful:
+                                logger.info(f"[API OUTLINE] 🎨 USING AI COLORS (culturally-aware): bg={bg_color}, text={text_color}, accent={accent_color}")
                                 from models.requests import ColorConfigItem
                                 outline.stylePreferences.colors = ColorConfigItem(
                                     type="custom",
-                                    name="Iconic Colors",
+                                    name="AI Theme Colors",
                                     background=colors.get('primary_background') or "#FFFFFF",
                                     text=colors.get('primary_text') or "#111827",
-                                    accent1=palette_colors[0] if len(palette_colors) > 0 else colors.get('primary_background'),
-                                    accent2=palette_colors[1] if len(palette_colors) > 1 else None,
+                                    accent1=colors.get('accent_1') or (palette_colors[0] if palette_colors else None),
+                                    accent2=palette_colors[1] if len(palette_colors) > 1 else colors.get('primary_background'),
                                     accent3=palette_colors[2] if len(palette_colors) > 2 else None,
                                 )
                             elif has_brandfetch_colors:
-                                # Brandfetch colors exist for the correct brand - preserve them
-                                logger.info(f"[API OUTLINE] ✅ PRESERVING Brandfetch colors: {existing_colors.background}, {existing_colors.accent1}")
-                            elif not getattr(outline.stylePreferences, 'colors', None):
-                                # Fallback: No iconic colors and no Brandfetch colors - use defaults
-                                logger.info("[API OUTLINE] No iconic or brand colors found; using defaults")
-                                if palette_colors or colors.get('primary_background'):
-                                    from models.requests import ColorConfigItem
-                                    outline.stylePreferences.colors = ColorConfigItem(
-                                        type="custom",
-                                        name="AI Suggested",
-                                        background=colors.get('primary_background') or (palette_colors[0] if palette_colors else None) or "#FFFFFF",
-                                        text=colors.get('primary_text') or "#111827",
-                                        accent1=palette_colors[0] if len(palette_colors) > 0 else None,
-                                        accent2=palette_colors[1] if len(palette_colors) > 1 else None,
-                                        accent3=palette_colors[2] if len(palette_colors) > 2 else None,
-                                    )
+                                # AI didn't return meaningful colors, use Brandfetch as fallback
+                                logger.info(f"[API OUTLINE] 📦 Using Brandfetch colors (AI returned defaults): {existing_colors.background}, {existing_colors.accent1}")
+                            elif has_ai_colors:
+                                # Use AI colors even if they're defaults (better than nothing)
+                                logger.info(f"[API OUTLINE] 🎨 Using AI default colors: {colors}")
+                                from models.requests import ColorConfigItem
+                                outline.stylePreferences.colors = ColorConfigItem(
+                                    type="custom",
+                                    name="AI Suggested",
+                                    background=colors.get('primary_background') or "#FFFFFF",
+                                    text=colors.get('primary_text') or "#111827",
+                                    accent1=colors.get('accent_1') or (palette_colors[0] if palette_colors else None),
+                                    accent2=palette_colors[1] if len(palette_colors) > 1 else None,
+                                    accent3=palette_colors[2] if len(palette_colors) > 2 else None,
+                                )
+                            else:
+                                logger.info("[API OUTLINE] No colors from AI or Brandfetch")
                         except Exception as e:
                             logger.debug(f"[API OUTLINE] AI color suggestion failed: {e}")
 

@@ -70,6 +70,28 @@ props.fontFamily     = theme font
 In your HTML: `<style>:root{--accent:${props.primaryColor};--text:${props.textColor}}</style>`
 Then use: `style='color:var(--accent)'`
 
+**🖼️ CUSTOMCOMPONENT IMAGES - NAME PROPS WITH SEARCH QUERIES!**
+The prop name becomes the search query - be SPECIFIC to the content:
+```javascript
+// ✅ GOOD - Specific names that search well:
+const elonMuskImage = props.elonMuskImage || 'placeholder';  // Searches "elon musk"
+const teslaModelSImage = props.teslaModelSImage || 'placeholder';  // Searches "tesla model s"
+const professionalHeadshotImage = props.professionalHeadshotImage || 'placeholder';
+
+// ❌ BAD - Generic, useless:
+const image1 = props.image1 || 'placeholder';  // What is this??
+```
+Then use: `<img src="${elonMuskImage}" style="object-fit:cover">`
+
+**ADD IMAGES FOR:**
+• People/characters → Use name: `steveJobsImage`, `beyonceImage`
+• Products → Use product: `iphone15Image`, `macbookProImage`
+• Places → Use location: `parisEiffelTowerImage`, `tokyoImage`
+• Concepts → Use visual term: `aiNeuralNetworkImage`, `cloudComputingImage`
+• Teams → Use role: `ceoHeadshotImage`, `engineerTeamImage`
+
+Images work in collapsible panels, accordions, animations - USE THEM!
+
 **EXAMPLE CREATIVE THINKING:**
 • "Revenue grew 42%" → Animated counter with theme accent color
 • "3-step process" → Interactive stepper (CustomComponent with theme colors)

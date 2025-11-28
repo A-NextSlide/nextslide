@@ -1,6 +1,8 @@
 """Smart color selector that combines multiple strategies for finding the perfect colors."""
 
 import re
+import os
+import json
 from typing import Dict, List, Optional, Any, Tuple
 from setup_logging_optimized import get_logger
 from .brand_color_tools import BrandColorSearcher
@@ -16,6 +18,111 @@ from .brand_color_enhancer import enhance_minimal_brand_colors
 from agents.research.tools import WebSearcher
 
 logger = get_logger(__name__)
+
+
+async def get_ai_colors_for_topic(topic: str, context: str = "") -> Optional[Dict[str, Any]]:
+    """Use AI (Claude Haiku 4.5) to understand what colors are culturally/contextually appropriate for a topic.
+
+    This handles cases like:
+    - "American" → red, white, blue (US flag colors)
+    - "Christmas" → red, green, gold
+    - "Halloween" → orange, black, purple
+    - "Ocean" → blues, teals, sandy beige
+
+    The AI understands cultural associations without hardcoding.
+    """
+    try:
+        from anthropic import Anthropic
+        from agents.config import THEME_STYLE_MODEL
+
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+        prompt = f"""You are a color expert. For the topic "{topic}" {f'(context: {context})' if context else ''},
+suggest exactly 3 colors that are culturally/contextually appropriate.
+
+Think about:
+- Cultural associations (flags, holidays, traditions)
+- Brand colors if it's a known brand
+- Natural associations (ocean=blue, forest=green)
+- Industry conventions (tech=blue/purple, health=green/blue)
+- Emotional associations
+
+KNOWN BRAND COLORS (use these exact colors if the topic mentions these brands):
+- Stripe: #635BFF (purple), white background, dark navy text
+- Google: #4285F4 (blue), #34A853 (green), #FBBC05 (yellow), #EA4335 (red)
+- Figma: #F24E1E (orange-red), #A259FF (purple), #0ACF83 (green)
+- Notion: black and white with subtle accents
+- Slack: #611F69 (purple), #E01E5A (pink), #36C5F0 (blue), #ECB22E (yellow)
+- Netflix: #E50914 (red), black background
+- Spotify: #1DB954 (green), black/dark background
+- Apple: clean whites, grays, with subtle blue accents
+- Amazon: #FF9900 (orange), #232F3E (dark blue)
+- Meta/Facebook: #1877F2 (blue)
+- Twitter/X: black and white
+- LinkedIn: #0A66C2 (blue)
+- GitHub: black/dark with orange accents
+- Airbnb: #FF5A5F (coral red)
+- Uber: black with white
+- PayPal: #003087 (blue), #009CDE (light blue)
+- Kit Kat: #E3000F (red)
+- Coca-Cola: #F40009 (red)
+- Starbucks: #00704A (green)
+- McDonald's: #FFC72C (yellow), #DA291C (red)
+
+Return ONLY a JSON object with hex colors:
+{{
+    "background": "#HEXCOLOR",
+    "text": "#HEXCOLOR",
+    "accent": "#HEXCOLOR",
+    "reasoning": "Brief explanation"
+}}
+
+IMPORTANT:
+- All 3 colors MUST be different from each other
+- Text must have good contrast with background
+- Use the actual culturally-recognized colors (e.g., American = official flag colors #002868 navy, #BF0A30 red, #FFFFFF white)
+- For brands mentioned above, use their EXACT brand colors
+- DO NOT use random lime green (#D2FF38), chartreuse, or Android colors unless the topic is specifically about Android
+"""
+
+        # Use Haiku 4.5 for fast, accurate, DETERMINISTIC color understanding
+        # temperature=0 ensures consistent results for the same input
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            temperature=0,  # Deterministic output - same input = same colors
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            system="You are a color expert. Always respond with valid JSON only, no markdown formatting. For known brands, use their official brand colors."
+        )
+
+        result_text = response.content[0].text.strip()
+        # Clean up any markdown formatting
+        if result_text.startswith("```"):
+            result_text = result_text.split("```")[1]
+            if result_text.startswith("json"):
+                result_text = result_text[4:]
+        result_text = result_text.strip()
+
+        colors = json.loads(result_text)
+
+        logger.info(f"[AI Color] Topic '{topic}' → bg={colors.get('background')}, text={colors.get('text')}, accent={colors.get('accent')}")
+        logger.info(f"[AI Color] Reasoning: {colors.get('reasoning', 'N/A')}")
+
+        return {
+            'colors': [colors['background'], colors['text'], colors['accent']],
+            'backgrounds': [colors['background']],
+            'text_colors': {'primary': colors['text']},
+            'accents': [colors['accent']],
+            'source': 'ai_topic_understanding',
+            'reasoning': colors.get('reasoning', ''),
+            'confidence': 0.95
+        }
+
+    except Exception as e:
+        logger.warning(f"[AI Color] Failed to get AI colors for topic '{topic}': {e}")
+        return None
 
 
 class SmartColorSelector:
@@ -67,17 +174,29 @@ class SmartColorSelector:
             brand_result = await self._get_brand_colors(request_analysis)
             if brand_result and brand_result.get('colors'):
                 color_sources['brand'] = brand_result
-        
-        # Check theme keywords (fourth priority)
-        if request_analysis['has_theme_keywords']:
+
+        # AI TOPIC UNDERSTANDING (fourth priority) - understands cultural context
+        # This is smarter than keyword-based search: "Kit Kat" → red/white, "American" → red/white/blue
+        # Only try if we don't already have brand colors (avoid duplicate AI calls)
+        if not color_sources.get('brand'):
+            vibe_context = ""
+            if style_preferences:
+                vibe_context = style_preferences.get('vibeContext', '')
+            ai_colors = await get_ai_colors_for_topic(title, vibe_context)
+            if ai_colors and ai_colors.get('colors'):
+                color_sources['ai_topic'] = ai_colors
+                logger.info(f"[SmartColorSelector] ✅ AI topic understanding: {title} → {ai_colors['colors']}")
+
+        # Check theme keywords (fifth priority - fallback if AI didn't understand)
+        if not color_sources.get('ai_topic') and request_analysis['has_theme_keywords']:
             theme_result = await self._get_theme_colors(request_analysis)
             if theme_result and theme_result.get('colors'):
                 color_sources['theme'] = theme_result
-        
+
         # Apply priority logic to select the best color source
         result = self._apply_color_priority(color_sources, request_analysis)
-        
-        # If still no colors, use topic-based fallback
+
+        # If still no colors, use topic-based fallback (Huemint or random palette)
         if not result or not result.get('colors'):
             result = await self._get_topic_colors(title, style_preferences, variety_seed)
         
@@ -254,15 +373,26 @@ class SmartColorSelector:
         """Get colors based on the topic.
 
         PRIORITY ORDER:
-        1. Semantic palette DB search (understands context like "American" → red/white/blue)
-        2. Huemint AI generation (for generic topics with no semantic match)
+        1. AI topic understanding (GPT understands "American" → red/white/blue culturally)
+        2. Semantic palette DB search (finds matching palettes if they exist)
+        3. Huemint AI generation (for generic topics - harmonious but context-unaware)
 
-        This ensures contextual topics get appropriate colors from the DB,
-        while generic topics still get aesthetically pleasing Huemint palettes.
+        This ensures contextual topics get culturally-appropriate colors via AI understanding.
         """
-        # FIRST: Try semantic database search - this understands context!
-        # For topics like "American", "Christmas", "Ocean" etc., the embedding search
-        # will find palettes with matching semantic meaning
+        # FIRST: Try AI to understand the topic culturally/contextually
+        # This is the smartest approach - AI knows "American" means flag colors
+        vibe_context = ""
+        if style_preferences:
+            vibe_context = style_preferences.get('vibeContext', '')
+
+        ai_colors = await get_ai_colors_for_topic(title, vibe_context)
+        if ai_colors and ai_colors.get('colors'):
+            logger.info(f"[SmartColorSelector] ✅ AI understood topic '{title}' → {ai_colors['colors']}")
+            return ai_colors
+
+        # SECOND: Try semantic database search as fallback
+        # For topics where AI failed or for variation
+        logger.info(f"[SmartColorSelector] AI topic understanding failed, trying semantic DB search for '{title}'")
         results = search_palette_by_topic(title, style_preferences, limit=5)
         
         if results:
@@ -339,9 +469,10 @@ class SmartColorSelector:
         if not result.get('colors'):
             return result
 
-        # If Huemint AI colors, skip heavy post-processing (use them directly like frontend)
-        if result.get('source') == 'huemint_ai':
-            logger.info("🎨 Skipping post-processing for Huemint colors (using directly like dropdown)")
+        # If AI-generated colors (Huemint or AI topic understanding), skip heavy post-processing
+        # These sources already have semantically-correct color assignments
+        if result.get('source') in ('huemint_ai', 'ai_topic_understanding'):
+            logger.info(f"🎨 Skipping post-processing for {result.get('source')} colors (already semantically assigned)")
             # Only ensure text colors exist
             if not result.get('text_colors') or not result['text_colors'].get('primary'):
                 primary_bg = result.get('backgrounds', [result['colors'][0]])[0]
@@ -502,6 +633,16 @@ class SmartColorSelector:
     
     def _detect_brand_request(self, text: str) -> Optional[Dict[str, Any]]:
         """Detect if this is a brand color request."""
+        # Common words that should NOT be treated as brand names
+        INVALID_BRAND_NAMES = {
+            'and', 'or', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'by',
+            'with', 'from', 'this', 'that', 'it', 'its', 'their', 'my', 'your', 'our',
+            'some', 'any', 'all', 'more', 'most', 'other', 'such', 'no', 'not', 'only',
+            'same', 'so', 'than', 'too', 'very', 'just', 'but', 'also', 'as', 'if',
+            'logo', 'brand', 'colors', 'color', 'theme', 'style', 'design', 'look',
+            'presentation', 'slides', 'deck', 'make', 'use', 'apply', 'match', 'like'
+        }
+
         patterns = [
             # General brand patterns
             r'\b(?:colors?\s+of|like|similar\s+to|brand\s+colors?|official\s+colors?)\s+([\w\-\s\.]+?)\b',
@@ -512,7 +653,7 @@ class SmartColorSelector:
             r'\bschool\s+colors?\s*(?:are|:)?\s*([\w\-\s\.]+?)\b',
             r'\bcolors?\s*(?:are|:)?\s*([\w\-\s]+?\s+(?:high\s+school|university|college))\b',
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -521,19 +662,29 @@ class SmartColorSelector:
                 brand_name = re.sub(r"\bschools\b", "school", brand_name, flags=re.IGNORECASE)
                 # Collapse whitespace
                 brand_name = re.sub(r"\s+", " ", brand_name).strip()
-                
+
+                # Skip invalid brand names (common words, too short, etc.)
+                if brand_name.lower() in INVALID_BRAND_NAMES:
+                    continue
+                if len(brand_name) < 2:
+                    continue
+
                 # Check if it's a URL
                 url = None
                 if re.search(r'\.[a-z]{2,}(?:\.[a-z]{2,})?\b', brand_name, re.IGNORECASE):
                     url = f"https://{brand_name}" if not brand_name.startswith('http') else brand_name
                     brand_name = brand_name.split('.')[0]
-                
+
+                # Final validation - skip if brand name is still invalid after URL processing
+                if brand_name.lower() in INVALID_BRAND_NAMES or len(brand_name) < 2:
+                    continue
+
                 return {
                     'is_brand_request': True,
                     'brand_name': brand_name,
                     'brand_url': url
                 }
-        
+
         return None
     
     def _extract_specific_colors(self, text: str) -> List[str]:
@@ -1144,10 +1295,14 @@ class SmartColorSelector:
         # Priority 3: Brand colors
         if 'brand' in color_sources:
             return color_sources['brand']
-        
-        # Priority 4: Theme colors
+
+        # Priority 4: AI topic understanding (culturally-aware)
+        if 'ai_topic' in color_sources:
+            return color_sources['ai_topic']
+
+        # Priority 5: Theme colors (keyword-based palette search)
         if 'theme' in color_sources:
             return color_sources['theme']
-        
+
         # No valid source found
         return None

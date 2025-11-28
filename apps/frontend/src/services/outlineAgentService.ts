@@ -82,8 +82,9 @@ export interface AgentDoneEvent {
 
 export interface AgentStatusEvent {
   type: 'status';
-  status: 'researching' | 'thinking';
+  status: 'researching' | 'thinking' | 'scraping' | 'scraped' | 'research_failed';
   query?: string;
+  message?: string;
 }
 
 export interface AgentResearchEvent {

@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, RefObject, useMemo, useState } from "react";
+import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback } from "react";
 import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
+import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 
 // Import visualization and animation libraries for CustomComponents
@@ -251,6 +252,45 @@ export const CustomComponentRenderer: React.FC<{
   // Get component state
   const { state, updateState, clearState } = useComponentInstance(component.id);
 
+  // Get updateComponent from ActiveSlide context for direct image updates
+  const { updateComponent } = useActiveSlide();
+
+  // Listen for image selection events and update component directly
+  useEffect(() => {
+    if (!isEditing || isThumbnail) return;
+
+    const handleImageSelected = (event: CustomEvent) => {
+      const { componentId, propName, imageUrl } = event.detail || {};
+
+      // Only handle events for this component
+      if (componentId !== component.id) return;
+
+      console.log('[CustomComponentRenderer] Updating image prop:', { propName, imageUrl });
+
+      // Get current props
+      const currentProps = component.props.props || {};
+
+      // Update the specific prop
+      const updatedProps = {
+        ...currentProps,
+        [propName]: imageUrl,
+      };
+
+      // Update the component
+      updateComponent(component.id, {
+        props: {
+          ...component.props,
+          props: updatedProps,
+        }
+      });
+    };
+
+    window.addEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
+    return () => {
+      window.removeEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
+    };
+  }, [isEditing, isThumbnail, component.id, component.props, updateComponent]);
+
   // Reset state when slide changes
   useEffect(() => {
     if (!isThumbnail && currentSlideIndex !== lastSlideIndexRef.current) {
@@ -286,13 +326,9 @@ export const CustomComponentRenderer: React.FC<{
       // Ensure proper newlines in HTML (fixes iframe rendering issues)
       const formattedHtml = ensureHtmlNewlines(code);
 
-      // Cache the srcDoc string - this is the ONLY thing that should cause iframe to reload
-      const cachedSrcDoc = formattedHtml;
-
-      // Return a special marker object that the renderer will use to create an iframe
-      // We return an object instead of a function to enable stable iframe rendering
+      // Return the base HTML - prop injection happens separately in stableIframeSrcDoc
       return {
-        compiledRender: { __isIframe: true, srcDoc: cachedSrcDoc } as any,
+        compiledRender: { __isIframe: true, srcDoc: formattedHtml, needsPropInjection: true } as any,
         compilationError: null
       };
     }
@@ -840,8 +876,234 @@ export const CustomComponentRenderer: React.FC<{
   const isIframeComponent = compiledRender && typeof compiledRender === 'object' && (compiledRender as any).__isIframe;
   const iframeSrcDoc = isIframeComponent ? (compiledRender as any).srcDoc : null;
 
-  // Memoize srcDoc to prevent iframe reload
-  const stableIframeSrcDoc = useMemo(() => iframeSrcDoc, [iframeSrcDoc]);
+  // Inject click handlers for placeholder images in edit mode
+  const injectImageClickHandlers = (html: string, componentId: string): string => {
+    if (!html || !isEditing) return html;
+
+    // Script to inject that handles placeholder image clicks
+    const clickHandlerScript = `
+<style>
+  .ns-placeholder-wrapper {
+    position: relative !important;
+    display: inline-block !important;
+  }
+  .ns-placeholder-hint {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    color: white !important;
+    background: rgba(99, 102, 241, 0.9) !important;
+    padding: 8px 16px !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    pointer-events: none !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    z-index: 1000 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+  }
+  .ns-placeholder-img {
+    cursor: pointer !important;
+    outline: 3px dashed rgba(99, 102, 241, 0.7) !important;
+    outline-offset: -3px !important;
+    min-height: 80px !important;
+    min-width: 80px !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.05) 100%) !important;
+    transition: all 0.2s ease !important;
+  }
+  .ns-placeholder-img:hover {
+    outline-color: rgba(99, 102, 241, 1) !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0.1) 100%) !important;
+  }
+</style>
+<script>
+(function() {
+  var processedImages = new WeakSet();
+
+  function setupImageClickHandlers() {
+    var images = document.querySelectorAll('img');
+    images.forEach(function(img, index) {
+      if (processedImages.has(img)) return;
+
+      var src = img.getAttribute('src') || '';
+      // Check if this is a placeholder or empty src - real URLs start with http or data:
+      var isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') || src === '' ||
+                          (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:'));
+
+      if (isPlaceholder) {
+        processedImages.add(img);
+
+        // Add placeholder styling class
+        img.classList.add('ns-placeholder-img');
+
+        // Wrap image in a relative container for proper hint positioning
+        var wrapper = document.createElement('div');
+        wrapper.className = 'ns-placeholder-wrapper';
+        wrapper.style.width = img.style.width || img.getAttribute('width') || '100%';
+        wrapper.style.height = img.style.height || img.getAttribute('height') || 'auto';
+
+        // Insert wrapper before img and move img inside
+        if (img.parentElement) {
+          img.parentElement.insertBefore(wrapper, img);
+          wrapper.appendChild(img);
+
+          // Add hint overlay
+          var hint = document.createElement('div');
+          hint.className = 'ns-placeholder-hint';
+          var alt = img.getAttribute('alt') || '';
+          hint.innerHTML = '📷 ' + (alt ? 'Select: ' + alt.substring(0, 20) + (alt.length > 20 ? '...' : '') : 'Click to select image');
+          wrapper.appendChild(hint);
+        }
+
+        // Add click handler to wrapper
+        wrapper.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          var alt = img.getAttribute('alt') || '';
+          var id = img.getAttribute('id') || 'img-' + index;
+          var dataProp = img.getAttribute('data-prop') || '';
+
+          // Infer prop name from alt text: "Elon Musk Portrait" -> "elonMuskPortraitImage"
+          var propName = dataProp;
+          if (!propName && alt) {
+            propName = alt.replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean).map(function(w, i) {
+              return i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+            }).join('') + 'Image';
+          }
+          if (!propName) propName = 'image' + index;
+
+          window.parent.postMessage({
+            type: 'customcomponent:image-click',
+            componentId: '${componentId}',
+            imageIndex: index,
+            imageId: id,
+            imageAlt: alt,
+            propName: propName,
+            currentSrc: src
+          }, '*');
+        });
+      }
+    });
+  }
+
+  // Run on load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupImageClickHandlers);
+  } else {
+    setupImageClickHandlers();
+  }
+
+  // Re-run for dynamic content
+  setTimeout(setupImageClickHandlers, 100);
+  setTimeout(setupImageClickHandlers, 300);
+  setTimeout(setupImageClickHandlers, 800);
+})();
+</script>`;
+
+    // Inject before </body> or at end
+    if (html.includes('</body>')) {
+      return html.replace('</body>', clickHandlerScript + '</body>');
+    } else if (html.includes('</html>')) {
+      return html.replace('</html>', clickHandlerScript + '</html>');
+    } else {
+      return html + clickHandlerScript;
+    }
+  };
+
+  // Inject image props into HTML by replacing placeholder src attributes
+  const injectImageProps = (html: string, props: Record<string, any>): string => {
+    if (!html || !props) return html;
+
+    let result = html;
+
+    // Find all img tags with placeholder src and replace with prop values
+    // Pattern: <img ... src="placeholder" ... alt="Some Alt Text" ...>
+    const imgRegex = /<img\s+([^>]*?)src=["'](?:placeholder|)["']([^>]*?)>/gi;
+
+    result = result.replace(imgRegex, (match, before, after) => {
+      // Extract alt attribute to find matching prop
+      const altMatch = (before + after).match(/alt=["']([^"']+)["']/i);
+      const dataProplMatch = (before + after).match(/data-prop=["']([^"']+)["']/i);
+
+      let propName = dataProplMatch?.[1];
+
+      if (!propName && altMatch) {
+        const alt = altMatch[1];
+        // Convert alt to camelCase prop name: "Elon Musk Portrait" -> "elonMuskPortraitImage"
+        propName = alt
+          .replace(/[^a-zA-Z0-9]/g, ' ')
+          .split(' ')
+          .filter(Boolean)
+          .map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join('') + 'Image';
+      }
+
+      // Check if we have this prop
+      if (propName && props[propName] && props[propName] !== 'placeholder') {
+        const newSrc = props[propName];
+        console.log(`[CustomComponent] Injecting image prop: ${propName} = ${newSrc.substring(0, 50)}...`);
+        return `<img ${before}src="${newSrc}"${after}>`;
+      }
+
+      return match;
+    });
+
+    return result;
+  };
+
+  // Memoize srcDoc with injected props and click handlers
+  const stableIframeSrcDoc = useMemo(() => {
+    if (!iframeSrcDoc) return null;
+
+    // First inject image props from componentProps
+    const propsToInject = componentProps.props || componentProps;
+    let html = injectImageProps(iframeSrcDoc, propsToInject);
+
+    // Then add click handlers for edit mode
+    html = injectImageClickHandlers(html, component.id);
+
+    return html;
+  }, [iframeSrcDoc, component.id, isEditing, componentProps]);
+
+  // Listen for messages from iframe (placeholder image clicks)
+  useEffect(() => {
+    if (!isIframeComponent || !isEditing) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'customcomponent:image-click' && event.data?.componentId === component.id) {
+        console.log('[CustomComponent] Placeholder image clicked:', event.data);
+
+        // Use propName from the iframe message (which was inferred from alt text)
+        const propName = event.data.propName || event.data.imageAlt || event.data.imageId || 'image';
+
+        // Convert propName to search query: "elonMuskImage" -> "elon musk"
+        const searchQuery = propName
+          .replace(/Image$|Img$|Photo$|Picture$/i, '')
+          .replace(/([A-Z])/g, ' $1')
+          .trim()
+          .toLowerCase() || event.data.imageAlt || 'image';
+
+        // Dispatch event to open ImagePicker
+        window.dispatchEvent(new CustomEvent('image:select-placeholder', {
+          detail: {
+            componentId: component.id,
+            slideId: component.slideId,
+            propName: propName,
+            searchQuery: searchQuery,
+            topic: searchQuery,
+            isCustomComponentProp: true,
+            imageIndex: event.data.imageIndex,
+          }
+        }));
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [isIframeComponent, isEditing, component.id, component.slideId]);
 
   // Render the component content (non-iframe path)
   const content = useMemo(() => {
@@ -1030,12 +1292,12 @@ export const CustomComponentRenderer: React.FC<{
           )}
         </div>
 
-        {/* 
+        {/*
           CLICK-THROUGH OVERLAY for iframe selection in edit mode
           This overlay sits on top of everything and has pointerEvents: none
           so clicks pass through to the parent ComponentRenderer
         */}
-        {effectiveIsEditMode && isIframeComponent && (
+        {effectiveIsEditMode && isIframeComponent && !isSelected && (
           <div
             style={{
               position: 'absolute',
@@ -1047,6 +1309,117 @@ export const CustomComponentRenderer: React.FC<{
             }}
           />
         )}
+
+        {/*
+          IMAGE SELECTION BUTTON for selected CustomComponents with placeholder images
+          Detects placeholders from HTML srcDoc (not props) since AI generates HTML directly
+        */}
+        {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (() => {
+          // Parse HTML to find placeholder images
+          const placeholderImages: Array<{ id: string; alt: string; propName: string; searchQuery: string }> = [];
+          const imgRegex = /<img[^>]*src=["'](?:placeholder|)["'][^>]*>/gi;
+          let match;
+          let index = 0;
+
+          while ((match = imgRegex.exec(stableIframeSrcDoc)) !== null) {
+            const imgTag = match[0];
+            // Extract alt text
+            const altMatch = imgTag.match(/alt=["']([^"']+)["']/i);
+            const idMatch = imgTag.match(/id=["']([^"']+)["']/i);
+            const alt = altMatch?.[1] || '';
+            const id = idMatch?.[1] || `img-${index}`;
+
+            // Convert alt to prop name: "Elon Musk Portrait" -> "elonMuskPortraitImage"
+            const propName = alt
+              ? alt.replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean)
+                  .map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                  .join('') + 'Image'
+              : `image${index}`;
+
+            // Convert to search query: "elonMuskPortraitImage" -> "elon musk portrait"
+            const searchQuery = (alt || propName)
+              .replace(/Image$|Img$|Photo$|Picture$/i, '')
+              .replace(/([A-Z])/g, ' $1')
+              .replace(/[^a-zA-Z0-9\s]/g, '')
+              .trim()
+              .toLowerCase() || 'image';
+
+            placeholderImages.push({ id, alt, propName, searchQuery });
+            index++;
+          }
+
+          if (placeholderImages.length === 0) return null;
+
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 100,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                alignItems: 'center',
+                pointerEvents: 'auto',
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {placeholderImages.slice(0, 3).map(({ propName, searchQuery, alt }) => (
+                <button
+                  key={propName}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    console.log('[CustomComponent] Select Image clicked:', { propName, searchQuery });
+                    window.dispatchEvent(new CustomEvent('image:select-placeholder', {
+                      detail: {
+                        componentId: component.id,
+                        slideId: component.slideId,
+                        propName: propName,
+                        searchQuery: searchQuery,
+                        topic: searchQuery,
+                        isCustomComponentProp: true,
+                      }
+                    }));
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: 'white',
+                    background: 'hsl(var(--primary))',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    transition: 'all 0.2s ease',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'hsl(var(--primary) / 0.85)';
+                    e.currentTarget.style.transform = 'scale(1.05)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.25)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'hsl(var(--primary))';
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                  }}
+                >
+                  📷 Select: {(alt || searchQuery).substring(0, 25)}{(alt || searchQuery).length > 25 ? '...' : ''}
+                </button>
+              ))}
+              {placeholderImages.length > 3 && (
+                <span style={{ fontSize: '12px', color: '#888', background: 'rgba(255,255,255,0.9)', padding: '4px 8px', borderRadius: '4px' }}>
+                  +{placeholderImages.length - 3} more images
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </ErrorBoundary>
   );

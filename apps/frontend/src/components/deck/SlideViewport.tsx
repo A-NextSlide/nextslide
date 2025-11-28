@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, lazy, Suspense } from 'react';
 import { BROWSER } from '@/utils/browser';
 import { runWhenIdle } from '@/utils/scheduler';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -30,6 +30,9 @@ import { shareService } from '@/services/shareService';
 import { useDeckStore } from '@/stores/deckStore';
 import { CommentsPanel } from './CommentsPanel';
 
+// Lazy load the waiting game
+const SlideAreaGame = lazy(() => import('./SlideAreaGame'));
+
 interface SlideViewportProps {
   slides: SlideData[];
   currentSlideIndex: number;
@@ -60,6 +63,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   isNewDeck
 }) => {
   const [selectedComponentId, setSelectedComponentId] = React.useState<string | null>(null);
+  const [showWaitingGame, setShowWaitingGame] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
@@ -669,11 +673,29 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       try {
         window.dispatchEvent(new CustomEvent('chat:selection-mode-changed', { detail: { selecting: false } }));
       } catch {}
+      // Close game when deck is complete
+      setShowWaitingGame(false);
     };
     window.addEventListener('deck_generation_complete', handleDeckComplete);
-    return () => window.removeEventListener('deck_generation_complete', handleDeckComplete);
+    window.addEventListener('deck_complete', handleDeckComplete);
+    return () => {
+      window.removeEventListener('deck_generation_complete', handleDeckComplete);
+      window.removeEventListener('deck_complete', handleDeckComplete);
+    };
   }, []);
-  
+
+  // Listen for waiting game toggle events
+  React.useEffect(() => {
+    const handleShowGame = () => setShowWaitingGame(true);
+    const handleHideGame = () => setShowWaitingGame(false);
+    window.addEventListener('show-waiting-game', handleShowGame);
+    window.addEventListener('hide-waiting-game', handleHideGame);
+    return () => {
+      window.removeEventListener('show-waiting-game', handleShowGame);
+      window.removeEventListener('hide-waiting-game', handleHideGame);
+    };
+  }, []);
+
   // No duplicate useEffect needed since we're using React's onMouseMove handler
 
   // Get the actual slide data for the current index
@@ -685,10 +707,26 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   }
 
   return (
-    <div 
-      ref={viewportRef} 
+    <div
+      ref={viewportRef}
       className="flex-1 relative overflow-hidden flex items-center justify-center max-w-full w-full h-full bg-background"
     >
+      {/* Waiting Game Overlay */}
+      {showWaitingGame && (
+        <Suspense fallback={
+          <div className="absolute inset-0 bg-slate-900 flex items-center justify-center z-50">
+            <span className="text-gray-400">Loading game...</span>
+          </div>
+        }>
+          <div className="absolute inset-0 z-50">
+            <SlideAreaGame onClose={() => {
+              setShowWaitingGame(false);
+              window.dispatchEvent(new CustomEvent('hide-waiting-game'));
+            }} />
+          </div>
+        </Suspense>
+      )}
+
       <ZoomIndicator />
       
       {/* Scrollable Container */}

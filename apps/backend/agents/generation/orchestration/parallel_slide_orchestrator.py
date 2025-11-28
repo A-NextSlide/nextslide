@@ -71,6 +71,18 @@ class ParallelSlideOrchestrator:
                 if deck_state.deck_outline.slides:
                     first_slide = deck_state.deck_outline.slides[0]
                     theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
+                    # Extract presentation context for prewarm
+                    prewarm_presentation_context = None
+                    if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
+                        style_prefs = deck_state.deck_outline.stylePreferences
+                        parts = []
+                        if hasattr(style_prefs, 'initialIdea') and style_prefs.initialIdea:
+                            parts.append(style_prefs.initialIdea)
+                        if hasattr(style_prefs, 'vibeContext') and style_prefs.vibeContext:
+                            parts.append(style_prefs.vibeContext)
+                        if parts:
+                            prewarm_presentation_context = " | ".join(parts)
+
                     context = SlideGenerationContext(
                         slide_outline=first_slide,
                         slide_index=0,
@@ -86,7 +98,8 @@ class ParallelSlideOrchestrator:
                             media.model_dump() if hasattr(first_slide, 'taggedMedia') and hasattr(media, 'model_dump') else media
                             for media in (first_slide.taggedMedia if hasattr(first_slide, 'taggedMedia') and first_slide.taggedMedia else [])
                         ],
-                        user_id=getattr(deck_state, 'user_id', None)
+                        user_id=getattr(deck_state, 'user_id', None),
+                        presentation_context=prewarm_presentation_context
                     )
                     # Build prompts using the same code paths
                     try:
@@ -391,7 +404,20 @@ class ParallelSlideOrchestrator:
                         logger.debug(f"[CHART DEBUG] Slide {slide_index + 1} extractedData: {chart_type} with {data_count} points")
                     except Exception as e:
                         logger.warning(f"[CHART DEBUG] Error accessing extractedData details: {e}")
-                
+
+                # Extract presentation context from user's initial request (for design context)
+                presentation_context = None
+                if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
+                    style_prefs = deck_state.deck_outline.stylePreferences
+                    parts = []
+                    if hasattr(style_prefs, 'initialIdea') and style_prefs.initialIdea:
+                        parts.append(style_prefs.initialIdea)
+                    if hasattr(style_prefs, 'vibeContext') and style_prefs.vibeContext:
+                        parts.append(style_prefs.vibeContext)
+                    if parts:
+                        presentation_context = " | ".join(parts)
+                        logger.debug(f"[DESIGN CONTEXT] Extracted presentation context: {presentation_context[:100]}...")
+
                 context = SlideGenerationContext(
                     slide_outline=slide_outline,
                     slide_index=slide_index,
@@ -408,7 +434,8 @@ class ParallelSlideOrchestrator:
                         media.model_dump() if hasattr(media, 'model_dump') else media
                         for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
                     ],
-                    user_id=user_id
+                    user_id=user_id,
+                    presentation_context=presentation_context
                 )
                 
                 logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")

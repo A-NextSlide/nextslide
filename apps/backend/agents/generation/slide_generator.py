@@ -1600,7 +1600,8 @@ class SlideGeneratorV2(ISlideGenerator):
                 'total_slides': context.total_slides,
                 'slide_type': getattr(context.slide_outline, 'layout', 'content'),
                 'is_full_slide': True,  # Signal this is a full-slide component
-                'background_color': bg_color
+                'background_color': bg_color,
+                'presentation_context': context.presentation_context  # User's original request for design cues
             },
             width=1920,
             height=1080,

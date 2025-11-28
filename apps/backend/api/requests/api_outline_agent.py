@@ -2,9 +2,9 @@
 Outline Generation Agent - Conversational AI for creating presentation outlines.
 
 Uses Anthropic's Haiku 4.5 with tool calling to have natural conversations
-and generate outlines when ready. Enhanced with Perplexity web search for
-researching URLs, companies, and topics.
+and generate outlines when ready. Model decides when to search via tool calling.
 """
+import os
 import logging
 import json
 import re
@@ -23,100 +23,44 @@ from setup_logging_optimized import get_logger
 logger = get_logger(__name__)
 
 
-# URL and company detection patterns
-URL_PATTERN = re.compile(
-    r'https?://[^\s<>"{}|\\^`\[\]]+|'  # Full URLs
-    r'(?:www\.)?[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s]*)?',  # Domain-like patterns
-    re.IGNORECASE
-)
-
-# Common phrases that indicate research is needed
-RESEARCH_TRIGGERS = [
-    "pitch deck", "investor", "startup", "company", "business",
-    "market", "industry", "competitor", "funding", "revenue",
-    "yc", "y combinator", "series a", "seed", "valuation"
-]
-
-
-def detect_research_needs(message: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-    """
-    Detect if the user's message contains URLs, company names, or topics
-    that would benefit from web research.
-
-    Returns:
-        Dict with 'needs_research', 'urls', 'search_query' keys
-    """
-    result = {
-        "needs_research": False,
-        "urls": [],
-        "search_query": None,
-        "research_type": None  # "url", "company", or "topic"
+# Tool definition for web search - model decides when to use it
+SEARCH_TOOL = {
+    "name": "web_search",
+    "description": "Search the web for current, up-to-date information. Use this when you need recent data, statistics, news, company info, or facts you're not confident about. Don't use for simple creative requests.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query - be specific about what information you need"
+            }
+        },
+        "required": ["query"]
     }
-
-    # Extract URLs
-    urls = URL_PATTERN.findall(message)
-    if urls:
-        # Clean up URLs
-        cleaned_urls = []
-        for url in urls:
-            url = url.strip('.,!?)')
-            if not url.startswith('http'):
-                url = 'https://' + url
-            cleaned_urls.append(url)
-        result["urls"] = cleaned_urls
-        result["needs_research"] = True
-        result["research_type"] = "url"
-        result["search_query"] = f"What is {cleaned_urls[0]}? Company overview, products, mission, and key facts"
-        return result
-
-    # Check for research trigger words (pitch decks, startups, etc.)
-    message_lower = message.lower()
-    has_triggers = any(trigger in message_lower for trigger in RESEARCH_TRIGGERS)
-
-    # Look for "about X" or "for X" patterns that might be company/topic names
-    about_match = re.search(r'(?:about|for|on)\s+([A-Z][a-zA-Z0-9\s]{2,30}?)(?:\s|$|,|\.)', message)
-
-    if has_triggers and about_match:
-        topic = about_match.group(1).strip()
-        result["needs_research"] = True
-        result["research_type"] = "topic"
-        result["search_query"] = f"{topic}: company overview, industry, market size, competitors, and recent news"
-        return result
-
-    return result
+}
 
 
-async def research_with_perplexity(query: str, research_type: str = "general") -> Dict[str, Any]:
+async def research_with_perplexity(query: str) -> Dict[str, Any]:
     """
-    Use Perplexity Sonar to research a topic, URL, or company.
-    Returns structured research with citations.
+    Use Perplexity Sonar to research a topic. Simple and direct - let the AI do the thinking.
     """
     try:
+        # Check if API key is available
+        if not (os.getenv("PPLX_API_KEY") or os.getenv("PERPLEXITY_API_KEY")):
+            logger.warning("[OutlineAgent] Perplexity API key not set - skipping research")
+            return {
+                "success": False,
+                "content": None,
+                "citations": [],
+                "error": "PPLX_API_KEY not configured"
+            }
+
         client, model = get_client("perplexity-sonar", wrap_with_instructor=False)
 
-        # Craft the research prompt based on type
-        if research_type == "url":
-            system_prompt = """You are a business research assistant. When given a URL or company website:
-1. Identify what the company/product does
-2. Find their value proposition and target market
-3. Look for any funding, traction, or key metrics
-4. Identify competitors or market positioning
-5. Note any unique differentiators
-
-Be concise but comprehensive. Focus on facts that would be useful for creating a pitch deck."""
-
-        elif research_type == "topic":
-            system_prompt = """You are a business research assistant. Research the given topic and provide:
-1. Company/product overview (if it's a company)
-2. Market size and opportunity
-3. Key competitors and landscape
-4. Recent news or developments
-5. Relevant statistics and data points
-
-Be concise but comprehensive. Focus on facts useful for presentations."""
-
-        else:
-            system_prompt = """You are a research assistant. Provide comprehensive, factual information about the query. Include relevant statistics, recent developments, and key insights."""
+        # Simple prompt - Perplexity is smart, let it figure out what's needed
+        system_prompt = """You are a research assistant helping create a presentation.
+Provide accurate, current information with specific facts, numbers, and statistics.
+Always cite your sources. Focus on what would be useful for presentation slides."""
 
         response = client.chat.completions.create(
             model="sonar",
@@ -124,11 +68,10 @@ Be concise but comprehensive. Focus on facts useful for presentations."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            max_tokens=2000,
+            max_tokens=3000,
             extra_body={
                 "return_citations": True,
-                "search_recency_filter": "month",
-                "search_domain_filter": ["-youtube.com", "-youtu.be"]
+                "search_recency_filter": "month"
             }
         )
 
@@ -160,6 +103,54 @@ Be concise but comprehensive. Focus on facts useful for presentations."""
             "citations": [],
             "error": str(e)
         }
+
+
+async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
+    """
+    Scrape content from reference links using Firecrawl. Keep it simple.
+    """
+    results = {
+        "success": False,
+        "scraped_content": [],
+        "error": None
+    }
+
+    try:
+        from services.firecrawl_service import get_firecrawl_service
+        svc = get_firecrawl_service()
+
+        if not svc.is_configured():
+            logger.warning("[OutlineAgent] Firecrawl not configured, skipping URL scraping")
+            results["error"] = "Firecrawl not configured"
+            return results
+
+        scraped_items = []
+        for url in urls[:3]:  # Limit to 3 URLs
+            try:
+                logger.info(f"[OutlineAgent] Scraping URL: {url}")
+                res = svc.scrape(url, formats=["markdown", "metadata"])
+
+                if res.get("success"):
+                    data = res.get("data") or res
+                    scraped_items.append({
+                        "url": url,
+                        "content": (data.get("markdown") or "")[:5000],
+                        "title": (data.get("metadata") or {}).get("title", ""),
+                    })
+                    logger.info(f"[OutlineAgent] Scraped {url}: {len(data.get('markdown', ''))} chars")
+            except Exception as e:
+                logger.warning(f"[OutlineAgent] Failed to scrape {url}: {e}")
+                continue
+
+        if scraped_items:
+            results["success"] = True
+            results["scraped_content"] = scraped_items
+
+    except Exception as e:
+        logger.error(f"[OutlineAgent] URL scraping failed: {e}")
+        results["error"] = str(e)
+
+    return results
 
 
 router = APIRouter(prefix="/api/outline-agent", tags=["outline-agent"])
@@ -578,44 +569,33 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
     """
     Stream the agent's response - agent outputs JSON directly in its response.
     Enhanced with Perplexity web search for researching URLs, companies, and topics.
+    Also scrapes reference links provided by user for content extraction.
     """
     try:
         # Get the raw Haiku 4.5 client
         client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
 
-        # Check if research is needed for this message
-        research_info = detect_research_needs(request.message, request.context)
-        research_context = ""
+        scraped_context = ""
 
-        if research_info["needs_research"]:
-            logger.info(f"[OutlineAgent] Research needed: {research_info['research_type']} - {research_info['search_query']}")
+        # Handle reference links if user explicitly provided them (from link button)
+        reference_links = []
+        if request.context:
+            reference_links = request.context.get("reference_links") or request.context.get("referenceLinks") or []
 
-            # Stream a "researching" indicator to the frontend
-            yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': research_info['search_query']})}\n\n"
+        if reference_links:
+            logger.info(f"[OutlineAgent] Scraping {len(reference_links)} reference links")
+            yield f"data: {json.dumps({'type': 'status', 'status': 'scraping', 'message': f'Reading content from {len(reference_links)} reference link(s)...'})}\n\n"
 
-            # Call Perplexity for research
-            research_result = await research_with_perplexity(
-                research_info["search_query"],
-                research_info["research_type"]
-            )
-
-            if research_result["success"]:
-                # Format research as context for the AI
-                research_context = f"""
-
-[RESEARCH CONTEXT - Use this information to create an informed, accurate presentation]
-{research_result['content']}
-
-Sources: {', '.join(research_result['citations'][:5]) if research_result['citations'] else 'Web search'}
-[END RESEARCH CONTEXT]
-
-"""
-                logger.info(f"[OutlineAgent] Research added to context: {len(research_context)} chars")
-
-                # Send research summary to frontend
-                yield f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
-            else:
-                logger.warning(f"[OutlineAgent] Research failed, proceeding without: {research_result.get('error')}")
+            scrape_result = await scrape_reference_links(reference_links)
+            if scrape_result["success"] and scrape_result["scraped_content"]:
+                scraped_parts = []
+                for item in scrape_result["scraped_content"]:
+                    title = item.get("title") or item.get("url", "Reference")
+                    scraped_parts.append(f"--- {title} ---\n{item['content']}\n---")
+                scraped_context = "\n\n[REFERENCE CONTENT]\n" + "\n".join(scraped_parts) + "\n[END REFERENCE CONTENT]\n\n"
+                logger.info(f"[OutlineAgent] Added scraped context: {len(scraped_context)} chars")
+                count = len(scrape_result["scraped_content"])
+                yield f"data: {json.dumps({'type': 'status', 'status': 'scraped', 'message': f'Extracted content from {count} link(s)'})}\n\n"
 
         # Build message history - filter out empty messages
         messages = []
@@ -627,7 +607,7 @@ Sources: {', '.join(research_result['citations'][:5]) if research_result['citati
                 })
 
         # Build user message with context if available
-        user_content = request.message + research_context
+        user_content = request.message + scraped_context
 
         # If context has current_outline, append it to the message
         if request.context and "current_outline" in request.context:
@@ -659,43 +639,79 @@ Sources: {', '.join(research_result['citations'][:5]) if research_result['citati
 
         logger.info(f"[OutlineAgent] Processing message with {len(messages)} messages in history")
 
-        # Call Anthropic API with streaming (no tools)
+        # Call Anthropic API with tool support - model decides when to search
+        async def call_model_with_tools(msgs):
+            """Call Claude with optional tool use, handle search tool if called."""
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=4096,
+                system=OUTLINE_AGENT_SYSTEM_PROMPT,
+                messages=msgs,
+                tools=[SEARCH_TOOL],
+                temperature=0.7
+            )
+
+            # Check if model wants to use a tool
+            if response.stop_reason == "tool_use":
+                for block in response.content:
+                    if block.type == "tool_use" and block.name == "web_search":
+                        query = block.input.get("query", "")
+                        logger.info(f"[OutlineAgent] Model requested search: {query}")
+
+                        # Tell frontend we're researching
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': query})}\n\n"
+
+                        # Do the search
+                        research_result = await research_with_perplexity(query)
+
+                        if research_result["success"]:
+                            tool_result = research_result["content"]
+                            yield f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
+                        else:
+                            tool_result = f"Search failed: {research_result.get('error', 'Unknown error')}"
+                            yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': research_result.get('error')})}\n\n"
+
+                        # Continue conversation with tool result
+                        msgs.append({"role": "assistant", "content": response.content})
+                        msgs.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": tool_result
+                            }]
+                        })
+
+                        # Call model again with the result
+                        async for event in call_model_with_tools(msgs):
+                            yield event
+                        return
+
+            # No tool use - return the text content
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    yield ("text", block.text)
+
+        # Run the model and collect response
         full_response = ""
         in_json_block = False
-        json_buffer = ""
 
-        with client.messages.stream(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=4096,
-            system=OUTLINE_AGENT_SYSTEM_PROMPT,
-            messages=messages,
-            temperature=0.7
-        ) as stream:
-            for event in stream:
-                # Stream text directly
-                if hasattr(event, 'type') and event.type == 'content_block_delta':
-                    if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
-                        text = event.delta.text
-                        full_response += text
+        async for result in call_model_with_tools(messages):
+            if isinstance(result, str) and result.startswith("data:"):
+                # This is a status event, yield it directly
+                yield result
+            elif isinstance(result, tuple) and result[0] == "text":
+                text = result[1]
+                full_response += text
 
-                        # Detect JSON block start
-                        if '```json' in full_response and not in_json_block:
-                            in_json_block = True
-                            # Extract text before JSON and send it
-                            text_before_json = full_response.split('```json')[0].strip()
-                            if text_before_json:
-                                yield f"data: {json.dumps({'type': 'text', 'content': text_before_json})}\n\n"
-                        elif '{' in text and '"action"' in full_response and not in_json_block:
-                            # Inline JSON without code block
-                            in_json_block = True
-                            # Extract text before JSON
-                            json_start = full_response.find('{')
-                            text_before_json = full_response[:json_start].strip()
-                            if text_before_json:
-                                yield f"data: {json.dumps({'type': 'text', 'content': text_before_json})}\n\n"
-                        elif not in_json_block:
-                            # Stream regular text
-                            yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
+                # Stream text, but detect JSON blocks
+                if '```json' in full_response and not in_json_block:
+                    in_json_block = True
+                    text_before_json = full_response.split('```json')[0].strip()
+                    if text_before_json:
+                        yield f"data: {json.dumps({'type': 'text', 'content': text_before_json})}\n\n"
+                elif not in_json_block:
+                    yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
 
         # After streaming, extract JSON and any text after it
         import re
