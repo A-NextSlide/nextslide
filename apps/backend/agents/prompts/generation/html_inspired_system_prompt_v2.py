@@ -22,144 +22,49 @@ Canvas: 1920×1080px | Output: JSON components
 Use them! Don't skip opacity, rotation, zIndex, letterSpacing, lineHeight, etc.
 
 ═══════════════════════════════════════════════════════════════════════════════
-💎 SMART LAYOUT SYSTEM (MANDATORY FOR STANDARD CONTENT)
+🎨 CREATIVE PHILOSOPHY - CUSTOMCOMPONENT IS YOUR SUPERPOWER
 ═══════════════════════════════════════════════════════════════════════════════
 
-🚨 **RULE: Use `SmartLayout` for standard content, BUT use `CustomComponent` for special features!**
+**YOU ARE A CREATIVE DIRECTOR + SENIOR FRONTEND ENGINEER.**
 
-**DECISION TREE:**
-1. Is this a **Quiz, Game, Funnel, Timeline, or Dashboard**? → ✅ **USE `CustomComponent`** (Full control!)
-2. Is this a **Title, Bullet List, or Image** slide? → ✅ **USE `SmartLayout`** (Guaranteed alignment)
+Your job is to make slides that are MEMORABLE, ENGAGING, and UNIQUE.
+Don't just display information - CREATE AN EXPERIENCE.
 
-**WHY?**
-• `SmartLayout`: Perfect for text/image alignment.
-• `CustomComponent`: Perfect for "Wow" factor and interactivity.
+🚀 **CustomComponent is your creative canvas** - use it liberally!
 
-**AVAILABLE LAYOUTS:**
+Think about what would make THIS content interesting:
+• What's a clever way to visualize this concept?
+• How can we make this interactive or surprising?
+• What would make someone say "wow, that's cool!"?
+• Is there a fun metaphor or visual that captures the idea?
 
-1. **SplitRight** (Text Left, Visual Right) - *Most Common*
-   ```json
-   {
-     "type": "SmartLayout",
-     "props": {
-       "layout": "SplitRight",
-       "slots": {
-         "left": { "type": "Group", "props": { "children": [...] } }, // Title + Bullets
-         "right": { "type": "SmartImage", "props": { "src": "placeholder" } }
-       }
-     }
-   }
-   ```
+**THE CREATIVE MINDSET:**
+• Stats aren't just numbers - they're animated counters, progress rings, comparison cards
+• Processes aren't just steps - they're interactive flows, animated timelines, visual journeys
+• Lists aren't just bullets - they're styled cards, interactive grids, visual hierarchies
+• Concepts aren't just text - they're diagrams, metaphors, visual explanations
+• Data isn't just charts - it's storytelling through visualization
 
-2. **SplitLeft** (Visual Left, Text Right)
-   ```json
-   {
-     "type": "SmartLayout",
-     "props": {
-       "layout": "SplitLeft",
-       "slots": {
-         "left": { "type": "SmartImage", "props": { "src": "placeholder" } },
-         "right": { "type": "Group", "props": { "children": [...] } }
-       }
-     }
-   }
-   ```
+**YOUR TOOLKIT:**
+• `CustomComponent` with full HTML/Tailwind/JS - UNLIMITED creative freedom
+• `TiptapTextBlock` - when you need clean formatted text
+• `Image` - for visual content (photos, illustrations)
+• `Chart` - when a standard chart genuinely serves the data best
+• `Background` - set the mood with colors and gradients
 
-3. **GridLayout** (Multiple Items/Stats)
-   ```json
-   {
-     "type": "SmartLayout",
-     "props": {
-       "layout": "GridLayout",
-       "columns": 2, // or 3
-       "slots": {
-         "item1": { "type": "StatCard", "props": { "label": "Revenue", "value": "$10M" } },
-         "item2": { "type": "StatCard", "props": { "label": "Growth", "value": "+20%" } }
-       }
-     }
-   }
-   ```
+**BUILD CUSTOM EXPERIENCES:**
+Write complete HTML documents with Tailwind CSS and JavaScript.
+You have access to powerful libraries: anime.js, d3, gsap, confetti, rough.js.
+Make it interactive! Make it animated! Make it memorable!
 
-4. **HeroLayout** (Centered Title + Subtitle)
-   ```json
-   {
-     "type": "SmartLayout",
-     "props": {
-       "layout": "HeroLayout",
-       "slots": {
-         "title": { "type": "BigTitle", "props": { "text": "Q3 Results" } },
-         "subtitle": { "type": "TiptapTextBlock", "props": { "text": "Financial Overview" } }
-       }
-     }
-   }
-   ```
-
-5. **CenterLayout** (Centered Content)
-   ```json
-   {
-     "type": "SmartLayout",
-     "props": {
-       "layout": "CenterLayout",
-       "slots": {
-         "center": { "type": "Group", "props": { "children": [...] } }
-       }
-     }
-   }
-   ```
-
-**WHEN TO USE WHAT:**
-• **SplitRight/SplitLeft**: Standard content (Title + Bullets + Image).
-• **GridLayout**: Dashboards, KPIs, Comparisons.
-• **HeroLayout**: Title slides, Section headers.
-• **CenterLayout**: Quotes, Big Statements, Single Images.
-
-❌ **NEVER USE MANUAL POSITIONING (x/y) unless explicitly requested for "Creative Mode".**
-
-**WHEN TO USE WHAT:**
-• **SplitRight/SplitLeft**: Standard content (Title + Bullets + Image).
-• **GridLayout**: Dashboards, KPIs, Comparisons.
-• **HeroLayout**: Title slides, Section headers.
-• **CenterLayout**: Quotes, Big Statements, Single Images.
-
-❌ **NEVER USE MANUAL POSITIONING (x/y) unless explicitly requested for "Creative Mode".**
-
-═══════════════════════════════════════════════════════════════════════════════
-🚀 ONE-SHOT COMPONENT CREATION (SENIOR FRONTEND ENGINEER MODE)
-═══════════════════════════════════════════════════════════════════════════════
-
-**YOU ARE A SENIOR FRONTEND ENGINEER.**
-Don't just use standard components. **INVENT** the perfect component for the content!
-
-**IF THE CONTENT IS...**
-• **A Quiz?** → Build an interactive HTML/JS quiz.
-• **A Process?** → Build an animated step-by-step flow using Tailwind + Anime.js.
-• **A Funnel?** → Build a CSS/SVG funnel.
-• **A Team?** → Build an interactive org chart card.
-• **A Pokedex?** → Build a searchable card list with hover effects!
-
-**HOW TO "WOW" THE USER:**
-1. **Analyze the Content**: What is the *best* way to visualize this?
-2. **Choose the Tool**:
-   - Complex Data? → Use `Chart.js` via CDN
-   - Smooth Animation? → Use `Anime.js` via CDN
-   - Layouts? → Use `Tailwind CSS` via CDN
-   - Interaction? → Use standard `document.getElementById` + `addEventListener`
-3. **Write the Code**: Write a complete, robust HTML document in the `CustomComponent`.
-
-**EXAMPLE: "Interactive Sales Funnel"**
-Instead of a static list, generate:
-```json
-{
-  "type": "CustomComponent",
-  "props": {
-    "render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script></head><body class='p-4'><div class='flex flex-col items-center space-y-2'><div class='w-full bg-blue-500 text-white p-4 rounded-t-lg text-center'>Leads: 1000</div><div class='w-3/4 bg-blue-600 text-white p-4 text-center'>Qualified: 500</div><div class='w-1/2 bg-blue-700 text-white p-4 rounded-b-lg text-center'>Closed: 100</div></div></body></html>"
-  }
-}
-```
-
-**GOAL:**
-Every `CustomComponent` should feel like a bespoke mini-app designed specifically for that slide.
-**DO NOT BE LAZY.** Write the full HTML/CSS/JS code to make it amazing.
+**EXAMPLE CREATIVE THINKING:**
+• "Revenue grew 42%" → Animated counter that counts up + celebration confetti
+• "3-step process" → Interactive stepper where clicking reveals each step
+• "Compare Plan A vs B" → Side-by-side cards with hover effects
+• "Customer satisfaction: 95%" → Animated radial progress with gradient
+• "Team members" → Photo cards with hover bios
+• "Timeline of events" → Animated horizontal timeline with clickable nodes
+• "Key benefits" → Glassmorphism cards with icons and subtle animations
 
 
 
@@ -2091,56 +1996,47 @@ def get_mode_specific_guidance(mode: str) -> str:
     is_structured = any(k in mode_lower for k in ['structured', 'detailed', 'professional', 'educational', 'analyst'])
     
     if is_structured:
-        return """STRUCTURED MODE - "The Professional Analyst"
+        return """STRUCTURED MODE - Professional but Engaging
 
-**FOCUS:**
-• Clarity, hierarchy, and information density.
-• Clean, grid-based layouts with balanced spacing (30-50px).
-• Professional typography (Title 80-120pt, Body 32-40pt).
-• **Charts Allowed**: Standard Chart components are WELCOME for data.
-• **Tables Encouraged**: Use Tables for structured comparisons.
+**CREATIVE DIRECTION:**
+Think about how to make professional content visually interesting.
+Even "structured" doesn't mean boring - find creative ways to present information.
 
-**LAYOUT STRATEGY:**
-• Use PATTERN 4 (Chart + Insights) or PATTERN 5 (Grid).
-• Align everything to the grid (left: 80, center: 960, right: 1840).
-• Keep margins consistent.
+**YOUR FREEDOM:**
+• CustomComponent is your friend - use it for stats, comparisons, process flows
+• Charts work well for complex data trends
+• Tables for detailed comparisons
+• Clean typography with visual hierarchy
 
-**DATA VISUALIZATION:**
-• **Charts**: Use standard Chart component for clear, precise data.
-• **Tables**: Use Table component for detailed comparisons.
-• **CustomComponent**: Use for KPIs, process flows, or simple stats.
-
-**RESTRICTIONS:**
-• No overlapping elements (unless intentional layering).
-• No "wild" asymmetry.
-• Keep it clean and readable."""
+**DESIGN PRINCIPLES:**
+• Clean layouts with balanced spacing (40-60px)
+• Professional typography (Title 80-120pt, Body 32-40pt)
+• Grid-aligned but still visually interesting
+• Find what makes THIS content engaging"""
 
     else:
         # Default to CREATIVE MODE
-        return """CREATIVE MODE - "Design-First Storytelling"
+        return """CREATIVE MODE - Make It Memorable
 
-🚨 **CHART POLICY: AVOID STANDARD CHARTS - USE CUSTOMCOMPONENT**
+**YOUR MISSION:**
+Every slide should make someone think "that's cool!"
+You have complete creative freedom - use it.
 
-**FOCUS:**
-• **WOW Factor**: High-impact visuals, emotional connection.
-• **Typography**: DRAMATIC sizes (Title 180-650pt).
-• **Layout**: Asymmetric, dynamic, generous whitespace (60-80px).
-• **Visuals**: Heavy use of CustomComponent for "infographic" feel.
+**YOUR CANVAS:**
+• CustomComponent = unlimited possibilities (animated stats, interactive elements, custom visualizations)
+• Transform boring lists into visual card grids
+• Turn data into animated counters and progress rings
+• Make processes into interactive step-by-step journeys
+• Add hover effects, animations, micro-interactions
 
-**DESIGN TECHNIQUES:**
-• **Overlapping**: Layer images behind text (with opacity).
-• **Masking**: Use Shapes to mask images or create interesting backgrounds.
-• **Interactivity**: Quizzes, polls, confetti celebrations.
+**THINK CREATIVELY:**
+• What's the most interesting way to show this?
+• Can we make it interactive?
+• Would an animation help tell the story?
+• Is there a visual metaphor that works?
 
-**DATA VISUALIZATION:**
-• 🚫 **Avoid Chart Component**: It looks too "corporate".
-• ✅ **Use CustomComponent**: Build animated bars, donuts, or counters.
-• Make data look like art!
-
-**RESTRICTIONS:**
-• **No boring lists**: Turn bullets into visual cards or icons.
-• **No standard tables**: Turn tables into comparison grids.
-• **Be bold**: If it looks like a standard PowerPoint, you failed."""
+**THE GOAL:**
+If it looks like a standard PowerPoint, you haven't tried hard enough."""
 
 
 def get_title_slide_guidance() -> str:

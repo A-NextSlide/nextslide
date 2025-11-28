@@ -355,16 +355,15 @@ class SlidePromptBuilder:
             return False
 
     def _add_text_heavy_layout_rules(self, sections: List[str]) -> None:
-        """On text-heavy slides, forbid central heavy components; prescribe side-panel/banners and icon+text adjacency."""
+        """Encourage creative visualization even for content-rich slides."""
         sections.extend([
-            "\nTEXT-HEAVY LAYOUT GUARDRAILS (STRICT):",
-            "- DO NOT place CustomComponent, Chart, Table, or 'stats hero' centered. No central dominance.",
-            "- Use split layout: LEFT column for text, RIGHT column for visualization (or the reverse).",
-            "- SIDE PANEL (preferred): x=960, width=880, y in 260–880; keep ≥60px gaps to text.",
-            "- NARROW BANNER (alternative): y>=640, height<=320; stretch width 1760; must not cover text.",
-            "- If text and icon belong together, keep them on the same row; first shrink text width before any vertical move.",
-            "- If overlap is inevitable, MOVE the visualization (CustomComponent/Chart/Image), NOT the text+icon pair.",
-            "- Only use a centered CustomComponent if slide is METRIC-FOCUSED with minimal text (<=60 words).",
+            "\nCONTENT-RICH SLIDE - GET CREATIVE:",
+            "- This slide has substantial content - a PERFECT opportunity for creative visualization!",
+            "- Consider: Can this content become an interactive CustomComponent? Cards? Timeline? Visual flow?",
+            "- Split layout works well: LEFT for key text, RIGHT for CustomComponent visualization.",
+            "- Transform bullet points into styled cards, comparison grids, or visual hierarchies.",
+            "- Use CustomComponent to make dense information engaging and scannable.",
+            "- If using text + visual, keep ≥60px gaps and use split-screen layout.",
         ])
 
     def _add_market_sizing_guidance(self, sections: List[str], context: SlideGenerationContext) -> None:
