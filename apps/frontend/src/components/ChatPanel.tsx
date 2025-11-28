@@ -2998,15 +2998,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       // NOTE: Don't set isGenerating(true) here - it causes all slides to show loading
       // We only set isGenerating when the agent actually triggers generation (generate_outline action)
 
-      // STEP 2: Add AI placeholder message
+      // STEP 2: Add AI placeholder message with thinking indicator
       const aiMessageId = `ai-${Date.now()}`;
+      const thinkingMessages = [
+        '🤔 Hmm, let me think...',
+        '💭 Pondering this one...',
+        '🧠 Processing...',
+        '✨ Cooking up something good...',
+        '🎯 Working on it...',
+      ];
+      const initialThinking = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
       setMessages(prev => [...prev, {
         id: aiMessageId,
         type: 'ai',
-        message: '',
+        message: initialThinking,
         timestamp: new Date(),
         feedback: null,
-        metadata: { isTyping: true }
+        metadata: { isTyping: true, thinkingPhase: 'initial' }
       }]);
 
       // STEP 3: Build context
@@ -3049,40 +3057,42 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           chat_history: convertMessagesToApiFormat(messages),
           context: context
         })) {
+          // Debug: log all events
+          console.log('[ChatPanel] Event received:', event.type, event.type === 'status' ? (event as any).status : '', event.type === 'text' ? `"${(event as any).content?.slice(0, 50)}..."` : '');
+
           if (event.type === 'status') {
             // Handle status events (researching, scraping, etc.)
             if (event.status === 'researching') {
+              const query = (event as any).query || 'your topic';
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `🔍 Researching: ${event.query || 'your topic'}...`, metadata: { isTyping: true, isResearching: true } }
+                  ? { ...m, message: `🔍 **Searching the web** for "${query}"`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'researching' } }
                   : m
               ));
             } else if (event.status === 'scraping') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `📥 ${event.message || 'Reading reference links...'}`, metadata: { isTyping: true, isResearching: true } }
+                  ? { ...m, message: `📄 **Reading website**... ${(event as any).message || ''}`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'scraping' } }
                   : m
               ));
             } else if (event.status === 'scraped') {
-              // Scraping complete - show brief success message then continue
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `✓ ${event.message || 'Content extracted'}`, metadata: { isTyping: true, isResearching: false } }
+                  ? { ...m, message: `✓ **Got it!** Now thinking...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking' } }
                   : m
               ));
             } else if (event.status === 'research_failed') {
-              // Research failed - show warning
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `⚠️ Research unavailable: ${event.message || 'API not configured'}`, metadata: { isTyping: true, isResearching: false } }
+                  ? { ...m, message: `⚠️ Couldn't find info online, winging it...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking' } }
                   : m
               ));
             }
           } else if (event.type === 'research') {
-            // Research completed - clear researching state
+            // Research completed - show brief "processing" then continue
             setMessages(prev => prev.map(m =>
               m.id === aiMessageId
-                ? { ...m, message: '', metadata: { isTyping: true, isResearching: false } }
+                ? { ...m, message: `🧠 **Found info!** Processing...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing' } }
                 : m
             ));
           } else if (event.type === 'text') {
@@ -3096,12 +3106,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
             displayText = displayText.trim();
 
-            // Update AI message in real-time
-            setMessages(prev => prev.map(m =>
-              m.id === aiMessageId
-                ? { ...m, message: displayText, metadata: { isTyping: true } }
-                : m
-            ));
+            // Update AI message in real-time, but preserve isResearching state
+            setMessages(prev => prev.map(m => {
+              if (m.id !== aiMessageId) return m;
+
+              // If we're researching, only show text if we have meaningful content
+              // (not empty/whitespace-only text from before tool call)
+              const isResearching = m.metadata?.isResearching;
+              if (isResearching && !displayText) {
+                return m; // Keep the "Researching..." message
+              }
+
+              return {
+                ...m,
+                message: displayText,
+                metadata: { ...m.metadata, isTyping: true, isResearching: false }
+              };
+            }));
           } else if (event.type === 'outline') {
             outlineData = event.data;
           }

@@ -61,7 +61,20 @@ COUNT CHECK: slides.length === {slide_count}"""
         if detail_level == "detailed":
             count_inst = "Use as many slides as needed to comprehensively explain the topic. Each slide = one focused concept."
         elif detail_level == "standard":
-            count_inst = "Create an appropriate number of slides to properly cover the topic. Break it down logically."
+            count_inst = """PRESENTATION MODE - Create slides for PRESENTING, not reading!
+
+SLIDE SPREADING STRATEGY:
+- ONE simple idea per slide - spread content across many slides
+- Step-by-step instructions: ONE step per slide (e.g., "Step 1: Mix dry ingredients" on its own slide)
+- Each concept gets its own moment - don't cram multiple ideas together
+- Prefer 8-15 slides with simple, focused content over 5-6 dense slides
+- Think: "What would a presenter SAY for this slide?" - if it takes 30+ seconds to explain, split it
+
+EXAMPLES:
+✅ "How to make pasta" → 10 slides: Title, Ingredients, Boil water, Add salt, Add pasta, Stir occasionally, Test for doneness, Drain, Serve, Enjoy
+❌ "How to make pasta" → 3 slides: Title, All steps crammed together, Conclusion
+
+Create slides optimized for FLOW and DELIVERY."""
         else:  # quick
             count_inst = "Create a concise presentation. Use your judgment on slide count."
 
@@ -303,75 +316,74 @@ CHARTS: ALMOST NEVER in educational/detailed mode
 - ONLY use charts if you have 15+ quantitative data points showing a clear pattern
 - Default to text explanations and examples"""
     else:
-        mode = """CREATIVE MODE - DESIGN-FIRST APPROACH:
+        mode = """🎤 PRESENTATION MODE - FOR PRESENTING, NOT READING!
 
-GOAL: Visual-first slides that are easy to absorb but provide sufficient context.
+CORE PRINCIPLE: This is a PRESENTATION. The audience will LISTEN to a presenter speak.
+Slides are VISUAL AIDS, not documents. Minimal text, maximum impact.
 
-APPROACH: Clean sections with clear, descriptive text.
+═══════════════════════════════════════════════════════════════
+WORD LIMITS (STRICT - DO NOT EXCEED):
+═══════════════════════════════════════════════════════════════
+• Standard content slides: MAX 20-35 words total
+• Step/instruction slides: MAX 10-20 words (just the step)
+• Stat/metric slides: MAX 10 words (number + context)
+• Interactive components: Can have more detail if needed
 
-FORMAT:
-## Section Title (2-5 words)
-• Concise but clear point (10-15 words)
-• Another key point with detail (10-15 words)
+FORMAT FOR SIMPLE SLIDES:
+## [Title - 2-5 words]
+• One key point (5-8 words)
+• Optional second point (5-8 words)
+• That's it. No more.
 
-## Another Section (if needed)
-• Supporting insight (10-15 words)
+EXAMPLE - PITCH DECK SLIDE (PRESENTATION MODE):
+## Market Opportunity
+• **$45B** addressable market
+• Growing **23%** annually
 
-EXAMPLE - PITCH DECK SLIDE:
-## Sector Insights
+EXAMPLE - STEP-BY-STEP SLIDE (SINGLE STEP PER SLIDE):
+## Step 3: Add the Pasta
+Drop pasta into boiling water
 
-## Fintech
-Fintech has shown **notable growth** with higher mega outcome incidence, driven by increasing adoption of digital payments and banking solutions.
+EXAMPLE - CONCEPT SLIDE:
+## What is Machine Learning?
+Computers learning patterns from data
 
-## SaaS
-The SaaS sector has maintained **steady outcomes**, demonstrating resilience even in fluctuating market conditions due to recurring revenue models.
+═══════════════════════════════════════════════════════════════
+PRESENTATION FLOW RULES:
+═══════════════════════════════════════════════════════════════
+• ONE idea per slide - let it breathe
+• Spread content across MORE slides rather than cramming
+• Step-by-step: ONE step per slide, centered, simple
+• The presenter will SPEAK the details - slides just prompt
+• If a slide takes 30+ seconds to explain, it needs to be split
 
-## Consumer
-Consumer sectors exhibit **high variance** in returns, often dependent on shifting consumer trends and brand loyalty.
+WHAT TO AVOID:
+❌ Walls of text
+❌ Multiple paragraphs
+❌ 5+ bullet points
+❌ Bullets longer than 10 words
+❌ Cramming everything onto one slide
+❌ Treating slides like a document
 
-CONTENT RULES:
-- BREVITY WITH SUBSTANCE: Bullets should be 10-15 words - clear and descriptive.
-- MAXIMUM 60-80 words per slide (excluding title)
-- 2-3 sections max per slide
-- 2-3 bullets per section
-- Bold key numbers and metrics with **
-- DO NOT include IMAGE tags - those are added separately
-- Use short, punchy sentences
-- Avoid wall of text, but avoid vague one-liners
+WHAT TO DO:
+✅ Simple, centered statements for steps/concepts
+✅ Big numbers with minimal context
+✅ Short, punchy phrases
+✅ Let visuals do the work
+✅ One thought = one slide
 
 ** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
 - Output EXACTLY what they wrote - word for word
 - DO NOT add research, examples, or additional information
-- DO NOT expand or elaborate on their content
 - Your role is to format and structure their exact words, not to add content
 
-VISUALS:
-🎨 Images/Icons: PRIMARY visual element (60-80% of slides should have images)
-📊 Charts: EXTREMELY RARE (only 5-10% of slides MAX, and ONLY for truly exceptional data stories)
+INTERACTIVE COMPONENTS (Exception):
+For interactive elements (quizzes, simulations, detailed analysis tools),
+more content is acceptable because users INTERACT with it, not just view it.
 
-CHARTS - WHEN TO USE THEM:
-🚫 NO CHARTS FOR (use text/images instead):
-   - Educational/explanatory content (concepts, processes, how-to)
-   - Historical narratives or stories
-   - Feature lists or benefits
-   - Comparisons that work as bullet points
-   - Simple statistics (2-3 numbers)
-   - Qualitative information (opinions, quotes, descriptions)
-   - Product features, team members, testimonials
-   - Vision statements, mission, values
-   - ANY slide where an image or text would work just as well
-
-✅ ONLY USE CHARTS WHEN ALL CONDITIONS MET:
-   - You have 10-20+ QUANTITATIVE data points to compare
-   - The data shows a clear TREND, PATTERN, or DISTRIBUTION
-   - The visual representation reveals insights text CANNOT
-   - The slide's PRIMARY PURPOSE is data analysis/metrics (not storytelling)
-   - Examples: quarterly revenue over 3+ years, market share distribution across 10+ companies, user growth over 12+ months
-   - The presentation is business/data-focused (NOT educational, personal, or creative)
-
-⚠️ ASK YOURSELF: "Is this slide IMPOSSIBLE to understand without a chart?"
-   - If the answer is "no" or "text/images would work" → NO CHART
-   - Default to NO CHART unless you're 100% certain it's necessary"""
+CHARTS - ALMOST NEVER:
+Only use charts when you have 15+ real data points and visualization is essential.
+Default: NO CHART. Use text + image instead."""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):

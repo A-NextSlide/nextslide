@@ -151,22 +151,24 @@ async def stream_theme_from_outline(
                 text_color = text if text else "#1F2937"
                 accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
                 
-                # Select appropriate fallback fonts if brand_fonts is not available
-                hero_font = brand_fonts
-                body_font = brand_fonts
-                
+                # Get fonts from stylePreferences (hero font AND body font separately)
+                hero_font = brand_fonts  # This is style_prefs.font
+                body_font_from_prefs = getattr(style_prefs, 'bodyFont', None)
+                body_font = body_font_from_prefs if body_font_from_prefs else brand_fonts
+
+                # If no fonts set, select appropriate fallback based on topic or brand
                 if not brand_fonts:
                     # Check if this is a fun/playful topic
                     title_lower = (outline.title or '').lower()
                     vibe_lower = (vibe_context or '').lower()
                     combined_context = f"{title_lower} {vibe_lower}"
-                    
+
                     is_fun_topic = any(keyword in combined_context for keyword in [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
                         'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
                     ])
-                    
+
                     if is_fun_topic:
                         # Use playful fonts for fun topics
                         import hashlib
@@ -181,11 +183,23 @@ async def stream_theme_from_outline(
                         combo = playful_combos[seed_hash % len(playful_combos)]
                         hero_font, body_font = combo
                         logger.info(f"[THEME API] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
+                    elif vibe_context and ('.' in vibe_context or len(vibe_context.split()) <= 2):
+                        # Looks like a brand domain or short brand name - let ThemeDirector handle it
+                        # Don't use generic fonts; fall through to ThemeDirector for better selection
+                        logger.info(f"[THEME API] 🏷️ Brand context detected ({vibe_context}), will use ThemeDirector for font selection")
+                        # Set temporary fonts but prefer ThemeDirector path
+                        hero_font = 'Montserrat'
+                        body_font = 'Roboto'
                     else:
                         # Use professional fonts for business topics
                         hero_font = 'Montserrat'
                         body_font = 'Roboto'
                         logger.info(f"[THEME API] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
+
+                # Ensure hero and body are different
+                if hero_font and body_font and hero_font.lower() == body_font.lower():
+                    body_font = 'Roboto' if hero_font != 'Roboto' else 'Open Sans'
+                    logger.info(f"[THEME API] 🔄 Ensured different fonts: hero={hero_font}, body={body_font}")
 
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -516,23 +530,25 @@ async def theme_from_outline_json(
                 bg_color = background if background else "#FFFFFF"
                 text_color = text if text else "#1F2937"
                 accent_color = brand_colors[0] if len(brand_colors) > 0 else "#FF4301"
-                
-                # Select appropriate fallback fonts if brand_fonts is not available
-                hero_font = brand_fonts
-                body_font = brand_fonts
-                
+
+                # Get fonts from stylePreferences (hero font AND body font separately)
+                hero_font = brand_fonts  # This is style_prefs.font
+                body_font_from_prefs = getattr(style_prefs, 'bodyFont', None)
+                body_font = body_font_from_prefs if body_font_from_prefs else brand_fonts
+
+                # If no fonts set, select appropriate fallback based on topic or brand
                 if not brand_fonts:
                     # Check if this is a fun/playful topic
                     title_lower = (outline.title or '').lower()
                     vibe_lower = (vibe_context or '').lower()
                     combined_context = f"{title_lower} {vibe_lower}"
-                    
+
                     is_fun_topic = any(keyword in combined_context for keyword in [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
                         'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
                     ])
-                    
+
                     if is_fun_topic:
                         # Use playful fonts for fun topics
                         import hashlib
@@ -547,11 +563,21 @@ async def theme_from_outline_json(
                         combo = playful_combos[seed_hash % len(playful_combos)]
                         hero_font, body_font = combo
                         logger.info(f"[THEME JSON] 🎮 Fun topic detected! Using playful fonts: {hero_font}/{body_font}")
+                    elif vibe_context and ('.' in vibe_context or len(vibe_context.split()) <= 2):
+                        # Looks like a brand domain or short brand name - let ThemeDirector handle it
+                        logger.info(f"[THEME JSON] 🏷️ Brand context detected ({vibe_context}), will use ThemeDirector for font selection")
+                        hero_font = 'Montserrat'
+                        body_font = 'Roboto'
                     else:
                         # Use professional fonts for business topics
                         hero_font = 'Montserrat'
                         body_font = 'Roboto'
                         logger.info(f"[THEME JSON] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
+
+                # Ensure hero and body are different
+                if hero_font and body_font and hero_font.lower() == body_font.lower():
+                    body_font = 'Roboto' if hero_font != 'Roboto' else 'Open Sans'
+                    logger.info(f"[THEME JSON] 🔄 Ensured different fonts: hero={hero_font}, body={body_font}")
 
                 reconstructed_theme = {
                     "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { DeckOutline } from '@/types/SlideTypes';
-import { ArrowLeft, Loader2, Microscope, ChevronLeft, Play, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Microscope } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -84,15 +84,15 @@ const OutlineHeader: React.FC<OutlineHeaderProps> = ({
                 return;
               }
               lastClickTimeRef.current = now;
-              
+
               // Guard against duplicate calls
               if (isLocalGenerating) {
                 return;
               }
-              
+
               setIsLocalGenerating(true);
               onGenerateDeck();
-              
+
               // Reset after a longer delay to ensure the parent has time to update
               setTimeout(() => {
                 setIsLocalGenerating(false);
@@ -101,32 +101,38 @@ const OutlineHeader: React.FC<OutlineHeaderProps> = ({
             disabled={!canGenerate}
             size="sm"
             className={cn(
-              "h-8 px-4 text-xs font-medium shadow-lg hover:shadow-xl transition-all whitespace-nowrap",
-              isOutlineGenerating 
-                ? "bg-orange-100 hover:bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/30 dark:text-orange-400"
+              "h-8 px-4 text-xs whitespace-nowrap transition-all border-0",
+              "shadow-[0_4px_14px_0_rgba(255,67,1,0.39)] hover:shadow-[0_6px_20px_rgba(255,67,1,0.5)]",
+              isOutlineGenerating
+                ? "bg-orange-100 hover:bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/30 dark:text-orange-400 shadow-none hover:shadow-none"
                 : (isGenerating || isLocalGenerating)
-                ? "bg-blue-100 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/30 dark:text-blue-400"
-                : "bg-[#FF4301] hover:bg-[#FF4301]/90 text-white"
+                ? "bg-blue-100 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/30 dark:text-blue-400 shadow-none hover:shadow-none"
+                : "bg-gradient-to-r from-[#FF4301] to-[#FF6B35] hover:from-[#E63D00] hover:to-[#FF4301] text-white"
             )}
+            style={{
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+              fontWeight: 800,
+              letterSpacing: '0.02em',
+            }}
           >
             {isOutlineGenerating ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Completing Outline...
               </>
             ) : isResearching ? (
               <>
-                <Microscope className="h-3.5 w-3.5 mr-1.5 animate-pulse" />
+                <Microscope className="h-4 w-4 mr-2 animate-pulse" />
                 Research: {completedResearchSlides}/{totalResearchSlides}
               </>
             ) : (isGenerating || isLocalGenerating) ? (
               generationProgress ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   <span className="inline-flex items-center gap-1">
                     Generating slide {generationProgress.currentSlide}/{generationProgress.totalSlides}
                     {generationProgress.slideTitle && (
-                      <span className="text-[10px] opacity-80 max-w-[150px] truncate">
+                      <span className="text-xs opacity-80 max-w-[150px] truncate">
                         ({generationProgress.slideTitle})
                       </span>
                     )}
@@ -134,15 +140,12 @@ const OutlineHeader: React.FC<OutlineHeaderProps> = ({
                 </>
               ) : (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Generating...
                 </>
               )
             ) : (
-              <>
-                <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-                Generate Presentation
-              </>
+              "Generate Presentation"
             )}
           </Button>
         </div>

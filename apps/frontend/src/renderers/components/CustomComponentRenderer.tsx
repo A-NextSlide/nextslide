@@ -265,16 +265,23 @@ export const CustomComponentRenderer: React.FC<{
       // Only handle events for this component
       if (componentId !== component.id) return;
 
-      console.log('[CustomComponentRenderer] Updating image prop:', { propName, imageUrl });
+      console.log('[CustomComponentRenderer] Received image selection:', { componentId, propName, imageUrl: imageUrl?.substring(0, 60) });
+
+      if (!propName || !imageUrl) {
+        console.warn('[CustomComponentRenderer] Missing propName or imageUrl');
+        return;
+      }
 
       // Get current props
       const currentProps = component.props.props || {};
+      console.log('[CustomComponentRenderer] Current props:', Object.keys(currentProps));
 
       // Update the specific prop
       const updatedProps = {
         ...currentProps,
         [propName]: imageUrl,
       };
+      console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
 
       // Update the component
       updateComponent(component.id, {
@@ -283,6 +290,7 @@ export const CustomComponentRenderer: React.FC<{
           props: updatedProps,
         }
       });
+      console.log('[CustomComponentRenderer] Component update dispatched');
     };
 
     window.addEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
@@ -290,6 +298,304 @@ export const CustomComponentRenderer: React.FC<{
       window.removeEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
     };
   }, [isEditing, isThumbnail, component.id, component.props, updateComponent]);
+
+  // Track if we've already auto-applied images for this component
+  const autoAppliedRef = useRef<Set<string>>(new Set());
+
+  // Auto-apply images for placeholder images when component first renders
+  useEffect(() => {
+    if (isThumbnail) return;
+
+    const html = renderCode;
+    if (!html || typeof html !== 'string') return;
+
+    // Only process full HTML documents (iframe mode)
+    const trimmedHtml = html.trim().toLowerCase();
+    if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
+
+    // Bad/generic search terms that won't give good results
+    const BAD_SEARCH_TERMS = [
+      'image', 'image0', 'image1', 'image2', 'image3',
+      'visualization', 'dataname', 'photo', 'picture',
+      'graphic', 'visual', 'background', 'chart', 'icon',
+      'placeholder', 'img', 'figure', 'illustration'
+    ];
+
+    // Get slide context for fallback search terms
+    const getSlideContext = () => {
+      try {
+        // Try to get slide title from the DOM or store
+        const slideContainer = document.querySelector('.slide-container[data-slide-id]');
+        const slideTitle = slideContainer?.getAttribute('data-slide-title') || '';
+
+        // Also try to extract title from the HTML itself
+        const titleMatch = html.match(/<(?:h1|h2|h3)[^>]*>([^<]+)</i);
+        const htmlTitle = titleMatch ? titleMatch[1].trim() : '';
+
+        return slideTitle || htmlTitle || 'professional business';
+      } catch {
+        return 'professional business';
+      }
+    };
+
+    // Check for placeholder images in the HTML
+    const imgRegex = /<img[^>]*>/gi;
+    const placeholders: Array<{ alt: string; searchQuery: string }> = [];
+    let match;
+
+    while ((match = imgRegex.exec(html)) !== null) {
+      const imgTag = match[0];
+      const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+      const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+      const src = srcMatch?.[1] || '';
+      const alt = altMatch?.[1] || '';
+
+      // Check if this is a placeholder
+      const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
+        (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
+
+      if (isPlaceholder) {
+        // Create a unique key for this placeholder
+        const placeholderKey = `${component.id}-${alt || 'unnamed'}`;
+
+        // Skip if we've already auto-applied for this placeholder
+        if (autoAppliedRef.current.has(placeholderKey)) continue;
+
+        // Convert alt to search query
+        let searchQuery = alt
+          .replace(/[^a-zA-Z0-9\s]/g, ' ')
+          .trim()
+          .toLowerCase();
+
+        // Check if the search query is bad/generic
+        const isBadSearchTerm = !searchQuery ||
+          searchQuery.length < 3 ||
+          BAD_SEARCH_TERMS.some(bad => searchQuery === bad || searchQuery.startsWith(bad + ' ') || searchQuery.match(new RegExp(`^${bad}\\d*$`)));
+
+        if (isBadSearchTerm) {
+          // Use slide context as fallback
+          const slideContext = getSlideContext();
+          searchQuery = `${slideContext} professional photo`;
+          console.log('[CustomComponentRenderer] Bad alt text detected, using fallback:', { original: alt, fallback: searchQuery });
+        }
+
+        placeholders.push({ alt: alt || 'image', searchQuery });
+        autoAppliedRef.current.add(placeholderKey);
+      }
+    }
+
+    if (placeholders.length === 0) return;
+
+    console.log('[CustomComponentRenderer] Found placeholder images to auto-apply:', placeholders);
+
+    // Auto-fetch and apply images for each placeholder
+    const autoApplyImages = async () => {
+      for (const { alt, searchQuery } of placeholders) {
+        try {
+          console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery);
+
+          // Search for images using the media search API
+          const response = await fetch('/api/media/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: searchQuery,
+              type: 'images',
+              limit: 1 // Only need one image
+            })
+          });
+
+          if (!response.ok) {
+            console.warn('[CustomComponentRenderer] Image search failed for:', searchQuery);
+            continue;
+          }
+
+          const data = await response.json();
+          const images = data.results || data.images || [];
+
+          if (images.length === 0) {
+            console.warn('[CustomComponentRenderer] No images found for:', searchQuery);
+            continue;
+          }
+
+          // Get the first image URL
+          let imageUrl = images[0].url || images[0].src?.large || images[0].src?.medium || images[0].src?.original;
+
+          if (!imageUrl) {
+            console.warn('[CustomComponentRenderer] No valid URL in image result');
+            continue;
+          }
+
+          console.log('[CustomComponentRenderer] Found image for', searchQuery, ':', imageUrl.substring(0, 60));
+
+          // Proxy external images through our backend for reliability
+          if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
+            try {
+              const proxyResponse = await fetch('/api/media/proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: imageUrl })
+              });
+
+              const proxyData = await proxyResponse.json();
+              if (proxyResponse.ok && proxyData.success && proxyData.url) {
+                imageUrl = proxyData.url;
+                console.log('[CustomComponentRenderer] Proxied URL:', imageUrl.substring(0, 60));
+              }
+            } catch (proxyError) {
+              console.warn('[CustomComponentRenderer] Proxy failed, using original URL');
+            }
+          }
+
+          // Update the HTML to replace the placeholder with the actual image
+          let currentHtml = component.props.render as string;
+          const altLower = alt.toLowerCase();
+          let replaced = false;
+
+          currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
+            if (replaced) return imgMatch;
+
+            const imgAltMatch = attrs.match(/alt=["']([^"']*)["']/i);
+            const imgAlt = imgAltMatch ? imgAltMatch[1].toLowerCase() : '';
+            const imgSrcMatch = attrs.match(/src=["']([^"']*)["']/i);
+            const imgSrc = imgSrcMatch ? imgSrcMatch[1] : '';
+
+            // Check if this is the placeholder we're looking for
+            const isThisPlaceholder = imgAlt === altLower &&
+              (!imgSrc || imgSrc === 'placeholder' || imgSrc.includes('placeholder') ||
+               (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:')));
+
+            if (isThisPlaceholder) {
+              replaced = true;
+              if (attrs.includes('src=')) {
+                const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
+                console.log('[CustomComponentRenderer] Auto-replaced image for:', alt);
+                return `<img${newAttrs}>`;
+              } else {
+                return `<img src="${imageUrl}"${attrs}>`;
+              }
+            }
+            return imgMatch;
+          });
+
+          if (replaced) {
+            // Update the component with the new HTML
+            updateComponent(component.id, {
+              props: {
+                ...component.props,
+                render: currentHtml,
+              }
+            });
+            console.log('[CustomComponentRenderer] Auto-applied image for:', alt);
+          }
+
+        } catch (error) {
+          console.error('[CustomComponentRenderer] Error auto-applying image:', error);
+        }
+      }
+    };
+
+    // Run auto-apply after a short delay to avoid blocking render
+    const timeoutId = setTimeout(autoApplyImages, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [component.id, renderCode, isThumbnail, updateComponent, component.props]);
+
+  // Track proxied URLs to avoid re-processing
+  const proxiedUrlsRef = useRef<Set<string>>(new Set());
+
+  // Proxy any external image URLs in the HTML (handles cases where AI embeds direct URLs)
+  useEffect(() => {
+    if (isThumbnail) return;
+
+    const html = renderCode;
+    if (!html || typeof html !== 'string') return;
+
+    // Only process full HTML documents (iframe mode)
+    const trimmedHtml = html.trim().toLowerCase();
+    if (!trimmedHtml.startsWith('<!doctype html') && !trimmedHtml.startsWith('<html')) return;
+
+    // Find external image URLs that need proxying
+    const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
+    const externalUrls: Array<{ originalUrl: string; fullMatch: string }> = [];
+    let match;
+
+    while ((match = imgRegex.exec(html)) !== null) {
+      const src = match[1];
+      // Check if this is an external URL that needs proxying
+      const isExternalUrl = src.startsWith('http') &&
+        !src.includes('supabase') &&
+        !src.includes('nextslide') &&
+        !src.includes('localhost') &&
+        !proxiedUrlsRef.current.has(src);
+
+      if (isExternalUrl) {
+        externalUrls.push({ originalUrl: src, fullMatch: match[0] });
+        proxiedUrlsRef.current.add(src); // Mark as being processed
+      }
+    }
+
+    if (externalUrls.length === 0) return;
+
+    console.log('[CustomComponentRenderer] Found external URLs to proxy:', externalUrls.map(e => e.originalUrl.substring(0, 50)));
+
+    // Proxy all external URLs
+    const proxyExternalUrls = async () => {
+      let currentHtml = component.props.render as string;
+      let updated = false;
+
+      for (const { originalUrl } of externalUrls) {
+        try {
+          console.log('[CustomComponentRenderer] Proxying external URL:', originalUrl.substring(0, 60));
+
+          const proxyResponse = await fetch('/api/media/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: originalUrl })
+          });
+
+          const proxyData = await proxyResponse.json();
+
+          if (proxyResponse.ok && proxyData.success && proxyData.url) {
+            const proxiedUrl = proxyData.url;
+            console.log('[CustomComponentRenderer] Proxied to:', proxiedUrl.substring(0, 60));
+
+            // Replace the URL in the HTML
+            // Use a regex that handles HTML entities like &amp;
+            const escapedOriginal = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const urlRegex = new RegExp(escapedOriginal.replace(/&/g, '(&|&amp;)'), 'gi');
+            const newHtml = currentHtml.replace(urlRegex, proxiedUrl);
+
+            if (newHtml !== currentHtml) {
+              currentHtml = newHtml;
+              updated = true;
+              console.log('[CustomComponentRenderer] Replaced URL in HTML');
+            }
+          } else {
+            console.warn('[CustomComponentRenderer] Proxy failed for:', originalUrl.substring(0, 50), proxyData.error);
+          }
+        } catch (error) {
+          console.error('[CustomComponentRenderer] Error proxying URL:', error);
+        }
+      }
+
+      if (updated) {
+        // Update the component with proxied URLs
+        updateComponent(component.id, {
+          props: {
+            ...component.props,
+            render: currentHtml,
+          }
+        });
+        console.log('[CustomComponentRenderer] Updated component with proxied URLs');
+      }
+    };
+
+    // Run proxy after a delay to avoid blocking and allow other operations to complete
+    const timeoutId = setTimeout(proxyExternalUrls, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [component.id, renderCode, isThumbnail, updateComponent, component.props]);
 
   // Reset state when slide changes
   useEffect(() => {
@@ -1058,15 +1364,17 @@ export const CustomComponentRenderer: React.FC<{
   const stableIframeSrcDoc = useMemo(() => {
     if (!iframeSrcDoc) return null;
 
-    // First inject image props from componentProps
-    const propsToInject = componentProps.props || componentProps;
-    let html = injectImageProps(iframeSrcDoc, propsToInject);
+    // First inject image props from component.props.props (the nested props object)
+    // componentProps already spreads these, but we need the actual image URLs
+    const imageProps = component.props.props || {};
+    console.log('[CustomComponent] Injecting props into HTML:', Object.keys(imageProps));
+    let html = injectImageProps(iframeSrcDoc, imageProps);
 
     // Then add click handlers for edit mode
     html = injectImageClickHandlers(html, component.id);
 
     return html;
-  }, [iframeSrcDoc, component.id, isEditing, componentProps]);
+  }, [iframeSrcDoc, component.id, isEditing, component.props.props]);
 
   // Listen for messages from iframe (placeholder image clicks)
   useEffect(() => {
@@ -1311,32 +1619,37 @@ export const CustomComponentRenderer: React.FC<{
         )}
 
         {/*
-          IMAGE SELECTION BUTTON for selected CustomComponents with placeholder images
-          Detects placeholders from HTML srcDoc (not props) since AI generates HTML directly
+          IMAGE SELECTION BUTTONS for selected CustomComponents with placeholder images
+          Shows compact, on-brand buttons positioned in a clean overlay
         */}
         {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (() => {
           // Parse HTML to find placeholder images
           const placeholderImages: Array<{ id: string; alt: string; propName: string; searchQuery: string }> = [];
-          const imgRegex = /<img[^>]*src=["'](?:placeholder|)["'][^>]*>/gi;
+          const imgRegex = /<img[^>]*>/gi;
           let match;
           let index = 0;
 
           while ((match = imgRegex.exec(stableIframeSrcDoc)) !== null) {
             const imgTag = match[0];
-            // Extract alt text
+            const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+            const src = srcMatch?.[1] || '';
+            const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
+              src.startsWith('data:image/svg+xml') || // loading placeholder
+              (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
+
+            if (!isPlaceholder) continue;
+
             const altMatch = imgTag.match(/alt=["']([^"']+)["']/i);
             const idMatch = imgTag.match(/id=["']([^"']+)["']/i);
             const alt = altMatch?.[1] || '';
             const id = idMatch?.[1] || `img-${index}`;
 
-            // Convert alt to prop name: "Elon Musk Portrait" -> "elonMuskPortraitImage"
             const propName = alt
               ? alt.replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean)
                   .map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
                   .join('') + 'Image'
               : `image${index}`;
 
-            // Convert to search query: "elonMuskPortraitImage" -> "elon musk portrait"
             const searchQuery = (alt || propName)
               .replace(/Image$|Img$|Photo$|Picture$/i, '')
               .replace(/([A-Z])/g, ' $1')
@@ -1350,23 +1663,27 @@ export const CustomComponentRenderer: React.FC<{
 
           if (placeholderImages.length === 0) return null;
 
+          // Brand colors
+          const brandOrange = '#FF4301';
+          const brandOrangeHover = '#E63D00';
+
           return (
             <div
+              data-no-drag="true"
               style={{
                 position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
+                bottom: '12px',
+                right: '12px',
                 zIndex: 100,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px',
-                alignItems: 'center',
+                gap: '6px',
+                alignItems: 'flex-end',
                 pointerEvents: 'auto',
               }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              {placeholderImages.slice(0, 3).map(({ propName, searchQuery, alt }) => (
+              {placeholderImages.slice(0, 4).map(({ propName, searchQuery, alt }, idx) => (
                 <button
                   key={propName}
                   onClick={(e) => {
@@ -1386,35 +1703,53 @@ export const CustomComponentRenderer: React.FC<{
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    fontSize: '11px',
                     fontWeight: 600,
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
                     color: 'white',
-                    background: 'hsl(var(--primary))',
+                    background: brandOrange,
                     border: 'none',
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(255, 67, 1, 0.3)',
+                    transition: 'all 0.15s ease',
                     whiteSpace: 'nowrap',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'hsl(var(--primary) / 0.85)';
-                    e.currentTarget.style.transform = 'scale(1.05)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.25)';
+                    e.currentTarget.style.background = brandOrangeHover;
+                    e.currentTarget.style.transform = 'translateX(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 67, 1, 0.4)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'hsl(var(--primary))';
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+                    e.currentTarget.style.background = brandOrange;
+                    e.currentTarget.style.transform = 'translateX(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(255, 67, 1, 0.3)';
                   }}
                 >
-                  📷 Select: {(alt || searchQuery).substring(0, 25)}{(alt || searchQuery).length > 25 ? '...' : ''}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21,15 16,10 5,21"/>
+                  </svg>
+                  {(alt || searchQuery).substring(0, 20)}{(alt || searchQuery).length > 20 ? '…' : ''}
                 </button>
               ))}
-              {placeholderImages.length > 3 && (
-                <span style={{ fontSize: '12px', color: '#888', background: 'rgba(255,255,255,0.9)', padding: '4px 8px', borderRadius: '4px' }}>
-                  +{placeholderImages.length - 3} more images
+              {placeholderImages.length > 4 && (
+                <span style={{
+                  fontSize: '10px',
+                  color: 'rgba(255,255,255,0.8)',
+                  background: 'rgba(0,0,0,0.6)',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontWeight: 500,
+                }}>
+                  +{placeholderImages.length - 4} more
                 </span>
               )}
             </div>

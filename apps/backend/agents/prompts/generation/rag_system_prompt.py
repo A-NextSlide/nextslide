@@ -214,6 +214,22 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
 - ABSOLUTELY NO external libraries, imports, JSX, or CSS frameworks. Write bespoke JS with React.createElement only.
 - Always pass and use theme props: primaryColor, secondaryColor, textColor, fontFamily.
 
+🚨 CUSTOMCOMPONENT IMAGES - CRITICAL RULES:
+- NEVER use external image URLs (unsplash.com, pexels.com, pixabay.com, etc.)
+- ALWAYS use src="placeholder" with DESCRIPTIVE alt text that will be used as a search query
+- The alt text = Google Image search query - make it SPECIFIC!
+
+✅ CORRECT:
+React.createElement('img', {src: 'placeholder', alt: 'Elon Musk portrait photo', style: {objectFit: 'cover', width: '100%', height: '200px'}})
+React.createElement('img', {src: 'placeholder', alt: 'Tesla Model S electric car', style: {objectFit: 'cover'}})
+React.createElement('img', {src: 'placeholder', alt: 'professional business team meeting', style: {objectFit: 'cover'}})
+
+🚫 BANNED (will break the slide):
+- src: 'https://unsplash.com/...'
+- src: 'https://source.unsplash.com/...'
+- src: 'https://images.unsplash.com/...'
+- alt: 'image0', 'image1', 'visualization', 'photo', 'picture', 'background'
+
  FIT AND RESPONSIVENESS (MANDATORY FOR CustomComponent):
  - CRITICAL FIRST LINES - ALWAYS DEFINE PADDING FIRST:
    const padding = props.padding || 32; // THIS MUST BE THE FIRST LINE

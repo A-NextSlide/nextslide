@@ -139,9 +139,9 @@ Icon + text rules (optional, use sparingly):
         if context.has_chart_data and context.chart_data:
             prompt_parts.append("Chart data provided - create appropriate chart.")
             
-        # Add image if available (minimal)
+        # Add image instruction (for Image components only, not CustomComponent HTML)
         if context.available_images:
-            prompt_parts.append(f"Image available: {context.available_images[0].get('url', '')[:100]}")
+            prompt_parts.append("Images available for Image components. For CustomComponent HTML, use <img src='placeholder' alt='descriptive search term'>.")
             
         prompt_parts.append("\nGenerate slide JSON.")
         

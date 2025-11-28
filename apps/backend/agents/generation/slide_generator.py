@@ -867,6 +867,12 @@ class SlideGeneratorV2(ISlideGenerator):
         except Exception as e:
             logger.warning(f"[SLIDE GENERATOR] Outline value injection skipped due to error: {e}")
 
+        # Process CustomComponent placeholder images - search and apply real images
+        try:
+            await self._process_custom_component_images(slide_data, context)
+        except Exception as e:
+            logger.warning(f"[SLIDE GENERATOR] CustomComponent image processing skipped: {e}")
+
         # Extract and store image search terms from components for persistence
         image_search_terms = {}
         for idx, comp in enumerate(validated_components):
@@ -3367,6 +3373,149 @@ class SlideGeneratorV2(ISlideGenerator):
                     props['outline'] = chips
         except Exception as e:
             logger.debug(f"_inject_outline_values_into_custom_components skipped: {e}")
+
+    async def _process_custom_component_images(self, slide_data: Dict[str, Any], context: SlideGenerationContext) -> None:
+        """Process CustomComponent HTML to find placeholder images and replace with real images.
+
+        This handles the case where CustomComponent HTML contains <img src="placeholder" alt="search term">
+        and searches for appropriate images using SerpAPI, then uploads to Supabase.
+        """
+        import re
+        try:
+            # Bad/generic search terms that won't give good results
+            BAD_SEARCH_TERMS = {
+                'image', 'image0', 'image1', 'image2', 'image3',
+                'visualization', 'dataname', 'photo', 'picture',
+                'graphic', 'visual', 'background', 'chart', 'icon',
+                'placeholder', 'img', 'figure', 'illustration'
+            }
+
+            # Get slide context for fallback
+            slide_title = getattr(context.slide_outline, 'title', '') or ''
+            slide_content = getattr(context.slide_outline, 'content', '') or ''
+
+            for comp in slide_data.get('components', []) or []:
+                if comp.get('type') != 'CustomComponent':
+                    continue
+
+                props = comp.get('props', {}) or {}
+                render_html = props.get('render', '')
+
+                if not render_html or not isinstance(render_html, str):
+                    continue
+
+                # Check if this is an HTML document (iframe mode)
+                trimmed = render_html.strip().lower()
+                if not (trimmed.startswith('<!doctype html') or trimmed.startswith('<html')):
+                    continue
+
+                # Find placeholder images
+                img_regex = re.compile(r'<img([^>]*)>', re.IGNORECASE)
+                updated_html = render_html
+                images_processed = 0
+
+                for match in img_regex.finditer(render_html):
+                    attrs = match.group(1)
+
+                    # Extract src and alt
+                    src_match = re.search(r'src=["\']([^"\']*)["\']', attrs, re.IGNORECASE)
+                    alt_match = re.search(r'alt=["\']([^"\']*)["\']', attrs, re.IGNORECASE)
+
+                    src = src_match.group(1) if src_match else ''
+                    alt = alt_match.group(1) if alt_match else ''
+
+                    # Check if this image needs processing
+                    # We process ANY image that isn't already on our Supabase/nextslide domain
+                    is_already_ours = (
+                        src and
+                        ('supabase' in src.lower() or 'nextslide' in src.lower())
+                    )
+
+                    # Skip images that are already on our domain
+                    if is_already_ours:
+                        continue
+
+                    # Generate search query from alt text
+                    search_query = re.sub(r'[^a-zA-Z0-9\s]', ' ', alt).strip().lower()
+
+                    # Check if search query is bad/generic
+                    is_bad_query = (
+                        not search_query or
+                        len(search_query) < 3 or
+                        search_query in BAD_SEARCH_TERMS or
+                        any(search_query.startswith(bad) for bad in BAD_SEARCH_TERMS)
+                    )
+
+                    if is_bad_query:
+                        # Use slide context as fallback
+                        search_query = f"{slide_title} professional" if slide_title else "professional business"
+                        logger.info(f"[CUSTOM IMG] Bad alt text '{alt}' - using fallback: {search_query}")
+
+                    # Search for image using SerpAPI
+                    try:
+                        from services.combined_image_service import get_combined_image_service
+                        image_service = get_combined_image_service()
+
+                        # Search for one image
+                        search_result = await image_service.search_images(
+                            query=search_query,
+                            per_page=1,
+                            page=1
+                        )
+
+                        images = search_result.get('photos', []) or search_result.get('results', [])
+
+                        if images and len(images) > 0:
+                            image_data = images[0]
+                            image_url = (
+                                image_data.get('url') or
+                                image_data.get('src', {}).get('large') or
+                                image_data.get('src', {}).get('original') or
+                                image_data.get('original_url')
+                            )
+
+                            if image_url:
+                                # Upload to Supabase for reliability
+                                from services.image_storage_service import get_image_storage_service
+                                storage = get_image_storage_service()
+
+                                upload_result = await storage.upload_image_from_url(
+                                    image_url,
+                                    metadata={'alt': alt, 'search_query': search_query, 'source': 'serpapi'}
+                                )
+
+                                if upload_result and upload_result.get('url'):
+                                    final_url = upload_result['url']
+
+                                    # Replace the placeholder src with the real URL
+                                    old_img = match.group(0)
+                                    if 'src=' in attrs:
+                                        new_attrs = re.sub(r'src=["\'][^"\']*["\']', f'src="{final_url}"', attrs, flags=re.IGNORECASE)
+                                    else:
+                                        new_attrs = f' src="{final_url}"' + attrs
+                                    new_img = f'<img{new_attrs}>'
+
+                                    updated_html = updated_html.replace(old_img, new_img, 1)
+                                    images_processed += 1
+                                    logger.info(f"[CUSTOM IMG] ✅ Applied image for '{search_query}': {final_url[:60]}...")
+                                else:
+                                    logger.warning(f"[CUSTOM IMG] Upload failed for {search_query}")
+                            else:
+                                logger.warning(f"[CUSTOM IMG] No URL in search result for {search_query}")
+                        else:
+                            logger.warning(f"[CUSTOM IMG] No images found for: {search_query}")
+
+                    except Exception as e:
+                        logger.warning(f"[CUSTOM IMG] Error searching for '{search_query}': {e}")
+                        continue
+
+                # Update the component's render HTML if images were processed
+                if images_processed > 0 and updated_html != render_html:
+                    props['render'] = updated_html
+                    logger.info(f"[CUSTOM IMG] Updated CustomComponent with {images_processed} images")
+
+        except Exception as e:
+            logger.warning(f"[CUSTOM IMG] Processing skipped: {e}")
 
     def _apply_tagged_media_to_images(self, slide_data: Dict[str, Any], tagged_media: List[Dict[str, Any]]):
         """Replace placeholder images with actual tagged media URLs."""

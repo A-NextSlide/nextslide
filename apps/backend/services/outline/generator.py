@@ -1877,20 +1877,21 @@ class OutlineGenerator:
             ' pitch' in prompt_lower and 'baseball' not in prompt_lower
         )
         if slide_count is None:
-            # Align default slide count with detail level (consistency with non-streaming path)
+            # Align default slide count with detail level
+            # PRESENTATION MODE: More slides with less content each = better flow
             default_map = {
-                'quick': 3,
-                'standard': 6,
-                'detailed': 10
+                'quick': 5,      # Was 3 - spread content more
+                'standard': 10,  # Was 6 - spread content across more slides for presentation
+                'detailed': 10   # Detailed keeps same - dense content per slide
             }
             if is_pitch:
                 # For pitch, allow more slides with simpler content if not specified
                 default_map = {
-                    'quick': 6,
-                    'standard': 10,
+                    'quick': 8,      # Was 6 - presentation mode spreads more
+                    'standard': 12,  # Was 10 - spread content across more slides
                     'detailed': 14
                 }
-            slide_count = default_map.get((options.detail_level or 'standard'), 6)
+            slide_count = default_map.get((options.detail_level or 'standard'), 10)
             # Hard clamp to supported bounds
             slide_count = max(1, min(20, slide_count))
 
@@ -2249,54 +2250,51 @@ REMEMBER: NO IMAGE tags in content."""
                         if options.style_context and options.style_context.strip():
                             context_for_slide = f"{options.prompt}\n\nAdditional context from conversation:\n{options.style_context}"
                         
-                        slide_prompt = f"""Create presentation content for this slide:
+                        slide_prompt = f"""🎤 PRESENTATION MODE - Create minimal slide content:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
 Context: {context_for_slide}
 
-{research_data_section}OUTPUT FORMAT: Return ONLY the slide content. DO NOT include metadata headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'. 
-DO NOT include IMAGE tags in your response - those will be added separately.
-{citation_instruction}
+{research_data_section}{citation_instruction}
 
-CRITICAL: If the context includes CUSTOM financial details, metrics, or specific requirements (e.g., "$15M raise", "$3M runway", "burn chart"), USE THOSE EXACT CUSTOM VALUES instead of generic research. The custom details from the conversation take PRIORITY over web-researched data.
+═══════════════════════════════════════════════════════════════
+🚨 STRICT WORD LIMIT: MAX 20-35 WORDS PER SLIDE 🚨
+═══════════════════════════════════════════════════════════════
 
-🎯 STRUCTURED CONTENT REQUIREMENTS:
-
-ORGANIZATION:
-- Group related points under section headers using ## for main topics
-- Use clear, descriptive section titles (2-5 words)
-- Organize content logically with proper hierarchy
+This is a PRESENTATION, not a document. The presenter will SPEAK the details.
+Slides are VISUAL CUES only.
 
 FORMAT:
-## Section Title
-• Main point with specific data (8-12 words)
-• Related point with details (8-12 words)
-  • Sub-point if needed (indented with 2 spaces)
+• Short point (5-8 words max)
+• Another point (5-8 words max)
 
+That's it. 1-2 bullets. No sections. No headers.
+
+✅ GOOD (for pitch deck):
+• **$45B** market opportunity
+• Growing **23%** annually
+
+✅ GOOD (for how-to):
+• Add pasta to boiling water
+• Wait **8-10 minutes**
+
+❌ BAD - TOO MUCH:
+## Section Header
+• Long sentence explaining concept in detail with citations[1]
+• Another long bullet with lots of information[2]
 ## Another Section
-• Key fact or metric
-• Supporting information
+• More content...
 
-CONTENT RULES:
-- Business/investor content: 3-5 bullets per section, 8-12 words each
-- Simple topics: 2-3 bullets per section, 5-7 words each
-- Test: Can you SPEAK this while presenting? If no, cut it
-- Bold key numbers and metrics with **
+RULES:
+- NO ## section headers
+- MAX 2 bullets (3 only if critical)
+- MAX 8 words per bullet
+- ONE idea per slide
+- **Bold** key numbers
+- NO paragraphs, NO walls of text
 
-GOOD examples:
-## Discovery
-• Howard Carter found tomb in **1922**, sealed **3,200 years**[1]
-• Hidden staircase **13 feet** below Valley of the Kings[1]
-
-## Artifacts  
-• King Tut's meteoritic iron dagger—rare divine material[3]
-• Thonis-Heracleion revealed **132 artifacts** near Alexandria[3][4]
-
-BAD examples:
-• Long paragraph explanations - DELETE
-• Unorganized random bullets without grouping - DELETE
-• IMAGE: [description here] - NEVER include this"""
+If custom values in context (e.g., "$15M raise"), use EXACTLY those values."""
 
                 logger.debug(f"[PARALLEL] Making Perplexity API call for slide {idx+1} ({detail_mode} mode)")
                 
@@ -2310,14 +2308,14 @@ BAD examples:
                         "num_search_results": 10
                     }
                 else:
-                    max_tokens_for_slide = 600  # Flexible minimal (allows business content)
+                    max_tokens_for_slide = 200  # Truly minimal for presentation mode
                     slide_search_params = {
                         "return_citations": True,
                         "search_recency_filter": "week",
                         "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
-                        "num_search_results": 5
+                        "num_search_results": 3  # Even fewer results for minimal content
                     }
-                    logger.debug(f"[PRESENTATION] Slide {idx+1}: Using MINIMAL tokens (300) and search (5 results, 1 week)")
+                    logger.debug(f"[PRESENTATION] Slide {idx+1}: Using MINIMAL tokens (200) and search (3 results)")
                 
                 # Use asyncio to run the synchronous API call in a thread executor
                 loop = asyncio.get_event_loop()
@@ -2906,20 +2904,21 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
             # 🎯 ADJUST FOR PERSONAL/CREATIVE: Use minimal slide counts for short, fun content
             if options.slide_count is None:
                 if is_personal_creative or is_howto:
-                    # Personal/creative content should be SHORT and focused
+                    # Personal/creative/how-to: SPREAD across MORE slides with simple content
+                    # Presentation mode = more slides, less content each
                     slide_hint = {
-                        'quick': 3,
-                        'standard': 5,  # Reduced from 6 to 5
-                        'detailed': 8   # Reduced from 10 to 8
-                    }.get(options.detail_level or 'standard', 5)
-                    logger.info(f"[OUTLINE] 🎉 Detected personal/creative/silly topic - using SHORT slide count: {slide_hint}")
+                        'quick': 5,      # Was 3 - spread content more
+                        'standard': 8,   # Was 5 - how-to gets more slides (one step per slide)
+                        'detailed': 10   # Was 8 - detailed stays denser
+                    }.get(options.detail_level or 'standard', 8)
+                    logger.info(f"[OUTLINE] 🎉 Detected personal/creative/how-to topic - using SPREAD slide count: {slide_hint}")
                 else:
-                    # Business/formal content uses normal defaults
+                    # Business/formal: presentation mode spreads more
                     slide_hint = {
-                        'quick': 3,
-                        'standard': 6,
-                        'detailed': 10
-                    }.get(options.detail_level or 'standard', 6)
+                        'quick': 5,      # Was 3
+                        'standard': 10,  # Was 6 - spread content across more slides
+                        'detailed': 10   # Detailed keeps dense content
+                    }.get(options.detail_level or 'standard', 10)
             else:
                 # User explicitly specified slide count - respect it
                 slide_hint = options.slide_count
@@ -2932,14 +2931,14 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
             is_pitch = any(ind in prompt_lower for ind in pitch_indicators) or (
                 ' pitch' in prompt_lower and 'baseball' not in prompt_lower
             )
-            # For pitch decks without an explicit slide count, allow slightly more slides with simpler content
-            # BUT NOT for personal/creative topics - those should stay short
+            # For pitch decks: spread content across more slides with minimal text each
+            # Presentation mode means MORE slides, LESS text per slide
             if options.slide_count is None and is_pitch and not is_personal_creative:
                 slide_hint = {
-                    'quick': 6,
-                    'standard': 10,
+                    'quick': 8,      # Was 6
+                    'standard': 12,  # Was 10 - pitch decks get spread content
                     'detailed': 14
-                }.get(options.detail_level or 'standard', 10)
+                }.get(options.detail_level or 'standard', 12)
             
             # Detect formal/comprehensive requests that need more facts
             formal_indicators = [
@@ -3055,59 +3054,70 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                     "CITATION POLICY: Do NOT use YouTube (youtube.com, youtu.be) as a source; prefer reputable articles, reports, company sites, documentation."
                 )
             else:
-                # PRESENTATION MODE: FLEXIBLE MINIMAL
+                # PRESENTATION MODE: TRULY MINIMAL - FOR PRESENTING
                 system = (
-                    "Create presentation slides. CORE: Visual-first, minimal text that supports speaking.\n"
+                    "🎤 PRESENTATION MODE - Create slides for SPEAKING, not reading!\n"
                     "\n"
-                    "OUTPUT FORMAT: Return ONLY clean bullet points. NO headers like 'SPEAKABLE CONTENT:', 'SPEAKER NOTES:', or 'CITATIONS:'. Citations go inline as [1], [2].\n"
+                    "CORE RULES:\n"
+                    "• MAX 20-35 words per content slide (this is STRICT)\n"
+                    "• ONE idea per slide - spread content across more slides\n"
+                    "• Step-by-step content: ONE step per slide, simple text\n"
+                    "• The presenter speaks the details - slides are visual cues\n"
                     "\n"
-                    "CONTENT ADAPTATION:\n"
-                    "• Concept/teaching slides: 2-3 bullets, 6-9 words each (baseline)\n"
-                    "• Business/investor slides: 3-5 bullets, 8-12 words each (concise facts)\n"
-                    "• Team slides: list members (Name — Role — 3–7 word credential). Multiple lines allowed.\n"
-                    "• Rule: Can you speak this while presenting? If no, cut it\n"
+                    "FORMAT:\n"
+                    "• 1-2 bullets max, 5-10 words each\n"
+                    "• Big numbers with **bold**: '**$2.5B** market'\n"
+                    "• Simple phrases, not sentences\n"
                     "\n"
-                    "✅ GOOD: 'Revenue **$2.5B**, up **42%** YoY' (7 words)\n"
-                    "❌ BAD: 'Our company experienced significant growth...' (paragraph)\n"
+                    "SPREAD CONTENT:\n"
+                    "• Prefer 10+ simple slides over 5 dense ones\n"
+                    "• Each concept gets its own slide moment\n"
+                    "• Step-by-step = one step per slide\n"
                     "\n"
-                    "NO paragraphs. NO section headers. ONLY bullets with **bold** numbers. JSON only."
+                    "❌ NO: paragraphs, 5+ bullets, walls of text, cramming\n"
+                    "✅ YES: minimal text, visual focus, breathing room\n"
+                    "\n"
+                    "JSON only. Citations inline as [1], [2]."
                 )
             # Dynamic bullet guidance for 'content' slides
             if options.detail_level == 'detailed':
                 content_bullet_limits = "150-250 words with section headers (##), main bullets (•), and indented sub-bullets (  •). Each main bullet should be 15-25 words with data. Use **bold** for emphasis on numbers and key terms."
             else:
-                # PRESENTATION MODE: FLEXIBLE MINIMAL
+                # PRESENTATION MODE: TRULY MINIMAL
                 content_bullet_limits = (
-                    "Concept/teaching: 2-3 bullets, 6-9 words (~45 words cap).\n"
-                    "Business/investor: 3-5 bullets, 8-12 words (~60 words).\n"
-                    "Team: list members (Name — Role — short credential).\n"
-                    "Adapt to context. **Bold** numbers. NO paragraphs."
+                    "MAX 20-35 words per slide. 1-2 bullets, 5-10 words each.\n"
+                    "Step-by-step: ONE step per slide, centered simple text.\n"
+                    "Team: list members (Name — Role — credential).\n"
+                    "**Bold** numbers. NO paragraphs. ONE idea per slide."
                 )
 
-            # Add flexible but minimal content guidance for presentation mode
+            # Add strict minimal content guidance for presentation mode
             brevity_enforcement = ""
             if options.detail_level != 'detailed':
                 brevity_enforcement = (
-                    "🎯 PRESENTATION MODE - FLEXIBLE MINIMAL STYLE:\n"
+                    "🎤 PRESENTATION MODE - FOR PRESENTING, NOT READING!\n"
                     "\n"
-                    "CORE PRINCIPLE: Slides support speaking, not reading. Visual + minimal text.\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "WORD LIMITS (STRICT - ENFORCE THESE):\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "• Content slides: MAX 20-35 words total\n"
+                    "• Step/instruction slides: MAX 10-20 words (just the step)\n"
+                    "• Stat slides: MAX 10 words (number + context)\n"
                     "\n"
-                    "CONTENT RULES (adapt to context):\n"
-                    "• Concept/teaching: 2-3 bullets, 6-9 words each (~45 words max/slide)\n"
-                    "• Business/investor: 3-5 bullets, 8-12 words each (~60 words max/slide)\n"
-                    "• Team slide: list 6–12 members, 'Name — Role — credential (3–7 words)'; allowed to exceed bullet/word caps.\n"
-                    "• Key rule: NO paragraphs, NO long explanations\n"
-                    "• Test: Can you speak this while presenting? If no, it's too much text\n"
+                    "SLIDE SPREADING:\n"
+                    "• ONE idea per slide - let it breathe\n"
+                    "• Step-by-step: ONE step per slide, not all steps crammed together\n"
+                    "• Prefer 10+ simple slides over 5 dense ones\n"
+                    "• If explaining takes 30+ seconds, split the slide\n"
                     "\n"
                     "FORMAT:\n"
-                    "✅ Punchy bullets with **bold** data/numbers\n"
-                    "✅ 'Q3 revenue: **$2.5B**, up **42%** YoY' (8 words, brief)\n"
-                    "✅ 'Launched in **5 markets**, **12M users** in 6 months' (9 words, data-rich)\n"
-                    "❌ 'Our company experienced significant revenue growth over the quarter...' (paragraph - DELETE)\n"
-                    "❌ Section headers like '## Key Metrics' (unnecessary - DELETE)\n"
+                    "✅ '**$2.5B** market opportunity' (4 words)\n"
+                    "✅ 'Step 3: Add pasta to water' (6 words, one step)\n"
+                    "✅ 'ML = computers learning from data' (6 words)\n"
+                    "❌ Paragraphs, 5+ bullets, walls of text\n"
+                    "❌ Multiple steps crammed on one slide\n"
                     "\n"
-                    "OUTPUT: Return ONLY bullet points. NO metadata headers. NO 'SPEAKABLE CONTENT' or 'SPEAKER NOTES' sections.\n"
-                    "FLEXIBILITY: Match content to presentation type. Investor pitch can have more substance than casual topic, but always concise bullets, never paragraphs.\n\n"
+                    "The presenter SPEAKS the details. Slides are visual cues.\n\n"
                 )
             
             # Append style_context/chat history if present - CRITICAL for following chat agreements
@@ -3153,17 +3163,23 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                     "  • COMPARISONS: Year-over-year, before/after, benchmarks, competitor data\n\n"
                 )
             else:
-                # PRESENTATION MODE: ENFORCE BREVITY
+                # PRESENTATION MODE: TRULY MINIMAL FOR PRESENTING
                 user += (
-                    "ADAPT content to context. Business: 3-5 bullets, 8-12 words. Simple: 2-3 bullets, 5-7 words. **Bold** numbers.\n"
-                    "✅ 'Revenue **$2.5B**, grew **42%** in Q3' (7 words, data-rich)\n"
-                    "❌ 'Our company experienced significant revenue growth during the past quarter...' (paragraph - DELETE)\n\n"
+                    "🎤 PRESENTATION MODE RULES:\n"
+                    "• MAX 20-35 words per content slide (STRICT)\n"
+                    "• 1-2 bullets, 5-10 words each\n"
+                    "• ONE idea per slide - spread across more slides\n"
+                    "• Step-by-step: ONE step per slide\n"
+                    "• **Bold** key numbers\n"
+                    "✅ '**$2.5B** market' (3 words)\n"
+                    "✅ 'Step 2: Add salt to water' (6 words)\n"
+                    "❌ Paragraphs, 5+ bullets, cramming\n\n"
                 )
-            
+
             user += (
-                f"STRUCTURE: Slide 1=title (metadata only). Quote/stat/divider=1 line. Content={content_bullet_limits}\n\n"
-                f"FINAL: Adapt to content. Concepts: ≤3 bullets × 9 words. Investor/business: ≤5 bullets × 12 words. Team slide can be longer with member lines. NO paragraphs. NO headers. {f'MAX 45 words/slide (non-team).' if options.detail_level != 'detailed' else 'Pack data.'}\n\n"
-                "OUTPUT FORMAT: Return ONLY bullet points. NO metadata headers like 'SPEAKABLE CONTENT', 'SPEAKER NOTES', or 'CITATIONS'. Put citations inline as [1], [2].\n\n"
+                f"STRUCTURE: Slide 1=title. Quote/stat/divider=1 line. Content={content_bullet_limits}\n\n"
+                f"FINAL: {f'MAX 25 words/slide. ONE idea per slide. Spread content across MORE slides. Step-by-step = one step per slide.' if options.detail_level != 'detailed' else 'Pack data. 150-250 words/slide.'}\n\n"
+                "OUTPUT FORMAT: Return ONLY bullet points. NO metadata headers. Citations inline as [1], [2].\n\n"
                 "JSON: {title:str, slides:[{title:str, type:'title'|'content'|'stat'|'quote'|'chart'|'team'|'agenda'|'divider'|'transition', content:str, chart?:{chartType:str,data:[{name:str,value:num}]}}]}\n"
             )
             # Call raw text generation with mode-specific parameters

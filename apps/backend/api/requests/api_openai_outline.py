@@ -300,7 +300,7 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
     try:
         t = text.strip()
         tl = t.lower()
-        
+
         # Explicitly ignore generic audience terms that might appear in styleContext
         # This list must be checked against ANY extracted candidate
         generic_terms = {
@@ -313,7 +313,7 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
             'class', 'course', 'lesson', 'tutorial', 'workshop', 'seminar',
             'undefined', 'none', 'null', 'unknown', 'default', 'test'
         }
-        
+
         def is_valid_candidate(c: str) -> bool:
             if not c: return False
             cl = c.lower().strip().strip('.,!?:')
@@ -330,7 +330,9 @@ def _guess_brand_identifier(text: Optional[str]) -> Optional[str]:
         # 2) Look for "for [Brand]" or "about [Brand]" or "[Brand] theme" patterns
         # Matches: "presentation for McDonald's", "deck about Nike", "McDonald's themed", "a mcdonalds theme"
         brand_patterns = [
-            # "[Brand] theme/themed" - HIGHEST priority for explicit theming requests
+            # "[Brand] branded" - HIGHEST priority for explicit branding requests (e.g., "first round branded")
+            r"\b([a-zA-Z][a-zA-Z0-9'\-\s]{1,30}?)\s+branded\b",
+            # "[Brand] theme/themed" - High priority for explicit theming requests
             r"\ba?\s*([a-zA-Z0-9'\-]+(?:'s)?)\s+theme[d]?\b",
             r"\b([a-zA-Z0-9'\-]+(?:'s)?)[- ]themed\b",
             # "for [Brand]" / "about [Brand]"
@@ -511,6 +513,103 @@ def _select_complementary_body_font(hero_font: str, is_fun_topic: bool = False) 
     if is_fun_topic:
         return 'Nunito'  # Friendly, readable body font for fun content
     return 'Open Sans'  # Clean, professional body font for business content
+
+
+async def _select_brand_appropriate_fonts(brand_name: str, brand_domain: Optional[str] = None) -> Dict[str, str]:
+    """Use AI to select fonts that match a brand's personality when brand fonts aren't available.
+
+    Args:
+        brand_name: The brand name (e.g., "Starbucks", "Nike")
+        brand_domain: Optional domain for additional context
+
+    Returns:
+        Dict with 'hero' and 'body' font names
+    """
+    try:
+        from agents.ai.clients import get_client, invoke
+        from services.registry_fonts import RegistryFonts
+
+        # Get available fonts
+        available_fonts = RegistryFonts.get_all_fonts_list(None)
+
+        # Get font categories for better AI context
+        try:
+            font_categories = RegistryFonts.get_available_fonts()
+            font_list_parts = []
+            for category, fonts_in_cat in font_categories.items():
+                if fonts_in_cat:
+                    font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:25])}")
+            available_fonts_str = "\n".join(font_list_parts)
+        except Exception:
+            available_fonts_str = ", ".join(available_fonts[:100])
+
+        prompt = f"""Select appropriate fonts for a presentation about the brand "{brand_name}".
+
+The brand's own fonts aren't available, so select fonts from our library that MATCH THE BRAND'S PERSONALITY and visual identity.
+
+Consider the brand's characteristics:
+- Industry/sector (tech, food, luxury, sports, etc.)
+- Brand personality (modern, traditional, playful, sophisticated, etc.)
+- Target audience (young, professional, mass market, premium, etc.)
+
+Available fonts by category:
+{available_fonts_str}
+
+Return your selection as:
+HERO: [font name]
+BODY: [font name]
+
+IMPORTANT:
+- Hero font should reflect the brand's headline style (bold, impactful)
+- Body font should be highly readable and complement the hero
+- Hero and body MUST be DIFFERENT fonts
+- Only use fonts from the list above"""
+
+        client, actual_model = get_client("claude-3-5-haiku-20241022")
+        response = invoke(
+            client=client,
+            model=actual_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.3
+        )
+
+        # Parse response
+        response_text = response.strip()
+        hero_font = None
+        body_font = None
+
+        for line in response_text.split('\n'):
+            line = line.strip()
+            if line.upper().startswith('HERO:'):
+                hero_font = line.split(':', 1)[1].strip().strip('"\'')
+            elif line.upper().startswith('BODY:'):
+                body_font = line.split(':', 1)[1].strip().strip('"\'')
+
+        # Validate fonts exist in our registry
+        available_lower = {f.lower(): f for f in available_fonts}
+
+        if hero_font and hero_font.lower() in available_lower:
+            hero_font = available_lower[hero_font.lower()]
+        else:
+            hero_font = 'Montserrat'  # Safe fallback
+
+        if body_font and body_font.lower() in available_lower:
+            body_font = available_lower[body_font.lower()]
+        else:
+            body_font = 'Open Sans'  # Safe fallback
+
+        # Ensure hero != body
+        if hero_font.lower() == body_font.lower():
+            body_font = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
+        logger.info(f"[BRAND FONTS] AI selected fonts for {brand_name}: hero={hero_font}, body={body_font}")
+        return {'hero': hero_font, 'body': body_font}
+
+    except Exception as e:
+        logger.warning(f"[BRAND FONTS] AI font selection failed for {brand_name}: {e}")
+        # Fallback to sensible defaults
+        return {'hero': 'Montserrat', 'body': 'Open Sans'}
 
 
 async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem], domain_hint: Optional[str] = None, outline_title: Optional[str] = None) -> Optional[StylePreferencesItem]:
@@ -788,7 +887,7 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
                 except Exception as font_err:
                     logger.warning(f"[STYLE PREF HYDRATE] Font validation failed: {font_err}")
             
-            # CRITICAL: If no valid font, select appropriate fallback based on topic
+            # CRITICAL: If no valid font, select appropriate fallback based on topic or brand
             if not font_set:
                 vibe_ctx = getattr(style_prefs, 'vibeContext', None)
                 if _is_entertainment_topic(outline_title or '', vibe_ctx):
@@ -806,8 +905,22 @@ async def _hydrate_style_preferences(style_prefs: Optional[StylePreferencesItem]
                     style_prefs.font = selected['hero']
                     style_prefs.bodyFont = selected['body']
                     logger.info(f"[STYLE PREF HYDRATE] 🎮 Fun topic! Using playful fonts: hero={selected['hero']}, body={selected['body']}")
+                elif domain:
+                    # THIS IS A BRAND - use AI to select brand-appropriate fonts
+                    # Extract brand name from domain or use domain_hint
+                    brand_name_for_fonts = domain.replace('.com', '').replace('.org', '').replace('.net', '').replace('.', ' ').title()
+                    logger.info(f"[STYLE PREF HYDRATE] 🏷️ Brand detected ({brand_name_for_fonts}), selecting brand-appropriate fonts...")
+                    try:
+                        brand_fonts = await _select_brand_appropriate_fonts(brand_name_for_fonts, domain)
+                        style_prefs.font = brand_fonts['hero']
+                        style_prefs.bodyFont = brand_fonts['body']
+                        logger.info(f"[STYLE PREF HYDRATE] 🎨 Brand fonts selected: hero={brand_fonts['hero']}, body={brand_fonts['body']}")
+                    except Exception as brand_font_err:
+                        logger.warning(f"[STYLE PREF HYDRATE] Brand font selection failed: {brand_font_err}")
+                        style_prefs.font = 'Montserrat'
+                        style_prefs.bodyFont = 'Open Sans'
                 else:
-                    # Use professional font for business topics
+                    # No brand, use professional defaults
                     style_prefs.font = 'Montserrat'
                     style_prefs.bodyFont = 'Open Sans'
                     logger.info(f"[STYLE PREF HYDRATE] 📊 Business topic - using professional fonts: hero=Montserrat, body=Open Sans")
@@ -1497,14 +1610,26 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                 accent_color not in ['', '#3B82F6', '#2563EB']  # Non-default accent
                             )
 
-                            # Check if we have Brandfetch colors
+                            # Check if we have Brandfetch colors (from _hydrate_style_preferences)
                             existing_colors = getattr(outline.stylePreferences, 'colors', None)
                             has_brandfetch_colors = existing_colors and (existing_colors.accent1 or existing_colors.background)
 
-                            # PRIORITY: AI-generated colors > Brandfetch colors (when AI understood the topic)
-                            # The AI understands cultural context (Stranger Things, American, etc.) that Brandfetch can't
-                            # Brandfetch often returns wrong colors due to bad domain extraction (e.g., "you" → YouTube)
-                            if ai_colors_are_meaningful:
+                            # Check if existing colors came from Brandfetch (not just defaults)
+                            # Brandfetch colors have a source marker or were set by hydration
+                            existing_color_name = getattr(existing_colors, 'name', '') if existing_colors else ''
+                            is_brandfetch_source = existing_color_name and ('Brand' in existing_color_name or 'brandfetch' in existing_color_name.lower())
+
+                            # Detect if this is an explicit brand request (user said "[brand] branded" or brand_hint was extracted)
+                            is_explicit_brand_request = bool(brand_hint) and len(brand_hint) > 2
+
+                            # NEW PRIORITY: For explicit brand requests, prefer Brandfetch colors over AI colors
+                            # For cultural/topic requests (no brand_hint), prefer AI colors which understand context
+                            if has_brandfetch_colors and (is_explicit_brand_request or is_brandfetch_source):
+                                # User explicitly requested a brand OR we have verified Brandfetch colors
+                                # Keep the existing Brandfetch colors - DON'T override with AI
+                                logger.info(f"[API OUTLINE] 📦 KEEPING Brandfetch brand colors (explicit brand request): bg={existing_colors.background}, accent={existing_colors.accent1}")
+                            elif ai_colors_are_meaningful:
+                                # No explicit brand request, AI understood the topic culturally
                                 logger.info(f"[API OUTLINE] 🎨 USING AI COLORS (culturally-aware): bg={bg_color}, text={text_color}, accent={accent_color}")
                                 from models.requests import ColorConfigItem
                                 outline.stylePreferences.colors = ColorConfigItem(
@@ -1517,7 +1642,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                     accent3=palette_colors[2] if len(palette_colors) > 2 else None,
                                 )
                             elif has_brandfetch_colors:
-                                # AI didn't return meaningful colors, use Brandfetch as fallback
+                                # AI didn't return meaningful colors, use existing Brandfetch colors
                                 logger.info(f"[API OUTLINE] 📦 Using Brandfetch colors (AI returned defaults): {existing_colors.background}, {existing_colors.accent1}")
                             elif has_ai_colors:
                                 # Use AI colors even if they're defaults (better than nothing)

@@ -275,9 +275,9 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       {/* Selection UI */}
       {/* Default selection border (hidden during text editing) */}
       {isSelected && !isTextEditing && (
-        <div 
+        <div
           className={`absolute inset-0 border rounded-[1px] ${isMultiSelected ? 'border-[#FF007B] border-dashed' : 'border-[#FF007B]'}`}
-          style={{ 
+          style={{
             boxShadow: isMultiSelected ? 'none' : '0 0 0 1px rgba(255, 0, 123, 0.3)',
             zIndex: 10,
             pointerEvents: 'none',
@@ -285,6 +285,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
           }}
         />
       )}
+
 
       {/* Text-editing border overlay */}
       {isSelected && isTextEditing && (
@@ -299,80 +300,6 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
         />
       )}
       
-      {/* Draggable edge strips for CustomComponents (since iframe has pointerEvents: auto when selected) */}
-      {isSelected && isDraggable && component.type === 'CustomComponent' && !isTextEditing && (
-        <>
-          {/* Top edge */}
-          <div
-            style={{
-              position: 'absolute',
-              top: -8,
-              left: 0,
-              right: 0,
-              height: 16,
-              cursor: 'move',
-              zIndex: 15,
-              background: 'transparent',
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              onDragStart(e);
-            }}
-          />
-          {/* Bottom edge */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: -8,
-              left: 0,
-              right: 0,
-              height: 16,
-              cursor: 'move',
-              zIndex: 15,
-              background: 'transparent',
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              onDragStart(e);
-            }}
-          />
-          {/* Left edge */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: -8,
-              bottom: 0,
-              width: 16,
-              cursor: 'move',
-              zIndex: 15,
-              background: 'transparent',
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              onDragStart(e);
-            }}
-          />
-          {/* Right edge */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: -8,
-              bottom: 0,
-              width: 16,
-              cursor: 'move',
-              zIndex: 15,
-              background: 'transparent',
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              onDragStart(e);
-            }}
-          />
-        </>
-      )}
-
       {/* Drag overlay - REMOVED */}
       {/* {isSelected && isDraggable && (
         <div

@@ -402,6 +402,47 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     return groups;
   }, [variables]);
 
+  // Detect placeholder images in HTML documents (for iframe mode)
+  const htmlPlaceholderImages = useMemo(() => {
+    if (!renderCode) return [];
+
+    const trimmedCode = renderCode.trim().toLowerCase();
+    // Only process HTML documents
+    if (!trimmedCode.startsWith('<!doctype html') && !trimmedCode.startsWith('<html')) return [];
+
+    const placeholders: Array<{ alt: string; searchQuery: string; currentSrc: string }> = [];
+    const imgRegex = /<img[^>]*>/gi;
+    let match;
+
+    while ((match = imgRegex.exec(renderCode)) !== null) {
+      const imgTag = match[0];
+      const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+      const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+      const src = srcMatch?.[1] || '';
+      const alt = altMatch?.[1] || '';
+
+      // Check if this is a placeholder (not a real URL) OR has a real URL that we should show
+      const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
+        (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
+
+      if (alt) {
+        // Convert alt to search query
+        const searchQuery = alt
+          .replace(/[^a-zA-Z0-9\s]/g, ' ')
+          .trim()
+          .toLowerCase() || 'image';
+
+        placeholders.push({
+          alt,
+          searchQuery,
+          currentSrc: isPlaceholder ? '' : src,
+        });
+      }
+    }
+
+    return placeholders;
+  }, [renderCode]);
+
   // Unified text editor: combine all text props into a single textarea separated by newlines
   const nonFontTextVariables = useMemo(() => groupedVariables.text.filter(v => !v.name.toLowerCase().includes('font')), [groupedVariables.text]);
   const [combinedTextValue, setCombinedTextValue] = useState<string>('');
@@ -515,12 +556,65 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </div>
           )}
 
-          {/* Image Properties */}
+          {/* Image Properties (from parsed props) */}
           {groupedVariables.image.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-xs font-medium text-muted-foreground">Image Properties</h4>
               <div className="grid grid-cols-1 gap-3">
                 {groupedVariables.image.map(renderVariableControl)}
+              </div>
+            </div>
+          )}
+
+          {/* HTML Placeholder Images (detected from HTML) */}
+          {htmlPlaceholderImages.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium text-muted-foreground">
+                Slide Images ({htmlPlaceholderImages.length})
+              </h4>
+              <div className="grid grid-cols-1 gap-3">
+                {htmlPlaceholderImages.map((placeholder, index) => (
+                  <ImageSlotEditor
+                    key={`html-placeholder-${index}-${placeholder.alt}`}
+                    propName={placeholder.alt} // Use alt as prop name for identification
+                    label={placeholder.alt}
+                    value={placeholder.currentSrc}
+                    searchQuery={placeholder.searchQuery}
+                    objectFit="cover"
+                    componentId={component.id}
+                    onUpdate={(propName, imageUrl) => {
+                      // Update the HTML directly by replacing the image src
+                      let currentHtml = component.props.render as string;
+                      const altLower = placeholder.alt.toLowerCase();
+                      let replaced = false;
+
+                      currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
+                        if (replaced) return imgMatch;
+
+                        const imgAltMatch = attrs.match(/alt=["']([^"']*)["']/i);
+                        const imgAlt = imgAltMatch ? imgAltMatch[1].toLowerCase() : '';
+
+                        if (imgAlt === altLower) {
+                          replaced = true;
+                          if (attrs.includes('src=')) {
+                            const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
+                            return `<img${newAttrs}>`;
+                          } else {
+                            return `<img src="${imageUrl}"${attrs}>`;
+                          }
+                        }
+                        return imgMatch;
+                      });
+
+                      if (replaced) {
+                        handlePropChange('render', currentHtml, true);
+                      }
+                    }}
+                    onSave={(propName, label) => {
+                      saveComponentToHistory(`Updated image: ${label}`);
+                    }}
+                  />
+                ))}
               </div>
             </div>
           )}

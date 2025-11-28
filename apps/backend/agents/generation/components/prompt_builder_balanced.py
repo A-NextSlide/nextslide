@@ -46,12 +46,12 @@ LIBRARY-FREE, THEME-AWARE CUSTOMCOMPONENTS:
 - Write bespoke JavaScript using React.createElement only.
 - Pass and use theme props explicitly: primaryColor, secondaryColor, textColor, fontFamily.
 
-IMAGES IN CUSTOMCOMPONENTS - NAME PROPS WITH SEARCH QUERIES:
-- For people/characters: const elonMuskImage = props.elonMuskImage || 'placeholder';
-- For products: const teslaModelSImage = props.teslaModelSImage || 'placeholder';
-- For places: const newYorkCityImage = props.newYorkCityImage || 'placeholder';
-- The prop name becomes the search query! Use specific names, not generic "image1".
-- Use: React.createElement('img', {src: elonMuskImage, style: {objectFit: 'cover', width: '100%', height: '200px'}})
+IMAGES IN CUSTOMCOMPONENTS - ALT TEXT = GOOGLE IMAGE SEARCH QUERY:
+🚨 CRITICAL: NO external URLs (unsplash.com, pexels.com, pixabay.com)! ALWAYS use src='placeholder'!
+✅ GOOD: src='placeholder' + alt="Elon Musk portrait photo", alt="Tesla Model S car", alt="sales growth bar chart"
+🚫 BANNED alt text: image0, image1, visualization, dataname, photo, chart, background
+🚫 BANNED URLs: https://unsplash.com, https://source.unsplash.com, https://pexels.com
+Example: React.createElement('img', {src: 'placeholder', alt: 'professional business team meeting', style: {objectFit: 'cover'}})
 
 Output valid JSON with this structure:
 {

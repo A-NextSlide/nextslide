@@ -200,7 +200,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               <Bot size={18} />
             </div>
           </div>
-          <div className="max-w-[80%] rounded-lg px-4 py-3 glass-panel border border-[#929292]">
+          <div className="max-w-[80%] rounded-md px-4 py-3 glass-panel border border-[#929292]">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-green-600 dark:text-green-400">
                 {primaryMessage}
@@ -223,7 +223,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             <div className="flex-shrink-0 mr-3">
               <div className="w-8 h-8" /> {/* Spacer */}
             </div>
-            <div className="max-w-[80%] rounded-lg px-4 py-3 glass-panel border border-[#929292]">
+            <div className="max-w-[80%] rounded-md px-4 py-3 glass-panel border border-[#929292]">
               <div className="text-sm whitespace-pre-wrap">
                 {secondaryMessage.split('Press E or double-click').map((part, index) => {
                   if (index === 0) {
@@ -279,7 +279,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
       <div
         className={cn(
-          'rounded-lg text-left break-words overflow-x-hidden min-w-0',
+          'rounded-md text-left break-words overflow-x-hidden min-w-0',
           isCompactMetaRow ? 'px-2 py-0.5 ml-11' : 'px-4 py-3',
           type === 'user'
             ? 'bg-transparent text-foreground border-2 border-zinc-700 dark:border-[#929292] max-w-[80%]'

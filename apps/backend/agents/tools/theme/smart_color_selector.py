@@ -40,49 +40,35 @@ async def get_ai_colors_for_topic(topic: str, context: str = "") -> Optional[Dic
         prompt = f"""You are a color expert. For the topic "{topic}" {f'(context: {context})' if context else ''},
 suggest exactly 3 colors that are culturally/contextually appropriate.
 
+IMPORTANT - Be smart about context:
+- "alphabet" by itself = educational topic about letters A-Z → use friendly, educational colors (bright blues, yellows, greens)
+- "Alphabet Inc" or "Google parent company" = tech company → Google-style colors
+- "apple pie" = food topic → warm colors (reds, browns, creams)
+- "Apple iPhone" = tech company → clean whites, grays, blues
+- "amazon river" or "rainforest" = nature topic → greens, browns, earthy tones
+- "Amazon Prime" = e-commerce company → orange and dark blue
+
 Think about:
 - Cultural associations (flags, holidays, traditions)
-- Brand colors if it's a known brand
-- Natural associations (ocean=blue, forest=green)
-- Industry conventions (tech=blue/purple, health=green/blue)
+- Natural associations (ocean=blue, forest=green, alphabet=colorful/educational)
+- Industry conventions (tech=blue/purple, health=green/blue, education=bright/friendly)
 - Emotional associations
-
-KNOWN BRAND COLORS (use these exact colors if the topic mentions these brands):
-- Stripe: #635BFF (purple), white background, dark navy text
-- Google: #4285F4 (blue), #34A853 (green), #FBBC05 (yellow), #EA4335 (red)
-- Figma: #F24E1E (orange-red), #A259FF (purple), #0ACF83 (green)
-- Notion: black and white with subtle accents
-- Slack: #611F69 (purple), #E01E5A (pink), #36C5F0 (blue), #ECB22E (yellow)
-- Netflix: #E50914 (red), black background
-- Spotify: #1DB954 (green), black/dark background
-- Apple: clean whites, grays, with subtle blue accents
-- Amazon: #FF9900 (orange), #232F3E (dark blue)
-- Meta/Facebook: #1877F2 (blue)
-- Twitter/X: black and white
-- LinkedIn: #0A66C2 (blue)
-- GitHub: black/dark with orange accents
-- Airbnb: #FF5A5F (coral red)
-- Uber: black with white
-- PayPal: #003087 (blue), #009CDE (light blue)
-- Kit Kat: #E3000F (red)
-- Coca-Cola: #F40009 (red)
-- Starbucks: #00704A (green)
-- McDonald's: #FFC72C (yellow), #DA291C (red)
+- If it's clearly a brand/company reference, use their typical brand colors
 
 Return ONLY a JSON object with hex colors:
 {{
     "background": "#HEXCOLOR",
     "text": "#HEXCOLOR",
     "accent": "#HEXCOLOR",
-    "reasoning": "Brief explanation"
+    "reasoning": "Brief explanation of why these colors fit the topic"
 }}
 
 IMPORTANT:
 - All 3 colors MUST be different from each other
-- Text must have good contrast with background
-- Use the actual culturally-recognized colors (e.g., American = official flag colors #002868 navy, #BF0A30 red, #FFFFFF white)
-- For brands mentioned above, use their EXACT brand colors
-- DO NOT use random lime green (#D2FF38), chartreuse, or Android colors unless the topic is specifically about Android
+- Text must have good contrast with background (white text on dark, dark text on light)
+- Use culturally-recognized colors (American = flag colors, Christmas = red/green, etc.)
+- For educational/kids topics like "alphabet", "numbers", "learning" → use bright, friendly, inviting colors
+- DO NOT use random lime green (#D2FF38) or chartreuse unless specifically requested
 """
 
         # Use Haiku 4.5 for fast, accurate, DETERMINISTIC color understanding

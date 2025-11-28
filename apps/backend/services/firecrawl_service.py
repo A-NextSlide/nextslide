@@ -58,8 +58,19 @@ class _FirecrawlService:
             if self._sdk_available:
                 client = self._get_client()
                 result = client.scrape(url, formats=formats, **kwargs)
-                # SDK returns a dict-like object already
-                return {"success": True, "data": result.get("data") or result}
+                # SDK returns a Document object with attributes, convert to dict
+                if hasattr(result, 'markdown'):
+                    data = {
+                        "markdown": getattr(result, 'markdown', ''),
+                        "html": getattr(result, 'html', ''),
+                        "metadata": getattr(result, 'metadata', {}) if hasattr(result, 'metadata') else {},
+                    }
+                    return {"success": True, "data": data}
+                elif isinstance(result, dict):
+                    return {"success": True, "data": result.get("data") or result}
+                else:
+                    # Try to convert to dict if possible
+                    return {"success": True, "data": dict(result) if hasattr(result, '__dict__') else {"raw": str(result)}}
             else:
                 import requests
                 headers = {

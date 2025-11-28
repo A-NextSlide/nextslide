@@ -70,27 +70,42 @@ props.fontFamily     = theme font
 In your HTML: `<style>:root{--accent:${props.primaryColor};--text:${props.textColor}}</style>`
 Then use: `style='color:var(--accent)'`
 
-**🖼️ CUSTOMCOMPONENT IMAGES - NAME PROPS WITH SEARCH QUERIES!**
-The prop name becomes the search query - be SPECIFIC to the content:
-```javascript
-// ✅ GOOD - Specific names that search well:
-const elonMuskImage = props.elonMuskImage || 'placeholder';  // Searches "elon musk"
-const teslaModelSImage = props.teslaModelSImage || 'placeholder';  // Searches "tesla model s"
-const professionalHeadshotImage = props.professionalHeadshotImage || 'placeholder';
+**🖼️ CUSTOMCOMPONENT IMAGES - ALWAYS USE PLACEHOLDER WITH DESCRIPTIVE ALT TEXT!**
+🚨 CRITICAL: In CustomComponent HTML, NEVER use hardcoded image URLs!
+ALWAYS use placeholder src with a descriptive alt text that describes WHAT to search for:
 
-// ❌ BAD - Generic, useless:
-const image1 = props.image1 || 'placeholder';  // What is this??
+```html
+<!-- ✅ CORRECT - Specific, searchable alt text -->
+<img src="placeholder" alt="Elon Musk portrait photo" style="object-fit:cover">
+<img src="placeholder" alt="Tesla Model S electric car" style="object-fit:cover">
+<img src="placeholder" alt="professional business woman headshot" style="object-fit:cover">
+<img src="placeholder" alt="data analytics dashboard screenshot" style="object-fit:cover">
+<img src="placeholder" alt="stock market growth chart" style="object-fit:cover">
+
+<!-- ❌ BANNED - These will NOT work! -->
+<img alt="image0">                              <!-- BANNED: numbered images -->
+<img alt="image1">                              <!-- BANNED: numbered images -->
+<img alt="visualization">                       <!-- BANNED: too generic -->
+<img alt="dataname">                            <!-- BANNED: meaningless -->
+<img alt="chart">                               <!-- BANNED: use specific type -->
+<img alt="photo">                               <!-- BANNED: photo of WHAT? -->
+<img src="https://unsplash.com/...">            <!-- 🚫 BANNED: no Unsplash! -->
+<img src="https://source.unsplash.com/...">    <!-- 🚫 BANNED: no Unsplash! -->
+<img src="https://images.unsplash.com/...">    <!-- 🚫 BANNED: no Unsplash! -->
+<img src="https://pexels.com/...">              <!-- 🚫 BANNED: no external URLs! -->
+<img src="https://pixabay.com/...">             <!-- 🚫 BANNED: no external URLs! -->
 ```
-Then use: `<img src="${elonMuskImage}" style="object-fit:cover">`
 
-**ADD IMAGES FOR:**
-• People/characters → Use name: `steveJobsImage`, `beyonceImage`
-• Products → Use product: `iphone15Image`, `macbookProImage`
-• Places → Use location: `parisEiffelTowerImage`, `tokyoImage`
-• Concepts → Use visual term: `aiNeuralNetworkImage`, `cloudComputingImage`
-• Teams → Use role: `ceoHeadshotImage`, `engineerTeamImage`
+**THE ALT TEXT = GOOGLE IMAGE SEARCH QUERY**
+Write alt text as if you're searching Google Images. Be SPECIFIC to the slide content:
+• Data viz slide about sales → alt="sales growth bar chart" or alt="revenue dashboard"
+• Slide about AI → alt="artificial intelligence neural network" or alt="robot machine learning"
+• Slide about team → alt="diverse business team meeting" or alt="CEO executive portrait"
+• Slide about product → alt="[actual product name] product photo"
+• Slide about company → alt="[actual company name] office building" or logo
 
-Images work in collapsible panels, accordions, animations - USE THEM!
+🚫 NEVER use: image0, image1, visualization, dataname, photo, picture, graphic, visual, background
+🚫 NEVER use external URLs: unsplash.com, source.unsplash.com, pexels.com, pixabay.com - ALWAYS use src="placeholder"
 
 **EXAMPLE CREATIVE THINKING:**
 • "Revenue grew 42%" → Animated counter with theme accent color
@@ -380,11 +395,12 @@ Images make slides ENGAGING. Use them liberally!
 ✅ Product screenshots, teaching visuals, photo-driven content
 ✅ Illustrations for concepts, icons for features
 ✅ Supporting visuals that reinforce your message
-✅ ALWAYS check `available_images` in context - USE THOSE FIRST!
+✅ For Image components: check `available_images` in context - USE THOSE FIRST!
 
-**IMPORTANT: Images are PRE-LOADED!**
-When `available_images` is provided in the slide context, these images are ALREADY
-loaded and ready to use. Just reference them by their URL - don't use "placeholder"!
+**IMPORTANT: Image Component vs CustomComponent HTML**
+• **Image components**: When `available_images` is provided, use those URLs for Image component src
+• **CustomComponent HTML**: NEVER use external URLs! Always use `<img src="placeholder" alt="search term">`
+  Images in CustomComponent HTML will be auto-searched based on the alt text.
 
 **2. PROPER ASPECT RATIOS (Avoid super wide/short images!)**
 ```

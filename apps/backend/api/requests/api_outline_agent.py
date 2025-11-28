@@ -26,13 +26,22 @@ logger = get_logger(__name__)
 # Tool definition for web search - model decides when to use it
 SEARCH_TOOL = {
     "name": "web_search",
-    "description": "Search the web for current, up-to-date information. Use this when you need recent data, statistics, news, company info, or facts you're not confident about. Don't use for simple creative requests.",
+    "description": """Search the web for NEW information. ONLY use this when:
+- User provides a URL and asks you to look it up
+- User explicitly asks to "fetch", "look up", or "search" for something NEW
+- User asks for data NOT already in the current outline context
+
+DO NOT use for:
+- Editing/refining existing slides (the outline already has researched data)
+- Theme changes, branding, colors, fonts
+- Simple modifications like "make it shorter" or "add more detail"
+- Anything the current outline context already covers""",
     "input_schema": {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query - be specific about what information you need"
+                "description": "The search query"
             }
         },
         "required": ["query"]
@@ -87,6 +96,7 @@ Always cite your sources. Focus on what would be useful for presentation slides.
                     citations.append(cit.get('url', str(cit)))
 
         logger.info(f"[OutlineAgent] Perplexity research completed: {len(content)} chars, {len(citations)} citations")
+        logger.info(f"[OutlineAgent] Perplexity content preview: {content[:300]}...")
 
         return {
             "success": True,
@@ -128,16 +138,25 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
         for url in urls[:3]:  # Limit to 3 URLs
             try:
                 logger.info(f"[OutlineAgent] Scraping URL: {url}")
-                res = svc.scrape(url, formats=["markdown", "metadata"])
+                res = svc.scrape(url, formats=["markdown"])
 
                 if res.get("success"):
                     data = res.get("data") or res
+                    markdown_content = data.get("markdown") or "" if isinstance(data, dict) else getattr(data, 'markdown', '')
+                    # Try to get title from metadata if available
+                    title = url
+                    metadata = data.get("metadata") if isinstance(data, dict) else getattr(data, 'metadata', None)
+                    if metadata:
+                        if isinstance(metadata, dict):
+                            title = metadata.get("title") or metadata.get("ogTitle") or url
+                        elif hasattr(metadata, 'title'):
+                            title = getattr(metadata, 'title', None) or getattr(metadata, 'ogTitle', None) or url
                     scraped_items.append({
                         "url": url,
-                        "content": (data.get("markdown") or "")[:5000],
-                        "title": (data.get("metadata") or {}).get("title", ""),
+                        "content": markdown_content[:8000] if markdown_content else "",
+                        "title": title,
                     })
-                    logger.info(f"[OutlineAgent] Scraped {url}: {len(data.get('markdown', ''))} chars")
+                    logger.info(f"[OutlineAgent] Scraped {url}: {len(markdown_content) if markdown_content else 0} chars")
             except Exception as e:
                 logger.warning(f"[OutlineAgent] Failed to scrape {url}: {e}")
                 continue
@@ -263,6 +282,28 @@ Example Response:
 {"action": "generate_outline", "slide_count": 5, "topic": "Topic", "slides": [...]}
 ```
 
+**🎤 PRESENTATION MODE vs DETAILED MODE - CRITICAL CONTENT RULES:**
+
+By default, use "detail_level": "standard" which means PRESENTATION MODE:
+- key_points should be SHORT (3-6 words each)
+- Maximum 2-3 key_points per slide
+- ONE idea per slide - spread across MORE slides
+- The presenter SPEAKS the details - slides are visual cues
+- Step-by-step content: ONE step per slide
+
+For "detail_level": "detailed" (user must explicitly request):
+- key_points can be longer (10-20 words each)
+- 4-6 key_points per slide allowed
+- Dense, research-heavy content
+
+**PRESENTATION MODE EXAMPLES (standard):**
+✅ key_points: ["**$45B** market opportunity", "Growing **23%** annually"]
+✅ key_points: ["Drop pasta into water", "Wait 8-10 minutes"]
+✅ key_points: ["AI learns from data", "No explicit programming needed"]
+
+❌ BAD: key_points: ["The U.S. retail sector faces severe workforce shortages, driving urgent automation demand across the industry"]
+❌ BAD: key_points with 4+ full sentences
+
 When you have enough context to generate an outline, output JSON in this EXACT format:
 ```json
 {
@@ -275,7 +316,7 @@ When you have enough context to generate an outline, output JSON in this EXACT f
     {
       "title": "Slide Title Here",
       "subtitle": "Optional subtitle",
-      "key_points": ["Key point 1", "Key point 2", "Key point 3"]
+      "key_points": ["Short point 1", "Short point 2"]
     }
   ]
 }
@@ -405,15 +446,15 @@ Assistant: ```json
   "tone": "professional",
   "slides": [
     {
-      "title": "The Business Case for Renewable Energy",
-      "subtitle": "Why Now Is the Time to Act",
-      "key_points": ["Market growth projections", "Cost competitiveness", "Regulatory drivers"]
+      "title": "The Business Case",
+      "subtitle": "Why Now Is the Time",
+      "key_points": ["**$500B** market by 2030", "Costs down **70%** since 2010"]
     },
     ...
   ]
 }
 ```
-Perfect! I've created a 10-slide executive overview on renewable energy, focusing on business strategy and ROI. Want me to adjust anything?
+Perfect! I've created a 10-slide executive overview on renewable energy. Want me to adjust anything?
 
 User: "create a presentation about delivery services with Instacart branding"
 Assistant: ```json
@@ -425,9 +466,9 @@ Assistant: ```json
   "tone": "professional",
   "slides": [
     {
-      "title": "Revolutionizing Grocery Delivery",
-      "subtitle": "How Technology is Changing the Game",
-      "key_points": ["On-demand delivery trends", "Customer expectations", "Market growth"]
+      "title": "Grocery Delivery Revolution",
+      "subtitle": "Technology Changing the Game",
+      "key_points": ["**30min** average delivery", "**85%** customer satisfaction"]
     },
     ...
   ]
@@ -456,12 +497,12 @@ Assistant: ```json
       "index": 2,
       "title": "Cost Benefits",
       "subtitle": "The Bottom Line",
-      "key_points": ["Lower operating costs through reduced energy bills", "Tax incentives and rebates available", "Long-term ROI projection"]
+      "key_points": ["**40%** lower energy bills", "Tax incentives available"]
     }
   ]
 }
 ```
-Done! I've condensed slide 3 to focus on the three core financial benefits.
+Done! I've condensed slide 3 to two punchy points.
 
 User: "make this simpler" (while on slide 5, TARGET_SLIDE_INDEX = 4)
 Assistant: ```json
@@ -470,14 +511,13 @@ Assistant: ```json
   "updated_slides": [
     {
       "index": 4,
-      "title": "Market Opportunities",
-      "subtitle": "Key Takeaways",
-      "key_points": ["Growing demand in residential and commercial sectors", "Competitive pricing makes adoption easier", "Government support accelerating market growth"]
+      "title": "Market Opportunity",
+      "key_points": ["**$2.5B** market growing fast"]
     }
   ]
 }
 ```
-Simplified! Slide 5 now uses clearer language while keeping the key insights.
+Simplified! Slide 5 now has just one powerful stat.
 
 User: "Add the Spotify logo to the slides"
 Assistant: ```json
@@ -577,16 +617,40 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
 
         scraped_context = ""
 
+        # Detect URLs in the message and auto-scrape them
+        url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)', re.IGNORECASE)
+        detected_urls = url_pattern.findall(request.message)
+
+        # Also check for domain mentions like "numi.life" without http
+        domain_pattern = re.compile(r'\b([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev))\b', re.IGNORECASE)
+        detected_domains = domain_pattern.findall(request.message)
+
+        # Combine and dedupe
+        urls_to_scrape = []
+        for url in detected_urls:
+            if url and not url.startswith('http'):
+                url = f'https://{url}'
+            if url:
+                urls_to_scrape.append(url)
+        for domain in detected_domains:
+            url = f'https://{domain}'
+            if url not in urls_to_scrape:
+                urls_to_scrape.append(url)
+
         # Handle reference links if user explicitly provided them (from link button)
         reference_links = []
         if request.context:
             reference_links = request.context.get("reference_links") or request.context.get("referenceLinks") or []
 
-        if reference_links:
-            logger.info(f"[OutlineAgent] Scraping {len(reference_links)} reference links")
-            yield f"data: {json.dumps({'type': 'status', 'status': 'scraping', 'message': f'Reading content from {len(reference_links)} reference link(s)...'})}\n\n"
+        # Add detected URLs to reference links
+        urls_to_scrape.extend(reference_links)
+        urls_to_scrape = list(set(urls_to_scrape))[:3]  # Dedupe and limit
 
-            scrape_result = await scrape_reference_links(reference_links)
+        if urls_to_scrape:
+            logger.info(f"[OutlineAgent] Auto-detected URLs to scrape: {urls_to_scrape}")
+            yield f"data: {json.dumps({'type': 'status', 'status': 'scraping', 'message': f'Reading content from {urls_to_scrape[0]}...'})}\n\n"
+
+            scrape_result = await scrape_reference_links(urls_to_scrape)
             if scrape_result["success"] and scrape_result["scraped_content"]:
                 scraped_parts = []
                 for item in scrape_result["scraped_content"]:
@@ -640,8 +704,13 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         logger.info(f"[OutlineAgent] Processing message with {len(messages)} messages in history")
 
         # Call Anthropic API with tool support - model decides when to search
-        async def call_model_with_tools(msgs):
+        async def call_model_with_tools(msgs, depth=0):
             """Call Claude with optional tool use, handle search tool if called."""
+            if depth > 2:
+                logger.warning("[OutlineAgent] Max tool depth reached, returning")
+                yield ("text", "I found some information but couldn't process it fully. Let me summarize what I know.")
+                return
+
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=4096,
@@ -651,8 +720,19 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 temperature=0.7
             )
 
-            # Check if model wants to use a tool
+            logger.info(f"[OutlineAgent] Response stop_reason: {response.stop_reason}")
+
+            # Check if model wants to use tools
             if response.stop_reason == "tool_use":
+                # Collect ALL tool calls and their results
+                tool_results = []
+
+                # First, yield any text that came before the tool call
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        yield ("text", block.text)
+
+                # Process tool calls
                 for block in response.content:
                     if block.type == "tool_use" and block.name == "web_search":
                         query = block.input.get("query", "")
@@ -666,30 +746,50 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
 
                         if research_result["success"]:
                             tool_result = research_result["content"]
+                            logger.info(f"[OutlineAgent] Search success, returning {len(tool_result)} chars to model")
                             yield f"data: {json.dumps({'type': 'research', 'content': research_result['content'][:500] + '...', 'citations': research_result['citations'][:5]})}\n\n"
                         else:
                             tool_result = f"Search failed: {research_result.get('error', 'Unknown error')}"
+                            logger.warning(f"[OutlineAgent] Search failed: {tool_result}")
                             yield f"data: {json.dumps({'type': 'status', 'status': 'research_failed', 'message': research_result.get('error')})}\n\n"
 
-                        # Continue conversation with tool result
-                        msgs.append({"role": "assistant", "content": response.content})
-                        msgs.append({
-                            "role": "user",
-                            "content": [{
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": tool_result
-                            }]
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": tool_result
                         })
 
-                        # Call model again with the result
-                        async for event in call_model_with_tools(msgs):
-                            yield event
-                        return
+                # Build proper message format for Anthropic
+                if tool_results:
+                    # Convert response.content to proper format
+                    assistant_content = []
+                    for block in response.content:
+                        if block.type == "text":
+                            assistant_content.append({"type": "text", "text": block.text})
+                        elif block.type == "tool_use":
+                            assistant_content.append({
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input
+                            })
 
-            # No tool use - return the text content
+                    new_msgs = msgs + [
+                        {"role": "assistant", "content": assistant_content},
+                        {"role": "user", "content": tool_results}
+                    ]
+
+                    logger.info(f"[OutlineAgent] Calling model again with tool results (depth={depth+1})")
+                    logger.info(f"[OutlineAgent] Tool result preview: {tool_results[0]['content'][:200] if tool_results else 'EMPTY'}...")
+
+                    # Call model again with results
+                    async for event in call_model_with_tools(new_msgs, depth + 1):
+                        yield event
+                    return
+
+            # No tool use or end_turn - return the text content
             for block in response.content:
-                if hasattr(block, 'text'):
+                if hasattr(block, 'text') and block.text:
                     yield ("text", block.text)
 
         # Run the model and collect response
@@ -714,8 +814,6 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
 
         # After streaming, extract JSON and any text after it
-        import re
-        
         # Find ALL JSON blocks to handle cases where agent outputs multiple actions
         found_json_blocks = []
 

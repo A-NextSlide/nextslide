@@ -491,6 +491,19 @@ export const ComponentRenderer: React.FC<Props> = ({
           return;
         }
 
+        // For CustomComponents: only allow drag when selected AND not clicking on interactive content
+        if (componentType === 'CustomComponent') {
+          // If not selected, don't start drag (let click select first)
+          if (!effectiveIsSelected) {
+            return;
+          }
+          // If clicking on buttons or interactive elements inside, don't drag
+          const target = e.target as HTMLElement;
+          if (target.closest('button') || target.closest('[data-no-drag]')) {
+            return;
+          }
+        }
+
         if (isEditing && e.button === 0 && !isBackground) {
           handleDragStart(e);
         }
@@ -507,10 +520,11 @@ export const ComponentRenderer: React.FC<Props> = ({
         document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
       )}
 
-      {/* 
+      {/*
         CLICK CAPTURE OVERLAY for CustomComponents in edit mode
         This invisible overlay captures clicks since iframes have pointerEvents: none.
         Only render when NOT selected - when selected, SelectionBoundingBox handles interactions.
+        NOTE: Only handles click to select, NOT drag. Drag happens after selection.
       */}
       {isEditing && componentType === 'CustomComponent' && !effectiveIsSelected && (
         <div
@@ -519,14 +533,21 @@ export const ComponentRenderer: React.FC<Props> = ({
             inset: 0,
             zIndex: 5, // Below selection UI but above content
             background: 'transparent',
-            cursor: effectiveDraggable ? 'move' : 'default',
+            cursor: 'pointer',
             pointerEvents: 'auto',
           }}
-          onClick={handleClick}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            handleClick(e);
+          }}
           onMouseDown={(e) => {
-            if (e.button === 0) {
-              handleDragStart(e);
-            }
+            // Completely prevent any drag from starting
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onMouseMove={(e) => {
+            e.stopPropagation();
           }}
         />
       )}

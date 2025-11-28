@@ -297,26 +297,61 @@ class ThemeDirector:
                 analysis['entity_name'] = match.group(1).title()
                 break
         
-        # AI-powered brand detection (same as outline generation)
+        # AI-powered brand detection - smart extraction of brand AND domain for Brandfetch
         try:
             from anthropic import Anthropic
             import os
-            
+            import json as json_module
+
             client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-            brand_prompt = f"Extract the main company/brand name from this text: '{title} {prompt}'. Return only the company name or NONE if no clear brand is mentioned."
-            
+            brand_prompt = f"""Analyze this presentation request and extract brand information for fetching official brand assets.
+
+Text: "{title} {prompt}"
+
+Your task:
+1. Determine if a real company/brand is being referenced as the SUBJECT (not just mentioned in passing)
+2. If yes, provide the brand's official website domain for fetching brand colors/logo
+
+Be smart about context:
+- "Learn the alphabet" → NOT about Alphabet Inc, just letters A-Z
+- "Alphabet Inc investor presentation" → YES, about Google's parent company → alphabet.com
+- "Apple pie recipe" → NOT about Apple Inc, just fruit
+- "Apple's new iPhone" → YES, about Apple Inc → apple.com
+- "Amazon rainforest" → NOT about Amazon.com, just the forest
+- "Amazon Prime benefits" → YES, about Amazon → amazon.com
+
+Return JSON only:
+{{"brand": "Brand Name", "domain": "brand.com"}} or {{"brand": null, "domain": null}}
+
+Examples:
+- "Nike marketing strategy" → {{"brand": "Nike", "domain": "nike.com"}}
+- "Coca-Cola history" → {{"brand": "Coca-Cola", "domain": "coca-cola.com"}}
+- "How to teach kids the alphabet" → {{"brand": null, "domain": null}}
+- "Stripe payment integration" → {{"brand": "Stripe", "domain": "stripe.com"}}
+- "McDonald's franchise model" → {{"brand": "McDonald's", "domain": "mcdonalds.com"}}"""
+
             response = client.messages.create(
                 model="claude-3-haiku-20240307",
-                max_tokens=50,
-                system="You are a brand detection expert. Return only the company name or NONE.",
+                max_tokens=100,
+                temperature=0,
+                system="You are a brand detection expert. Return valid JSON only. Be smart about distinguishing common words from actual brand references.",
                 messages=[{"role": "user", "content": brand_prompt}]
             )
-            
-            detected_brand = response.content[0].text.strip()
-            if detected_brand and detected_brand.upper() != 'NONE':
+
+            result_text = response.content[0].text.strip()
+            # Clean markdown if present
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+
+            brand_info = json_module.loads(result_text)
+            if brand_info.get('brand') and brand_info.get('domain'):
                 analysis['is_brand'] = True
-                analysis['brand_name'] = detected_brand
-                logger.info(f"[THEME] AI detected brand: {detected_brand}")
+                analysis['brand_name'] = brand_info['brand']
+                analysis['brand_url'] = brand_info['domain']
+                logger.info(f"[THEME] AI detected brand: {brand_info['brand']} → {brand_info['domain']}")
         except Exception as e:
             logger.warning(f"[THEME] Brand detection failed: {e}")
             
@@ -384,82 +419,82 @@ class ThemeDirector:
             # Quick AI-based brand detection - single fast API call
             from agents.ai.clients import get_client, invoke
             
-            brand_detection_prompt = f"""Extract ANY brand/company name mentioned in this text:
+            brand_detection_prompt = f"""Analyze this text and extract brand information for fetching official brand assets.
 
-Text: "{full_text[:200]}"
+Text: "{full_text[:300]}"
 
-IMPORTANT: Detect brands even if the context is:
-- "How to make a [BRAND]" → extract the brand name
-- "History of [BRAND]" → extract the brand name
-- "Why [BRAND] is successful" → extract the brand name
-- "[BRAND] presentation" → extract the brand name
+Your task:
+1. Determine if a real company/brand is being referenced as the SUBJECT
+2. If yes, provide the brand's official website domain
 
-Look for:
-- Luxury brands (Rolex, Louis Vuitton, Ferrari, Gucci, Chanel, etc.)
-- Tech companies (Apple, Google, Microsoft, Tesla, etc.)
-- Consumer brands (Nike, Adidas, Coca-Cola, McDonald's, etc.)
-- Investment firms (Sequoia, a16z, First Round Capital, etc.)
-- ANY well-known company or product brand
+Be smart about context - distinguish common words from brand references:
+- "Learn the alphabet" → NOT Alphabet Inc, just letters → null
+- "Alphabet Inc quarterly earnings" → YES → alphabet.com
+- "Apple pie recipe" → NOT Apple Inc → null
+- "Apple Vision Pro review" → YES → apple.com
+- "Amazon rainforest documentary" → NOT Amazon.com → null
+- "Amazon Web Services tutorial" → YES → amazon.com
+- "Target practice tips" → NOT Target store → null
+- "Target Q4 sales" → YES → target.com
 
-Respond with ONLY the brand name or "none":
-Examples: "Rolex", "Nike", "First Round Capital", "Tesla", "none"
-
-Brand name:"""
+Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "domain": null}}"""
 
             detected_brand = None
+            detected_domain = None
             try:
+                import json as json_module
                 client = get_client("claude-3-7-sonnet-20250219")
                 brand_response = invoke(
                     client=client,
                     model="claude-3-7-sonnet-20250219",
                     messages=[{"role": "user", "content": brand_detection_prompt}],
-                    max_tokens=10,
+                    max_tokens=100,
                     temperature=0
                 )
-                
-                ai_detected_brand = brand_response.strip().lower()
-                if ai_detected_brand != "none" and len(ai_detected_brand) > 2:
-                    # Brand detected - continue with intelligent analysis
-                    logger.info(f"Quick AI detected brand: {ai_detected_brand}")
-                    detected_brand = ai_detected_brand
+
+                # Parse JSON response
+                result_text = brand_response.strip()
+                if result_text.startswith("```"):
+                    result_text = result_text.split("```")[1]
+                    if result_text.startswith("json"):
+                        result_text = result_text[4:]
+                result_text = result_text.strip()
+
+                brand_info = json_module.loads(result_text)
+                if brand_info.get('brand') and brand_info.get('domain'):
+                    detected_brand = brand_info['brand']
+                    detected_domain = brand_info['domain']
+                    logger.info(f"AI detected brand: {detected_brand} → {detected_domain}")
                 else:
-                    # No brand detected - skip heavy brand processing
-                    logger.info("Quick AI brand detection: no brand found")
-            
+                    logger.info("AI brand detection: no brand found (returned null)")
+
             except Exception as e:
                 logger.warning(f"Quick brand detection failed: {e}")
-                logger.info("AI brand detection failed, proceeding with general theme: brand_detection_failed")
-            
+                logger.info("AI brand detection failed, proceeding with general theme")
+
             # If no brand detected, skip brand processing
-            if not detected_brand:
+            if not detected_brand or not detected_domain:
                 logger.info("No brand detected, using general theme")
                 raise RuntimeError("no_brand_detected")
-            # Fast brand color extraction with single AI call
-            # Skip AI color guessing - go straight to brandfetch DB lookup
-            logger.info(f"Brand detected: {detected_brand}, checking brandfetch DB...")
-            
+
+            # Use the AI-provided domain directly for Brandfetch lookup
+            logger.info(f"Brand detected: {detected_brand}, using domain: {detected_domain}")
+
             try:
-                # Try brandfetch for this detected brand (check cache first)
+                # Try brandfetch for this detected brand using the AI-provided domain
                 from services.simple_brandfetch_cache import SimpleBrandfetchCache
                 import os
                 db_url = os.getenv('DATABASE_URL', 'postgresql://postgres.iureiriffqcxrldisuqp:202War123!!@aws-0-us-west-1.pooler.supabase.com:6543/postgres')
                 async with SimpleBrandfetchCache(db_url) as bf_service:
-                    # Try different domain variations (prioritize shorter/simpler domains first)
-                    # Clean brand name: remove apostrophes, symbols, and other non-alphanumeric chars
-                    def clean_for_domain(name: str) -> str:
-                        # Remove all non-alphanumeric characters except spaces
-                        import re
-                        cleaned = re.sub(r"[^a-zA-Z0-9\s]", "", name)
-                        # Replace spaces and make lowercase
-                        return cleaned.lower().replace(' ', '')
-                    
-                    cleaned_brand = clean_for_domain(detected_brand)
-                    domain_variants = [
-                        f"{cleaned_brand.replace('capital', '')}.com",  # mcdonalds.com (remove apostrophe)
-                        f"{''.join(detected_brand.lower().split()[:2])}.com".replace("'", ""),  # First two words, no apostrophes
-                        f"{cleaned_brand}.com"  # Full cleaned brand name
-                    ]
-                    
+                    # Use the AI-provided domain directly - it's smart about the correct domain
+                    # Only use fallback variations if the direct domain fails
+                    domain_variants = [detected_domain]  # AI-provided domain first
+
+                    # Add fallback variations only if needed
+                    cleaned = detected_domain.replace('.com', '').replace('.org', '').replace('.net', '').replace('-', '')
+                    if f"{cleaned}.com" != detected_domain:
+                        domain_variants.append(f"{cleaned}.com")
+
                     for domain in domain_variants:
                         brand_info = await bf_service.get_brand_data(domain)
                         
@@ -1599,11 +1634,95 @@ Brand name:"""
                 print(f"   Hero: {font_result['hero']}")
                 print(f"   Body: {font_result['body']}")
                 print(f"   Combo: {combo_idx + 1}/{len(playful_combos)}\n")
+            elif analysis.get('is_brand') and analysis.get('brand_name'):
+                # BRAND DETECTED but brand fonts not available - use AI to select brand-appropriate fonts
+                brand_name = analysis.get('brand_name')
+                logger.info(f"🏷️ BRAND DETECTED: {brand_name} → Selecting brand-appropriate fonts with AI")
+                print(f"\n🏷️🏷️🏷️ BRAND DETECTED IN THEME_DIRECTOR 🏷️🏷️🏷️")
+                print(f"   Brand: '{brand_name}'")
+                print(f"   → Selecting fonts that match the brand's personality!\n")
+
+                try:
+                    # Use AI to select fonts that match the brand's personality
+                    all_available = RegistryFonts.get_all_fonts_list(None)
+                    font_categories = RegistryFonts.get_available_fonts()
+
+                    font_list_parts = []
+                    for category, fonts_in_cat in font_categories.items():
+                        if fonts_in_cat:
+                            font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:25])}")
+                    available_fonts_str = "\n".join(font_list_parts)
+
+                    prompt = f"""Select appropriate fonts for a presentation about the brand "{brand_name}".
+
+The brand's own fonts aren't available, so select fonts from our library that MATCH THE BRAND'S PERSONALITY and visual identity.
+
+Consider the brand's characteristics:
+- Industry/sector (tech, food, luxury, sports, etc.)
+- Brand personality (modern, traditional, playful, sophisticated, etc.)
+- Target audience (young, professional, mass market, premium, etc.)
+
+Available fonts by category:
+{available_fonts_str}
+
+Return your selection as:
+HERO: [font name]
+BODY: [font name]
+
+IMPORTANT:
+- Hero font should reflect the brand's headline style (bold, impactful)
+- Body font should be highly readable and complement the hero
+- Hero and body MUST be DIFFERENT fonts
+- Only use fonts from the list above"""
+
+                    response = await self.client.messages.create(
+                        model="claude-3-5-haiku-20241022",
+                        max_tokens=100,
+                        temperature=0.3,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+
+                    response_text = response.content[0].text.strip()
+                    hero_font = None
+                    body_font = None
+
+                    for line in response_text.split('\n'):
+                        line = line.strip()
+                        if line.upper().startswith('HERO:'):
+                            hero_font = line.split(':', 1)[1].strip().strip('"\'')
+                        elif line.upper().startswith('BODY:'):
+                            body_font = line.split(':', 1)[1].strip().strip('"\'')
+
+                    # Validate fonts exist
+                    available_lower = {f.lower(): f for f in all_available}
+                    if hero_font and hero_font.lower() in available_lower:
+                        hero_font = available_lower[hero_font.lower()]
+                    else:
+                        hero_font = 'Montserrat'
+                    if body_font and body_font.lower() in available_lower:
+                        body_font = available_lower[body_font.lower()]
+                    else:
+                        body_font = 'Roboto'
+
+                    # Ensure different fonts
+                    if hero_font.lower() == body_font.lower():
+                        body_font = 'Roboto' if hero_font != 'Roboto' else 'Open Sans'
+
+                    font_result = {
+                        'hero': hero_font,
+                        'body': body_font,
+                        'source': 'brand_ai_selected'
+                    }
+                    logger.info(f"✅ BRAND FONTS (AI): Hero={font_result['hero']}, Body={font_result['body']}")
+
+                except Exception as e:
+                    logger.warning(f"AI brand font selection failed: {e}")
+                    font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
             else:
                 # Use EnhancedFontService for intelligent metadata-based selection
                 try:
                     font_service = EnhancedFontService()
-                    
+
                     # Extract context from analysis
                     vibe = analysis.get('vibe', 'professional')
                     keywords = []
@@ -1611,9 +1730,9 @@ Brand name:"""
                         keywords.append(analysis['topic'])
                     if analysis.get('industry'):
                         keywords.append(analysis['industry'])
-                    
+
                     audience = analysis.get('audience') or analysis.get('target_audience')
-                    
+
                     # Get intelligent font pair with variety
                     font_pair = font_service.select_font_pair(
                         deck_title=title,
@@ -1622,7 +1741,7 @@ Brand name:"""
                         target_audience=audience,
                         variety_seed=variety_seed
                     )
-                    
+
                     font_result = {
                         'hero': font_pair['hero'],
                         'body': font_pair['body'],

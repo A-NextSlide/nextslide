@@ -14,6 +14,7 @@ import { useDeckStore } from '@/stores/deckStore';
 import { AnimatePresence } from 'framer-motion';
 import { GenerationProgressTracker } from '@/services/generation/GenerationProgressTracker';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useEditorStore } from '@/stores/editorStore';
 import { useToast } from '@/hooks/use-toast';
 
 interface SlideContainerProps {
@@ -320,19 +321,72 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
 
     // Handle CustomComponent prop selection - dispatch callback event
     if (customComponentPropInfo && imageUrl !== 'generating://ai-image') {
-      const { propName, componentId } = customComponentPropInfo;
+      const { propName, componentId, searchQuery } = customComponentPropInfo;
       console.log('[SlideContainer] CustomComponent image selection:', { propName, componentId, imageUrl: imageUrl.substring(0, 60) });
+
+      // Helper to update HTML with a URL
+      const updateHtmlWithImage = (url: string) => {
+        const storeState = useEditorStore.getState();
+        const currentComponents = storeState.draftComponents[currentSlide.id] || currentSlide.components || [];
+        const targetComponent = currentComponents.find((c: any) => c.id === componentId);
+
+        if (!targetComponent?.props?.render) return false;
+
+        let html = targetComponent.props.render as string;
+        const searchTerm = (searchQuery || propName)
+          .replace(/Image$|Img$|Photo$|Picture$/i, '')
+          .replace(/([A-Z])/g, ' $1')
+          .trim()
+          .toLowerCase();
+        const searchWords = searchTerm.split(' ').filter(Boolean);
+
+        // Find and replace the matching image
+        const imgRegex = /<img([^>]*)>/gi;
+        let replaced = false;
+        html = html.replace(imgRegex, (fullMatch, attrs) => {
+          if (replaced) return fullMatch;
+
+          const srcMatch = attrs.match(/src=["']([^"']*)["']/i);
+          const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+          const src = srcMatch ? srcMatch[1] : '';
+          const alt = altMatch ? altMatch[1] : '';
+          const altLower = alt.toLowerCase();
+
+          // Check if this matches our search or is a placeholder
+          const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
+            (!src.startsWith('http') && !src.startsWith('data:'));
+          const matchesSearch = searchWords.some(w => w.length >= 2 && altLower.includes(w));
+
+          if (isPlaceholder || matchesSearch) {
+            replaced = true;
+            const newAttrs = attrs.includes('src=')
+              ? attrs.replace(/src=["'][^"']*["']/i, `src="${url}"`)
+              : ` src="${url}"` + attrs;
+            return `<img${newAttrs}>`;
+          }
+          return fullMatch;
+        });
+
+        if (replaced) {
+          storeState.updateDraftComponent(currentSlide.id, componentId, {
+            props: { ...targetComponent.props, render: html }
+          });
+          return true;
+        }
+        return false;
+      };
+
+      // STEP 1: Immediately show a loading placeholder (data URI of a simple loading image)
+      const loadingPlaceholder = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#1a1a2e" width="400" height="300"/><text x="200" y="150" text-anchor="middle" fill="#666" font-family="system-ui" font-size="14">Loading image...</text></svg>`);
+      updateHtmlWithImage(loadingPlaceholder);
+      console.log('[SlideContainer] Applied loading placeholder immediately');
 
       let finalUrl = imageUrl;
 
-      // Proxy external images through our backend to Supabase for reliability
+      // STEP 2: Proxy external images through our backend to Supabase
       if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
         try {
           console.log('[SlideContainer] Proxying external image to Supabase...');
-          toast({
-            title: "Processing image...",
-            description: "Uploading to our servers for reliability",
-          });
 
           const response = await fetch('/api/media/proxy', {
             method: 'POST',
@@ -351,24 +405,26 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
           }
         } catch (error) {
           console.error('[SlideContainer] Error proxying image for CustomComponent:', error);
-          // Continue with original URL as fallback
         }
       }
 
-      console.log('[SlideContainer] Dispatching customcomponent:image-selected with:', { componentId, propName, imageUrl: finalUrl.substring(0, 60) });
+      // STEP 3: Update with the final URL
+      console.log('[SlideContainer] Updating CustomComponent HTML with final image:', { componentId, propName, imageUrl: finalUrl.substring(0, 60) });
+      if (updateHtmlWithImage(finalUrl)) {
+        toast({
+          title: "Image applied",
+          description: "The image has been added to your slide",
+          duration: 2000,
+        });
+      }
 
-      // Dispatch event for CustomComponentRenderer to receive
-      window.dispatchEvent(new CustomEvent('customcomponent:image-selected', {
-        detail: {
-          componentId,
-          propName,
-          imageUrl: finalUrl,
-        }
-      }));
-
-      // Clear the prop info and close picker
       setCustomComponentPropInfo(null);
-      closeImagePicker();
+      return;
+    }
+
+    // Legacy handling for non-CustomComponent (keeping existing code path)
+    if (customComponentPropInfo) {
+      setCustomComponentPropInfo(null);
       return;
     }
 
