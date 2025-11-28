@@ -20,6 +20,115 @@ from typing import Dict, Any, Optional, List, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _validate_font_against_registry(font_name: str) -> Optional[str]:
+    """Validate that a font exists in the system registry.
+
+    Returns the font name if valid, None if not available.
+    """
+    if not font_name:
+        return None
+
+    try:
+        from services.registry_fonts import RegistryFonts
+        available_fonts = RegistryFonts.get_all_fonts_list(None)
+
+        # Direct match
+        if font_name in available_fonts:
+            return font_name
+
+        # Case-insensitive match
+        font_lower = font_name.lower().strip()
+        available_lower = {f.lower(): f for f in available_fonts}
+        if font_lower in available_lower:
+            return available_lower[font_lower]
+
+        # Partial match (e.g., "Open Sans" matches "Open Sans Regular")
+        for avail_font in available_fonts:
+            if font_lower in avail_font.lower() or avail_font.lower() in font_lower:
+                return avail_font
+
+        return None
+    except Exception as e:
+        logger.warning(f"[ThemeAgent] Font validation error: {e}")
+        return None
+
+
+async def _select_similar_font_for_brand(brand_name: str, original_font: str) -> Dict[str, str]:
+    """Select a similar font from available fonts when brand font is not available."""
+    try:
+        from agents.ai.clients import get_client, invoke
+        from services.registry_fonts import RegistryFonts
+
+        # Get available fonts grouped by category
+        font_categories = RegistryFonts.get_available_fonts()
+
+        # Build font list for AI prompt (limit to avoid too long prompts)
+        font_list_parts = []
+        for category, fonts in font_categories.items():
+            if fonts and category not in ['PixelBuddha']:  # Skip PixelBuddha for now (too many)
+                font_list_parts.append(f"{category}: {', '.join(fonts[:15])}")
+        available_fonts_str = "\n".join(font_list_parts)
+
+        font_prompt = f"""The brand "{brand_name}" uses the font "{original_font}", but it's not available in our system.
+
+Select a visually similar font from our library that matches the brand's style.
+
+Available fonts by category:
+{available_fonts_str}
+
+Requirements:
+- Hero font should be SIMILAR in style to "{original_font}"
+- Body font should complement the hero font
+- Hero and body MUST be DIFFERENT fonts
+
+Return ONLY:
+HERO: [font name]
+BODY: [font name]"""
+
+        client = get_client("claude-3-5-haiku-20241022")
+        response = invoke(
+            client=client,
+            model="claude-3-5-haiku-20241022",
+            messages=[{"role": "user", "content": font_prompt}],
+            max_tokens=100,
+            temperature=0
+        )
+
+        hero_font = None
+        body_font = None
+
+        for line in response.split('\n'):
+            if 'HERO:' in line.upper():
+                hero_font = line.split(':', 1)[1].strip().strip('"\'')
+            elif 'BODY:' in line.upper():
+                body_font = line.split(':', 1)[1].strip().strip('"\'')
+
+        # Validate selected fonts
+        available_fonts = RegistryFonts.get_all_fonts_list(None)
+        available_lower = {f.lower(): f for f in available_fonts}
+
+        if hero_font and hero_font.lower() in available_lower:
+            hero_font = available_lower[hero_font.lower()]
+        else:
+            hero_font = 'Montserrat'  # Safe fallback
+
+        if body_font and body_font.lower() in available_lower:
+            body_font = available_lower[body_font.lower()]
+        else:
+            body_font = 'Open Sans'  # Safe fallback
+
+        # Ensure different fonts
+        if hero_font.lower() == body_font.lower():
+            body_font = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
+
+        logger.info(f"[ThemeAgent] Selected similar fonts for {brand_name}: hero={hero_font}, body={body_font} (original: {original_font})")
+        return {'hero': hero_font, 'body': body_font}
+
+    except Exception as e:
+        logger.warning(f"[ThemeAgent] Font selection failed: {e}")
+        return {'hero': 'Montserrat', 'body': 'Open Sans'}
+
+
 def _hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     """Convert hex color to RGB tuple."""
     hex_color = hex_color.lstrip('#')
@@ -129,32 +238,64 @@ class ThemeAgent:
                 logger.info(f"[ThemeAgent] Brand detected: {result['brand_name']} → {result['domain']}")
 
                 # Step 2: Fetch brand data if we have a domain
+                brand_data = None  # Initialize to avoid scope issues
                 if result["domain"]:
                     brand_data = await self._tool_fetch_brand_data(result["domain"])
 
                     if brand_data and not brand_data.get("error"):
                         # Extract colors
                         colors = brand_data.get("colors", [])
+                        logger.info(f"[ThemeAgent] Brandfetch colors raw: {colors}")
                         if colors:
                             distinct_colors = _ensure_distinct_colors(colors, min_distance=80)
-                            if len(distinct_colors) >= 3:
-                                result["colors"] = distinct_colors[:5]
-                                result["background"] = distinct_colors[0]
-                                result["accent"] = distinct_colors[1] if len(distinct_colors) > 1 else None
+                            # Accept 2+ brand colors - we can derive the third if needed
+                            if len(distinct_colors) >= 2:
+                                # Reorder colors: [primary_accent, secondary_accent, white_bg]
+                                # This ensures accent1 and accent2 are brand colors, not white
+                                brand_colors = distinct_colors[:2]  # First two are brand colors
+                                if len(distinct_colors) == 2:
+                                    # Add white as background option
+                                    logger.info(f"[ThemeAgent] 2-color brand, adding white background")
+                                result["colors"] = brand_colors + ["#FFFFFF"]  # Brand colors first, then white
+                                result["background"] = "#FFFFFF"  # White background for professional look
+                                result["accent"] = brand_colors[0]  # First brand color as primary accent
+                                result["accent2"] = brand_colors[1]  # Second brand color as secondary accent
+                                result["text"] = "#1A1A1A"  # Dark text for readability
                                 result["source"] = "brandfetch"
-                                logger.info(f"[ThemeAgent] Got {len(distinct_colors)} distinct brand colors")
+                                logger.info(f"[ThemeAgent] Got {len(brand_colors)} brand colors: {brand_colors}")
+                            elif len(distinct_colors) == 1:
+                                # Single brand color - derive a complementary palette
+                                primary = distinct_colors[0]
+                                result["colors"] = [primary, "#FFFFFF", "#1A1A1A"]
+                                result["background"] = "#FFFFFF"
+                                result["accent"] = primary
+                                result["text"] = "#1A1A1A"
+                                result["source"] = "brandfetch"
+                                logger.info(f"[ThemeAgent] Single brand color, derived palette from {primary}")
 
                         # Extract logo
                         if brand_data.get("logo_url"):
                             result["logo_url"] = brand_data["logo_url"]
                             logger.info(f"[ThemeAgent] Got logo URL")
 
-                        # Extract fonts
+                        # Extract fonts - VALIDATE against available fonts
                         if brand_data.get("fonts"):
-                            result["fonts"]["hero"] = brand_data["fonts"][0] if brand_data["fonts"] else "Montserrat"
+                            brand_font = brand_data["fonts"][0] if brand_data["fonts"] else None
+                            if brand_font:
+                                # Validate the brand font exists in our system
+                                validated_font = _validate_font_against_registry(brand_font)
+                                if validated_font:
+                                    result["fonts"]["hero"] = validated_font
+                                    logger.info(f"[ThemeAgent] ✅ Brand font validated: {brand_font}")
+                                else:
+                                    # Font not available - select a similar font using AI
+                                    logger.info(f"[ThemeAgent] ⚠️ Brand font '{brand_font}' not in system, selecting similar font...")
+                                    similar_fonts = await _select_similar_font_for_brand(result["brand_name"], brand_font)
+                                    result["fonts"] = similar_fonts
 
-                # Step 3: Select brand-appropriate fonts if not from Brandfetch
-                if result["source"] != "brandfetch" or not brand_data.get("fonts"):
+                # Step 3: Select brand-appropriate fonts if no fonts yet or Brandfetch didn't have fonts
+                brandfetch_had_fonts = brand_data and brand_data.get("fonts")
+                if not brandfetch_had_fonts:
                     fonts = await self._tool_select_fonts(result["brand_name"], result["domain"])
                     if fonts:
                         result["fonts"] = fonts
@@ -256,13 +397,17 @@ Return ONLY JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null
                 brand_data = await cache.get_brand_data(domain)
 
                 if brand_data and not brand_data.get('error'):
-                    # Extract colors
+                    # Extract colors - handle multiple formats from Brandfetch
                     colors_data = brand_data.get('colors', {})
+                    logger.info(f"[ThemeAgent] Brandfetch raw colors_data type={type(colors_data)}: {colors_data}")
                     colors = []
                     if isinstance(colors_data, dict):
-                        colors = colors_data.get('hex_list', [])
+                        # Try multiple possible keys
+                        colors = colors_data.get('hex_list', []) or colors_data.get('hex', []) or colors_data.get('colors', [])
+                        logger.info(f"[ThemeAgent] Colors from dict: {colors}")
                     elif isinstance(colors_data, list):
                         colors = [c.get('hex') if isinstance(c, dict) else c for c in colors_data]
+                        logger.info(f"[ThemeAgent] Colors from list: {colors}")
 
                     # Extract fonts
                     fonts_data = brand_data.get('fonts', {})
@@ -359,20 +504,33 @@ Return ONLY JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null
             return None
 
     async def _tool_select_fonts(self, name: str, domain: Optional[str]) -> Optional[Dict[str, str]]:
-        """Select appropriate fonts using AI."""
+        """Select appropriate fonts using AI from available fonts in the registry."""
         try:
             from agents.ai.clients import get_client, invoke
+            from services.registry_fonts import RegistryFonts
+
+            # Get available fonts grouped by category
+            font_categories = RegistryFonts.get_available_fonts()
+
+            # Build font list for AI prompt (limit to avoid too long prompts)
+            font_list_parts = []
+            for category, fonts in font_categories.items():
+                if fonts and category not in ['PixelBuddha']:  # Skip PixelBuddha for now
+                    font_list_parts.append(f"{category}: {', '.join(fonts[:10])}")
+            available_fonts_str = "\n".join(font_list_parts)
 
             font_prompt = f"""Select fonts for: "{name}"
 
-Choose from these categories:
-- Modern Tech: Inter, Space Grotesk, JetBrains Mono
-- Professional: Montserrat, Open Sans, Lato
-- Creative: Poppins, Nunito, Quicksand
-- Bold: Bebas Neue, Oswald, Anton
-- Elegant: Playfair Display, Merriweather, Lora
+Available fonts by category:
+{available_fonts_str}
 
-Return ONLY: HERO: [font name]
+Requirements:
+- Hero font should be bold/impactful for headlines
+- Body font should be readable for body text
+- Hero and body MUST be DIFFERENT fonts
+
+Return ONLY:
+HERO: [font name]
 BODY: [font name]"""
 
             client = get_client("claude-3-5-haiku-20241022")
@@ -380,20 +538,39 @@ BODY: [font name]"""
                 client=client,
                 model="claude-3-5-haiku-20241022",
                 messages=[{"role": "user", "content": font_prompt}],
-                max_tokens=50,
+                max_tokens=100,
                 temperature=0
             )
 
             # Parse response
-            hero = "Montserrat"
-            body = "Open Sans"
+            hero = None
+            body = None
 
             for line in response.split('\n'):
                 if 'HERO:' in line.upper():
-                    hero = line.split(':')[-1].strip()
+                    hero = line.split(':', 1)[-1].strip().strip('"\'')
                 elif 'BODY:' in line.upper():
-                    body = line.split(':')[-1].strip()
+                    body = line.split(':', 1)[-1].strip().strip('"\'')
 
+            # Validate fonts exist in registry
+            available_fonts = RegistryFonts.get_all_fonts_list(None)
+            available_lower = {f.lower(): f for f in available_fonts}
+
+            if hero and hero.lower() in available_lower:
+                hero = available_lower[hero.lower()]
+            else:
+                hero = "Montserrat"  # Safe fallback
+
+            if body and body.lower() in available_lower:
+                body = available_lower[body.lower()]
+            else:
+                body = "Open Sans"  # Safe fallback
+
+            # Ensure different fonts
+            if hero.lower() == body.lower():
+                body = "Open Sans" if hero != "Open Sans" else "Roboto"
+
+            logger.info(f"[ThemeAgent] Selected fonts: hero={hero}, body={body}")
             return {"hero": hero, "body": body}
 
         except Exception as e:

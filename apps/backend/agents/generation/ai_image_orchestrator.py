@@ -652,8 +652,14 @@ class AIImageOrchestrator:
                     escaped_src = re.escape(original_src)
                     # Replace in img tags
                     pattern = f'(src=["\']){escaped_src}(["\'])'
+                    old_html_len = len(current_html)
                     current_html = re.sub(pattern, f'\\1{image_url}\\2', current_html, flags=re.IGNORECASE)
-                    updated = True
+                    new_html_len = len(current_html)
+                    if old_html_len != new_html_len:
+                        logger.info("[AIImageOrchestrator] HTML replacement SUCCESS: %s -> %s", original_src[:30], image_url[:60])
+                        updated = True
+                    else:
+                        logger.warning("[AIImageOrchestrator] HTML replacement FAILED - pattern not found: %s", pattern[:80])
 
                 # Also try to replace by alt text matching
                 alt = placeholder.get('alt', '')

@@ -363,9 +363,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
         console.log('[ChatPanel] 📸 Uploaded media from agent:', uploadedMediaFromAgent.length, uploadedMediaFromAgent);
 
-        let prompt = `Create a presentation about ${topic}.`;
+        // Only create a prompt if we have a valid topic
+        let prompt = topic ? `Create a presentation about ${topic}.` : '';
         if (slideCount) {
           prompt += ` It should have approximately ${slideCount} slides.`;
+        }
+
+        // If no valid prompt, don't proceed with generation
+        if (!prompt.trim()) {
+          console.warn('[ChatPanel] No valid topic provided, skipping generation');
+          return;
         }
 
         // Build style context from chat history if available
@@ -3179,57 +3186,56 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             if (event.status === 'thinking') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `💭 ${(event as any).message || 'Thinking...'}`, metadata: { isTyping: true, thinkingPhase: 'thinking', isStreamingUpdate: true } }
+                  ? { ...m, message: (event as any).message || 'about your request', metadata: { isTyping: true, thinkingPhase: 'thinking', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'researching') {
               const query = (event as any).query || 'your topic';
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `🔍 Searching the web for "${query}"`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'researching', isStreamingUpdate: true } }
+                  ? { ...m, message: `for "${query}"`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'researching', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'scraping') {
+              const url = (event as any).message || '';
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `📄 Reading website... ${(event as any).message || ''}`, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'scraping', isStreamingUpdate: true } }
+                  ? { ...m, message: url, metadata: { isTyping: true, isResearching: true, thinkingPhase: 'scraping', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'scraped') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `✓ Got it! Now thinking...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking', isStreamingUpdate: true } }
+                  ? { ...m, message: 'done, now processing', metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'research_failed') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `⚠️ Couldn't find info online, winging it...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking', isStreamingUpdate: true } }
+                  ? { ...m, message: 'couldn\'t find info, improvising', metadata: { isTyping: true, isResearching: false, thinkingPhase: 'thinking', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'analyzing_file') {
-              // File analysis in progress
               const fileName = (event as any).file_name || 'file';
               const fileIndex = ((event as any).file_index || 0) + 1;
               const totalFiles = (event as any).total_files || 1;
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `📎 Analyzing ${fileName} (${fileIndex}/${totalFiles})...`, metadata: { isTyping: true, isAnalyzingFiles: true, thinkingPhase: 'analyzing', isStreamingUpdate: true } }
+                  ? { ...m, message: `${fileName} (${fileIndex}/${totalFiles})`, metadata: { isTyping: true, isAnalyzingFiles: true, thinkingPhase: 'analyzing', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'files_analyzed') {
-              // File analysis complete
               const analyses = (event as any).analyses || [];
               const fileCount = analyses.length;
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `✓ Analyzed ${fileCount} file(s)! Now creating your presentation...`, metadata: { isTyping: true, isAnalyzingFiles: false, fileAnalyses: analyses, thinkingPhase: 'generating', isStreamingUpdate: true } }
+                  ? { ...m, message: `${fileCount} file(s) ready`, metadata: { isTyping: true, isAnalyzingFiles: false, fileAnalyses: analyses, thinkingPhase: 'generating', isStreamingUpdate: true } }
                   : m
               ));
             } else if (event.status === 'file_analysis_error') {
               setMessages(prev => prev.map(m =>
                 m.id === aiMessageId
-                  ? { ...m, message: `⚠️ Couldn't analyze some files, continuing anyway...`, metadata: { isTyping: true, isAnalyzingFiles: false, thinkingPhase: 'generating', isStreamingUpdate: true } }
+                  ? { ...m, message: 'some files skipped, continuing', metadata: { isTyping: true, isAnalyzingFiles: false, thinkingPhase: 'generating', isStreamingUpdate: true } }
                   : m
               ));
             }
@@ -3237,7 +3243,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             // Research completed - show brief "processing" then continue
             setMessages(prev => prev.map(m =>
               m.id === aiMessageId
-                ? { ...m, message: `🧠 Found info! Processing...`, metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing', isStreamingUpdate: true } }
+                ? { ...m, message: 'found relevant info', metadata: { isTyping: true, isResearching: false, thinkingPhase: 'processing', isStreamingUpdate: true } }
                 : m
             ));
           } else if (event.type === 'text') {

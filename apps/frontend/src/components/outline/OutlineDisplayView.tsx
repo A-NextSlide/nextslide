@@ -441,7 +441,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     const cachedAccent = existingDeckTheme?.color_palette?.accent_1;
     if (existingDeckTheme && (isRealColor(cachedBg) || isRealColor(cachedAccent))) {
       console.log('[OutlineDisplayView] ✅ Theme already in store with real colors:', { cachedBg, cachedAccent });
-      
+
       // CRITICAL: Even with cached theme, ensure fonts from stylePreferences are applied to workspace theme
       const styleHeadingFont = (currentOutline as any)?.stylePreferences?.font;
       const styleBodyFont = (currentOutline as any)?.stylePreferences?.bodyFont || styleHeadingFont;
@@ -468,21 +468,107 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
           setWorkspaceTheme(addedId);
         }
       }
-      
+
       setThemeReady(true);
       setIsThemeLoading(false);
-      return;
+
+      // Still set up event listener for theme_loading during NEW generation
+      const onThemePreview = (e: CustomEvent) => {
+        const d: any = (e as any).detail || {};
+        if (d?.type === 'theme_loading') {
+          console.log('[OutlineDisplayView] 🎨 Theme loading started (cached theme):', d?.message);
+          setIsThemeLoading(true);
+          setThemeReady(false);
+          return;
+        }
+        if (d?.type === 'theme_generated' || (d?.theme && (d?.palette || d?.theme?.color_palette))) {
+          setIsThemeLoading(false);
+          setThemeReady(true);
+        }
+      };
+      window.addEventListener('theme_preview_update', onThemePreview as any);
+      return () => {
+        window.removeEventListener('theme_preview_update', onThemePreview as any);
+      };
     }
     
-    // If we have stylePreferences.colors, apply them immediately WITHOUT any dedup checks
-    // This ensures the theme tab shows real colors, not a default
+    // If we have stylePreferences.colors, show loading first then apply theme after fonts load
+    // This ensures the theme tab shows a proper loading state before displaying the theme
     if (hasExistingThemeColors) {
-      console.log('[OutlineDisplayView] Found stylePreferences.colors - applying immediately');
-      applyThemeFromColors(existingColors);
-      
-      // Still set up event listener for any future updates during generation
+      console.log('[OutlineDisplayView] Found stylePreferences.colors - showing loading state first');
+
+      // Keep loading state true initially
+      setIsThemeLoading(true);
+      setThemeReady(false);
+
+      // Apply theme after a brief delay to show loading state AND wait for fonts
+      const applyThemeWithDelay = async () => {
+        try {
+          // Get fonts from stylePreferences
+          const headingFont = (currentOutline as any)?.stylePreferences?.font;
+          const bodyFont = (currentOutline as any)?.stylePreferences?.bodyFont || headingFont;
+
+          // Sync designer fonts first
+          await FontLoadingService.syncDesignerFonts?.();
+
+          // Load fonts if specified
+          if (headingFont) {
+            try {
+              await FontLoadingService.loadFont(headingFont);
+              // Wait for browser to process font
+              if ('fonts' in document) {
+                await document.fonts.load(`bold 24px "${headingFont}"`).catch(() => {});
+              }
+            } catch (err) {
+              console.warn('[OutlineDisplayView] Failed to load heading font:', headingFont, err);
+            }
+          }
+          if (bodyFont && bodyFont !== headingFont) {
+            try {
+              await FontLoadingService.loadFont(bodyFont);
+              if ('fonts' in document) {
+                await document.fonts.load(`14px "${bodyFont}"`).catch(() => {});
+              }
+            } catch (err) {
+              console.warn('[OutlineDisplayView] Failed to load body font:', bodyFont, err);
+            }
+          }
+
+          // Small delay to ensure smooth transition
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+          if (!cancelled) {
+            console.log('[OutlineDisplayView] 🎨 Fonts loaded, applying theme');
+            applyThemeFromColors(existingColors);
+          }
+        } catch (err) {
+          console.warn('[OutlineDisplayView] Theme application error:', err);
+          if (!cancelled) {
+            // Apply theme anyway on error
+            applyThemeFromColors(existingColors);
+          }
+        }
+      };
+
+      applyThemeWithDelay();
+
+      // Still set up event listener for theme_loading events during NEW generation
+      // This ensures loading state is shown when a new generation starts
       const onThemePreview = (e: CustomEvent) => {
-        // Handle theme updates from generation if they come
+        const d: any = (e as any).detail || {};
+        // Handle theme_loading event - show loading state when new generation starts
+        if (d?.type === 'theme_loading') {
+          console.log('[OutlineDisplayView] 🎨 Theme loading started (existing colors):', d?.message);
+          setIsThemeLoading(true);
+          setThemeReady(false);
+          return;
+        }
+        // Handle theme_generated to update with new colors and stop loading
+        if (d?.type === 'theme_generated' || (d?.theme && (d?.palette || d?.theme?.color_palette))) {
+          console.log('[OutlineDisplayView] 🎨 Theme generated - updating colors');
+          setIsThemeLoading(false);
+          setThemeReady(true);
+        }
       };
       window.addEventListener('theme_preview_update', onThemePreview as any);
       return () => {
@@ -579,6 +665,7 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
               primary_background: colors.primary_background,
               primary_text: colors.primary_text,
               accent_1: colors.accent_1,
+              accent_2: colors.accent_2,
               backgrounds: colors.backgrounds,
               accents: colors.accents,
               text_colors: colors.text_colors
@@ -587,24 +674,20 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             const pageBg = colors.primary_background || colors.backgrounds?.[0] || '#ffffff';
             const textColor = colors.primary_text || colors.text_colors?.primary || '#1f2937';
             const accent1 = colors.accent_1 || colors.accents?.[0] || '#FF4301';
+            const accent2 = colors.accent_2 || colors.accents?.[1] || null;  // Preserve accent2 if available
 
-            console.log('[THEME DEBUG] Extracted colors:', { pageBg, textColor, accent1 });
-
-            // Colors array should ONLY contain visual theme colors (bg + accents), NOT text color
-            // Use empty array to prevent extras from appearing - we set explicit fields instead
-            const colorsArray: string[] = [];
+            console.log('[THEME DEBUG] Extracted colors:', { pageBg, textColor, accent1, accent2 });
 
             // Fix the colors array in themePayload NOW
             if (themePayload?.color_palette) {
-              themePayload.color_palette.colors = colorsArray; // Empty array - we use explicit fields
+              themePayload.color_palette.colors = []; // Empty array - we use explicit fields
               themePayload.color_palette.backgrounds = [pageBg];
-              themePayload.color_palette.accents = [accent1];
+              themePayload.color_palette.accents = [accent1, accent2].filter(Boolean);
               // CRITICAL: Set explicit singular fields so swatches can read from them!
               themePayload.color_palette.primary_background = pageBg;
               themePayload.color_palette.primary_text = textColor;
               themePayload.color_palette.accent_1 = accent1;
-              // Explicitly set accent_2 to undefined to prevent duplicate accent bars
-              themePayload.color_palette.accent_2 = undefined;
+              themePayload.color_palette.accent_2 = accent2;  // Preserve accent2 for brand colors
               // Also update text_colors for backwards compatibility
               if (!themePayload.color_palette.text_colors) {
                 themePayload.color_palette.text_colors = {};

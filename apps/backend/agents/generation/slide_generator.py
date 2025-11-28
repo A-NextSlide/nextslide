@@ -3478,8 +3478,8 @@ class SlideGeneratorV2(ISlideGenerator):
 
                     # Search for image using SerpAPI
                     try:
-                        from services.combined_image_service import get_combined_image_service
-                        image_service = get_combined_image_service()
+                        from services.combined_image_service import CombinedImageService
+                        image_service = CombinedImageService()
 
                         # Search for one image
                         search_result = await image_service.search_images(

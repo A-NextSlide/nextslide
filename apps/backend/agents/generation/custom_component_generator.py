@@ -9,7 +9,8 @@ This module generates visually stunning CustomComponents for slides using:
 """
 
 import asyncio
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
 from agents.ai.clients import get_client, invoke
@@ -21,6 +22,347 @@ from agents.config import (
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+
+async def prefetch_images_for_content(
+    content: str,
+    slide_title: str,
+    max_images: int = 5
+) -> Dict[str, str]:
+    """
+    Pre-fetch HIGH QUALITY images for slide content BEFORE generation.
+
+    Analyzes content to extract meaningful search terms, searches for images,
+    and returns a dict of {propName: imageUrl} that can be passed to the AI.
+
+    Uses simple numbered prop names (image1, image2, etc.) for guaranteed matching.
+
+    Args:
+        content: The slide content to analyze
+        slide_title: The slide title for additional context
+        max_images: Maximum number of images to fetch
+
+    Returns:
+        Dict mapping prop names to image URLs, e.g.:
+        {"image1": "https://...", "image2": "https://..."}
+        Also includes search term hints: {"image1_query": "Elon Musk", ...}
+    """
+    # Use SerpAPI directly since CombinedImageService.search_images is disabled
+    try:
+        from services.serpapi_service import SerpAPIService
+        from services.image_validator import ImageValidator
+        serpapi = SerpAPIService()
+        if not serpapi.is_available:
+            logger.warning("[PREFETCH] SerpAPI not available (no API key)")
+            print("[PREFETCH] ❌ SerpAPI not available - no API key configured")
+            return {}
+    except Exception as e:
+        logger.warning(f"[PREFETCH] Could not initialize SerpAPI service: {e}")
+        print(f"[PREFETCH] ❌ Failed to init SerpAPI: {e}")
+        return {}
+
+    # Extract search terms from content - now returns better quality terms
+    search_terms = _extract_image_search_terms(content, slide_title)
+
+    if not search_terms:
+        logger.info("[PREFETCH] No image search terms extracted from content")
+        print("[PREFETCH] ⚠️ No search terms extracted from content")
+        return {}
+
+    logger.info(f"[PREFETCH] Extracted {len(search_terms)} search terms: {search_terms[:5]}")
+    print(f"[PREFETCH] 🔍 Search terms: {search_terms[:5]}")
+
+    # Limit to max_images
+    search_terms = search_terms[:max_images]
+
+    # Search for images in parallel - use numbered props for guaranteed matching
+    prefetched = {}
+
+    # Domains to avoid (game sites, wikis, meme sites, etc.)
+    BAD_DOMAINS = [
+        'wikia.nocookie.net', 'fandom.com', 'wiki', 'pinterest', 'giphy',
+        'tenor.com', 'memegenerator', 'imgflip', 'knowyourmeme', 'deviantart',
+        'tumblr', 'reddit', 'imgur', 'facebook', 'instagram', 'twitter',
+        'tiktok', 'snapchat', 'ebay', 'amazon', 'aliexpress', 'alibaba'
+    ]
+
+    async def search_one(index: int, term: str) -> Tuple[int, str, Optional[str]]:
+        """Search for a single term and return (index, term, url)."""
+        try:
+            # Build a professional search query
+            professional_query = f"{term} professional high quality photo"
+
+            # Use SerpAPI to search for images - get multiple results to filter
+            result = await serpapi.search_images(
+                query=professional_query,
+                per_page=10,  # Get more results to filter bad ones
+                size="large"  # Prefer larger images
+            )
+
+            photos = result.get('photos', [])
+
+            # Filter out bad domains and find a good image
+            for photo in photos:
+                url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
+                if not url:
+                    continue
+
+                # Skip bad domains
+                url_lower = url.lower()
+                if any(bad in url_lower for bad in BAD_DOMAINS):
+                    logger.debug(f"[PREFETCH] Skipping bad domain: {url[:50]}")
+                    continue
+
+                # Skip obviously bad file types
+                if any(ext in url_lower for ext in ['.svg', '.gif', '.webp']):
+                    continue
+
+                # Skip data URIs and base64
+                if url.startswith('data:'):
+                    continue
+
+                # Found a good image!
+                logger.info(f"[PREFETCH] Found image for '{term}': {url[:60]}...")
+                print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> {url[:50]}...")
+                return (index, term, url)
+
+            # If no good images found with professional query, try original term
+            logger.info(f"[PREFETCH] Trying original term: {term}")
+            result2 = await serpapi.search_images(query=term, per_page=10, size="large")
+
+            for photo in result2.get('photos', []):
+                url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
+                if not url:
+                    continue
+                url_lower = url.lower()
+                if any(bad in url_lower for bad in BAD_DOMAINS):
+                    continue
+                if any(ext in url_lower for ext in ['.svg', '.gif', '.webp']):
+                    continue
+                if url.startswith('data:'):
+                    continue
+
+                logger.info(f"[PREFETCH] Found image for '{term}': {url[:60]}...")
+                print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> {url[:50]}...")
+                return (index, term, url)
+
+            logger.warning(f"[PREFETCH] No good image found for '{term}'")
+            print(f"[PREFETCH] ⚠️ No good image found for: {term}")
+            return (index, term, None)
+        except Exception as e:
+            logger.warning(f"[PREFETCH] Error searching for '{term}': {e}")
+            print(f"[PREFETCH] ❌ Error searching for '{term}': {e}")
+            return (index, term, None)
+
+    # Run all searches in parallel
+    tasks = [search_one(i, term) for i, term in enumerate(search_terms)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Use simple numbered prop names: image1, image2, etc.
+    for result in results:
+        if isinstance(result, tuple) and len(result) == 3 and result[2]:
+            index, term, url = result
+            prop_name = f"image{index + 1}"
+            prefetched[prop_name] = url
+            # Also store the query term so AI knows what each image is
+            prefetched[f"{prop_name}_query"] = term
+
+    logger.info(f"[PREFETCH] Successfully fetched {len([k for k in prefetched if not k.endswith('_query')])}/{len(search_terms)} images")
+    print(f"[PREFETCH] 📸 Fetched {len([k for k in prefetched if not k.endswith('_query')])} images")
+
+    return prefetched
+
+
+def _extract_image_search_terms(content: str, slide_title: str) -> List[str]:
+    """
+    Extract HIGH QUALITY, SPECIFIC image search terms from slide content.
+
+    Focuses on:
+    - Named entities (people, places, products, companies)
+    - Specific brands, products, and organizations
+    - Concrete, visualizable concepts (NOT abstract terms)
+
+    Avoids:
+    - Generic business buzzwords (synergy, strategy, alignment)
+    - Abstract concepts (success, growth, innovation)
+    - Common verbs and adjectives
+
+    Returns list of search terms, most specific first.
+    """
+    terms = []
+    combined_text = f"{slide_title}\n{content}"
+
+    # Words to NEVER use as search terms (too generic, produce bad results)
+    BLACKLIST = {
+        # Abstract business terms
+        'team', 'teamwork', 'alignment', 'strategy', 'synergy', 'growth', 'success',
+        'innovation', 'collaboration', 'partnership', 'leadership', 'excellence',
+        'solution', 'solutions', 'approach', 'methodology', 'framework', 'process',
+        'efficiency', 'productivity', 'performance', 'optimization', 'transformation',
+        'digital', 'agile', 'scalable', 'robust', 'seamless', 'holistic', 'proactive',
+        'stakeholder', 'stakeholders', 'initiative', 'initiatives', 'deliverable',
+        'leverage', 'synergize', 'streamline', 'optimize', 'maximize', 'minimize',
+        'empower', 'enable', 'facilitate', 'implement', 'integrate', 'execute',
+        # Generic slide terms
+        'overview', 'introduction', 'summary', 'agenda', 'conclusion', 'questions',
+        'thank', 'thanks', 'slide', 'presentation', 'deck', 'section', 'chapter',
+        # Common words
+        'the', 'and', 'for', 'with', 'about', 'your', 'our', 'their', 'this', 'that',
+        'new', 'key', 'main', 'important', 'critical', 'essential', 'top', 'best',
+        'next', 'steps', 'action', 'items', 'point', 'points', 'benefit', 'benefits',
+        'feature', 'features', 'advantage', 'advantages', 'goal', 'goals', 'objective',
+        'meeting', 'meetings', 'discussion', 'review', 'update', 'status', 'progress',
+    }
+
+    # 1. Extract company/product names (capitalized multi-word phrases)
+    # Match: "Tesla Motors", "Google Cloud", "Microsoft Azure", "Elon Musk"
+    proper_nouns = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', combined_text)
+    for noun in proper_nouns:
+        # Only add if none of the words are blacklisted
+        words = noun.lower().split()
+        if not any(w in BLACKLIST for w in words):
+            terms.append(noun)
+
+    # 2. Extract quoted terms (usually specific names/products)
+    quoted = re.findall(r'"([^"]{3,40})"', combined_text)
+    for q in quoted:
+        if q.lower() not in BLACKLIST and len(q.split()) <= 4:
+            terms.append(q)
+
+    # 3. Extract specific technology/product patterns
+    tech_patterns = [
+        r'\b(GPT-\d+|ChatGPT|Claude|Gemini|DALL-E|Midjourney|Stable Diffusion)\b',
+        r'\b(iPhone \d+|iPad Pro|MacBook|Apple Watch|AirPods)\b',
+        r'\b(Tesla Model [SXY3]|Cybertruck|Roadster)\b',
+        r'\b(AWS|Azure|Google Cloud|GCP|Kubernetes|Docker|Terraform)\b',
+        r'\b(React|Vue|Angular|Next\.js|Node\.js|Python|TypeScript)\b',
+        r'\b(OpenAI|Anthropic|Google DeepMind|Meta AI)\b',
+        r'\b(Netflix|Spotify|Uber|Airbnb|Stripe|Shopify)\b',
+        r'\b(CEO|CTO|CFO)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\b',  # "CEO Tim Cook"
+    ]
+    for pattern in tech_patterns:
+        matches = re.findall(pattern, combined_text, re.IGNORECASE)
+        for match in matches:
+            if isinstance(match, tuple):
+                terms.extend([m for m in match if m])
+            else:
+                terms.append(match)
+
+    # 4. Extract single capitalized words that are likely brands/names
+    # These appear mid-sentence (not at start)
+    single_caps = re.findall(r'(?<=[a-z]\s)([A-Z][a-z]{2,})\b', combined_text)
+    for cap in single_caps:
+        if cap.lower() not in BLACKLIST and len(cap) >= 4:
+            terms.append(cap)
+
+    # 5. Extract terms from bold/emphasized text (often important)
+    bold = re.findall(r'\*\*([^*]{3,30})\*\*', combined_text)
+    for b in bold:
+        words = b.lower().split()
+        if not all(w in BLACKLIST for w in words):
+            terms.append(b)
+
+    # 6. Use slide title ONLY if it contains specific terms
+    if slide_title:
+        title_words = slide_title.split()
+        # Check if title has any non-blacklisted words
+        specific_words = [w for w in title_words if w.lower() not in BLACKLIST and len(w) > 3]
+        if specific_words:
+            # Use just the specific words from title
+            terms.append(' '.join(specific_words[:3]))
+
+    # 7. If we still don't have good terms, extract nouns from content
+    if len(terms) < 2:
+        # Look for concrete nouns (things you can photograph)
+        concrete_nouns = re.findall(r'\b(office|building|computer|laptop|phone|car|robot|factory|warehouse|store|restaurant|hospital|school|university|city|mountain|ocean|forest|desert)\b', combined_text, re.IGNORECASE)
+        terms.extend(list(set(concrete_nouns)))
+
+    # Deduplicate while preserving order (most specific first)
+    seen = set()
+    unique_terms = []
+    for term in terms:
+        term_clean = term.strip()
+        term_lower = term_clean.lower()
+        if term_lower and term_lower not in seen and term_lower not in BLACKLIST:
+            # Skip if too short or too long
+            if len(term_clean) < 3 or len(term_clean) > 50:
+                continue
+            seen.add(term_lower)
+            unique_terms.append(term_clean)
+
+    # If we have very few terms, add the title as a last resort
+    if len(unique_terms) < 2 and slide_title:
+        # Clean the title of blacklisted words
+        clean_title = ' '.join([w for w in slide_title.split() if w.lower() not in BLACKLIST])
+        if clean_title and clean_title not in seen:
+            unique_terms.append(clean_title)
+
+    return unique_terms
+
+
+def _term_to_prop_name(term: str) -> str:
+    """
+    Convert a search term to a valid JavaScript prop name.
+
+    "Elon Musk" -> "elonMuskImage"
+    "Tesla Model S" -> "teslaModelSImage"
+    """
+    # Remove special characters, keep alphanumeric and spaces
+    clean = re.sub(r'[^a-zA-Z0-9\s]', '', term)
+
+    # Split into words
+    words = clean.split()
+
+    if not words:
+        return "imageDefault"
+
+    # CamelCase: first word lowercase, rest capitalized
+    prop = words[0].lower()
+    for word in words[1:]:
+        prop += word.capitalize()
+
+    # Add "Image" suffix if not already present
+    if not prop.lower().endswith('image'):
+        prop += 'Image'
+
+    return prop
+
+
+def _extract_fonts_from_typography(typography: Dict[str, Any]) -> Tuple[str, str]:
+    """
+    Extract hero and body fonts from typography dict.
+
+    Handles multiple possible structures:
+    - Flat: typography.hero_font, typography.body_font
+    - Nested: typography.hero_title.family, typography.body_text.family
+    - Alternative: typography.heading.family, typography.body.family
+
+    Returns (hero_font, body_font) tuple with 'Inter' as fallback.
+    """
+    if not typography:
+        logger.debug("[FONTS] No typography dict provided, using defaults")
+        return ('Inter', 'Inter')
+
+    # Debug: log what we received
+    logger.debug(f"[FONTS] Typography keys: {list(typography.keys())}")
+
+    hero_font = (
+        typography.get('hero_font') or
+        (typography.get('hero_title') or {}).get('family') or
+        (typography.get('heading') or {}).get('family') or
+        (typography.get('title') or {}).get('family') or
+        'Inter'
+    )
+    body_font = (
+        typography.get('body_font') or
+        (typography.get('body_text') or {}).get('family') or
+        (typography.get('body') or {}).get('family') or
+        (typography.get('paragraph') or {}).get('family') or
+        'Inter'
+    )
+
+    logger.debug(f"[FONTS] Extracted: hero={hero_font}, body={body_font}")
+    return (hero_font, body_font)
 
 
 class CustomComponentGenerator:
@@ -49,7 +391,9 @@ class CustomComponentGenerator:
         height: int = 700,
         position: Dict[str, int] = None,
         external_media: Optional[Dict[str, Any]] = None,
-        uploaded_media: Optional[list] = None
+        uploaded_media: Optional[list] = None,
+        prefetched_images: Optional[Dict[str, str]] = None,
+        auto_prefetch: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a creative CustomComponent.
@@ -72,6 +416,8 @@ class CustomComponentGenerator:
                 - Types: 'image' (photos/graphics), 'drawing' (mockups/sketches), 'data' (charts/tables)
                 - For drawings: use as design reference, don't place directly
                 - For photos: can be placed as images on the slide
+            prefetched_images: Optional dict of {propName: imageUrl} pre-fetched images
+            auto_prefetch: If True and no prefetched_images, automatically fetch images
 
         Returns:
             CustomComponent dict with type, props, position, etc.
@@ -87,6 +433,68 @@ class CustomComponentGenerator:
             colors = theme.get('color_palette', {})
             typography = theme.get('typography', {})
             style_keywords = theme.get('style_keywords', [])
+
+            # Debug: Log what typography we received
+            logger.info(f"[CUSTOM_COMPONENT] Theme typography keys: {list(typography.keys()) if typography else 'None'}")
+            print(f"[CUSTOM_COMPONENT] 🎨 Theme typography: {list(typography.keys()) if typography else 'EMPTY'}")
+            if typography:
+                # Show nested structure if present
+                for key in ['hero_title', 'body_text', 'hero_font', 'body_font']:
+                    if key in typography:
+                        val = typography[key]
+                        if isinstance(val, dict):
+                            print(f"[CUSTOM_COMPONENT]   {key}: {val.get('family', 'no family')}")
+                        else:
+                            print(f"[CUSTOM_COMPONENT]   {key}: {val}")
+
+            # PRE-FETCH IMAGES if not already provided and auto_prefetch enabled
+            # Skip for title slides (they typically don't need images)
+            slide_title = slide_context.get('title', '')
+            is_title_slide_check = self._is_title_slide(slide_context)
+
+            if not prefetched_images and auto_prefetch and not is_title_slide_check and not external_media:
+                logger.info("[CUSTOM_COMPONENT] Auto-prefetching images for content...")
+                print("[CUSTOM_COMPONENT] 🔍 Pre-fetching images before generation...")
+                try:
+                    prefetched_images = await prefetch_images_for_content(
+                        content=content,
+                        slide_title=slide_title,
+                        max_images=5
+                    )
+                    if prefetched_images:
+                        logger.info(f"[CUSTOM_COMPONENT] Pre-fetched {len(prefetched_images)} images")
+                        print(f"[CUSTOM_COMPONENT] ✅ Pre-fetched {len(prefetched_images)} images: {list(prefetched_images.keys())}")
+                except Exception as e:
+                    logger.warning(f"[CUSTOM_COMPONENT] Image prefetch failed: {e}")
+                    prefetched_images = {}
+
+            # CRITICAL: Convert external_media images to prefetched_images format for injection
+            # This ensures images from Firecrawl/external sources are also injected into HTML
+            if not prefetched_images and external_media:
+                external_images = external_media.get('images', [])
+                if external_images:
+                    logger.info(f"[CUSTOM_COMPONENT] Converting {len(external_images)} external_media images for injection")
+                    print(f"[CUSTOM_COMPONENT] 📸 Using {len(external_images)} images from external_media for injection")
+                    prefetched_images = {}
+                    for i, img_url in enumerate(external_images[:5], 1):  # Max 5 images
+                        prefetched_images[f"image{i}"] = img_url
+                        prefetched_images[f"image{i}_query"] = "external media"
+                    print(f"[CUSTOM_COMPONENT] ✅ Converted external images: {list(prefetched_images.keys())}")
+                else:
+                    # external_media exists but has no images - try auto-prefetch as fallback
+                    logger.info("[CUSTOM_COMPONENT] external_media has no images, trying auto-prefetch...")
+                    print("[CUSTOM_COMPONENT] ⚠️ external_media has no images, falling back to auto-prefetch...")
+                    try:
+                        prefetched_images = await prefetch_images_for_content(
+                            content=content,
+                            slide_title=slide_title,
+                            max_images=5
+                        )
+                        if prefetched_images:
+                            print(f"[CUSTOM_COMPONENT] ✅ Fallback prefetch got {len(prefetched_images)} images")
+                    except Exception as e:
+                        logger.warning(f"[CUSTOM_COMPONENT] Fallback prefetch failed: {e}")
+                        prefetched_images = {}
 
             # Detect if this is a title slide
             is_title_slide = self._is_title_slide(slide_context)
@@ -117,7 +525,8 @@ class CustomComponentGenerator:
                     width=width,
                     height=height,
                     external_media=external_media,
-                    uploaded_media=uploaded_media
+                    uploaded_media=uploaded_media,
+                    prefetched_images=prefetched_images
                 )
 
             # Get client and generate
@@ -178,13 +587,38 @@ class CustomComponentGenerator:
                 return None
 
             print(f"[CUSTOM_COMPONENT] ✅ HTML extracted: {len(html_content)} chars")
-            # DEBUG: Show first 200 chars to verify no escaped sequences
-            print(f"[CUSTOM_COMPONENT] HTML preview: {repr(html_content[:300])}")
+
+            # GUARANTEED IMAGE INJECTION - Post-process HTML to inject real URLs
+            # This runs AFTER generation to ensure images appear regardless of what AI generated
+            print(f"[CUSTOM_COMPONENT] 🔍 Checking for image injection: prefetched_images={'available with ' + str(len(prefetched_images)) + ' keys' if prefetched_images else 'NONE'}")
+
+            # Check if HTML has placeholders that need injection
+            has_placeholders = 'placeholder' in html_content.lower() or '${' in html_content or 'src=""' in html_content
+            if has_placeholders:
+                print(f"[CUSTOM_COMPONENT] ⚠️ HTML has placeholders that need injection!")
+
+            if prefetched_images:
+                print(f"[CUSTOM_COMPONENT] 🔧 Running image injection with keys: {list(prefetched_images.keys())}")
+                html_content = self._inject_prefetched_images_into_html(html_content, prefetched_images)
+            elif has_placeholders:
+                print(f"[CUSTOM_COMPONENT] ❌ NO IMAGES TO INJECT but HTML has placeholders!")
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[CUSTOM_COMPONENT] Generated in {elapsed:.1f}s ({len(html_content)} chars)")
 
             # Build the component
+            # Include prefetched images in props.props so frontend can inject them
+            # Filter out the _query hints - only include actual image URLs
+            image_props = {k: v for k, v in (prefetched_images or {}).items() if not k.endswith('_query')}
+            if image_props:
+                logger.info(f"[CUSTOM_COMPONENT] Including {len(image_props)} prefetched images in component props")
+                print(f"[CUSTOM_COMPONENT] 📸 Storing {len(image_props)} image URLs in props: {list(image_props.keys())}")
+
+            # Extract fonts using the helper
+            hero_font, body_font = _extract_fonts_from_typography(typography)
+            logger.info(f"[CUSTOM_COMPONENT] Using fonts: hero={hero_font}, body={body_font}")
+            print(f"[CUSTOM_COMPONENT] 🔤 Fonts: hero={hero_font}, body={body_font}")
+
             component = {
                 "id": f"custom-{datetime.now().strftime('%H%M%S%f')}",
                 "type": "CustomComponent",
@@ -195,7 +629,10 @@ class CustomComponentGenerator:
                     "primaryColor": colors.get('accent_1', '#6366f1'),
                     "secondaryColor": colors.get('accent_2', colors.get('accent_1', '#8b5cf6')),
                     "textColor": colors.get('primary_text', '#ffffff'),
-                    "fontFamily": typography.get('body_font', 'Inter')
+                    "fontFamily": body_font,
+                    "heroFont": hero_font,
+                    # Store prefetched images - frontend will inject these into ${propName} placeholders
+                    "props": image_props
                 },
                 "position": position or {"x": 80, "y": 240},
                 "width": width,
@@ -225,8 +662,7 @@ class CustomComponentGenerator:
         secondary = colors.get('accent_2', '#8b5cf6')
         text_color = colors.get('primary_text', '#ffffff')
         bg_color = colors.get('primary_background', '#0a0e27')
-        hero_font = typography.get('hero_font', 'Inter')
-        body_font = typography.get('body_font', 'Inter')
+        hero_font, body_font = _extract_fonts_from_typography(typography)
 
         return f"""You are a WORLD-CLASS CREATIVE TECHNOLOGIST creating STUNNING interactive web experiences.
 
@@ -246,7 +682,17 @@ Create something that makes people say "WOW, how did they do that?!"
   --font-body: '{body_font}', sans-serif;
 }}
 
+COLORS: Use --accent and --secondary for all accent elements. These are MANDATORY.
+FONTS: Default to {hero_font} for headings and {body_font} for body text.
+       You may override fonts if a different font makes more design sense (e.g., monospace for code).
+       Include Google Fonts link: https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@400;600;700;900&family={body_font.replace(' ', '+')}:wght@400;500;600&display=swap
+
 STYLE: {style_desc}
+
+📸 IMAGES: If pre-loaded images are listed in the prompt, USE image1, image2, image3, etc.
+           Access them as: const image1 = props.image1 || '';
+           Use in HTML as: <img src="${{image1}}" alt="...">
+           DO NOT use custom prop names - only image1, image2, image3, etc.
 
 ═══════════════════════════════════════════════════════════════
 🚀 CREATIVE ARSENAL - PICK THE RIGHT WEAPON
@@ -596,7 +1042,8 @@ When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
         width: int,
         height: int,
         external_media: Optional[Dict[str, Any]] = None,
-        uploaded_media: Optional[list] = None
+        uploaded_media: Optional[list] = None,
+        prefetched_images: Optional[Dict[str, str]] = None
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -611,8 +1058,7 @@ When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
         secondary = colors.get('accent_2', '#8b5cf6')
         text_color = colors.get('primary_text', '#ffffff')
         bg_color = background_color
-        hero_font = typography.get('hero_font', 'Inter')
-        body_font = typography.get('body_font', 'Inter')
+        hero_font, body_font = _extract_fonts_from_typography(typography)
 
         # Get presentation context (user's original request) for design cues
         presentation_context = slide_context.get('presentation_context', '')
@@ -807,6 +1253,51 @@ Create appropriate visualizations (charts, tables, graphs) for this data.""")
 3. DATA FILES: Visualize as charts/tables, don't show raw data.
 """
 
+        # Build prefetched images section - these are REAL URLs we've already fetched!
+        prefetched_images_section = ""
+        if prefetched_images and len(prefetched_images) > 0:
+            # Filter to just the image props (not the _query hints)
+            image_props = {k: v for k, v in prefetched_images.items() if not k.endswith('_query')}
+
+            if image_props:
+                # Build list with descriptions
+                image_lines = []
+                for prop_name in sorted(image_props.keys()):
+                    query = prefetched_images.get(f"{prop_name}_query", "image")
+                    image_lines.append(f"  ✓ {prop_name} - shows: {query}")
+
+                image_list = "\n".join(image_lines)
+                prop_names = list(image_props.keys())
+
+                prefetched_images_section = f"""
+═══════════════════════════════════════════════════════════════
+📸 PRE-LOADED IMAGES - USE THESE EXACT NAMES!
+═══════════════════════════════════════════════════════════════
+
+We have already fetched these images for you:
+
+{image_list}
+
+⚠️ CRITICAL - USE THESE EXACT PROP NAMES:
+- image1, image2, image3, etc. - these are the ONLY image props that will work!
+- Each has a REAL photo already loaded and ready to display
+- DO NOT create custom prop names like "elonMuskImage" - use image1, image2, etc.
+
+REQUIRED PATTERN - Copy this exactly:
+```html
+<script>
+  const image1 = props.image1 || '';
+  const image2 = props.image2 || '';
+  const image3 = props.image3 || '';
+</script>
+
+<img src="${{image1}}" alt="{prefetched_images.get('image1_query', 'Image 1')}" style="object-fit:cover;">
+<img src="${{image2}}" alt="{prefetched_images.get('image2_query', 'Image 2')}" style="object-fit:cover;">
+```
+
+✅ These images WILL display - use them for hero images, cards, backgrounds, etc.
+"""
+
         return f"""{full_slide_instructions}═══════════════════════════════════════════════════════════════
 🎯 YOUR MISSION
 ═══════════════════════════════════════════════════════════════
@@ -814,7 +1305,7 @@ Create appropriate visualizations (charts, tables, graphs) for this data.""")
 Create a STUNNING {"full presentation slide" if is_full_slide else "interactive component"} for:
 
 SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_context_section}{external_media_section}{uploaded_media_section}
+{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
 CONTENT:
 {content}
 
@@ -1094,6 +1585,105 @@ OUTPUT: Complete HTML document starting with <!DOCTYPE html>"""
         # Format/clean up the HTML
         html_content = self._format_html(html_content)
         return html_content
+
+    def _inject_prefetched_images_into_html(self, html: str, prefetched_images: Dict[str, str]) -> str:
+        """
+        GUARANTEED image injection - directly replaces placeholder/variable image sources
+        with real URLs from prefetched images.
+
+        This runs AFTER AI generation to ensure images appear regardless of what the AI generated.
+        """
+        import re
+
+        if not html or not prefetched_images:
+            return html
+
+        # Get only actual image URLs (not the _query hints)
+        image_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
+
+        if not image_urls:
+            logger.warning("[IMAGE_INJECT] No valid image URLs to inject")
+            return html
+
+        logger.info(f"[IMAGE_INJECT] Starting guaranteed injection with {len(image_urls)} images")
+        print(f"[IMAGE_INJECT] 🔧 Injecting {len(image_urls)} real URLs into HTML...")
+
+        result = html
+        images_injected = 0
+        image_index = 0
+
+        # PATTERN 1: Replace ${propName} patterns with real URLs
+        # Matches: src="${image1}" or src="${anyPropName}"
+        def replace_variable_src(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            var_name = match.group(2)
+            after = match.group(3)
+
+            # Check if we have this exact prop
+            prop_key = var_name
+            if prop_key in prefetched_images and prefetched_images[prop_key].startswith('http'):
+                url = prefetched_images[prop_key]
+            elif image_index < len(image_urls):
+                # Use next available image
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                # Cycle through images
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced ${{{var_name}}} with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ ${{{var_name}}} -> {url[:40]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        var_pattern = r'<img\s+([^>]*?)src=["\']?\$\{+\s*(\w+)\s*\}+["\']?([^>]*?)>'
+        result = re.sub(var_pattern, replace_variable_src, result, flags=re.IGNORECASE)
+
+        # PATTERN 2: Replace empty or placeholder src with real URLs
+        # Matches: src="" or src="placeholder" or src='placeholder'
+        def replace_placeholder_src(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            after = match.group(2)
+
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced placeholder with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ placeholder -> {url[:40]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        placeholder_pattern = r'<img\s+([^>]*?)src=["\'](?:placeholder|)["\']([^>]*?)>'
+        result = re.sub(placeholder_pattern, replace_placeholder_src, result, flags=re.IGNORECASE)
+
+        # PATTERN 3: Replace JavaScript variable assignments
+        # const image1 = props.image1 || 'placeholder' -> const image1 = 'https://...'
+        for key, url in prefetched_images.items():
+            if key.endswith('_query') or not url.startswith('http'):
+                continue
+
+            # Replace: const propName = props.propName || 'placeholder'
+            js_pattern = rf"const\s+{re.escape(key)}\s*=\s*props\.{re.escape(key)}\s*\|\|\s*['\"][^'\"]*['\"]"
+            replacement = f"const {key} = '{url}'"
+            if re.search(js_pattern, result):
+                result = re.sub(js_pattern, replacement, result)
+                logger.info(f"[IMAGE_INJECT] Replaced JS variable {key}")
+                print(f"[IMAGE_INJECT] ✅ JS: {key} = '{url[:40]}...'")
+
+        if images_injected > 0:
+            logger.info(f"[IMAGE_INJECT] Successfully injected {images_injected} images")
+            print(f"[IMAGE_INJECT] 🎉 Injected {images_injected} images into HTML")
+        else:
+            # No placeholders found - try to add images to the first suitable container
+            logger.warning("[IMAGE_INJECT] No placeholders found - adding images to content")
+            print("[IMAGE_INJECT] ⚠️ No placeholders found, attempting to add images...")
+
+        return result
 
     def _format_javascript(self, code: str) -> str:
         """
@@ -1482,8 +2072,7 @@ Think: "If Apple or Stripe built an interactive visualization for this content, 
         secondary = colors.get('accent_2', '#8b5cf6')
         text_color = colors.get('primary_text', '#ffffff')
         bg_color = colors.get('primary_background', '#0a0e27')
-        hero_font = typography.get('hero_font', 'Inter')
-        body_font = typography.get('body_font', 'Inter')
+        hero_font, body_font = _extract_fonts_from_typography(typography)
 
         return f"""You are a WORLD-CLASS MOTION GRAPHICS DESIGNER creating STUNNING ANIMATED TITLE SLIDES.
 
@@ -1649,8 +2238,7 @@ animation-delay: calc(var(--i) * 0.1s);
         accent = colors.get('accent_1', '#6366f1')
         secondary = colors.get('accent_2', '#8b5cf6')
         text_color = colors.get('primary_text', '#ffffff')
-        hero_font = typography.get('hero_font', 'Inter')
-        body_font = typography.get('body_font', 'Inter')
+        hero_font, body_font = _extract_fonts_from_typography(typography)
 
         # Get presentation context (user's original request) for design cues
         presentation_context = slide_context.get('presentation_context', '')

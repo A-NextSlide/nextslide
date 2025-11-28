@@ -291,7 +291,15 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
             setStatusMessage(message || status);
           }
         } else if (event.type === 'outline') {
-          outlineData = event.data;
+          // IMPORTANT: Don't overwrite generate_outline with subsequent update_theme
+          // The agent may output both in the same response, and we need to keep the generate_outline
+          if (!outlineData || outlineData.action !== 'generate_outline') {
+            outlineData = event.data;
+          } else if (event.data?.action === 'update_theme' && outlineData.action === 'generate_outline') {
+            // Store theme changes in the existing generate_outline data
+            outlineData.theme_changes = event.data.theme_changes;
+            console.log('[ConversationalOnboarding] Merged theme update into generate_outline');
+          }
           console.log('[ConversationalOnboarding] Received outline data:', outlineData);
           setStatusMessage(null);
           setStatusPhase(null);
@@ -621,7 +629,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           detailLevel: 'quick',
                           presentationType: 'simple',
                           chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges,
+                          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
                           uploadedFiles: uploadedFiles.map(f => f.file),
                           uploadedMedia: outlineFlow?.uploadedMedia
                         });
@@ -671,7 +679,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           detailLevel: 'detailed',
                           presentationType: 'detailed',
                           chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges,
+                          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
                           uploadedFiles: uploadedFiles.map(f => f.file),
                           uploadedMedia: outlineFlow?.uploadedMedia
                         });
@@ -745,65 +753,40 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           </div>
         ))}
 
-        {/* Agent Typing/Status Indicator */}
+        {/* Agent Typing/Status Indicator - Subtle, on-brand design */}
         {isAgentTyping && (
           <div className="flex justify-start animate-in slide-in-from-bottom-4">
-            <div className="bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 rounded-2xl px-4 py-3 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-              {statusMessage ? (
-                <div className="flex items-center gap-3">
-                  {/* Animated icon based on phase */}
-                  <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
-                    statusPhase === 'analyzing' && "bg-purple-100 dark:bg-purple-900/30",
-                    statusPhase === 'analyzed' && "bg-green-100 dark:bg-green-900/30",
-                    statusPhase === 'researching' && "bg-blue-100 dark:bg-blue-900/30",
-                    statusPhase === 'scraping' && "bg-indigo-100 dark:bg-indigo-900/30",
-                    statusPhase === 'error' && "bg-red-100 dark:bg-red-900/30",
-                    (!statusPhase || statusPhase === 'thinking') && "bg-orange-100 dark:bg-orange-900/30"
-                  )}>
-                    {statusPhase === 'analyzing' ? (
-                      <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400 animate-pulse" />
-                    ) : statusPhase === 'analyzed' ? (
-                      <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />
-                    ) : statusPhase === 'researching' ? (
-                      <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    ) : statusPhase === 'scraping' ? (
-                      <LinkIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400 animate-pulse" />
-                    ) : statusPhase === 'error' ? (
-                      <X className="w-4 h-4 text-red-600 dark:text-red-400" />
-                    ) : (
-                      <Loader2 className="w-4 h-4 text-orange-600 dark:text-orange-400 animate-spin" />
-                    )}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className={cn(
-                      "text-[10px] font-semibold uppercase tracking-wider",
-                      statusPhase === 'analyzing' && "text-purple-600 dark:text-purple-400",
-                      statusPhase === 'analyzed' && "text-green-600 dark:text-green-400",
-                      statusPhase === 'researching' && "text-blue-600 dark:text-blue-400",
-                      statusPhase === 'scraping' && "text-indigo-600 dark:text-indigo-400",
-                      statusPhase === 'error' && "text-red-600 dark:text-red-400",
-                      (!statusPhase || statusPhase === 'thinking') && "text-orange-600 dark:text-orange-400"
-                    )}>
-                      {statusPhase === 'analyzing' ? 'Analyzing' :
-                       statusPhase === 'analyzed' ? 'Done' :
-                       statusPhase === 'researching' ? 'Searching' :
-                       statusPhase === 'scraping' ? 'Reading' :
-                       statusPhase === 'scraped' ? 'Done' :
-                       statusPhase === 'error' ? 'Error' :
-                       'Processing'}
-                    </span>
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{statusMessage}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
-                  <span className="text-sm text-zinc-500">Thinking...</span>
-                </div>
-              )}
+            <div className="flex items-start gap-2 px-1">
+              {/* Small pulsing orange dot */}
+              <div className="flex-shrink-0 mt-1.5">
+                <span
+                  className="block w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ backgroundColor: '#FF4301' }}
+                />
+              </div>
+
+              {/* Clean inline status text */}
+              <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                <span className="font-medium" style={{ color: '#FF4301' }}>
+                  {statusPhase === 'analyzing' ? 'Analyzing' :
+                   statusPhase === 'analyzed' ? 'Done analyzing' :
+                   statusPhase === 'researching' ? 'Searching the web' :
+                   statusPhase === 'scraping' ? 'Reading page' :
+                   statusPhase === 'scraped' ? 'Processing' :
+                   statusPhase === 'error' ? 'Hmm' :
+                   'Thinking'}
+                </span>
+                {' '}
+                <span className="text-zinc-500 dark:text-zinc-400">
+                  {statusMessage || 'about your request'}
+                </span>
+                {/* Subtle animated ellipsis */}
+                <span className="inline-flex ml-0.5 text-zinc-400">
+                  <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
+                  <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
+                  <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
+                </span>
+              </p>
             </div>
           </div>
         )}

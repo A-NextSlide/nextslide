@@ -1825,7 +1825,8 @@ const SlideEditorContent: React.FC = () => {
 
     const handleSlideCompleted = async (e: CustomEvent) => {
       try {
-        const autoSelect = (window as any).__slideGenerationPreferences?.autoSelectImages !== false;
+        // Only auto-generate images if explicitly enabled (defaults to OFF)
+        const autoSelect = (window as any).__slideGenerationPreferences?.autoSelectImages === true;
         if (!autoSelect) return;
         const slideIndex: number | undefined = e.detail?.slideIndex;
         if (typeof slideIndex !== 'number') return;

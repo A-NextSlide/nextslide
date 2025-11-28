@@ -82,6 +82,8 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
   // Track previous slide ID to detect actual slide changes
   const previousSlideIdRef = useRef<string | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Track previous components to detect realtime updates in view mode
+  const previousComponentsRef = useRef<ComponentInstance[] | null>(null);
   
   // Fetch components when needed dependencies change
   useEffect(() => {
@@ -100,12 +102,19 @@ export const ActiveSlideProvider = ({ children }: { children: ReactNode }) => {
     if (isSlideChange) {
       previousSlideIdRef.current = currentSlide.id;
     }
-    
-    // For non-editing mode, only update if the slide actually changed
-    // This prevents double updates during navigation
-    if (!isEditing && !isSlideChange && componentVersion === 0 && !lastOperation) {
+
+    // Check if components have changed (for realtime updates in view mode)
+    const currentComponents = currentSlide.components || [];
+    const hasComponentsChanged = previousComponentsRef.current !== currentComponents;
+
+    // For non-editing mode, only update if the slide actually changed or components updated
+    // This prevents double updates during navigation but allows realtime updates
+    if (!isEditing && !isSlideChange && !hasComponentsChanged && componentVersion === 0 && !lastOperation) {
       return;
     }
+
+    // Update the previous components ref
+    previousComponentsRef.current = currentComponents;
     
     // Clear any pending update
     if (updateTimeoutRef.current) {

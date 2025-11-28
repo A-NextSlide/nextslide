@@ -1568,6 +1568,18 @@ export const CustomComponentRenderer: React.FC<{
     return result;
   };
 
+  // Create a stable string key from props for proper dependency tracking
+  // This ensures useMemo detects when nested props change (e.g., image URLs from backend)
+  const propsKey = useMemo(() => {
+    try {
+      // Stringify all nested props to detect any changes
+      return JSON.stringify(component.props.props || {});
+    } catch {
+      // Fallback to object keys if circular reference
+      return Object.keys(component.props.props || {}).join(',');
+    }
+  }, [component.props.props]);
+
   // Memoize srcDoc with injected props and click handlers
   const stableIframeSrcDoc = useMemo(() => {
     if (!iframeSrcDoc) return null;
@@ -1575,14 +1587,23 @@ export const CustomComponentRenderer: React.FC<{
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs
     const imageProps = component.props.props || {};
-    console.log('[CustomComponent] Injecting props into HTML:', Object.keys(imageProps));
+    console.log('[CustomComponent] Injecting props into HTML:', {
+      keys: Object.keys(imageProps),
+      values: Object.fromEntries(
+        Object.entries(imageProps)
+          .filter(([k]) => k.toLowerCase().includes('image'))
+          .map(([k, v]) => [k, typeof v === 'string' ? v.substring(0, 60) + '...' : v])
+      ),
+      hasPlaceholders: iframeSrcDoc.includes('${'),
+      propsKey: propsKey.substring(0, 100)
+    });
     let html = injectImageProps(iframeSrcDoc, imageProps);
 
     // Then add click handlers for edit mode
     html = injectImageClickHandlers(html, component.id);
 
     return html;
-  }, [iframeSrcDoc, component.id, isEditing, component.props.props]);
+  }, [iframeSrcDoc, component.id, isEditing, propsKey]); // Use propsKey instead of object reference
 
   // Listen for messages from iframe (placeholder image clicks)
   useEffect(() => {
@@ -1782,7 +1803,7 @@ export const CustomComponentRenderer: React.FC<{
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
           {isIframeComponent && stableIframeSrcDoc && (
             <iframe
-              key={component.id}
+              key={`${component.id}-${propsKey.length}-${propsKey.slice(-20)}`}
               srcDoc={stableIframeSrcDoc}
               style={{
                 position: 'absolute',

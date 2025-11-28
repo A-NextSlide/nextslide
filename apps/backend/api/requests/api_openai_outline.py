@@ -1692,7 +1692,24 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         # USE PARALLEL THEME AGENT RESULTS
                         # The ThemeAgent has been running in parallel - now collect its results
                         # ========================================================================
-                        style_context_value = request.styleContext or detected_style_context
+
+                        # DON'T store raw conversation history as vibeContext - only store actual style preferences
+                        # vibeContext should be short style descriptions like "fun", "professional", not chat logs
+                        raw_style_context = request.styleContext or detected_style_context
+                        filtered_vibe_context = None
+                        if raw_style_context:
+                            # Only use as vibeContext if it's a short style description (not conversation history)
+                            # Conversation history contains "Context from conversation:" or multiple "User:"/"Assistant:" lines
+                            is_conversation_history = (
+                                "Context from conversation:" in raw_style_context or
+                                raw_style_context.count("User:") > 1 or
+                                raw_style_context.count("Assistant:") > 1 or
+                                len(raw_style_context) > 500  # Too long to be a simple vibe description
+                            )
+                            if not is_conversation_history:
+                                filtered_vibe_context = raw_style_context
+                            else:
+                                logger.info("[PARALLEL THEME] Filtered out conversation history from vibeContext")
 
                         # Wait for ThemeAgent to complete (it's been running in parallel)
                         theme_result = None
@@ -1705,10 +1722,11 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                             logger.warning(f"[PARALLEL THEME] ⚠️ ThemeAgent failed: {theme_err}")
 
                         # Build style preferences from ThemeAgent result
+                        # Use the outline title as initialIdea (cleaner than the raw prompt)
                         from models.requests import ColorConfigItem
                         style_prefs = StylePreferencesItem(
-                            vibeContext=style_context_value,
-                            initialIdea=request.prompt,
+                            vibeContext=filtered_vibe_context,
+                            initialIdea=outline.title or request.prompt,  # Prefer clean title over raw prompt
                             font=request.fontPreference
                         )
 
@@ -1722,20 +1740,27 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                 style_prefs.bodyFont = fonts['body']
                             logger.info(f"[PARALLEL THEME] 🔤 Fonts: hero={style_prefs.font}, body={style_prefs.bodyFont}")
 
-                            # Set colors from theme agent (guaranteed 3+ distinct colors)
+                            # Set colors from theme agent
                             theme_colors = theme_result.get('colors', [])
-                            if theme_colors and len(theme_colors) >= 3:
+                            if theme_colors and len(theme_colors) >= 2:  # Accept 2+ colors
                                 color_source = theme_result.get('source', 'unknown')
+                                # Use explicit accent/accent2 fields from ThemeAgent if available
+                                accent1 = theme_result.get('accent', theme_colors[0] if theme_colors else None)
+                                accent2 = theme_result.get('accent2', theme_colors[1] if len(theme_colors) > 1 else None)
+                                accent3 = theme_colors[2] if len(theme_colors) > 2 else None
+                                # Don't use white as accent3
+                                if accent3 and accent3.upper() in ['#FFFFFF', '#FFF', 'WHITE']:
+                                    accent3 = None
                                 style_prefs.colors = ColorConfigItem(
                                     type="custom",
                                     name=f"Theme Colors ({color_source})",
-                                    background=theme_result.get('background', theme_colors[0]),
+                                    background=theme_result.get('background', '#FFFFFF'),
                                     text=theme_result.get('text', '#1A1A1A'),
-                                    accent1=theme_result.get('accent', theme_colors[1] if len(theme_colors) > 1 else None),
-                                    accent2=theme_colors[2] if len(theme_colors) > 2 else None,
-                                    accent3=theme_colors[3] if len(theme_colors) > 3 else None,
+                                    accent1=accent1,
+                                    accent2=accent2,
+                                    accent3=accent3,
                                 )
-                                logger.info(f"[PARALLEL THEME] 🎨 Colors ({color_source}): {theme_colors[:3]}")
+                                logger.info(f"[PARALLEL THEME] 🎨 Colors ({color_source}): bg={theme_result.get('background')}, accent1={accent1}, accent2={accent2}")
 
                             # Set logo from theme agent
                             if theme_result.get('logo_url'):
@@ -2010,10 +2035,23 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                 
                 # Add style preferences for non-streaming path
                 if request.styleContext or request.fontPreference or request.colorPreference:
+                    # Filter out conversation history from vibeContext
+                    raw_style_context = request.styleContext
+                    filtered_vibe = None
+                    if raw_style_context:
+                        is_conversation_history = (
+                            "Context from conversation:" in raw_style_context or
+                            raw_style_context.count("User:") > 1 or
+                            raw_style_context.count("Assistant:") > 1 or
+                            len(raw_style_context) > 500
+                        )
+                        if not is_conversation_history:
+                            filtered_vibe = raw_style_context
+
                     style_prefs = StylePreferencesItem(
-                        vibeContext=request.styleContext,
-                        initialIdea=request.prompt,
-                        font=request.fontPreference  # Changed from fontPreference to font
+                        vibeContext=filtered_vibe,
+                        initialIdea=outline.title if hasattr(outline, 'title') else request.prompt,
+                        font=request.fontPreference
                     )
                     
                     # Handle color preferences
