@@ -142,22 +142,24 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, pr
     try:
         client, model_name = get_client("claude-haiku-4-5")
 
-        prompt = f"""Analyze this slide and generate 3-5 specific image search queries.
+        prompt = f"""You are generating Google Image search queries for a presentation slide.
 
-SLIDE TITLE: {slide_title}
-SLIDE CONTENT: {content[:1000]}
-{f"PRESENTATION CONTEXT: {presentation_context}" if presentation_context else ""}
+SLIDE: {slide_title}
+CONTENT: {content[:800]}
+{f"CONTEXT: {presentation_context}" if presentation_context else ""}
 
-RULES:
-1. Generate search queries that would find RELEVANT, PROFESSIONAL images
-2. Focus on the MAIN SUBJECT - companies, products, industries, concepts
-3. Be SPECIFIC - "grocery delivery warehouse" not "warehouse"
-4. Include brand/company names if mentioned
-5. Avoid generic terms like "business", "success", "teamwork"
-6. Think about what PHOTO would illustrate this slide well
+Generate 4-5 search queries like you'd type into Google Images. Think:
+- What PHOTO would best illustrate this slide?
+- Use specific nouns: "Tesla factory robots" not "manufacturing"
+- Include brand/company names when mentioned
+- 2-4 words per query, like real Google searches
+- NO generic words: business, success, teamwork, strategy, growth, professional
 
-Return ONLY a JSON array of 3-5 search queries, nothing else:
-["query 1", "query 2", "query 3"]"""
+GOOD: "Instacart delivery driver", "Kroger warehouse automation", "grocery app UI"
+BAD: "fulfillment model", "AI experience", "retail expansion"
+
+Return ONLY a JSON array:
+["query 1", "query 2", "query 3", "query 4"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
