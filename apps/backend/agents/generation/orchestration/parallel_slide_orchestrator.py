@@ -418,6 +418,13 @@ class ParallelSlideOrchestrator:
                         presentation_context = " | ".join(parts)
                         logger.debug(f"[DESIGN CONTEXT] Extracted presentation context: {presentation_context[:100]}...")
 
+                # Extract videos from deck notes (populated by ThemeAgent for real brands)
+                available_videos = []
+                if deck_state.notes and isinstance(deck_state.notes, dict):
+                    available_videos = deck_state.notes.get('videos', [])
+                    if available_videos:
+                        logger.debug(f"[VIDEO] Found {len(available_videos)} videos from brand website")
+
                 context = SlideGenerationContext(
                     slide_outline=slide_outline,
                     slide_index=slide_index,
@@ -427,6 +434,7 @@ class ParallelSlideOrchestrator:
                     style_manifesto=deck_state.style_manifesto or "",
                     deck_uuid=deck_state.deck_uuid,
                     available_images=available_images,
+                    available_videos=available_videos,
                     async_images=options.async_images,
                     visual_density=self._infer_visual_density(deck_state, slide_outline),
                     tagged_media=[

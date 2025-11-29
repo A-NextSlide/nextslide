@@ -5,6 +5,9 @@ import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
+import { CustomComponentEditOverlay, DetectedElement, ImageElementToolbar, injectEditMode } from '@/components/custom-component-editor';
+import { createPortal } from 'react-dom';
+import { AnimatePresence } from 'framer-motion';
 
 // Import visualization and animation libraries for CustomComponents
 import * as d3Import from 'd3';
@@ -801,6 +804,16 @@ export const CustomComponentRenderer: React.FC<{
     // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
     const trimmedCode = code.trim();
 
+    console.log('[CustomComponent] Compiling code:', {
+      codeLength: code.length,
+      trimmedLength: trimmedCode.length,
+      first50: trimmedCode.slice(0, 50).toLowerCase(),
+      startsWithDoctype: trimmedCode.toLowerCase().startsWith('<!doctype html'),
+      startsWithHtml: trimmedCode.toLowerCase().startsWith('<html'),
+      containsDoctype: trimmedCode.toLowerCase().includes('<!doctype html'),
+      containsHtmlTag: trimmedCode.toLowerCase().includes('<html')
+    });
+
     // 0. IFRAME MODE: Check for Full HTML Document
     // This allows "do whatever we want" - Tailwind, CDNs, full isolation
     if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
@@ -1331,23 +1344,47 @@ export const CustomComponentRenderer: React.FC<{
   // Previously this was incorrectly true in view mode, blocking clicks
   const effectiveIsEditMode = !isPresenting && !isThumbnail && isEditing;
 
-  // Debug logging for interaction issues
+  // Debug logging for interaction issues - always log for debugging edit mode
   useEffect(() => {
-    if (component.props.debug || component.id.includes('custom')) {
-      console.log(`[CustomComponent:${component.id}] Interaction Debug:`, {
-        effectiveIsEditMode,
-        isPresenting,
-        isThumbnail,
-        isSelected,
-        isEditingProp: isEditing,
-        baseStylesPointerEvents: baseStyles.pointerEvents,
-        computedPointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
-      });
-    }
-  }, [effectiveIsEditMode, isPresenting, isThumbnail, isSelected, isEditing, baseStyles.pointerEvents, component.id, component.props.debug]);
+    console.log(`[CustomComponent:${component.id.slice(0, 8)}] State:`, {
+      effectiveIsEditMode,
+      isPresenting,
+      isThumbnail,
+      isSelected,
+      isEditingProp: isEditing,
+      hasRenderCode: !!renderCode,
+      renderCodeLength: renderCode?.length || 0,
+      computedPointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none'
+    });
+  }, [effectiveIsEditMode, isPresenting, isThumbnail, isSelected, isEditing, component.id, renderCode]);
 
   // Ref for the content wrapper
   const contentInnerRef = useRef<HTMLDivElement>(null);
+
+  // Ref for the iframe element
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // State for element-level editing
+  const [selectedElement, setSelectedElement] = useState<DetectedElement | null>(null);
+  const [showImageToolbar, setShowImageToolbar] = useState(false);
+  const [containerBoundsState, setContainerBoundsState] = useState<DOMRect | null>(null);
+
+  // Update container bounds when resizing
+  useEffect(() => {
+    const updateBounds = () => {
+      if (contentInnerRef.current) {
+        setContainerBoundsState(contentInnerRef.current.getBoundingClientRect());
+      }
+    };
+
+    updateBounds();
+    const observer = new ResizeObserver(updateBounds);
+    if (contentInnerRef.current) {
+      observer.observe(contentInnerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
 
   // Container dimensions for non-iframe rendering
   const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
@@ -1500,52 +1537,109 @@ export const CustomComponentRenderer: React.FC<{
 
     let result = html;
 
+    // Build a list of image URLs from props (for index-based matching)
+    const imageUrls: string[] = [];
+    const imagePropsMap: Record<string, string> = {};
+
+    // Collect all image props (both numbered like Image1 and named like heroImage)
+    for (const [key, value] of Object.entries(props)) {
+      if (typeof value === 'string' && value.startsWith('http')) {
+        imagePropsMap[key.toLowerCase()] = value;
+        // Check if this is a numbered image prop (Image1, image2, etc.)
+        if (/^image\d+$/i.test(key)) {
+          const index = parseInt(key.replace(/image/i, ''), 10) - 1;
+          imageUrls[index] = value;
+        }
+      }
+    }
+
+    console.log('[CustomComponent] Image props available:', Object.keys(imagePropsMap));
+
     // PATTERN 1: Find all img tags with ${propName} in src (AI-generated pattern)
     // Example: <img src="${storeClosingSignImage}" alt="Store closing sign">
     const varSrcRegex = /<img\s+([^>]*?)src=["']\$\{+\s*(\w+)\s*\}+["']([^>]*?)>/gi;
 
     result = result.replace(varSrcRegex, (match, before, varName, after) => {
-      // Check if we have this prop (exact match or with Image suffix)
-      const propName = props[varName] ? varName :
-                       props[varName + 'Image'] ? varName + 'Image' :
-                       props[varName.replace(/Image$/, '')] ? varName.replace(/Image$/, '') : null;
+      const varNameLower = varName.toLowerCase();
 
-      if (propName && props[propName] && props[propName] !== 'placeholder' && props[propName].startsWith('http')) {
-        const newSrc = props[propName];
-        console.log(`[CustomComponent] Injecting image from \${${varName}}: ${propName} = ${newSrc.substring(0, 50)}...`);
-        return `<img ${before}src="${newSrc}"${after}>`;
+      // Check multiple variations of the prop name
+      const possibleNames = [
+        varName,
+        varName + 'Image',
+        varName.replace(/Image$/i, ''),
+        varNameLower,
+        varNameLower + 'image',
+        varNameLower.replace(/image$/i, ''),
+      ];
+
+      for (const name of possibleNames) {
+        if (imagePropsMap[name.toLowerCase()]) {
+          const newSrc = imagePropsMap[name.toLowerCase()];
+          console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
+          return `<img ${before}src="${newSrc}"${after}>`;
+        }
       }
 
       return match;
     });
 
     // PATTERN 2: Find all img tags with placeholder src and replace with prop values
-    // Pattern: <img ... src="placeholder" ... alt="Some Alt Text" ...>
-    const imgRegex = /<img\s+([^>]*?)src=["'](?:placeholder|)["']([^>]*?)>/gi;
+    // Also handles empty src or src without http
+    let imageIndex = 0;
+    const imgRegex = /<img\s+([^>]*?)src=["']([^"']*)["']([^>]*?)>/gi;
 
-    result = result.replace(imgRegex, (match, before, after) => {
-      // Extract alt attribute to find matching prop
+    result = result.replace(imgRegex, (match, before, src, after) => {
+      // Skip if already has a valid URL
+      if (src.startsWith('http') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('//')) {
+        imageIndex++;
+        return match;
+      }
+
+      // This is a placeholder - try to find a matching prop
       const altMatch = (before + after).match(/alt=["']([^"']+)["']/i);
-      const dataProplMatch = (before + after).match(/data-prop=["']([^"']+)["']/i);
+      const dataPropMatch = (before + after).match(/data-prop=["']([^"']+)["']/i);
 
-      let propName = dataProplMatch?.[1];
+      let propValue: string | null = null;
+      let matchedBy = '';
 
-      if (!propName && altMatch) {
+      // 1. Try data-prop attribute first
+      if (dataPropMatch?.[1] && imagePropsMap[dataPropMatch[1].toLowerCase()]) {
+        propValue = imagePropsMap[dataPropMatch[1].toLowerCase()];
+        matchedBy = 'data-prop';
+      }
+
+      // 2. Try alt text converted to prop name
+      if (!propValue && altMatch) {
         const alt = altMatch[1];
-        // Convert alt to camelCase prop name: "Elon Musk Portrait" -> "elonMuskPortraitImage"
-        propName = alt
+        const altPropName = alt
           .replace(/[^a-zA-Z0-9]/g, ' ')
           .split(' ')
           .filter(Boolean)
           .map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-          .join('') + 'Image';
+          .join('');
+
+        // Try with and without 'Image' suffix
+        const variations = [altPropName, altPropName + 'image', altPropName.replace(/image$/i, '')];
+        for (const name of variations) {
+          if (imagePropsMap[name.toLowerCase()]) {
+            propValue = imagePropsMap[name.toLowerCase()];
+            matchedBy = 'alt-text';
+            break;
+          }
+        }
       }
 
-      // Check if we have this prop
-      if (propName && props[propName] && props[propName] !== 'placeholder' && props[propName].startsWith('http')) {
-        const newSrc = props[propName];
-        console.log(`[CustomComponent] Injecting image prop: ${propName} = ${newSrc.substring(0, 50)}...`);
-        return `<img ${before}src="${newSrc}"${after}>`;
+      // 3. Fall back to index-based matching (Image1, Image2, etc.)
+      if (!propValue && imageUrls[imageIndex]) {
+        propValue = imageUrls[imageIndex];
+        matchedBy = 'index';
+      }
+
+      imageIndex++;
+
+      if (propValue) {
+        console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
+        return `<img ${before}src="${propValue}"${after}>`;
       }
 
       return match;
@@ -1562,6 +1656,27 @@ export const CustomComponentRenderer: React.FC<{
           'gi'
         );
         result = result.replace(jsPattern, `$1'${propValue}'`);
+
+        // Also replace: const varName = 'placeholder' style declarations
+        // if the varName matches the propName (common in AI-generated code)
+        const constPattern = new RegExp(
+          `(const\\s+${propName}\\s*=\\s*)['"\`]placeholder['"\`]`,
+          'gi'
+        );
+        result = result.replace(constPattern, `$1'${propValue}'`);
+      }
+    }
+
+    // PATTERN 4: Replace JS variable assignments that reference props
+    // const image1 = props.Image1 || 'placeholder' where Image1 has a URL
+    for (const [propName, propValue] of Object.entries(props)) {
+      if (typeof propValue === 'string' && propValue.startsWith('http')) {
+        // Handle case-insensitive prop matching
+        const propNamePattern = new RegExp(
+          `(const\\s+\\w+\\s*=\\s*props\\.${propName}\\s*\\|\\|\\s*)['"\`][^'"\`]*['"\`]`,
+          'gi'
+        );
+        result = result.replace(propNamePattern, `$1'${propValue}'`);
       }
     }
 
@@ -1602,14 +1717,26 @@ export const CustomComponentRenderer: React.FC<{
     // Then add click handlers for edit mode
     html = injectImageClickHandlers(html, component.id);
 
-    return html;
-  }, [iframeSrcDoc, component.id, isEditing, propsKey]); // Use propsKey instead of object reference
+    // Inject element-level edit mode when in edit mode (not just when selected)
+    // This allows hover effects and double-click to work before selection
+    if (effectiveIsEditMode) {
+      console.log('[CustomComponent] INJECTING edit mode script:', {
+        componentId: component.id.slice(0, 8),
+        isSelected,
+        htmlLength: html.length
+      });
+      html = injectEditMode(html, component.id);
+    }
 
-  // Listen for messages from iframe (placeholder image clicks)
+    return html;
+  }, [iframeSrcDoc, component.id, isEditing, propsKey, effectiveIsEditMode, isSelected]); // Use propsKey instead of object reference
+
+  // Listen for messages from iframe (placeholder image clicks and edit mode)
   useEffect(() => {
     if (!isIframeComponent || !isEditing) return;
 
     const handleMessage = (event: MessageEvent) => {
+      // Handle placeholder image clicks (legacy)
       if (event.data?.type === 'customcomponent:image-click' && event.data?.componentId === component.id) {
         console.log('[CustomComponent] Placeholder image clicked:', event.data);
 
@@ -1636,11 +1763,64 @@ export const CustomComponentRenderer: React.FC<{
           }
         }));
       }
+
+      // Handle element-level edit mode messages
+      if (event.data?.source === 'ns-custom-component-edit' && event.data?.componentId === component.id) {
+        console.log('[CustomComponent] Edit mode message:', event.data.type, event.data);
+
+        if (event.data.type === 'element-selected') {
+          setSelectedElement(event.data.element);
+          if (event.data.element.type === 'image') {
+            setShowImageToolbar(true);
+          } else {
+            setShowImageToolbar(false);
+          }
+        }
+
+        if (event.data.type === 'image-clicked') {
+          setSelectedElement(event.data.element);
+          setShowImageToolbar(true);
+        }
+
+        if (event.data.type === 'text-changed') {
+          // Text was edited in iframe - update the component HTML
+          const { oldText, newText } = event.data;
+          if (oldText && newText && stableIframeSrcDoc) {
+            const escapedOld = oldText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(escapedOld, 'g');
+            const updatedHtml = stableIframeSrcDoc.replace(pattern, newText);
+
+            if (updatedHtml !== stableIframeSrcDoc) {
+              // Update the component with the new HTML
+              updateComponent(component.id, {
+                props: {
+                  ...component.props,
+                  render: updatedHtml
+                }
+              });
+              console.log('[CustomComponent] Updated HTML with new text');
+            }
+          }
+        }
+
+        if (event.data.type === 'edit-mode-ready') {
+          console.log('[CustomComponent] Edit mode ready in iframe');
+        }
+
+        if (event.data.type === 'component-clicked') {
+          // Dispatch a custom event that ComponentRenderer can catch for selection
+          const clickEvent = new CustomEvent('customcomponent:request-select', {
+            bubbles: true,
+            detail: { componentId: component.id }
+          });
+          containerRef.current?.dispatchEvent(clickEvent);
+        }
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isIframeComponent, isEditing, component.id, component.slideId]);
+  }, [isIframeComponent, isEditing, component.id, component.slideId, stableIframeSrcDoc, updateComponent, component.props]);
 
   // Render the component content (non-iframe path)
   const content = useMemo(() => {
@@ -1765,6 +1945,136 @@ export const CustomComponentRenderer: React.FC<{
     return () => observer.disconnect();
   }, [containerWidth]);
 
+  // Handler for text editing inside custom component
+  const handleTextEdit = useCallback((element: DetectedElement, newText: string) => {
+    if (!stableIframeSrcDoc || !element.selector) return;
+
+    console.log('[CustomComponent] Text edit:', { selector: element.selector, newText });
+
+    // Find and replace the text content in the HTML
+    let updatedHtml = stableIframeSrcDoc;
+
+    // Create a safe pattern to find the element
+    const tagName = element.tagName.toLowerCase();
+    const escapedContent = (element.content || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Try to find and replace based on content
+    if (escapedContent) {
+      // Pattern: find tag with this text content
+      const pattern = new RegExp(`(<${tagName}[^>]*>)\\s*${escapedContent}\\s*(</${tagName}>)`, 'gi');
+      if (pattern.test(updatedHtml)) {
+        updatedHtml = updatedHtml.replace(pattern, `$1${newText}$2`);
+      } else {
+        // Fallback: just replace the text where it appears
+        updatedHtml = updatedHtml.replace(new RegExp(escapedContent, 'g'), newText);
+      }
+    }
+
+    if (updatedHtml !== stableIframeSrcDoc) {
+      // Update the component with new HTML
+      updateComponent(component.id, {
+        props: {
+          ...component.props,
+          render: updatedHtml
+        }
+      });
+      console.log('[CustomComponent] Updated HTML with new text');
+    }
+  }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
+
+  // Handler for image swap inside custom component
+  const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
+    if (!stableIframeSrcDoc || !element.src) return;
+
+    console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
+
+    // Replace the old image src with the new one
+    let updatedHtml = stableIframeSrcDoc;
+    const oldSrc = element.src;
+
+    // Escape special regex characters in the URL
+    const escapedOldSrc = oldSrc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`src=["']${escapedOldSrc}["']`, 'g');
+
+    updatedHtml = updatedHtml.replace(pattern, `src="${newImageUrl}"`);
+
+    if (updatedHtml !== stableIframeSrcDoc) {
+      updateComponent(component.id, {
+        props: {
+          ...component.props,
+          render: updatedHtml
+        }
+      });
+      console.log('[CustomComponent] Updated HTML with new image');
+    }
+
+    setSelectedElement(null);
+    setShowImageToolbar(false);
+  }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
+
+  // Handler for AI-based element editing
+  const handleElementAiEdit = useCallback(async (element: DetectedElement, instruction: string) => {
+    console.log('[CustomComponent] AI Edit request:', { type: element.type, instruction });
+
+    // For images, call the image edit API
+    if (element.type === 'image' && element.src) {
+      try {
+        const response = await fetch('/api/images/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: element.src,
+            instructions: instruction,
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const editedUrl = data.editedUrl || data.url || data.image_url;
+          if (editedUrl) {
+            handleImageSwap(element, editedUrl);
+          }
+        }
+      } catch (error) {
+        console.error('[CustomComponent] AI image edit failed:', error);
+      }
+    }
+
+    // For text, call a text transformation API
+    if (element.type === 'text' && element.content) {
+      try {
+        // Use a simple completion to transform the text
+        const response = await fetch('/api/chat/quick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: `Transform this text according to the instruction. Only output the transformed text, nothing else.\n\nOriginal: "${element.content}"\n\nInstruction: ${instruction}`,
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const newText = data.text || data.content || data.message;
+          if (newText) {
+            handleTextEdit(element, newText.trim());
+          }
+        }
+      } catch (error) {
+        console.error('[CustomComponent] AI text edit failed:', error);
+      }
+    }
+
+    setSelectedElement(null);
+  }, [handleImageSwap, handleTextEdit]);
+
+  // Handle element selection from overlay
+  const handleElementSelect = useCallback((element: DetectedElement) => {
+    setSelectedElement(element);
+    if (element.type === 'image') {
+      setShowImageToolbar(true);
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <div
@@ -1803,6 +2113,7 @@ export const CustomComponentRenderer: React.FC<{
           {/* IFRAME RENDERING - Simple 100% fill, HTML handles responsive layout */}
           {isIframeComponent && stableIframeSrcDoc && (
             <iframe
+              ref={iframeRef}
               key={`${component.id}-${propsKey.length}-${propsKey.slice(-20)}`}
               srcDoc={stableIframeSrcDoc}
               style={{
@@ -1814,12 +2125,15 @@ export const CustomComponentRenderer: React.FC<{
                 border: 'none',
                 backgroundColor: 'transparent',
                 display: 'block',
-                pointerEvents: isSelected || !effectiveIsEditMode ? 'auto' : 'none' // Allow interaction in view mode or when selected
+                pointerEvents: 'auto' // Always interactive - edit mode script handles selection notification
               }}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               title="Custom Component"
             />
           )}
+
+          {/* ELEMENT-LEVEL EDIT OVERLAY for selected custom components */}
+          {/* Edit mode is now injected directly into the iframe srcDoc for better element interaction */}
 
           {/* Non-iframe content */}
           {!isIframeComponent && (
@@ -1984,6 +2298,39 @@ export const CustomComponentRenderer: React.FC<{
             </div>
           );
         })()}
+
+        {/* IMAGE ELEMENT TOOLBAR - rendered as portal */}
+        {showImageToolbar && selectedElement && selectedElement.type === 'image' && createPortal(
+          <AnimatePresence>
+            <ImageElementToolbar
+              element={selectedElement}
+              scale={scale}
+              onSwap={(newUrl) => {
+                if (selectedElement) {
+                  handleImageSwap(selectedElement, newUrl);
+                }
+              }}
+              onAiEdit={(instruction) => {
+                if (selectedElement) {
+                  handleElementAiEdit(selectedElement, instruction);
+                }
+              }}
+              onClose={() => {
+                setShowImageToolbar(false);
+                setSelectedElement(null);
+                // Tell iframe to deselect
+                const iframes = document.querySelectorAll('iframe');
+                iframes.forEach(iframe => {
+                  iframe.contentWindow?.postMessage({
+                    target: 'ns-custom-component-edit',
+                    type: 'deselect'
+                  }, '*');
+                });
+              }}
+            />
+          </AnimatePresence>,
+          document.body
+        )}
       </div>
     </ErrorBoundary>
   );

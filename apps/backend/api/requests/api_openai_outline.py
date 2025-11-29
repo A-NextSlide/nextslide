@@ -1130,6 +1130,7 @@ class OutlineRequest(BaseModel):
     enableResearch: Optional[bool] = Field(None, description="Enable web research (Thinking) during outline creation")
     async_images: Optional[bool] = Field(default=True, description="If True, images are placeholders; if False, images are auto-applied (default: True = placeholders)")
     uploadedMedia: Optional[List[Dict[str, Any]]] = Field(default=None, description="Pre-processed uploaded media from OutlineAgent to include in deck")
+    scraped_videos: Optional[List[Dict[str, Any]]] = Field(default=None, description="Videos scraped from website URLs to include in deck")
 
     @validator('async_images', pre=True, always=True)
     def debug_async_images(cls, v):
@@ -1885,6 +1886,27 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                         if narrative_flow_result:
                             outline.notes = narrative_flow_result.model_dump()
                             logger.info("Added narrative flow as 'notes' to outline for persistence")
+
+                        # Add videos from ThemeAgent to notes (for brand presentations)
+                        if theme_result and theme_result.get('videos'):
+                            if outline.notes is None:
+                                outline.notes = {}
+                            outline.notes['videos'] = theme_result['videos']
+                            logger.info(f"[VIDEO] Added {len(theme_result['videos'])} brand videos to outline.notes")
+
+                        # Also add scraped videos from OutlineAgent if provided
+                        if request.scraped_videos:
+                            if outline.notes is None:
+                                outline.notes = {}
+                            # Merge with theme videos if both exist
+                            existing_videos = outline.notes.get('videos', [])
+                            # Add scraped videos that aren't already in the list (by URL)
+                            existing_urls = {v.get('url') for v in existing_videos}
+                            for video in request.scraped_videos:
+                                if video.get('url') not in existing_urls:
+                                    existing_videos.append(video)
+                            outline.notes['videos'] = existing_videos
+                            logger.info(f"[VIDEO] Added scraped videos to outline.notes, total: {len(existing_videos)}")
                         
                         # Build response data with narrative flow
                         outline_dict = outline.dict()

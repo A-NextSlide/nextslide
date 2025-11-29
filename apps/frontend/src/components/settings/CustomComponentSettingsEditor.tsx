@@ -402,45 +402,71 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
     return groups;
   }, [variables]);
 
-  // Detect placeholder images in HTML documents (for iframe mode)
+  // Detect ALL images in HTML documents (for iframe mode) - both placeholders and real images
   const htmlPlaceholderImages = useMemo(() => {
-    if (!renderCode) return [];
+    if (!renderCode) {
+      console.log('[CustomComponentSettings] No renderCode');
+      return [];
+    }
 
+    // Clean up the code for detection - remove leading whitespace, comments, etc.
     const trimmedCode = renderCode.trim().toLowerCase();
-    // Only process HTML documents
-    if (!trimmedCode.startsWith('<!doctype html') && !trimmedCode.startsWith('<html')) return [];
 
-    const placeholders: Array<{ alt: string; searchQuery: string; currentSrc: string }> = [];
+    // More flexible HTML detection - check for doctype, html tag, or common HTML elements
+    const isHtmlDoc =
+      trimmedCode.startsWith('<!doctype html') ||
+      trimmedCode.startsWith('<html') ||
+      trimmedCode.includes('<!doctype html') ||
+      trimmedCode.includes('<html') ||
+      (trimmedCode.includes('<head') && trimmedCode.includes('<body')) ||
+      (trimmedCode.includes('<style') && trimmedCode.includes('<img'));
+
+    console.log('[CustomComponentSettings] Checking HTML document:', {
+      isHtmlDoc,
+      hasDoctype: trimmedCode.includes('<!doctype html'),
+      hasHtmlTag: trimmedCode.includes('<html'),
+      hasHead: trimmedCode.includes('<head'),
+      hasBody: trimmedCode.includes('<body'),
+      hasImg: trimmedCode.includes('<img'),
+      codeLength: trimmedCode.length,
+      first100Chars: trimmedCode.slice(0, 100)
+    });
+
+    // Only process HTML documents
+    if (!isHtmlDoc) return [];
+
+    const images: Array<{ alt: string; searchQuery: string; currentSrc: string; index: number }> = [];
     const imgRegex = /<img[^>]*>/gi;
     let match;
+    let index = 0;
 
     while ((match = imgRegex.exec(renderCode)) !== null) {
       const imgTag = match[0];
       const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
       const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
       const src = srcMatch?.[1] || '';
-      const alt = altMatch?.[1] || '';
+      const alt = altMatch?.[1] || `Image ${index + 1}`;
 
-      // Check if this is a placeholder (not a real URL) OR has a real URL that we should show
-      const isPlaceholder = !src || src === 'placeholder' || src.includes('placeholder') ||
-        (!src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('//'));
+      // Convert alt to search query
+      const searchQuery = alt
+        .replace(/[^a-zA-Z0-9\s]/g, ' ')
+        .trim()
+        .toLowerCase() || 'image';
 
-      if (alt) {
-        // Convert alt to search query
-        const searchQuery = alt
-          .replace(/[^a-zA-Z0-9\s]/g, ' ')
-          .trim()
-          .toLowerCase() || 'image';
+      // Include ALL images - whether placeholder or real URL
+      // This allows users to swap any image
+      images.push({
+        alt,
+        searchQuery,
+        currentSrc: src.startsWith('http') || src.startsWith('data:') || src.startsWith('//') ? src : '',
+        index,
+      });
 
-        placeholders.push({
-          alt,
-          searchQuery,
-          currentSrc: isPlaceholder ? '' : src,
-        });
-      }
+      index++;
     }
 
-    return placeholders;
+    console.log('[CustomComponentSettings] Found HTML images:', images.length, images);
+    return images;
   }, [renderCode]);
 
   // Unified text editor: combine all text props into a single textarea separated by newlines
@@ -525,11 +551,64 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
           </div>
         </DialogContent>
       </Dialog>
-      
-      {/* Suggestions UI removed - auto-apply handled in effect */}
 
-      {/* Parsed Variables */}
-      {variables.length > 0 ? (
+      {/* HTML Slide Images - shown for HTML documents regardless of parsed variables */}
+      {htmlPlaceholderImages.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground">
+            Slide Images ({htmlPlaceholderImages.length})
+          </h4>
+          <div className="grid grid-cols-1 gap-3">
+            {htmlPlaceholderImages.map((imageInfo, idx) => (
+              <ImageSlotEditor
+                key={`html-image-${idx}-${imageInfo.alt}`}
+                propName={`Image${idx + 1}`}
+                label={imageInfo.alt}
+                value={imageInfo.currentSrc}
+                searchQuery={imageInfo.searchQuery}
+                objectFit="cover"
+                componentId={component.id}
+                onUpdate={(propName, imageUrl) => {
+                  // Update the HTML directly by replacing the image src
+                  // Use index-based matching to find the correct image
+                  let currentHtml = component.props.render as string;
+                  let currentIndex = 0;
+                  let replaced = false;
+
+                  currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
+                    if (replaced) {
+                      currentIndex++;
+                      return imgMatch;
+                    }
+
+                    if (currentIndex === imageInfo.index) {
+                      replaced = true;
+                      if (attrs.includes('src=')) {
+                        const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
+                        return `<img${newAttrs}>`;
+                      } else {
+                        return `<img src="${imageUrl}"${attrs}>`;
+                      }
+                    }
+                    currentIndex++;
+                    return imgMatch;
+                  });
+
+                  if (replaced) {
+                    handlePropChange('render', currentHtml, true);
+                  }
+                }}
+                onSave={(propName, label) => {
+                  saveComponentToHistory(`Updated image: ${label}`);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Parsed Variables from props.xxx pattern */}
+      {variables.length > 0 && (
         <div className="space-y-4">
           {/* Unified Text Block */}
           {nonFontTextVariables.length > 0 && (
@@ -566,59 +645,6 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </div>
           )}
 
-          {/* HTML Placeholder Images (detected from HTML) */}
-          {htmlPlaceholderImages.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">
-                Slide Images ({htmlPlaceholderImages.length})
-              </h4>
-              <div className="grid grid-cols-1 gap-3">
-                {htmlPlaceholderImages.map((placeholder, index) => (
-                  <ImageSlotEditor
-                    key={`html-placeholder-${index}-${placeholder.alt}`}
-                    propName={placeholder.alt} // Use alt as prop name for identification
-                    label={placeholder.alt}
-                    value={placeholder.currentSrc}
-                    searchQuery={placeholder.searchQuery}
-                    objectFit="cover"
-                    componentId={component.id}
-                    onUpdate={(propName, imageUrl) => {
-                      // Update the HTML directly by replacing the image src
-                      let currentHtml = component.props.render as string;
-                      const altLower = placeholder.alt.toLowerCase();
-                      let replaced = false;
-
-                      currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
-                        if (replaced) return imgMatch;
-
-                        const imgAltMatch = attrs.match(/alt=["']([^"']*)["']/i);
-                        const imgAlt = imgAltMatch ? imgAltMatch[1].toLowerCase() : '';
-
-                        if (imgAlt === altLower) {
-                          replaced = true;
-                          if (attrs.includes('src=')) {
-                            const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
-                            return `<img${newAttrs}>`;
-                          } else {
-                            return `<img src="${imageUrl}"${attrs}>`;
-                          }
-                        }
-                        return imgMatch;
-                      });
-
-                      if (replaced) {
-                        handlePropChange('render', currentHtml, true);
-                      }
-                    }}
-                    onSave={(propName, label) => {
-                      saveComponentToHistory(`Updated image: ${label}`);
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Numeric Properties */}
           {groupedVariables.number.length > 0 && (
             <div className="space-y-2">
@@ -628,7 +654,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
               </div>
             </div>
           )}
-          
+
           {/* Color Properties */}
           {groupedVariables.color.length > 0 && (
             <div className="space-y-2">
@@ -638,7 +664,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
               </div>
             </div>
           )}
-          
+
           {/* Boolean Properties */}
           {groupedVariables.boolean.length > 0 && (
             <div className="space-y-2">
@@ -648,7 +674,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
               </div>
             </div>
           )}
-          
+
           {/* Select Properties */}
           {groupedVariables.select.length > 0 && (
             <div className="space-y-2">
@@ -659,7 +685,10 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             </div>
           )}
         </div>
-      ) : (
+      )}
+
+      {/* No editable properties message - only show if BOTH no parsed variables AND no HTML images */}
+      {variables.length === 0 && htmlPlaceholderImages.length === 0 && (
         <div className="text-xs text-muted-foreground text-center py-4">
           <p>No editable properties detected in the component code.</p>
           <p className="mt-1">To make your component editable, add property definitions like:</p>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import SlideContainer from './viewport/SlideContainer';
+import ComponentToolbar from './viewport/ComponentToolbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import ComponentSettingsEditor from '@/components/ComponentSettingsEditor';
 import MultiComponentSettingsEditor from '@/components/MultiComponentSettingsEditor';
@@ -728,106 +729,143 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       )}
 
       <ZoomIndicator />
-      
-      {/* Scrollable Container */}
-      <div 
+
+      {/* Fixed UI Controls - unaffected by zoom */}
+      <div className="absolute top-2 left-2 right-2 z-50 flex justify-between items-start pointer-events-none">
+        {/* Component Toolbar on the left */}
+        {isEditing && currentSlide && (
+          <div style={{ pointerEvents: 'auto' }}>
+            <ComponentToolbar
+              slideId={currentSlide.id}
+              onComponentSelected={(componentId) => {
+                if (componentId) {
+                  const component = activeComponents.find(c => c.id === componentId);
+                  if (component) {
+                    handleComponentSelect(component);
+                  }
+                } else {
+                  handleComponentDeselect();
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Edit/Done button on the right */}
+        {currentSlide && isCurrentSlideCompleted && (
+          <button
+            className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm pointer-events-auto"
+            style={{
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+              fontWeight: 600,
+              letterSpacing: '0.3px'
+            }}
+            data-tour="edit-button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
+            }}
+            disabled={
+              currentSlide && (currentSlide.status === 'pending' || currentSlide.status === 'generating' || currentSlide.status === 'streaming') &&
+              (!currentSlide.components || currentSlide.components.length === 0)
+            }
+          >
+            {isEditing ? 'Done' : 'Edit'}
+          </button>
+        )}
+      </div>
+
+      {/* Canvas Container - Figma-style zoom */}
+      <div
         ref={scrollContainerRef}
-        className={`absolute inset-0 overflow-auto ${zoomLevel <= 100 ? 'scrollbar-hide' : ''}`}
+        className="absolute inset-0 overflow-auto"
         style={{
-          // Hide scrollbars when at 100% zoom
-          scrollbarWidth: zoomLevel > 100 ? 'auto' : 'none',
-          msOverflowStyle: zoomLevel > 100 ? 'auto' : 'none',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(155, 155, 155, 0.5) transparent',
         }}
       >
-        {/* Zoom Content Wrapper - this expands based on zoom level */}
-        <div 
-          className="relative flex items-center justify-center"
+        {/* Canvas that expands when zoomed in to allow scrolling */}
+        <div
+          className="relative"
           style={{
+            // When zoomed in, expand canvas to allow scrolling
+            // When zoomed out, keep minimum size to center content
             minWidth: '100%',
             minHeight: '100%',
-            width: `${zoomLevel}%`,
-            height: `${zoomLevel}%`,
-            // Center content when not zoomed
+            width: zoomLevel > 100 ? `${zoomLevel}%` : '100%',
+            height: zoomLevel > 100 ? `${zoomLevel}%` : '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          {/* This wrapper div maintains position while children animate */}
-          <div className="relative flex justify-center items-center">
-            {/* Slide Container that adjusts position when editing - prevent flashing by keeping transform stable */}
-            <motion.div 
-              className="flex flex-col relative"
-              initial={false}
-              animate={{
-                scale: isEditing ? 0.92 : 1,
-                x: isEditing ? -140 : 0
+          {/* Slide wrapper - handles edit mode offset */}
+          <motion.div
+            className="relative"
+            initial={false}
+            animate={{
+              x: isEditing ? -140 : 0
+            }}
+            transition={{
+              duration: 0.18,
+              ease: "easeOut"
+            }}
+            style={{
+              zIndex: 40,
+              pointerEvents: 'auto',
+            }}
+          >
+            {/* Zoom Container - ONLY the slide zooms */}
+            <div
+              ref={zoomContainerRef}
+              style={{
+                transform: `scale(${zoomLevel / 100})`,
+                transformOrigin: 'center center',
+                transition: 'transform 0.1s ease-out',
               }}
-              transition={{
-                duration: 0.18,
-                ease: "easeOut"
-              }}
-              style={{ 
-                zIndex: 40,
-                pointerEvents: 'auto',
-                willChange: 'transform'
-              }} 
             >
-              {/* Zoom Transformation Container - only for slide content */}
-              <div 
-                ref={zoomContainerRef}
-                style={{ 
-                  transform: `scale(${zoomLevel/100})`, 
-                  transformOrigin: `${zoomOrigin.x * 100}% ${zoomOrigin.y * 100}%`,
-                  transition: 'transform 0.15s ease-out',
-                  willChange: 'transform'
-                }}
-              >
-                <SlideContainer
-                  slides={slides}
-                  currentSlideIndex={currentSlideIndex}
-                  direction={direction}
-                  isEditing={isEditing}
-                  selectedComponentId={selectedComponent?.id}
-                  onComponentSelect={handleComponentSelect}
-                  onComponentDeselect={handleComponentDeselect}
-                  updateSlide={updateSlide}
-                  zoomLevel={100}
-                  deckStatus={deckStatus}
-                  isNewDeck={isNewDeck}
+              <SlideContainer
+                slides={slides}
+                currentSlideIndex={currentSlideIndex}
+                direction={direction}
+                isEditing={isEditing}
+                selectedComponentId={selectedComponent?.id}
+                onComponentSelect={handleComponentSelect}
+                onComponentDeselect={handleComponentDeselect}
+                updateSlide={updateSlide}
+                zoomLevel={zoomLevel}
+                deckStatus={deckStatus}
+                isNewDeck={isNewDeck}
+              />
+            </div>
+
+            {/* Cursor overlays - inside the motion wrapper but outside zoom */}
+            {currentSlide && (
+              <>
+                <SimpleCursors
+                  slideId={currentSlide.id}
+                  containerRef={scrollContainerRef}
+                  offsetY={24}
+                  zoomLevel={zoomLevel}
                 />
-              </div>
-              
-              {/* Use both cursor systems with specific offsets for accurate cursor positioning */}
-              {currentSlide && (
-                <>
-                  {/* Try Yjs-based cursor tracking first */}
-                  <SimpleCursors
-                    slideId={currentSlide.id}
-                    containerRef={scrollContainerRef}
-                    offsetY={24} // Significant positive offset for perfect alignment
-                    zoomLevel={zoomLevel} // Pass zoom level for cursor positioning
-                  />
-                  
-                  {/* Fallback to direct cursor tracking if Yjs isn't working */}
-                  <DirectCursors
-                    slideId={currentSlide.id}
-                    containerRef={scrollContainerRef}
-                    offsetY={24} // Significant positive offset for perfect alignment
-                    zoomLevel={zoomLevel} // Pass zoom level for cursor positioning
-                  />
-                  {/* Comments overlay */}
-                  <CommentPinsOverlay
-                    deckId={deckUuid}
-                    slideId={currentSlide.id}
-                    containerRef={scrollContainerRef}
-                    zoomLevel={zoomLevel}
-                    getCollaborators={getCollaborators}
-                  />
-                </>
-              )}
-            </motion.div>
-          </div>
+                <DirectCursors
+                  slideId={currentSlide.id}
+                  containerRef={scrollContainerRef}
+                  offsetY={24}
+                  zoomLevel={zoomLevel}
+                />
+                <CommentPinsOverlay
+                  deckId={deckUuid}
+                  slideId={currentSlide.id}
+                  containerRef={scrollContainerRef}
+                  zoomLevel={zoomLevel}
+                  getCollaborators={getCollaborators}
+                />
+              </>
+            )}
+          </motion.div>
         </div>
       </div>
       

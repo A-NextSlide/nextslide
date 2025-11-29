@@ -219,6 +219,84 @@ def insert_image(args: InsertImageArgs, registry: ComponentRegistry, deck_data: 
     return deck_diff
 
 
+class InsertVideoArgs(ToolModel):
+    tool_name: Literal["insert_video"] = Field(description="Insert a video component into a slide. Supports YouTube, Vimeo, and direct video URLs.")
+    slide_id: str = Field(description="Target slide id")
+    id: str = Field(description="Component id for the new Video")
+    video_url: str = Field(description="URL of the video (YouTube, Vimeo, or direct mp4/webm URL)")
+    x: Optional[float] = Field(default=200, description="x position in pixels")
+    y: Optional[float] = Field(default=200, description="y position in pixels")
+    width: Optional[float] = Field(default=960, description="Width in pixels")
+    height: Optional[float] = Field(default=540, description="Height in pixels")
+    autoplay: Optional[bool] = Field(default=False, description="Auto-play the video")
+    controls: Optional[bool] = Field(default=True, description="Show video controls")
+    loop: Optional[bool] = Field(default=False, description="Loop the video")
+    muted: Optional[bool] = Field(default=False, description="Mute the video")
+    poster_url: Optional[str] = Field(default=None, description="Poster/thumbnail image URL")
+
+
+def insert_video(args: InsertVideoArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff) -> DeckDiff:
+    """Insert a video component into a slide."""
+    import re
+
+    video_url = args.video_url
+    embed_url = None
+
+    # Convert YouTube URLs to embed URLs
+    youtube_patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})',
+        r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+    ]
+    for pattern in youtube_patterns:
+        match = re.search(pattern, video_url)
+        if match:
+            video_id = match.group(1)
+            embed_url = f"https://www.youtube.com/embed/{video_id}"
+            break
+
+    # Convert Vimeo URLs to embed URLs
+    vimeo_patterns = [
+        r'vimeo\.com/(\d+)',
+        r'player\.vimeo\.com/video/(\d+)',
+    ]
+    for pattern in vimeo_patterns:
+        match = re.search(pattern, video_url)
+        if match:
+            video_id = match.group(1)
+            embed_url = f"https://player.vimeo.com/video/{video_id}"
+            break
+
+    # Use embed URL if found, otherwise use original URL
+    final_url = embed_url or video_url
+
+    comp: Any = {
+        "id": args.id,
+        "type": "Video",
+        "props": {
+            "src": final_url,
+            "position": {"x": args.x or 0, "y": args.y or 0},
+            "width": args.width or 960,
+            "height": args.height or 540,
+            "autoplay": args.autoplay or False,
+            "controls": args.controls if args.controls is not None else True,
+            "loop": args.loop or False,
+            "muted": args.muted or False,
+            "poster": args.poster_url or "",
+            "objectFit": "contain",
+        }
+    }
+    try:
+        if registry:
+            Model = registry.get_component_model("Video")
+            if Model:
+                comp = Model(**comp)
+    except Exception:
+        # Fallback to plain dict
+        pass
+    deck_diff.add_component(args.slide_id, comp)  # type: ignore[arg-type]
+    return deck_diff
+
+
 class InsertAttachmentArgs(ToolModel):
     tool_name: Literal["insert_attachment"] = Field(description="Insert a previously uploaded attachment into a slide (image -> Image, CSV/XLSX -> Chart).")
     slide_id: str = Field(description="Target slide id")

@@ -194,6 +194,22 @@ export const ComponentRenderer: React.FC<Props> = ({
     didJustDrag,
   });
 
+  // Listen for selection requests from CustomComponent iframes
+  useEffect(() => {
+    if (componentType !== 'CustomComponent') return;
+
+    const handleIframeSelectRequest = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.componentId === componentId) {
+        onSelect(componentId);
+      }
+    };
+
+    const container = containerRef.current;
+    container?.addEventListener('customcomponent:request-select', handleIframeSelectRequest);
+    return () => container?.removeEventListener('customcomponent:request-select', handleIframeSelectRequest);
+  }, [componentId, componentType, onSelect]);
+
   // Combine snap guides from drag and resize
   const snapGuides = isDragging ? dragSnapGuides : isResizing ? localSnapGuides : [];
 

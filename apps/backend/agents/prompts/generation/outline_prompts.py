@@ -17,23 +17,24 @@ def get_flow_requirements(slide_count: Optional[int]) -> str:
 
     if slide_count >= 8:
         requirements.extend([
-            "- Slide 2: Agenda showing roadmap",
-            "- Transition slides every 4-5 content slides",
-            "- Dividers for major sections"
+            "- Slide 2: AGENDA/ROADMAP showing presentation structure",
+            "- For pitch decks: Problem > Solution > Market > Traction > Team > Ask",
+            "- For corporate: Overview > Analysis > Recommendations > Next Steps",
+            "- Transition slides every 4-5 content slides"
         ])
 
     if slide_count >= 12:
         requirements.extend([
-            "- 2-3 stat slides for metrics (business/data topics only)",
-            "- Quote slide for testimonials",
-            "- Checkpoint transitions"
+            "- Section dividers between major topics",
+            "- 2-3 stat slides for key metrics (business/data topics only)",
+            "- Quote or testimonial slide if relevant"
         ])
 
     if slide_count >= 20:
         requirements.extend([
-            "- Break into clear chapters",
-            "- Sub-section dividers",
-            "- Multiple checkpoints"
+            "- Break into clear chapters with dividers",
+            "- Sub-section agendas for each chapter",
+            "- Recap/checkpoint slides every 6-8 slides"
         ])
 
     return "\n".join(requirements) if requirements else "- Logical flow"
@@ -88,10 +89,17 @@ Create coherent, well-paced presentations."""
 SLIDE COUNT: {count_inst}
 
 CONTEXT DETECTION:
-- Business: pitch, investor, company, financial
+- Pitch Deck: pitch, investor, funding, series A/B/C, startup, raise, VC
+- Corporate: quarterly, board, strategy, executive, stakeholder, annual
+- Business: company, financial, market, revenue, growth
 - Educational: school, teaching, learning, academic
 - Personal: hobby, party, birthday, fun, creative
 - How-to: tutorial, guide, recipe, DIY
+
+PITCH DECK STRUCTURE (if detected):
+Slide 1: Title | Slide 2: Agenda | Slide 3: Problem | Slide 4: Solution |
+Slide 5: Market | Slide 6: Product | Slide 7: Traction | Slide 8: Business Model |
+Slide 9: Competition | Slide 10: Team | Slide 11: Financials | Slide 12: The Ask
 
 RULES:
 1. Title reflects ACTUAL topic (not generic)
@@ -167,7 +175,36 @@ Create title slide (20-35 words):
     if slide_type == 'agenda':
         return f"""{base}
 
-List 4-7 main sections as bullets."""
+AGENDA/ROADMAP SLIDE for corporate/structured presentations:
+
+FORMAT OPTIONS (choose based on context):
+1. NUMBERED ROADMAP (pitch decks, investor presentations):
+   01 The Problem
+   02 Our Solution
+   03 Market Opportunity
+   04 Business Model
+   05 Traction
+   06 The Ask
+
+2. SECTION OVERVIEW (corporate, training, long-form):
+   | Strategy | Execution | Results | Next Steps |
+
+3. TIMELINE FORMAT (project updates, quarterly reviews):
+   Q1: Foundation | Q2: Launch | Q3: Scale | Q4: Optimize
+
+RULES:
+- 4-7 sections maximum
+- Each section 2-4 words
+- Match the presentation's actual slide structure
+- Use parallel phrasing (all nouns OR all verbs)
+- NO emoji, NO icons in text
+- Professional, scannable at a glance
+
+For PITCH DECKS specifically:
+Problem > Solution > Market > Product > Traction > Team > Financials > Ask
+
+For CORPORATE/TRAINING:
+Overview > Context > Details > Implementation > Summary"""
 
     if slide_type == 'conclusion':
         return f"""{base}
@@ -426,7 +463,7 @@ def get_fallback_content(slide_title: str, slide_type: str, topic: str) -> str:
         return f"# {slide_title}\n\n{topic}\n\n[Your Name]"
 
     if slide_type == 'agenda':
-        return f"## {slide_title}\n\n• Introduction\n• Key Topics\n• Next Steps"
+        return f"## {slide_title}\n\n01 Overview\n02 Key Insights\n03 Recommendations\n04 Next Steps"
 
     if slide_type == 'team':
         return f"## {slide_title}\n\nName: Team Member\nTitle: Role\nDescription: Background and expertise"
@@ -471,12 +508,13 @@ def get_smart_content_guidance(slide_title: str, presentation_title: str, presen
         guidance["chart_appropriateness"] = "never"
         guidance["reasoning"] = "Focus on takeaways"
 
-    # Agenda
-    elif "agenda" in title_lower or "outline" in title_lower:
-        guidance["word_count_range"] = (20, 40)
+    # Agenda/Roadmap
+    elif any(w in title_lower for w in ["agenda", "outline", "roadmap", "overview", "contents"]):
+        guidance["word_count_range"] = (15, 35)
         guidance["content_style"] = "structured"
         guidance["chart_appropriateness"] = "never"
-        guidance["reasoning"] = "Navigational slide"
+        guidance["visual_emphasis"] = "very_high"
+        guidance["reasoning"] = "Navigational roadmap - scannable sections only"
 
     # Data/metrics slides
     elif any(w in title_lower for w in ["data", "metrics", "analysis", "results", "performance"]):

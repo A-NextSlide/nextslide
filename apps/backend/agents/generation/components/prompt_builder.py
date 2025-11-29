@@ -2190,7 +2190,26 @@ class SlidePromptBuilder:
                 "Also include props.searchQuery on each Image to guide later retrieval (2–5 precise words).",
                 "Data-heavy slides, timeline slides, and conclusion slides often work better without images. Avoid wide, short, bottom-half images."
             ])
-        
+
+        # Add video handling if available
+        if hasattr(context, 'available_videos') and context.available_videos:
+            sections.append(f"\n🎬 BRAND VIDEOS AVAILABLE ({len(context.available_videos)} found from company website):")
+            for i, video in enumerate(context.available_videos[:3]):
+                video_url = video.get('url', video.get('embed_url', ''))
+                video_type = video.get('source_type', 'direct')
+                video_title = video.get('title', 'Untitled')
+                thumbnail = video.get('thumbnail', '')
+                sections.append(f"  {i+1}. [{video_type}] {video_title}")
+                sections.append(f"     URL: {video_url}")
+                if thumbnail:
+                    sections.append(f"     Thumbnail: {thumbnail}")
+            sections.extend([
+                "\nTo use a video, create a Video component:",
+                "Example: {\"type\": \"Video\", \"props\": {\"src\": \"<video_url>\", \"position\": {\"x\": 200, \"y\": 200}, \"width\": 960, \"height\": 540, \"controls\": true, \"autoplay\": false}}",
+                "Videos are great for product demos, company overviews, and testimonials.",
+                "Use videos sparingly - typically on title slides, product slides, or demo sections."
+            ])
+
         # Add image boundary rules
         sections.extend([
             "\n** CRITICAL IMAGE BOUNDARY RULES:",

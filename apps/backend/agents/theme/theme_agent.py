@@ -77,6 +77,7 @@ class ThemeAgent:
             "accent2": None,
             "fonts": {"hero": "Montserrat", "body": "Open Sans"},
             "logo_url": None,
+            "videos": [],  # List of video dicts from the brand's website
             "source": "default"
         }
 
@@ -95,12 +96,13 @@ class ThemeAgent:
             # Step 2: Handle based on theme type
             if theme_type == "real_brand" and theme_analysis.get("domain"):
                 # Real brand - try Brandfetch
-                logger.info(f"[ThemeAgent] Real brand detected: {theme_analysis.get('brand')} → {theme_analysis.get('domain')}")
-                brand_data = await self._fetch_brandfetch(theme_analysis["domain"])
+                domain = theme_analysis["domain"]
+                logger.info(f"[ThemeAgent] Real brand detected: {theme_analysis.get('brand')} → {domain}")
+                brand_data = await self._fetch_brandfetch(domain)
 
                 if brand_data and brand_data.get("colors"):
                     result["brand_name"] = theme_analysis.get("brand")
-                    result["domain"] = theme_analysis.get("domain")
+                    result["domain"] = domain
                     result["colors"] = brand_data["colors"]
                     result["background"] = "#FFFFFF"
                     result["accent"] = brand_data["colors"][0] if brand_data["colors"] else None
@@ -116,16 +118,34 @@ class ThemeAgent:
                         if validated:
                             result["fonts"]["hero"] = validated
 
+                    # Fetch videos from the brand's website (parallel, non-blocking)
+                    try:
+                        videos = await self._fetch_brand_videos(domain)
+                        result["videos"] = videos
+                        if videos:
+                            logger.info(f"[ThemeAgent] 🎬 Found {len(videos)} videos from {domain}")
+                    except Exception as e:
+                        logger.warning(f"[ThemeAgent] Video fetch error (non-blocking): {e}")
+
                     logger.info(f"[ThemeAgent] ✅ Brandfetch success: {result['colors'][:3]}")
                     return result
                 else:
                     # Brandfetch failed, try to get logo from website via Firecrawl
                     logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl for logo...")
-                    logo_url = await self._fetch_logo_from_website(theme_analysis["domain"])
+                    logo_url = await self._fetch_logo_from_website(domain)
                     if logo_url:
                         result["logo_url"] = logo_url
-                        result["domain"] = theme_analysis.get("domain")
+                        result["domain"] = domain
                         result["brand_name"] = theme_analysis.get("brand")
+
+                    # Still try to fetch videos even if Brandfetch failed
+                    try:
+                        videos = await self._fetch_brand_videos(domain)
+                        result["videos"] = videos
+                        if videos:
+                            logger.info(f"[ThemeAgent] 🎬 Found {len(videos)} videos from {domain}")
+                    except Exception as e:
+                        logger.warning(f"[ThemeAgent] Video fetch error (non-blocking): {e}")
 
             # Step 3: Generate contextual colors based on the theme
             # This handles: inspired_by, fictional_brand, topic_based, generic
@@ -294,6 +314,35 @@ IMPORTANT:
         except Exception as e:
             logger.warning(f"[ThemeAgent] Brandfetch error: {e}")
             return None
+
+    async def _fetch_brand_videos(self, domain: str, max_videos: int = 5) -> List[Dict[str, Any]]:
+        """
+        Fetch videos from a brand's website.
+
+        Args:
+            domain: Brand domain (e.g., 'dyna.co')
+            max_videos: Maximum number of videos to return
+
+        Returns:
+            List of video dictionaries with url, source_type, thumbnail, etc.
+        """
+        try:
+            from services.video_scraper_service import get_brand_videos
+
+            logger.info(f"[ThemeAgent] 🎬 Fetching videos from: {domain}")
+
+            # Set timeout for video fetching
+            try:
+                async with asyncio.timeout(10):
+                    videos = await get_brand_videos(domain, max_videos)
+                    return videos
+            except asyncio.TimeoutError:
+                logger.warning(f"[ThemeAgent] Video fetch timeout for {domain}")
+                return []
+
+        except Exception as e:
+            logger.warning(f"[ThemeAgent] Video fetch error for {domain}: {e}")
+            return []
 
     async def _fetch_logo_from_website(self, domain: str) -> Optional[str]:
         """Fallback: Try to get logo from website using Firecrawl."""

@@ -86,8 +86,57 @@ async def process_media_search(request: MediaSearchRequest) -> MediaSearchRespon
                         height=768,
                     ))
                 total = len(results)
+        elif request.type == "videos":
+            # Use SerpAPI for video search or fallback to website scraping
+            from services.serpapi_service import SerpAPIService
+            serpapi = SerpAPIService()
+
+            if serpapi.is_available:
+                try:
+                    # SerpAPI can search YouTube videos via google search
+                    raw_results = await serpapi.search_videos(
+                        query=request.query,
+                        per_page=request.limit
+                    )
+
+                    videos = raw_results.get("videos", [])
+                    for video in videos[:request.limit]:
+                        results.append(MediaSearchResult(
+                            title=video.get("title", request.query),
+                            link=video.get("link", video.get("url", "")),
+                            thumbnail=video.get("thumbnail", ""),
+                            source=video.get("source", "youtube"),
+                            width=video.get("width", 1920),
+                            height=video.get("height", 1080),
+                        ))
+                    total = len(results)
+                except Exception as e:
+                    logger.warning(f"SerpAPI video search failed: {e}, trying website scraping")
+                    # Fallback: try to scrape videos from a relevant website
+                    from services.video_scraper_service import scrape_website_videos
+
+                    # Search for company website based on query
+                    domain = request.query.lower().replace(" ", "").replace(".", "") + ".com"
+                    scrape_result = await scrape_website_videos(f"https://{domain}", max_videos=request.limit)
+
+                    if scrape_result.success:
+                        for video in scrape_result.videos:
+                            results.append(MediaSearchResult(
+                                title=video.title or request.query,
+                                link=video.embed_url or video.url,
+                                thumbnail=video.thumbnail or "",
+                                source=video.source_type,
+                                width=1920,
+                                height=1080,
+                            ))
+                    total = len(results)
+            else:
+                # No video search available - return empty
+                logger.warning("Video search not available - SerpAPI not configured")
+                results = []
+                total = 0
         else:
-            # Videos/GIFs not implemented
+            # GIFs not implemented
             results = []
             total = 0
 

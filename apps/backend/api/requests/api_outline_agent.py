@@ -421,11 +421,13 @@ async def scrape_media_from_url(url: str, media_filter: str = "all") -> Dict[str
 
 async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
     """
-    Scrape content from reference links using Firecrawl. Keep it simple.
+    Scrape content from reference links using Firecrawl and video scraper.
+    Also extracts videos from the websites.
     """
     results = {
         "success": False,
         "scraped_content": [],
+        "videos": [],  # Videos found on the websites
         "error": None
     }
 
@@ -439,6 +441,8 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
             return results
 
         scraped_items = []
+        all_videos = []
+
         for url in urls[:3]:  # Limit to 3 URLs
             try:
                 logger.info(f"[OutlineAgent] Scraping URL: {url}")
@@ -461,6 +465,18 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
                         "title": title,
                     })
                     logger.info(f"[OutlineAgent] Scraped {url}: {len(markdown_content) if markdown_content else 0} chars")
+
+                # Also scrape videos from the URL (non-blocking)
+                try:
+                    from services.video_scraper_service import scrape_website_videos
+                    video_result = await scrape_website_videos(url, max_videos=5)
+                    if video_result.success and video_result.videos:
+                        for video in video_result.videos:
+                            all_videos.append(video.to_dict())
+                        logger.info(f"[OutlineAgent] 🎬 Found {len(video_result.videos)} videos from {url}")
+                except Exception as video_err:
+                    logger.warning(f"[OutlineAgent] Video scraping failed for {url}: {video_err}")
+
             except Exception as e:
                 logger.warning(f"[OutlineAgent] Failed to scrape {url}: {e}")
                 continue
@@ -468,6 +484,10 @@ async def scrape_reference_links(urls: List[str]) -> Dict[str, Any]:
         if scraped_items:
             results["success"] = True
             results["scraped_content"] = scraped_items
+
+        if all_videos:
+            results["videos"] = all_videos
+            logger.info(f"[OutlineAgent] 🎬 Total videos scraped: {len(all_videos)}")
 
     except Exception as e:
         logger.error(f"[OutlineAgent] URL scraping failed: {e}")
@@ -988,6 +1008,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
 
         scraped_context = ""
+        scrape_result = None  # Will hold videos and scraped content if URL scraping happens
         file_context = ""
 
         # Analyze uploaded files if present
@@ -1054,6 +1075,27 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     title = item.get("title") or item.get("url", "Reference")
                     scraped_parts.append(f"--- {title} ---\n{item['content']}\n---")
                 scraped_context = "\n\n[REFERENCE CONTENT]\n" + "\n".join(scraped_parts) + "\n[END REFERENCE CONTENT]\n\n"
+
+                # Add video information if found
+                videos = scrape_result.get("videos", [])
+                if videos:
+                    video_parts = ["\n\n[AVAILABLE VIDEOS FROM WEBSITE]"]
+                    video_parts.append(f"Found {len(videos)} video(s) that can be embedded in slides:\n")
+                    for i, video in enumerate(videos[:5]):  # Limit to top 5
+                        video_url = video.get('url', video.get('embed_url', ''))
+                        video_type = video.get('source_type', 'direct')
+                        video_title = video.get('title', 'Untitled')
+                        thumbnail = video.get('thumbnail', '')
+                        video_parts.append(f"{i+1}. [{video_type}] {video_title}")
+                        video_parts.append(f"   URL: {video_url}")
+                        if thumbnail:
+                            video_parts.append(f"   Thumbnail: {thumbnail}")
+                    video_parts.append("\nYou can reference these videos in slide content suggestions.")
+                    video_parts.append("[END AVAILABLE VIDEOS]\n")
+                    scraped_context += "\n".join(video_parts)
+                    logger.info(f"[OutlineAgent] 🎬 Added {len(videos)} videos to context")
+                    yield f"data: {json.dumps({'type': 'status', 'status': 'videos_found', 'message': f'Found {len(videos)} video(s) from website'})}\n\n"
+
                 logger.info(f"[OutlineAgent] Added scraped context: {len(scraped_context)} chars")
                 count = len(scrape_result["scraped_content"])
                 yield f"data: {json.dumps({'type': 'status', 'status': 'scraped', 'message': f'Extracted content from {count} link(s)'})}\n\n"
@@ -1315,6 +1357,11 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                         error_msg = media_result.get('error', 'Unknown error')
                         yield f"data: {json.dumps({'type': 'status', 'status': 'media_scrape_failed', 'message': f'Could not fetch media: {error_msg}'})}\n\n"
                         logger.warning(f"[OutlineAgent] Media scrape failed: {error_msg}")
+
+            # Attach scraped videos to generate_outline action
+            if outline_data.get('action') == 'generate_outline' and scrape_result and scrape_result.get('videos'):
+                outline_data['scraped_videos'] = scrape_result['videos']
+                logger.info(f"[OutlineAgent] 🎬 Attached {len(scrape_result['videos'])} scraped videos to outline")
 
             # Attach uploaded files to generate_outline action so they're used in slide generation
             logger.info(f"[OutlineAgent] 📎 Checking file attachment: action={outline_data.get('action')}, has_files={bool(request.files)}, file_count={len(request.files) if request.files else 0}")

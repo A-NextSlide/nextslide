@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
-import ComponentToolbar from './ComponentToolbar';
 import SlideDisplay from './SlideDisplay';
 import SlideControlBar from './SlideControlBar';
 import ImagePicker from './ImagePicker';
-import { useEditor } from '@/hooks/useEditor';
 import { useImageOptions } from '@/hooks/useImageOptions';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -50,8 +48,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   // Toast notifications
   const { toast } = useToast();
   
-  // Get editor state for accessing draft components
-  const { getComponents } = useEditor();
   
   // Get updateComponent from ActiveSlide context
   const { updateComponent } = useActiveSlide();
@@ -64,7 +60,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   // Track slide generation progress
   const [slidesInProgress, setSlidesInProgress] = useState<Set<number>>(new Set());
   const [completedSlides, setCompletedSlides] = useState<Set<number>>(new Set());
-  const [isChatSelecting, setIsChatSelecting] = useState(false);
 
   // Track CustomComponent prop selection (for image injection into CustomComponents)
   const [customComponentPropInfo, setCustomComponentPropInfo] = useState<{
@@ -138,15 +133,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     };
   }, [deckId, deckUuid, slides, deckData, fetchImageOptions]);
 
-  // Listen for chat selection toggle to hide slide edit button when chat is selecting
-  useEffect(() => {
-    const handler = (e: CustomEvent) => {
-      const selecting = !!e.detail?.selecting;
-      setIsChatSelecting(selecting);
-    };
-    window.addEventListener('chat:selection-mode-changed', handler as EventListener);
-    return () => window.removeEventListener('chat:selection-mode-changed', handler as EventListener);
-  }, []);
   
   // Listen for slide generation progress events
   useEffect(() => {
@@ -815,65 +801,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
           );
         })()}
       </AnimatePresence>
-      
-      {/* Edit controls container */}
-      <div className="h-10 mb-2 flex justify-between items-center w-full" 
-           style={{ 
-             transition: 'transform ease-in-out',
-             width: '100%',
-             maxWidth: '1400px'
-           }}>
-        {/* ComponentToolbar on the left */}
-        {isEditing && (
-          <ComponentToolbar 
-            slideId={slides[currentSlideIndex]?.id}
-            onComponentSelected={(componentId) => {
-              if (componentId) {
-                // If a component ID is provided, select that component
-                const currentSlide = slides[currentSlideIndex];
-                if (currentSlide) {
-                  // Use draft components when in edit mode
-                  const components = getComponents(currentSlide.id);
-                  const component = components.find(c => c.id === componentId);
-                  if (component) {
-                    onComponentSelect(component);
-                  }
-                }
-              } else {
-                // If no component ID is provided, deselect the current component
-                onComponentDeselect();
-              }
-            }}
-          />
-        )}
-        
-        {/* Spacer */}
-        {!isEditing && <div className="flex-1" />}
-        
-        {/* Edit/Done button on the right */}
-        {!isChatSelecting && (
-          <button
-            className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-            style={{
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-              fontWeight: 600,
-              letterSpacing: '0.3px'
-            }}
-            data-tour="edit-button"
-            onClick={() => {
-              // Toggle edit mode
-              window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
-            }}
-            disabled={
-              // Disable the button if the current slide is generating/streaming
-              currentSlide && (currentSlide.status === 'pending' || currentSlide.status === 'generating' || currentSlide.status === 'streaming') &&
-              (!currentSlide.components || currentSlide.components.length === 0)
-            }
-          >
-            {isEditing ? 'Done' : 'Edit'}
-          </button>
-        )}
-      </div>
       
       {/* Slide display container */}
       <div className="flex flex-col items-center w-full" style={{ 

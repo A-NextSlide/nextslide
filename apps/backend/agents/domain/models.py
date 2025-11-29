@@ -109,6 +109,7 @@ class SlideGenerationContext:
     style_manifesto: str
     deck_uuid: str
     available_images: List[Dict[str, Any]] = field(default_factory=list)
+    available_videos: List[Dict[str, Any]] = field(default_factory=list)  # Videos from brand website
     async_images: bool = False
     tagged_media: List[Dict[str, Any]] = field(default_factory=list)
     # Visual density guidance for content amount: "minimal" | "moderate" | "rich" | "data-heavy"
