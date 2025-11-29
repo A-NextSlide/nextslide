@@ -19,9 +19,13 @@ from agents.config import (
     CUSTOM_COMPONENT_TEMPERATURE,
     ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
 )
+from agents.generation.exceptions import AIRateLimitError
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+# Global semaphore to limit concurrent Gemini calls (prevents rate limiting)
+_GEMINI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent Gemini calls
 
 
 async def prefetch_images_for_content(
@@ -498,35 +502,56 @@ class CustomComponentGenerator:
             print(f"[CUSTOM_COMPONENT] 📝 Prompt length: system={len(system_prompt)}, user={len(user_prompt)}")
 
             loop = asyncio.get_event_loop()
-            try:
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        invoke,
-                        client,
-                        model_name,
-                        messages,
-                        None,  # No response model - raw text
-                        16000,  # max_tokens
-                        self.temperature
-                    ),
-                    timeout=self.generation_timeout
-                )
-                logger.info(f"[CUSTOM_COMPONENT] Got response: {type(response)}, length: {len(str(response)) if response else 0}")
-                print(f"[CUSTOM_COMPONENT] ✅ Got response: {type(response)}, length: {len(str(response)) if response else 0}")
-                if response:
-                    response_str = str(response)
-                    # Check if response has literal \n (escaped) vs actual newlines
-                    has_escaped = '\\n' in response_str
-                    has_actual = '\n' in response_str
-                    print(f"[CUSTOM_COMPONENT] 🔍 Response check: escaped_newlines={has_escaped}, actual_newlines={has_actual}")
-                    print(f"[CUSTOM_COMPONENT] 📄 Response preview (repr): {repr(response_str[:300])}")
-            except Exception as invoke_error:
-                logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
-                print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
-                import traceback
-                traceback.print_exc()
-                raise
+
+            # Use semaphore to limit concurrent Gemini calls + retry with backoff
+            max_retries = 3
+            response = None
+
+            async with _GEMINI_SEMAPHORE:
+                for attempt in range(max_retries):
+                    try:
+                        print(f"[CUSTOM_COMPONENT] 🔄 Attempt {attempt + 1}/{max_retries}")
+                        response = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None,
+                                invoke,
+                                client,
+                                model_name,
+                                messages,
+                                None,  # No response model - raw text
+                                16000,  # max_tokens
+                                self.temperature
+                            ),
+                            timeout=self.generation_timeout
+                        )
+                        # Success - break out of retry loop
+                        break
+                    except AIRateLimitError as rate_err:
+                        if attempt < max_retries - 1:
+                            # Exponential backoff: 5s, 15s, 45s
+                            wait_time = 5 * (3 ** attempt)
+                            logger.warning(f"[CUSTOM_COMPONENT] Rate limited, waiting {wait_time}s before retry...")
+                            print(f"[CUSTOM_COMPONENT] ⏳ Rate limited, waiting {wait_time}s before retry...")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            logger.error(f"[CUSTOM_COMPONENT] Rate limit exceeded after {max_retries} attempts")
+                            raise
+                    except Exception as invoke_error:
+                        logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
+                        print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
+                        import traceback
+                        traceback.print_exc()
+                        raise
+
+            logger.info(f"[CUSTOM_COMPONENT] Got response: {type(response)}, length: {len(str(response)) if response else 0}")
+            print(f"[CUSTOM_COMPONENT] ✅ Got response: {type(response)}, length: {len(str(response)) if response else 0}")
+            if response:
+                response_str = str(response)
+                # Check if response has literal \n (escaped) vs actual newlines
+                has_escaped = '\\n' in response_str
+                has_actual = '\n' in response_str
+                print(f"[CUSTOM_COMPONENT] 🔍 Response check: escaped_newlines={has_escaped}, actual_newlines={has_actual}")
+                print(f"[CUSTOM_COMPONENT] 📄 Response preview (repr): {repr(response_str[:300])}")
 
             # Extract HTML from response
             html_content = self._extract_html(response)
