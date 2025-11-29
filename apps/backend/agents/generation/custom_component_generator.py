@@ -63,8 +63,8 @@ async def prefetch_images_for_content(
         logger.warning(f"[PREFETCH] Could not init SerpAPI: {e}")
         return {}
 
-    # Extract search terms
-    search_terms = _extract_image_search_terms(content, slide_title)
+    # Extract search terms using AI for better quality
+    search_terms = await _extract_image_search_terms_with_ai(content, slide_title)
     if not search_terms:
         print("[PREFETCH] ⚠️ No search terms extracted")
         return {}
@@ -126,6 +126,71 @@ async def prefetch_images_for_content(
     count = len([k for k in prefetched if not k.endswith('_query')])
     print(f"[PREFETCH] 📸 Uploaded {count} images to our bucket")
     return prefetched
+
+
+async def _extract_image_search_terms_with_ai(content: str, slide_title: str, presentation_context: str = "") -> List[str]:
+    """
+    Use AI to extract SMART, CONTEXTUAL image search terms.
+
+    This produces much better results than regex-based extraction because it understands:
+    - The actual topic of the slide
+    - Industry context
+    - What kinds of images would be relevant
+    """
+    from agents.ai.clients import get_client, invoke
+
+    try:
+        client, model_name = get_client("claude-haiku-4-5")
+
+        prompt = f"""Analyze this slide and generate 3-5 specific image search queries.
+
+SLIDE TITLE: {slide_title}
+SLIDE CONTENT: {content[:1000]}
+{f"PRESENTATION CONTEXT: {presentation_context}" if presentation_context else ""}
+
+RULES:
+1. Generate search queries that would find RELEVANT, PROFESSIONAL images
+2. Focus on the MAIN SUBJECT - companies, products, industries, concepts
+3. Be SPECIFIC - "grocery delivery warehouse" not "warehouse"
+4. Include brand/company names if mentioned
+5. Avoid generic terms like "business", "success", "teamwork"
+6. Think about what PHOTO would illustrate this slide well
+
+Return ONLY a JSON array of 3-5 search queries, nothing else:
+["query 1", "query 2", "query 3"]"""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            500,
+            0.3
+        )
+
+        # Parse JSON array from response
+        import json
+        response_str = str(response).strip()
+        # Find JSON array in response
+        match = re.search(r'\[.*?\]', response_str, re.DOTALL)
+        if match:
+            terms = json.loads(match.group())
+            print(f"[PREFETCH] 🧠 AI-generated search terms: {terms}")
+            return terms[:5]
+    except Exception as e:
+        logger.warning(f"[PREFETCH] AI search term extraction failed: {e}, falling back to regex")
+        print(f"[PREFETCH] ⚠️ AI extraction failed: {e}, using fallback")
+
+    # Fallback to regex-based extraction
+    return _extract_image_search_terms_fallback(content, slide_title)
+
+
+def _extract_image_search_terms_fallback(content: str, slide_title: str) -> List[str]:
+    """Fallback regex-based extraction if AI fails."""
+    return _extract_image_search_terms(content, slide_title)
 
 
 def _extract_image_search_terms(content: str, slide_title: str) -> List[str]:
