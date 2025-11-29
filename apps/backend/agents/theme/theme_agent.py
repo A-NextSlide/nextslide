@@ -191,21 +191,11 @@ Return JSON:
     "color_hints": ["any colors mentioned or implied, e.g., 'blue', 'Sonic blue', 'neon'"]
 }}
 
-IMPORTANT - REAL BRANDS INCLUDE:
-- Companies: Apple, Nike, McDonald's, Google, etc.
-- Video games: Sonic, Nintendo, Pokemon, PlayStation, Xbox, etc.
-- TV Shows: Stranger Things (netflix.com), Game of Thrones (hbo.com), Breaking Bad (amc.com)
-- Movies: Star Wars (starwars.com), Marvel (marvel.com), Disney (disney.com)
-- Sports teams: Lakers, Yankees, Manchester United, etc.
-
-For entertainment properties, use the parent company or official domain:
-- Stranger Things → netflix.com
-- Game of Thrones → hbo.com
-- Star Wars → starwars.com
-- Marvel movies → marvel.com
-
-For fictional variants like "SonicVerse" - type should be "inspired_by" with inspiration="Sonic the Hedgehog"
-Always try to identify the INSPIRATION even for fictional brands"""
+IMPORTANT:
+- "real_brand" = companies/brands with websites (Apple, Nike, etc.) - we'll fetch their official colors
+- "inspired_by" = inspired by something with recognizable colors (Sonic, Star Wars, retro gaming, etc.)
+- For fictional variants like "SonicVerse" - type should be "inspired_by" with inspiration="Sonic the Hedgehog"
+- Always identify the core INSPIRATION so we can generate appropriate colors"""
 
             client, actual_model = get_client("claude-haiku-4-5")
             if not client or not actual_model:
@@ -324,21 +314,8 @@ Inspiration: {inspiration or 'None specified'}
 Mood: {mood or 'professional'}
 Theme type: {theme_type}
 
-IMPORTANT CONTEXT - USE THESE SPECIFIC COLORS:
-- Sonic the Hedgehog: Sonic blue (#0066FF), red (#CC0000), ring gold (#FFD700)
-- Stranger Things: Dark red (#8B0000), black (#000000), neon red (#FF0000) - or 80s neon for Season 3
-- Star Wars: Black, gold (#FFE81F), white - imperial gray for dark side themes
-- Marvel: Red (#ED1D24), white, black
-- Nintendo: Red (#E60012), white
-- PlayStation: Blue (#003087), white
-- Xbox: Green (#107C10), black, white
-- Pokemon: Yellow (#FFCB05), blue (#3D7DCA), red
-- Netflix: Red (#E50914), black, white
-- Disney: Blue (#006E99), white
-- Retro/arcade gaming: Neon pink, electric blue, lime green, purple
-- Professional/corporate: Navy, white, accent color
-- Nature/environment: Greens, blues, earth tones
-- Match the MOOD and INSPIRATION, not random colors!
+You know the official/iconic colors for brands, games, movies, TV shows, and cultural properties.
+Use that knowledge - if this is inspired by Sonic, use Sonic's blue/red/gold. If it's Star Wars, use black/gold/white. Etc.
 
 Return JSON with EXACTLY this format:
 {{
@@ -351,10 +328,7 @@ Return JSON with EXACTLY this format:
     "body_font": "suggested body font name"
 }}
 
-CRITICAL: For known brands/properties, you MUST use their official colors from the list above.
-Do NOT use random colors when you know the brand's actual colors!
-
-Return ONLY the JSON, no explanation."""
+Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
 
             client, actual_model = get_client("claude-haiku-4-5")
             if not client or not actual_model:
