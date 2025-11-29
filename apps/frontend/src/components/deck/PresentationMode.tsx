@@ -23,16 +23,36 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   isViewOnly = false,
   alwaysShowControls = false
 }) => {
-  const { 
-    isPresenting, 
-    showControls, 
+  const {
+    isPresenting,
+    showControls,
     showThumbnails,
-    exitPresentation, 
+    exitPresentation,
     setShowControls,
-    setShowThumbnails 
+    setShowThumbnails
   } = usePresentationStore();
-  
-  const { goToNextSlide, goToPrevSlide, goToSlide } = useSlideNavigation();
+
+  // Use useSlideNavigation but override with prop-based navigation for reliability
+  const slideNav = useSlideNavigation();
+
+  // Create navigation functions that work with the slides prop
+  const goToNextSlide = () => {
+    if (currentSlideIndex < slides.length - 1) {
+      slideNav.goToSlide(currentSlideIndex + 1);
+    }
+  };
+
+  const goToPrevSlide = () => {
+    if (currentSlideIndex > 0) {
+      slideNav.goToSlide(currentSlideIndex - 1);
+    }
+  };
+
+  const goToSlide = (index: number) => {
+    if (index >= 0 && index < slides.length) {
+      slideNav.goToSlide(index);
+    }
+  };
   const lastMouseMove = useRef<number>(0);
   const mouseMoveTimeout = useRef<NodeJS.Timeout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
