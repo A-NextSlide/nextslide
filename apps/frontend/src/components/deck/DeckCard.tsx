@@ -43,12 +43,7 @@ const DeckCard: React.FC<DeckCardProps> = React.memo(({
         animationFillMode: 'backwards' 
       } : undefined}
     >
-      <div className="relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-lg transition-all duration-300"
-           style={{
-             background: deck.data?.isImporting
-               ? 'linear-gradient(135deg, #FFEFE6 0%, #FFF7F3 100%)'
-               : undefined
-           }}>
+      <div className={`relative aspect-[16/9] w-full max-w-full overflow-hidden rounded-lg transition-all duration-300 ${deck.data?.isImporting ? 'bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-950/30 dark:to-orange-900/20' : ''}`}>
         <div className="absolute inset-0 w-full h-full flex items-center justify-center">
           {deck.data?.isGenerating ? (
             <div className="flex flex-col items-center justify-center gap-4 p-4">

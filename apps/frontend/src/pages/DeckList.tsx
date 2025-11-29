@@ -435,14 +435,14 @@ const VirtualizedPopupDeckGrid = React.memo(({
         >
           {visibleDecks.has(index) ? (
             <div
-              className="group relative cursor-pointer border hover:shadow-md transition-all duration-300 rounded-lg overflow-hidden"
+              className="group relative cursor-pointer border border-zinc-200 dark:border-zinc-800 hover:shadow-md dark:hover:shadow-black/40 transition-all duration-300 rounded-lg overflow-hidden bg-white dark:bg-zinc-900"
               onClick={() => onEdit(deck)}
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
                 <div className="absolute inset-0 w-full h-full flex items-center justify-center">
                   <DeckThumbnail deck={deck} />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-800/70 dark:from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-end p-2">
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-800/70 dark:from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-end p-2">
                   <div className="flex gap-1">
                     <Button
                       variant="ghost"
@@ -458,7 +458,7 @@ const VirtualizedPopupDeckGrid = React.memo(({
                   </div>
                 </div>
               </div>
-              <div className="p-3">
+              <div className="p-3 bg-white dark:bg-zinc-900">
                 <div className="flex flex-col items-start">
                   <h3 className="text-xs font-black text-foreground break-words border-0">
                     {deck.name || 'Untitled presentation'}
@@ -470,9 +470,9 @@ const VirtualizedPopupDeckGrid = React.memo(({
               </div>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
               <div className="aspect-[16/9] bg-zinc-200 dark:bg-zinc-800"></div>
-              <div className="p-3 space-y-2">
+              <div className="p-3 space-y-2 bg-white dark:bg-zinc-900">
                 <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4"></div>
                 <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded w-1/2"></div>
               </div>
@@ -2000,7 +2000,7 @@ const DeckList: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 selection:bg-orange-100 selection:text-orange-900">
+                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300 dark:bg-zinc-950">
                   {/* Particle Background */}
 
 
@@ -2040,8 +2040,8 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-center bg-white rounded-2xl shadow-xl shadow-slate-200/50 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
-                                  isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50" : "border-slate-200"
+                                  "relative flex items-center bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
                                 onDragOver={handleHeroDragOver}
@@ -2050,11 +2050,11 @@ const DeckList: React.FC = () => {
                               >
                                 {/* Drop Zone Overlay */}
                                 {isHeroDraggingOver && (
-                                  <div className="absolute inset-0 bg-orange-50 flex items-center justify-center rounded-2xl bg-opacity-90 backdrop-blur-sm z-20">
-                                    <p className="text-orange-600 font-medium flex items-center flex-col">
+                                  <div className="absolute inset-0 bg-orange-50 dark:bg-orange-950/80 flex items-center justify-center rounded-2xl bg-opacity-90 backdrop-blur-sm z-20">
+                                    <p className="text-orange-600 dark:text-orange-400 font-medium flex items-center flex-col">
                                       <Upload className="h-6 w-6 mb-2" />
                                       <span className="text-center">Drop files here</span>
-                                      <span className="text-xs mt-1 text-orange-500/70">Images, PDFs, Excel, PowerPoint</span>
+                                      <span className="text-xs mt-1 text-orange-500/70 dark:text-orange-400/70">Images, PDFs, Excel, PowerPoint</span>
                                     </p>
                                   </div>
                                 )}
@@ -2062,7 +2062,7 @@ const DeckList: React.FC = () => {
                                 {/* Input Field with Typewriter Placeholder */}
                                 <div className="flex-1 relative">
                                   <Input
-                                    className="w-full border-none shadow-none focus-visible:ring-0 h-14 bg-transparent placeholder:text-slate-300 px-4 font-sans"
+                                    className="w-full border-none shadow-none focus-visible:ring-0 h-14 bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 font-sans dark:text-zinc-100"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
@@ -2072,16 +2072,16 @@ const DeckList: React.FC = () => {
                                     }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute inset-0 pointer-events-none flex items-center px-4 text-lg text-slate-400">
+                                    <div className="absolute inset-0 pointer-events-none flex items-center px-4 text-lg text-slate-400 dark:text-zinc-500">
                                       <span className="whitespace-pre">I want to create </span>
-                                      <span className="text-slate-300">{typewriterText}</span>
+                                      <span className="text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="animate-pulse text-orange-500">|</span>
                                     </div>
                                   )}
                                 </div>
 
                                 {/* Actions Divider */}
-                                <div className="h-8 w-px bg-slate-200 mx-2"></div>
+                                <div className="h-8 w-px bg-slate-200 dark:bg-zinc-700 mx-2"></div>
 
                                 {/* Action Buttons */}
                                 <div className="flex items-center gap-1 pr-2">
@@ -2089,7 +2089,7 @@ const DeckList: React.FC = () => {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-colors"
+                                    className="h-8 w-8 text-slate-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50 rounded-xl transition-colors"
                                     onClick={() => fileInputRef.current?.click()}
                                     title="Upload files"
                                   >
@@ -2109,19 +2109,19 @@ const DeckList: React.FC = () => {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                        className="h-8 w-8 text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-xl transition-colors"
                                         title="Add link"
                                       >
                                         <LinkIcon size={18} />
                                       </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-80 p-3" side="top" align="center">
+                                    <PopoverContent className="w-80 p-3 dark:bg-zinc-900 dark:border-zinc-700" side="top" align="center">
                                       <div className="flex gap-2">
                                         <Input
                                           placeholder="Paste URL..."
                                           value={linkInput}
                                           onChange={(e) => setLinkInput(e.target.value)}
-                                          className="h-9"
+                                          className="h-9 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
                                           onKeyDown={(e) => e.key === 'Enter' && handleLinkAdd()}
                                         />
                                         <Button size="sm" onClick={handleLinkAdd} className="bg-blue-600 hover:bg-blue-700 text-white h-9 w-9 p-0">
@@ -2136,7 +2136,7 @@ const DeckList: React.FC = () => {
                                     <PopoverTrigger asChild>
                                       <Button
                                         variant="ghost"
-                                        className="h-8 border-none shadow-none bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium rounded-lg focus:ring-0 gap-2 px-3"
+                                        className="h-8 border-none shadow-none bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-xs font-medium rounded-lg focus:ring-0 gap-2 px-3"
                                       >
                                         <span className="truncate">
                                           {slideCount === undefined ? 'Auto' :
@@ -2146,9 +2146,9 @@ const DeckList: React.FC = () => {
                                         <ChevronDown className="h-3 w-3 opacity-50" />
                                       </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[280px] p-3" align="end">
+                                    <PopoverContent className="w-[280px] p-3 dark:bg-zinc-900 dark:border-zinc-700" align="end">
                                       <div className="space-y-3">
-                                        <div className="font-medium text-xs text-slate-500 uppercase tracking-wider">Number of Slides</div>
+                                        <div className="font-medium text-xs text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Number of Slides</div>
 
                                         {/* Auto Option */}
                                         <button
@@ -2159,8 +2159,8 @@ const DeckList: React.FC = () => {
                                           className={cn(
                                             "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
                                             slideCount === undefined
-                                              ? "bg-orange-50 border-orange-500 text-orange-700"
-                                              : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                              ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
+                                              : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
                                           )}
                                         >
                                           Auto (Recommended)
@@ -2178,8 +2178,8 @@ const DeckList: React.FC = () => {
                                               className={cn(
                                                 "py-2 rounded-lg text-xs font-medium transition-all border",
                                                 slideCount === num
-                                                  ? "bg-orange-50 border-orange-500 text-orange-700"
-                                                  : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                                  ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
+                                                  : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
                                               )}
                                             >
                                               {num}
@@ -2196,8 +2196,8 @@ const DeckList: React.FC = () => {
                                           className={cn(
                                             "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
                                             slideCount === 12
-                                              ? "bg-orange-50 border-orange-500 text-orange-700"
-                                              : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                                              ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
+                                              : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
                                           )}
                                         >
                                           10+ Slides
@@ -2226,12 +2226,12 @@ const DeckList: React.FC = () => {
                             {uploadedFiles.length > 0 && (
                               <div className="mt-4 flex flex-wrap gap-2 justify-center animate-in fade-in slide-in-from-top-2">
                                 {uploadedFiles.map((file, i) => (
-                                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-white/80 backdrop-blur-sm border border-slate-200 rounded-lg shadow-sm text-sm text-slate-600">
+                                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 rounded-lg shadow-sm text-sm text-slate-600 dark:text-zinc-300">
                                     <FilePlus size={14} className="text-orange-500" />
                                     <span className="max-w-[150px] truncate">{file.name}</span>
                                     <button
                                       onClick={() => setUploadedFiles(prev => prev.filter((_, idx) => idx !== i))}
-                                      className="ml-1 text-slate-400 hover:text-red-500 transition-colors"
+                                      className="ml-1 text-slate-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                                     >
                                       <X size={14} />
                                     </button>
@@ -2251,31 +2251,31 @@ const DeckList: React.FC = () => {
                     onMouseDown={handleResizeStart}
                   >
                     <div className="absolute inset-y-0 -left-2 -right-2 z-50" /> {/* Hit area */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 bg-zinc-300 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 bg-zinc-300 dark:bg-zinc-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
 
                   {/* Right Pane: Deck List */}
                   <div
-                    className="h-full bg-white/60 backdrop-blur-xl border-l border-white/50 shadow-xl shadow-slate-200/50 relative z-10 flex flex-col flex-none"
+                    className="h-full bg-white/60 dark:bg-zinc-900/90 backdrop-blur-xl border-l border-white/50 dark:border-zinc-800/50 shadow-xl shadow-slate-200/50 dark:shadow-black/30 relative z-10 flex flex-col flex-none"
                     style={{ width: `${deckListWidth}%` }}
                   >
-                    <div className="p-4 pt-20 border-b border-zinc-100 flex-shrink-0">
+                    <div className="p-4 pt-20 border-b border-zinc-100 dark:border-zinc-800 flex-shrink-0">
                       <div className="flex flex-col gap-4">
                         <div className="relative w-full">
-                          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                           <Input
                             type="text"
                             placeholder="Search..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-white/50 border-zinc-200 focus:bg-white pl-10 h-9 rounded-lg text-sm"
+                            className="w-full bg-white/50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-800 pl-10 h-9 rounded-lg text-sm dark:text-zinc-100 dark:placeholder:text-zinc-500"
                           />
                         </div>
 
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                          <TabsList className="w-full bg-zinc-100/50 p-1 rounded-lg grid grid-cols-2">
-                            <TabsTrigger value="by-me" className="rounded-md text-xs">My Decks</TabsTrigger>
-                            <TabsTrigger value="shared" className="rounded-md text-xs">Shared</TabsTrigger>
+                          <TabsList className="w-full bg-zinc-100/50 dark:bg-zinc-800/50 p-1 rounded-lg grid grid-cols-2">
+                            <TabsTrigger value="by-me" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">My Decks</TabsTrigger>
+                            <TabsTrigger value="shared" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">Shared</TabsTrigger>
                           </TabsList>
                         </Tabs>
                       </div>
@@ -2287,7 +2287,7 @@ const DeckList: React.FC = () => {
                           {isLoading ? (
                             <div className="grid grid-cols-1 gap-4">
                               {[1, 2, 3, 4].map((i) => (
-                                <div key={i} className="aspect-[16/9] bg-zinc-100 rounded-xl animate-pulse" />
+                                <div key={i} className="aspect-[16/9] bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />
                               ))}
                             </div>
                           ) : filteredDecks.length === 0 ? (
@@ -2309,7 +2309,7 @@ const DeckList: React.FC = () => {
                           {isLoadingShared ? (
                             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-500" /></div>
                           ) : sharedDecks.length === 0 ? (
-                            <div className="text-center py-12 text-zinc-500 text-sm">No shared presentations found.</div>
+                            <div className="text-center py-12 text-zinc-500 dark:text-zinc-400 text-sm">No shared presentations found.</div>
                           ) : (
                             <VirtualizedDeckGrid
                               decks={sharedDecks}

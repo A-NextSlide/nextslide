@@ -13,7 +13,7 @@ const EmptyDeckList: React.FC<EmptyDeckListProps> = ({ searchQuery, onCreateDeck
   if (authError && !searchQuery) {
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-zinc-300 dark:text-zinc-400">
+        <h3 className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
           Unable to load presentations
         </h3>
         <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-2">
@@ -33,7 +33,7 @@ const EmptyDeckList: React.FC<EmptyDeckListProps> = ({ searchQuery, onCreateDeck
 
   return (
     <div className="text-center py-12">
-      <h3 className="text-lg font-medium text-zinc-300 dark:text-zinc-400">
+      <h3 className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
         {searchQuery ? 'No presentations match your search.' : "You haven\'t created any presentations yet"}
       </h3>
       {!searchQuery && (
