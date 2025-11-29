@@ -1320,37 +1320,37 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
   };
 
   return (
-    <div className="bg-background/95 backdrop-blur-sm rounded-md p-1 shadow-sm border border-border flex items-center gap-1 self-start" data-tour="component-toolbar" style={{ position: 'relative', zIndex: 100001 }}>
+    <div className="bg-background/95 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-border flex items-center gap-0.5 self-start" data-tour="component-toolbar" style={{ position: 'relative', zIndex: 100001 }}>
       <TooltipProvider>
         {/* Snap Toggle */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
+            <Button
               variant={isSnapEnabled ? "default" : "ghost"}
-              size="icon" 
-              className="h-8 w-8 rounded-md"
+              size="icon"
+              className="h-7 w-7 rounded"
               onClick={() => toggleSnap()}
             >
-              <Magnet size={16} className={isSnapEnabled ? "text-primary-foreground" : ""} />
+              <Magnet size={14} className={isSnapEnabled ? "text-primary-foreground" : ""} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
             <p className="text-xs">{isSnapEnabled ? "Snap Enabled" : "Snap Disabled"}</p>
           </TooltipContent>
         </Tooltip>
-        
+
         {/* Theme Panel (Revised Structure) */}
         <Popover open={isThemeOpen} onOpenChange={setIsThemeOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
-               <PopoverTrigger asChild> 
-                 <Button 
-                   variant="ghost" 
-                   size="icon" 
-                   className="h-8 w-8 rounded-md"
+               <PopoverTrigger asChild>
+                 <Button
+                   variant="ghost"
+                   size="icon"
+                   className="h-7 w-7 rounded"
                    data-tour="theme-button"
                  >
-                   <Palette size={16} />
+                   <Palette size={14} />
                  </Button>
                </PopoverTrigger>
             </TooltipTrigger>
@@ -1364,32 +1364,32 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
         </Popover>
 
         {/* Divider */}
-        <div className="h-6 w-px bg-border/50 mx-0.5"></div>
+        <div className="h-5 w-px bg-border/50 mx-0.5"></div>
 
         {/* Text Component - Now TiptapTextBlock by default */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 rounded-md"
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded"
               onClick={() => handleAddComponent('TiptapTextBlock')}
             >
-              <Type size={16} />
+              <Type size={14} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
             <p className="text-xs">Add Text</p>
           </TooltipContent>
         </Tooltip>
-        
+
         {/* Lines Component */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button 
+            <Button
               variant={isCreatingLine ? "default" : "ghost"}
-              size="icon" 
-              className="h-8 w-8 rounded-md"
+              size="icon"
+              className="h-7 w-7 rounded"
               onClick={() => {
                 // Toggle line creation mode
                 if (isCreatingLine) {

@@ -229,25 +229,23 @@ const SharedDeckView: React.FC = () => {
             ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
           }}
         >
-          <NavigationProvider initialSlideIndex={index} onSlideChange={() => {}}>
-            <EditorStateProvider initialEditingState={false}>
-              <ActiveSlideProvider>
-                <Slide
-                  key={slide.id}
-                  slide={slide}
-                  isActive={true}
-                  direction={null}
-                  isEditing={false}
-                  onSave={() => {}}
-                  selectedComponentId={undefined}
-                  onComponentSelect={() => {}}
-                />
-              </ActiveSlideProvider>
-            </EditorStateProvider>
-          </NavigationProvider>
+          <EditorStateProvider initialEditingState={false}>
+            <ActiveSlideProvider>
+              <Slide
+                key={slide.id}
+                slide={slide}
+                isActive={true}
+                direction={null}
+                isEditing={false}
+                onSave={() => {}}
+                selectedComponentId={undefined}
+                onComponentSelect={() => {}}
+              />
+            </ActiveSlideProvider>
+          </EditorStateProvider>
           {/* Add watermark for view-only decks */}
           {!canEdit && (
-            <Watermark 
+            <Watermark
               text="VIEW ONLY"
               opacity={0.08}
               fontSize={80}

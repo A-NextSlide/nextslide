@@ -72,16 +72,16 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle fullscreen toggle (desktop only)
+  // Handle fullscreen toggle
   const toggleFullscreen = async () => {
-    if (isMobile) return; // Fullscreen API doesn't work on mobile
-
     try {
       if (isFullscreen) {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
         } else if ((document as any).webkitExitFullscreen) {
           (document as any).webkitExitFullscreen();
+        } else if ((document as any).msExitFullscreen) {
+          (document as any).msExitFullscreen();
         }
       } else {
         const elem = presentationRef.current || document.documentElement;
@@ -89,6 +89,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           await elem.requestFullscreen();
         } else if ((elem as any).webkitRequestFullscreen) {
           (elem as any).webkitRequestFullscreen();
+        } else if ((elem as any).msRequestFullscreen) {
+          (elem as any).msRequestFullscreen();
         }
       }
     } catch (err) {
@@ -388,19 +390,20 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     <Grid3X3 size={18} />
                   </motion.button>
 
-                  {/* Fullscreen toggle - desktop only */}
-                  {!isMobile && (
-                    <motion.button
-                      initial={{ y: -20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      transition={{ delay: 0.2 }}
-                      onClick={toggleFullscreen}
-                      className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
-                      title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                    >
-                      {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                    </motion.button>
-                  )}
+                  {/* Fullscreen toggle */}
+                  <motion.button
+                    initial={{ y: -20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    onClick={toggleFullscreen}
+                    className={cn(
+                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 transition-colors border border-white/20",
+                      isMobile ? "p-3" : "p-2"
+                    )}
+                    title={isFullscreen ? "Exit fullscreen" : "Full Screen"}
+                  >
+                    {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
+                  </motion.button>
 
                   {/* Exit button */}
                   <motion.button
