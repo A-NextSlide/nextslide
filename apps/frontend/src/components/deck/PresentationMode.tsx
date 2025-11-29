@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
-import { useSlideNavigation } from '@/hooks/useSlideNavigation';
+import { useNavigation } from '@/context/NavigationContext';
 import { SlideData } from '@/types/SlideTypes';
 import { cn } from '@/lib/utils';
 import { DEFAULT_SLIDE_HEIGHT, DEFAULT_SLIDE_WIDTH } from '@/utils/deckUtils';
@@ -32,25 +32,25 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     setShowThumbnails
   } = usePresentationStore();
 
-  // Use useSlideNavigation but override with prop-based navigation for reliability
-  const slideNav = useSlideNavigation();
+  // Use NavigationContext directly for reliable navigation
+  const { setCurrentSlideIndex } = useNavigation();
 
   // Create navigation functions that work with the slides prop
   const goToNextSlide = () => {
     if (currentSlideIndex < slides.length - 1) {
-      slideNav.goToSlide(currentSlideIndex + 1);
+      setCurrentSlideIndex(currentSlideIndex + 1);
     }
   };
 
   const goToPrevSlide = () => {
     if (currentSlideIndex > 0) {
-      slideNav.goToSlide(currentSlideIndex - 1);
+      setCurrentSlideIndex(currentSlideIndex - 1);
     }
   };
 
   const goToSlide = (index: number) => {
     if (index >= 0 && index < slides.length) {
-      slideNav.goToSlide(index);
+      setCurrentSlideIndex(index);
     }
   };
   const lastMouseMove = useRef<number>(0);
@@ -72,40 +72,27 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle fullscreen/landscape toggle
+  // Handle fullscreen toggle (desktop only)
   const toggleFullscreen = async () => {
+    if (isMobile) return; // Fullscreen API doesn't work on mobile
+
     try {
-      if (isMobile) {
-        // On mobile, request landscape orientation
-        const screen = window.screen as any;
-        if (screen.orientation && screen.orientation.lock) {
-          if (screen.orientation.type.includes('landscape')) {
-            // Already in landscape, unlock to allow rotation
-            await screen.orientation.unlock();
-          } else {
-            // Lock to landscape
-            await screen.orientation.lock('landscape');
-          }
+      if (isFullscreen) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
         }
       } else {
-        // On desktop, use fullscreen API
-        if (isFullscreen) {
-          if (document.exitFullscreen) {
-            await document.exitFullscreen();
-          } else if ((document as any).webkitExitFullscreen) {
-            (document as any).webkitExitFullscreen();
-          }
-        } else {
-          const elem = presentationRef.current || document.documentElement;
-          if (elem.requestFullscreen) {
-            await elem.requestFullscreen();
-          } else if ((elem as any).webkitRequestFullscreen) {
-            (elem as any).webkitRequestFullscreen();
-          }
+        const elem = presentationRef.current || document.documentElement;
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if ((elem as any).webkitRequestFullscreen) {
+          (elem as any).webkitRequestFullscreen();
         }
       }
     } catch (err) {
-      console.log('Fullscreen/orientation not supported:', err);
+      console.log('Fullscreen not supported:', err);
     }
   };
   
@@ -401,20 +388,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     <Grid3X3 size={18} />
                   </motion.button>
 
-                  {/* Fullscreen toggle */}
-                  <motion.button
-                    initial={{ y: -20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                    onClick={toggleFullscreen}
-                    className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 transition-colors border border-white/20",
-                      isMobile ? "p-3" : "p-2"
-                    )}
-                    title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                  >
-                    {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
-                  </motion.button>
+                  {/* Fullscreen toggle - desktop only */}
+                  {!isMobile && (
+                    <motion.button
+                      initial={{ y: -20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                      onClick={toggleFullscreen}
+                      className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                      title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    >
+                      {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </motion.button>
+                  )}
 
                   {/* Exit button */}
                   <motion.button
@@ -490,21 +476,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Mobile landscape button - shows when on mobile in portrait */}
-      {isMobile && !showThumbnails && (
-        <motion.button
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 20, opacity: 0 }}
-          transition={{ delay: 0.5 }}
-          onClick={toggleFullscreen}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 bg-white/90 text-black rounded-full px-5 py-3 flex items-center gap-2 shadow-xl font-medium active:scale-95 transition-transform"
-        >
-          <RotateCcw size={20} />
-          <span>Landscape</span>
-        </motion.button>
-      )}
 
       {/* Thumbnail grid overlay */}
       <AnimatePresence>

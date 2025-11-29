@@ -214,13 +214,14 @@ const SlideFactoryOverlay: React.FC<SlideFactoryOverlayProps> = ({
             }}
             animate={{
               y: [0, -30, 0],
-              opacity: [0.2, 0.8, 0.2],
+              opacity: [0.2, 0.6, 0.2],
               scale: [0.5, 1, 0.5],
             }}
             transition={{
-              duration: 3 + Math.random() * 2,
+              duration: 6 + Math.random() * 4,
               repeat: Infinity,
-              delay: Math.random() * 3,
+              delay: Math.random() * 5,
+              ease: "easeInOut",
             }}
           />
         ))}
@@ -241,10 +242,10 @@ const SlideFactoryOverlay: React.FC<SlideFactoryOverlayProps> = ({
               className="w-8 h-2 bg-gray-600 rounded mx-2 flex-shrink-0"
               animate={{ x: [-100, 0] }}
               transition={{
-                duration: 2,
+                duration: 4,
                 repeat: Infinity,
                 ease: 'linear',
-                delay: i * 0.1,
+                delay: i * 0.2,
               }}
             />
           ))}
@@ -592,21 +593,21 @@ const SlideFactoryOverlay: React.FC<SlideFactoryOverlayProps> = ({
         <motion.div
           className="text-4xl opacity-20"
           animate={{ rotate: 360 }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
         >
           ⚙️
         </motion.div>
         <motion.div
           className="text-5xl opacity-20"
           animate={{ rotate: -360 }}
-          transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
         >
           ⚙️
         </motion.div>
         <motion.div
           className="text-3xl opacity-20"
           animate={{ rotate: 360 }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
         >
           ⚙️
         </motion.div>
