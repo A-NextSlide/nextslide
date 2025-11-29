@@ -329,6 +329,9 @@ def get_client(model_name: str, api_key: str = None, base_url: str = None, wrap_
             gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not gemini_key:
                 raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set")
+            # Debug: Log key info when creating Gemini client
+            key_preview = f"{gemini_key[:4]}...{gemini_key[-4:]}" if len(gemini_key) > 8 else "***"
+            print(f"[GET_CLIENT] 🔑 Creating Gemini client with API key: {key_preview} (len={len(gemini_key)})")
             client_kwargs["api_key"] = gemini_key
         else:
             client_kwargs["api_key"] = client_config["api_key"]
@@ -932,6 +935,14 @@ def invoke(
                     # Add system content if present
                     if system_content:
                         prompt = f"System: {system_content}\n{prompt}"
+
+                    # Debug: Check API key status
+                    _runtime_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                    if _runtime_key:
+                        _key_preview = f"{_runtime_key[:4]}...{_runtime_key[-4:]}" if len(_runtime_key) > 8 else "***"
+                        print(f"[GEMINI FREEFORM] 🔑 API key at runtime: {_key_preview} (len={len(_runtime_key)})")
+                    else:
+                        print(f"[GEMINI FREEFORM] ⚠️ NO API KEY FOUND AT RUNTIME!")
 
                     print(f"[GEMINI FREEFORM] 🎯 Using model: {model}")
                     print(f"[GEMINI FREEFORM] 📝 Prompt length: {len(prompt)} chars")

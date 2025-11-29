@@ -2168,8 +2168,8 @@ async def process_content_enhancement(content: str, enhance_prompt: str = "") ->
         logger.info(f"Enhancing content with Google Search grounding")
         logger.info(f"Content length: {len(content)}, Enhance prompt: {enhance_prompt[:100]}...")
         
-        # Use Claude Haiku for cost-effective enhancement (Gemini API key invalid in prod)
-        model_name = "claude-haiku-4-5"
+        # Use Gemini Flash-Lite for cost-effective search grounding
+        model_name = "gemini-2.5-flash-lite"
         client, actual_model = get_client(model_name)
         
         # Build the enhanced prompt that encourages search usage
