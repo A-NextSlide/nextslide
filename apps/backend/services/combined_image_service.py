@@ -14,6 +14,69 @@ import json
 
 import logging
 
+# AI-powered search term extraction
+async def extract_image_search_terms_with_ai(
+    slide_title: str,
+    slide_content: str,
+    presentation_title: str = "",
+    presentation_context: str = ""
+) -> List[str]:
+    """
+    Use AI to extract smart, contextual image search terms for a slide.
+
+    This produces much better results than regex because it understands:
+    - The actual topic of the slide
+    - Industry/domain context
+    - What kinds of images would be relevant
+    """
+    from agents.ai.clients import get_client, invoke
+
+    try:
+        client, model_name = get_client("claude-haiku-4-5")
+
+        prompt = f"""Generate 3-5 specific image search queries for this presentation slide.
+
+PRESENTATION: {presentation_title}
+SLIDE TITLE: {slide_title}
+SLIDE CONTENT: {slide_content[:800]}
+{f"CONTEXT: {presentation_context}" if presentation_context else ""}
+
+RULES:
+1. Generate queries that would find RELEVANT, PROFESSIONAL photos
+2. Focus on the MAIN SUBJECT - companies, products, industries, concepts
+3. Be SPECIFIC - "grocery delivery warehouse" not "warehouse"
+4. Include company/brand names if mentioned (Tesla, Apple, etc)
+5. AVOID generic terms: business, success, teamwork, strategy, growth
+6. Think about what PHOTO would illustrate this slide well
+
+Return ONLY a JSON array of 3-5 search queries:
+["query 1", "query 2", "query 3"]"""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            500,
+            0.3
+        )
+
+        # Parse JSON array from response
+        response_str = str(response).strip()
+        match = re.search(r'\[.*?\]', response_str, re.DOTALL)
+        if match:
+            terms = json.loads(match.group())
+            logger.info(f"[AI IMAGE SEARCH] Generated terms for '{slide_title}': {terms}")
+            return terms[:5]
+    except Exception as e:
+        logger.warning(f"[AI IMAGE SEARCH] AI extraction failed: {e}")
+
+    return []
+
+
 from services.serpapi_service import SerpAPIService
 from services.perplexity_image_service import PerplexityImageService
 from services.gemini_image_service import GeminiImageService
@@ -1440,17 +1503,19 @@ class CombinedImageService:
                             topics_to_search[q] = []
                         topics_to_search[q].append(slide_id)
         else:
-            logger.info("No deck-wide topics found, extracting topics from slide content...")
-            # Fallback to content-based extraction
+            logger.info("No deck-wide topics found, using AI to extract smart search terms...")
+            # Use AI-powered extraction for better results
+            presentation_title = getattr(deck_outline, 'title', '') or ''
+
             for slide_idx, slide in enumerate(deck_outline.slides):
                 # Check if slide needs images
                 if not self._slide_needs_images(slide, slide_idx):
                     logger.debug(f"Skipping slide {slide_idx + 1} '{getattr(slide, 'title', '')}' - doesn't need images")
                     continue
-                
+
                 slide_id = slide.id
                 slide_topic_list = []
-                
+
                 # Extract topics from slide content
                 if search_queries and slide_id in search_queries:
                     # Use pre-generated queries if available
@@ -1458,32 +1523,49 @@ class CombinedImageService:
                     if query:
                         slide_topic_list.append(query)
                 else:
-                    # Generate topics from slide content
-                    topics = []
-                    
-                    # From title
-                    if slide.title:
-                        logger.debug(f"Slide {slide_id} title: {slide.title}")
-                        title_topics = self._extract_topics_from_text(slide.title)
-                        if title_topics:
-                            topics.extend(title_topics)
-                            logger.debug(f"Title topics: {title_topics}")
-                    
-                    # From content (if we don't have enough topics)
-                    if len(topics) < 2 and slide.content:
-                        content_topics = self._extract_topics_from_text(slide.content[:300])  # First 300 chars
-                        if content_topics:
-                            topics.extend(content_topics)
+                    # Try AI-powered extraction first (much better quality)
+                    slide_title = getattr(slide, 'title', '') or ''
+                    slide_content = getattr(slide, 'content', '') or ''
+
+                    try:
+                        ai_topics = await extract_image_search_terms_with_ai(
+                            slide_title=slide_title,
+                            slide_content=slide_content,
+                            presentation_title=presentation_title
+                        )
+                        if ai_topics:
+                            logger.info(f"[AI IMAGE] Slide '{slide_title}' -> {ai_topics}")
+                            slide_topic_list.extend(ai_topics[:3])
+                    except Exception as e:
+                        logger.warning(f"[AI IMAGE] Failed for slide {slide_idx}: {e}")
+
+                    # Fallback to regex if AI fails or returns nothing
+                    if not slide_topic_list:
+                        topics = []
+
+                        # From title
+                        if slide.title:
+                            logger.debug(f"Slide {slide_id} title: {slide.title}")
+                            title_topics = self._extract_topics_from_text(slide.title)
+                            if title_topics:
+                                topics.extend(title_topics)
+                                logger.debug(f"Title topics: {title_topics}")
+
+                        # From content (if we don't have enough topics)
+                        if len(topics) < 2 and slide.content:
+                            content_topics = self._extract_topics_from_text(slide.content[:300])  # First 300 chars
+                            if content_topics:
+                                topics.extend(content_topics)
                             logger.debug(f"Content topics: {content_topics}")
 
-                    # Use deck title as context if we still need topics
-                    if len(topics) < 1:
-                        deck_title_topics = self._extract_topics_from_text(deck_outline.title)
-                        if deck_title_topics:
-                            topics.extend(deck_title_topics)
-                            logger.debug(f"Deck title topics: {deck_title_topics}")
-                    
-                    slide_topic_list = list(dict.fromkeys(topics))[:3]  # Deduplicate and limit to 3
+                        # Use deck title as context if we still need topics
+                        if len(topics) < 1:
+                            deck_title_topics = self._extract_topics_from_text(deck_outline.title)
+                            if deck_title_topics:
+                                topics.extend(deck_title_topics)
+                                logger.debug(f"Deck title topics: {deck_title_topics}")
+
+                        slide_topic_list = list(dict.fromkeys(topics))[:3]  # Deduplicate and limit to 3
                 
                 logger.debug(f"Slide {slide_idx + 1} '{slide.title}' final topics: {slide_topic_list}")
                 
