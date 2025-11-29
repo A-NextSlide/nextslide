@@ -16,6 +16,8 @@ import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { ComponentRenderer } from '@/renderers/ComponentRenderer';
+import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { EditorStateProvider } from '@/context/EditorStateContext';
 
 const SharedDeckView: React.FC = () => {
   const { shareCode } = useParams<{ shareCode: string }>();
@@ -230,22 +232,26 @@ const SharedDeckView: React.FC = () => {
             ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
           }}
         >
-          {/* Render components directly without heavy context wrappers */}
-          {components.map((component) => {
-            if (!component || !component.id) return null;
-            return (
-              <ComponentRenderer
-                key={component.id}
-                component={component}
-                isEditing={false}
-                isSelected={false}
-                onSelect={() => {}}
-                onUpdate={() => {}}
-                slideId={slide.id}
-                allComponents={components}
-              />
-            );
-          })}
+          <EditorStateProvider initialEditingState={false}>
+            <ActiveSlideProvider>
+              {/* Render components */}
+              {components.map((component) => {
+                if (!component || !component.id) return null;
+                return (
+                  <ComponentRenderer
+                    key={component.id}
+                    component={component}
+                    isEditing={false}
+                    isSelected={false}
+                    onSelect={() => {}}
+                    onUpdate={() => {}}
+                    slideId={slide.id}
+                    allComponents={components}
+                  />
+                );
+              })}
+            </ActiveSlideProvider>
+          </EditorStateProvider>
           {/* Add watermark for view-only decks */}
           {!canEdit && (
             <Watermark
