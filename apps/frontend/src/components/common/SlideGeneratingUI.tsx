@@ -8,6 +8,20 @@ interface SlideGeneratingUIProps {
   message?: string;
 }
 
+// Fun factory workers with their messages
+const WORKER_MESSAGES = [
+  { emoji: '⚡', name: 'Bolt', message: 'Speed-running the pixels...' },
+  { emoji: '🎨', name: 'Pixel', message: 'Making it look absolutely perfect!' },
+  { emoji: '☕', name: 'Bean', message: 'Caffeinating the algorithms...' },
+  { emoji: '📊', name: 'Data', message: 'Crunching the layout math!' },
+  { emoji: '🐛', name: 'Bug', message: 'Checking for Comic Sans... coast clear!' },
+  { emoji: '🔧', name: 'Wrench', message: 'Tightening the visual bolts!' },
+  { emoji: '✨', name: 'Spark', message: 'Adding extra sparkle!' },
+  { emoji: '🎯', name: 'Target', message: 'Aligning everything perfectly!' },
+  { emoji: '🚀', name: 'Rocket', message: 'Boosting render speed!' },
+  { emoji: '🧙', name: 'Wizard', message: 'Casting design spells!' },
+];
+
 // Define different slide layout sketches - these will be drawn as if being sketched
 interface SlideSketch {
   id: string;
@@ -173,6 +187,7 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
   // Animated progress state - initialize with current progress
   const [animatedProgress, setAnimatedProgress] = useState(progress);
   const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
+  const [currentWorkerIndex, setCurrentWorkerIndex] = useState(0);
   
   // Use refs to track animation state without causing re-renders
   const targetProgressRef = useRef(progress);
@@ -291,6 +306,20 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  // Cycle through worker messages
+  useEffect(() => {
+    const workerCycleTime = 3000;
+    const interval = setInterval(() => {
+      if (isComponentVisibleRef.current) {
+        setCurrentWorkerIndex((prev) => (prev + 1) % WORKER_MESSAGES.length);
+      }
+    }, workerCycleTime);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const currentWorker = WORKER_MESSAGES[currentWorkerIndex];
+
   // Color scheme based on theme
   const isDarkMode = document.documentElement.classList.contains('dark');
   const lineColor = '#FF4301'; // Orange from theme generation
@@ -356,6 +385,51 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
 
 
 
+      {/* Worker message at top */}
+      <div className="absolute top-4 left-4 right-4">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentWorkerIndex}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.3 }}
+            className="flex items-center gap-2 justify-center"
+          >
+            <motion.span
+              className="text-2xl"
+              animate={{ 
+                rotate: [0, -10, 10, 0],
+                scale: [1, 1.1, 1],
+              }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+            >
+              {currentWorker.emoji}
+            </motion.span>
+            <div className="flex items-center gap-2">
+              <span 
+                className="font-bold text-sm"
+                style={{ 
+                  color: lineColor,
+                  fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                }}
+              >
+                {currentWorker.name}:
+              </span>
+              <span 
+                className="text-sm"
+                style={{ 
+                  color: textColor,
+                  fontFamily: '"Inter", system-ui, sans-serif',
+                }}
+              >
+                "{currentWorker.message}"
+              </span>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
       {/* Progress bar - Always visible at bottom, styled like theme generation */}
       <div className="absolute bottom-4 left-4 right-4">
         <div className="flex items-center justify-between mb-2">
@@ -369,7 +443,7 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
               MozOsxFontSmoothing: 'grayscale'
             }}
           >
-            {slideNumber && totalSlides ? `Generating Slide ${slideNumber}` : 'Generating Theme'}
+            {slideNumber && totalSlides ? `🏭 Building Slide ${slideNumber}/${totalSlides}` : '🏭 Building Theme'}
           </span>
           <span 
             className="text-sm font-bold"
@@ -381,19 +455,28 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
             {Math.round(animatedProgress)}%
           </span>
         </div>
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
           <motion.div
-            className="h-1.5 rounded-full relative"
-            style={{ backgroundColor: lineColor }}
+            className="h-2 rounded-full relative"
+            style={{ 
+              background: 'linear-gradient(90deg, #FF4301, #FF6B35, #FF4301)',
+              backgroundSize: '200% 100%',
+            }}
             initial={{ width: 0 }}
-            animate={{ width: `${animatedProgress}%` }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            animate={{ 
+              width: `${animatedProgress}%`,
+              backgroundPosition: ['0% 0%', '100% 0%'],
+            }}
+            transition={{ 
+              width: { duration: 0.3, ease: "easeOut" },
+              backgroundPosition: { duration: 2, repeat: Infinity, ease: 'linear' },
+            }}
           >
             {/* Shimmer effect on progress bar */}
             <div 
               className="absolute inset-0"
               style={{
-                background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)`,
+                background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)`,
                 animation: 'shimmer 1.5s infinite'
               }}
             />

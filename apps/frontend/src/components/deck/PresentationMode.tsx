@@ -155,13 +155,16 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
   }, [isPresenting]);
 
-  // Handle mouse movement
+  // Handle mouse/touch movement and keyboard
   useEffect(() => {
     if (!isPresenting) return;
 
+    let touchStartX = 0;
+    let touchStartY = 0;
+
     const handleMouseMove = (e: MouseEvent) => {
       const now = Date.now();
-      
+
       // Throttle mouse move events
       if (now - lastMouseMove.current < 100) return;
       lastMouseMove.current = now;
@@ -171,6 +174,38 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       // Show controls
       setShowControls(true);
+    };
+
+    // Touch support for mobile
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+
+      // Show controls on touch
+      if (!showThumbnails) {
+        setShowControls(true);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (showThumbnails) return;
+
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+
+      // Only trigger swipe if horizontal movement is greater than vertical
+      // and the swipe distance is significant (> 50px)
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+        if (deltaX < 0) {
+          // Swipe left -> next slide
+          goToNextSlide();
+        } else {
+          // Swipe right -> previous slide
+          goToPrevSlide();
+        }
+      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -203,11 +238,15 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     };
 
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
@@ -223,16 +262,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-black"
+      style={{ height: '100dvh' }} // Use dvh for mobile Safari compatibility
     >
       {/* Main slide display */}
       <div className="relative w-full h-full flex items-center justify-center p-4">
-        <div 
+        <div
           ref={slideContainerRef}
           className="relative rounded-lg overflow-hidden"
           style={{
             width: '100%',
-            maxWidth: `min(95vw, calc(95vh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`,
-            aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`
+            maxWidth: `min(95vw, calc(95dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`,
+            aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
+            // Fallback height for browsers that don't support aspect-ratio
+            minHeight: `min(calc(95vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), 95dvh)`
           }}
         >
           {currentSlide && renderSlide(currentSlide, currentSlideIndex, slideScale)}
@@ -439,17 +481,15 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                       >
                         {/* Slide thumbnail */}
                         <div className="relative bg-white w-full h-full overflow-hidden">
-                          <div 
-                            className="absolute inset-0"
+                          <div
+                            className="absolute"
                             style={{
                               transform: `scale(${120 / DEFAULT_SLIDE_HEIGHT})`,
-                              transformOrigin: 'center',
+                              transformOrigin: 'top left',
                               width: `${DEFAULT_SLIDE_WIDTH}px`,
                               height: `${DEFAULT_SLIDE_HEIGHT}px`,
-                              left: '50%',
-                              top: '50%',
-                              marginLeft: `-${DEFAULT_SLIDE_WIDTH / 2}px`,
-                              marginTop: `-${DEFAULT_SLIDE_HEIGHT / 2}px`
+                              left: 0,
+                              top: 0
                             }}
                           >
                             {renderSlide(slide, index, 1)}

@@ -219,8 +219,8 @@ const SharedDeckView: React.FC = () => {
 
     return (
       <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-        <div 
-          className="absolute origin-top-left"
+        <div
+          className="absolute top-0 left-0 origin-top-left"
           style={{
             width: `${DEFAULT_SLIDE_WIDTH}px`,
             height: `${DEFAULT_SLIDE_HEIGHT}px`,
@@ -353,7 +353,7 @@ const SharedDeckView: React.FC = () => {
 
   // Render the presentation view
   return (
-    <div className="h-screen w-screen overflow-hidden relative">
+    <div className="w-screen overflow-hidden relative" style={{ height: '100dvh' }}>
       {/* Presentation Mode */}
       <NavigationProvider 
         initialSlideIndex={0}
