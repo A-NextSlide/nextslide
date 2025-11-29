@@ -72,29 +72,50 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle fullscreen toggle
+  // Handle fullscreen/landscape toggle
   const toggleFullscreen = async () => {
     try {
+      const elem = presentationRef.current || document.documentElement;
+
       if (isFullscreen) {
+        // Exit fullscreen
         if (document.exitFullscreen) {
           await document.exitFullscreen();
         } else if ((document as any).webkitExitFullscreen) {
           (document as any).webkitExitFullscreen();
-        } else if ((document as any).msExitFullscreen) {
-          (document as any).msExitFullscreen();
         }
+        // Unlock orientation
+        try {
+          const screen = window.screen as any;
+          if (screen.orientation?.unlock) {
+            screen.orientation.unlock();
+          }
+        } catch {}
       } else {
-        const elem = presentationRef.current || document.documentElement;
+        // Enter fullscreen
         if (elem.requestFullscreen) {
           await elem.requestFullscreen();
         } else if ((elem as any).webkitRequestFullscreen) {
           (elem as any).webkitRequestFullscreen();
-        } else if ((elem as any).msRequestFullscreen) {
-          (elem as any).msRequestFullscreen();
         }
+        // Lock to landscape on mobile
+        try {
+          const screen = window.screen as any;
+          if (screen.orientation?.lock) {
+            await screen.orientation.lock('landscape');
+          }
+        } catch {}
       }
     } catch (err) {
-      console.log('Fullscreen not supported:', err);
+      // Fullscreen failed, try just landscape lock on mobile
+      if (isMobile) {
+        try {
+          const screen = window.screen as any;
+          if (screen.orientation?.lock) {
+            await screen.orientation.lock('landscape');
+          }
+        } catch {}
+      }
     }
   };
   

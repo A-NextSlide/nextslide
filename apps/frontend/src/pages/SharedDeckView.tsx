@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Lock, AlertCircle, Edit, Presentation } from 'lucide-react';
+import { Loader2, Lock, AlertCircle, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,13 +11,11 @@ import { useDeckStore } from '@/stores/deckStore';
 import PresentationMode from '@/components/deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useReturnBannerStore } from '@/stores/returnBannerStore';
-import Slide from '@/components/Slide';
 import { SlideData } from '@/types/SlideTypes';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import Watermark from '@/components/common/Watermark';
 import { NavigationProvider } from '@/context/NavigationContext';
-import { EditorStateProvider } from '@/context/EditorStateContext';
-import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
+import { ComponentRenderer } from '@/renderers/ComponentRenderer';
 
 const SharedDeckView: React.FC = () => {
   const { shareCode } = useParams<{ shareCode: string }>();
@@ -217,6 +215,9 @@ const SharedDeckView: React.FC = () => {
       return undefined as string | undefined;
     })();
 
+    // Get components to render
+    const components = Array.isArray(slide.components) ? slide.components : [];
+
     return (
       <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
         <div
@@ -229,20 +230,22 @@ const SharedDeckView: React.FC = () => {
             ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
           }}
         >
-          <EditorStateProvider initialEditingState={false}>
-            <ActiveSlideProvider>
-              <Slide
-                key={slide.id}
-                slide={slide}
-                isActive={true}
-                direction={null}
+          {/* Render components directly without heavy context wrappers */}
+          {components.map((component) => {
+            if (!component || !component.id) return null;
+            return (
+              <ComponentRenderer
+                key={component.id}
+                component={component}
                 isEditing={false}
-                onSave={() => {}}
-                selectedComponentId={undefined}
-                onComponentSelect={() => {}}
+                isSelected={false}
+                onSelect={() => {}}
+                onUpdate={() => {}}
+                slideId={slide.id}
+                allComponents={components}
               />
-            </ActiveSlideProvider>
-          </EditorStateProvider>
+            );
+          })}
           {/* Add watermark for view-only decks */}
           {!canEdit && (
             <Watermark
