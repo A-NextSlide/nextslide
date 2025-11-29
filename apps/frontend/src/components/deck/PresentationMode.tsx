@@ -38,7 +38,45 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const thumbnailScrollRef = useRef<HTMLDivElement>(null);
   const slideContainerRef = useRef<HTMLDivElement>(null);
+  const presentationRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768 || 'ontouchstart' in window);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Handle fullscreen toggle with iOS Safari support
+  const toggleFullscreen = async () => {
+    try {
+      if (isFullscreen) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      } else {
+        const elem = presentationRef.current || document.documentElement;
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if ((elem as any).webkitRequestFullscreen) {
+          // iOS Safari
+          (elem as any).webkitRequestFullscreen();
+        } else if ((elem as any).webkitEnterFullscreen) {
+          // Older iOS
+          (elem as any).webkitEnterFullscreen();
+        }
+      }
+    } catch (err) {
+      console.log('Fullscreen not supported:', err);
+    }
+  };
   
   // Dispatch slidechange event when slide changes in presentation mode
   // This ensures chart animations are triggered properly
@@ -232,9 +270,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       }
     };
 
-    // Handle fullscreen changes
+    // Handle fullscreen changes (including webkit prefix for Safari)
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      setIsFullscreen(isFS);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -242,6 +281,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
@@ -249,6 +289,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
   }, [isPresenting, showThumbnails, setShowControls, exitPresentation, goToNextSlide, goToPrevSlide]);
 
@@ -258,6 +299,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   return (
     <motion.div
+      ref={presentationRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -333,16 +375,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    onClick={() => {
-                      if (isFullscreen) {
-                        document.exitFullscreen();
-                      } else {
-                        document.documentElement.requestFullscreen();
-                      }
-                    }}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    onClick={toggleFullscreen}
+                    className={cn(
+                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 transition-colors border border-white/20",
+                      isMobile ? "p-3" : "p-2"
+                    )}
+                    title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                   >
-                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
                   </motion.button>
 
                   {/* Exit button */}
@@ -361,7 +401,10 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             </div>
 
             {/* Navigation arrows */}
-            <div className="absolute top-1/2 -translate-y-1/2 left-6 right-6 flex justify-between pointer-events-auto">
+            <div className={cn(
+              "absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto",
+              isMobile ? "left-2 right-2" : "left-6 right-6"
+            )}>
               <motion.button
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
@@ -369,13 +412,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 onClick={goToPrevSlide}
                 disabled={currentSlideIndex === 0}
                 className={cn(
-                  "bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20",
-                  currentSlideIndex === 0 
-                    ? "opacity-30 cursor-not-allowed" 
-                    : "hover:bg-black/80 hover:scale-110"
+                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20",
+                  isMobile ? "p-4" : "p-3",
+                  currentSlideIndex === 0
+                    ? "opacity-30 cursor-not-allowed"
+                    : "hover:bg-black/80 hover:scale-110 active:scale-95"
                 )}
               >
-                <ChevronLeft size={24} />
+                <ChevronLeft size={isMobile ? 28 : 24} />
               </motion.button>
 
               <motion.button
@@ -385,13 +429,14 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 onClick={goToNextSlide}
                 disabled={currentSlideIndex === slides.length - 1}
                 className={cn(
-                  "bg-black/60 rounded-full p-3 text-white/90 transition-all border border-white/20",
-                  currentSlideIndex === slides.length - 1 
-                    ? "opacity-30 cursor-not-allowed" 
-                    : "hover:bg-black/80 hover:scale-110"
+                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20",
+                  isMobile ? "p-4" : "p-3",
+                  currentSlideIndex === slides.length - 1
+                    ? "opacity-30 cursor-not-allowed"
+                    : "hover:bg-black/80 hover:scale-110 active:scale-95"
                 )}
               >
-                <ChevronRight size={24} />
+                <ChevronRight size={isMobile ? 28 : 24} />
               </motion.button>
             </div>
 
@@ -414,6 +459,21 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile fullscreen floating button - shows when on mobile and not fullscreen */}
+      {isMobile && !isFullscreen && !showThumbnails && (
+        <motion.button
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 20, opacity: 0 }}
+          transition={{ delay: 0.5 }}
+          onClick={toggleFullscreen}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 bg-white/90 text-black rounded-full px-5 py-3 flex items-center gap-2 shadow-xl font-medium active:scale-95 transition-transform"
+        >
+          <Maximize2 size={20} />
+          <span>Full Screen</span>
+        </motion.button>
+      )}
 
       {/* Thumbnail grid overlay */}
       <AnimatePresence>
