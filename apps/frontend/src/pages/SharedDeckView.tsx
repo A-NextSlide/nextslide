@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
@@ -18,6 +18,47 @@ import { NavigationProvider } from '@/context/NavigationContext';
 import { ComponentRenderer } from '@/renderers/ComponentRenderer';
 import { ActiveSlideProvider } from '@/context/ActiveSlideContext';
 import { EditorStateProvider } from '@/context/EditorStateContext';
+
+// Error boundary to catch component rendering errors and prevent page crashes
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class SlideErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[SlideErrorBoundary] Error rendering slide:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="w-full h-full flex items-center justify-center bg-gray-100">
+          <div className="text-center p-4">
+            <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+            <p className="text-sm text-gray-600">Unable to display slide</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const SharedDeckView: React.FC = () => {
   const { shareCode } = useParams<{ shareCode: string }>();
@@ -160,110 +201,145 @@ const SharedDeckView: React.FC = () => {
     }
   };
 
-  // Function to render slides for presentation mode
-  const renderSlide = (slide: SlideData, index: number, scale: number = 1) => {
-    // Compute a defensive fallback background similar to editor presentation
-    const fallbackBackground = (() => {
-      const normalizeHex = (hex: string) => {
-        const h = hex.trim();
-        if (/^#([0-9a-fA-F]{8})$/.test(h)) {
-          const m = h.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
-          if (m) {
-            const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16), a = parseInt(m[4], 16) / 255;
-            return `rgba(${r}, ${g}, ${b}, ${a})`;
+  // Helper to extract background from slide
+  const getSlideBackground = (slide: SlideData): string | undefined => {
+    const normalizeHex = (hex: string) => {
+      const h = hex.trim();
+      if (/^#([0-9a-fA-F]{8})$/.test(h)) {
+        const m = h.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+        if (m) {
+          const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16), a = parseInt(m[4], 16) / 255;
+          return `rgba(${r}, ${g}, ${b}, ${a})`;
+        }
+      }
+      if (/^#([0-9a-fA-F]{4})$/.test(h)) {
+        const m = h.match(/^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/);
+        if (m) {
+          const r = parseInt(m[1] + m[1], 16), g = parseInt(m[2] + m[2], 16), b = parseInt(m[3] + m[3], 16), a = parseInt(m[4] + m[4], 16) / 255;
+          return `rgba(${r}, ${g}, ${b}, ${a})`;
+        }
+      }
+      return hex;
+    };
+    try {
+      const components = Array.isArray(slide.components) ? slide.components : [];
+      const bg = components.find(c => c && (c.type === 'Background' || (c.id && c.id.toLowerCase().includes('background'))));
+      const props: any = bg?.props || {};
+      if (typeof props.background === 'string' && props.background.trim()) {
+        return props.background as string;
+      }
+      const gradient = props.gradient || props.style?.background || (props.background && props.background.color ? props.background : null);
+      if (typeof gradient === 'string' && gradient) return gradient;
+      if (gradient && typeof gradient === 'object' && (Array.isArray((gradient as any).stops) || Array.isArray((gradient as any).colors))) {
+        const rawStops = Array.isArray((gradient as any).stops) ? (gradient as any).stops : (gradient as any).colors;
+        const stops = rawStops
+          .filter((s: any) => s && s.color)
+          .map((s: any) => {
+            const pos = typeof s.position === 'number' ? (s.position <= 1 ? s.position * 100 : s.position) : undefined;
+            const color = typeof s.color === 'string' ? normalizeHex(s.color) : s.color;
+            return `${color}${typeof pos === 'number' ? ` ${pos}%` : ''}`;
+          })
+          .join(', ');
+        if (stops) {
+          if (gradient.type === 'radial') {
+            return `radial-gradient(circle, ${stops})`;
           }
+          const angle = typeof gradient.angle === 'number' ? gradient.angle : 180;
+          return `linear-gradient(${angle}deg, ${stops})`;
         }
-        if (/^#([0-9a-fA-F]{4})$/.test(h)) {
-          const m = h.match(/^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/);
-          if (m) {
-            const r = parseInt(m[1] + m[1], 16), g = parseInt(m[2] + m[2], 16), b = parseInt(m[3] + m[3], 16), a = parseInt(m[4] + m[4], 16) / 255;
-            return `rgba(${r}, ${g}, ${b}, ${a})`;
-          }
-        }
-        return hex;
-      };
-      try {
-        const components = Array.isArray(slide.components) ? slide.components : [];
-        const bg = components.find(c => c && (c.type === 'Background' || (c.id && c.id.toLowerCase().includes('background'))));
-        const props: any = bg?.props || {};
-        if (typeof props.background === 'string' && props.background.trim()) {
-          return props.background as string;
-        }
-        const gradient = props.gradient || props.style?.background || (props.background && props.background.color ? props.background : null);
-        if (typeof gradient === 'string' && gradient) return gradient;
-        if (gradient && typeof gradient === 'object' && (Array.isArray((gradient as any).stops) || Array.isArray((gradient as any).colors))) {
-          const rawStops = Array.isArray((gradient as any).stops) ? (gradient as any).stops : (gradient as any).colors;
-          const stops = rawStops
-            .filter((s: any) => s && s.color)
-            .map((s: any) => {
-              const pos = typeof s.position === 'number' ? (s.position <= 1 ? s.position * 100 : s.position) : undefined;
-              const color = typeof s.color === 'string' ? normalizeHex(s.color) : s.color;
-              return `${color}${typeof pos === 'number' ? ` ${pos}%` : ''}`;
-            })
-            .join(', ');
-          if (stops) {
-            if (gradient.type === 'radial') {
-              return `radial-gradient(circle, ${stops})`;
-            }
-            const angle = typeof gradient.angle === 'number' ? gradient.angle : 180;
-            return `linear-gradient(${angle}deg, ${stops})`;
-          }
-        }
-        const directColor = props.backgroundColor || props.color || props.page?.backgroundColor || (slide as any).backgroundColor;
-        if (typeof directColor === 'string' && directColor) return normalizeHex(directColor as string);
-        const slideBgImg = (slide as any).backgroundImage;
-        if (typeof slideBgImg === 'string' && slideBgImg) return `url(${slideBgImg})`;
-      } catch {}
-      return undefined as string | undefined;
-    })();
+      }
+      const directColor = props.backgroundColor || props.color || props.page?.backgroundColor || (slide as any).backgroundColor;
+      if (typeof directColor === 'string' && directColor) return normalizeHex(directColor as string);
+      const slideBgImg = (slide as any).backgroundImage;
+      if (typeof slideBgImg === 'string' && slideBgImg) return `url(${slideBgImg})`;
+    } catch {}
+    return undefined;
+  };
 
-    // Get components to render
+  // Function to render slides for presentation mode
+  // isThumbnail parameter allows for lighter rendering in thumbnail grid
+  const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
+    const fallbackBackground = getSlideBackground(slide);
     const components = Array.isArray(slide.components) ? slide.components : [];
 
-    return (
-      <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+    // For thumbnails, use a much simpler rendering approach to avoid crashes on mobile
+    if (isThumbnail) {
+      return (
         <div
-          className="absolute top-0 left-0 origin-top-left"
-          style={{
-            width: `${DEFAULT_SLIDE_WIDTH}px`,
-            height: `${DEFAULT_SLIDE_HEIGHT}px`,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-            ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
-          }}
+          className="w-full h-full relative overflow-hidden"
+          style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: '#f0f0f0' }}
         >
-          <EditorStateProvider initialEditingState={false}>
-            <ActiveSlideProvider>
-              {/* Render components */}
-              {components.map((component) => {
-                if (!component || !component.id) return null;
-                return (
-                  <ComponentRenderer
-                    key={component.id}
-                    component={component}
-                    isEditing={false}
-                    isSelected={false}
-                    onSelect={() => {}}
-                    onUpdate={() => {}}
-                    slideId={slide.id}
-                    allComponents={components}
-                  />
-                );
-              })}
-            </ActiveSlideProvider>
-          </EditorStateProvider>
-          {/* Add watermark for view-only decks */}
-          {!canEdit && (
-            <Watermark
-              text="VIEW ONLY"
-              opacity={0.08}
-              fontSize={80}
-              rotation={-30}
-              repeat={true}
-            />
-          )}
+          {/* Simple thumbnail - just show background and slide number */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-4xl font-bold text-black/20">{index + 1}</span>
+          </div>
         </div>
-      </div>
+      );
+    }
+
+    return (
+      <SlideErrorBoundary
+        fallback={
+          <div
+            className="w-full h-full relative overflow-hidden flex items-center justify-center"
+            style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: '#f0f0f0' }}
+          >
+            <div className="text-center p-4">
+              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-2" />
+              <p className="text-gray-600">Unable to display slide</p>
+            </div>
+          </div>
+        }
+      >
+        <div className="w-full h-full relative overflow-hidden" style={fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+          <div
+            className="absolute top-0 left-0 origin-top-left"
+            style={{
+              width: `${DEFAULT_SLIDE_WIDTH}px`,
+              height: `${DEFAULT_SLIDE_HEIGHT}px`,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
+            }}
+          >
+            <EditorStateProvider initialEditingState={false}>
+              <ActiveSlideProvider>
+                {/* Render components */}
+                {components.map((component) => {
+                  if (!component || !component.id) return null;
+                  try {
+                    return (
+                      <ComponentRenderer
+                        key={component.id}
+                        component={component}
+                        isEditing={false}
+                        isSelected={false}
+                        onSelect={() => {}}
+                        onUpdate={() => {}}
+                        slideId={slide.id}
+                        allComponents={components}
+                      />
+                    );
+                  } catch (err) {
+                    console.error(`[SharedDeckView] Error rendering component ${component.id}:`, err);
+                    return null;
+                  }
+                })}
+              </ActiveSlideProvider>
+            </EditorStateProvider>
+            {/* Add watermark for view-only decks */}
+            {!canEdit && (
+              <Watermark
+                text="VIEW ONLY"
+                opacity={0.08}
+                fontSize={80}
+                rotation={-30}
+                repeat={true}
+              />
+            )}
+          </div>
+        </div>
+      </SlideErrorBoundary>
     );
   };
 

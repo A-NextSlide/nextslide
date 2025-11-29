@@ -11,7 +11,7 @@ import Watermark from '@/components/common/Watermark';
 interface PresentationModeProps {
   slides: SlideData[];
   currentSlideIndex: number;
-  renderSlide: (slide: SlideData, index: number, scale?: number) => React.ReactNode;
+  renderSlide: (slide: SlideData, index: number, scale?: number, isThumbnail?: boolean) => React.ReactNode;
   isViewOnly?: boolean;
   alwaysShowControls?: boolean;
 }
@@ -336,7 +336,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
   if (!isPresenting) return null;
 
-  const currentSlide = slides[currentSlideIndex];
+  // Defensive: ensure currentSlideIndex is valid
+  const validIndex = Math.max(0, Math.min(currentSlideIndex, slides.length - 1));
+  const currentSlide = slides[validIndex];
 
   return (
     <motion.div
@@ -360,7 +362,11 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             minHeight: `min(calc(95vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), 95dvh)`
           }}
         >
-          {currentSlide && renderSlide(currentSlide, currentSlideIndex, slideScale)}
+          {currentSlide && (
+            <div key={`slide-${currentSlide.id || validIndex}`} className="w-full h-full">
+              {renderSlide(currentSlide, validIndex, slideScale, false)}
+            </div>
+          )}
           {/* Add watermark for view-only presentations */}
           {isViewOnly && (
             <Watermark 
@@ -394,54 +400,90 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                   transition={{ delay: 0.1 }}
                   className="bg-black/60 rounded-full px-4 py-2 text-white/90 text-sm font-medium border border-white/20"
                 >
-                  {currentSlideIndex + 1} / {slides.length}
+                  {validIndex + 1} / {slides.length}
                 </motion.div>
 
                 {/* Right controls */}
                 <div className="flex items-center gap-2">
-                  {/* Grid view button */}
+                  {/* Grid view button - with touch support for mobile */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.15 }}
-                    onClick={() => setShowThumbnails(true)}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowThumbnails(true);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowThumbnails(true);
+                    }}
+                    className={cn(
+                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
+                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
+                    )}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                     title="Show all slides (G)"
                   >
-                    <Grid3X3 size={18} />
+                    <Grid3X3 size={isMobile ? 22 : 18} />
                   </motion.button>
 
-                  {/* Fullscreen toggle */}
+                  {/* Fullscreen toggle - with touch support for mobile */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    onClick={toggleFullscreen}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
                     className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 transition-colors border border-white/20",
-                      isMobile ? "p-3" : "p-2"
+                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
+                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
                     )}
-                    title={isFullscreen ? "Exit fullscreen" : "Full Screen"}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
                   >
                     {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
                   </motion.button>
 
-                  {/* Exit button */}
+                  {/* Exit button - with touch support for mobile */}
                   <motion.button
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.25 }}
-                    onClick={exitPresentation}
-                    className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      exitPresentation();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      exitPresentation();
+                    }}
+                    className={cn(
+                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 active:bg-black/90 transition-colors border border-white/20 touch-manipulation",
+                      isMobile ? "p-3 min-w-[48px] min-h-[48px]" : "p-2"
+                    )}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                     title="Exit presentation (ESC)"
                   >
-                    <X size={18} />
+                    <X size={isMobile ? 22 : 18} />
                   </motion.button>
                 </div>
               </div>
             </div>
 
-            {/* Navigation arrows */}
+            {/* Navigation arrows - with touch support for mobile */}
             <div className={cn(
               "absolute top-1/2 -translate-y-1/2 flex justify-between pointer-events-auto",
               isMobile ? "left-2 right-2" : "left-6 right-6"
@@ -450,15 +492,26 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                onClick={goToPrevSlide}
-                disabled={currentSlideIndex === 0}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToPrevSlide();
+                }}
+                onTouchEnd={(e) => {
+                  if (validIndex === 0) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToPrevSlide();
+                }}
+                disabled={validIndex === 0}
                 className={cn(
-                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20",
-                  isMobile ? "p-4" : "p-3",
-                  currentSlideIndex === 0
+                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20 touch-manipulation",
+                  isMobile ? "p-4 min-w-[56px] min-h-[56px]" : "p-3",
+                  validIndex === 0
                     ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black/80 hover:scale-110 active:scale-95"
+                    : "hover:bg-black/80 hover:scale-110 active:scale-95 active:bg-black/90"
                 )}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 <ChevronLeft size={isMobile ? 28 : 24} />
               </motion.button>
@@ -467,15 +520,26 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                 initial={{ x: 20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                onClick={goToNextSlide}
-                disabled={currentSlideIndex === slides.length - 1}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToNextSlide();
+                }}
+                onTouchEnd={(e) => {
+                  if (validIndex === slides.length - 1) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  goToNextSlide();
+                }}
+                disabled={validIndex === slides.length - 1}
                 className={cn(
-                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20",
-                  isMobile ? "p-4" : "p-3",
-                  currentSlideIndex === slides.length - 1
+                  "bg-black/60 rounded-full text-white/90 transition-all border border-white/20 touch-manipulation",
+                  isMobile ? "p-4 min-w-[56px] min-h-[56px]" : "p-3",
+                  validIndex === slides.length - 1
                     ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black/80 hover:scale-110 active:scale-95"
+                    : "hover:bg-black/80 hover:scale-110 active:scale-95 active:bg-black/90"
                 )}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
               >
                 <ChevronRight size={isMobile ? 28 : 24} />
               </motion.button>
@@ -492,7 +556,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
               <div className="bg-black/40 rounded-full h-1 overflow-hidden">
                 <motion.div
                   className="bg-white/80 h-full rounded-full"
-                  animate={{ width: `${((currentSlideIndex + 1) / slides.length) * 100}%` }}
+                  animate={{ width: `${((validIndex + 1) / slides.length) * 100}%` }}
                   transition={{ duration: 0.3, ease: "easeInOut" }}
                 />
               </div>
@@ -558,28 +622,16 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                           className={cn(
                             "relative group flex-shrink-0 overflow-hidden rounded-md transition-all bg-gray-800",
                             "ring-1 ring-transparent hover:ring-white/50 hover:scale-105",
-                            currentSlideIndex === index && "ring-2 ring-white scale-105"
+                            validIndex === index && "ring-2 ring-white scale-105"
                           )}
                         style={{
                           height: '120px',
                           aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`
                         }}
                       >
-                        {/* Slide thumbnail */}
+                        {/* Slide thumbnail - use isThumbnail=true for lighter rendering */}
                         <div className="relative bg-white w-full h-full overflow-hidden">
-                          <div
-                            className="absolute"
-                            style={{
-                              transform: `scale(${120 / DEFAULT_SLIDE_HEIGHT})`,
-                              transformOrigin: 'top left',
-                              width: `${DEFAULT_SLIDE_WIDTH}px`,
-                              height: `${DEFAULT_SLIDE_HEIGHT}px`,
-                              left: 0,
-                              top: 0
-                            }}
-                          >
-                            {renderSlide(slide, index, 1)}
-                          </div>
+                          {renderSlide(slide, index, 1, true)}
                         </div>
 
                         {/* Slide number overlay */}
@@ -588,7 +640,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                         </div>
 
                         {/* Current slide indicator */}
-                        {currentSlideIndex === index && (
+                        {validIndex === index && (
                           <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white rounded-full px-2 py-0.5 text-black text-xs font-bold">
                             Current
                           </div>
