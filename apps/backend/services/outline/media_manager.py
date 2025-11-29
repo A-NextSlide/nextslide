@@ -39,7 +39,7 @@ class MediaManager:
         self, 
         slides: List[SlideContent], 
         processed_files: Dict[str, Any],
-        model_name: str = "gemini-2.5-flash-lite"
+        model_name: str = "claude-haiku-4-5"  # Switched from gemini - API key invalid in prod
     ) -> None:
         """Use AI to intelligently assign media files to appropriate slides"""
         if not processed_files or not processed_files.get('images'):
