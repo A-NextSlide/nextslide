@@ -327,16 +327,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
       style={{ height: '100dvh' }} // Use dvh for mobile Safari compatibility
     >
       {/* Main slide display */}
-      <div className="relative w-full h-full flex items-center justify-center p-4">
+      <div className={cn(
+        "relative w-full h-full flex items-center justify-center",
+        isMobile ? "p-0" : "p-4"
+      )}>
         <div
           ref={slideContainerRef}
-          className="relative rounded-lg overflow-hidden"
+          className="relative overflow-hidden"
           style={{
             width: '100%',
-            maxWidth: `min(95vw, calc(95dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`,
-            aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`,
-            // Fallback height for browsers that don't support aspect-ratio
-            minHeight: `min(calc(95vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}), 95dvh)`
+            height: '100%',
+            maxWidth: isMobile ? '100vw' : `min(95vw, calc(95dvh * ${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}))`,
+            maxHeight: isMobile ? '100dvh' : `min(95dvh, calc(95vw * ${DEFAULT_SLIDE_HEIGHT} / ${DEFAULT_SLIDE_WIDTH}))`,
+            aspectRatio: `${DEFAULT_SLIDE_WIDTH} / ${DEFAULT_SLIDE_HEIGHT}`
           }}
         >
           {currentSlide && renderSlide(currentSlide, currentSlideIndex, slideScale)}
@@ -390,20 +393,19 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
                     <Grid3X3 size={18} />
                   </motion.button>
 
-                  {/* Fullscreen toggle */}
-                  <motion.button
-                    initial={{ y: -20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                    onClick={toggleFullscreen}
-                    className={cn(
-                      "bg-black/60 rounded-full text-white/90 hover:bg-black/80 transition-colors border border-white/20",
-                      isMobile ? "p-3" : "p-2"
-                    )}
-                    title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                  >
-                    {isFullscreen ? <Minimize2 size={isMobile ? 22 : 18} /> : <Maximize2 size={isMobile ? 22 : 18} />}
-                  </motion.button>
+                  {/* Fullscreen toggle - only show on desktop (iOS doesn't support fullscreen API) */}
+                  {!isMobile && (
+                    <motion.button
+                      initial={{ y: -20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                      onClick={toggleFullscreen}
+                      className="bg-black/60 rounded-full p-2 text-white/90 hover:bg-black/80 transition-colors border border-white/20"
+                      title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    >
+                      {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </motion.button>
+                  )}
 
                   {/* Exit button */}
                   <motion.button
@@ -479,21 +481,6 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Mobile fullscreen floating button - shows when on mobile and not fullscreen */}
-      {isMobile && !isFullscreen && !showThumbnails && (
-        <motion.button
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 20, opacity: 0 }}
-          transition={{ delay: 0.5 }}
-          onClick={toggleFullscreen}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 bg-white/90 text-black rounded-full px-5 py-3 flex items-center gap-2 shadow-xl font-medium active:scale-95 transition-transform"
-        >
-          <Maximize2 size={20} />
-          <span>Full Screen</span>
-        </motion.button>
-      )}
 
       {/* Thumbnail grid overlay */}
       <AnimatePresence>
