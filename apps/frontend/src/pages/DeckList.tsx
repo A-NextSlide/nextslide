@@ -1935,46 +1935,9 @@ const DeckList: React.FC = () => {
                             // The ChatPanel component monitors the agent's processing state and updates it automatically.
                             // This ensures the loading state persists during partial updates and clears only when done.
 
-                            // Handle theme changes if present
-                            if (params.theme_changes && params.theme_changes.brand) {
-                              console.log('[DeckList] Applying theme changes:', params.theme_changes);
-                              const themeStore = useThemeStore.getState();
-                              const brandName = params.theme_changes.brand.name || 'Custom Brand';
-
-                              // Create a custom theme based on the brand
-                              const newThemeId = themeStore.addCustomTheme({
-                                name: brandName,
-                                page: {
-                                  backgroundColor: '#FFFFFF',
-                                },
-                                typography: {
-                                  paragraph: {
-                                    fontFamily: 'Inter',
-                                    color: '#000000',
-                                    fontSize: '16px',
-                                    fontWeight: 400,
-                                    lineHeight: 1.5
-                                  },
-                                  heading: {
-                                    fontFamily: 'Inter',
-                                    color: '#000000',
-                                    fontSize: '32px',
-                                    fontWeight: 700
-                                  }
-                                },
-                                accent1: '#FF4301',
-                                accent2: '#333333'
-                              });
-
-                              themeStore.setWorkspaceTheme(newThemeId);
-                              themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
-                              themeStore.setThemeReady(true);
-                            } else {
-                              // No theme changes - OutlineDisplayView will handle showing loading until theme is ready
-                              const themeStore = useThemeStore.getState();
-                              themeStore.setOutlineTheme(newOutline.id, themeStore.getWorkspaceTheme());
-                              // DON'T set themeReady here - let OutlineDisplayView control this
-                            }
+                            // DON'T handle theme changes here - let OutlineDisplayView handle all theme state
+                            // This prevents premature setThemeReady(true) before actual colors are loaded
+                            // OutlineDisplayView will set themeReady when fonts/colors are actually applied
                           }}
                         />
                       </div>

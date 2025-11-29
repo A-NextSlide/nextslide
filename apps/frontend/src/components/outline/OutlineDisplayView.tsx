@@ -618,20 +618,24 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
     }
     
     // FALLBACK: No colors in stylePreferences - mark as requested and wait for events
+    // ALWAYS ensure loading state is set, even on re-renders
+    setIsThemeLoading(true);
+    setThemeReady(false);
+
     try {
       if (hasOutlineThemeRequested?.(currentOutline.id)) {
-        // Already requested, just set ready (will show loading spinner until events come)
-        return;
+        // Already requested - keep loading state active and set up event listener
+        console.log('[OutlineDisplayView] Theme already requested, keeping loading state');
+      } else {
+        markOutlineThemeRequested?.(currentOutline.id);
       }
-      markOutlineThemeRequested?.(currentOutline.id);
     } catch { }
 
     try {
       const key = `__theme_requested_${currentOutline.id}`;
-      if ((window as any)[key]) {
-        return;
+      if (!(window as any)[key]) {
+        (window as any)[key] = true;
       }
-      (window as any)[key] = true;
     } catch { }
 
     // No existing colors - set up async theme loading from events

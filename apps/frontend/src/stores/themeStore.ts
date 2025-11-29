@@ -153,7 +153,7 @@ export const useThemeStore = create<ThemeStore>()(
     }),
     {
       name: 'slide-sorcery-themes',
-      version: 3,
+      version: 4, // Bumped to reset any stale persisted state
       migrate: (persistedState: any, version: number) => {
         // Fully clear previously persisted theme state to avoid stale theme reuse
         return {} as any;

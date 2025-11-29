@@ -1816,7 +1816,7 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                 director = ThemeDirector()
                                 suggestion = await director.generate_quick_palette(
                                     title=outline.title,
-                                    context=style_context_value or request.prompt
+                                    context=request.styleContext or request.prompt
                                 )
                                 colors = (suggestion or {}).get('color_palette') or {}
                                 bg_color = colors.get('primary_background', '#FFFFFF')

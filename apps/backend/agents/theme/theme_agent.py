@@ -1,30 +1,26 @@
 """
-ThemeAgent - Agentic theme detection that runs in parallel with outline generation.
+ThemeAgent - Smart theme detection that understands context.
 
-Uses tool calls to:
-1. Detect brand from title/prompt
-2. Fetch brand colors/fonts/logo from Brandfetch
-3. Generate colors via Huemint for generic content
-4. Select appropriate fonts
+The agent decides:
+1. Is this a REAL brand? → Fetch from Brandfetch
+2. Is this INSPIRED by something? (Sonic, retro, etc.) → Generate contextual colors
+3. Generic topic? → Generate nice complementary colors
+4. User specified colors? → Use those
 
-Ensures 3 distinct colors (not too similar) for all palettes.
+Simple. Agentic. Context-aware.
 """
 
 import asyncio
 import logging
 import os
 import json
-import colorsys
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 
 def _validate_font_against_registry(font_name: str) -> Optional[str]:
-    """Validate that a font exists in the system registry.
-
-    Returns the font name if valid, None if not available.
-    """
+    """Validate that a font exists in the system registry."""
     if not font_name:
         return None
 
@@ -42,7 +38,7 @@ def _validate_font_against_registry(font_name: str) -> Optional[str]:
         if font_lower in available_lower:
             return available_lower[font_lower]
 
-        # Partial match (e.g., "Open Sans" matches "Open Sans Regular")
+        # Partial match
         for avail_font in available_fonts:
             if font_lower in avail_font.lower() or avail_font.lower() in font_lower:
                 return avail_font
@@ -53,169 +49,24 @@ def _validate_font_against_registry(font_name: str) -> Optional[str]:
         return None
 
 
-async def _select_similar_font_for_brand(brand_name: str, original_font: str) -> Dict[str, str]:
-    """Select a similar font from available fonts when brand font is not available."""
-    try:
-        from agents.ai.clients import get_client, invoke
-        from services.registry_fonts import RegistryFonts
-
-        # Get available fonts grouped by category
-        font_categories = RegistryFonts.get_available_fonts()
-
-        # Build font list for AI prompt (limit to avoid too long prompts)
-        font_list_parts = []
-        for category, fonts in font_categories.items():
-            if fonts and category not in ['PixelBuddha']:  # Skip PixelBuddha for now (too many)
-                font_list_parts.append(f"{category}: {', '.join(fonts[:15])}")
-        available_fonts_str = "\n".join(font_list_parts)
-
-        font_prompt = f"""The brand "{brand_name}" uses the font "{original_font}", but it's not available in our system.
-
-Select a visually similar font from our library that matches the brand's style.
-
-Available fonts by category:
-{available_fonts_str}
-
-Requirements:
-- Hero font should be SIMILAR in style to "{original_font}"
-- Body font should complement the hero font
-- Hero and body MUST be DIFFERENT fonts
-
-Return ONLY:
-HERO: [font name]
-BODY: [font name]"""
-
-        client = get_client("claude-3-5-haiku-20241022")
-        response = invoke(
-            client=client,
-            model="claude-3-5-haiku-20241022",
-            messages=[{"role": "user", "content": font_prompt}],
-            max_tokens=100,
-            temperature=0
-        )
-
-        hero_font = None
-        body_font = None
-
-        for line in response.split('\n'):
-            if 'HERO:' in line.upper():
-                hero_font = line.split(':', 1)[1].strip().strip('"\'')
-            elif 'BODY:' in line.upper():
-                body_font = line.split(':', 1)[1].strip().strip('"\'')
-
-        # Validate selected fonts
-        available_fonts = RegistryFonts.get_all_fonts_list(None)
-        available_lower = {f.lower(): f for f in available_fonts}
-
-        if hero_font and hero_font.lower() in available_lower:
-            hero_font = available_lower[hero_font.lower()]
-        else:
-            hero_font = 'Montserrat'  # Safe fallback
-
-        if body_font and body_font.lower() in available_lower:
-            body_font = available_lower[body_font.lower()]
-        else:
-            body_font = 'Open Sans'  # Safe fallback
-
-        # Ensure different fonts
-        if hero_font.lower() == body_font.lower():
-            body_font = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
-
-        logger.info(f"[ThemeAgent] Selected similar fonts for {brand_name}: hero={hero_font}, body={body_font} (original: {original_font})")
-        return {'hero': hero_font, 'body': body_font}
-
-    except Exception as e:
-        logger.warning(f"[ThemeAgent] Font selection failed: {e}")
-        return {'hero': 'Montserrat', 'body': 'Open Sans'}
-
-
-def _hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
-    """Convert hex color to RGB tuple."""
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-
-def _rgb_to_hex(r: int, g: int, b: int) -> str:
-    """Convert RGB to hex."""
-    return f"#{r:02X}{g:02X}{b:02X}"
-
-
-def _color_distance(c1: str, c2: str) -> float:
-    """Calculate perceptual color distance between two hex colors.
-
-    Uses LAB-like distance for better perceptual accuracy.
-    Returns value 0-100+ where higher = more different.
-    """
-    try:
-        r1, g1, b1 = _hex_to_rgb(c1)
-        r2, g2, b2 = _hex_to_rgb(c2)
-
-        # Use weighted Euclidean distance (accounts for human perception)
-        # Red is perceived less than green, blue in between
-        rmean = (r1 + r2) / 2
-        dr = r1 - r2
-        dg = g1 - g2
-        db = b1 - b2
-
-        # Weighted formula for perceptual difference
-        return ((2 + rmean/256) * dr**2 + 4 * dg**2 + (2 + (255-rmean)/256) * db**2) ** 0.5
-    except Exception:
-        return 0
-
-
-def _ensure_distinct_colors(colors: List[str], min_distance: float = 80) -> List[str]:
-    """Filter colors to ensure they're visually distinct.
-
-    Args:
-        colors: List of hex colors
-        min_distance: Minimum perceptual distance between colors (0-442)
-
-    Returns:
-        List of distinct colors (at least 3 if possible)
-    """
-    if not colors:
-        return []
-
-    distinct = [colors[0]]
-
-    for color in colors[1:]:
-        # Check distance from all already-selected colors
-        is_distinct = all(
-            _color_distance(color, existing) >= min_distance
-            for existing in distinct
-        )
-        if is_distinct:
-            distinct.append(color)
-
-    return distinct
-
-
 class ThemeAgent:
-    """Agentic theme detection with parallel tool execution."""
+    """
+    Smart theme agent that understands context and makes appropriate decisions.
+    """
 
     def __init__(self):
-        self.tools = {
-            "detect_brand": self._tool_detect_brand,
-            "fetch_brand_data": self._tool_fetch_brand_data,
-            "generate_huemint_palette": self._tool_generate_huemint_palette,
-            "select_fonts": self._tool_select_fonts,
-        }
+        pass
 
     async def run(self, title: str, prompt: str, context: Optional[str] = None) -> Dict[str, Any]:
-        """Run the theme agent to detect brand/colors/fonts.
-
-        This is designed to run in parallel with outline generation.
-
-        Args:
-            title: Presentation title
-            prompt: User's original prompt
-            context: Optional additional context
+        """
+        Run the theme agent to determine the best theme for the presentation.
 
         Returns:
-            Dict with: brand_name, domain, colors, fonts, logo_url
+            Dict with: colors, background, text, accent, accent2, fonts, logo_url, source
         """
-        logger.info(f"[ThemeAgent] Starting parallel theme detection for: {title[:50]}...")
+        logger.info(f"[ThemeAgent] Starting for: {title[:50]}...")
 
+        # Default result
         result = {
             "brand_name": None,
             "domain": None,
@@ -223,365 +74,328 @@ class ThemeAgent:
             "background": "#FFFFFF",
             "text": "#1A1A1A",
             "accent": None,
+            "accent2": None,
             "fonts": {"hero": "Montserrat", "body": "Open Sans"},
             "logo_url": None,
             "source": "default"
         }
 
         try:
-            # Step 1: Try to detect brand
-            brand_info = await self._tool_detect_brand(title, prompt)
+            # Step 1: Ask AI to analyze what kind of theme we need
+            logger.info(f"[ThemeAgent] Step 1: Analyzing theme needs...")
+            theme_analysis = await self._analyze_theme_needs(title, prompt, context)
+            logger.info(f"[ThemeAgent] Analysis result: {theme_analysis}")
 
-            if brand_info and brand_info.get("brand"):
-                result["brand_name"] = brand_info["brand"]
-                result["domain"] = brand_info.get("domain")
-                logger.info(f"[ThemeAgent] Brand detected: {result['brand_name']} → {result['domain']}")
+            if not theme_analysis:
+                logger.warning("[ThemeAgent] Analysis failed, using defaults")
+                return result
 
-                # Step 2: Fetch brand data if we have a domain
-                brand_data = None  # Initialize to avoid scope issues
-                if result["domain"]:
-                    brand_data = await self._tool_fetch_brand_data(result["domain"])
+            theme_type = theme_analysis.get("type", "generic")
 
-                    if brand_data and not brand_data.get("error"):
-                        # Extract colors
-                        colors = brand_data.get("colors", [])
-                        logger.info(f"[ThemeAgent] Brandfetch colors raw: {colors}")
-                        if colors:
-                            distinct_colors = _ensure_distinct_colors(colors, min_distance=80)
-                            # Accept 2+ brand colors - we can derive the third if needed
-                            if len(distinct_colors) >= 2:
-                                # Reorder colors: [primary_accent, secondary_accent, white_bg]
-                                # This ensures accent1 and accent2 are brand colors, not white
-                                brand_colors = distinct_colors[:2]  # First two are brand colors
-                                if len(distinct_colors) == 2:
-                                    # Add white as background option
-                                    logger.info(f"[ThemeAgent] 2-color brand, adding white background")
-                                result["colors"] = brand_colors + ["#FFFFFF"]  # Brand colors first, then white
-                                result["background"] = "#FFFFFF"  # White background for professional look
-                                result["accent"] = brand_colors[0]  # First brand color as primary accent
-                                result["accent2"] = brand_colors[1]  # Second brand color as secondary accent
-                                result["text"] = "#1A1A1A"  # Dark text for readability
-                                result["source"] = "brandfetch"
-                                logger.info(f"[ThemeAgent] Got {len(brand_colors)} brand colors: {brand_colors}")
-                            elif len(distinct_colors) == 1:
-                                # Single brand color - derive a complementary palette
-                                primary = distinct_colors[0]
-                                result["colors"] = [primary, "#FFFFFF", "#1A1A1A"]
-                                result["background"] = "#FFFFFF"
-                                result["accent"] = primary
-                                result["text"] = "#1A1A1A"
-                                result["source"] = "brandfetch"
-                                logger.info(f"[ThemeAgent] Single brand color, derived palette from {primary}")
+            # Step 2: Handle based on theme type
+            if theme_type == "real_brand" and theme_analysis.get("domain"):
+                # Real brand - try Brandfetch
+                logger.info(f"[ThemeAgent] Real brand detected: {theme_analysis.get('brand')} → {theme_analysis.get('domain')}")
+                brand_data = await self._fetch_brandfetch(theme_analysis["domain"])
 
-                        # Extract logo
-                        if brand_data.get("logo_url"):
-                            result["logo_url"] = brand_data["logo_url"]
-                            logger.info(f"[ThemeAgent] Got logo URL")
+                if brand_data and brand_data.get("colors"):
+                    result["brand_name"] = theme_analysis.get("brand")
+                    result["domain"] = theme_analysis.get("domain")
+                    result["colors"] = brand_data["colors"]
+                    result["background"] = "#FFFFFF"
+                    result["accent"] = brand_data["colors"][0] if brand_data["colors"] else None
+                    result["accent2"] = brand_data["colors"][1] if len(brand_data["colors"]) > 1 else None
+                    result["text"] = "#1A1A1A"
+                    result["logo_url"] = brand_data.get("logo_url")
+                    result["source"] = "brandfetch"
 
-                        # Extract fonts - VALIDATE against available fonts
-                        if brand_data.get("fonts"):
-                            brand_font = brand_data["fonts"][0] if brand_data["fonts"] else None
-                            if brand_font:
-                                # Validate the brand font exists in our system
-                                validated_font = _validate_font_against_registry(brand_font)
-                                if validated_font:
-                                    result["fonts"]["hero"] = validated_font
-                                    logger.info(f"[ThemeAgent] ✅ Brand font validated: {brand_font}")
-                                else:
-                                    # Font not available - select a similar font using AI
-                                    logger.info(f"[ThemeAgent] ⚠️ Brand font '{brand_font}' not in system, selecting similar font...")
-                                    similar_fonts = await _select_similar_font_for_brand(result["brand_name"], brand_font)
-                                    result["fonts"] = similar_fonts
+                    # Get fonts
+                    if brand_data.get("fonts"):
+                        font = brand_data["fonts"][0]
+                        validated = _validate_font_against_registry(font)
+                        if validated:
+                            result["fonts"]["hero"] = validated
 
-                # Step 3: Select brand-appropriate fonts if no fonts yet or Brandfetch didn't have fonts
-                brandfetch_had_fonts = brand_data and brand_data.get("fonts")
-                if not brandfetch_had_fonts:
-                    fonts = await self._tool_select_fonts(result["brand_name"], result["domain"])
-                    if fonts:
-                        result["fonts"] = fonts
+                    logger.info(f"[ThemeAgent] ✅ Brandfetch success: {result['colors'][:3]}")
+                    return result
+                else:
+                    # Brandfetch failed, fall through to contextual generation
+                    logger.info("[ThemeAgent] Brandfetch failed, generating contextual colors")
 
-            # Step 4: If no brand or insufficient colors, use Huemint
-            if not result["colors"] or len(result["colors"]) < 3:
-                logger.info(f"[ThemeAgent] No brand colors, generating Huemint palette...")
-                huemint_result = await self._tool_generate_huemint_palette(title, prompt)
+            # Step 3: Generate contextual colors based on the theme
+            # This handles: inspired_by, fictional_brand, topic_based, generic
+            logger.info(f"[ThemeAgent] Step 3: Generating contextual theme (type={theme_type}, inspiration={theme_analysis.get('inspiration')})")
+            contextual_theme = await self._generate_contextual_theme(
+                title=title,
+                prompt=prompt,
+                context=context,
+                inspiration=theme_analysis.get("inspiration"),
+                mood=theme_analysis.get("mood"),
+                theme_type=theme_type
+            )
 
-                if huemint_result and huemint_result.get("colors"):
-                    distinct_colors = _ensure_distinct_colors(huemint_result["colors"], min_distance=80)
-                    if len(distinct_colors) >= 3:
-                        result["colors"] = distinct_colors[:5]
-                        result["background"] = huemint_result.get("background", distinct_colors[0])
-                        result["text"] = huemint_result.get("text", "#1A1A1A")
-                        result["accent"] = huemint_result.get("accent", distinct_colors[1] if len(distinct_colors) > 1 else None)
-                        result["source"] = "huemint"
-                        logger.info(f"[ThemeAgent] Generated {len(distinct_colors)} distinct Huemint colors")
+            if contextual_theme:
+                result["colors"] = contextual_theme.get("colors", [])
+                result["background"] = contextual_theme.get("background", "#FFFFFF")
+                result["text"] = contextual_theme.get("text", "#1A1A1A")
+                result["accent"] = contextual_theme.get("accent")
+                result["accent2"] = contextual_theme.get("accent2")
+                result["fonts"] = contextual_theme.get("fonts", result["fonts"])
+                result["source"] = contextual_theme.get("source", "ai_generated")
 
-                # Also select fonts for non-brand content
-                if not result.get("brand_name"):
-                    fonts = await self._tool_select_fonts(title, None)
-                    if fonts:
-                        result["fonts"] = fonts
+                logger.info(f"[ThemeAgent] ✅ Contextual theme: {result['colors'][:3]}, source={result['source']}")
 
-            # Final validation: ensure we have at least 3 distinct colors
-            if len(result["colors"]) < 3:
-                logger.warning(f"[ThemeAgent] Only {len(result['colors'])} colors, adding defaults")
-                defaults = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444"]
-                for default in defaults:
-                    if len(result["colors"]) >= 3:
-                        break
-                    if all(_color_distance(default, c) >= 80 for c in result["colors"]):
-                        result["colors"].append(default)
-
-            logger.info(f"[ThemeAgent] Complete: {len(result['colors'])} colors, source={result['source']}")
             return result
 
         except Exception as e:
             logger.error(f"[ThemeAgent] Error: {e}")
-            # Return safe defaults
-            result["colors"] = ["#3B82F6", "#10B981", "#F59E0B"]
-            result["accent"] = "#3B82F6"
-            result["source"] = "default"
             return result
 
-    async def _tool_detect_brand(self, title: str, prompt: str) -> Optional[Dict[str, str]]:
-        """Detect brand from title/prompt using AI."""
+    async def _analyze_theme_needs(self, title: str, prompt: str, context: Optional[str]) -> Optional[Dict[str, Any]]:
+        """
+        Use AI to analyze what kind of theme is needed.
+
+        Returns:
+            {
+                "type": "real_brand" | "inspired_by" | "fictional_brand" | "topic_based" | "generic",
+                "brand": str or None,
+                "domain": str or None (for real brands),
+                "inspiration": str or None (what it's inspired by - e.g., "Sonic the Hedgehog", "retro gaming"),
+                "mood": str (e.g., "fun", "professional", "energetic", "calm"),
+                "suggested_colors": list or None (if user mentioned colors)
+            }
+        """
         try:
             from agents.ai.clients import get_client, invoke
 
-            text = f"{title}. {prompt}"[:300]
+            analysis_prompt = f"""Analyze this presentation to determine the best theme approach.
 
-            brand_prompt = f"""Analyze this text and extract brand information.
+Title: {title}
+Prompt: {prompt}
+Context: {context or 'None'}
 
-Text: "{text}"
+Determine:
+1. Is this about a REAL company/brand with a website? (e.g., Apple, Nike, McDonald's)
+2. Is this INSPIRED BY something with known colors? (e.g., "Sonic the Hedgehog" = blue/red/gold, "retro gaming" = neon colors)
+3. Is this a fictional brand that should look like something? (e.g., "SonicVerse" should look Sonic-inspired)
+4. Is this topic-based where colors should match the subject? (e.g., "Ocean Conservation" = blues/greens)
+5. Is this generic where any nice colors work?
 
-Determine if a real company/brand is the SUBJECT. If yes, provide the domain.
+Return JSON:
+{{
+    "type": "real_brand" | "inspired_by" | "fictional_brand" | "topic_based" | "generic",
+    "brand": "brand name if applicable",
+    "domain": "domain.com if it's a real brand with a website, null otherwise",
+    "inspiration": "what it's inspired by (e.g., 'Sonic the Hedgehog', 'retro arcade games', 'ocean/nature')",
+    "mood": "fun/professional/energetic/calm/bold/playful/serious",
+    "color_hints": ["any colors mentioned or implied, e.g., 'blue', 'Sonic blue', 'neon'"]
+}}
 
-Examples:
-- "Google Q3 Earnings" → {{"brand": "Google", "domain": "google.com"}}
-- "Nike marketing strategy" → {{"brand": "Nike", "domain": "nike.com"}}
-- "How to cook pasta" → {{"brand": null, "domain": null}}
-- "Amazon rainforest" → {{"brand": null, "domain": null}}
-- "Amazon Web Services" → {{"brand": "Amazon Web Services", "domain": "aws.amazon.com"}}
+IMPORTANT:
+- For gaming/character brands like Sonic, Nintendo, Pokemon - these are REAL brands with domains
+- For fictional variants like "SonicVerse" - type should be "inspired_by" with inspiration="Sonic the Hedgehog"
+- Always try to identify the INSPIRATION even for fictional brands"""
 
-Return ONLY JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "domain": null}}"""
-
-            client = get_client("claude-3-5-haiku-20241022")
+            client, actual_model = get_client("claude-haiku-4-5")
+            if not client or not actual_model:
+                logger.error(f"[ThemeAgent] Failed to get client for claude-haiku-4-5")
+                return None
+            logger.info(f"[ThemeAgent] Using model: {actual_model}")
             response = invoke(
                 client=client,
-                model="claude-3-5-haiku-20241022",
-                messages=[{"role": "user", "content": brand_prompt}],
-                max_tokens=100,
-                temperature=0
+                model=actual_model,
+                messages=[{"role": "user", "content": analysis_prompt}],
+                max_tokens=300,
+                temperature=0,
+                theme_generation=True
             )
+            logger.info(f"[ThemeAgent] Analysis response type: {type(response)}, preview: {str(response)[:200]}")
 
-            # Parse JSON - extract just the object
-            import re
-            json_match = re.search(r'\{[^{}]*\}', response)
-            if json_match:
-                return json.loads(json_match.group(0))
-            return None
+            # Parse JSON from response
+            try:
+                # Handle both string and dict responses
+                response_text = response.get("content") if isinstance(response, dict) else response
+                # Find JSON in response
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_text[json_start:json_end]
+                    return json.loads(json_str)
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.warning(f"[ThemeAgent] Failed to parse analysis: {str(response)[:200]}, error: {e}")
+                return None
 
         except Exception as e:
-            logger.warning(f"[ThemeAgent] Brand detection failed: {e}")
+            import traceback
+            logger.error(f"[ThemeAgent] Analysis error: {e}")
+            logger.error(f"[ThemeAgent] Analysis traceback: {traceback.format_exc()}")
             return None
 
-    async def _tool_fetch_brand_data(self, domain: str) -> Optional[Dict[str, Any]]:
-        """Fetch brand colors/fonts/logo from Brandfetch."""
+    async def _fetch_brandfetch(self, domain: str) -> Optional[Dict[str, Any]]:
+        """Fetch brand data from Brandfetch with timeout."""
         try:
             from services.simple_brandfetch_cache import SimpleBrandfetchCache
 
             db_url = os.getenv('DATABASE_URL')
             if not db_url:
+                logger.warning("[ThemeAgent] No DATABASE_URL")
                 return None
 
-            async with SimpleBrandfetchCache(db_url) as cache:
-                brand_data = await cache.get_brand_data(domain)
+            logger.info(f"[ThemeAgent] Fetching Brandfetch: {domain}")
 
-                if brand_data and not brand_data.get('error'):
-                    # Extract colors - handle multiple formats from Brandfetch
-                    colors_data = brand_data.get('colors', {})
-                    logger.info(f"[ThemeAgent] Brandfetch raw colors_data type={type(colors_data)}: {colors_data}")
-                    colors = []
-                    if isinstance(colors_data, dict):
-                        # Try multiple possible keys
-                        colors = colors_data.get('hex_list', []) or colors_data.get('hex', []) or colors_data.get('colors', [])
-                        logger.info(f"[ThemeAgent] Colors from dict: {colors}")
-                    elif isinstance(colors_data, list):
-                        colors = [c.get('hex') if isinstance(c, dict) else c for c in colors_data]
-                        logger.info(f"[ThemeAgent] Colors from list: {colors}")
-
-                    # Extract fonts
-                    fonts_data = brand_data.get('fonts', {})
-                    fonts = fonts_data.get('names', []) if isinstance(fonts_data, dict) else []
-
-                    # Extract logo
-                    logos = brand_data.get('logos', {})
-                    logo_url = None
-                    for logo_type in ['light', 'dark', 'icons']:
-                        items = logos.get(logo_type, [])
-                        if items and isinstance(items, list) and items[0]:
-                            item = items[0]
-                            if isinstance(item, dict):
-                                formats = item.get('formats', [])
-                                if formats and isinstance(formats, list):
-                                    logo_url = formats[0].get('url')
-                                    break
-
-                    return {
-                        "colors": [c.upper() if isinstance(c, str) else c for c in colors if c],
-                        "fonts": fonts,
-                        "logo_url": logo_url
-                    }
-
-            return None
-
-        except Exception as e:
-            logger.warning(f"[ThemeAgent] Brandfetch fetch failed: {e}")
-            return None
-
-    async def _tool_generate_huemint_palette(self, title: str, prompt: str) -> Optional[Dict[str, Any]]:
-        """Generate a nice palette using Huemint for generic content."""
-        try:
-            from agents.tools.theme.huemint_palette_generator import HuemintPaletteGenerator
-
-            generator = HuemintPaletteGenerator()
-
-            # Generate multiple palettes and pick the best one with distinct colors
-            palettes = await generator.generate_palette(
-                num_colors=5,
-                temperature=1.2,  # More creative
-                num_results=10
-            )
-
-            if not palettes:
+            try:
+                async with asyncio.timeout(15):
+                    async with SimpleBrandfetchCache(db_url) as cache:
+                        brand_data = await cache.get_brand_data(domain)
+            except asyncio.TimeoutError:
+                logger.warning(f"[ThemeAgent] Brandfetch timeout: {domain}")
                 return None
 
-            # Find palette with most distinct colors
-            best_palette = None
-            best_distinct_count = 0
+            if brand_data and not brand_data.get('error'):
+                # Extract colors
+                colors_data = brand_data.get('colors', {})
+                colors = []
+                if isinstance(colors_data, dict):
+                    colors = colors_data.get('hex_list', []) or colors_data.get('hex', []) or colors_data.get('colors', [])
+                elif isinstance(colors_data, list):
+                    colors = [c.get('hex') if isinstance(c, dict) else c for c in colors_data]
 
-            for palette in palettes:
-                colors = palette.get("colors", [])
-                distinct = _ensure_distinct_colors(colors, min_distance=80)
-                if len(distinct) > best_distinct_count:
-                    best_distinct_count = len(distinct)
-                    best_palette = palette
-                    if best_distinct_count >= 4:
-                        break  # Good enough
+                # Extract fonts
+                fonts_data = brand_data.get('fonts', {})
+                fonts = fonts_data.get('names', []) if isinstance(fonts_data, dict) else []
 
-            if best_palette and best_palette.get("colors"):
-                colors = best_palette["colors"]
-                distinct = _ensure_distinct_colors(colors, min_distance=80)
-
-                # Determine background (lightest), text (darkest), accent (most vibrant)
-                def brightness(hex_c):
-                    r, g, b = _hex_to_rgb(hex_c)
-                    return (r * 299 + g * 587 + b * 114) / 1000
-
-                def saturation(hex_c):
-                    r, g, b = _hex_to_rgb(hex_c)
-                    h, l, s = colorsys.rgb_to_hls(r/255, g/255, b/255)
-                    return s
-
-                sorted_by_brightness = sorted(distinct, key=brightness, reverse=True)
-                background = sorted_by_brightness[0] if sorted_by_brightness else "#FFFFFF"
-                text = sorted_by_brightness[-1] if sorted_by_brightness else "#1A1A1A"
-
-                # Accent is most saturated (excluding bg and text)
-                remaining = [c for c in distinct if c not in [background, text]]
-                accent = max(remaining, key=saturation) if remaining else distinct[1] if len(distinct) > 1 else "#3B82F6"
+                # Extract logo
+                logos = brand_data.get('logos', {})
+                logo_url = None
+                for logo_type in ['light', 'dark', 'icons']:
+                    items = logos.get(logo_type, [])
+                    if items and isinstance(items, list) and items[0]:
+                        item = items[0]
+                        if isinstance(item, dict):
+                            formats = item.get('formats', [])
+                            if formats:
+                                logo_url = formats[0].get('url')
+                                break
 
                 return {
-                    "colors": distinct,
-                    "background": background,
-                    "text": text,
-                    "accent": accent
+                    "colors": [c.upper() if isinstance(c, str) else c for c in colors if c],
+                    "fonts": fonts,
+                    "logo_url": logo_url
                 }
 
             return None
 
         except Exception as e:
-            logger.warning(f"[ThemeAgent] Huemint generation failed: {e}")
+            logger.warning(f"[ThemeAgent] Brandfetch error: {e}")
             return None
 
-    async def _tool_select_fonts(self, name: str, domain: Optional[str]) -> Optional[Dict[str, str]]:
-        """Select appropriate fonts using AI from available fonts in the registry."""
+    async def _generate_contextual_theme(
+        self,
+        title: str,
+        prompt: str,
+        context: Optional[str],
+        inspiration: Optional[str],
+        mood: Optional[str],
+        theme_type: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate a contextually appropriate theme using AI.
+        This is the smart part - it understands what colors make sense.
+        """
         try:
             from agents.ai.clients import get_client, invoke
-            from services.registry_fonts import RegistryFonts
 
-            # Get available fonts grouped by category
-            font_categories = RegistryFonts.get_available_fonts()
+            # Build context for color generation
+            color_context = f"""Generate a color palette for this presentation.
 
-            # Build font list for AI prompt (limit to avoid too long prompts)
-            font_list_parts = []
-            for category, fonts in font_categories.items():
-                if fonts and category not in ['PixelBuddha']:  # Skip PixelBuddha for now
-                    font_list_parts.append(f"{category}: {', '.join(fonts[:10])}")
-            available_fonts_str = "\n".join(font_list_parts)
+Title: {title}
+Inspiration: {inspiration or 'None specified'}
+Mood: {mood or 'professional'}
+Theme type: {theme_type}
 
-            font_prompt = f"""Select fonts for: "{name}"
+IMPORTANT CONTEXT:
+- If inspired by Sonic the Hedgehog: Use Sonic's iconic colors (bright blue #0066CC, red #CC0000, gold/yellow #FFD700)
+- If retro/arcade gaming: Use vibrant neon colors (hot pink, electric blue, lime green)
+- If professional/corporate: Use clean, modern colors (navy, white, accent color)
+- If nature/environment: Use natural colors (greens, blues, earth tones)
+- Match the MOOD and INSPIRATION, not random colors!
 
-Available fonts by category:
-{available_fonts_str}
+Return JSON with EXACTLY this format:
+{{
+    "background": "#FFFFFF or appropriate background color",
+    "text": "#1A1A1A or appropriate text color",
+    "accent": "primary accent color hex",
+    "accent2": "secondary accent color hex",
+    "colors": ["all colors as hex array"],
+    "hero_font": "suggested hero font name",
+    "body_font": "suggested body font name"
+}}
 
-Requirements:
-- Hero font should be bold/impactful for headlines
-- Body font should be readable for body text
-- Hero and body MUST be DIFFERENT fonts
+For Sonic-inspired themes, MUST use:
+- Sonic Blue (#0066FF or similar bright blue)
+- Sonic Red (#FF0000 or #CC0000)
+- Ring Gold (#FFD700 or #FFC107)
 
-Return ONLY:
-HERO: [font name]
-BODY: [font name]"""
+Return ONLY the JSON, no explanation."""
 
-            client = get_client("claude-3-5-haiku-20241022")
+            client, actual_model = get_client("claude-haiku-4-5")
+            if not client or not actual_model:
+                logger.error(f"[ThemeAgent] Failed to get client for claude-haiku-4-5 in contextual theme")
+                return None
+            logger.info(f"[ThemeAgent] Generating contextual theme with model: {actual_model}")
             response = invoke(
                 client=client,
-                model="claude-3-5-haiku-20241022",
-                messages=[{"role": "user", "content": font_prompt}],
-                max_tokens=100,
-                temperature=0
+                model=actual_model,
+                messages=[{"role": "user", "content": color_context}],
+                max_tokens=300,
+                temperature=0.3,
+                theme_generation=True
             )
+            logger.info(f"[ThemeAgent] Contextual response type: {type(response)}, preview: {str(response)[:200]}")
 
-            # Parse response
-            hero = None
-            body = None
+            # Parse JSON
+            try:
+                # Handle both string and dict responses
+                response_text = response.get("content") if isinstance(response, dict) else response
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_text[json_start:json_end]
+                    theme_data = json.loads(json_str)
 
-            for line in response.split('\n'):
-                if 'HERO:' in line.upper():
-                    hero = line.split(':', 1)[-1].strip().strip('"\'')
-                elif 'BODY:' in line.upper():
-                    body = line.split(':', 1)[-1].strip().strip('"\'')
+                    # Validate and extract fonts
+                    hero_font = theme_data.get("hero_font", "Montserrat")
+                    body_font = theme_data.get("body_font", "Open Sans")
 
-            # Validate fonts exist in registry
-            available_fonts = RegistryFonts.get_all_fonts_list(None)
-            available_lower = {f.lower(): f for f in available_fonts}
+                    # Validate fonts against registry
+                    validated_hero = _validate_font_against_registry(hero_font)
+                    validated_body = _validate_font_against_registry(body_font)
 
-            if hero and hero.lower() in available_lower:
-                hero = available_lower[hero.lower()]
-            else:
-                hero = "Montserrat"  # Safe fallback
+                    return {
+                        "background": theme_data.get("background", "#FFFFFF"),
+                        "text": theme_data.get("text", "#1A1A1A"),
+                        "accent": theme_data.get("accent"),
+                        "accent2": theme_data.get("accent2"),
+                        "colors": theme_data.get("colors", []),
+                        "fonts": {
+                            "hero": validated_hero or "Montserrat",
+                            "body": validated_body or "Open Sans"
+                        },
+                        "source": "ai_contextual"
+                    }
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.warning(f"[ThemeAgent] Failed to parse theme: {str(response)[:200]}, error: {e}")
 
-            if body and body.lower() in available_lower:
-                body = available_lower[body.lower()]
-            else:
-                body = "Open Sans"  # Safe fallback
-
-            # Ensure different fonts
-            if hero.lower() == body.lower():
-                body = "Open Sans" if hero != "Open Sans" else "Roboto"
-
-            logger.info(f"[ThemeAgent] Selected fonts: hero={hero}, body={body}")
-            return {"hero": hero, "body": body}
+            return None
 
         except Exception as e:
-            logger.warning(f"[ThemeAgent] Font selection failed: {e}")
-            return {"hero": "Montserrat", "body": "Open Sans"}
+            import traceback
+            logger.error(f"[ThemeAgent] Contextual theme error: {e}")
+            logger.error(f"[ThemeAgent] Contextual traceback: {traceback.format_exc()}")
+            return None
 
 
 async def run_theme_agent_parallel(title: str, prompt: str, context: Optional[str] = None) -> Dict[str, Any]:
-    """Convenience function to run theme agent.
-
-    This is designed to be called in parallel with outline generation.
-    """
+    """Convenience function to run the theme agent."""
     agent = ThemeAgent()
     return await agent.run(title, prompt, context)
