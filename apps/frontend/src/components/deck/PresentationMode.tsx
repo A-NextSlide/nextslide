@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Grid3X3, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useSlideNavigation } from '@/hooks/useSlideNavigation';
 import { SlideData } from '@/types/SlideTypes';
@@ -72,29 +72,40 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Handle fullscreen toggle with iOS Safari support
+  // Handle fullscreen/landscape toggle
   const toggleFullscreen = async () => {
     try {
-      if (isFullscreen) {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen();
+      if (isMobile) {
+        // On mobile, request landscape orientation
+        const screen = window.screen as any;
+        if (screen.orientation && screen.orientation.lock) {
+          if (screen.orientation.type.includes('landscape')) {
+            // Already in landscape, unlock to allow rotation
+            await screen.orientation.unlock();
+          } else {
+            // Lock to landscape
+            await screen.orientation.lock('landscape');
+          }
         }
       } else {
-        const elem = presentationRef.current || document.documentElement;
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if ((elem as any).webkitRequestFullscreen) {
-          // iOS Safari
-          (elem as any).webkitRequestFullscreen();
-        } else if ((elem as any).webkitEnterFullscreen) {
-          // Older iOS
-          (elem as any).webkitEnterFullscreen();
+        // On desktop, use fullscreen API
+        if (isFullscreen) {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            (document as any).webkitExitFullscreen();
+          }
+        } else {
+          const elem = presentationRef.current || document.documentElement;
+          if (elem.requestFullscreen) {
+            await elem.requestFullscreen();
+          } else if ((elem as any).webkitRequestFullscreen) {
+            (elem as any).webkitRequestFullscreen();
+          }
         }
       }
     } catch (err) {
-      console.log('Fullscreen not supported:', err);
+      console.log('Fullscreen/orientation not supported:', err);
     }
   };
   
@@ -480,8 +491,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Mobile fullscreen floating button - shows when on mobile and not fullscreen */}
-      {isMobile && !isFullscreen && !showThumbnails && (
+      {/* Mobile landscape button - shows when on mobile in portrait */}
+      {isMobile && !showThumbnails && (
         <motion.button
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -490,8 +501,8 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           onClick={toggleFullscreen}
           className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 bg-white/90 text-black rounded-full px-5 py-3 flex items-center gap-2 shadow-xl font-medium active:scale-95 transition-transform"
         >
-          <Maximize2 size={20} />
-          <span>Full Screen</span>
+          <RotateCcw size={20} />
+          <span>Landscape</span>
         </motion.button>
       )}
 
