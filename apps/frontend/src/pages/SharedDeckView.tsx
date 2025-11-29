@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useDeckStore } from '@/stores/deckStore';
 import PresentationMode from '@/components/deck/PresentationMode';
 import { usePresentationStore } from '@/stores/presentationStore';
+import { useReturnBannerStore } from '@/stores/returnBannerStore';
 import Slide from '@/components/Slide';
 import { SlideData } from '@/types/SlideTypes';
 import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
@@ -22,7 +23,7 @@ const SharedDeckView: React.FC = () => {
   const { shareCode } = useParams<{ shareCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requiresPassword, setRequiresPassword] = useState(false);
@@ -31,8 +32,22 @@ const SharedDeckView: React.FC = () => {
   const [deck, setDeck] = useState<any>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  
+
+  const isPresenting = usePresentationStore(state => state.isPresenting);
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
+  const setPendingPresentation = useReturnBannerStore(state => state.setPendingPresentation);
+
+  // Track if we've loaded the deck (to distinguish exit from initial load)
+  const hasLoadedDeck = useRef(false);
+
+  // When presentation mode exits (user clicks X or presses Escape), redirect to landing with banner
+  useEffect(() => {
+    if (hasLoadedDeck.current && !isPresenting && deck && shareCode) {
+      // User exited the presentation - redirect to landing with return banner
+      setPendingPresentation(shareCode, deck.name || 'your presentation');
+      navigate('/');
+    }
+  }, [isPresenting, deck, shareCode, navigate, setPendingPresentation]);
 
   useEffect(() => {
     if (shareCode) {
@@ -68,10 +83,17 @@ const SharedDeckView: React.FC = () => {
         
         // Store whether user can edit (in case they want to switch to edit mode)
         setCanEdit(is_editable);
-        
-        // Set the deck data
+
+        // Set the deck data locally
         setDeck(deckData);
-        
+
+        // Also load into the deckStore so navigation works (without saving to backend)
+        const { updateDeckData } = useDeckStore.getState();
+        updateDeckData(deckData, { skipBackend: true });
+
+        // Mark that we've loaded the deck (for exit detection)
+        hasLoadedDeck.current = true;
+
         // Enter presentation mode automatically
         enterPresentation();
         
@@ -342,6 +364,7 @@ const SharedDeckView: React.FC = () => {
           currentSlideIndex={currentSlideIndex}
           renderSlide={renderSlide}
           isViewOnly={!canEdit}
+          alwaysShowControls={true}
         />
         
         {/* Optional edit button if user has permissions */}

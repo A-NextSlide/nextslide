@@ -13,13 +13,15 @@ interface PresentationModeProps {
   currentSlideIndex: number;
   renderSlide: (slide: SlideData, index: number, scale?: number) => React.ReactNode;
   isViewOnly?: boolean;
+  alwaysShowControls?: boolean;
 }
 
-const PresentationMode: React.FC<PresentationModeProps> = ({ 
-  slides, 
+const PresentationMode: React.FC<PresentationModeProps> = ({
+  slides,
   currentSlideIndex,
   renderSlide,
-  isViewOnly = false
+  isViewOnly = false,
+  alwaysShowControls = false
 }) => {
   const { 
     isPresenting, 
@@ -249,7 +251,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
       {/* Floating controls overlay */}
       <AnimatePresence>
-        {showControls && !showThumbnails && (
+        {(showControls || alwaysShowControls) && !showThumbnails && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
