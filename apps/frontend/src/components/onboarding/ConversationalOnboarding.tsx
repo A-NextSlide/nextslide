@@ -430,7 +430,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     // Handle slide mode selection
     if (action === 'interactive' || action === 'static') {
       const slideMode = action as 'interactive' | 'static';
-      const modeLabel = slideMode === 'interactive' ? 'Interactive slides' : 'Classic design';
+      const modeLabel = slideMode === 'interactive' ? 'Interactive Slides' : 'Traditional Format';
 
       addMessage('user', modeLabel);
       setCollectedData(prev => ({ ...prev, slideMode }));
@@ -668,23 +668,39 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
             {/* Slide Mode Selection - Custom UI */}
             {message.role === 'assistant' && message.showSlideModeSelection && (
               <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex flex-col items-center gap-1.5">
-                  {/* Main Generate Button */}
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  {/* Interactive Presentation Button */}
                   <button
                     onClick={() => handleButtonClick('interactive')}
                     disabled={isProcessing}
-                    className="px-5 py-2 bg-[#FF4301] hover:bg-[#E63D00] text-white text-sm font-medium rounded-md transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="group relative flex flex-col items-center gap-1 px-6 py-4 bg-gradient-to-br from-[#FF4301] to-[#FF6B35] hover:from-[#E63D00] hover:to-[#FF4301] text-white rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 min-w-[200px]"
                   >
-                    Generate Outline
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span className="font-semibold text-base">Interactive Slides</span>
+                    </div>
+                    <span className="text-xs text-white/80 font-normal">
+                      Edit outline, customize each slide
+                    </span>
                   </button>
 
-                  {/* Classic Option */}
+                  {/* Classic/Traditional Presentation Button */}
                   <button
                     onClick={() => handleButtonClick('static')}
                     disabled={isProcessing}
-                    className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-500 dark:hover:text-zinc-400 transition-colors disabled:opacity-50 py-1"
+                    className="group relative flex flex-col items-center gap-1 px-6 py-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-xl transition-all duration-200 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 min-w-[200px]"
                   >
-                    or use classic mode
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="font-semibold text-base">Traditional Format</span>
+                    </div>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">
+                      Quick generation, ready to present
+                    </span>
                   </button>
                 </div>
               </div>
