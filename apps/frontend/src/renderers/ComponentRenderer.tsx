@@ -299,12 +299,11 @@ export const ComponentRenderer: React.FC<Props> = ({
     border: debug ? '1px dashed #aaa' : 'none', // Only show border if explicit debug prop
     color: textColor,
     // In edit mode: CustomComponent needs pointerEvents: none so clicks reach wrapper for selection
-    // UNLESS it is selected, then we allow interaction (pointerEvents: auto)
     // In non-edit mode: CustomComponent can be interactive
     // Other interactive components (TextBlock, TiptapTextBlock, Table, Video) keep auto for their editing needs
     pointerEvents: isEditing && componentType === 'CustomComponent'
-      ? (effectiveIsSelected ? 'auto' : 'none')
-      : ['CustomComponent', 'TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
+      ? 'none'
+      : ['TextBlock', 'TiptapTextBlock', 'Table', 'Video', 'Background'].includes(componentType)
         ? 'auto'
         : 'none',
   };
@@ -491,19 +490,6 @@ export const ComponentRenderer: React.FC<Props> = ({
           return;
         }
 
-        // For CustomComponents: only allow drag when selected AND not clicking on interactive content
-        if (componentType === 'CustomComponent') {
-          // If not selected, don't start drag (let click select first)
-          if (!effectiveIsSelected) {
-            return;
-          }
-          // If clicking on buttons or interactive elements inside, don't drag
-          const target = e.target as HTMLElement;
-          if (target.closest('button') || target.closest('[data-no-drag]')) {
-            return;
-          }
-        }
-
         if (isEditing && e.button === 0 && !isBackground) {
           handleDragStart(e);
         }
@@ -520,11 +506,10 @@ export const ComponentRenderer: React.FC<Props> = ({
         document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
       )}
 
-      {/*
+      {/* 
         CLICK CAPTURE OVERLAY for CustomComponents in edit mode
         This invisible overlay captures clicks since iframes have pointerEvents: none.
         Only render when NOT selected - when selected, SelectionBoundingBox handles interactions.
-        NOTE: Only handles click to select, NOT drag. Drag happens after selection.
       */}
       {isEditing && componentType === 'CustomComponent' && !effectiveIsSelected && (
         <div
@@ -533,21 +518,14 @@ export const ComponentRenderer: React.FC<Props> = ({
             inset: 0,
             zIndex: 5, // Below selection UI but above content
             background: 'transparent',
-            cursor: 'pointer',
+            cursor: effectiveDraggable ? 'move' : 'default',
             pointerEvents: 'auto',
           }}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            handleClick(e);
-          }}
+          onClick={handleClick}
           onMouseDown={(e) => {
-            // Completely prevent any drag from starting
-            e.stopPropagation();
-            e.preventDefault();
-          }}
-          onMouseMove={(e) => {
-            e.stopPropagation();
+            if (e.button === 0) {
+              handleDragStart(e);
+            }
           }}
         />
       )}
@@ -556,13 +534,7 @@ export const ComponentRenderer: React.FC<Props> = ({
         DRAG OVERLAY for selected CustomComponents
         When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
       */}
-      {/* 
-        DRAG OVERLAY for selected CustomComponents
-        When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
-        CRITICAL: Disabled for CustomComponent to allow interaction when selected.
-        User must drag via the SelectionBoundingBox border.
-      */}
-      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && false && (
+      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && (
         <div
           style={{
             position: 'absolute',
@@ -612,3 +584,4 @@ export const ComponentRenderer: React.FC<Props> = ({
     </div>
   );
 };
+

@@ -61,20 +61,23 @@ COUNT CHECK: slides.length === {slide_count}"""
         if detail_level == "detailed":
             count_inst = "Use as many slides as needed to comprehensively explain the topic. Each slide = one focused concept."
         elif detail_level == "standard":
-            count_inst = """PRESENTATION MODE - Create slides for PRESENTING, not reading!
+            count_inst = """PRESENTATION MODE - Create slides for presenting, not reading.
 
-SLIDE SPREADING STRATEGY:
-- ONE simple idea per slide - spread content across many slides
-- Step-by-step instructions: ONE step per slide (e.g., "Step 1: Mix dry ingredients" on its own slide)
-- Each concept gets its own moment - don't cram multiple ideas together
-- Prefer 8-15 slides with simple, focused content over 5-6 dense slides
-- Think: "What would a presenter SAY for this slide?" - if it takes 30+ seconds to explain, split it
+SPREADING AND FLOW:
+- ONE idea per slide - give each concept room to breathe
+- Step-by-step content: ONE step per slide
+- Build a coherent narrative - each slide leads naturally to the next
+- Prefer 8-15 slides with focused content over dense slides
+- Complex concepts: break into introduction, explanation, and application slides
 
-EXAMPLES:
-✅ "How to make pasta" → 10 slides: Title, Ingredients, Boil water, Add salt, Add pasta, Stir occasionally, Test for doneness, Drain, Serve, Enjoy
-❌ "How to make pasta" → 3 slides: Title, All steps crammed together, Conclusion
+GOOD FLOW EXAMPLE:
+"How to make pasta" in 10 slides:
+Title, Ingredients Overview, Boil Water, Add Salt, Add Pasta, Stir, Test Doneness, Drain, Plate, Enjoy
 
-Create slides optimized for FLOW and DELIVERY."""
+BAD (cramming):
+"How to make pasta" in 3 slides: Title, All Steps Together, Conclusion
+
+Create coherent, well-paced presentations."""
         else:  # quick
             count_inst = "Create a concise presentation. Use your judgment on slide count."
 
@@ -121,7 +124,7 @@ Output JSON:
 
 Slide types: title, agenda, content, transition, divider, stat, quote, team, quiz, conclusion
 
-📝 Use 'quiz' type for interactive checkpoint slides in educational presentations
+Use 'quiz' type for interactive checkpoint slides in educational presentations
 
 CONTEXT/HISTORY:
 {style_context or 'None'}
@@ -189,8 +192,9 @@ Section title + optional 3-5 word tagline"""
     if slide_type == 'transition':
         return f"""{base}
 
-Progress indicator: "Section ✓ | >> Current | Upcoming"
-Use >> for current section, ✓ for completed"""
+Progress indicator showing completed sections, current section, and upcoming.
+Example: "Done | CURRENT | Next"
+Keep it simple and readable."""
 
     if slide_type == 'team':
         return f"""{base}
@@ -247,165 +251,111 @@ D) Glucose and carbon dioxide
     data_note = "\n\nUSE REAL DATA from files!" if has_data else ""
 
     if detail == 'detailed':
-        mode = """STRUCTURED MODE - EDUCATIONAL/PROFESSIONAL APPROACH:
+        mode = """DETAILED MODE - COMPREHENSIVE EDUCATIONAL APPROACH
 
-🎓 GOAL: Deep understanding through clear, focused explanations.
-This is NOT about cramming information - it's about TEACHING concepts properly.
+GOAL: Deep understanding through clear, well-paced explanations.
+Build understanding progressively - each slide advances the narrative.
 
 CONTENT PER SLIDE:
-- 150-200 words per slide (comprehensive coverage)
-- Multiple concepts allowed if related
-- Use full sentences and paragraphs where appropriate
-- Think "textbook clarity" with sufficient detail
+- 150-200 words per slide
+- ONE main concept per slide - give it room to breathe
+- Full sentences for clarity
+- Spread complex ideas across MULTIPLE slides
 
 FORMAT:
 ## Concept Title (2-5 words)
-• Clear, detailed point (15-25 words)
-• Supporting detail with context (15-25 words)
-• Optional example or case study (15-25 words)
+- Clear, detailed point (15-25 words)
+- Supporting detail with context (15-25 words)
+- Optional example (15-25 words)
 
-EDUCATIONAL CONTENT RULES:
-✅ Break complex topics into logical sections
-✅ Each slide focuses on a key learning objective
-✅ Use clear, accessible language
-✅ Include concrete examples when helpful
-✅ Progressive complexity: simple → advanced
-✅ For processes: detailed steps
-✅ For concepts: definition → explanation → example
-✅ For comparisons: overview → item A → item B → synthesis
+PACING AND FLOW:
+- Break complex topics into logical sections across slides
+- Each slide = one learning objective
+- Progressive complexity: foundation before advanced concepts
+- For processes: one step per slide when detail matters
+- For concepts: definition slide, then explanation slide, then example slide
+- For comparisons: overview, then each item separately, then synthesis
 
-INTERACTIVE ELEMENTS for Educational Content:
-- For key concepts: add "💡 Quick Check: [simple question to test understanding]"
-- For processes: add "✓ Checkpoint: What did we learn?"
-- For complex topics: add "🤔 Think: How would you apply this?"
+AVOID CRAMMING:
+- If a concept needs 3 paragraphs, use 3 slides
+- Step-by-step processes: dedicate a slide per step
+- Let each idea have its moment before moving on
 
-EXAMPLES BY TOPIC TYPE:
+CRITICAL - USER-PROVIDED CONTENT:
+If the user provided specific content/text:
+- Output EXACTLY what they wrote
+- DO NOT add research or elaboration
+- Format and structure their exact words only
 
-Educational Concept:
-## Photosynthesis Overview
-• Plants convert sunlight into chemical energy through a complex process involving chlorophyll.
-• This occurs primarily in the chloroplasts, which are the green parts of plants responsible for absorbing light.
-• The process produces glucose, which serves as food for the plant, and releases oxygen as a vital byproduct for other life.
-
-💡 Quick Check: What are the two main products of photosynthesis?
-
-Tutorial Step:
-## Step 3: Mixing the Batter
-• Combine dry and wet ingredients separately first to ensure even distribution of leavening agents.
-• Gently fold the wet mixture into the dry ingredients - be careful not to overmix, as this can develop gluten and make the result tough.
-• Stop mixing when just combined; some small lumps are perfectly fine and will disappear during baking.
-
-✓ Checkpoint: The batter should look slightly lumpy, not perfectly smooth.
-
-Technical Concept:
-## What is an API?
-• Application Programming Interface (API) is a set of rules and protocols that allows different software applications to communicate with each other.
-• It acts as an intermediary, similar to a waiter taking your order to the kitchen and bringing the food back to you.
-• APIs enable developers to access functionality or data from other services without needing to understand their internal implementation.
-
-🤔 Think: What are some APIs you might be using right now without realizing it?
-
-** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
-- Output EXACTLY what they wrote - word for word
-- DO NOT add research, examples, or additional information
-- DO NOT expand or elaborate on their content
-- Your role is to format and structure their exact words, not to add content
-
-CHARTS: ALMOST NEVER in educational/detailed mode
+CHARTS: Rarely needed
 - Educational content needs TEXT and EXAMPLES, not charts
-- ONLY use charts if you have 15+ quantitative data points showing a clear pattern
-- Default to text explanations and examples"""
+- Only use charts with 15+ real data points"""
     else:
-        mode = """🎤 PRESENTATION MODE - FOR PRESENTING, NOT READING!
+        mode = """PRESENTATION MODE - FOR SPEAKING, NOT READING
 
-CORE PRINCIPLE: This is a PRESENTATION. The audience will LISTEN to a presenter speak.
-Slides are VISUAL AIDS, not documents. Minimal text, maximum impact.
+CORE PRINCIPLE: Slides are visual aids for a presenter speaking.
+Minimal text, maximum impact. The presenter speaks the details.
 
-═══════════════════════════════════════════════════════════════
-WORD LIMITS (STRICT - DO NOT EXCEED):
-═══════════════════════════════════════════════════════════════
-• Standard content slides: MAX 20-35 words total
-• Step/instruction slides: MAX 10-20 words (just the step)
-• Stat/metric slides: MAX 10 words (number + context)
-• Interactive components: Can have more detail if needed
+WORD LIMITS (STRICT):
+- Content slides: MAX 20-35 words
+- Step/instruction slides: MAX 10-20 words
+- Stat slides: MAX 10 words
 
-FORMAT FOR SIMPLE SLIDES:
+FORMAT:
 ## [Title - 2-5 words]
-• One key point (5-8 words)
-• Optional second point (5-8 words)
-• That's it. No more.
+- One key point (5-8 words)
+- Optional second point (5-8 words)
 
-EXAMPLE - PITCH DECK SLIDE (PRESENTATION MODE):
-## Market Opportunity
-• **$45B** addressable market
-• Growing **23%** annually
+FLOW AND PACING:
+- ONE idea per slide - give it room to breathe
+- Spread content across MORE slides rather than cramming
+- Step-by-step content: ONE step per slide
+- If explaining takes 30+ seconds, split into multiple slides
+- Build narrative flow - each slide leads to the next
 
-EXAMPLE - STEP-BY-STEP SLIDE (SINGLE STEP PER SLIDE):
-## Step 3: Add the Pasta
-Drop pasta into boiling water
+COHERENT STRUCTURE:
+- For tutorials: one step per slide, logical sequence
+- For concepts: intro slide, then breakdown slides, then synthesis
+- For comparisons: overview, then dedicated slides per item
+- For stories: setup, progression, resolution across slides
 
-EXAMPLE - CONCEPT SLIDE:
-## What is Machine Learning?
-Computers learning patterns from data
+AVOID:
+- Walls of text
+- 5+ bullet points on one slide
+- Cramming multiple ideas together
+- Repetitive phrasing across slides
 
-═══════════════════════════════════════════════════════════════
-PRESENTATION FLOW RULES:
-═══════════════════════════════════════════════════════════════
-• ONE idea per slide - let it breathe
-• Spread content across MORE slides rather than cramming
-• Step-by-step: ONE step per slide, centered, simple
-• The presenter will SPEAK the details - slides just prompt
-• If a slide takes 30+ seconds to explain, it needs to be split
+CRITICAL - USER-PROVIDED CONTENT:
+If the user provided specific content/text:
+- Output EXACTLY what they wrote
+- DO NOT add research or elaboration
+- Format and structure their exact words only
 
-WHAT TO AVOID:
-❌ Walls of text
-❌ Multiple paragraphs
-❌ 5+ bullet points
-❌ Bullets longer than 10 words
-❌ Cramming everything onto one slide
-❌ Treating slides like a document
-
-WHAT TO DO:
-✅ Simple, centered statements for steps/concepts
-✅ Big numbers with minimal context
-✅ Short, punchy phrases
-✅ Let visuals do the work
-✅ One thought = one slide
-
-** CRITICAL: IF THE USER PROVIDED SPECIFIC CONTENT/TEXT:
-- Output EXACTLY what they wrote - word for word
-- DO NOT add research, examples, or additional information
-- Your role is to format and structure their exact words, not to add content
-
-INTERACTIVE COMPONENTS (Exception):
-For interactive elements (quizzes, simulations, detailed analysis tools),
-more content is acceptable because users INTERACT with it, not just view it.
-
-CHARTS - ALMOST NEVER:
-Only use charts when you have 15+ real data points and visualization is essential.
-Default: NO CHART. Use text + image instead."""
+CHARTS: Almost never
+- Only with 15+ real data points
+- Default to text + visuals instead"""
 
     charts = """
 CHART VALIDATION (ALL MUST PASS OR NO CHART):
 
-🚨 CRITICAL #1: SAME UNITS & MEASUREMENT TYPE
-❌ NEVER mix different types of data in ONE chart:
-   - NO mixing years + heights + distances (e.g., 4525 years, 200 feet, 1.4 meters)
+1. SAME UNITS & MEASUREMENT TYPE (CRITICAL)
+NEVER mix different types of data in ONE chart:
+   - NO mixing years + heights + distances
    - NO mixing revenue + employee count + percentages
    - NO mixing dates + measurements + counts
 
-✅ ALL values must represent THE SAME MEASUREMENT:
+ALL values must represent THE SAME MEASUREMENT:
    - Revenue chart: ONLY revenue values in consistent units ($M)
    - Employee chart: ONLY employee counts
    - Time series: ONLY values of same type across time points
 
-EXAMPLE FAILURES:
-❌ [{"name": "Years", "value": 4525}, {"name": "Height (ft)", "value": 200}, {"name": "Distance (m)", "value": 1.4}]
-❌ [{"name": "Revenue ($M)", "value": 500}, {"name": "Employees", "value": 2000}, {"name": "Growth %", "value": 15}]
+WRONG (mixed units):
+[{"name": "Years", "value": 4525}, {"name": "Height (ft)", "value": 200}]
+[{"name": "Revenue ($M)", "value": 500}, {"name": "Employees", "value": 2000}]
 
-EXAMPLE SUCCESS:
-✅ [{"name": "Q1 Revenue", "value": 500}, {"name": "Q2 Revenue", "value": 550}, {"name": "Q3 Revenue", "value": 600}]
-✅ [{"name": "North", "value": 1200}, {"name": "South", "value": 1500}, {"name": "East", "value": 1100}]
+CORRECT (same units):
+[{"name": "Q1 Revenue", "value": 500}, {"name": "Q2 Revenue", "value": 550}]
+[{"name": "North", "value": 1200}, {"name": "South", "value": 1500}]
 
 2. SAME SCALE: Comparable magnitudes (within 100x range)
 3. MAKES SENSE: Realistic (pie=100%, chronological time series)
@@ -417,11 +367,10 @@ TYPES: bar/column (categories), line/area (time trends), pie (distribution=100%)
 waterfall (sequential), scatter/bubble (correlation), radar (multi-dimensional),
 heatmap (2D intensity), sankey (flow), treemap/sunburst (hierarchical)
 
-403: Multi-series: add "series" field → [{"name": "Q1", "value": 450, "series": "Revenue"}, ...]
-
+Multi-series: add "series" field
 Titles need units: "Revenue by Region ($M)"
 
-If ANY rule fails → NO CHART, use text or bullet points instead"""
+If ANY rule fails, NO CHART - use text instead"""
 
     return f"""{base}
 

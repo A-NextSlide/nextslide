@@ -16,14 +16,25 @@ logger = get_logger(__name__)
 
 class SlidePromptBuilder:
     """Builds prompts for slide generation."""
-    
+
     MAX_CONTEXT_CHARS = 32000  # ~8,000 tokens (reduced for better performance)
-    
+
     def __init__(self):
         self.compressor = PromptCompressor()
         self.color_extractor = SlideColorExtractor()
         # Memoize deck-wide static prompt blocks so every slide reuses identical cached content
         self._static_block_cache: Dict[str, str] = {}
+
+    def _is_static_mode(self, context: SlideGenerationContext) -> bool:
+        """Check if slideMode is 'static' (classic design without animations)."""
+        try:
+            style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+            if style_prefs:
+                slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None)
+                return slide_mode == 'static'
+        except Exception:
+            pass
+        return False
     
     def build_system_prompt(self) -> str:
         """Build the system prompt."""
@@ -49,7 +60,21 @@ class SlidePromptBuilder:
         
         # Add slide information
         self._add_slide_info(sections, context)
-        
+
+        # Add static mode instructions if applicable
+        if self._is_static_mode(context):
+            sections.extend([
+                "\n** CLASSIC DESIGN MODE - NO ANIMATIONS OR INTERACTIVE ELEMENTS **",
+                "This presentation uses CLASSIC DESIGN mode. Generate clean, professional slides:",
+                "- NO animated components (no ReactBits, no animations)",
+                "- NO interactive elements (no quizzes, polls, expandable panels)",
+                "- NO hover effects or transitions",
+                "- Use standard components: TiptapTextBlock, Image, Chart, Table, Icon",
+                "- Focus on clean typography, clear layout, and professional design",
+                "- This should look like a traditional PowerPoint presentation",
+                ""
+            ])
+
         # Add mandatory content
         self._add_mandatory_content(sections, context)
         
@@ -1453,21 +1478,23 @@ class SlidePromptBuilder:
             pass
 
         # Promote ReactBits for modern, animated, and visually engaging presentations
-        try:
-            topic_text_rb = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
-            # ReactBits triggers for text animations
-            text_animation_triggers = ['animate', 'animated', 'dynamic', 'modern', 'interactive', 'engaging', 'stunning']
-            # Background animation triggers
-            background_triggers = ['backdrop', 'background', 'atmosphere', 'ambience', 'visual effect']
-            # Title/hero slide indicators
-            is_title_slide = context.slide_index == 0 or any(k in topic_text_rb for k in ['introduction', 'welcome', 'title', 'cover'])
+        # Skip ReactBits entirely in static mode (classic design)
+        if not self._is_static_mode(context):
+            try:
+                topic_text_rb = f"{context.slide_outline.title} {context.slide_outline.content}".lower()
+                # ReactBits triggers for text animations
+                text_animation_triggers = ['animate', 'animated', 'dynamic', 'modern', 'interactive', 'engaging', 'stunning']
+                # Background animation triggers
+                background_triggers = ['backdrop', 'background', 'atmosphere', 'ambience', 'visual effect']
+                # Title/hero slide indicators
+                is_title_slide = context.slide_index == 0 or any(k in topic_text_rb for k in ['introduction', 'welcome', 'title', 'cover'])
 
-            if 'ReactBits' not in predicted:
-                # Add ReactBits for title slides or slides with animation keywords
-                if is_title_slide or any(k in topic_text_rb for k in text_animation_triggers + background_triggers):
-                    predicted.append('ReactBits')
-        except Exception:
-            pass
+                if 'ReactBits' not in predicted:
+                    # Add ReactBits for title slides or slides with animation keywords
+                    if is_title_slide or any(k in topic_text_rb for k in text_animation_triggers + background_triggers):
+                        predicted.append('ReactBits')
+            except Exception:
+                pass
 
         sections.append(f"\nCOMPONENTS TO USE: {', '.join(predicted)}")
         

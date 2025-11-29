@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Sparkles, ArrowLeft, BarChart3, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
+import { Send, Sparkles, ArrowLeft, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
 import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 
@@ -55,6 +55,7 @@ interface Message {
     action: string;
   }>;
   showPresentationSelection?: boolean;
+  showSlideModeSelection?: boolean;
   attachments?: AttachmentPreview[];
 }
 
@@ -64,6 +65,7 @@ interface CollectedData {
   slideCount?: number;
   detailLevel?: 'quick' | 'standard' | 'detailed';
   presentationType?: 'simple' | 'detailed';
+  slideMode?: 'interactive' | 'static';
   chatHistory?: { role: 'user' | 'assistant'; content: string }[];
   themeChanges?: any;
   uploadedFiles?: File[];
@@ -80,7 +82,7 @@ interface CollectedData {
 type ConversationStage =
   | 'conversing'
   | 'planning'
-  | 'presentation_type_selection'
+  | 'slide_mode_selection'
   | 'confirmed'
   | 'chat';
 
@@ -159,7 +161,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     content: string,
     buttons?: Array<{ label: string; action: string }>,
     showPresentationSelection?: boolean,
-    attachments?: AttachmentPreview[]
+    attachments?: AttachmentPreview[],
+    showSlideModeSelection?: boolean
   ) => {
     const newMessage: Message = {
       id: `${Date.now()}-${Math.random()}`,
@@ -168,12 +171,13 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       timestamp: new Date(),
       buttons,
       showPresentationSelection,
+      showSlideModeSelection,
       attachments
     };
     setMessages(prev => [...prev, newMessage]);
 
-    // Update chat history for agent (don't include presentation selection prompts)
-    if (!showPresentationSelection) {
+    // Update chat history for agent (don't include selection prompts)
+    if (!showPresentationSelection && !showSlideModeSelection) {
       setChatHistory(prev => [...prev, { role, content }]);
     }
   };
@@ -332,11 +336,30 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           assistantMessage || "Here's the plan for your presentation:"
         );
 
-        // Show presentation type selection as a message
+        // Check if user requested detailed mode in their messages
+        const userRequestedDetailed = chatHistory.some(msg =>
+          msg.role === 'user' &&
+          (msg.content.toLowerCase().includes('detailed') ||
+           msg.content.toLowerCase().includes('in-depth') ||
+           msg.content.toLowerCase().includes('comprehensive'))
+        );
+
+        // Store detail level for later use
+        const detailLevel = userRequestedDetailed ? 'detailed' : 'quick';
+        setCollectedData(prev => ({ ...prev, presentationType: 'simple', detailLevel }));
+
+        // Ask about slide mode (interactive vs static)
         setTimeout(() => {
-          setStage('presentation_type_selection');
-          addMessage('assistant', "Choose your presentation style:", undefined, true);
-        }, 1000);
+          setStage('slide_mode_selection');
+          addMessage(
+            'assistant',
+            "Your presentation is ready to generate!",
+            undefined,
+            undefined,
+            undefined,
+            true // showSlideModeSelection
+          );
+        }, 1500);
       } else if (outlineData && outlineData.action === 'update_theme') {
         // Agent wants to update the theme
         console.log('[ConversationalOnboarding] Received theme update:', outlineData.theme_changes);
@@ -404,6 +427,38 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   };
 
   const handleButtonClick = (action: string) => {
+    // Handle slide mode selection
+    if (action === 'interactive' || action === 'static') {
+      const slideMode = action as 'interactive' | 'static';
+      const modeLabel = slideMode === 'interactive' ? 'Interactive slides' : 'Classic design';
+
+      addMessage('user', modeLabel);
+      setCollectedData(prev => ({ ...prev, slideMode }));
+      setStage('confirmed');
+
+      const confirmMessage = slideMode === 'interactive'
+        ? "Excellent choice! Creating your interactive presentation..."
+        : "Got it! Creating your beautifully designed presentation...";
+
+      addAgentMessage(confirmMessage);
+
+      setTimeout(() => {
+        onComplete({
+          ...collectedData,
+          topic: outlineFlow?.topic || collectedData.topic,
+          slideCount: collectedData.slideCount || outlineFlow?.slide_count,
+          detailLevel: collectedData.detailLevel || 'quick',
+          presentationType: 'simple',
+          slideMode,
+          chatHistory: chatHistory,
+          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
+          uploadedFiles: uploadedFiles.map(f => f.file),
+          uploadedMedia: outlineFlow?.uploadedMedia
+        });
+      }, 1500);
+      return;
+    }
+
     handleSendMessage(action);
   };
 
@@ -610,146 +665,38 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               </div>
             )}
 
-            {/* Presentation Type Selection Cards */}
-            {message.role === 'assistant' && message.showPresentationSelection && (
-              <div className="mt-4 animate-in slide-in-from-bottom-4 space-y-6">
-                <div className="grid grid-cols-2 gap-3 max-w-xl">
-                  {/* Simple Presentation */}
+            {/* Slide Mode Selection - Custom UI */}
+            {message.role === 'assistant' && message.showSlideModeSelection && (
+              <div className="mt-6 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="flex flex-col items-center gap-4 py-2">
+                  {/* Main Generate Button */}
                   <button
-                    onClick={() => {
-                      setCollectedData(prev => ({ ...prev, presentationType: 'simple', detailLevel: 'quick' }));
-                      addMessage('user', `Simple presentation (${collectedData.slideCount ? `${collectedData.slideCount} slides` : 'Auto count'})`);
-                      setStage('confirmed');
-                      addAgentMessage("Creating your presentation...");
-                      setTimeout(() => {
-                        onComplete({
-                          ...collectedData,
-                          topic: outlineFlow?.topic || collectedData.topic,
-                          slideCount: collectedData.slideCount || outlineFlow?.slide_count,
-                          detailLevel: 'quick',
-                          presentationType: 'simple',
-                          chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
-                          uploadedFiles: uploadedFiles.map(f => f.file),
-                          uploadedMedia: outlineFlow?.uploadedMedia
-                        });
-                      }, 1500);
-                    }}
-                    className="group relative bg-white dark:bg-zinc-800 rounded-xl p-4 border-2 border-zinc-200 dark:border-zinc-700 hover:border-orange-400 dark:hover:border-orange-500 transition-all hover:shadow-lg text-left"
+                    onClick={() => handleButtonClick('interactive')}
+                    disabled={isProcessing}
+                    className="group relative px-8 py-4 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold text-lg rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg group-hover:bg-orange-50 dark:group-hover:bg-orange-900/20 transition-colors">
-                        <FileText className="w-5 h-5 text-zinc-600 dark:text-zinc-400 group-hover:text-orange-500 transition-colors" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">Simple</h3>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">Clean slides with key points</p>
-                      </div>
-                    </div>
-
-                    {/* Simple slide preview SVG - Content Left, Image Right */}
-                    <svg viewBox="0 0 200 100" className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
-                      {/* Background */}
-                      <rect width="200" height="100" fill="currentColor" className="text-zinc-50 dark:text-zinc-900" />
-
-                      {/* Left Content */}
-                      <rect x="15" y="20" width="70" height="8" rx="2" fill="currentColor" className="text-zinc-800 dark:text-zinc-300" />
-                      <rect x="15" y="40" width="60" height="4" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-                      <rect x="15" y="50" width="50" height="4" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-                      <rect x="15" y="60" width="55" height="4" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-
-                      {/* Right Image Placeholder */}
-                      <rect x="100" y="15" width="85" height="70" rx="2" fill="currentColor" className="text-orange-100 dark:text-orange-900/20" />
-                      <circle cx="142.5" cy="50" r="15" fill="currentColor" className="text-orange-200 dark:text-orange-800/40" />
-                    </svg>
+                    <span className="flex items-center gap-3">
+                      <Sparkles className="w-5 h-5" />
+                      Generate Presentation
+                    </span>
+                    <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                      Animations, transitions & interactive elements
+                    </span>
                   </button>
 
-                  {/* Detailed Presentation */}
+                  {/* Classic Option */}
                   <button
-                    onClick={() => {
-                      setCollectedData(prev => ({ ...prev, presentationType: 'detailed', detailLevel: 'detailed' }));
-                      addMessage('user', `Detailed presentation (${collectedData.slideCount ? `${collectedData.slideCount} slides` : 'Auto count'})`);
-                      setStage('confirmed');
-                      addAgentMessage("Creating your detailed presentation...");
-                      setTimeout(() => {
-                        onComplete({
-                          ...collectedData,
-                          topic: outlineFlow?.topic || collectedData.topic,
-                          slideCount: collectedData.slideCount || outlineFlow?.slide_count,
-                          detailLevel: 'detailed',
-                          presentationType: 'detailed',
-                          chatHistory: chatHistory,
-                          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
-                          uploadedFiles: uploadedFiles.map(f => f.file),
-                          uploadedMedia: outlineFlow?.uploadedMedia
-                        });
-                      }, 1500);
-                    }}
-                    className="group relative bg-white dark:bg-zinc-800 rounded-xl p-4 border-2 border-zinc-200 dark:border-zinc-700 hover:border-orange-400 dark:hover:border-orange-500 transition-all hover:shadow-lg text-left"
+                    onClick={() => handleButtonClick('static')}
+                    disabled={isProcessing}
+                    className="mt-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-50"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg group-hover:bg-orange-50 dark:group-hover:bg-orange-900/20 transition-colors">
-                        <BarChart3 className="w-5 h-5 text-zinc-600 dark:text-zinc-400 group-hover:text-orange-500 transition-colors" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">Detailed</h3>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">Rich content with charts</p>
-                      </div>
-                    </div>
-
-                    {/* Detailed slide preview SVG - Content Left, Image Right */}
-                    <svg viewBox="0 0 200 100" className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
-                      {/* Background */}
-                      <rect width="200" height="100" fill="currentColor" className="text-zinc-50 dark:text-zinc-900" />
-
-                      {/* Left Content - Title */}
-                      <rect x="10" y="15" width="60" height="6" rx="2" fill="currentColor" className="text-zinc-800 dark:text-zinc-300" />
-                      
-                      {/* Left Content - Text blocks */}
-                      <rect x="10" y="26" width="55" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-                      <rect x="10" y="32" width="52" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-                      <rect x="10" y="38" width="50" height="3" rx="1" fill="currentColor" className="text-zinc-400 dark:text-zinc-600" />
-                      
-                      {/* Left Content - Charts */}
-                      <rect x="10" y="48" width="15" height="30" rx="1" fill="currentColor" className="text-blue-200 dark:text-blue-900" />
-                      <rect x="28" y="55" width="15" height="23" rx="1" fill="currentColor" className="text-blue-300 dark:text-blue-800" />
-                      <rect x="46" y="50" width="15" height="28" rx="1" fill="currentColor" className="text-blue-400 dark:text-blue-700" />
-                      
-                      {/* Additional text below chart */}
-                      <rect x="10" y="83" width="45" height="2.5" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
-                      <rect x="10" y="88" width="40" height="2.5" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
-
-                      {/* Right Image Placeholder with more detail */}
-                      <rect x="75" y="15" width="115" height="70" rx="2" fill="currentColor" className="text-indigo-100 dark:text-indigo-900/20" />
-                      <rect x="82" y="22" width="50" height="35" rx="1" fill="currentColor" className="text-indigo-200 dark:text-indigo-800/30" />
-                      <rect x="135" y="22" width="48" height="20" rx="1" fill="currentColor" className="text-purple-200 dark:text-purple-800/30" />
-                      <rect x="135" y="45" width="48" height="12" rx="1" fill="currentColor" className="text-blue-200 dark:text-blue-800/30" />
-                      
-                      {/* Caption */}
-                      <rect x="82" y="60" width="80" height="2" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
-                      <rect x="82" y="65" width="70" height="2" rx="1" fill="currentColor" className="text-zinc-300 dark:text-zinc-700" />
-                    </svg>
-                  </button>
-                </div>
-                
-                {/* Continue Chatting Link */}
-                <div className="flex justify-center mt-2">
-                  <button
-                    onClick={() => {
-                      // Allow user to continue asking questions
-                      setStage('chat');
-                      addMessage('user', 'I want to continue chatting');
-                      setTimeout(() => {
-                        addAgentMessage("Of course! What else would you like to discuss about your presentation?");
-                      }, 500);
-                    }}
-                    className="text-xs font-bold text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors cursor-pointer"
-                  >
-                    continue chatting
+                    or create a <span className="underline underline-offset-2">classic presentation</span>
+                    <span className="text-xs ml-1 opacity-70">(no animations)</span>
                   </button>
                 </div>
               </div>
             )}
+
           </div>
         ))}
 
@@ -796,8 +743,29 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           <div className="flex justify-center mt-4 animate-in fade-in">
             <button
               onClick={() => {
-                setStage('presentation_type_selection');
-                addMessage('assistant', "Choose your presentation style:", undefined, true);
+                // Check if user requested detailed mode in their messages
+                const userRequestedDetailed = chatHistory.some(msg =>
+                  msg.role === 'user' &&
+                  (msg.content.toLowerCase().includes('detailed') ||
+                   msg.content.toLowerCase().includes('in-depth') ||
+                   msg.content.toLowerCase().includes('comprehensive'))
+                );
+                const detailLevel = userRequestedDetailed ? 'detailed' : 'quick';
+
+                // Default to interactive mode when skipping the chat early
+                setCollectedData(prev => ({ ...prev, presentationType: 'simple', detailLevel, slideMode: 'interactive' }));
+                setStage('confirmed');
+                addAgentMessage("Creating your interactive presentation...");
+                setTimeout(() => {
+                  onComplete({
+                    ...collectedData,
+                    detailLevel,
+                    presentationType: 'simple',
+                    slideMode: 'interactive',
+                    chatHistory: chatHistory,
+                    uploadedFiles: uploadedFiles.map(f => f.file)
+                  });
+                }, 1500);
               }}
               className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors"
             >
@@ -810,7 +778,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       </div>
 
       {/* Input Area - Sticky Bottom */}
-      {stage !== 'presentation_type_selection' && stage !== 'confirmed' && (
+      {stage !== 'slide_mode_selection' && stage !== 'confirmed' && (
         <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800">
           <div className="px-6 py-4">
             {/* Pending files preview - shown before sending */}

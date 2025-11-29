@@ -119,8 +119,13 @@ class ThemeAgent:
                     logger.info(f"[ThemeAgent] ✅ Brandfetch success: {result['colors'][:3]}")
                     return result
                 else:
-                    # Brandfetch failed, fall through to contextual generation
-                    logger.info("[ThemeAgent] Brandfetch failed, generating contextual colors")
+                    # Brandfetch failed, try to get logo from website via Firecrawl
+                    logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl for logo...")
+                    logo_url = await self._fetch_logo_from_website(theme_analysis["domain"])
+                    if logo_url:
+                        result["logo_url"] = logo_url
+                        result["domain"] = theme_analysis.get("domain")
+                        result["brand_name"] = theme_analysis.get("brand")
 
             # Step 3: Generate contextual colors based on the theme
             # This handles: inspired_by, fictional_brand, topic_based, generic
@@ -288,6 +293,62 @@ IMPORTANT:
 
         except Exception as e:
             logger.warning(f"[ThemeAgent] Brandfetch error: {e}")
+            return None
+
+    async def _fetch_logo_from_website(self, domain: str) -> Optional[str]:
+        """Fallback: Try to get logo from website using Firecrawl."""
+        try:
+            from services.firecrawl_service import get_firecrawl_service
+
+            firecrawl = get_firecrawl_service()
+            if not firecrawl.is_configured():
+                logger.warning("[ThemeAgent] Firecrawl not configured")
+                return None
+
+            url = f"https://{domain}"
+            logger.info(f"[ThemeAgent] Fetching logo from website via Firecrawl: {url}")
+
+            # Scrape the website for metadata
+            result = firecrawl.scrape(url, formats=["markdown"])
+
+            if not result.get("success"):
+                logger.warning(f"[ThemeAgent] Firecrawl scrape failed: {result.get('error')}")
+                return None
+
+            data = result.get("data", {})
+            metadata = data.get("metadata", {})
+
+            # Try different metadata fields for logo
+            logo_url = None
+
+            # Check for explicit logo field
+            if metadata.get("logo"):
+                logo_url = metadata["logo"]
+            # Check for Open Graph image (often company logo or main branding)
+            elif metadata.get("ogImage"):
+                logo_url = metadata["ogImage"]
+            # Check for favicon
+            elif metadata.get("favicon"):
+                logo_url = metadata["favicon"]
+            # Check for icon
+            elif metadata.get("icon"):
+                logo_url = metadata["icon"]
+
+            if logo_url:
+                # Ensure it's an absolute URL
+                if logo_url.startswith("//"):
+                    logo_url = f"https:{logo_url}"
+                elif logo_url.startswith("/"):
+                    logo_url = f"https://{domain}{logo_url}"
+
+                logger.info(f"[ThemeAgent] ✅ Found logo via Firecrawl: {logo_url}")
+                return logo_url
+
+            logger.info("[ThemeAgent] No logo found in website metadata")
+            return None
+
+        except Exception as e:
+            logger.warning(f"[ThemeAgent] Firecrawl logo fetch error: {e}")
             return None
 
     async def _generate_contextual_theme(

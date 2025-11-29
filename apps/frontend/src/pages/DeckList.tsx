@@ -804,6 +804,7 @@ const DeckList: React.FC = () => {
     stylePreferences?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
+    slideMode?: 'interactive' | 'static';
     themeChanges?: any;
     uploadedFiles?: File[];
     uploadedMedia?: Array<{
@@ -818,6 +819,7 @@ const DeckList: React.FC = () => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
     console.log('[DeckList] Uploaded media from agent:', data.uploadedMedia?.length || 0, data.uploadedMedia);
+    console.log('[DeckList] Slide mode:', data.slideMode || 'interactive (default)');
 
     // Hide conversational onboarding
     setShowConversationalOnboarding(false);
@@ -826,12 +828,13 @@ const DeckList: React.FC = () => {
     // This ensures fresh theme colors from the API are used, not stale cached colors
     const themeStore = useThemeStore.getState();
     themeStore.setThemeReady(false); // Reset theme ready state
-    
+
     // Update style preferences with collected data - CLEAR any old colors!
     setStylePreferences({
       initialIdea: data.topic,
       vibeContext: data.stylePreferences,
       colors: undefined, // Clear old colors so API colors take precedence
+      slideMode: data.slideMode || 'interactive', // Default to interactive
     });
 
     // Store conversational data to trigger generation
@@ -980,6 +983,7 @@ const DeckList: React.FC = () => {
     autoSelectImages?: boolean;
     referenceLinks?: string[];
     enableResearch?: boolean;
+    slideMode?: 'interactive' | 'static';
   }>({});
 
   // Auto-open Google import modal on successful OAuth redirect

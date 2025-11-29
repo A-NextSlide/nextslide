@@ -1099,6 +1099,17 @@ class SlideGeneratorV2(ISlideGenerator):
                 comp['props'] = props
 
     def _ensure_interactive_elements(self, slide_data: Dict[str, Any], context: SlideGenerationContext) -> None:
+        # Skip interactive elements if slideMode is 'static' (classic design)
+        try:
+            style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+            if style_prefs:
+                slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None)
+                if slide_mode == 'static':
+                    logger.debug("[INTERACTIVE] Skipping interactive elements - slideMode is 'static'")
+                    return
+        except Exception:
+            pass
+
         try:
             title_text = getattr(context.slide_outline, 'title', '') or ''
             content_text = getattr(context.slide_outline, 'content', '') or ''

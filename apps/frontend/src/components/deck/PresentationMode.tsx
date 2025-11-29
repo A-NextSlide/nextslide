@@ -255,7 +255,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 pointer-events-none"
+            className="absolute inset-0 pointer-events-none z-20"
           >
             {/* Top bar */}
             <div className="absolute top-0 left-0 right-0 p-6 pointer-events-auto">
@@ -378,7 +378,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/98 z-10 overflow-y-auto"
+            className="absolute inset-0 bg-black/98 z-20 overflow-y-auto"
             onClick={() => setShowThumbnails(false)}
           >
                         <div className="flex flex-col h-full" onClick={(e) => e.stopPropagation()}>
