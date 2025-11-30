@@ -8,20 +8,6 @@ interface SlideGeneratingUIProps {
   message?: string;
 }
 
-// Fun factory workers with their messages
-const WORKER_MESSAGES = [
-  { emoji: '⚡', name: 'Bolt', message: 'Speed-running the pixels...' },
-  { emoji: '🎨', name: 'Pixel', message: 'Making it look absolutely perfect!' },
-  { emoji: '☕', name: 'Bean', message: 'Caffeinating the algorithms...' },
-  { emoji: '📊', name: 'Data', message: 'Crunching the layout math!' },
-  { emoji: '🐛', name: 'Bug', message: 'Checking for Comic Sans... coast clear!' },
-  { emoji: '🔧', name: 'Wrench', message: 'Tightening the visual bolts!' },
-  { emoji: '✨', name: 'Spark', message: 'Adding extra sparkle!' },
-  { emoji: '🎯', name: 'Target', message: 'Aligning everything perfectly!' },
-  { emoji: '🚀', name: 'Rocket', message: 'Boosting render speed!' },
-  { emoji: '🧙', name: 'Wizard', message: 'Casting design spells!' },
-];
-
 // Define different slide layout sketches - these will be drawn as if being sketched
 interface SlideSketch {
   id: string;
@@ -187,7 +173,6 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
   // Animated progress state - initialize with current progress
   const [animatedProgress, setAnimatedProgress] = useState(progress);
   const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
-  const [currentWorkerIndex, setCurrentWorkerIndex] = useState(0);
   
   // Use refs to track animation state without causing re-renders
   const targetProgressRef = useRef(progress);
@@ -306,20 +291,6 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Cycle through worker messages
-  useEffect(() => {
-    const workerCycleTime = 3000;
-    const interval = setInterval(() => {
-      if (isComponentVisibleRef.current) {
-        setCurrentWorkerIndex((prev) => (prev + 1) % WORKER_MESSAGES.length);
-      }
-    }, workerCycleTime);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  const currentWorker = WORKER_MESSAGES[currentWorkerIndex];
-
   // Color scheme based on theme
   const isDarkMode = document.documentElement.classList.contains('dark');
   const lineColor = '#FF4301'; // Orange from theme generation
@@ -381,53 +352,6 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
             ))}
           </AnimatePresence>
         </svg>
-      </div>
-
-
-
-      {/* Worker message at top */}
-      <div className="absolute top-4 left-4 right-4">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentWorkerIndex}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.3 }}
-            className="flex items-center gap-2 justify-center"
-          >
-            <motion.span
-              className="text-2xl"
-              animate={{ 
-                rotate: [0, -10, 10, 0],
-                scale: [1, 1.1, 1],
-              }}
-              transition={{ repeat: Infinity, duration: 1.5 }}
-            >
-              {currentWorker.emoji}
-            </motion.span>
-            <div className="flex items-center gap-2">
-              <span 
-                className="font-bold text-sm"
-                style={{ 
-                  color: lineColor,
-                  fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-                }}
-              >
-                {currentWorker.name}:
-              </span>
-              <span 
-                className="text-sm"
-                style={{ 
-                  color: textColor,
-                  fontFamily: '"Inter", system-ui, sans-serif',
-                }}
-              >
-                "{currentWorker.message}"
-              </span>
-            </div>
-          </motion.div>
-        </AnimatePresence>
       </div>
 
       {/* Progress bar - Always visible at bottom, styled like theme generation */}

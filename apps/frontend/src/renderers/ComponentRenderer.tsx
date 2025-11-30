@@ -546,9 +546,10 @@ export const ComponentRenderer: React.FC<Props> = ({
         />
       )}
 
-      {/* 
+      {/*
         DRAG OVERLAY for selected CustomComponents
         When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
+        Double-click passes through to iframe to enable element editing
       */}
       {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && (
         <div
@@ -566,6 +567,25 @@ export const ComponentRenderer: React.FC<Props> = ({
             if (target.style.cursor?.includes('resize')) return;
             if (e.button === 0) {
               handleDragStart(e);
+            }
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            // Find the iframe inside this component and forward the double-click
+            const iframe = containerRef.current?.querySelector('iframe');
+            if (iframe?.contentWindow) {
+              // Get click position relative to iframe
+              const iframeRect = iframe.getBoundingClientRect();
+              const x = e.clientX - iframeRect.left;
+              const y = e.clientY - iframeRect.top;
+
+              // Send message to iframe to trigger element selection at this position
+              iframe.contentWindow.postMessage({
+                target: 'ns-custom-component-edit',
+                type: 'trigger-element-select',
+                x,
+                y
+              }, '*');
             }
           }}
         />

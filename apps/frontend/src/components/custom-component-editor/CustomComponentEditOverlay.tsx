@@ -40,10 +40,6 @@ const BRAND_ORANGE = '#FF4301';
 export function generateEditModeScript(componentId: string): string {
   return `
 <!-- NEXTSLIDE EDIT MODE -->
-<div id="ns-edit-mode-indicator" style="position:fixed;top:8px;right:8px;background:#FF4301;color:white;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;font-family:system-ui;z-index:99999;pointer-events:none;opacity:0.9;">
-  ✏️ Edit Mode
-</div>
-
 <style id="ns-edit-mode-styles">
   /* Edit mode hover effects */
   .ns-editable-text,
@@ -435,6 +431,31 @@ export function generateEditModeScript(componentId: string): string {
           finishTextEdit(selectedElement);
         }
         selectedElement = null;
+      }
+    }
+
+    // Handle trigger-element-select from parent (when user double-clicks overlay)
+    if (e.data.type === 'trigger-element-select') {
+      const x = e.data.x;
+      const y = e.data.y;
+
+      // Find element at the clicked position
+      const elementsAtPoint = document.elementsFromPoint(x, y);
+
+      for (const el of elementsAtPoint) {
+        // Check for editable text
+        if (el.classList.contains('ns-editable-text')) {
+          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
+          handleTextClick(el, fakeEvent);
+          return;
+        }
+
+        // Check for editable image wrapper
+        if (el.classList.contains('ns-image-wrapper') || el.classList.contains('ns-editable-image')) {
+          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
+          handleImageClick(el, fakeEvent);
+          return;
+        }
       }
     }
   });

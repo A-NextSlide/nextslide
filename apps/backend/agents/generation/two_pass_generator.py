@@ -689,9 +689,9 @@ FULL VISUAL LAYOUT:
 
             data = json.loads(text)
 
-            # Ensure required fields
+            # Ensure required fields - preserve original slide ID from outline
             if not data.get('id'):
-                data['id'] = f"slide-{context.slide_index + 1}"
+                data['id'] = getattr(context.slide_outline, 'id', f"slide-{context.slide_index + 1}")
             if not data.get('title'):
                 data['title'] = getattr(context.slide_outline, 'title', f"Slide {context.slide_index + 1}")
             if not isinstance(data.get('components'), list):
@@ -805,7 +805,7 @@ FULL VISUAL LAYOUT:
             })
 
         return {
-            "id": f"slide-{context.slide_index + 1}",
+            "id": getattr(context.slide_outline, 'id', f"slide-{context.slide_index + 1}"),
             "title": title,
             "components": components
         }
@@ -923,7 +923,7 @@ FULL VISUAL LAYOUT:
         content = getattr(slide_outline, 'content', '')
 
         return {
-            "id": f"slide-{context.slide_index + 1}",
+            "id": getattr(slide_outline, 'id', f"slide-{context.slide_index + 1}"),
             "title": title,
             "components": [
                 {

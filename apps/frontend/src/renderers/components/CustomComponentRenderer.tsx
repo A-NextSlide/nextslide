@@ -816,7 +816,14 @@ export const CustomComponentRenderer: React.FC<{
 
     // 0. IFRAME MODE: Check for Full HTML Document
     // This allows "do whatever we want" - Tailwind, CDNs, full isolation
-    if (trimmedCode.toLowerCase().startsWith('<!doctype html') || trimmedCode.toLowerCase().startsWith('<html')) {
+    // Check both startsWith AND contains to handle leading whitespace or BOM
+    const lowerCode = trimmedCode.toLowerCase();
+    const isFullHtmlDoc = lowerCode.startsWith('<!doctype html') ||
+                          lowerCode.startsWith('<html') ||
+                          lowerCode.includes('<!doctype html') ||
+                          (lowerCode.includes('<html') && lowerCode.includes('</html>'));
+
+    if (isFullHtmlDoc) {
       // Ensure proper newlines in HTML (fixes iframe rendering issues)
       const formattedHtml = ensureHtmlNewlines(code);
 
