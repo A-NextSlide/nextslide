@@ -1,16 +1,36 @@
 import './utils/consoleSuppressor'; // Initialize console suppressor first
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import * as Sentry from '@sentry/react'
 import App from './App.tsx'
 import './index.css'
 import './components/ColorPickerStyles.css'
 import './styles/presentation.css'
-import { useEditorSettingsStore } from '@/stores/editorSettingsStore'
-import { configureLogging, enableRegistryLogsOnly, LogLevel } from '@/utils/logging'
+import { configureLogging, LogLevel } from '@/utils/logging'
 import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
 import { setupDiagnostics } from '@/utils/authDiagnostics'
+
+// Initialize Sentry for error tracking (production only)
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+if (import.meta.env.PROD && SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: false,
+        blockAllMedia: false,
+      }),
+    ],
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+    enabled: import.meta.env.PROD,
+  });
+}
 
 // Configure logging to suppress all logs as early as possible
 configureLogging({
