@@ -1268,6 +1268,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     };
   }, []);
 
+  // Handle chat:prefill_with_component events (from CustomComponentEditOverlay AI edit)
+  useEffect(() => {
+    const handlePrefillWithComponent = (event: CustomEvent) => {
+      const { componentId, slideId, label, prompt, elementType } = event.detail || {};
+
+      if (!componentId) return;
+
+      // Add component to selections
+      setSelectedElements(prev => {
+        // Don't add if already selected
+        if (prev.some(s => s.elementId === componentId)) return prev;
+
+        return [...prev, {
+          elementId: componentId,
+          elementType: elementType || 'CustomComponent',
+          slideId: slideId || null,
+          label: label || 'Custom Component',
+          overlaps: [],
+          bounds: null
+        }];
+      });
+
+      // Set the input text (if prompt provided)
+      if (prompt) {
+        setInput(prompt);
+      }
+
+      // Focus the input after a short delay to ensure state is updated
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    };
+
+    window.addEventListener('chat:prefill_with_component', handlePrefillWithComponent as EventListener);
+
+    return () => {
+      window.removeEventListener('chat:prefill_with_component', handlePrefillWithComponent as EventListener);
+    };
+  }, []);
+
   // Show initial prompt message when outline with stylePreferences loads
   useEffect(() => {
     if (outlineMode && useOutlineAgent && outline?.stylePreferences && messages.length === 0) {
@@ -3065,11 +3105,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       }]);
 
       setInput('');
-      // Clear attachments and revoke preview URLs
+      // Clear attachments and revoke preview URLs ONLY for attachments with uploaded URLs
       console.log('[ChatPanel] 🧹 CLEARING ATTACHMENTS:', currentAttachments.length);
       currentAttachments.forEach(a => {
         const preview = (a as any).previewUrl;
-        if (preview) revokeImagePreview(preview);
+        const hasUploadedUrl = !!(a as any).url;
+        // Only revoke blob URLs if we have an uploaded URL to use instead
+        if (preview && hasUploadedUrl) revokeImagePreview(preview);
       });
       setAttachments([]);
       attachmentsRef.current = []; // Also clear the ref immediately
@@ -3664,14 +3706,58 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       // Re-read from ref after potential registration update
       const latestAttachments = attachmentsRef.current;
       const finalized = (latestAttachments as Array<PendingAttachment | RegisteredAttachment>).filter((a: any) => (a as any).url) as RegisteredAttachment[];
-      const attachmentMeta = finalized.map(a => ({ name: a.name, mimeType: a.mimeType, size: a.size, url: a.url }));
+      const attachmentMeta = finalized.map(a => ({
+        name: a.name,
+        mimeType: a.mimeType,
+        size: a.size,
+        url: a.url,
+        attachmentId: (a as any).attachmentId // Include attachment ID if available
+      }));
+
+      console.log('[ChatPanel] 📎 SENDING attachments to backend:', {
+        latestCount: latestAttachments.length,
+        finalizedCount: finalized.length,
+        attachmentMeta: attachmentMeta.map(a => ({ name: a.name, hasUrl: !!a.url, urlPrefix: a.url?.substring(0, 50) }))
+      });
+
+      // IMPORTANT: Update the user message in state with the uploaded URLs
+      // This MERGES finalized attachments, preserving any that are still pending
+      // This ensures pending attachments stay visible (with loading indicator) until upload completes
+      setMessages(prev => prev.map(msg => {
+        if (msg.id !== userMsgId || !msg.metadata?.attachments) return msg;
+
+        const existingAttachments = msg.metadata.attachments as any[];
+        const mergedAttachments = existingAttachments.map(existing => {
+          // Find the corresponding finalized attachment by name and size
+          const uploaded = finalized.find(f =>
+            f.name === existing.name && f.size === existing.size
+          );
+
+          if (uploaded) {
+            // Replace with uploaded version (has real URL)
+            return {
+              name: uploaded.name,
+              type: (uploaded as any).type || uploaded.mimeType,
+              size: uploaded.size,
+              url: uploaded.url,
+              previewUrl: uploaded.url, // Use uploaded URL since blob will be revoked
+            };
+          }
+          // Keep existing (still pending or failed) - preserves blob previewUrl and file ref
+          return existing;
+        });
+
+        return { ...msg, metadata: { ...msg.metadata, attachments: mergedAttachments } };
+      }));
 
       // Immediately clear UI selection bubbles and highlights before network call
       clearSelections();
-      // Revoke preview URLs before clearing attachments
+      // Revoke preview URLs ONLY for attachments that have an uploaded URL replacement
+      // This ensures we don't break previews for attachments that failed to upload
       latestAttachments.forEach(a => {
         const preview = (a as any).previewUrl;
-        if (preview) revokeImagePreview(preview);
+        const hasUploadedUrl = !!(a as any).url;
+        if (preview && hasUploadedUrl) revokeImagePreview(preview);
       });
       setAttachments([]);
       attachmentsRef.current = []; // Also clear the ref immediately
@@ -4009,7 +4095,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const pending = (att as any).file && !(att as any).url;
                     const fileType = (att as any).type || (att as any).mimeType || '';
                     const isImage = fileType.startsWith('image/');
-                    const previewUrl = (att as any).previewUrl || ((att as any).url && isImage ? (att as any).url : null);
+                    // IMPORTANT: Prefer uploaded URL over blob previewUrl since blob URLs get revoked
+                    const previewUrl = (att as any).url || (att as any).previewUrl || null;
                     const category = getFileCategory({ name: att.name, type: fileType });
 
                     // Get appropriate icon for file type

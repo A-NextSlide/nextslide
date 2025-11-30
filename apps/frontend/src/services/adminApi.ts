@@ -680,6 +680,59 @@ class AdminApi {
       throw error;
     }
   }
+
+  // ==================== Service Health ====================
+
+  async getServicesHealth(): Promise<ServiceHealthResponse> {
+    try {
+      return await this.request<ServiceHealthResponse>('/admin/services/health');
+    } catch (error) {
+      console.error('Error fetching services health:', error);
+      throw error;
+    }
+  }
+
+  async getServicesUsage(): Promise<{ usage: Record<string, any>; checked_at: string }> {
+    try {
+      return await this.request<any>('/admin/services/usage');
+    } catch (error) {
+      console.error('Error fetching services usage:', error);
+      throw error;
+    }
+  }
+
+  async getServicesConfig(): Promise<ModelConfigResponse> {
+    try {
+      return await this.request<ModelConfigResponse>('/admin/services/config');
+    } catch (error) {
+      console.error('Error fetching services config:', error);
+      throw error;
+    }
+  }
+
+  async getCosts(startDate?: string, endDate?: string): Promise<CostsResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return await this.request<CostsResponse>(`/admin/costs${query}`);
+    } catch (error) {
+      console.error('Error fetching costs:', error);
+      throw error;
+    }
+  }
+
+  async getCostEstimate(decksPerDay: number = 10, slidesPerDeck: number = 10): Promise<CostEstimateResponse> {
+    try {
+      return await this.request<CostEstimateResponse>(
+        `/admin/costs/estimate?decks_per_day=${decksPerDay}&slides_per_deck=${slidesPerDeck}`
+      );
+    } catch (error) {
+      console.error('Error fetching cost estimate:', error);
+      throw error;
+    }
+  }
 }
 
 export interface Brand {
@@ -701,6 +754,91 @@ export interface Brand {
   created_at: string;
   hit_count: number;
   last_accessed_at: string;
+}
+
+export interface ServiceStatus {
+  name: string;
+  status: 'operational' | 'degraded' | 'down' | 'unknown';
+  latency_ms?: number;
+  last_checked: string;
+  details?: Record<string, any>;
+  error?: string;
+}
+
+export interface ServiceHealthResponse {
+  overall_status: string;
+  services: ServiceStatus[];
+  checked_at: string;
+}
+
+export interface ModelConfig {
+  model: string;
+  description: string;
+  provider?: string;
+  enabled?: boolean;
+}
+
+export interface ModelConfigResponse {
+  models: Record<string, ModelConfig>;
+  feature_flags: Record<string, boolean>;
+  error?: string;
+}
+
+export interface ModelPricing {
+  input: number;
+  output: number;
+  provider: string;
+  per_request?: number;
+}
+
+export interface ProviderCostInfo {
+  source: 'api' | 'estimated' | 'no_api_key' | 'no_admin_key' | 'no_billing_api' | 'api_error' | 'error' | 'unavailable';
+  total_usd?: number;
+  data?: any[];
+  usage?: {
+    by_model?: any[];
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+  };
+  total_entries?: number;
+  note?: string;
+  error?: string;
+  setup_url?: string;
+  console_url?: string;
+  estimated?: boolean;
+}
+
+export interface CostsResponse {
+  period: {
+    start: string;
+    end: string;
+  };
+  providers: Record<string, ProviderCostInfo>;
+  total_estimated_usd: number;
+  data_source: 'api' | 'estimated';
+  model_pricing: Record<string, ModelPricing>;
+  estimation_note?: string;
+  setup_instructions?: Record<string, string>;
+}
+
+export interface CostBreakdownItem {
+  operation: string;
+  model: string;
+  provider: string;
+  calls_per_month: number;
+  cost_usd: number;
+}
+
+export interface CostEstimateResponse {
+  input: {
+    decks_per_day: number;
+    slides_per_deck: number;
+    decks_per_month: number;
+    slides_per_month: number;
+  };
+  breakdown: CostBreakdownItem[];
+  total_monthly_usd: number;
+  by_provider: Record<string, number>;
 }
 
 export const adminApi = new AdminApi();

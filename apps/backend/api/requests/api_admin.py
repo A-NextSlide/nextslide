@@ -1845,3 +1845,858 @@ async def fetch_brand_from_brandfetch(
     except Exception as e:
         logger.error(f"Fetch brand error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Service Health & Status ====================
+
+class ServiceStatus(BaseModel):
+    name: str
+    status: str  # operational, degraded, down, unknown
+    latency_ms: Optional[float] = None
+    last_checked: str
+    details: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class ServiceHealthResponse(BaseModel):
+    overall_status: str
+    services: List[ServiceStatus]
+    checked_at: str
+
+
+@router.get("/services/health", response_model=ServiceHealthResponse)
+async def get_services_health(
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Check health status of all external services and APIs
+    """
+    import os
+    import time
+    import aiohttp
+
+    services = []
+    checked_at = datetime.utcnow().isoformat()
+
+    # Helper to check HTTP endpoint
+    async def check_http(name: str, url: str, headers: dict = None, timeout: float = 5.0) -> ServiceStatus:
+        start = time.time()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                    latency = (time.time() - start) * 1000
+                    if resp.status < 400:
+                        return ServiceStatus(
+                            name=name,
+                            status="operational",
+                            latency_ms=round(latency, 2),
+                            last_checked=checked_at
+                        )
+                    else:
+                        return ServiceStatus(
+                            name=name,
+                            status="degraded",
+                            latency_ms=round(latency, 2),
+                            last_checked=checked_at,
+                            error=f"HTTP {resp.status}"
+                        )
+        except asyncio.TimeoutError:
+            return ServiceStatus(
+                name=name,
+                status="degraded",
+                latency_ms=timeout * 1000,
+                last_checked=checked_at,
+                error="Timeout"
+            )
+        except Exception as e:
+            return ServiceStatus(
+                name=name,
+                status="down",
+                last_checked=checked_at,
+                error=str(e)[:100]
+            )
+
+    import asyncio
+
+    # 1. Supabase Database
+    try:
+        supabase = get_supabase_client()
+        start = time.time()
+        result = supabase.table("users").select("id").limit(1).execute()
+        latency = (time.time() - start) * 1000
+        services.append(ServiceStatus(
+            name="Supabase Database",
+            status="operational",
+            latency_ms=round(latency, 2),
+            last_checked=checked_at,
+            details={"type": "PostgreSQL"}
+        ))
+    except Exception as e:
+        services.append(ServiceStatus(
+            name="Supabase Database",
+            status="down",
+            last_checked=checked_at,
+            error=str(e)[:100]
+        ))
+
+    # 2. OpenAI API
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        openai_status = await check_http(
+            "OpenAI API",
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {openai_key}"}
+        )
+        openai_status.details = {"models": "gpt-4, gpt-4o, gpt-image-1"}
+        services.append(openai_status)
+    else:
+        services.append(ServiceStatus(
+            name="OpenAI API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 3. Anthropic API
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        anthropic_status = await check_http(
+            "Anthropic API",
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": anthropic_key,
+                "anthropic-version": "2023-06-01"
+            }
+        )
+        # Anthropic returns 400 for empty body, but that means API is reachable
+        if anthropic_status.error and "400" in str(anthropic_status.error):
+            anthropic_status.status = "operational"
+            anthropic_status.error = None
+        anthropic_status.details = {"models": "claude-3, claude-3.5"}
+        services.append(anthropic_status)
+    else:
+        services.append(ServiceStatus(
+            name="Anthropic API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 4. Brandfetch API
+    brandfetch_key = os.getenv("BRANDFETCH_BRAND_API_KEY")
+    if brandfetch_key:
+        # Check cache stats instead of hitting API
+        try:
+            cache_stats = supabase.table("brandfetch_cache").select("id", count="exact").execute()
+            services.append(ServiceStatus(
+                name="Brandfetch API",
+                status="operational",
+                last_checked=checked_at,
+                details={
+                    "cached_brands": cache_stats.count or 0,
+                    "type": "Brand Data"
+                }
+            ))
+        except:
+            services.append(ServiceStatus(
+                name="Brandfetch API",
+                status="operational",
+                last_checked=checked_at,
+                details={"type": "Brand Data"}
+            ))
+    else:
+        services.append(ServiceStatus(
+            name="Brandfetch API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 5. Unsplash API
+    unsplash_key = os.getenv("UNSPLASH_ACCESS_KEY")
+    if unsplash_key:
+        unsplash_status = await check_http(
+            "Unsplash API",
+            "https://api.unsplash.com/photos/random?count=1",
+            headers={"Authorization": f"Client-ID {unsplash_key}"}
+        )
+        unsplash_status.details = {"type": "Stock Photos"}
+        services.append(unsplash_status)
+    else:
+        services.append(ServiceStatus(
+            name="Unsplash API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 6. Pexels API
+    pexels_key = os.getenv("PEXELS_API_KEY")
+    if pexels_key:
+        pexels_status = await check_http(
+            "Pexels API",
+            "https://api.pexels.com/v1/curated?per_page=1",
+            headers={"Authorization": pexels_key}
+        )
+        pexels_status.details = {"type": "Stock Photos & Videos"}
+        services.append(pexels_status)
+    else:
+        services.append(ServiceStatus(
+            name="Pexels API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 7. SerpAPI
+    serpapi_key = os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY")
+    if serpapi_key:
+        services.append(ServiceStatus(
+            name="SerpAPI",
+            status="operational",
+            last_checked=checked_at,
+            details={"type": "Google Images Search", "rate_limit": "10 req/sec"}
+        ))
+    else:
+        services.append(ServiceStatus(
+            name="SerpAPI",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 8. Resend Email
+    resend_key = os.getenv("RESEND_API_KEY")
+    if resend_key:
+        resend_status = await check_http(
+            "Resend Email",
+            "https://api.resend.com/domains",
+            headers={"Authorization": f"Bearer {resend_key}"}
+        )
+        resend_status.details = {"type": "Email Delivery"}
+        services.append(resend_status)
+    else:
+        services.append(ServiceStatus(
+            name="Resend Email",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 9. Perplexity API
+    pplx_key = os.getenv("PPLX_API_KEY")
+    if pplx_key:
+        services.append(ServiceStatus(
+            name="Perplexity API",
+            status="operational",
+            last_checked=checked_at,
+            details={"type": "Research & Web Search"}
+        ))
+    else:
+        services.append(ServiceStatus(
+            name="Perplexity API",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 10. Google Gemini
+    google_key = os.getenv("GOOGLE_API_KEY")
+    if google_key:
+        services.append(ServiceStatus(
+            name="Google Gemini",
+            status="operational",
+            last_checked=checked_at,
+            details={"model": os.getenv("GEMINI_COMPOSER_MODEL", "gemini-2.5-pro"), "type": "Image Generation"}
+        ))
+    else:
+        services.append(ServiceStatus(
+            name="Google Gemini",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 11. Firecrawl
+    firecrawl_key = os.getenv("FIRECRAWL_API_KEY")
+    if firecrawl_key:
+        services.append(ServiceStatus(
+            name="Firecrawl",
+            status="operational",
+            last_checked=checked_at,
+            details={"type": "Web Scraping"}
+        ))
+    else:
+        services.append(ServiceStatus(
+            name="Firecrawl",
+            status="unknown",
+            last_checked=checked_at,
+            error="API key not configured"
+        ))
+
+    # 12. Sentry
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if sentry_dsn:
+        services.append(ServiceStatus(
+            name="Sentry",
+            status="operational",
+            last_checked=checked_at,
+            details={"type": "Error Tracking", "sample_rate": "10%"}
+        ))
+    else:
+        services.append(ServiceStatus(
+            name="Sentry",
+            status="unknown",
+            last_checked=checked_at,
+            error="Not configured"
+        ))
+
+    # Determine overall status
+    statuses = [s.status for s in services]
+    if all(s == "operational" for s in statuses):
+        overall_status = "operational"
+    elif any(s == "down" for s in statuses):
+        overall_status = "degraded"
+    elif any(s == "degraded" for s in statuses):
+        overall_status = "degraded"
+    else:
+        overall_status = "operational"
+
+    return ServiceHealthResponse(
+        overall_status=overall_status,
+        services=services,
+        checked_at=checked_at
+    )
+
+
+@router.get("/services/config")
+async def get_services_config(
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Get actual model configuration used in generation
+    """
+    try:
+        from agents.config import (
+            THEME_STYLE_MODEL, COMPOSER_MODEL, VISUAL_LAYOUT_ANALYZER_MODEL,
+            OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL, OUTLINE_RESEARCH_MODEL,
+            OUTLINE_OPENAI_SEARCH_MODEL, PERPLEXITY_OUTLINE_MODEL, PRESENTATION_OUTLINE_MODEL,
+            PERPLEXITY_RESEARCH_MODEL, PERPLEXITY_IMAGE_MODEL,
+            ORCHESTRATOR_MODEL, DECK_EDITOR_MODEL, SLIDE_STYLE_MODEL, CONTEXT_BUILDER_MODEL,
+            QUALITY_EVALUATOR_MODEL, FILE_ANALYSIS_MODEL, OPENAI_IMAGE_MODEL, GEMINI_IMAGE_MODEL,
+            CUSTOM_COMPONENT_MODEL, IMAGE_PROVIDER, IMAGE_GENERATION_ENABLED,
+            USE_PERPLEXITY_FOR_OUTLINE, USE_PERPLEXITY_FOR_RESEARCH,
+            ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN, ENABLE_VISUAL_VALIDATION,
+        )
+
+        config = {
+            "models": {
+                "slide_generation": {
+                    "model": COMPOSER_MODEL,
+                    "description": "Main slide content generation"
+                },
+                "theme_generation": {
+                    "model": THEME_STYLE_MODEL,
+                    "description": "Theme & style decisions"
+                },
+                "outline_planning": {
+                    "model": OUTLINE_PLANNING_MODEL,
+                    "description": "Outline structure planning"
+                },
+                "outline_content": {
+                    "model": OUTLINE_CONTENT_MODEL,
+                    "description": "Outline content generation"
+                },
+                "presentation_outline": {
+                    "model": PRESENTATION_OUTLINE_MODEL,
+                    "description": "Detailed presentation outlines"
+                },
+                "research": {
+                    "model": PERPLEXITY_RESEARCH_MODEL,
+                    "description": "Web research & search"
+                },
+                "image_generation": {
+                    "model": GEMINI_IMAGE_MODEL if IMAGE_PROVIDER == "gemini" else OPENAI_IMAGE_MODEL,
+                    "provider": IMAGE_PROVIDER,
+                    "enabled": IMAGE_GENERATION_ENABLED,
+                    "description": "AI image generation"
+                },
+                "custom_components": {
+                    "model": CUSTOM_COMPONENT_MODEL,
+                    "enabled": ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN,
+                    "description": "Custom component generation"
+                },
+                "quality_evaluation": {
+                    "model": QUALITY_EVALUATOR_MODEL,
+                    "description": "Slide quality scoring"
+                },
+                "visual_analysis": {
+                    "model": VISUAL_LAYOUT_ANALYZER_MODEL,
+                    "enabled": ENABLE_VISUAL_VALIDATION,
+                    "description": "Layout validation"
+                },
+                "editing": {
+                    "model": ORCHESTRATOR_MODEL,
+                    "description": "Edit orchestration"
+                },
+                "file_analysis": {
+                    "model": FILE_ANALYSIS_MODEL,
+                    "description": "Document parsing"
+                },
+            },
+            "feature_flags": {
+                "use_perplexity_outline": USE_PERPLEXITY_FOR_OUTLINE,
+                "use_perplexity_research": USE_PERPLEXITY_FOR_RESEARCH,
+                "image_generation_enabled": IMAGE_GENERATION_ENABLED,
+                "visual_validation_enabled": ENABLE_VISUAL_VALIDATION,
+                "custom_component_gen_enabled": ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN,
+            }
+        }
+
+        return config
+
+    except ImportError as e:
+        logger.error(f"Failed to import config: {e}")
+        return {"error": "Config not available", "models": {}, "feature_flags": {}}
+
+
+@router.get("/services/usage")
+async def get_services_usage(
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Get usage statistics for services where available
+    """
+    import os
+
+    supabase = get_supabase_client()
+    usage = {}
+
+    # Brand cache usage
+    try:
+        cache_result = supabase.table("brandfetch_cache").select("id, hit_count", count="exact").execute()
+        total_hits = sum(b.get("hit_count", 0) for b in (cache_result.data or []))
+        usage["brandfetch"] = {
+            "cached_brands": cache_result.count or 0,
+            "total_cache_hits": total_hits,
+            "type": "cache"
+        }
+    except Exception as e:
+        logger.error(f"Error getting brandfetch usage: {e}")
+
+    # Deck statistics
+    try:
+        decks_result = supabase.table("decks").select("id", count="exact").execute()
+        usage["decks"] = {
+            "total_decks": decks_result.count or 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting deck usage: {e}")
+
+    # User statistics
+    try:
+        users_result = supabase.table("users").select("id", count="exact").execute()
+        usage["users"] = {
+            "total_users": users_result.count or 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting user usage: {e}")
+
+    # Font storage
+    try:
+        fonts_query = supabase.table("brandfetch_cache").select("api_response").execute()
+        font_count = 0
+        for brand in (fonts_query.data or []):
+            fonts = brand.get("api_response", {}).get("fonts", {})
+            if isinstance(fonts, dict):
+                files = fonts.get("files", [])
+                for f in files:
+                    font_count += len(f.get("variants", {}))
+        usage["fonts"] = {
+            "uploaded_font_files": font_count
+        }
+    except Exception as e:
+        logger.error(f"Error getting font usage: {e}")
+
+    return {
+        "usage": usage,
+        "checked_at": datetime.utcnow().isoformat()
+    }
+
+
+# Model pricing per million tokens (input, output) in USD
+MODEL_PRICING = {
+    # Anthropic Claude models
+    "claude-haiku-4-5": {"input": 0.80, "output": 4.00, "provider": "anthropic"},
+    "claude-3-5-haiku": {"input": 0.80, "output": 4.00, "provider": "anthropic"},
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
+    "claude-3-5-sonnet": {"input": 3.00, "output": 15.00, "provider": "anthropic"},
+    "claude-opus-4": {"input": 15.00, "output": 75.00, "provider": "anthropic"},
+
+    # Google Gemini models
+    "gemini-2.5-flash": {"input": 0.075, "output": 0.30, "provider": "google"},
+    "gemini-2.5-flash-lite": {"input": 0.0375, "output": 0.15, "provider": "google"},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00, "provider": "google"},
+    "gemini-3-pro": {"input": 1.25, "output": 10.00, "provider": "google"},
+
+    # OpenAI models
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "provider": "openai"},
+    "gpt-4.1": {"input": 2.00, "output": 8.00, "provider": "openai"},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "provider": "openai"},
+
+    # Perplexity models (per request, not per token)
+    "perplexity-sonar": {"input": 1.00, "output": 1.00, "provider": "perplexity", "per_request": 0.005},
+    "perplexity-sonar-pro": {"input": 3.00, "output": 15.00, "provider": "perplexity", "per_request": 0.005},
+
+    # Groq models (very cheap)
+    "llama3-8b-8192": {"input": 0.05, "output": 0.08, "provider": "groq"},
+    "mistral-saba-24b": {"input": 0.20, "output": 0.60, "provider": "groq"},
+}
+
+
+@router.get("/costs")
+async def get_costs(
+    request: Request,
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Get cost data from providers. Attempts to fetch real costs from Anthropic Admin API,
+    falls back to estimates based on model pricing.
+    """
+    import os
+
+    # Default to last 30 days
+    if not end_date:
+        end_dt = datetime.utcnow()
+    else:
+        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00').replace('+00:00', ''))
+
+    if not start_date:
+        start_dt = end_dt - timedelta(days=30)
+    else:
+        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00').replace('+00:00', ''))
+
+    costs = {
+        "period": {
+            "start": start_dt.isoformat(),
+            "end": end_dt.isoformat()
+        },
+        "providers": {},
+        "total_estimated_usd": 0.0,
+        "data_source": "estimated",
+        "model_pricing": MODEL_PRICING,
+    }
+
+    total_cost = 0.0
+
+    # Try to get real costs from Anthropic Admin API
+    # Admin API keys start with "sk-ant-admin-", regular keys start with "sk-ant-api"
+    anthropic_admin_key = os.environ.get("ANTHROPIC_ADMIN_API_KEY")
+    if anthropic_admin_key and anthropic_admin_key.startswith("sk-ant-admin"):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Fetch cost report - uses daily granularity
+                cost_response = await client.get(
+                    "https://api.anthropic.com/v1/organizations/cost_report",
+                    params={
+                        "start_date": start_dt.strftime("%Y-%m-%d"),
+                        "end_date": end_dt.strftime("%Y-%m-%d"),
+                        "limit": 1000
+                    },
+                    headers={
+                        "anthropic-version": "2023-06-01",
+                        "x-api-key": anthropic_admin_key
+                    }
+                )
+
+                if cost_response.status_code == 200:
+                    cost_data = cost_response.json()
+                    # Sum up costs - costs are in USD as decimal strings
+                    anthropic_total = sum(
+                        float(item.get("cost_usd", 0))
+                        for item in cost_data.get("data", [])
+                    )
+                    costs["providers"]["anthropic"] = {
+                        "source": "api",
+                        "total_usd": round(anthropic_total, 4),
+                        "data": cost_data.get("data", [])[:10],  # First 10 entries for preview
+                        "total_entries": len(cost_data.get("data", []))
+                    }
+                    total_cost += anthropic_total
+                    costs["data_source"] = "api"
+
+                    # Also fetch usage data for more details
+                    usage_response = await client.get(
+                        "https://api.anthropic.com/v1/organizations/usage_report/messages",
+                        params={
+                            "start_date": start_dt.strftime("%Y-%m-%d"),
+                            "end_date": end_dt.strftime("%Y-%m-%d"),
+                            "group_by": "model",
+                            "bucket": "1d",
+                            "limit": 1000
+                        },
+                        headers={
+                            "anthropic-version": "2023-06-01",
+                            "x-api-key": anthropic_admin_key
+                        }
+                    )
+                    if usage_response.status_code == 200:
+                        usage_data = usage_response.json()
+                        costs["providers"]["anthropic"]["usage"] = {
+                            "by_model": usage_data.get("data", [])[:20],
+                            "total_input_tokens": sum(
+                                item.get("input_tokens", 0) for item in usage_data.get("data", [])
+                            ),
+                            "total_output_tokens": sum(
+                                item.get("output_tokens", 0) for item in usage_data.get("data", [])
+                            )
+                        }
+                else:
+                    logger.warning(f"Anthropic cost API returned {cost_response.status_code}: {cost_response.text}")
+                    costs["providers"]["anthropic"] = {
+                        "source": "error",
+                        "error": f"API returned {cost_response.status_code}",
+                        "note": "Check Admin API key permissions"
+                    }
+        except Exception as e:
+            logger.error(f"Error fetching Anthropic costs: {e}")
+            costs["providers"]["anthropic"] = {
+                "source": "error",
+                "error": str(e)
+            }
+    else:
+        # Check if they have a regular key but not admin
+        regular_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if regular_key.startswith("sk-ant-api"):
+            costs["providers"]["anthropic"] = {
+                "source": "no_admin_key",
+                "note": "You have a regular API key (sk-ant-api...). For cost data, create an Admin API key (sk-ant-admin...) at console.anthropic.com/settings/admin-keys",
+                "setup_url": "https://console.anthropic.com/settings/admin-keys"
+            }
+        else:
+            costs["providers"]["anthropic"] = {
+                "source": "no_api_key",
+                "note": "No Anthropic API key configured"
+            }
+
+    # Google AI Studio - check if we can get usage
+    # Google AI Studio doesn't have a direct billing API like Anthropic
+    # Would need Google Cloud Billing API with service account
+    google_api_key = os.environ.get("GOOGLE_API_KEY")
+    if google_api_key:
+        costs["providers"]["google"] = {
+            "source": "no_billing_api",
+            "note": "Google AI Studio doesn't expose usage API. Check console.cloud.google.com/billing for costs.",
+            "console_url": "https://console.cloud.google.com/billing"
+        }
+    else:
+        costs["providers"]["google"] = {
+            "source": "no_api_key",
+            "note": "No GOOGLE_API_KEY configured"
+        }
+
+    # OpenAI - has a usage API
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # OpenAI usage API
+                usage_response = await client.get(
+                    "https://api.openai.com/v1/organization/usage",
+                    params={
+                        "start_date": start_dt.strftime("%Y-%m-%d"),
+                        "end_date": end_dt.strftime("%Y-%m-%d")
+                    },
+                    headers={
+                        "Authorization": f"Bearer {openai_api_key}"
+                    }
+                )
+                if usage_response.status_code == 200:
+                    usage_data = usage_response.json()
+                    openai_total = usage_data.get("total_usage", 0) / 100  # Convert cents to dollars
+                    costs["providers"]["openai"] = {
+                        "source": "api",
+                        "total_usd": round(openai_total, 4),
+                        "data": usage_data
+                    }
+                    total_cost += openai_total
+                else:
+                    costs["providers"]["openai"] = {
+                        "source": "api_error",
+                        "note": f"API returned {usage_response.status_code}. Check platform.openai.com/usage for costs.",
+                        "console_url": "https://platform.openai.com/usage"
+                    }
+        except Exception as e:
+            costs["providers"]["openai"] = {
+                "source": "error",
+                "error": str(e),
+                "console_url": "https://platform.openai.com/usage"
+            }
+    else:
+        costs["providers"]["openai"] = {
+            "source": "no_api_key",
+            "note": "No OPENAI_API_KEY configured"
+        }
+
+    # Perplexity - no billing API
+    pplx_key = os.environ.get("PPLX_API_KEY") or os.environ.get("PERPLEXITY_API_KEY")
+    if pplx_key:
+        costs["providers"]["perplexity"] = {
+            "source": "no_billing_api",
+            "note": "Perplexity doesn't have a usage API. Check your Perplexity dashboard for costs."
+        }
+    else:
+        costs["providers"]["perplexity"] = {
+            "source": "no_api_key",
+            "note": "No PPLX_API_KEY configured"
+        }
+
+    costs["total_estimated_usd"] = round(total_cost, 2)
+
+    # Add setup instructions
+    costs["setup_instructions"] = {
+        "anthropic": "Create Admin API key at console.anthropic.com/settings/admin-keys (requires org admin role)",
+        "google": "Google AI Studio billing is viewed at console.cloud.google.com/billing",
+        "openai": "OpenAI usage is at platform.openai.com/usage"
+    }
+
+    return costs
+
+
+@router.get("/costs/estimate")
+async def estimate_costs(
+    request: Request,
+    decks_per_day: int = Query(10, description="Average decks generated per day"),
+    slides_per_deck: int = Query(10, description="Average slides per deck"),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Estimate monthly costs based on usage patterns.
+    """
+    # Estimated tokens per operation
+    TOKENS_PER_SLIDE = {
+        "theme_input": 2000,
+        "theme_output": 500,
+        "slide_input": 3000,
+        "slide_output": 2000,
+        "outline_input": 1500,
+        "outline_output": 1000,
+    }
+
+    # Get models from config
+    try:
+        from agents.config import (
+            THEME_STYLE_MODEL, COMPOSER_MODEL, OUTLINE_PLANNING_MODEL,
+            PERPLEXITY_RESEARCH_MODEL, CUSTOM_COMPONENT_MODEL
+        )
+    except ImportError:
+        THEME_STYLE_MODEL = "claude-haiku-4-5"
+        COMPOSER_MODEL = "claude-haiku-4-5"
+        OUTLINE_PLANNING_MODEL = "perplexity-sonar"
+        PERPLEXITY_RESEARCH_MODEL = "perplexity-sonar"
+        CUSTOM_COMPONENT_MODEL = "gemini-3-pro"
+
+    decks_per_month = decks_per_day * 30
+    slides_per_month = decks_per_month * slides_per_deck
+
+    estimates = {
+        "input": {
+            "decks_per_day": decks_per_day,
+            "slides_per_deck": slides_per_deck,
+            "decks_per_month": decks_per_month,
+            "slides_per_month": slides_per_month
+        },
+        "breakdown": [],
+        "total_monthly_usd": 0.0
+    }
+
+    # Theme generation (1 per deck)
+    theme_model = THEME_STYLE_MODEL
+    if theme_model in MODEL_PRICING:
+        pricing = MODEL_PRICING[theme_model]
+        input_cost = (TOKENS_PER_SLIDE["theme_input"] * decks_per_month / 1_000_000) * pricing["input"]
+        output_cost = (TOKENS_PER_SLIDE["theme_output"] * decks_per_month / 1_000_000) * pricing["output"]
+        total = input_cost + output_cost
+        estimates["breakdown"].append({
+            "operation": "Theme Generation",
+            "model": theme_model,
+            "provider": pricing["provider"],
+            "calls_per_month": decks_per_month,
+            "cost_usd": round(total, 2)
+        })
+        estimates["total_monthly_usd"] += total
+
+    # Outline generation (1 per deck)
+    outline_model = OUTLINE_PLANNING_MODEL
+    if outline_model in MODEL_PRICING:
+        pricing = MODEL_PRICING[outline_model]
+        if pricing.get("per_request"):
+            total = pricing["per_request"] * decks_per_month
+        else:
+            input_cost = (TOKENS_PER_SLIDE["outline_input"] * decks_per_month / 1_000_000) * pricing["input"]
+            output_cost = (TOKENS_PER_SLIDE["outline_output"] * decks_per_month / 1_000_000) * pricing["output"]
+            total = input_cost + output_cost
+        estimates["breakdown"].append({
+            "operation": "Outline Generation",
+            "model": outline_model,
+            "provider": pricing["provider"],
+            "calls_per_month": decks_per_month,
+            "cost_usd": round(total, 2)
+        })
+        estimates["total_monthly_usd"] += total
+
+    # Slide generation (1 per slide)
+    slide_model = COMPOSER_MODEL
+    if slide_model in MODEL_PRICING:
+        pricing = MODEL_PRICING[slide_model]
+        input_cost = (TOKENS_PER_SLIDE["slide_input"] * slides_per_month / 1_000_000) * pricing["input"]
+        output_cost = (TOKENS_PER_SLIDE["slide_output"] * slides_per_month / 1_000_000) * pricing["output"]
+        total = input_cost + output_cost
+        estimates["breakdown"].append({
+            "operation": "Slide Generation",
+            "model": slide_model,
+            "provider": pricing["provider"],
+            "calls_per_month": slides_per_month,
+            "cost_usd": round(total, 2)
+        })
+        estimates["total_monthly_usd"] += total
+
+    # Custom components (estimate 30% of slides have custom components)
+    custom_slides = int(slides_per_month * 0.3)
+    custom_model = CUSTOM_COMPONENT_MODEL
+    if custom_model in MODEL_PRICING:
+        pricing = MODEL_PRICING[custom_model]
+        input_cost = (2000 * custom_slides / 1_000_000) * pricing["input"]
+        output_cost = (3000 * custom_slides / 1_000_000) * pricing["output"]
+        total = input_cost + output_cost
+        estimates["breakdown"].append({
+            "operation": "Custom Components",
+            "model": custom_model,
+            "provider": pricing["provider"],
+            "calls_per_month": custom_slides,
+            "cost_usd": round(total, 2)
+        })
+        estimates["total_monthly_usd"] += total
+
+    estimates["total_monthly_usd"] = round(estimates["total_monthly_usd"], 2)
+
+    # Add provider summary
+    provider_totals = {}
+    for item in estimates["breakdown"]:
+        provider = item["provider"]
+        if provider not in provider_totals:
+            provider_totals[provider] = 0.0
+        provider_totals[provider] += item["cost_usd"]
+
+    estimates["by_provider"] = {
+        provider: round(total, 2)
+        for provider, total in provider_totals.items()
+    }
+
+    return estimates

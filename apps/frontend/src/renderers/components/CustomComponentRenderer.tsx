@@ -4,10 +4,11 @@ import { useComponentInstance } from "../../context/CustomComponentStateContext"
 import { useNavigation } from '../../context/NavigationContext';
 import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
+import { useEditorStore } from '@/stores/editorStore';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
 import { CustomComponentEditOverlay, DetectedElement, ImageElementToolbar, injectEditMode } from '@/components/custom-component-editor';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 // Import visualization and animation libraries for CustomComponents
 import * as d3Import from 'd3';
@@ -1381,6 +1382,9 @@ export const CustomComponentRenderer: React.FC<{
   // State for element-level editing
   const [selectedElement, setSelectedElement] = useState<DetectedElement | null>(null);
   const [showImageToolbar, setShowImageToolbar] = useState(false);
+  const [showAiChatBubble, setShowAiChatBubble] = useState(false);
+  const [aiChatMessage, setAiChatMessage] = useState('');
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [containerBoundsState, setContainerBoundsState] = useState<DOMRect | null>(null);
 
   // Update container bounds when resizing
@@ -1784,16 +1788,55 @@ export const CustomComponentRenderer: React.FC<{
 
         if (event.data.type === 'element-selected') {
           setSelectedElement(event.data.element);
+          setShowAiChatBubble(false); // Reset chat bubble
+          setAiChatMessage('');
+
+          // For images, dispatch the placeholder image picker event
           if (event.data.element.type === 'image') {
-            setShowImageToolbar(true);
-          } else {
-            setShowImageToolbar(false);
+            const imgSrc = event.data.element.src || '';
+            const imgAlt = event.data.element.alt || 'image';
+
+            // Dispatch existing image picker event
+            window.dispatchEvent(new CustomEvent('image:select-placeholder', {
+              detail: {
+                componentId: component.id,
+                slideId: component.slideId,
+                propName: event.data.element.id || 'customImage',
+                searchQuery: imgAlt,
+                topic: imgAlt,
+                isCustomComponentImage: true,
+                elementId: event.data.element.id,
+              }
+            }));
           }
+          setShowImageToolbar(false);
         }
 
-        if (event.data.type === 'image-clicked') {
+        if (event.data.type === 'image-clicked' || event.data.type === 'image-selected') {
           setSelectedElement(event.data.element);
-          setShowImageToolbar(true);
+          // Use existing image picker
+          const imgSrc = event.data.element.src || '';
+          const imgAlt = event.data.element.alt || 'image';
+
+          window.dispatchEvent(new CustomEvent('image:select-placeholder', {
+            detail: {
+              componentId: component.id,
+              slideId: component.slideId,
+              propName: event.data.element.id || 'customImage',
+              searchQuery: imgAlt,
+              topic: imgAlt,
+              isCustomComponentImage: true,
+              elementId: event.data.element.id,
+            }
+          }));
+          setShowImageToolbar(false);
+        }
+
+        if (event.data.type === 'element-deselected') {
+          setSelectedElement(null);
+          setShowImageToolbar(false);
+          setShowAiChatBubble(false);
+          setAiChatMessage('');
         }
 
         if (event.data.type === 'text-changed') {
@@ -1813,6 +1856,17 @@ export const CustomComponentRenderer: React.FC<{
                 }
               });
               DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text');
+
+              // CRITICAL: Immediately persist changes to backend
+              // Debounce to avoid too many saves during rapid typing
+              setTimeout(() => {
+                try {
+                  useEditorStore.getState().applyDraftChanges();
+                  DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted text changes to backend');
+                } catch (e) {
+                  console.error('[CustomComponent] Failed to persist text changes:', e);
+                }
+              }, 500);
             }
           }
         }
@@ -1993,6 +2047,16 @@ export const CustomComponentRenderer: React.FC<{
         }
       });
       DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text');
+
+      // CRITICAL: Immediately persist changes to backend
+      setTimeout(() => {
+        try {
+          useEditorStore.getState().applyDraftChanges();
+          DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted text edit to backend');
+        } catch (e) {
+          console.error('[CustomComponent] Failed to persist text edit:', e);
+        }
+      }, 500);
     }
   }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
 
@@ -2020,66 +2084,59 @@ export const CustomComponentRenderer: React.FC<{
         }
       });
       DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new image');
+
+      // CRITICAL: Immediately persist changes to backend
+      setTimeout(() => {
+        try {
+          useEditorStore.getState().applyDraftChanges();
+          DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted image changes to backend');
+        } catch (e) {
+          console.error('[CustomComponent] Failed to persist image changes:', e);
+        }
+      }, 300);
     }
 
     setSelectedElement(null);
     setShowImageToolbar(false);
   }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
 
-  // Handler for AI-based element editing
-  const handleElementAiEdit = useCallback(async (element: DetectedElement, instruction: string) => {
+  // Handler for AI-based element editing - dispatches to main chat panel
+  const handleElementAiEdit = useCallback((element: DetectedElement, instruction: string) => {
     DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, instruction });
 
-    // For images, call the image edit API
-    if (element.type === 'image' && element.src) {
-      try {
-        const response = await fetch('/api/images/edit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageUrl: element.src,
-            instructions: instruction,
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const editedUrl = data.editedUrl || data.url || data.image_url;
-          if (editedUrl) {
-            handleImageSwap(element, editedUrl);
-          }
-        }
-      } catch (error) {
-        console.error('[CustomComponent] AI image edit failed:', error);
-      }
-    }
-
-    // For text, call a text transformation API
+    // Create a descriptive label for the component chip in chat
+    let label = 'Custom Component';
     if (element.type === 'text' && element.content) {
-      try {
-        // Use a simple completion to transform the text
-        const response = await fetch('/api/chat/quick', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: `Transform this text according to the instruction. Only output the transformed text, nothing else.\n\nOriginal: "${element.content}"\n\nInstruction: ${instruction}`,
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const newText = data.text || data.content || data.message;
-          if (newText) {
-            handleTextEdit(element, newText.trim());
-          }
-        }
-      } catch (error) {
-        console.error('[CustomComponent] AI text edit failed:', error);
-      }
+      const preview = element.content.slice(0, 20);
+      label = `Text: "${preview}${element.content.length > 20 ? '...' : ''}"`;
+    } else if (element.type === 'image') {
+      label = 'Image Element';
     }
 
+    // Build the prompt - include context about what element is being edited
+    let prompt = instruction;
+    if (element.type === 'text' && element.content) {
+      prompt = `Edit this text: "${element.content.slice(0, 100)}${element.content.length > 100 ? '...' : ''}"\n\nInstruction: ${instruction}`;
+    } else if (element.type === 'image') {
+      prompt = `Edit the image in this component. Instruction: ${instruction}`;
+    }
+
+    // Dispatch event to prefill chat panel with the component and prompt
+    window.dispatchEvent(new CustomEvent('chat:prefill_with_component', {
+      detail: {
+        componentId: component.id,
+        slideId: component.slideId,
+        label,
+        prompt,
+        elementType: 'CustomComponent'
+      }
+    }));
+
+    // Close the AI edit UI
+    setShowAiChatBubble(false);
+    setAiChatMessage('');
     setSelectedElement(null);
-  }, [handleImageSwap, handleTextEdit]);
+  }, [component.id, component.slideId]);
 
   // Handle element selection from overlay
   const handleElementSelect = useCallback((element: DetectedElement) => {
@@ -2313,60 +2370,205 @@ export const CustomComponentRenderer: React.FC<{
           );
         })()}
 
-        {/* IMAGE ELEMENT TOOLBAR - rendered as portal */}
-        {showImageToolbar && selectedElement && selectedElement.type === 'image' && createPortal(
+        {/* IMAGE ELEMENT - uses existing image picker via 'image:select-placeholder' event */}
+
+        {/* TEXT ELEMENT AI EDIT TOOLBAR - rendered as portal when text is selected */}
+        {selectedElement && selectedElement.type === 'text' && createPortal(
           <AnimatePresence>
-            <ImageElementToolbar
-              element={selectedElement}
-              scale={scale}
-              onSwap={(newUrl) => {
-                if (selectedElement) {
-                  handleImageSwap(selectedElement, newUrl);
-                }
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + (selectedElement.bounds.y * scale) - 44),
+                left: Math.max(10, (iframeRef.current?.getBoundingClientRect().left || 0) + (selectedElement.bounds.x * scale)),
+                zIndex: 9999,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
               }}
-              onAiEdit={(instruction) => {
-                if (selectedElement) {
-                  handleElementAiEdit(selectedElement, instruction);
-                }
-              }}
-              onClose={() => {
-                setShowImageToolbar(false);
-                setSelectedElement(null);
-                // Tell iframe to deselect
-                const iframes = document.querySelectorAll('iframe');
-                iframes.forEach(iframe => {
-                  iframe.contentWindow?.postMessage({
-                    target: 'ns-custom-component-edit',
-                    type: 'deselect'
-                  }, '*');
-                });
-              }}
-            />
+            >
+              {/* AI Edit Button */}
+              <div
+                style={{ display: 'flex', gap: '6px', alignItems: 'center' }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setShowAiChatBubble(!showAiChatBubble);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    background: showAiChatBubble ? '#FF4301' : 'white',
+                    color: showAiChatBubble ? 'white' : '#333',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    fontFamily: 'system-ui',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
+                  </svg>
+                  AI Edit
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setSelectedElement(null);
+                    setShowAiChatBubble(false);
+                    // Tell iframe to deselect
+                    iframeRef.current?.contentWindow?.postMessage({
+                      target: 'ns-custom-component-edit',
+                      type: 'deselect'
+                    }, '*');
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    padding: '8px',
+                    background: 'white',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* AI Chat Bubble */}
+              {showAiChatBubble && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    width: '320px',
+                    background: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{
+                    padding: '12px 16px',
+                    background: '#FF4301',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
+                    </svg>
+                    <span style={{ fontSize: '14px', fontWeight: 600 }}>Edit with AI</span>
+                  </div>
+                  <div style={{ padding: '16px' }}>
+                    <div style={{
+                      padding: '10px 12px',
+                      background: '#f5f5f5',
+                      borderRadius: '8px',
+                      marginBottom: '12px',
+                      fontSize: '12px',
+                      color: '#666',
+                    }}>
+                      "{selectedElement.content?.slice(0, 80)}{(selectedElement.content?.length || 0) > 80 ? '...' : ''}"
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                      <input
+                        type="text"
+                        value={aiChatMessage}
+                        onChange={(e) => setAiChatMessage(e.target.value)}
+                        placeholder="Tell AI what to change..."
+                        disabled={isAiProcessing}
+                        style={{
+                          flex: 1,
+                          padding: '10px 14px',
+                          border: '1px solid #ddd',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          outline: 'none',
+                          opacity: isAiProcessing ? 0.6 : 1,
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter' && aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                            handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                            handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                          }
+                        }}
+                        disabled={!aiChatMessage.trim() || isAiProcessing}
+                        style={{
+                          padding: '10px 16px',
+                          background: (aiChatMessage.trim() && !isAiProcessing) ? '#FF4301' : '#ccc',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: (aiChatMessage.trim() && !isAiProcessing) ? 'pointer' : 'default',
+                          fontWeight: 600,
+                          minWidth: '70px',
+                        }}
+                      >
+                        {isAiProcessing ? '...' : 'Send'}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {['Shorten', 'Expand', 'Make professional', 'Make casual'].map(label => (
+                        <button
+                          key={label}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isAiProcessing && selectedElement) {
+                              handleElementAiEdit(selectedElement, label);
+                            }
+                          }}
+                          disabled={isAiProcessing}
+                          style={{
+                            padding: '6px 12px',
+                            background: isAiProcessing ? '#e0e0e0' : '#f0f0f0',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            cursor: isAiProcessing ? 'default' : 'pointer',
+                            color: '#444',
+                            opacity: isAiProcessing ? 0.6 : 1,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
           </AnimatePresence>,
           document.body
-        )}
-
-        {/* CUSTOM COMPONENT EDIT OVERLAY - always rendered when selected in edit mode to listen for iframe messages */}
-        {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (
-          <CustomComponentEditOverlay
-            componentId={component.id}
-            isEditing={effectiveIsEditMode}
-            isSelected={isSelected}
-            srcDoc={stableIframeSrcDoc}
-            scale={scale}
-            onHtmlUpdate={(newHtml) => {
-              updateComponent(component.id, {
-                props: {
-                  ...component.props,
-                  render: newHtml
-                }
-              });
-            }}
-            onImageSelect={(element) => {
-              setSelectedElement(element);
-              setShowImageToolbar(true);
-            }}
-          />
         )}
       </div>
     </ErrorBoundary>

@@ -94,6 +94,7 @@ CLIENTS = {
 MODELS = {
     "Meta-Llama-3.1-405B-Instruct": ("samba", "Meta-Llama-3.1-405B-Instruct"),
     "Meta-Llama-3.2-1B-Instruct": ("samba", "Meta-Llama-3.2-1B-Instruct"),
+    "claude-opus-4-5": ("anthropic", "claude-opus-4-5-20251101"),  # Claude Opus 4.5 - most capable
     "claude-opus-4": ("anthropic", "claude-opus-4-20250514"),
     "claude-sonnet-4-5": ("anthropic", "claude-sonnet-4-5-20250929"),
     "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),
@@ -153,6 +154,8 @@ MAX_PARAM = {
 
 # Max token limits for each model (based on official documentation)
 MODEL_MAX_TOKENS = {
+    # Claude 4.5 models
+    "claude-opus-4-5-20251101": 32000,    # Claude Opus 4.5 - most capable model
     # Claude 4 models
     "claude-opus-4-20250514": 32000,      # Claude Opus 4 supports 32k output
     "claude-sonnet-4-5-20250929": 64000,  # Claude Sonnet 4.5 supports 64k output

@@ -62,7 +62,7 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
         )
         print(f"[AgentChat] message received: session={session_id} user={user.get('id')} role={role} text={(text or '')[:200]!r}")
         print(f"[AgentChat] selections: {sel_log}")
-        print(f"[AgentChat] attachments: {[a.get('attachmentId') for a in (attachments or [])]}")
+        print(f"[AgentChat] attachments: {[{'name': a.get('name'), 'url_len': len(a.get('url') or ''), 'url': (a.get('url') or '')[:100] + ('...' if len(a.get('url') or '') > 100 else ''), 'attachmentId': a.get('attachmentId')} for a in (attachments or [])]}")
     except Exception:
         pass
 
@@ -1073,6 +1073,16 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
         # Non-fatal: proceed with raw slide dict
         current_slide_for_agent = current_slide
 
+    # Normalize attachments for passing to orchestrator
+    normalized_attachments = []
+    for att in (attachments or []):
+        if isinstance(att, dict) and (att.get('url') or att.get('publicUrl')):
+            normalized_attachments.append({
+                'name': att.get('name') or att.get('fileName') or att.get('filename') or 'file',
+                'mimeType': att.get('mimeType') or att.get('type') or 'application/octet-stream',
+                'url': att.get('url') or att.get('publicUrl')
+            })
+
     result = await run_in_threadpool(
         thread_pool,
         edit_deck,
@@ -1082,7 +1092,8 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
         message=llm_message,
         chat_history=chat_history,
         run_uuid=str(uuid.uuid4()),
-        event_cb=_event_cb
+        event_cb=_event_cb,
+        attachments=normalized_attachments
     )
 
     # Convert orchestrator result to a proposed edit (or auto-apply if enabled)

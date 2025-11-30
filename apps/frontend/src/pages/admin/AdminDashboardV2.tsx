@@ -1,28 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Users, 
-  FileStack, 
-  Activity, 
-  TrendingUp, 
-  HardDrive,
-  Clock,
+import { Button } from '@/components/ui/button';
+import {
+  Users,
+  FileStack,
+  Activity,
+  TrendingUp,
   UserPlus,
   FilePlus,
-  Share2,
-  CheckCircle,
   AlertTriangle,
-  Server,
-  Sparkles,
   ArrowUp,
   ArrowDown,
+  ArrowRight,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { adminApi } from '@/services/adminApi';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { adminApi, ServiceHealthResponse } from '@/services/adminApi';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface DashboardMetrics {
   users: {
@@ -64,82 +63,68 @@ interface DashboardMetrics {
 interface MetricCardProps {
   title: string;
   value: string | number;
-  description?: string;
+  subtitle?: string;
   icon: React.ElementType;
   trend?: {
     value: number;
     isPositive: boolean;
   };
-  className?: string;
-  iconColor?: string;
+  href?: string;
+  iconClassName?: string;
 }
 
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  description,
+  subtitle,
   icon: Icon,
   trend,
-  className,
-  iconColor = "text-violet-600 dark:text-violet-400",
+  href,
+  iconClassName = 'text-slate-600 dark:text-slate-400',
 }) => {
-  return (
-    <Card className={cn(
-      "relative overflow-hidden border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-lg transition-all duration-300 group",
-      className
-    )}>
-      <div className="absolute top-0 right-0 w-32 h-32 transform translate-x-16 -translate-y-16">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-600/10 to-purple-600/10 dark:from-violet-600/20 dark:to-purple-600/20 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-500" />
-      </div>
-      <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-          {title}
-        </CardTitle>
-        <div className={cn(
-          "p-2 rounded-lg bg-gray-100 dark:bg-gray-800 group-hover:scale-110 transition-transform duration-300",
-        )}>
-          <Icon className={cn("h-4 w-4", iconColor)} />
-        </div>
-      </CardHeader>
-      <CardContent className="relative">
-        <div 
-          className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100"
-          style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-        >
-          {value}
-        </div>
-        {description && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {description}
-          </p>
-        )}
-        {trend && (
-          <div className={cn(
-            "flex items-center gap-1 text-sm font-medium mt-3",
-            trend.isPositive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-          )}>
-            {trend.isPositive ? (
-              <ArrowUp className="h-4 w-4" />
-            ) : (
-              <ArrowDown className="h-4 w-4" />
+  const content = (
+    <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
+            <p className="text-2xl font-semibold text-slate-900 dark:text-white">{value}</p>
+            {subtitle && (
+              <p className="text-sm text-slate-500">{subtitle}</p>
             )}
-            <span>{Math.abs(trend.value)}%</span>
-            <span className="text-gray-500 dark:text-gray-400 font-normal">vs last week</span>
+            {trend && (
+              <div className={cn(
+                'flex items-center gap-1 text-sm font-medium',
+                trend.isPositive ? 'text-emerald-600' : 'text-red-600'
+              )}>
+                {trend.isPositive ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                <span>{Math.abs(trend.value)}%</span>
+                <span className="text-slate-400 font-normal">vs last week</span>
+              </div>
+            )}
           </div>
-        )}
+          <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800">
+            <Icon className={cn('h-5 w-5', iconClassName)} />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return <Link to={href}>{content}</Link>;
+  }
+  return content;
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-white dark:bg-gray-900 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</p>
+      <div className="bg-white dark:bg-slate-900 px-3 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700">
+        <p className="text-sm font-medium text-slate-900 dark:text-white">{label}</p>
         {payload.map((entry: any, index: number) => (
-          <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {entry.name}: {entry.value}
+          <p key={index} className="text-sm text-slate-600 dark:text-slate-400">
+            {entry.name}: <span className="font-medium" style={{ color: entry.color }}>{entry.value}</span>
           </p>
         ))}
       </div>
@@ -154,354 +139,360 @@ const AdminDashboardV2: React.FC = () => {
   const [userTrends, setUserTrends] = useState<any[]>([]);
   const [deckTrends, setDeckTrends] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [animateNumbers, setAnimateNumbers] = useState(false);
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthResponse | null>(null);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  useEffect(() => {
-    if (metrics && !animateNumbers) {
-      setTimeout(() => setAnimateNumbers(true), 100);
-    }
-  }, [metrics]);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const metricsData = await adminApi.getAnalyticsOverview();
+
+      const [metricsData, userTrendsData, deckTrendsData, healthData] = await Promise.all([
+        adminApi.getAnalyticsOverview(),
+        adminApi.getUserTrends(),
+        adminApi.getDeckTrends(),
+        adminApi.getServicesHealth().catch(() => null),
+      ]);
+
       setMetrics(metricsData);
-
-      const userTrendsData = await adminApi.getUserTrends();
       setUserTrends(userTrendsData);
-
-      const deckTrendsData = await adminApi.getDeckTrends();
       setDeckTrends(deckTrendsData);
+      setServiceHealth(healthData);
     } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
-      setError(error.message || "Failed to fetch dashboard data.");
+      setError(error.message || 'Failed to fetch dashboard data.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
-  const renderSkeletons = (count: number) => (
-    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {[...Array(count)].map((_, i) => (
-        <Card key={i} className="border-gray-200 dark:border-gray-800">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-8 rounded-lg" />
+  const renderSkeletons = () => (
+    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      {[...Array(4)].map((_, i) => (
+        <Card key={i} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-7 w-16" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-10 w-10 rounded-lg" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-8 w-20 mb-2" />
-            <Skeleton className="h-3 w-32" />
           </CardContent>
         </Card>
       ))}
     </div>
   );
-  
+
+  const operationalServices = serviceHealth?.services.filter(s => s.status === 'operational').length || 0;
+  const totalServices = serviceHealth?.services.length || 0;
+  const hasIssues = serviceHealth?.services.some(s => s.status === 'down' || s.status === 'degraded');
+
   return (
     <AdminLayoutV2>
-      <div className="space-y-8 w-full">
-        {/* Welcome Section */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 to-purple-600 p-8 text-white">
-          <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
-          <div className="relative flex items-center justify-between">
-            <div>
-              <h1 
-                className="text-3xl font-bold tracking-tight mb-2"
-                style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-              >
-                Welcome back!
-              </h1>
-              <p className="text-violet-100 max-w-xl">
-                Here's what's happening with your platform today.
-              </p>
-            </div>
-            <Sparkles className="h-12 w-12 text-white/20" />
-          </div>
-        </div>
-
+      <div className="space-y-6">
+        {/* Error State */}
         {error && (
-          <Card className="bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800">
-            <CardHeader className="flex flex-row items-center gap-4">
-              <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/20">
-                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+          <Card className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                <div>
+                  <p className="font-medium text-red-900 dark:text-red-100">Error Loading Dashboard</p>
+                  <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchDashboardData()}
+                  className="ml-auto"
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  Retry
+                </Button>
               </div>
-              <div>
-                <CardTitle className="text-red-900 dark:text-red-100">An Error Occurred</CardTitle>
-                <CardDescription className="text-red-700 dark:text-red-300">
-                  {error}
-                </CardDescription>
-              </div>
-            </CardHeader>
+            </CardContent>
           </Card>
         )}
-        
-        <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="bg-gray-100 dark:bg-gray-800 p-1">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900">
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900">
-              Analytics
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900">
-              Activity
-            </TabsTrigger>
-          </TabsList>
 
-          <TabsContent value="overview" className="space-y-6 mt-6">
-            {isLoading ? renderSkeletons(8) : metrics && (
-              <>
-                {/* Primary Metrics */}
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  <MetricCard
-                    title="Total Users"
-                    value={animateNumbers ? metrics.users.total.toLocaleString() : '0'}
-                    description={`${metrics.users.newToday} new today`}
-                    icon={Users}
-                    trend={{
-                      value: metrics.users.growthRate,
-                      isPositive: metrics.users.growthRate > 0
-                    }}
-                  />
-                  <MetricCard
-                    title="Active Users (24h)"
-                    value={animateNumbers ? metrics.users.active24h.toLocaleString() : '0'}
-                    description={`${metrics.users.active7d} this week`}
-                    icon={Activity}
-                    iconColor="text-green-600 dark:text-green-400"
-                  />
-                  <MetricCard
-                    title="Total Decks"
-                    value={animateNumbers ? metrics.decks.total.toLocaleString() : '0'}
-                    description={`${metrics.decks.createdToday} created today`}
-                    icon={FileStack}
-                    iconColor="text-blue-600 dark:text-blue-400"
-                  />
-                  <MetricCard
-                    title="Storage Used"
-                    value={animateNumbers ? formatBytes(metrics.storage.totalUsed) : '0 Bytes'}
-                    description={`${formatBytes(metrics.storage.averagePerUser)} per user`}
-                    icon={HardDrive}
-                    iconColor="text-orange-600 dark:text-orange-400"
-                  />
+        {/* Service Status Banner */}
+        {serviceHealth && (
+          <Card className={cn(
+            'border',
+            hasIssues
+              ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'
+              : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
+          )}>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {hasIssues ? (
+                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  ) : (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  )}
+                  <div>
+                    <p className={cn(
+                      'font-medium',
+                      hasIssues ? 'text-amber-900 dark:text-amber-100' : 'text-emerald-900 dark:text-emerald-100'
+                    )}>
+                      {hasIssues ? 'Some Services Need Attention' : 'All Systems Operational'}
+                    </p>
+                    <p className={cn(
+                      'text-sm',
+                      hasIssues ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
+                    )}>
+                      {operationalServices} of {totalServices} services running
+                    </p>
+                  </div>
                 </div>
+                <Link to="/admin/services">
+                  <Button variant="ghost" size="sm" className="gap-1">
+                    View Details
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-                {/* Secondary Metrics */}
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  <MetricCard
-                    title="New Users Today"
-                    value={animateNumbers ? metrics.users.newToday : '0'}
-                    description={`${metrics.users.newThisWeek} this week`}
-                    icon={UserPlus}
-                    iconColor="text-teal-600 dark:text-teal-400"
-                  />
-                  <MetricCard
-                    title="Decks Created Today"
-                    value={animateNumbers ? metrics.decks.createdToday : '0'}
-                    description={`${metrics.decks.averagePerUser.toFixed(1)} avg per user`}
-                    icon={FilePlus}
-                    iconColor="text-indigo-600 dark:text-indigo-400"
-                  />
-                  <MetricCard
-                    title="Active Collaborations"
-                    value={animateNumbers ? metrics.collaboration.activeSessions : '0'}
-                    description={`${metrics.collaboration.totalCollaborations} total`}
-                    icon={Share2}
-                    iconColor="text-pink-600 dark:text-pink-400"
-                  />
-                  <MetricCard
-                    title="API Calls Today"
-                    value={animateNumbers ? metrics.activity.apiCallsToday.toLocaleString() : '0'}
-                    description={`${metrics.activity.errorRate.toFixed(2)}% error rate`}
-                    icon={Activity}
-                    iconColor="text-purple-600 dark:text-purple-400"
-                  />
-                </div>
-              </>
-            )}
-          </TabsContent>
-          
-          <TabsContent value="analytics" className="space-y-6 mt-6">
-            <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 w-full">
-              <Card className="border-gray-200 dark:border-gray-800">
-                <CardHeader>
-                  <CardTitle 
-                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-                  >
-                    User Activity
-                  </CardTitle>
-                  <CardDescription>Signups and logins over the past week</CardDescription>
-                </CardHeader>
-                <CardContent className="h-[350px]">
+        {/* Primary Metrics */}
+        {isLoading ? renderSkeletons() : metrics && (
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              title="Total Users"
+              value={metrics.users.total.toLocaleString()}
+              subtitle={`${metrics.users.newToday} new today`}
+              icon={Users}
+              trend={{
+                value: metrics.users.growthRate,
+                isPositive: metrics.users.growthRate > 0
+              }}
+              href="/admin/users"
+              iconClassName="text-blue-600"
+            />
+            <MetricCard
+              title="Active Users (24h)"
+              value={metrics.users.active24h.toLocaleString()}
+              subtitle={`${metrics.users.active7d} this week`}
+              icon={Activity}
+              iconClassName="text-emerald-600"
+            />
+            <MetricCard
+              title="Total Decks"
+              value={metrics.decks.total.toLocaleString()}
+              subtitle={`${metrics.decks.createdToday} created today`}
+              icon={FileStack}
+              href="/admin/decks"
+              iconClassName="text-purple-600"
+            />
+            <MetricCard
+              title="Avg per User"
+              value={metrics.decks.averagePerUser.toFixed(1)}
+              subtitle="decks per user"
+              icon={TrendingUp}
+              iconClassName="text-amber-600"
+            />
+          </div>
+        )}
+
+        {/* Secondary Metrics */}
+        {!isLoading && metrics && (
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              title="New Users Today"
+              value={metrics.users.newToday}
+              subtitle={`${metrics.users.newThisWeek} this week`}
+              icon={UserPlus}
+              iconClassName="text-teal-600"
+            />
+            <MetricCard
+              title="Decks Created Today"
+              value={metrics.decks.createdToday}
+              subtitle={`${metrics.decks.createdThisWeek} this week`}
+              icon={FilePlus}
+              iconClassName="text-indigo-600"
+            />
+            <MetricCard
+              title="Total Slides"
+              value={metrics.decks.totalSlides.toLocaleString()}
+              subtitle={`${metrics.decks.averageSlidesPerDeck.toFixed(1)} avg per deck`}
+              icon={FileStack}
+              iconClassName="text-rose-600"
+            />
+            <MetricCard
+              title="Monthly Active"
+              value={metrics.users.active30d.toLocaleString()}
+              subtitle="users this month"
+              icon={Activity}
+              iconClassName="text-cyan-600"
+            />
+          </div>
+        )}
+
+        {/* Charts */}
+        <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+          {/* User Activity Chart */}
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-medium">User Activity</CardTitle>
+              <CardDescription>Signups and logins over the past week</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[280px] w-full" />
+              ) : (
+                <div className="h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={userTrends}>
                       <defs>
                         <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                         </linearGradient>
                         <linearGradient id="colorLogins" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fontSize: 12 }}
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12, fill: '#64748b' }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e2e8f0' }}
                       />
-                      <YAxis 
-                        tick={{ fontSize: 12 }}
+                      <YAxis
+                        tick={{ fontSize: 12, fill: '#64748b' }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e2e8f0' }}
                       />
                       <Tooltip content={<CustomTooltip />} />
-                      <Area 
-                        type="monotone" 
-                        dataKey="signups" 
-                        stroke="#8b5cf6" 
-                        fillOpacity={1} 
-                        fill="url(#colorSignups)" 
+                      <Area
+                        type="monotone"
+                        dataKey="signups"
+                        stroke="#6366f1"
+                        fillOpacity={1}
+                        fill="url(#colorSignups)"
                         strokeWidth={2}
                         name="Signups"
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="logins" 
-                        stroke="#3b82f6" 
-                        fillOpacity={1} 
-                        fill="url(#colorLogins)" 
+                      <Area
+                        type="monotone"
+                        dataKey="logins"
+                        stroke="#10b981"
+                        fillOpacity={1}
+                        fill="url(#colorLogins)"
                         strokeWidth={2}
                         name="Logins"
                       />
                     </AreaChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-              <Card className="border-gray-200 dark:border-gray-800">
-                <CardHeader>
-                  <CardTitle 
-                    style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-                  >
-                    Deck Creation
-                  </CardTitle>
-                  <CardDescription>Decks created over the past week</CardDescription>
-                </CardHeader>
-                <CardContent className="h-[350px]">
+          {/* Deck Creation Chart */}
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-medium">Deck Creation</CardTitle>
+              <CardDescription>Decks created over the past week</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[280px] w-full" />
+              ) : (
+                <div className="h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={deckTrends}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fontSize: 12 }}
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12, fill: '#64748b' }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e2e8f0' }}
                       />
-                      <YAxis 
-                        tick={{ fontSize: 12 }}
+                      <YAxis
+                        tick={{ fontSize: 12, fill: '#64748b' }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e2e8f0' }}
                       />
                       <Tooltip content={<CustomTooltip />} />
-                      <Bar 
-                        dataKey="created" 
-                        fill="#8b5cf6" 
-                        radius={[8, 8, 0, 0]}
+                      <Bar
+                        dataKey="created"
+                        fill="#6366f1"
+                        radius={[4, 4, 0, 0]}
                         name="Decks Created"
                       />
                     </BarChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="activity" className="space-y-6 mt-6">
-            <Card className="border-gray-200 dark:border-gray-800">
-              <CardHeader>
-                <CardTitle 
-                  style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-                >
-                  System Status
-                </CardTitle>
-                <CardDescription>Real-time operational status of key services</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {[
-                    { name: 'API Server', icon: Server, status: 'operational' },
-                    { name: 'Database', icon: HardDrive, status: 'operational' },
-                    { name: 'Authentication', icon: Users, status: 'operational' },
-                    { name: 'WebSocket', icon: Activity, status: 'operational' },
-                  ].map((service) => (
-                    <div key={service.name} className="relative group">
-                      <div className="absolute inset-0 bg-gradient-to-br from-green-600/10 to-emerald-600/10 dark:from-green-600/20 dark:to-emerald-600/20 rounded-xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      <div className="relative flex items-center gap-4 p-4 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10">
-                        <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/20">
-                          <service.icon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {service.name}
-                          </p>
-                          <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1 mt-1">
-                            <CheckCircle className="h-3 w-3" />
-                            Operational
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-            <Card className="border-gray-200 dark:border-gray-800">
-              <CardHeader>
-                <CardTitle 
-                  style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
-                >
-                  Recent Activity
-                </CardTitle>
-                <CardDescription>Latest platform events and user actions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <div className="h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4 mx-auto">
-                      <Clock className="h-8 w-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">Activity feed coming soon</p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                      Real-time events will appear here
-                    </p>
+        {/* Quick Links */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <Link to="/admin/users">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                    <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   </div>
+                  <span className="font-medium text-slate-900 dark:text-white">Manage Users</span>
                 </div>
+                <ArrowRight className="h-4 w-4 text-slate-400" />
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+          </Link>
+          <Link to="/admin/decks">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                    <FileStack className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <span className="font-medium text-slate-900 dark:text-white">View Decks</span>
+                </div>
+                <ArrowRight className="h-4 w-4 text-slate-400" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/admin/services">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                    <Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <span className="font-medium text-slate-900 dark:text-white">Service Status</span>
+                </div>
+                <ArrowRight className="h-4 w-4 text-slate-400" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/admin/analytics">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                    <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <span className="font-medium text-slate-900 dark:text-white">Analytics</span>
+                </div>
+                <ArrowRight className="h-4 w-4 text-slate-400" />
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
       </div>
     </AdminLayoutV2>
   );

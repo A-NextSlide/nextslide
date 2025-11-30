@@ -140,6 +140,7 @@ class StylePreferencesItem(BaseModel):
     logoUrl: Optional[str] = Field(None, description="URL to a company/brand logo to place consistently on slides.")
     autoSelectImages: Optional[bool] = Field(None, description="When True, frontend handles image search/application; backend skips SerpAPI search.")
     slideMode: Optional[str] = Field(None, description="Slide mode: 'interactive' for animations/interactions, 'static' for classic clean slides.")
+    referenceImages: Optional[List[str]] = Field(None, description="URLs of design reference images (e.g., PPT screenshots) for the AI to match style/design from.")
 
 class DeckOutline(BaseModel):
     id: str = Field(description="Unique identifier for the deck outline.")

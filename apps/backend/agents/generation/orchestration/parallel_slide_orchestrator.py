@@ -73,6 +73,7 @@ class ParallelSlideOrchestrator:
                     theme_to_pass = deck_state.theme or ThemeSpec.from_dict({})
                     # Extract presentation context for prewarm
                     prewarm_presentation_context = None
+                    prewarm_reference_images = []
                     if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
                         style_prefs = deck_state.deck_outline.stylePreferences
                         parts = []
@@ -82,6 +83,9 @@ class ParallelSlideOrchestrator:
                             parts.append(style_prefs.vibeContext)
                         if parts:
                             prewarm_presentation_context = " | ".join(parts)
+                        # Extract design reference images
+                        if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
+                            prewarm_reference_images = style_prefs.referenceImages
 
                     context = SlideGenerationContext(
                         slide_outline=first_slide,
@@ -99,7 +103,8 @@ class ParallelSlideOrchestrator:
                             for media in (first_slide.taggedMedia if hasattr(first_slide, 'taggedMedia') and first_slide.taggedMedia else [])
                         ],
                         user_id=getattr(deck_state, 'user_id', None),
-                        presentation_context=prewarm_presentation_context
+                        presentation_context=prewarm_presentation_context,
+                        reference_images=prewarm_reference_images
                     )
                     # Build prompts using the same code paths
                     try:
@@ -407,6 +412,7 @@ class ParallelSlideOrchestrator:
 
                 # Extract presentation context from user's initial request (for design context)
                 presentation_context = None
+                reference_images = []
                 if hasattr(deck_state.deck_outline, 'stylePreferences') and deck_state.deck_outline.stylePreferences:
                     style_prefs = deck_state.deck_outline.stylePreferences
                     parts = []
@@ -417,6 +423,10 @@ class ParallelSlideOrchestrator:
                     if parts:
                         presentation_context = " | ".join(parts)
                         logger.debug(f"[DESIGN CONTEXT] Extracted presentation context: {presentation_context[:100]}...")
+                    # Extract design reference images
+                    if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
+                        reference_images = style_prefs.referenceImages
+                        logger.info(f"[REFERENCE IMAGES] Found {len(reference_images)} design reference images")
 
                 # Extract videos from deck notes (populated by ThemeAgent for real brands)
                 available_videos = []
@@ -443,7 +453,8 @@ class ParallelSlideOrchestrator:
                         for media in (slide_outline.taggedMedia if hasattr(slide_outline, 'taggedMedia') and slide_outline.taggedMedia else [])
                     ],
                     user_id=user_id,
-                    presentation_context=presentation_context
+                    presentation_context=presentation_context,
+                    reference_images=reference_images
                 )
                 
                 logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")

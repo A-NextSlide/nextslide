@@ -45,6 +45,7 @@ class AgentState(TypedDict):
     prompt_context: str
     deck_diff: DeckDiffBase
     edit_summary: str
+    attachments: List[Dict]  # User-uploaded images/files with {name, type/mimeType, url}
 
 def get_orchestrator_prompt(state: AgentState, descriptions: str):
     """
@@ -57,9 +58,90 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
     _cur = state.get('current_slide', {})
     current_slide_id = getattr(_cur, 'id', None) if not isinstance(_cur, dict) else _cur.get('id')
 
+    # Build attachments section if user uploaded images/files
+    attachments = state.get('attachments', [])
+    attachments_section = ""
+    if attachments:
+        att_list = []
+        for att in attachments:
+            name = att.get('name') or att.get('fileName') or 'file'
+            mime = att.get('mimeType') or att.get('type') or 'unknown'
+            url = att.get('url') or att.get('publicUrl') or ''
+            att_list.append(f"- {name} ({mime}): {url}")
+        attachments_section = f"""
+    <user_uploaded_files>
+    The user has uploaded the following files as design references.
+    {chr(10).join(att_list)}
+
+    **HOW TO USE REFERENCE IMAGES:**
+
+    1. **For STYLING existing content** (colors, fonts, effects):
+       - Use `style_slide` - it can see and analyze these images
+       - This ONLY styles existing components, cannot change layout
+
+    2. **For RECREATING a slide from reference** (new layout/structure):
+       - Use `remove_all_content` first to clear the slide
+       - Then use `create_new_component` with type='CustomComponent'
+       - Describe the design from the reference image in component_request
+       - The component generator can see reference images and replicate the design
+
+    Choose based on whether user wants to:
+    - "Style like this" → style_slide (keeps existing components)
+    - "Make it look like this" / "Recreate this" → remove_all_content + create_new_component
+    </user_uploaded_files>
+"""
+
+    # Check if current slide has a CustomComponent and build context
+    custom_component_section = ""
+    _cur = state.get('current_slide', {})
+    components = []
+    if hasattr(_cur, 'components'):
+        components = list(getattr(_cur, 'components', []) or [])
+    elif isinstance(_cur, dict):
+        components = list(_cur.get('components', []) or [])
+
+    for comp in components:
+        ctype = getattr(comp, 'type', None) if not isinstance(comp, dict) else comp.get('type')
+        cid = getattr(comp, 'id', None) if not isinstance(comp, dict) else comp.get('id')
+        cprops = getattr(comp, 'props', None) if not isinstance(comp, dict) else comp.get('props', {})
+
+        if ctype == 'CustomComponent' and isinstance(cprops, dict) and cprops.get('render'):
+            html_content = cprops.get('render', '')
+            custom_component_section = f"""
+    <custom_component_context>
+    🚨 THIS SLIDE CONTAINS A CustomComponent - USE SPECIAL EDITING APPROACH!
+
+    Component ID: {cid}
+    Slide ID: {current_slide_id}
+
+    **EDITING STRATEGY:**
+    - For TARGETED edits (color, text, font, size changes): Use `custom_component_str_replace`
+      - Find the exact string in the HTML below
+      - Replace it with the new value
+      - Call once per edit (one old_string → new_string replacement per call)
+      - Example: old_string="color: #333" new_string="color: #ff0000"
+
+    - For BROAD changes (new layout, complete redesign): Use `replace_component`
+      - Only if user wants a fundamentally different design
+
+    **DO NOT use `edit_component` with made-up IDs - the entire slide is ONE component!**
+
+    **IMPORTANT for str_replace:**
+    - Copy the EXACT string from the HTML below (including any special characters)
+    - Don't modify or truncate the old_string - it must match exactly
+    - If the HTML is truncated (ends with ...), the full text might continue
+    - Make one str_replace call per change (multiple calls if multiple changes needed)
+
+    <html_content>
+    {html_content[:15000]}{"... [TRUNCATED - full HTML is " + str(len(html_content)) + " chars]" if len(html_content) > 15000 else ""}
+    </html_content>
+    </custom_component_context>
+"""
+            break  # Only handle first CustomComponent
+
     prompt = f"""
     Based on the deck summary, current slide, chat history, user request, and already gathered context, determine which tools to call in order to edit the deck.
-    
+
     <chat_history>
     {summarize_chat_history(state.get('chat_history', []))}
     </chat_history>
@@ -67,7 +149,7 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
     <user_message>
     {state.get('user_message', '')}
     </user_message>
-
+{attachments_section}{custom_component_section}
     <deck_summary>
     {state.get('deck_summary', 'No summary available')}
     </deck_summary>
@@ -81,7 +163,7 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
     </available_tools>
 
     Do not concern yourself with the exact properites of a component, the editor downstream will handle that for you
-        
+
     If the user request is clear and can be handled with the information provided, indicate that no more context is needed.
     You do not need to ask for more information about a component if the id/identifier is already in the gathered context.
 
@@ -104,6 +186,7 @@ def orchestrate(state: AgentState, event_cb=None):
         deck_data=state.get('deck_data', {}),
         registry=state.get('registry', {}),
         current_slide_id=_cur_id,
+        attachments=state.get('attachments', []),  # Pass user-uploaded images to tools
     )
     call_map.update(_map)
 
@@ -286,7 +369,7 @@ def build_agent():
     graph.add_edge("orchestrate", END)
     return graph.compile() 
 
-def edit_deck(deck_data, current_slide, registry, message, chat_history, run_uuid=None, event_cb=None):
+def edit_deck(deck_data, current_slide, registry, message, chat_history, run_uuid=None, event_cb=None, attachments=None):
     # Create a structured deck summary using cached digest snapshots
     # Support dict or typed slide
     _cur_id = None
@@ -311,7 +394,8 @@ def edit_deck(deck_data, current_slide, registry, message, chat_history, run_uui
         current_slide=current_slide,
         user_message=message,
         context=[],
-        chat_history=chat_history
+        chat_history=chat_history,
+        attachments=attachments or []  # User-uploaded images/files
     )
 
     config = {

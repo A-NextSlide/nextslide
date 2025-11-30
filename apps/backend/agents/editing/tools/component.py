@@ -1,4 +1,4 @@
-from typing import List, Union, Literal
+from typing import List, Union, Literal, Optional, Dict, Any
 from pydantic import BaseModel, Field, create_model
 import uuid
 import logging
@@ -7,7 +7,7 @@ from models.tools import ToolModel
 from models.component import ComponentBase
 from models.registry import ComponentRegistry
 from models.deck import DeckBase, DeckDiff
-from agents.prompts.editing.editor_notes import get_editor_notes
+# Note: editor_notes removed - using simplified inline prompts
 from agents.ai.clients import get_client, invoke
 from utils.deck import find_component_by_id, get_component_info
 from utils.images import image_exists
@@ -19,12 +19,113 @@ from services.gemini_image_service import GeminiImageService
 from services.openai_image_service import OpenAIImageService
 from services.image_storage_service import ImageStorageService
 import requests
+import base64
 import asyncio
+from agents.editing.attachment_analyzer import (
+    analyze_attachments,
+    build_multimodal_content,
+    get_attachment_context_summary,
+    FileType
+)
 import threading
 from queue import Queue
 import re
 
 logger = logging.getLogger(__name__)
+
+
+def _truncate_component_for_prompt(component: dict, max_render_length: int = 2000) -> dict:
+    """
+    Truncate large component data for prompts to prevent token limit issues.
+    Specifically truncates CustomComponent render fields which can be huge HTML strings.
+    """
+    if not component or not isinstance(component, dict):
+        return component
+
+    result = dict(component)
+
+    # Handle the actual component data (might be nested under 'component' key)
+    comp_data = result.get('component', result)
+
+    comp_type = comp_data.get('type')
+    props = comp_data.get('props', {})
+
+    if comp_type == 'CustomComponent' and isinstance(props, dict):
+        render_content = props.get('render', '')
+        if isinstance(render_content, str) and len(render_content) > max_render_length:
+            # Truncate the render HTML
+            truncated = render_content[:max_render_length] + f'... [TRUNCATED - {len(render_content)} chars total]'
+            if 'component' in result:
+                result['component'] = dict(comp_data)
+                result['component']['props'] = dict(props)
+                result['component']['props']['render'] = truncated
+            else:
+                result['props'] = dict(props)
+                result['props']['render'] = truncated
+            logger.info(f"[EDIT] Truncated CustomComponent render from {len(render_content)} to {max_render_length} chars")
+
+    return result
+
+
+def _build_custom_component_prompt(component_args, slide_summary: dict, analyzed_attachments: list) -> str:
+    """
+    Build a focused, example-based prompt for CustomComponent creation.
+    Follows the pattern from custom_component_generator.py - simple instructions + working example.
+    """
+    from agents.editing.attachment_analyzer import FileType
+
+    # Check if user uploaded reference images
+    has_reference_images = any(att.is_vision_content for att in analyzed_attachments)
+    has_data_files = any(att.file_type == FileType.SPREADSHEET for att in analyzed_attachments)
+
+    # Get data context if spreadsheets were uploaded
+    data_context = ""
+    if has_data_files:
+        for att in analyzed_attachments:
+            if att.file_type == FileType.SPREADSHEET and att.extracted_text:
+                data_context += f"\nDATA TO VISUALIZE:\n{att.extracted_text[:2000]}\n"
+
+    reference_note = ""
+    if has_reference_images:
+        reference_note = """
+🎯 REFERENCE IMAGES PROVIDED - MATCH THIS STYLE!
+Analyze the uploaded images and replicate:
+- Color palette and gradients
+- Typography style and hierarchy
+- Layout patterns and spacing
+- Visual effects (shadows, rounded corners, etc.)
+"""
+
+    return f"""CREATE THIS CUSTOMCOMPONENT:
+{component_args.component_request}
+
+SLIDE CONTEXT:
+{slide_summary}
+{reference_note}{data_context}
+═══════════════════════════════════════════════════════════════
+📋 CUSTOMCOMPONENT FORMAT (REQUIRED)
+═══════════════════════════════════════════════════════════════
+
+The "render" prop must be a COMPLETE HTML document as a single-line string:
+
+STRUCTURE:
+<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}</style></head><body class='w-full h-full flex items-center justify-center'>YOUR_CONTENT</body></html>
+
+RULES:
+- Single line string (no newlines)
+- Use SINGLE QUOTES for all HTML attributes
+- Include Tailwind CDN
+- Set background:transparent
+- Use Tailwind classes for styling
+- Content must fit in the specified dimensions (no scrolling)
+
+═══════════════════════════════════════════════════════════════
+📋 WORKING EXAMPLE
+═══════════════════════════════════════════════════════════════
+
+<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}</style></head><body class='w-full h-full flex items-center justify-center p-8'><div class='w-full max-w-4xl'><h1 class='text-4xl font-bold text-white mb-6'>Your Title Here</h1><div class='grid grid-cols-3 gap-6'><div class='bg-white/10 backdrop-blur rounded-2xl p-6 border border-white/20'><div class='text-3xl font-bold text-emerald-400'>85%</div><div class='text-white/70'>Metric One</div></div><div class='bg-white/10 backdrop-blur rounded-2xl p-6 border border-white/20'><div class='text-3xl font-bold text-blue-400'>$2.4M</div><div class='text-white/70'>Metric Two</div></div><div class='bg-white/10 backdrop-blur rounded-2xl p-6 border border-white/20'><div class='text-3xl font-bold text-purple-400'>124</div><div class='text-white/70'>Metric Three</div></div></div></div></body></html>
+
+Now create the CustomComponent the user requested. Position it appropriately on the 1920x1080 canvas."""
 
 
 def _infer_style_guidance(slide_summary: str, base_prompt: str) -> str:
@@ -201,8 +302,6 @@ def get_additional_context(component: ComponentBase):
     return additional_context
 
 def edit_component(edit_args: EditComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
-    editor_notes = get_editor_notes((1920, 1080))
-
     component = find_component_by_id(deck_data, edit_args.metadata.component_id)
 
     # Check if component was found
@@ -210,44 +309,41 @@ def edit_component(edit_args: EditComponentArgs, registry: ComponentRegistry, de
         logger.error(f"Component {edit_args.metadata.component_id} not found in deck")
         raise ValueError(f"Component {edit_args.metadata.component_id} not found in deck")
 
+    # Truncate component data to prevent token limit issues (CustomComponent HTML can be huge)
+    component_for_prompt = _truncate_component_for_prompt(component)
+
     slide_summary = get_slide_summary(deck_data, edit_args.metadata.slide_id)
-    relevant_components = [find_component_by_id(deck_data, component_id) for component_id in edit_args.relevant_component_ids]
+    relevant_components_raw = [find_component_by_id(deck_data, component_id) for component_id in edit_args.relevant_component_ids]
+    # Truncate relevant components too
+    relevant_components = [_truncate_component_for_prompt(c) for c in relevant_components_raw if c]
     component_diff_model = registry.get_component_diff_model(edit_args.metadata.component_type)
     additional_context = get_additional_context(component['component'])
 
-    # Build system prompt with caching
-    system_prompt_base = """You are a helpful assistant that helps with deck editing.
-You will be given a component data in the <component> tag and a user request in the <edit_request> tag.
-You will then make the changes to the component data and return edit response summary.
-You will respect the rules in the <editor_notes> tag.
-You will also be given a list of relevant component ids in the <relevant_component_ids> tag, you are not allowed to change these components, but you can use them to understand the context of the edit request.
-If changes are not needed, return an empty diff."""
+    # Simplified system prompt
+    system_prompt_base = """You are an expert presentation component editor.
 
-    editor_notes_section = f"""<editor_notes>
-{editor_notes}
-</editor_notes>"""
+CANVAS: 1920x1080 pixels. All positions in pixels.
 
-    # Build cacheable context sections
-    context_section = f"""<relevant_components>
-{relevant_components}
-</relevant_components>
+YOUR TASK: Apply the user's edit request to the component.
+- Execute their changes precisely
+- Return a diff with only the changed properties
+- If no changes needed, return empty diff"""
 
-<additional_component_context>
-{additional_context}
-</additional_component_context>
-
-<slide_summary>
+    # Focused context section (cached)
+    context_section = f"""SLIDE CONTEXT:
 {slide_summary}
-</slide_summary>"""
 
-    component_section = f"""<component>
-{component}
-</component>"""
+RELATED COMPONENTS (for context only):
+{relevant_components}
+
+{f"COMPONENT NOTES: {additional_context}" if additional_context else ""}"""
+
+    component_section = f"""COMPONENT TO EDIT:
+{component_for_prompt}"""
 
     # Edit request is NOT cached (changes every time)
-    edit_request_section = f"""<edit_request>
-{edit_args.edit_request}
-</edit_request>"""
+    edit_request_section = f"""EDIT REQUEST:
+{edit_args.edit_request}"""
 
     EditResponse = create_model(
         "EditResponse",
@@ -265,20 +361,13 @@ If changes are not needed, return an empty diff."""
 
     try:
         # Use content blocks with cache_control for Claude's prompt caching
-        # Cache breakpoints: 1) editor_notes, 2) context, 3) component data
         response = invoke(
             client=client,
             model=model,
             max_tokens=16384,
             response_model=EditResponse,
             messages=[
-                {
-                    "role": "system",
-                    "content": [
-                        {"type": "text", "text": system_prompt_base},
-                        {"type": "text", "text": editor_notes_section, "cache_control": {"type": "ephemeral"}}
-                    ]
-                },
+                {"role": "system", "content": system_prompt_base},
                 {
                     "role": "user",
                     "content": [
@@ -292,7 +381,6 @@ If changes are not needed, return an empty diff."""
         )
     except Exception as e:
         logger.error(f"Component edit failed for component {edit_args.metadata.component_id}: {str(e)}")
-        logger.error(f"Editor notes length: {len(editor_notes_section)} chars")
         logger.error(f"Component data length: {len(component_section)} chars")
         raise
     # Guardrail: ensure the diff targets the intended component id to avoid ID mismatch crashes
@@ -355,107 +443,55 @@ def get_create_new_component_model(component_types: List[str]) -> BaseModel:
         component_type=(str, Field(description="The type of the component to create", json_schema_extra={"enum": component_types}))
     )
 
-def create_new_component(component_args: CreateComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
-    editor_notes = get_editor_notes((1920, 1080))
-    system_prompt = f"""
-    You are a helpful assistant that helps with deck editing.
-    You are tasked with creating a new component that you can find in the <component_request> tag.
-    You will respect the rules outlined in the <editor_notes> tag.
-    It is important that you fully define the component and that you dont leave any ambiguity.
-    """
+def create_new_component(component_args: CreateComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff, attachments: Optional[List[Dict[str, Any]]] = None):
+    # Analyze all attachments (images, spreadsheets, documents, etc.)
+    analyzed_attachments = analyze_attachments(attachments or [])
+
+    # Build attachment context summary
+    attachment_context = get_attachment_context_summary(analyzed_attachments)
 
     component_model = registry.get_component_model(component_args.component_type)
     slide_summary = get_slide_summary(deck_data, component_args.slide_id)
 
-    # Get dynamic context based on component type
-    dynamic_context = ""
-    if component_args.component_type == "Image":
+    # Simple, focused system prompt
+    system_prompt = f"""You are an expert presentation component creator.
+
+CANVAS: 1920x1080 pixels. Origin (0,0) is top-left. X increases rightward, Y increases downward.
+All positions/sizes in PIXELS only (no percentages).
+
+YOUR TASK: Create the exact component the user requests.
+- Execute their vision precisely
+- Don't question or suggest alternatives
+- Fully define all required properties
+{attachment_context}"""
+
+    # Build focused prompt based on component type
+    if component_args.component_type == "CustomComponent":
+        prompt = _build_custom_component_prompt(component_args, slide_summary, analyzed_attachments)
+    elif component_args.component_type == "Image":
         image_context = get_image_search_context(component_args.component_request)
-        if image_context:
-            dynamic_context = f"""
-            <image_search_context>
-            {image_context}
-            </image_search_context>
-            """
-    elif component_args.component_type == "CustomComponent":
-        # Add specific guidance for CustomComponent - now supports FULL HTML with Tailwind!
-        dynamic_context = f"""
-            <customcomponent_rules>
-            🚀 **CustomComponent - UNLIMITED CREATIVE POWER**
-            
-            CustomComponent now supports TWO modes:
-            
-            ═══════════════════════════════════════════════════════════════
-            MODE 1: FULL HTML (RECOMMENDED - Maximum flexibility!)
-            ═══════════════════════════════════════════════════════════════
-            
-            Start your render string with `<!DOCTYPE html>` to enable FULL HTML mode!
-            This gives you complete control with Tailwind CSS, Google Fonts, animations, and more.
-            
-            TEMPLATE:
-            "render": "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://cdn.tailwindcss.com'></script><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}body{{font-family:'Inter',sans-serif}}</style></head><body class='w-full h-full flex items-center justify-center p-6'><div class='w-full h-full'>YOUR CONTENT HERE</div></body></html>"
-            
-            CRITICAL RULES:
-            - MUST be a SINGLE LINE string (no line breaks!)
-            - Use SINGLE QUOTES for all HTML attributes: class='...' not class="..."
-            - Include Tailwind CDN: <script src='https://cdn.tailwindcss.com'></script>
-            - Set background:transparent so slide background shows through
-            - Use html,body{{width:100%;height:100%}} to fill the container
-            
-            WHAT YOU CAN DO:
-            - Any Tailwind CSS classes for styling
-            - Google Fonts (just add the link tag)
-            - CSS animations with @keyframes
-            - Flexbox and Grid layouts
-            - Glassmorphism (bg-white/10 backdrop-blur-xl)
-            - Gradient text (bg-gradient-to-r ... bg-clip-text text-transparent)
-            - Glow effects (shadow-[0_0_30px_rgba(59,130,246,0.4)])
-            - Complex SVG graphics
-            - Any HTML structure you want!
-            
-            EXAMPLE - Stat Dashboard:
-            "render": "<!DOCTYPE html><html><head><script src='https://cdn.tailwindcss.com'></script><style>*{{margin:0;padding:0;box-sizing:border-box}}html,body{{width:100%;height:100%;overflow:hidden;background:transparent}}</style></head><body class='w-full h-full p-6'><div class='grid grid-cols-3 gap-4 h-full'><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>$2.4B</span><span class='text-lg text-white/70 mt-2'>Revenue</span></div><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>+47%</span><span class='text-lg text-white/70 mt-2'>Growth</span></div><div class='bg-white/10 backdrop-blur-xl rounded-2xl p-6 flex flex-col items-center justify-center border border-white/20'><span class='text-6xl font-black text-white'>12M</span><span class='text-lg text-white/70 mt-2'>Users</span></div></div></body></html>"
-            
-            ═══════════════════════════════════════════════════════════════
-            MODE 2: React.createElement (For complex interactivity)
-            ═══════════════════════════════════════════════════════════════
-            
-            For interactive components that need state, use function render with React.createElement:
-            
-            function render({{props, state, updateState, id, isThumbnail, containerWidth, containerHeight}}) {{
-              return React.createElement('div', {{
-                style: {{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              }}, [
-                React.createElement('span', {{ key: 'text', style: {{ fontSize: '48px', fontWeight: '900' }} }}, 'Hello')
-              ]);
-            }}
-            
-            ═══════════════════════════════════════════════════════════════
-            
-            🎨 **DESIGN FREEDOM - DO WHATEVER THE USER WANTS!**
-            - If user wants glassmorphism → USE FULL HTML with Tailwind classes
-            - If user wants animations → ADD CSS @keyframes
-            - If user wants a specific layout → CREATE THAT EXACT LAYOUT
-            - If user provides inspiration → REPLICATE IT FAITHFULLY
-            
-            </customcomponent_rules>
-            """
+        prompt = f"""CREATE THIS IMAGE COMPONENT:
+{component_args.component_request}
 
-    prompt = f"""
-    <editor_notes>
-    {editor_notes}
-    </editor_notes>
+SLIDE CONTEXT:
+{slide_summary}
 
-    <slide_summary>
-    {slide_summary}
-    </slide_summary>
+{f"IMAGE SEARCH HINTS: {image_context}" if image_context else ""}
 
-    <component_request>
-    {component_args.component_request}
-    </component_request>
+Position it appropriately on the 1920x1080 canvas."""
+    else:
+        prompt = f"""CREATE THIS COMPONENT:
+{component_args.component_request}
 
-    {dynamic_context}
-    """
+SLIDE CONTEXT:
+{slide_summary}
+
+POSITIONING RULES:
+- Avoid overlapping existing components
+- Leave 20px minimum spacing between elements
+- Standard title position: Y=100-150
+- Body content starts around Y=250
+- Full-width content: width ~1720 (100px margins each side)"""
 
     CreateResponse = create_model(
         "CreateResponse",
@@ -467,9 +503,20 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
             str,
             Field(description="A succinct description of the component that you have created")
         )
-    ) 
-    
+    )
+
     client, model = get_client(DECK_EDITOR_MODEL)
+
+    # Build multimodal user content using the unified analyzer
+    # This handles images (as vision), spreadsheets (as data context), documents (as text), etc.
+    user_content = build_multimodal_content(analyzed_attachments, prompt, max_images=3)
+
+    # Log what we're sending
+    image_count = sum(1 for att in analyzed_attachments if att.is_vision_content)
+    data_count = sum(1 for att in analyzed_attachments if att.file_type == FileType.SPREADSHEET)
+    doc_count = sum(1 for att in analyzed_attachments if att.file_type in [FileType.DOCUMENT, FileType.PRESENTATION])
+    if analyzed_attachments:
+        logger.info(f"[CREATE_COMPONENT] Attachments: {image_count} images, {data_count} data files, {doc_count} documents")
 
     try:
         response = invoke(
@@ -479,14 +526,14 @@ def create_new_component(component_args: CreateComponentArgs, registry: Componen
             response_model=CreateResponse,
             messages=[
                 { "role": "system", "content": system_prompt },
-                { "role": "user", "content": prompt }
+                { "role": "user", "content": user_content }
             ],
             max_retries=3,  # Increased from 2 to give more retry attempts
         )
     except Exception as e:
         logger.error(f"Component creation failed for component {component_args.id}: {str(e)}")
         logger.error(f"System prompt length: {len(system_prompt)} chars")
-        logger.error(f"User prompt length: {len(prompt)} chars")
+        logger.error(f"User content blocks: {len(user_content)}")
         raise
 
     # Set the ID on the component after getting the response
@@ -650,23 +697,20 @@ def get_replace_component_model(component_types: List[str]) -> BaseModel:
         new_component_type=(str, Field(description="The type of the new component to create", json_schema_extra={"enum": component_types}))
     )
 
-def replace_component(replace_args: ReplaceComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
+def replace_component(replace_args: ReplaceComponentArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff, attachments: Optional[List[Dict[str, Any]]] = None):
     # First get the old component information
     old_component = find_component_by_id(deck_data, replace_args.component_id)
-    slide_summary = get_slide_summary(deck_data, replace_args.slide_id)
-    
-    # Create enhanced component request that includes old component info
-    enhanced_request = f"""
-    Replace the following component:
-    {old_component}
-    
-    Original request: {replace_args.component_request}
-    
-    Slide context:
-    {slide_summary}
-    
-    Please create a new {replace_args.new_component_type} component that replaces the old one while maintaining appropriate positioning and styling.
-    """
+
+    # Truncate old component to avoid token issues
+    old_component_truncated = _truncate_component_for_prompt(old_component)
+
+    # Create focused replacement request
+    enhanced_request = f"""REPLACE THIS COMPONENT:
+{old_component_truncated}
+
+WITH: {replace_args.component_request}
+
+Keep similar position/size unless the request specifies otherwise."""
     
     # If the target is an Image and we're replacing with an Image, prefer in-place update of src/metadata
     try:
@@ -681,7 +725,7 @@ def replace_component(replace_args: ReplaceComponentArgs, registry: ComponentReg
                 slide_id=replace_args.slide_id,
                 id=str(uuid.uuid4())
             )
-            temp_diff = create_new_component(create_args, registry, deck_data, DeckDiff(DeckDiffBase()))
+            temp_diff = create_new_component(create_args, registry, deck_data, DeckDiff(DeckDiffBase()), attachments=attachments)
             # Extract the created component's props from the temp diff (last added on this slide)
             image_props = {}
             try:
@@ -725,4 +769,4 @@ def replace_component(replace_args: ReplaceComponentArgs, registry: ComponentReg
         slide_id=replace_args.slide_id,
         id=str(uuid.uuid4())
     )
-    return create_new_component(create_args, registry, deck_data, deck_diff)
+    return create_new_component(create_args, registry, deck_data, deck_diff, attachments=attachments)

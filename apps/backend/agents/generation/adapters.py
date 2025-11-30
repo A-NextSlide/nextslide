@@ -118,6 +118,7 @@ class SlideGeneratorAdapter:
 
             # Extract presentation context from user's initial request (for design context)
             presentation_context = None
+            reference_images = []
             if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
                 style_prefs = deck_outline.stylePreferences
                 parts = []
@@ -127,6 +128,10 @@ class SlideGeneratorAdapter:
                     parts.append(style_prefs.vibeContext)
                 if parts:
                     presentation_context = " | ".join(parts)
+                # Extract design reference images (e.g., PPT screenshots for "make it look like this")
+                if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
+                    reference_images = style_prefs.referenceImages
+                    logger.info(f"[ADAPTER] Found {len(reference_images)} design reference images")
 
             context = SlideGenerationContext(
                 slide_outline=slide_outline,
@@ -139,7 +144,8 @@ class SlideGeneratorAdapter:
                 available_images=available_images or [],
                 async_images=async_images,
                 tagged_media=tagged_media_for_context,
-                presentation_context=presentation_context
+                presentation_context=presentation_context,
+                reference_images=reference_images
             )
             
             # Generate using new system

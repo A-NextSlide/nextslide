@@ -19,6 +19,12 @@ from agents.editing.tools.component import (
     get_edit_component_model,
     get_replace_component_model,
 )
+from agents.editing.tools.custom_component_edit import (
+    CustomComponentStrReplaceArgs,
+    CustomComponentViewArgs,
+    custom_component_str_replace,
+    custom_component_view,
+)
 from agents.editing.tools.slide import StyleSlideArgs, style_slide
 from agents.editing.tools.background import UpdateBackgroundArgs, update_background
 from agents.editing.tools.slide_ops import (
@@ -66,6 +72,7 @@ def get_tools_and_call_map(
     deck_data: Dict[str, Any],
     registry: ComponentRegistry,
     current_slide_id: Optional[str],
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Any], Dict[str, Any]]:
     # Filter out ReactBits from editing agent - it requires specific pre-built component IDs
     # For custom interactive components, use CustomComponent instead
@@ -80,6 +87,9 @@ def get_tools_and_call_map(
         ),
         get_create_new_component_model(component_types=available_types),
         get_replace_component_model(component_types=available_types),
+        # CustomComponent str_replace tools for fast, targeted edits
+        CustomComponentStrReplaceArgs,
+        CustomComponentViewArgs,
         RemoveComponentArgs,
         RemoveAllContentArgs,
         RemoveComponentsByTypeArgs,
@@ -101,14 +111,29 @@ def get_tools_and_call_map(
         FirecrawlFetchArgs,
     ]
 
+    # Create a wrapper for style_slide that passes attachments
+    def style_slide_with_attachments(args, reg, deck, diff):
+        return style_slide(args, reg, deck, diff, attachments=attachments)
+
+    # Create a wrapper for create_new_component that passes attachments
+    def create_new_component_with_attachments(args, reg, deck, diff):
+        return create_new_component(args, reg, deck, diff, attachments=attachments)
+
+    # Create a wrapper for replace_component that passes attachments
+    def replace_component_with_attachments(args, reg, deck, diff):
+        return replace_component(args, reg, deck, diff, attachments=attachments)
+
     call_map = {
         "edit_component": edit_component,
-        "create_new_component": create_new_component,
+        "create_new_component": create_new_component_with_attachments,
         "remove_component": remove_component,
         "remove_all_content": remove_all_content,
         "remove_components_by_type": remove_components_by_type,
-        "replace_component": replace_component,
-        "style_slide": style_slide,
+        "replace_component": replace_component_with_attachments,
+        # CustomComponent str_replace tools
+        "custom_component_str_replace": custom_component_str_replace,
+        "custom_component_view": custom_component_view,
+        "style_slide": style_slide_with_attachments,
         "update_background": update_background,
         "create_slide": create_slide,
         "duplicate_slide": duplicate_slide,

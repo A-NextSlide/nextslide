@@ -16,6 +16,14 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+interface EditableBrandData {
+  brand_name: string;
+  domain: string;
+  logo_url: string;
+  colors: string[];
+  fonts: string[];
+}
+
 const AdminBrands: React.FC = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,8 +33,13 @@ const AdminBrands: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [editedData, setEditedData] = useState<string>('');
-  const [editedColors, setEditedColors] = useState<string[]>([]);
-  const [editedFonts, setEditedFonts] = useState<string[]>([]);
+  const [editedBrandData, setEditedBrandData] = useState<EditableBrandData>({
+    brand_name: '',
+    domain: '',
+    logo_url: '',
+    colors: [],
+    fonts: [],
+  });
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<Brand | null>(null);
   const [uploadingBrand, setUploadingBrand] = useState<Brand | null>(null);
@@ -88,8 +101,16 @@ const AdminBrands: React.FC = () => {
   const handleEdit = (brand: Brand) => {
     setEditingBrand(brand);
     setEditedData(JSON.stringify(brand.api_response, null, 2));
-    setEditedColors(getColorArray(brand));
-    setEditedFonts(getFonts(brand));
+
+    // Initialize editable brand data
+    const logoUrl = getBestLogo(brand) || '';
+    setEditedBrandData({
+      brand_name: brand.api_response?.brand_name || brand.identifier || '',
+      domain: brand.api_response?.domain || brand.normalized_identifier || '',
+      logo_url: logoUrl,
+      colors: getColorArray(brand),
+      fonts: getFonts(brand),
+    });
   };
 
   const handleSave = async () => {
@@ -97,11 +118,56 @@ const AdminBrands: React.FC = () => {
 
     setSaving(true);
     try {
-      const parsedData = JSON.parse(editedData);
+      // Parse the original JSON
+      let parsedData: any;
+      try {
+        parsedData = JSON.parse(editedData);
+      } catch {
+        // If JSON is invalid, start from original
+        parsedData = { ...editingBrand.api_response };
+      }
+
+      // Update with visual editor changes
+      parsedData.brand_name = editedBrandData.brand_name;
+      parsedData.domain = editedBrandData.domain;
+
+      // Update colors - preserve structure but update values
       if (!parsedData.colors) parsedData.colors = {};
-      parsedData.colors.primary = editedColors.map(hex => ({ hex, type: 'primary' }));
-      if (editedFonts.length > 0) {
-        parsedData.fonts = { names: editedFonts };
+      parsedData.colors.primary = editedBrandData.colors.map(hex => ({ hex, type: 'primary' }));
+
+      // Update fonts
+      if (editedBrandData.fonts.length > 0) {
+        if (!parsedData.fonts) parsedData.fonts = {};
+        parsedData.fonts.names = editedBrandData.fonts;
+      }
+
+      // Update logo URL if changed
+      if (editedBrandData.logo_url) {
+        // Find or create logo structure
+        if (!parsedData.logos) parsedData.logos = { light: [] };
+        if (!parsedData.logos.light) parsedData.logos.light = [];
+
+        // Update or add logo
+        if (parsedData.logos.light.length > 0) {
+          if (!parsedData.logos.light[0].formats) parsedData.logos.light[0].formats = [];
+          // Check if URL already exists
+          const existingFormat = parsedData.logos.light[0].formats.find(
+            (f: any) => f.url === editedBrandData.logo_url
+          );
+          if (!existingFormat) {
+            parsedData.logos.light[0].formats.unshift({
+              url: editedBrandData.logo_url,
+              format: editedBrandData.logo_url.endsWith('.svg') ? 'svg' : 'png'
+            });
+          }
+        } else {
+          parsedData.logos.light.push({
+            formats: [{
+              url: editedBrandData.logo_url,
+              format: editedBrandData.logo_url.endsWith('.svg') ? 'svg' : 'png'
+            }]
+          });
+        }
       }
 
       await adminApi.updateBrand(editingBrand.id, parsedData);
@@ -116,31 +182,45 @@ const AdminBrands: React.FC = () => {
   };
 
   const handleColorChange = (index: number, newColor: string) => {
-    const updated = [...editedColors];
-    updated[index] = newColor;
-    setEditedColors(updated);
+    setEditedBrandData(prev => ({
+      ...prev,
+      colors: prev.colors.map((c, i) => i === index ? newColor : c)
+    }));
   };
 
   const handleAddColor = () => {
-    setEditedColors([...editedColors, '#000000']);
+    setEditedBrandData(prev => ({
+      ...prev,
+      colors: [...prev.colors, '#000000']
+    }));
   };
 
   const handleRemoveColor = (index: number) => {
-    setEditedColors(editedColors.filter((_, i) => i !== index));
+    setEditedBrandData(prev => ({
+      ...prev,
+      colors: prev.colors.filter((_, i) => i !== index)
+    }));
   };
 
   const handleFontChange = (index: number, newFont: string) => {
-    const updated = [...editedFonts];
-    updated[index] = newFont;
-    setEditedFonts(updated);
+    setEditedBrandData(prev => ({
+      ...prev,
+      fonts: prev.fonts.map((f, i) => i === index ? newFont : f)
+    }));
   };
 
   const handleAddFont = () => {
-    setEditedFonts([...editedFonts, 'Arial']);
+    setEditedBrandData(prev => ({
+      ...prev,
+      fonts: [...prev.fonts, 'Arial']
+    }));
   };
 
   const handleRemoveFont = (index: number) => {
-    setEditedFonts(editedFonts.filter((_, i) => i !== index));
+    setEditedBrandData(prev => ({
+      ...prev,
+      fonts: prev.fonts.filter((_, i) => i !== index)
+    }));
   };
 
   const handleDelete = async (brand: Brand) => {
@@ -678,134 +758,236 @@ const AdminBrands: React.FC = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editingBrand} onOpenChange={() => setEditingBrand(null)}>
-        <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Edit Brand Data</DialogTitle>
-            <DialogDescription>
-              Edit colors, fonts, and raw JSON for {editingBrand?.api_response?.brand_name || editingBrand?.identifier}
-            </DialogDescription>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="pb-4 border-b">
+            <div className="flex items-center gap-4">
+              {/* Logo Preview in Header */}
+              <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden border">
+                {editedBrandData.logo_url ? (
+                  <img
+                    src={editedBrandData.logo_url}
+                    alt={editedBrandData.brand_name}
+                    className="max-h-12 max-w-12 object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <Image className="h-8 w-8 text-muted-foreground opacity-50" />
+                )}
+              </div>
+              <div>
+                <DialogTitle className="text-xl">{editedBrandData.brand_name || 'Edit Brand'}</DialogTitle>
+                <DialogDescription className="flex items-center gap-2">
+                  <Globe className="h-3 w-3" />
+                  {editedBrandData.domain || 'No domain'}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
           <Tabs defaultValue="visual" className="flex-1 flex flex-col min-h-0">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="visual">
-                <Palette className="h-4 w-4 mr-2" />
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="visual" className="gap-2">
+                <Palette className="h-4 w-4" />
                 Visual Editor
               </TabsTrigger>
-              <TabsTrigger value="json">
-                <Code className="h-4 w-4 mr-2" />
+              <TabsTrigger value="json" className="gap-2">
+                <Code className="h-4 w-4" />
                 JSON Editor
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="visual" className="flex-1 min-h-0 mt-4">
-              <ScrollArea className="h-[500px] pr-4">
-                <div className="space-y-6">
+            <TabsContent value="visual" className="flex-1 min-h-0">
+              <ScrollArea className="h-[480px] pr-4">
+                <div className="space-y-8">
+                  {/* Brand Identity Section */}
+                  <div className="bg-muted/30 rounded-lg p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Brand Identity</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="brand-name">Brand Name</Label>
+                        <Input
+                          id="brand-name"
+                          value={editedBrandData.brand_name}
+                          onChange={(e) => setEditedBrandData(prev => ({ ...prev, brand_name: e.target.value }))}
+                          placeholder="e.g., Nike"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="brand-domain">Domain</Label>
+                        <Input
+                          id="brand-domain"
+                          value={editedBrandData.domain}
+                          onChange={(e) => setEditedBrandData(prev => ({ ...prev, domain: e.target.value }))}
+                          placeholder="e.g., nike.com"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Logo Section */}
+                  <div className="bg-muted/30 rounded-lg p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Logo</h3>
+                    <div className="flex gap-6">
+                      {/* Logo Preview */}
+                      <div className="w-32 h-32 rounded-xl bg-white dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {editedBrandData.logo_url ? (
+                          <img
+                            src={editedBrandData.logo_url}
+                            alt="Logo preview"
+                            className="max-h-24 max-w-24 object-contain"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = '';
+                              target.alt = 'Failed to load';
+                            }}
+                          />
+                        ) : (
+                          <div className="text-center text-muted-foreground">
+                            <Image className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                            <span className="text-xs">No logo</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Logo URL Input */}
+                      <div className="flex-1 space-y-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="logo-url">Logo URL</Label>
+                          <Input
+                            id="logo-url"
+                            value={editedBrandData.logo_url}
+                            onChange={(e) => setEditedBrandData(prev => ({ ...prev, logo_url: e.target.value }))}
+                            placeholder="https://example.com/logo.svg"
+                            className="font-mono text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Enter a direct URL to the brand logo (SVG or PNG preferred)
+                          </p>
+                        </div>
+                        {editedBrandData.logo_url && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditedBrandData(prev => ({ ...prev, logo_url: '' }))}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Remove Logo
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Colors Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <Label className="text-lg font-semibold">Brand Colors</Label>
-                      <Button size="sm" variant="outline" onClick={handleAddColor}>
+                  <div className="bg-muted/30 rounded-lg p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Brand Colors</h3>
+                      <Button size="sm" variant="outline" onClick={handleAddColor} className="h-8">
                         <Plus className="h-3 w-3 mr-1" />
                         Add Color
                       </Button>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {editedColors.map((color, index) => (
-                        <div key={index} className="space-y-2">
-                          <div className="relative">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="color"
-                                value={color}
-                                onChange={(e) => handleColorChange(index, e.target.value)}
-                                className="w-16 h-16 rounded-lg border-2 border-gray-300 cursor-pointer"
-                              />
-                              <div className="flex-1">
-                                <Input
-                                  value={color}
-                                  onChange={(e) => handleColorChange(index, e.target.value.toUpperCase())}
-                                  placeholder="#000000"
-                                  className="font-mono text-sm"
-                                  maxLength={7}
-                                />
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleRemoveColor(index)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
+                    {editedBrandData.colors.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {editedBrandData.colors.map((color, index) => (
+                          <div key={index} className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg p-2 border">
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(e) => handleColorChange(index, e.target.value)}
+                              className="w-10 h-10 rounded-md border-0 cursor-pointer"
+                              style={{ backgroundColor: color }}
+                            />
+                            <Input
+                              value={color}
+                              onChange={(e) => handleColorChange(index, e.target.value.toUpperCase())}
+                              placeholder="#000000"
+                              className="font-mono text-xs h-8 flex-1"
+                              maxLength={7}
+                            />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleRemoveColor(index)}
+                              className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <Palette className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No colors defined</p>
+                        <Button size="sm" variant="outline" onClick={handleAddColor} className="mt-2">
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add First Color
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Fonts Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <Label className="text-lg font-semibold">Brand Fonts</Label>
-                      <Button size="sm" variant="outline" onClick={handleAddFont}>
+                  <div className="bg-muted/30 rounded-lg p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Brand Fonts</h3>
+                      <Button size="sm" variant="outline" onClick={handleAddFont} className="h-8">
                         <Plus className="h-3 w-3 mr-1" />
                         Add Font
                       </Button>
                     </div>
-                    <div className="space-y-2">
-                      {editedFonts.map((font, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Input
-                            value={font}
-                            onChange={(e) => handleFontChange(index, e.target.value)}
-                            placeholder="Font name"
-                            className="flex-1 font-mono"
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleRemoveFont(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                      {editedFonts.length === 0 && (
-                        <p className="text-sm text-muted-foreground italic">No fonts defined</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Brand Info */}
-                  <div>
-                    <Label className="text-lg font-semibold mb-3 block">Brand Information</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-sm text-muted-foreground">Brand Name</Label>
-                        <p className="font-medium">{editingBrand?.api_response?.brand_name || 'N/A'}</p>
+                    {editedBrandData.fonts.length > 0 ? (
+                      <div className="space-y-2">
+                        {editedBrandData.fonts.map((font, index) => (
+                          <div key={index} className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg p-2 border">
+                            <Type className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <Input
+                              value={font}
+                              onChange={(e) => handleFontChange(index, e.target.value)}
+                              placeholder="Font name"
+                              className="flex-1 h-8"
+                            />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleRemoveFont(index)}
+                              className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <Label className="text-sm text-muted-foreground">Domain</Label>
-                        <p className="font-medium">{editingBrand?.api_response?.domain || 'N/A'}</p>
+                    ) : (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <Type className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No fonts defined</p>
+                        <Button size="sm" variant="outline" onClick={handleAddFont} className="mt-2">
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add First Font
+                        </Button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="json" className="flex-1 min-h-0 mt-4">
-              <div className="h-[500px] flex flex-col">
-                <Label htmlFor="brand-data" className="mb-2">API Response JSON</Label>
-                <ScrollArea className="flex-1 border rounded-md">
+            <TabsContent value="json" className="flex-1 min-h-0">
+              <div className="h-[480px] flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="brand-data" className="text-sm text-muted-foreground">Raw API Response JSON</Label>
+                  <Badge variant="outline" className="text-xs">Advanced</Badge>
+                </div>
+                <ScrollArea className="flex-1 border rounded-lg bg-muted/30">
                   <Textarea
                     id="brand-data"
                     value={editedData}
                     onChange={(e) => setEditedData(e.target.value)}
-                    className="font-mono text-xs min-h-[480px] border-0 focus-visible:ring-0"
+                    className="font-mono text-xs min-h-[450px] border-0 focus-visible:ring-0 bg-transparent resize-none"
                     placeholder="Paste JSON data here..."
                   />
                 </ScrollArea>
@@ -813,14 +995,22 @@ const AdminBrands: React.FC = () => {
             </TabsContent>
           </Tabs>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="pt-4 border-t gap-2">
             <Button variant="outline" onClick={() => setEditingBrand(null)}>
-              <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : 'Save Changes'}
+            <Button onClick={handleSave} disabled={saving} className="min-w-[120px]">
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

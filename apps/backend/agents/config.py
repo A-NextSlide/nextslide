@@ -58,10 +58,13 @@ PERPLEXITY_IMAGE_MODEL = 'perplexity-sonar'
 # DECK EDITING MODELS
 #==============================================================================
 
-ORCHESTRATOR_MODEL = "claude-haiku-4-5"
-DECK_EDITOR_MODEL = "claude-haiku-4-5"
-CONTEXT_BUILDER_MODEL = "claude-haiku-4-5"
-SLIDE_STYLE_MODEL = "claude-haiku-4-5"
+# All editing models use Claude Opus 4.5 (most capable)
+# Gemini's function schema doesn't support complex Union/Optional types
+_has_google_key_for_editing = bool(os.environ.get('GOOGLE_API_KEY'))
+ORCHESTRATOR_MODEL = "claude-opus-4-5"  # Claude Opus 4.5 - best for complex editing decisions
+DECK_EDITOR_MODEL = "claude-opus-4-5"   # Claude Opus 4.5 - for component editing
+CONTEXT_BUILDER_MODEL = "claude-haiku-4-5"  # Keep Haiku for context (smaller, cheaper)
+SLIDE_STYLE_MODEL = "claude-opus-4-5"   # Claude Opus 4.5 - for styling
 
 #==============================================================================
 # SPECIALIZED MODELS
@@ -89,9 +92,10 @@ ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN = True
 # Temperature for creative CustomComponent generation (higher = more creative)
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
 
-# Log which model is being used
+# Log which models are being used
 if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN:
     print(f"[CONFIG] CustomComponent model: {CUSTOM_COMPONENT_MODEL} (Google API key: {'✓' if _has_google_api_key else '✗'})")
+print(f"[CONFIG] Editing orchestrator: {ORCHESTRATOR_MODEL} | Style: {SLIDE_STYLE_MODEL}")
 
 #==============================================================================
 # IMAGE GENERATION PROVIDER SWITCH

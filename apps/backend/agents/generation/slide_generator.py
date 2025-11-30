@@ -1647,7 +1647,8 @@ class SlideGeneratorV2(ISlideGenerator):
             height=1080,
             position={'x': 0, 'y': 0},
             external_media=external_media,
-            uploaded_media=uploaded_media
+            uploaded_media=uploaded_media,
+            reference_images=context.reference_images  # Design reference images (e.g., PPT screenshots)
         )
 
         if enhanced:

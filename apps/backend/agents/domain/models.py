@@ -118,6 +118,8 @@ class SlideGenerationContext:
     user_id: Optional[str] = None
     # Presentation context from user's initial request (for design context only)
     presentation_context: Optional[str] = None
+    # Design reference images (e.g., PPT screenshots) for AI to match style from
+    reference_images: List[str] = field(default_factory=list)
     
     @property
     def total_slides(self) -> int:

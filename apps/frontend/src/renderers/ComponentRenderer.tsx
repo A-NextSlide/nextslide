@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ComponentInstance } from "@/types/components";
 import { createComponentStyles, rendererRegistry, RendererProps } from "./index";
@@ -6,6 +6,7 @@ import { useEditorState } from '@/context/EditorStateContext';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import SelectionBoundingBox from '@/components/SelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
+import { Pencil } from 'lucide-react';
 
 // Import TypeBox registry
 import { registry } from '@/registry';
@@ -116,6 +117,23 @@ export const ComponentRenderer: React.FC<Props> = ({
   const isCroppingImage = useEditorSettingsStore(state => state.isCroppingImage);
   const croppingComponentId = useEditorSettingsStore(state => state.croppingComponentId);
   const isCroppingThis = isCroppingImage && croppingComponentId === componentId && componentType === 'Image';
+
+  // Element edit mode for CustomComponents - when true, iframe is directly interactive
+  const [isElementEditMode, setIsElementEditMode] = useState(false);
+
+  // Exit element edit mode when component is deselected
+  useEffect(() => {
+    if (!effectiveIsSelected && isElementEditMode) {
+      setIsElementEditMode(false);
+    }
+  }, [effectiveIsSelected, isElementEditMode]);
+
+  // Function to enter element edit mode
+  const enterElementEditMode = useCallback(() => {
+    if (componentType === 'CustomComponent') {
+      setIsElementEditMode(true);
+    }
+  }, [componentType]);
 
   // Clear text-edit mode when switching to a different component
   // This ensures text editing doesn't stick when user selects another component
@@ -548,47 +566,126 @@ export const ComponentRenderer: React.FC<Props> = ({
 
       {/*
         DRAG OVERLAY for selected CustomComponents
-        When selected, we need an overlay for dragging but below resize handles (zIndex: 40)
-        Double-click passes through to iframe to enable element editing
+        Shows when NOT in element edit mode - allows dragging and has edit button
       */}
-      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && (
+      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && !isElementEditMode && (
+        <>
+          {/* Full drag overlay */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 15,
+              background: 'transparent',
+              cursor: isDragging ? 'grabbing' : 'move',
+              pointerEvents: 'auto',
+            }}
+            onMouseDown={(e) => {
+              const target = e.target as HTMLElement;
+              if (target.style.cursor?.includes('resize')) return;
+              if (target.closest('[data-edit-elements-btn]')) return;
+              if (e.button === 0) {
+                handleDragStart(e);
+              }
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              enterElementEditMode();
+            }}
+          />
+          {/* Edit Elements button */}
+          <div
+            data-edit-elements-btn="true"
+            onClick={(e) => {
+              e.stopPropagation();
+              enterElementEditMode();
+            }}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              background: '#FF4301',
+              color: 'white',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              boxShadow: '0 4px 12px rgba(255, 67, 1, 0.4)',
+              pointerEvents: 'auto',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(255, 67, 1, 0.5)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 67, 1, 0.4)';
+            }}
+          >
+            <Pencil size={16} />
+            Edit Elements
+          </div>
+          {/* Hint text */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '12px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 20,
+              padding: '4px 10px',
+              background: 'rgba(0,0,0,0.7)',
+              color: 'white',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontFamily: 'system-ui',
+              pointerEvents: 'none',
+            }}
+          >
+            Right-click or click button to edit • Drag to move
+          </div>
+        </>
+      )}
+
+      {/*
+        EXIT EDIT MODE button - shows when in element edit mode
+      */}
+      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && isElementEditMode && (
         <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsElementEditMode(false);
+          }}
           style={{
             position: 'absolute',
-            inset: 0,
-            zIndex: 15, // Below resize handles (40) but above content
-            background: 'transparent',
-            cursor: isDragging ? 'grabbing' : 'move',
+            top: '-32px',
+            right: '0',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '6px 12px',
+            background: '#FF4301',
+            color: 'white',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: 600,
+            fontFamily: 'system-ui',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
             pointerEvents: 'auto',
           }}
-          onMouseDown={(e) => {
-            // Don't interfere with resize handles
-            const target = e.target as HTMLElement;
-            if (target.style.cursor?.includes('resize')) return;
-            if (e.button === 0) {
-              handleDragStart(e);
-            }
-          }}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            // Find the iframe inside this component and forward the double-click
-            const iframe = containerRef.current?.querySelector('iframe');
-            if (iframe?.contentWindow) {
-              // Get click position relative to iframe
-              const iframeRect = iframe.getBoundingClientRect();
-              const x = e.clientX - iframeRect.left;
-              const y = e.clientY - iframeRect.top;
-
-              // Send message to iframe to trigger element selection at this position
-              iframe.contentWindow.postMessage({
-                target: 'ns-custom-component-edit',
-                type: 'trigger-element-select',
-                x,
-                y
-              }, '*');
-            }
-          }}
-        />
+        >
+          ✓ Done Editing
+        </div>
       )}
 
       {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */}

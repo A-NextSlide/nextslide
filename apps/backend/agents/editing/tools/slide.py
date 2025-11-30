@@ -1,10 +1,22 @@
 from typing import Literal, Union, List, Dict, Any, Optional
 import asyncio
+import base64
+import requests
+import logging
 from pydantic import Field, create_model
 from models.tools import ToolModel
 from models.registry import ComponentRegistry
 from models.deck import DeckBase, DeckDiff, DeckDiffBase
 import json
+
+from agents.editing.attachment_analyzer import (
+    analyze_attachments,
+    build_multimodal_content,
+    get_attachment_context_summary,
+    FileType
+)
+
+logger = logging.getLogger(__name__)
 
 from agents.prompts.editing.editor_notes import get_editor_notes
 from agents.ai.clients import get_client, invoke
@@ -22,10 +34,10 @@ from agents.rag.slide_context_retriever import SlideContextRetriever
 from models.requests import SlideOutline as OutlineSlide, DeckOutline as OutlineDeck
 
 class StyleSlideArgs(ToolModel):
-    tool_name: Literal["style_slide"] = Field(description="Tool to style the slide according to the style and layout guidelines. No new components will be created, only existing ones will be styled.")
+    tool_name: Literal["style_slide"] = Field(description="Tool to style the slide according to the style and layout guidelines. Can analyze uploaded reference images to match their design style. No new components will be created, only existing ones will be styled.")
     slide_id: str = Field(description="The id of the slide to style")
 
-def style_slide(slide_style_args: StyleSlideArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff):
+def style_slide(slide_style_args: StyleSlideArgs, registry: ComponentRegistry, deck_data: DeckBase, deck_diff: DeckDiff, attachments: Optional[List[Dict[str, Any]]] = None):
     editor_notes = get_editor_notes((1920, 1080))
     
     # Extract optional theme/style context from deck (persisted by generation)
@@ -273,8 +285,30 @@ def style_slide(slide_style_args: StyleSlideArgs, registry: ComponentRegistry, d
         layout_guidelines = default_layout_guidelines
         style_guidelines = default_style_guidelines
     
+    # Get actual component IDs that exist on this slide for the constraint
+    existing_component_ids = get_all_component_ids(deck_data, slide_style_args.slide_id)
+    existing_ids_list = ", ".join(existing_component_ids) if existing_component_ids else "NO COMPONENTS FOUND"
+
     # Build system prompt with caching
     system_prompt_base = f"""You are a creative slide styling assistant with UNLIMITED flexibility.
+
+🚨 **CRITICAL CONSTRAINT - READ CAREFULLY** 🚨
+
+You can ONLY edit components that ALREADY EXIST on this slide.
+You CANNOT create new components or reference IDs that don't exist.
+
+**EXISTING COMPONENT IDs ON THIS SLIDE:**
+{existing_ids_list}
+
+⚠️ You MUST ONLY use component_id values from the list above!
+⚠️ DO NOT invent or hallucinate component IDs like "bg_main", "title_main", etc.
+⚠️ If a component ID is not in the list above, you CANNOT edit it.
+
+If you see a reference image showing a different layout than what exists:
+- Apply the COLOR PALETTE from the reference to existing components
+- Apply the TYPOGRAPHY STYLE from the reference to existing text
+- Apply VISUAL EFFECTS (shadows, gradients, spacing) to existing components
+- You CANNOT recreate the entire layout - only style what already exists
 
 🚨 **USER REQUESTS ARE THE #1 PRIORITY** 🚨
 
@@ -288,11 +322,10 @@ You will be given a slide data in the <slide> tag.
 Your job is to style it according to user preferences and make it visually stunning.
 Call the update component tool for each component that needs modification.
 
-CREATIVE FREEDOM:
-- You can make dramatic changes if it improves the design
-- Break conventional rules if it creates better impact
-- Use CustomComponent with full HTML/Tailwind for complex visualizations
-- Experiment with typography, colors, and layouts
+CREATIVE FREEDOM (within existing components):
+- You can make dramatic styling changes to existing components
+- Experiment with typography, colors, and visual effects
+- Apply sophisticated styling from reference images to existing elements
 
 {"RAG design context is provided in <rag_context> for inspiration, but USER REQUESTS always take priority." if rag_context_str else "Guidelines for layout and style will be provided for inspiration, but USER REQUESTS always take priority."}
 
@@ -353,6 +386,56 @@ THEME GUIDANCE (use as defaults, but user can override):
     ]
 
     user_content = []
+
+    # Analyze all attachments using the unified analyzer
+    # This handles images (vision), spreadsheets (data context), documents (text), etc.
+    analyzed_attachments = analyze_attachments(attachments or [])
+
+    # Add images as vision content
+    for att in analyzed_attachments:
+        if att.is_vision_content and att.base64_data:
+            # Add instruction before first image
+            if not any(block.get("type") == "image" for block in user_content):
+                user_content.append({
+                    "type": "text",
+                    "text": """<reference_attachments>
+The user has uploaded reference files. CAREFULLY ANALYZE these and apply to styling:
+- For images: Extract colors, typography, spacing, and visual effects
+- For data files: Use the data context to inform chart styling
+Apply these visual elements to style the slide components.
+</reference_attachments>"""
+                })
+
+            media_type = att.mime_type or 'image/png'
+            if not media_type.startswith('image/'):
+                media_type = 'image/png'
+
+            user_content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": att.base64_data
+                }
+            })
+            user_content.append({
+                "type": "text",
+                "text": f"[Reference: {att.name}]"
+            })
+            logger.info(f"[STYLE_SLIDE] Added reference image: {att.name}")
+
+    # Add non-image attachment context (spreadsheets, documents)
+    non_image_context = []
+    for att in analyzed_attachments:
+        if not att.is_vision_content and att.text_content:
+            non_image_context.append(f"<{att.file_type.value} name='{att.name}'>\n{att.text_content[:3000]}\n</{att.file_type.value}>")
+
+    if non_image_context:
+        user_content.append({
+            "type": "text",
+            "text": "<uploaded_file_content>\n" + "\n".join(non_image_context) + "\n</uploaded_file_content>"
+        })
+
     if theme_section:
         user_content.append({"type": "text", "text": theme_section, "cache_control": {"type": "ephemeral"}})
     user_content.append({"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}})

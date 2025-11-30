@@ -1,9 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ImageIcon, MessageSquare, Type, Sparkles, RefreshCw, X, Send } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { MediaHub } from '@/components/media/MediaHub';
+import { Sparkles, Upload, ChevronUp, X, Image as ImageIcon } from 'lucide-react';
 
 // Types for detected elements
 export interface DetectedElement {
@@ -19,6 +17,7 @@ export interface DetectedElement {
 
 interface CustomComponentEditOverlayProps {
   componentId: string;
+  slideId?: string;
   isEditing: boolean;
   isSelected: boolean;
   srcDoc: string;
@@ -42,87 +41,39 @@ export function generateEditModeScript(componentId: string): string {
   return `
 <!-- NEXTSLIDE EDIT MODE -->
 <style id="ns-edit-mode-styles">
-  /* Edit mode hover effects */
-  .ns-editable-text,
+  /* Text elements - show text cursor */
+  .ns-editable-text {
+    cursor: text !important;
+    transition: outline 0.15s ease !important;
+  }
+
+  /* Image elements - show pointer */
   .ns-editable-image {
     cursor: pointer !important;
-    transition: outline 0.15s ease, background-color 0.15s ease !important;
+    transition: outline 0.15s ease !important;
   }
 
+  /* Hover effects - subtle */
   .ns-editable-text:hover,
   .ns-editable-image:hover {
-    outline: 2px solid rgba(255, 67, 1, 0.6) !important;
+    outline: 2px solid rgba(255, 67, 1, 0.5) !important;
     outline-offset: 2px !important;
-    background-color: rgba(255, 67, 1, 0.05) !important;
   }
 
+  /* Selected state */
   .ns-editable-text.ns-selected,
   .ns-editable-image.ns-selected {
     outline: 2px solid #FF4301 !important;
     outline-offset: 2px !important;
-    background-color: rgba(255, 67, 1, 0.1) !important;
   }
 
-  .ns-editable-image {
-    position: relative !important;
-  }
-
-  .ns-image-overlay {
-    position: absolute !important;
-    inset: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    background: rgba(0, 0, 0, 0.4) !important;
-    opacity: 0 !important;
-    transition: opacity 0.2s ease !important;
-    pointer-events: none !important;
-  }
-
-  .ns-editable-image:hover .ns-image-overlay {
-    opacity: 1 !important;
-  }
-
-  .ns-image-overlay-text {
-    color: white !important;
-    font-size: 12px !important;
-    font-weight: 600 !important;
-    background: #FF4301 !important;
-    padding: 6px 12px !important;
-    border-radius: 6px !important;
-    font-family: system-ui, -apple-system, sans-serif !important;
-  }
-
-  /* Text being edited */
+  /* Text being actively edited */
   .ns-text-editing {
     outline: 2px solid #FF4301 !important;
     outline-offset: 2px !important;
     background-color: rgba(255, 255, 255, 0.95) !important;
     min-width: 50px !important;
-    min-height: 1em !important;
-  }
-
-  /* Type indicator badges */
-  .ns-type-badge {
-    position: absolute !important;
-    top: -20px !important;
-    left: 0 !important;
-    background: #FF4301 !important;
-    color: white !important;
-    font-size: 10px !important;
-    padding: 2px 6px !important;
-    border-radius: 4px !important;
-    font-family: system-ui, -apple-system, sans-serif !important;
-    font-weight: 600 !important;
-    pointer-events: none !important;
-    opacity: 0 !important;
-    transition: opacity 0.15s ease !important;
-    z-index: 10000 !important;
-  }
-
-  .ns-editable-text:hover .ns-type-badge,
-  .ns-editable-image:hover .ns-type-badge {
-    opacity: 1 !important;
+    cursor: text !important;
   }
 </style>
 <script>
@@ -131,67 +82,41 @@ export function generateEditModeScript(componentId: string): string {
   let selectedElement = null;
   let isTextEditing = false;
 
-  // Mark text elements as editable
+  // Mark text elements as editable (no badges or overlays - keep it clean)
+  let setupRan = false;
   function setupEditableElements() {
-    // Text elements
-    const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button, div';
-    document.querySelectorAll(textSelectors).forEach((el, index) => {
-      // Skip if already processed or has no direct text
-      if (el.classList.contains('ns-editable-text') || el.classList.contains('ns-editable-image')) return;
-      if (el.classList.contains('ns-type-badge') || el.classList.contains('ns-image-overlay')) return;
+    // Only run once per iframe load
+    if (setupRan) return;
+    setupRan = true;
 
+    // Text elements - only process leaf elements with direct text
+    const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button';
+    document.querySelectorAll(textSelectors).forEach((el, index) => {
+      // Skip if already processed
+      if (el.dataset.nsId) return;
+
+      // Only get direct text nodes (not from children)
       const directText = Array.from(el.childNodes)
         .filter(node => node.nodeType === Node.TEXT_NODE)
-        .map(node => node.textContent?.trim())
+        .map(node => node.textContent || '')
         .join('')
         .trim();
 
-      if (directText && directText.length > 0) {
+      // Only mark as editable if it has meaningful text
+      if (directText && directText.length > 1) {
         el.classList.add('ns-editable-text');
         el.dataset.nsId = 'text-' + index;
         el.dataset.nsOriginal = directText;
-        el.style.position = el.style.position || 'relative';
-
-        // Add type badge
-        const badge = document.createElement('span');
-        badge.className = 'ns-type-badge';
-        badge.textContent = el.tagName.toLowerCase();
-        el.appendChild(badge);
       }
     });
 
     // Image elements
     document.querySelectorAll('img').forEach((img, index) => {
-      if (img.classList.contains('ns-editable-image')) return;
-      if (img.width < 30 || img.height < 30) return; // Skip tiny images
+      if (img.dataset.nsId) return;
+      if (img.width < 30 || img.height < 30) return;
 
       img.classList.add('ns-editable-image');
       img.dataset.nsId = 'img-' + index;
-
-      // Wrap image if not already wrapped
-      if (!img.parentElement?.classList.contains('ns-image-wrapper')) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'ns-image-wrapper';
-        wrapper.style.position = 'relative';
-        wrapper.style.display = 'inline-block';
-        wrapper.style.width = img.style.width || (img.width + 'px');
-        wrapper.style.height = img.style.height || (img.height + 'px');
-
-        img.parentElement?.insertBefore(wrapper, img);
-        wrapper.appendChild(img);
-
-        // Add overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'ns-image-overlay';
-        overlay.innerHTML = '<span class="ns-image-overlay-text">Click to edit</span>';
-        wrapper.appendChild(overlay);
-
-        // Add type badge
-        const badge = document.createElement('span');
-        badge.className = 'ns-type-badge';
-        badge.textContent = 'image';
-        wrapper.appendChild(badge);
-      }
     });
   }
 
@@ -218,11 +143,17 @@ export function generateEditModeScript(componentId: string): string {
 
   // Handle text element click
   function handleTextClick(el, e) {
+    // If already editing this element, let normal click behavior position cursor
+    if (selectedElement === el && isTextEditing) {
+      // Don't prevent default - let the click position the cursor naturally
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
-    // Deselect previous
-    if (selectedElement) {
+    // Deselect previous element if different
+    if (selectedElement && selectedElement !== el) {
       selectedElement.classList.remove('ns-selected');
       if (isTextEditing) {
         finishTextEdit(selectedElement);
@@ -238,12 +169,14 @@ export function generateEditModeScript(componentId: string): string {
     el.contentEditable = 'true';
     el.focus();
 
-    // Select all text
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    // Position cursor at click location instead of selecting all
+    // Get click position relative to element
+    const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (range) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
 
     sendToParent('element-selected', {
       element: {
@@ -273,28 +206,20 @@ export function generateEditModeScript(componentId: string): string {
       }
     }
 
-    const wrapper = img.closest('.ns-image-wrapper') || img;
-    selectedElement = wrapper;
-    wrapper.classList.add('ns-selected');
+    selectedElement = img;
+    img.classList.add('ns-selected');
+    isTextEditing = false;
 
-    sendToParent('element-selected', {
+    // Send image-selected event (different from element-selected)
+    // This triggers the image settings editor in parent
+    sendToParent('image-selected', {
       element: {
         id: img.dataset.nsId,
         type: 'image',
         tagName: 'img',
         src: img.src,
-        alt: img.alt,
-        bounds: getElementBounds(wrapper)
-      }
-    });
-
-    sendToParent('image-clicked', {
-      element: {
-        id: img.dataset.nsId,
-        type: 'image',
-        src: img.src,
-        alt: img.alt,
-        bounds: getElementBounds(wrapper)
+        alt: img.alt || '',
+        bounds: getElementBounds(img)
       }
     });
   }
@@ -320,40 +245,27 @@ export function generateEditModeScript(componentId: string): string {
     }
   }
 
-  // Handle double-clicks for editing (like text blocks)
-  document.addEventListener('dblclick', function(e) {
+  // Single click - select element and start editing immediately
+  document.addEventListener('click', function(e) {
     const target = e.target;
 
-    // Check for editable text
+    // Check for editable text - single click to select and edit
     const textEl = target.closest('.ns-editable-text');
     if (textEl) {
       handleTextClick(textEl, e);
       return;
     }
 
-    // Check for editable image
+    // Check for editable image - single click to select and notify parent
     const imgWrapper = target.closest('.ns-image-wrapper');
     const imgEl = target.closest('.ns-editable-image');
     if (imgWrapper || imgEl) {
       handleImageClick(imgWrapper || imgEl, e);
       return;
     }
-  });
 
-  // Single click - notify parent for component selection
-  document.addEventListener('click', function(e) {
-    // Always notify parent that the component was clicked (for selection)
+    // Notify parent that component was clicked (for any other click)
     sendToParent('component-clicked', {});
-
-    const target = e.target;
-
-    // If clicking on an editable element, don't deselect (wait for double-click)
-    const textEl = target.closest('.ns-editable-text');
-    const imgWrapper = target.closest('.ns-image-wrapper');
-    const imgEl = target.closest('.ns-editable-image');
-    if (textEl || imgWrapper || imgEl) {
-      return;
-    }
 
     // Click outside editable element - deselect current element
     if (selectedElement) {
@@ -362,20 +274,22 @@ export function generateEditModeScript(componentId: string): string {
         finishTextEdit(selectedElement);
       }
       selectedElement = null;
+      sendToParent('element-deselected', {});
     }
   });
 
-  // Handle blur for text editing
+  // Handle blur for text editing - only finish editing, don't deselect
+  // (deselection is handled by clicking outside or pressing Escape)
   document.addEventListener('focusout', function(e) {
     if (isTextEditing && selectedElement) {
-      // Delay to allow click handling
+      // Delay to allow click handling on parent toolbar
       setTimeout(() => {
         if (isTextEditing && selectedElement) {
+          // Only finish the text editing, keep element selected
           finishTextEdit(selectedElement);
-          selectedElement.classList.remove('ns-selected');
-          selectedElement = null;
+          // Keep ns-selected class so outline stays visible
         }
-      }, 200);
+      }, 300);
     }
   });
 
@@ -461,20 +375,16 @@ export function generateEditModeScript(componentId: string): string {
     }
   });
 
-  // Initialize on load
+  // Initialize on load - only once
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupEditableElements);
+    document.addEventListener('DOMContentLoaded', function() {
+      setupEditableElements();
+      sendToParent('edit-mode-ready', {});
+    });
   } else {
     setupEditableElements();
+    sendToParent('edit-mode-ready', {});
   }
-
-  // Re-run after dynamic content might load
-  setTimeout(setupEditableElements, 100);
-  setTimeout(setupEditableElements, 500);
-  setTimeout(setupEditableElements, 1000);
-
-  // Notify parent that edit mode is ready
-  sendToParent('edit-mode-ready', {});
 })();
 </script>`;
 }
@@ -500,11 +410,12 @@ export function injectEditMode(html: string, componentId: string): string {
 /**
  * CustomComponentEditOverlay
  *
- * Renders floating UI elements for editing custom components.
- * The actual element detection happens inside the iframe via injected script.
+ * Renders a sleek floating chat input for editing custom components.
+ * Design inspired by modern AI-assisted editing interfaces.
  */
 export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProps> = ({
   componentId,
+  slideId,
   isEditing,
   isSelected,
   srcDoc,
@@ -513,9 +424,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   onImageSelect
 }) => {
   const [selectedElement, setSelectedElement] = useState<DetectedElement | null>(null);
-  const [showChat, setShowChat] = useState(false);
-  const [chatMessage, setChatMessage] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Listen for messages from iframe
   useEffect(() => {
@@ -532,13 +443,17 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         setSelectedElement(data.element);
       }
 
-      if (data.type === 'image-clicked') {
+      if (data.type === 'image-selected') {
         setSelectedElement(data.element);
+        // Trigger image picker/settings for this custom component image
         onImageSelect(data.element);
       }
 
+      if (data.type === 'element-deselected') {
+        setSelectedElement(null);
+      }
+
       if (data.type === 'text-changed') {
-        // Update the HTML with new text
         handleTextUpdate(data.elementId, data.oldText, data.newText);
       }
     };
@@ -551,7 +466,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const handleTextUpdate = useCallback((elementId: string, oldText: string, newText: string) => {
     if (!srcDoc || !oldText || !newText) return;
 
-    // Simple text replacement (this is a basic approach)
     const escapedOld = oldText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(escapedOld, 'g');
     const updatedHtml = srcDoc.replace(pattern, newText);
@@ -561,166 +475,226 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [srcDoc, onHtmlUpdate]);
 
-  // Handle AI chat message
-  const handleChatSubmit = useCallback(async () => {
-    if (!chatMessage.trim() || !selectedElement) return;
+  // Send message to chat panel
+  const sendToChat = useCallback((prompt: string) => {
+    const label = selectedElement?.type === 'text'
+      ? `Text: "${(selectedElement.content || '').slice(0, 20)}..."`
+      : selectedElement?.type === 'image'
+      ? 'Image'
+      : 'Custom Component';
 
-    setIsProcessing(true);
+    window.dispatchEvent(new CustomEvent('chat:prefill_with_component', {
+      detail: {
+        componentId,
+        slideId,
+        label,
+        prompt,
+        elementType: 'CustomComponent'
+      }
+    }));
+    setInputValue('');
+  }, [componentId, slideId, selectedElement]);
 
-    try {
-      if (selectedElement.type === 'text') {
-        // Transform text via AI
-        const response = await fetch('/api/chat/quick', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: `Transform this text according to the instruction. Only output the transformed text, nothing else.\n\nOriginal: "${selectedElement.content}"\n\nInstruction: ${chatMessage}`
-          })
-        });
+  const handleSubmit = useCallback(() => {
+    if (inputValue.trim()) {
+      sendToChat(inputValue.trim());
+    }
+  }, [inputValue, sendToChat]);
 
-        if (response.ok) {
-          const data = await response.json();
-          const newText = (data.text || data.content || data.message || '').trim();
-          if (newText) {
-            handleTextUpdate(selectedElement.id, selectedElement.content || '', newText);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }, [handleSubmit]);
 
-            // Also tell iframe to update
+  if (!isEditing || !isSelected) return null;
+
+  // Calculate position for the floating chat
+  const getFloatingPosition = () => {
+    const iframe = document.querySelector(`iframe[title="Custom Component"]`);
+    const iframeRect = iframe?.getBoundingClientRect();
+
+    if (!iframeRect) return { top: 100, right: 20 };
+
+    // Position at top-right of the component with some offset
+    return {
+      top: Math.max(80, iframeRect.top + 20),
+      right: Math.max(20, window.innerWidth - iframeRect.right + 20)
+    };
+  };
+
+  const position = getFloatingPosition();
+
+  // Quick suggestions based on selection
+  const suggestions = selectedElement?.type === 'text'
+    ? [
+        { label: 'Try new fonts', prompt: 'Change the font to something more modern and professional' },
+        { label: 'Rearrange layout', prompt: 'Improve the layout and spacing of this section' },
+        { label: 'Copy edit', prompt: 'Fix any grammar or spelling issues and improve clarity' },
+      ]
+    : selectedElement?.type === 'image'
+    ? [
+        { label: 'Replace image', prompt: 'Find a better image for this' },
+        { label: 'Add effects', prompt: 'Add subtle visual effects to enhance this image' },
+        { label: 'Adjust size', prompt: 'Resize this image to better fit the layout' },
+      ]
+    : [
+        { label: 'Improve design', prompt: 'Improve the overall design and visual appeal' },
+        { label: 'Change colors', prompt: 'Update the color scheme to be more cohesive' },
+        { label: 'Add animation', prompt: 'Add subtle animations to make it more engaging' },
+      ];
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+        transition={{ duration: 0.15 }}
+        className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
+        style={{
+          position: 'fixed',
+          top: position.top,
+          right: position.right,
+          width: 340,
+          zIndex: 9999,
+        }}
+      >
+        {/* Close button */}
+        <button
+          onClick={() => {
+            // Deselect element in iframe
             const iframes = document.querySelectorAll('iframe');
             iframes.forEach(iframe => {
               iframe.contentWindow?.postMessage({
                 target: 'ns-custom-component-edit',
-                type: 'update-text',
-                elementId: selectedElement.id,
-                newText: newText
+                type: 'deselect'
               }, '*');
             });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('AI edit failed:', error);
-    } finally {
-      setIsProcessing(false);
-      setChatMessage('');
-    }
-  }, [chatMessage, selectedElement, handleTextUpdate]);
+            setSelectedElement(null);
+          }}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 z-10"
+        >
+          <X size={16} />
+        </button>
 
-  if (!isEditing || !isSelected) return null;
+        {/* Input area */}
+        <div className="p-4">
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="What can I help with?"
+              className="w-full pr-20 py-2 text-sm text-gray-800 placeholder-gray-400 bg-transparent border-0 focus:outline-none focus:ring-0"
+            />
 
-  // Calculate viewport-relative position for fixed positioning
-  const getFixedPosition = (bounds: { x: number; y: number; width: number; height: number }) => {
-    // Get the iframe element to calculate its position on screen
-    const iframe = document.querySelector(`iframe[title="Custom Component"]`);
-    const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
-
-    return {
-      x: iframeRect.left + (bounds.x * scale),
-      y: iframeRect.top + (bounds.y * scale)
-    };
-  };
-
-  return createPortal(
-    <>
-      {/* Floating chat for text elements */}
-      <AnimatePresence>
-        {showChat && selectedElement && selectedElement.type === 'text' && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="w-72 bg-white rounded-lg border shadow-xl"
-            style={{
-              position: 'fixed',
-              top: Math.min(Math.max(getFixedPosition(selectedElement.bounds).y - 8, 60), window.innerHeight - 300),
-              left: Math.min(Math.max(getFixedPosition(selectedElement.bounds).x + (selectedElement.bounds.width * scale) + 10, 10), window.innerWidth - 300),
-              zIndex: 9999
-            }}
-          >
-            <div
-              className="flex items-center justify-between px-3 py-2 border-b text-white rounded-t-lg"
-              style={{ backgroundColor: BRAND_ORANGE }}
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} />
-                <span className="text-xs font-semibold">AI Edit Text</span>
-              </div>
-              <button onClick={() => setShowChat(false)} className="text-white/80 hover:text-white">
-                <X size={14} />
+            {/* Action buttons */}
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <button
+                onClick={() => {
+                  // Trigger file upload for image
+                  window.dispatchEvent(new CustomEvent('image:select-placeholder', {
+                    detail: {
+                      componentId,
+                      slideId,
+                      isCustomComponentProp: true
+                    }
+                  }));
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Upload image"
+              >
+                <Upload size={16} />
+              </button>
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  isExpanded
+                    ? 'text-[#FF4301] bg-orange-50'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+                title={isExpanded ? 'Collapse' : 'Expand'}
+              >
+                <ChevronUp size={16} className={`transition-transform ${isExpanded ? '' : 'rotate-180'}`} />
               </button>
             </div>
+          </div>
 
-            <div className="p-3 space-y-2">
-              <div className="text-xs text-gray-500 truncate">
-                "{selectedElement.content?.slice(0, 50)}{(selectedElement.content?.length || 0) > 50 ? '...' : ''}"
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  placeholder="e.g., Make it shorter..."
-                  className="flex-1 px-2 py-1.5 text-xs border rounded focus:outline-none focus:border-orange-300"
-                  onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
-                  disabled={isProcessing}
-                />
-                <button
-                  onClick={handleChatSubmit}
-                  disabled={!chatMessage.trim() || isProcessing}
-                  className={cn(
-                    "px-2 py-1.5 rounded text-white",
-                    chatMessage.trim() && !isProcessing ? "bg-orange-500 hover:bg-orange-600" : "bg-gray-300"
+          {/* Divider */}
+          <div className="border-t border-gray-100 mt-3 pt-3">
+            {/* Selection indicator */}
+            {selectedElement && (
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-full text-xs text-gray-500">
+                  {selectedElement.type === 'image' ? (
+                    <ImageIcon size={12} className="text-gray-400" />
+                  ) : (
+                    <span className="w-3 h-3 rounded bg-[#FF4301]/20 flex items-center justify-center text-[8px] text-[#FF4301] font-bold">T</span>
                   )}
+                  <span className="max-w-[150px] truncate">
+                    {selectedElement.type === 'image'
+                      ? 'Image selected'
+                      : selectedElement.content?.slice(0, 30) || 'Text selected'
+                    }
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Suggestions */}
+            <p className="text-xs text-gray-400 mb-2">You can try something like:</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map(({ label, prompt }) => (
+                <button
+                  key={label}
+                  onClick={() => sendToChat(prompt)}
+                  className="px-3 py-1.5 text-xs font-medium text-[#FF4301] bg-white border border-[#FF4301]/30 rounded-full hover:bg-[#FF4301]/5 hover:border-[#FF4301]/50 transition-colors"
                 >
-                  <Send size={12} />
+                  {label}
                 </button>
-              </div>
-
-              <div className="flex flex-wrap gap-1">
-                {['Shorten', 'Expand', 'Professional', 'Casual'].map(label => (
-                  <button
-                    key={label}
-                    onClick={() => setChatMessage(`Make it more ${label.toLowerCase()}`)}
-                    className="px-2 py-0.5 text-[10px] rounded-full border text-gray-600 hover:bg-orange-50 hover:border-orange-200"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
 
-      {/* Action buttons when element is selected */}
-      <AnimatePresence>
-        {selectedElement && selectedElement.type === 'text' && (
-          <motion.div
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="flex items-center gap-1"
-            style={{
-              position: 'fixed',
-              top: Math.max(60, getFixedPosition(selectedElement.bounds).y - 32),
-              left: Math.max(10, getFixedPosition(selectedElement.bounds).x),
-              zIndex: 9998
-            }}
-          >
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium shadow-md",
-                showChat ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-orange-50"
-              )}
+        {/* Expanded area - AI quick actions */}
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-t border-gray-100 bg-gray-50/50"
             >
-              <Sparkles size={12} />
-              AI Edit
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>,
+              <div className="p-4 space-y-3">
+                <p className="text-xs font-medium text-gray-600">Quick AI Actions</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { icon: <Sparkles size={14} />, label: 'Enhance', prompt: 'Enhance and improve this' },
+                    { icon: <span className="text-xs">Aa</span>, label: 'Fix text', prompt: 'Fix any grammar or typos' },
+                    { icon: <span className="text-xs">🎨</span>, label: 'Restyle', prompt: 'Improve the visual style' },
+                    { icon: <span className="text-xs">📐</span>, label: 'Layout', prompt: 'Improve the layout and spacing' },
+                  ].map(({ icon, label, prompt }) => (
+                    <button
+                      key={label}
+                      onClick={() => sendToChat(prompt)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 bg-white rounded-lg border border-gray-200 hover:border-[#FF4301]/30 hover:text-[#FF4301] transition-colors"
+                    >
+                      {icon}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </AnimatePresence>,
     document.body
   );
 };

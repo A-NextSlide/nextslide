@@ -252,6 +252,15 @@ def get_slide_summary(deck_data, slide_id):
             if not image_exists(cprops["src"]):
                 summary["warnings"].append(f"Component {cid} with Image {cprops['src']} does not exist")
 
+        # Include CustomComponent HTML content for AI editing context
+        if ctype == "CustomComponent" and isinstance(cprops, dict) and "render" in cprops:
+            html_content = cprops.get("render", "")
+            comp_summary["html_content"] = html_content
+            comp_summary["html_length"] = len(html_content)
+            # Mark that this slide uses CustomComponent (important for editing strategy)
+            summary["is_custom_component_slide"] = True
+            summary["custom_component_id"] = cid
+
         summary["components"].append(comp_summary)
     
     # Add grid layout visualization

@@ -415,7 +415,8 @@ class CustomComponentGenerator:
         external_media: Optional[Dict[str, Any]] = None,
         uploaded_media: Optional[list] = None,
         prefetched_images: Optional[Dict[str, str]] = None,
-        auto_prefetch: bool = True
+        auto_prefetch: bool = True,
+        reference_images: Optional[List[str]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a creative CustomComponent.
@@ -440,6 +441,9 @@ class CustomComponentGenerator:
                 - For photos: can be placed as images on the slide
             prefetched_images: Optional dict of {propName: imageUrl} pre-fetched images
             auto_prefetch: If True and no prefetched_images, automatically fetch images
+            reference_images: Optional list of design reference image URLs (e.g., PPT screenshots)
+                - These are NOT for placing on the slide
+                - AI should analyze these to match the design style, layout, and visual patterns
 
         Returns:
             CustomComponent dict with type, props, position, etc.
@@ -548,7 +552,8 @@ class CustomComponentGenerator:
                     height=height,
                     external_media=external_media,
                     uploaded_media=uploaded_media,
-                    prefetched_images=prefetched_images
+                    prefetched_images=prefetched_images,
+                    reference_images=reference_images
                 )
 
             # Get client and generate
@@ -557,10 +562,68 @@ class CustomComponentGenerator:
             logger.info(f"[CUSTOM_COMPONENT] Generating with {model_name}...")
             logger.info(f"[CUSTOM_COMPONENT] Content preview: {content[:100]}...")
 
-            # Create messages
+            # Create messages - potentially multimodal if reference images provided
+            user_content = user_prompt
+
+            # If reference images are provided, make the user message multimodal
+            # so Gemini can actually SEE the design references
+            if reference_images and len(reference_images) > 0:
+                import requests
+                import base64 as b64_module
+
+                user_content_parts = []
+
+                # Add instruction about the reference images
+                user_content_parts.append({
+                    "type": "text",
+                    "text": "🎨 DESIGN REFERENCE IMAGES - Analyze these to match the style:\n"
+                })
+
+                # Download and encode each reference image (limit to 3)
+                for idx, img_url in enumerate(reference_images[:3]):
+                    try:
+                        resp = requests.get(img_url, timeout=10)
+                        if resp.status_code == 200:
+                            img_b64 = b64_module.b64encode(resp.content).decode('utf-8')
+                            # Determine media type from content-type header or URL
+                            content_type = resp.headers.get('content-type', 'image/png')
+                            if 'jpeg' in content_type or 'jpg' in content_type:
+                                media_type = 'image/jpeg'
+                            elif 'gif' in content_type:
+                                media_type = 'image/gif'
+                            elif 'webp' in content_type:
+                                media_type = 'image/webp'
+                            else:
+                                media_type = 'image/png'
+
+                            user_content_parts.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": img_b64
+                                }
+                            })
+                            user_content_parts.append({
+                                "type": "text",
+                                "text": f"[Reference image {idx + 1}]"
+                            })
+                            logger.info(f"[CUSTOM_COMPONENT] Added reference image {idx + 1}: {img_url[:60]}...")
+                    except Exception as e:
+                        logger.warning(f"[CUSTOM_COMPONENT] Failed to load reference image {img_url}: {e}")
+
+                # Add the main prompt text
+                user_content_parts.append({
+                    "type": "text",
+                    "text": user_prompt
+                })
+
+                user_content = user_content_parts
+                logger.info(f"[CUSTOM_COMPONENT] Created multimodal message with {len([p for p in user_content_parts if p.get('type') == 'image'])} images")
+
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_content}
             ]
 
             # Generate using AI model (no structured output - we want raw HTML)
@@ -1086,7 +1149,8 @@ When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
         height: int,
         external_media: Optional[Dict[str, Any]] = None,
         uploaded_media: Optional[list] = None,
-        prefetched_images: Optional[Dict[str, str]] = None
+        prefetched_images: Optional[Dict[str, str]] = None,
+        reference_images: Optional[List[str]] = None
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -1169,6 +1233,39 @@ The user originally requested: "{presentation_context}"
 - Mood/tone (professional, fun, serious, energetic, etc.)
 
 DO NOT use this for content - the slide content is provided separately below.
+"""
+
+        # Build design reference images section (e.g., PPT screenshots to match style)
+        design_reference_section = ""
+        if reference_images and len(reference_images) > 0:
+            ref_urls = "\n".join([f"  - {url}" for url in reference_images[:3]])
+            design_reference_section = f"""
+═══════════════════════════════════════════════════════════════
+🎯 DESIGN REFERENCE IMAGES - MATCH THIS STYLE!
+═══════════════════════════════════════════════════════════════
+
+The user has provided reference images (e.g., PPT screenshots) to match:
+{ref_urls}
+
+⚠️ CRITICAL INSTRUCTIONS:
+These are DESIGN REFERENCES, NOT images to place on the slide!
+
+1. ANALYZE these reference images carefully:
+   - Color palette (primary, secondary, accent colors)
+   - Typography style (font weights, sizes, hierarchy)
+   - Layout patterns (grid, cards, spacing, alignment)
+   - Visual effects (gradients, shadows, rounded corners)
+   - Overall aesthetic (minimalist, bold, corporate, playful)
+
+2. REPLICATE the design style in your generated HTML:
+   - Match the color scheme closely
+   - Use similar typography hierarchy
+   - Copy the layout structure and spacing patterns
+   - Apply similar visual effects and decorations
+   - Maintain the same level of visual polish
+
+3. DO NOT place these images on the slide - they are for style reference only!
+
 """
 
         # Build external media section if media URLs were provided (from Firecrawl scraping)
@@ -1348,7 +1445,7 @@ REQUIRED PATTERN - Copy this exactly:
 Create a STUNNING {"full presentation slide" if is_full_slide else "interactive component"} for:
 
 SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
+{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
 CONTENT:
 {content}
 
