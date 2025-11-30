@@ -1,6 +1,7 @@
 import './utils/consoleSuppressor'; // Initialize console suppressor first
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import * as Sentry from '@sentry/react'
 import App from './App.tsx'
 import './index.css'
 import './components/ColorPickerStyles.css'
@@ -11,6 +12,28 @@ import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
 import { setupDiagnostics } from '@/utils/authDiagnostics'
+
+// Initialize Sentry for error tracking (production only)
+if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: false,
+        blockAllMedia: false,
+      }),
+    ],
+    // Performance monitoring
+    tracesSampleRate: 0.1, // 10% of transactions
+    // Session replay for errors
+    replaysSessionSampleRate: 0.1, // 10% of sessions
+    replaysOnErrorSampleRate: 1.0, // 100% of sessions with errors
+    // Only send errors in production
+    enabled: import.meta.env.PROD,
+  });
+}
 
 // Configure logging to suppress all logs as early as possible
 configureLogging({

@@ -53,6 +53,7 @@
     "@rpldy/upload-button": "^1.9.1",
     "@rpldy/upload-drop-zone": "^1.9.1",
     "@rpldy/uploady": "^1.9.1",
+    "@sentry/react": "^10.27.0",
     "@sinclair/typebox": "^0.34.33",
     "@supabase/supabase-js": "^2.49.1",
     "@tabler/icons-react": "^3.34.0",
