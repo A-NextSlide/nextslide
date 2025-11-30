@@ -16,6 +16,9 @@ import roughImport from 'roughjs';
 import confettiImport from 'canvas-confetti';
 import * as gsapImport from 'gsap';
 
+// Debug flag - disable in production for performance
+const DEBUG_CUSTOM_COMPONENT = false;
+
 /**
  * Ensure HTML document has proper blank line after <html> tag.
  * Some browsers/iframes need this to render correctly.
@@ -268,23 +271,23 @@ export const CustomComponentRenderer: React.FC<{
       // Only handle events for this component
       if (componentId !== component.id) return;
 
-      console.log('[CustomComponentRenderer] Received image selection:', { componentId, propName, imageUrl: imageUrl?.substring(0, 60) });
+      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Received image selection:', { componentId, propName, imageUrl: imageUrl?.substring(0, 60) });
 
       if (!propName || !imageUrl) {
-        console.warn('[CustomComponentRenderer] Missing propName or imageUrl');
+        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Missing propName or imageUrl');
         return;
       }
 
       // Get current props
       const currentProps = component.props.props || {};
-      console.log('[CustomComponentRenderer] Current props:', Object.keys(currentProps));
+      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Current props:', Object.keys(currentProps));
 
       // Update the specific prop
       const updatedProps = {
         ...currentProps,
         [propName]: imageUrl,
       };
-      console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
+      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated props:', Object.keys(updatedProps));
 
       // Update the component
       updateComponent(component.id, {
@@ -293,7 +296,7 @@ export const CustomComponentRenderer: React.FC<{
           props: updatedProps,
         }
       });
-      console.log('[CustomComponentRenderer] Component update dispatched');
+      DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Component update dispatched');
     };
 
     window.addEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
@@ -306,8 +309,10 @@ export const CustomComponentRenderer: React.FC<{
   const autoAppliedRef = useRef<Set<string>>(new Set());
 
   // Auto-apply images for placeholder images when component first renders
+  // PERFORMANCE: Skip in view/presentation mode - only process when editing
   useEffect(() => {
     if (isThumbnail) return;
+    if (!isEditing) return; // Skip image auto-apply in view mode for mobile performance
 
     const html = renderCode;
     if (!html || typeof html !== 'string') return;
@@ -361,7 +366,7 @@ export const CustomComponentRenderer: React.FC<{
         const searchQuery = extractSearchQueryFromPropName(propName);
         if (searchQuery && searchQuery.length > 2) {
           propNameToSearchQuery.set(propName, searchQuery);
-          console.log('[CustomComponentRenderer] Found image prop from JS:', propName, '->', searchQuery);
+          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from JS:', propName, '->', searchQuery);
         }
       }
 
@@ -374,7 +379,7 @@ export const CustomComponentRenderer: React.FC<{
           const searchQuery = extractSearchQueryFromPropName(propName);
           if (searchQuery && searchQuery.length > 2) {
             propNameToSearchQuery.set(propName, searchQuery);
-            console.log('[CustomComponentRenderer] Found image prop from template:', propName, '->', searchQuery);
+            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from template:', propName, '->', searchQuery);
           }
         }
       }
@@ -388,7 +393,7 @@ export const CustomComponentRenderer: React.FC<{
           const searchQuery = extractSearchQueryFromPropName(propName);
           if (searchQuery && searchQuery.length > 2) {
             propNameToSearchQuery.set(propName, searchQuery);
-            console.log('[CustomComponentRenderer] Found image prop from src template:', propName, '->', searchQuery);
+            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image prop from src template:', propName, '->', searchQuery);
           }
         }
       }
@@ -415,7 +420,7 @@ export const CustomComponentRenderer: React.FC<{
 
     // FIRST: Extract image props from JavaScript (these have the actual descriptive names)
     const imagePropSearchQueries = extractImagePropsFromJS(html);
-    console.log('[CustomComponentRenderer] Extracted image props:', Array.from(imagePropSearchQueries.entries()));
+    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Extracted image props:', Array.from(imagePropSearchQueries.entries()));
 
     // Check for placeholder images in the HTML
     const imgRegex = /<img[^>]*>/gi;
@@ -460,7 +465,7 @@ export const CustomComponentRenderer: React.FC<{
                 varName.toLowerCase().includes(propName.toLowerCase().replace('image', ''))) {
               searchQuery = query;
               matchedPropName = propName;
-              console.log('[CustomComponentRenderer] Matched img to prop:', varName, '->', propName, '->', searchQuery);
+              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Matched img to prop:', varName, '->', propName, '->', searchQuery);
               break;
             }
           }
@@ -475,7 +480,7 @@ export const CustomComponentRenderer: React.FC<{
             if (altLower.includes(propLower) || propLower.includes(altLower.split(' ')[0])) {
               searchQuery = query;
               matchedPropName = propName;
-              console.log('[CustomComponentRenderer] Matched img alt to prop:', alt, '->', propName, '->', searchQuery);
+              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Matched img alt to prop:', alt, '->', propName, '->', searchQuery);
               break;
             }
           }
@@ -503,7 +508,7 @@ export const CustomComponentRenderer: React.FC<{
               const [propName, query] = unusedProps[imgIndex % unusedProps.length] || unusedProps[0];
               searchQuery = query;
               matchedPropName = propName;
-              console.log('[CustomComponentRenderer] Using unused prop for generic img:', propName, '->', searchQuery);
+              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Using unused prop for generic img:', propName, '->', searchQuery);
             }
           }
 
@@ -511,7 +516,7 @@ export const CustomComponentRenderer: React.FC<{
           if (!searchQuery || BAD_SEARCH_TERMS.includes(searchQuery)) {
             const slideContext = getSlideContext();
             searchQuery = `${slideContext} professional photo`;
-            console.log('[CustomComponentRenderer] Bad alt text detected, using slide context:', { original: alt, fallback: searchQuery });
+            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Bad alt text detected, using slide context:', { original: alt, fallback: searchQuery });
           }
         }
 
@@ -523,7 +528,7 @@ export const CustomComponentRenderer: React.FC<{
 
     if (placeholders.length === 0) return;
 
-    console.log('[CustomComponentRenderer] Found placeholder images to auto-apply:', placeholders);
+    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found placeholder images to auto-apply:', placeholders);
 
     // Auto-fetch and apply images for each placeholder
     const autoApplyImages = async () => {
@@ -534,7 +539,7 @@ export const CustomComponentRenderer: React.FC<{
 
       for (const { alt, searchQuery, propName } of placeholders) {
         try {
-          console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery, 'propName:', propName);
+          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-searching for:', searchQuery, 'propName:', propName);
 
           // Search for images using the media search API
           const response = await fetch('/api/media/search', {
@@ -548,7 +553,7 @@ export const CustomComponentRenderer: React.FC<{
           });
 
           if (!response.ok) {
-            console.warn('[CustomComponentRenderer] Image search failed for:', searchQuery);
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Image search failed for:', searchQuery);
             continue;
           }
 
@@ -556,7 +561,7 @@ export const CustomComponentRenderer: React.FC<{
           const images = data.results || data.images || [];
 
           if (images.length === 0) {
-            console.warn('[CustomComponentRenderer] No images found for:', searchQuery);
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] No images found for:', searchQuery);
             continue;
           }
 
@@ -564,11 +569,11 @@ export const CustomComponentRenderer: React.FC<{
           let imageUrl = images[0].url || images[0].src?.large || images[0].src?.medium || images[0].src?.original;
 
           if (!imageUrl) {
-            console.warn('[CustomComponentRenderer] No valid URL in image result');
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] No valid URL in image result');
             continue;
           }
 
-          console.log('[CustomComponentRenderer] Found image for', searchQuery, ':', imageUrl.substring(0, 60));
+          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found image for', searchQuery, ':', imageUrl.substring(0, 60));
 
           // Proxy external images through our backend for reliability
           if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
@@ -582,10 +587,10 @@ export const CustomComponentRenderer: React.FC<{
               const proxyData = await proxyResponse.json();
               if (proxyResponse.ok && proxyData.success && proxyData.url) {
                 imageUrl = proxyData.url;
-                console.log('[CustomComponentRenderer] Proxied URL:', imageUrl.substring(0, 60));
+                DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxied URL:', imageUrl.substring(0, 60));
               }
             } catch (proxyError) {
-              console.warn('[CustomComponentRenderer] Proxy failed, using original URL');
+              DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed, using original URL');
             }
           }
 
@@ -593,7 +598,7 @@ export const CustomComponentRenderer: React.FC<{
           // This is the key fix - we need to update props so iframe JS can access them
           if (propName) {
             propsToUpdate[propName] = imageUrl;
-            console.log('[CustomComponentRenderer] Will update prop:', propName, '=', imageUrl.substring(0, 50));
+            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Will update prop:', propName, '=', imageUrl.substring(0, 50));
           }
 
           // Also update the HTML to replace placeholder src values
@@ -625,7 +630,7 @@ export const CustomComponentRenderer: React.FC<{
               anyReplaced = true;
               if (attrs.includes('src=')) {
                 const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
-                console.log('[CustomComponentRenderer] Auto-replaced image src for:', alt || propName);
+                DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-replaced image src for:', alt || propName);
                 return `<img${newAttrs}>`;
               } else {
                 return `<img src="${imageUrl}"${attrs}>`;
@@ -644,7 +649,7 @@ export const CustomComponentRenderer: React.FC<{
         const currentProps = component.props.props || {};
         const updatedProps = { ...currentProps, ...propsToUpdate };
 
-        console.log('[CustomComponentRenderer] Updating component with props:', Object.keys(propsToUpdate));
+        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updating component with props:', Object.keys(propsToUpdate));
 
         updateComponent(component.id, {
           props: {
@@ -653,7 +658,7 @@ export const CustomComponentRenderer: React.FC<{
             props: updatedProps, // This is CRITICAL - iframe reads from props.props
           }
         });
-        console.log('[CustomComponentRenderer] Auto-applied images, updated props:', Object.keys(propsToUpdate));
+        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Auto-applied images, updated props:', Object.keys(propsToUpdate));
       }
     };
 
@@ -661,7 +666,7 @@ export const CustomComponentRenderer: React.FC<{
     const timeoutId = setTimeout(autoApplyImages, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [component.id, renderCode, isThumbnail, updateComponent, component.props]);
+  }, [component.id, renderCode, isThumbnail, isEditing, updateComponent, component.props]);
 
   // Track proxied URLs to avoid re-processing
   const proxiedUrlsRef = useRef<Set<string>>(new Set());
@@ -679,8 +684,10 @@ export const CustomComponentRenderer: React.FC<{
   };
 
   // Proxy any external image URLs in the HTML (handles cases where AI embeds direct URLs)
+  // PERFORMANCE: Skip in view/presentation mode - only process when editing
   useEffect(() => {
     if (isThumbnail) return;
+    if (!isEditing) return; // Skip URL proxying in view mode for mobile performance
 
     const html = renderCode;
     if (!html || typeof html !== 'string') return;
@@ -709,13 +716,13 @@ export const CustomComponentRenderer: React.FC<{
       if (isExternalUrl) {
         externalUrls.push({ originalUrl: rawSrc, decodedUrl: src, fullMatch: match[0] });
         proxiedUrlsRef.current.add(src); // Mark as being processed
-        console.log('[CustomComponentRenderer] Found external URL to proxy:', src.substring(0, 80));
+        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Found external URL to proxy:', src.substring(0, 80));
       }
     }
 
     if (externalUrls.length === 0) return;
 
-    console.log('[CustomComponentRenderer] External URLs to proxy:', externalUrls.length);
+    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] External URLs to proxy:', externalUrls.length);
 
     // Proxy all external URLs
     const proxyExternalUrls = async () => {
@@ -724,7 +731,7 @@ export const CustomComponentRenderer: React.FC<{
 
       for (const { originalUrl, decodedUrl } of externalUrls) {
         try {
-          console.log('[CustomComponentRenderer] Proxying:', decodedUrl.substring(0, 80));
+          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxying:', decodedUrl.substring(0, 80));
 
           const proxyResponse = await fetch('/api/media/proxy', {
             method: 'POST',
@@ -736,23 +743,23 @@ export const CustomComponentRenderer: React.FC<{
 
           if (proxyResponse.ok && proxyData.success && proxyData.url) {
             const proxiedUrl = proxyData.url;
-            console.log('[CustomComponentRenderer] Proxied to:', proxiedUrl.substring(0, 60));
+            DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Proxied to:', proxiedUrl.substring(0, 60));
 
             // Replace BOTH the original (with &amp;) and decoded (with &) versions
             // First try exact match with original
             if (currentHtml.includes(originalUrl)) {
               currentHtml = currentHtml.split(originalUrl).join(proxiedUrl);
               updated = true;
-              console.log('[CustomComponentRenderer] Replaced original URL in HTML');
+              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Replaced original URL in HTML');
             }
             // Also try with decoded URL (in case HTML was already decoded somewhere)
             if (currentHtml.includes(decodedUrl)) {
               currentHtml = currentHtml.split(decodedUrl).join(proxiedUrl);
               updated = true;
-              console.log('[CustomComponentRenderer] Replaced decoded URL in HTML');
+              DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Replaced decoded URL in HTML');
             }
           } else {
-            console.warn('[CustomComponentRenderer] Proxy failed for:', decodedUrl.substring(0, 50), proxyData.error);
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Proxy failed for:', decodedUrl.substring(0, 50), proxyData.error);
           }
         } catch (error) {
           console.error('[CustomComponentRenderer] Error proxying URL:', error);
@@ -767,13 +774,13 @@ export const CustomComponentRenderer: React.FC<{
             render: currentHtml,
           }
         });
-        console.log('[CustomComponentRenderer] Updated component with proxied URLs');
+        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Updated component with proxied URLs');
       }
     };
 
     // Run proxy immediately (not delayed) to avoid CORS issues on first render
     proxyExternalUrls();
-  }, [component.id, renderCode, isThumbnail, updateComponent, component.props]);
+  }, [component.id, renderCode, isThumbnail, isEditing, updateComponent, component.props]);
 
   // Reset state when slide changes
   useEffect(() => {
@@ -804,7 +811,7 @@ export const CustomComponentRenderer: React.FC<{
     // ADAPTIVE FORMAT DETECTION: Handle multiple formats from AI
     const trimmedCode = code.trim();
 
-    console.log('[CustomComponent] Compiling code:', {
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Compiling code:', {
       codeLength: code.length,
       trimmedLength: trimmedCode.length,
       first50: trimmedCode.slice(0, 50).toLowerCase(),
@@ -837,7 +844,7 @@ export const CustomComponentRenderer: React.FC<{
     // 0b. IFRAME MODE for render functions that return HTML strings
     // Much cleaner than React.createElement - AI generates readable HTML/CSS
     if (trimmedCode.startsWith('function render(') || trimmedCode.startsWith('function render (')) {
-      console.log('[CustomComponent] Detected render function, executing in IFRAME sandbox');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Detected render function, executing in IFRAME sandbox');
 
       const iframeFunctionRenderer = function ({ props, state, id, isThumbnail, containerWidth, containerHeight }: any) {
         // Safely serialize props, filtering out functions and circular refs
@@ -915,7 +922,7 @@ export const CustomComponentRenderer: React.FC<{
       const hasTemplateVars = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/g.test(trimmedCode);
 
       if (hasTemplateVars) {
-        console.warn('[CustomComponent] Detected HTML with template variables - INVALID!', {
+        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Detected HTML with template variables - INVALID!', {
           preview: trimmedCode.substring(0, 200),
           variables: trimmedCode.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g)
         });
@@ -925,7 +932,7 @@ export const CustomComponentRenderer: React.FC<{
         };
       }
 
-      console.log('[CustomComponent] Detected raw HTML format, converting to React');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Detected raw HTML format, converting to React');
       // Return a function that renders the HTML using dangerouslySetInnerHTML
       const htmlRenderer = function ({ props }: any) {
         return React.createElement('div', {
@@ -1013,7 +1020,7 @@ export const CustomComponentRenderer: React.FC<{
           parenDepth--;
           if (parenDepth < 0) {
             // Extra closing paren - remove it
-            console.warn('[CustomComponent] Removing extra closing paren at position', i);
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Removing extra closing paren at position', i);
             unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
             i--; // Re-check from same position
             parenDepth = 0;
@@ -1024,7 +1031,7 @@ export const CustomComponentRenderer: React.FC<{
           braceDepth--;
           if (braceDepth < 0) {
             // Extra closing brace - remove it
-            console.warn('[CustomComponent] Removing extra closing brace at position', i);
+            DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Removing extra closing brace at position', i);
             unescapedCode = unescapedCode.slice(0, i) + unescapedCode.slice(i + 1);
             i--;
             braceDepth = 0;
@@ -1034,15 +1041,15 @@ export const CustomComponentRenderer: React.FC<{
 
       // Add missing closing brackets at the end if needed
       if (parenDepth > 0) {
-        console.warn('[CustomComponent] Adding', parenDepth, 'missing closing parens');
+        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Adding', parenDepth, 'missing closing parens');
         unescapedCode += ')'.repeat(parenDepth);
       }
       if (braceDepth > 0) {
-        console.warn('[CustomComponent] Adding', braceDepth, 'missing closing braces');
+        DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Adding', braceDepth, 'missing closing braces');
         unescapedCode += '}'.repeat(braceDepth);
       }
     } catch (err) {
-      console.warn('[CustomComponent] Bracket fix failed:', err);
+      DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Bracket fix failed:', err);
     }
 
     // Note: Do NOT escape backticks. User code may legitimately use template literals,
@@ -1353,7 +1360,7 @@ export const CustomComponentRenderer: React.FC<{
 
   // Debug logging for interaction issues - always log for debugging edit mode
   useEffect(() => {
-    console.log(`[CustomComponent:${component.id.slice(0, 8)}] State:`, {
+    DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent:${component.id.slice(0, 8)}] State:`, {
       effectiveIsEditMode,
       isPresenting,
       isThumbnail,
@@ -1560,7 +1567,7 @@ export const CustomComponentRenderer: React.FC<{
       }
     }
 
-    console.log('[CustomComponent] Image props available:', Object.keys(imagePropsMap));
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Image props available:', Object.keys(imagePropsMap));
 
     // PATTERN 1: Find all img tags with ${propName} in src (AI-generated pattern)
     // Example: <img src="${storeClosingSignImage}" alt="Store closing sign">
@@ -1582,7 +1589,7 @@ export const CustomComponentRenderer: React.FC<{
       for (const name of possibleNames) {
         if (imagePropsMap[name.toLowerCase()]) {
           const newSrc = imagePropsMap[name.toLowerCase()];
-          console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
+          DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image from \${${varName}}: ${name} = ${newSrc.substring(0, 50)}...`);
           return `<img ${before}src="${newSrc}"${after}>`;
         }
       }
@@ -1645,7 +1652,7 @@ export const CustomComponentRenderer: React.FC<{
       imageIndex++;
 
       if (propValue) {
-        console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
+        DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log(`[CustomComponent] Injecting image (${matchedBy}): ${propValue.substring(0, 50)}...`);
         return `<img ${before}src="${propValue}"${after}>`;
       }
 
@@ -1709,7 +1716,7 @@ export const CustomComponentRenderer: React.FC<{
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs
     const imageProps = component.props.props || {};
-    console.log('[CustomComponent] Injecting props into HTML:', {
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Injecting props into HTML:', {
       keys: Object.keys(imageProps),
       values: Object.fromEntries(
         Object.entries(imageProps)
@@ -1727,7 +1734,7 @@ export const CustomComponentRenderer: React.FC<{
     // Inject element-level edit mode when in edit mode (not just when selected)
     // This allows hover effects and double-click to work before selection
     if (effectiveIsEditMode) {
-      console.log('[CustomComponent] INJECTING edit mode script:', {
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] INJECTING edit mode script:', {
         componentId: component.id.slice(0, 8),
         isSelected,
         htmlLength: html.length
@@ -1745,7 +1752,7 @@ export const CustomComponentRenderer: React.FC<{
     const handleMessage = (event: MessageEvent) => {
       // Handle placeholder image clicks (legacy)
       if (event.data?.type === 'customcomponent:image-click' && event.data?.componentId === component.id) {
-        console.log('[CustomComponent] Placeholder image clicked:', event.data);
+        DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Placeholder image clicked:', event.data);
 
         // Use propName from the iframe message (which was inferred from alt text)
         const propName = event.data.propName || event.data.imageAlt || event.data.imageId || 'image';
@@ -1773,7 +1780,7 @@ export const CustomComponentRenderer: React.FC<{
 
       // Handle element-level edit mode messages
       if (event.data?.source === 'ns-custom-component-edit' && event.data?.componentId === component.id) {
-        console.log('[CustomComponent] Edit mode message:', event.data.type, event.data);
+        DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Edit mode message:', event.data.type, event.data);
 
         if (event.data.type === 'element-selected') {
           setSelectedElement(event.data.element);
@@ -1805,13 +1812,13 @@ export const CustomComponentRenderer: React.FC<{
                   render: updatedHtml
                 }
               });
-              console.log('[CustomComponent] Updated HTML with new text');
+              DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text');
             }
           }
         }
 
         if (event.data.type === 'edit-mode-ready') {
-          console.log('[CustomComponent] Edit mode ready in iframe');
+          DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Edit mode ready in iframe');
         }
 
         if (event.data.type === 'component-clicked') {
@@ -1896,7 +1903,7 @@ export const CustomComponentRenderer: React.FC<{
         return <div dangerouslySetInnerHTML={{ __html: htmlString }} />;
       }
 
-      console.warn('[CustomComponent] Invalid element returned:', element);
+      DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponent] Invalid element returned:', element);
       return <div>{String(element)}</div>;
     } catch (err) {
       console.error('[CustomComponent] Runtime error:', err);
@@ -1956,7 +1963,7 @@ export const CustomComponentRenderer: React.FC<{
   const handleTextEdit = useCallback((element: DetectedElement, newText: string) => {
     if (!stableIframeSrcDoc || !element.selector) return;
 
-    console.log('[CustomComponent] Text edit:', { selector: element.selector, newText });
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Text edit:', { selector: element.selector, newText });
 
     // Find and replace the text content in the HTML
     let updatedHtml = stableIframeSrcDoc;
@@ -1985,7 +1992,7 @@ export const CustomComponentRenderer: React.FC<{
           render: updatedHtml
         }
       });
-      console.log('[CustomComponent] Updated HTML with new text');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new text');
     }
   }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
 
@@ -1993,7 +2000,7 @@ export const CustomComponentRenderer: React.FC<{
   const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
     if (!stableIframeSrcDoc || !element.src) return;
 
-    console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
 
     // Replace the old image src with the new one
     let updatedHtml = stableIframeSrcDoc;
@@ -2012,7 +2019,7 @@ export const CustomComponentRenderer: React.FC<{
           render: updatedHtml
         }
       });
-      console.log('[CustomComponent] Updated HTML with new image');
+      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new image');
     }
 
     setSelectedElement(null);
@@ -2021,7 +2028,7 @@ export const CustomComponentRenderer: React.FC<{
 
   // Handler for AI-based element editing
   const handleElementAiEdit = useCallback(async (element: DetectedElement, instruction: string) => {
-    console.log('[CustomComponent] AI Edit request:', { type: element.type, instruction });
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, instruction });
 
     // For images, call the image edit API
     if (element.type === 'image' && element.src) {
@@ -2239,7 +2246,7 @@ export const CustomComponentRenderer: React.FC<{
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    console.log('[CustomComponent] Select Image clicked:', { propName, searchQuery });
+                    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Select Image clicked:', { propName, searchQuery });
                     window.dispatchEvent(new CustomEvent('image:select-placeholder', {
                       detail: {
                         componentId: component.id,
@@ -2337,6 +2344,29 @@ export const CustomComponentRenderer: React.FC<{
             />
           </AnimatePresence>,
           document.body
+        )}
+
+        {/* CUSTOM COMPONENT EDIT OVERLAY - always rendered when selected in edit mode to listen for iframe messages */}
+        {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (
+          <CustomComponentEditOverlay
+            componentId={component.id}
+            isEditing={effectiveIsEditMode}
+            isSelected={isSelected}
+            srcDoc={stableIframeSrcDoc}
+            scale={scale}
+            onHtmlUpdate={(newHtml) => {
+              updateComponent(component.id, {
+                props: {
+                  ...component.props,
+                  render: newHtml
+                }
+              });
+            }}
+            onImageSelect={(element) => {
+              setSelectedElement(element);
+              setShowImageToolbar(true);
+            }}
+          />
         )}
       </div>
     </ErrorBoundary>
