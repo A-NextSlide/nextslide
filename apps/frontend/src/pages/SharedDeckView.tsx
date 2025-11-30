@@ -302,31 +302,26 @@ const SharedDeckView: React.FC = () => {
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
           >
-            <EditorStateProvider initialEditingState={false}>
-              <ActiveSlideProvider>
-                {/* Render components */}
-                {components.map((component) => {
-                  if (!component || !component.id) return null;
-                  try {
-                    return (
-                      <ComponentRenderer
-                        key={component.id}
-                        component={component}
-                        isEditing={false}
-                        isSelected={false}
-                        onSelect={() => {}}
-                        onUpdate={() => {}}
-                        slideId={slide.id}
-                        allComponents={components}
-                      />
-                    );
-                  } catch (err) {
-                    console.error(`[SharedDeckView] Error rendering component ${component.id}:`, err);
-                    return null;
-                  }
-                })}
-              </ActiveSlideProvider>
-            </EditorStateProvider>
+            {/* Render components - providers are at the top level now */}
+            {/* isEditing and slideId come from context (EditorStateProvider/ActiveSlideProvider) */}
+            {components.map((component) => {
+              if (!component || !component.id) return null;
+              try {
+                return (
+                  <ComponentRenderer
+                    key={component.id}
+                    component={component}
+                    isSelected={false}
+                    onSelect={() => {}}
+                    allComponents={components}
+                    isThumbnail={false}
+                  />
+                );
+              } catch (err) {
+                console.error(`[SharedDeckView] Error rendering component ${component.id}:`, err);
+                return null;
+              }
+            })}
             {/* Add watermark for view-only decks */}
             {!canEdit && (
               <Watermark
@@ -435,21 +430,27 @@ const SharedDeckView: React.FC = () => {
   }
 
   // Render the presentation view
+  // CRITICAL: EditorStateProvider and ActiveSlideProvider are at the top level
+  // to prevent re-creation on each render which causes mobile crashes
   return (
     <div className="w-screen overflow-hidden relative" style={{ height: '100dvh' }}>
       {/* Presentation Mode */}
-      <NavigationProvider 
+      <NavigationProvider
         initialSlideIndex={0}
         onSlideChange={(index) => setCurrentSlideIndex(index)}
       >
-        <PresentationMode
-          slides={deck.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
-          currentSlideIndex={currentSlideIndex}
-          renderSlide={renderSlide}
-          isViewOnly={!canEdit}
-          alwaysShowControls={true}
-        />
-        
+        <EditorStateProvider initialEditingState={false}>
+          <ActiveSlideProvider>
+            <PresentationMode
+              slides={deck.slides.filter(s => s && s.id && !s.id.startsWith('placeholder-'))}
+              currentSlideIndex={currentSlideIndex}
+              renderSlide={renderSlide}
+              isViewOnly={!canEdit}
+              alwaysShowControls={true}
+            />
+          </ActiveSlideProvider>
+        </EditorStateProvider>
+
         {/* Optional edit button if user has permissions */}
         {canEdit && (
           <div className="absolute top-4 right-4 z-50">
