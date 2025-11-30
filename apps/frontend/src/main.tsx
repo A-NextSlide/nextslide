@@ -6,17 +6,17 @@ import App from './App.tsx'
 import './index.css'
 import './components/ColorPickerStyles.css'
 import './styles/presentation.css'
-import { useEditorSettingsStore } from '@/stores/editorSettingsStore'
-import { configureLogging, enableRegistryLogsOnly, LogLevel } from '@/utils/logging'
+import { configureLogging, LogLevel } from '@/utils/logging'
 import { setupGlobalErrorHandlers } from '@/utils/errorHandler'
 import { initializeStorage } from '@/integrations/supabase/client'
 import { BROWSER } from '@/utils/browser'
 import { setupDiagnostics } from '@/utils/authDiagnostics'
 
 // Initialize Sentry for error tracking (production only)
-if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+if (import.meta.env.PROD && SENTRY_DSN) {
   Sentry.init({
-    dsn: import.meta.env.VITE_SENTRY_DSN,
+    dsn: SENTRY_DSN,
     environment: import.meta.env.MODE,
     integrations: [
       Sentry.browserTracingIntegration(),
@@ -25,12 +25,9 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
         blockAllMedia: false,
       }),
     ],
-    // Performance monitoring
-    tracesSampleRate: 0.1, // 10% of transactions
-    // Session replay for errors
-    replaysSessionSampleRate: 0.1, // 10% of sessions
-    replaysOnErrorSampleRate: 1.0, // 100% of sessions with errors
-    // Only send errors in production
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
     enabled: import.meta.env.PROD,
   });
 }
