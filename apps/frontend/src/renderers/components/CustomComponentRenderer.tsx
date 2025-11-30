@@ -16,7 +16,7 @@ import roughImport from 'roughjs';
 import confettiImport from 'canvas-confetti';
 import * as gsapImport from 'gsap';
 
-// Debug flag - disable in production for performance
+// Debug flag - disabled in production for mobile performance
 const DEBUG_CUSTOM_COMPONENT = false;
 
 /**

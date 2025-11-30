@@ -10,7 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Palette, Trash2, Edit, Save, X, CheckCircle, XCircle, Plus, Code, Upload, Download, AlertCircle } from 'lucide-react';
+import {
+  Search, Palette, Trash2, Edit, Save, X, CheckCircle, XCircle, Plus, Code, Upload,
+  Download, AlertCircle, RefreshCw, Image, Type, Globe, Loader2, ExternalLink
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const AdminBrands: React.FC = () => {
@@ -31,11 +34,16 @@ const AdminBrands: React.FC = () => {
   const [fontFamilyName, setFontFamilyName] = useState('');
   const [uploading, setUploading] = useState(false);
 
+  // New brand fetch states
+  const [showAddBrand, setShowAddBrand] = useState(false);
+  const [newBrandIdentifier, setNewBrandIdentifier] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [refreshingBrand, setRefreshingBrand] = useState<string | null>(null);
+
   const pageSize = 50;
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Reset when search changes
     setBrands([]);
     setCurrentPage(1);
     setHasMore(true);
@@ -89,21 +97,16 @@ const AdminBrands: React.FC = () => {
 
     setSaving(true);
     try {
-      // Parse the JSON data
       const parsedData = JSON.parse(editedData);
-
-      // Update colors in the parsed data
       if (!parsedData.colors) parsedData.colors = {};
       parsedData.colors.primary = editedColors.map(hex => ({ hex, type: 'primary' }));
-
-      // Update fonts in the parsed data
       if (editedFonts.length > 0) {
         parsedData.fonts = { names: editedFonts };
       }
 
       await adminApi.updateBrand(editingBrand.id, parsedData);
       setEditingBrand(null);
-      loadBrands();
+      loadBrands(1);
     } catch (error) {
       console.error('Error saving brand:', error);
       alert('Error saving brand. Please check the JSON format.');
@@ -144,7 +147,6 @@ const AdminBrands: React.FC = () => {
     try {
       await adminApi.deleteBrand(brand.id);
       setDeleteConfirm(null);
-      // Remove from local state instead of reloading
       setBrands(prev => prev.filter(b => b.id !== brand.id));
       setTotal(prev => prev - 1);
     } catch (error) {
@@ -153,11 +155,53 @@ const AdminBrands: React.FC = () => {
     }
   };
 
+  // Fetch new brand from Brandfetch
+  const handleFetchBrand = async () => {
+    if (!newBrandIdentifier.trim()) return;
+
+    setFetching(true);
+    try {
+      const response = await adminApi.fetchBrandFromBrandfetch(newBrandIdentifier.trim());
+      setShowAddBrand(false);
+      setNewBrandIdentifier('');
+
+      // Refresh the list
+      loadBrands(1);
+
+      alert(`Brand ${response.action} successfully: ${response.brand.api_response?.brand_name || response.brand.identifier}`);
+    } catch (error: any) {
+      console.error('Error fetching brand:', error);
+      alert(error.message || 'Error fetching brand from Brandfetch');
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // Refresh existing brand from Brandfetch
+  const handleRefreshBrand = async (brand: Brand) => {
+    const identifier = brand.api_response?.domain || brand.normalized_identifier || brand.identifier;
+
+    setRefreshingBrand(brand.id);
+    try {
+      const response = await adminApi.fetchBrandFromBrandfetch(identifier);
+
+      // Update the brand in local state
+      setBrands(prev => prev.map(b =>
+        b.id === brand.id ? { ...response.brand, id: brand.id, hit_count: brand.hit_count, last_accessed_at: brand.last_accessed_at, created_at: brand.created_at } : b
+      ));
+
+    } catch (error: any) {
+      console.error('Error refreshing brand:', error);
+      alert(error.message || 'Error refreshing brand from Brandfetch');
+    } finally {
+      setRefreshingBrand(null);
+    }
+  };
+
   const getColorArray = (brand: Brand): string[] => {
     const colors: string[] = [];
     const apiResponse = brand.api_response;
 
-    // Helper to extract colors from various formats
     const extractColors = (colorData: any) => {
       if (!colorData) return;
 
@@ -170,7 +214,6 @@ const AdminBrands: React.FC = () => {
           }
         });
       } else if (typeof colorData === 'object') {
-        // Check all properties for color arrays
         Object.values(colorData).forEach(value => {
           if (Array.isArray(value)) {
             value.forEach((color: any) => {
@@ -185,12 +228,11 @@ const AdminBrands: React.FC = () => {
       }
     };
 
-    // Extract from all color categories
     if (apiResponse?.colors) {
       extractColors(apiResponse.colors);
     }
 
-    return colors.slice(0, 12); // Show up to 12 colors
+    return colors.slice(0, 12);
   };
 
   const getFonts = (brand: Brand): string[] => {
@@ -224,15 +266,43 @@ const AdminBrands: React.FC = () => {
     return files.length > 0 && Object.keys(files[0]?.variants || {}).length > 0;
   };
 
+  // Get the best logo URL from brand data
+  const getBestLogo = (brand: Brand): string | null => {
+    const logos = brand.api_response?.logos;
+    if (!logos) return null;
+
+    // Try light theme first, then dark, then icons, then other
+    const themes = ['light', 'dark', 'icons', 'other'];
+
+    for (const theme of themes) {
+      const logoList = logos[theme];
+      if (Array.isArray(logoList) && logoList.length > 0) {
+        const logo = logoList[0];
+        const formats = logo?.formats;
+        if (Array.isArray(formats) && formats.length > 0) {
+          // Prefer SVG, then PNG
+          const svgFormat = formats.find((f: any) => f.format === 'svg' || f.url?.endsWith('.svg'));
+          if (svgFormat?.url) return svgFormat.url;
+
+          const pngFormat = formats.find((f: any) => f.format === 'png' || f.url?.endsWith('.png'));
+          if (pngFormat?.url) return pngFormat.url;
+
+          // Return first available
+          if (formats[0]?.url) return formats[0].url;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const detectVariantFromFilename = (filename: string): string => {
     const lower = filename.toLowerCase();
 
-    // Check for combined variants first
     if (lower.includes('bolditalic') || lower.includes('bold-italic') || lower.includes('bold_italic')) {
       return 'bold-italic';
     }
 
-    // Then check for individual variants
     if (lower.includes('bold') || lower.includes('bd')) return 'bold';
     if (lower.includes('italic') || lower.includes('it') || lower.includes('oblique')) return 'italic';
     if (lower.includes('light') || lower.includes('lt')) return 'light';
@@ -243,7 +313,6 @@ const AdminBrands: React.FC = () => {
     if (lower.includes('black')) return 'black';
     if (lower.includes('regular') || lower.includes('normal') || lower.includes('book')) return 'regular';
 
-    // Default to regular if no variant detected
     return 'regular';
   };
 
@@ -284,7 +353,6 @@ const AdminBrands: React.FC = () => {
 
     try {
       await adminApi.deleteBrandFont(brand.id, fontName, variant);
-      // Update local state
       setBrands(prev => prev.map(b => {
         if (b.id === brand.id) {
           const updated = { ...b };
@@ -317,10 +385,14 @@ const AdminBrands: React.FC = () => {
               Manage cached brand data from Brandfetch API
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-sm">
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="text-sm px-3 py-1">
               {total} brands cached
             </Badge>
+            <Button onClick={() => setShowAddBrand(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Add Brand
+            </Button>
           </div>
         </div>
 
@@ -337,201 +409,272 @@ const AdminBrands: React.FC = () => {
           </div>
         </div>
 
-        {/* Brands Table */}
+        {/* Brands Grid */}
         <Card className="overflow-hidden">
           <ScrollArea className="h-[calc(100vh-280px)]" onScrollCapture={handleScroll}>
-            <div className="min-w-[1000px]">
-              {/* Header */}
-              <div className="sticky top-0 z-10 bg-muted/50 backdrop-blur border-b">
-                <div className="grid grid-cols-[minmax(180px,200px)_minmax(130px,150px)_minmax(200px,1fr)_minmax(180px,200px)_minmax(100px,120px)_100px] gap-4 px-4 py-3 text-sm font-semibold">
-                  <div>Brand</div>
-                  <div>Domain</div>
-                  <div>Colors</div>
-                  <div>Fonts</div>
-                  <div>Usage</div>
-                  <div className="text-right">Actions</div>
+            <div className="p-4">
+              {brands.length === 0 && !loading ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Palette className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold">No brands found</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery ? 'Try adjusting your search query' : 'No brands cached yet'}
+                  </p>
+                  <Button onClick={() => setShowAddBrand(true)} className="mt-4 gap-2">
+                    <Plus className="h-4 w-4" />
+                    Add Your First Brand
+                  </Button>
                 </div>
-              </div>
-
-              {/* Rows */}
-              <div className="divide-y">
-                {brands.length === 0 && !loading ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <Palette className="h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-semibold">No brands found</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {searchQuery ? 'Try adjusting your search query' : 'No brands cached yet'}
-                    </p>
-                  </div>
-                ) : (
-                  brands.map((brand) => {
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {brands.map((brand) => {
                     const colors = getColorArray(brand);
                     const fonts = getFonts(brand);
                     const brandName = brand.api_response?.brand_name || brand.identifier;
                     const domain = brand.api_response?.domain || brand.normalized_identifier;
+                    const logoUrl = getBestLogo(brand);
+                    const hasUploadedFontsFlag = hasUploadedFonts(brand);
+                    const isRefreshing = refreshingBrand === brand.id;
 
                     return (
-                      <div
+                      <Card
                         key={brand.id}
-                        className="grid grid-cols-[minmax(180px,200px)_minmax(130px,150px)_minmax(200px,1fr)_minmax(180px,200px)_minmax(100px,120px)_100px] gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
+                        className={cn(
+                          "overflow-hidden transition-all hover:shadow-lg",
+                          !brand.success && "border-red-300 bg-red-50/30 dark:border-red-900 dark:bg-red-950/30"
+                        )}
                       >
-                        {/* Brand Name */}
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{brandName}</div>
-                            <Badge variant={brand.success ? 'outline' : 'destructive'} className="text-xs mt-1">
-                              {brand.success ? (
-                                <CheckCircle className="h-2 w-2 mr-1" />
-                              ) : (
-                                <XCircle className="h-2 w-2 mr-1" />
-                              )}
-                              {brand.success ? 'Active' : 'Failed'}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        {/* Domain */}
-                        <div className="text-sm text-muted-foreground truncate" title={domain}>
-                          {domain}
-                        </div>
-
-                        {/* Colors */}
-                        <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin py-1">
-                          {colors.length > 0 ? (
-                            colors.map((color, idx) => (
-                              <div
-                                key={idx}
-                                className="group relative flex-shrink-0"
-                                title={color}
-                              >
-                                <div
-                                  className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:scale-125 transition-transform"
-                                  style={{ backgroundColor: color }}
-                                />
-                              </div>
-                            ))
+                        {/* Logo Section */}
+                        <div className="relative h-24 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+                          {logoUrl ? (
+                            <img
+                              src={logoUrl}
+                              alt={brandName}
+                              className="max-h-16 max-w-[80%] object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
                           ) : (
-                            <span className="text-xs text-muted-foreground">No colors</span>
+                            <div className="flex flex-col items-center text-muted-foreground">
+                              <Image className="h-8 w-8 mb-1 opacity-50" />
+                              <span className="text-xs">No logo</span>
+                            </div>
                           )}
+
+                          {/* Status badge */}
+                          <Badge
+                            variant={brand.success ? 'outline' : 'destructive'}
+                            className="absolute top-2 right-2 text-xs"
+                          >
+                            {brand.success ? 'Active' : 'Failed'}
+                          </Badge>
                         </div>
 
-                        {/* Fonts */}
-                        <div className="space-y-1">
-                          {(() => {
-                            const uploadedFonts = getUploadedFontFiles(brand);
-                            const fontNames = getFonts(brand);
+                        <CardContent className="p-4 space-y-3">
+                          {/* Brand Name & Domain */}
+                          <div>
+                            <h3 className="font-semibold text-sm truncate" title={brandName}>
+                              {brandName}
+                            </h3>
+                            <a
+                              href={`https://${domain}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 truncate"
+                            >
+                              <Globe className="h-3 w-3" />
+                              {domain}
+                              <ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          </div>
 
-                            if (uploadedFonts.length > 0) {
-                              return (
-                                <div className="space-y-1">
-                                  {uploadedFonts.map((font, idx) => (
-                                    <div key={idx} className="flex items-center gap-1">
-                                      <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/20 border border-green-300 dark:border-green-700">
-                                        <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
-                                        <span className="text-xs font-medium text-green-900 dark:text-green-100">
-                                          {font.name}
-                                        </span>
-                                      </div>
-                                      <Badge variant="outline" className="text-xs">
-                                        {Object.keys(font.variants).length} files
-                                      </Badge>
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            } else if (fontNames.length > 0) {
-                              return (
-                                <div className="space-y-1">
-                                  {fontNames.slice(0, 2).map((fontName, idx) => (
-                                    <div key={idx} className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
-                                      <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                                      <span className="text-xs font-medium text-amber-900 dark:text-amber-100">
-                                        {fontName}
-                                      </span>
-                                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                                        (no files)
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {fontNames.length > 2 && (
+                          {/* Colors */}
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Colors</Label>
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {colors.length > 0 ? (
+                                colors.slice(0, 8).map((color, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="w-5 h-5 rounded border border-gray-300 dark:border-gray-600 cursor-pointer hover:scale-110 transition-transform"
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                  />
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">No colors</span>
+                              )}
+                              {colors.length > 8 && (
+                                <span className="text-xs text-muted-foreground">+{colors.length - 8}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Fonts */}
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Fonts</Label>
+                            <div className="mt-1 space-y-1">
+                              {hasUploadedFontsFlag ? (
+                                getUploadedFontFiles(brand).map((font, idx) => (
+                                  <div key={idx} className="flex items-center gap-1">
+                                    <Badge variant="default" className="text-xs gap-1 bg-green-600">
+                                      <CheckCircle className="h-2.5 w-2.5" />
+                                      {font.name}
+                                    </Badge>
                                     <span className="text-xs text-muted-foreground">
-                                      +{fontNames.length - 2} more
+                                      ({Object.keys(font.variants).length} files)
                                     </span>
+                                  </div>
+                                ))
+                              ) : fonts.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {fonts.slice(0, 2).map((fontName, idx) => (
+                                    <Badge key={idx} variant="outline" className="text-xs gap-1 border-amber-400 text-amber-700 dark:text-amber-300">
+                                      <Type className="h-2.5 w-2.5" />
+                                      {fontName}
+                                    </Badge>
+                                  ))}
+                                  {fonts.length > 2 && (
+                                    <span className="text-xs text-muted-foreground">+{fonts.length - 2}</span>
                                   )}
                                 </div>
-                              );
-                            } else {
-                              return (
-                                <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                                  <XCircle className="h-3 w-3 text-gray-400" />
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 italic">
-                                    No fonts defined
-                                  </span>
-                                </div>
-                              );
-                            }
-                          })()}
-                        </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">No fonts</span>
+                              )}
+                            </div>
+                          </div>
 
-                        {/* Usage Stats */}
-                        <div className="text-xs text-muted-foreground">
-                          <div>{brand.hit_count} hits</div>
-                          <div>{new Date(brand.last_accessed_at).toLocaleDateString()}</div>
-                        </div>
+                          {/* Stats */}
+                          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+                            <span>{brand.hit_count} hits</span>
+                            <span>{new Date(brand.last_accessed_at).toLocaleDateString()}</span>
+                          </div>
 
-                        {/* Actions */}
-                        <div className="flex gap-1 justify-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setUploadingBrand(brand);
-                              setFontFamilyName(brand.api_response?.brand_name || '');
-                            }}
-                            className="h-8 px-2"
-                            title="Upload fonts"
-                          >
-                            <Upload className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(brand)}
-                            className="h-8 px-2"
-                            title="Edit brand"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDeleteConfirm(brand);
-                            }}
-                            className="h-8 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            title="Delete brand"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
+                          {/* Actions */}
+                          <div className="flex gap-1 pt-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRefreshBrand(brand)}
+                              disabled={isRefreshing}
+                              className="flex-1 h-8 text-xs"
+                              title="Refresh from Brandfetch"
+                            >
+                              {isRefreshing ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setUploadingBrand(brand);
+                                setFontFamilyName(brand.api_response?.brand_name || '');
+                              }}
+                              className="flex-1 h-8 text-xs"
+                              title="Upload fonts"
+                            >
+                              <Upload className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(brand)}
+                              className="flex-1 h-8 text-xs"
+                              title="Edit brand"
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDeleteConfirm(brand)}
+                              className="h-8 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+                              title="Delete brand"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     );
-                  })
-                )}
+                  })}
+                </div>
+              )}
 
-                {/* Loading indicator */}
-                {loading && (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    Loading more brands...
-                  </div>
-                )}
-              </div>
+              {/* Loading indicator */}
+              {loading && (
+                <div className="py-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading more brands...
+                </div>
+              )}
             </div>
           </ScrollArea>
         </Card>
       </div>
+
+      {/* Add Brand Dialog */}
+      <Dialog open={showAddBrand} onOpenChange={setShowAddBrand}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add Brand from Brandfetch
+            </DialogTitle>
+            <DialogDescription>
+              Enter a domain (e.g., nike.com) or brand name to fetch brand data from Brandfetch API.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="brand-identifier">Domain or Brand Name</Label>
+              <Input
+                id="brand-identifier"
+                value={newBrandIdentifier}
+                onChange={(e) => setNewBrandIdentifier(e.target.value)}
+                placeholder="e.g., nike.com, Apple, starbucks.com"
+                className="mt-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !fetching) {
+                    handleFetchBrand();
+                  }
+                }}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                For best results, use the exact domain (e.g., apple.com instead of Apple)
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddBrand(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFetchBrand}
+              disabled={fetching || !newBrandIdentifier.trim()}
+              className="gap-2"
+            >
+              {fetching ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Fetching...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Fetch Brand
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={!!editingBrand} onOpenChange={() => setEditingBrand(null)}>

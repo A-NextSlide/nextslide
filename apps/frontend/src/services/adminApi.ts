@@ -664,6 +664,22 @@ class AdminApi {
       throw error;
     }
   }
+
+  async fetchBrandFromBrandfetch(
+    identifier: string
+  ): Promise<{ success: boolean; message: string; action: string; brand: Brand }> {
+    try {
+      const response = await this.request<any>('/admin/brands/fetch', {
+        method: 'POST',
+        body: JSON.stringify({ identifier }),
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Error fetching brand from Brandfetch:', error);
+      throw error;
+    }
+  }
 }
 
 export interface Brand {

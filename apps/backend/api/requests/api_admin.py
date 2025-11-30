@@ -1732,3 +1732,116 @@ async def delete_brand_font(
     except Exception as e:
         logger.error(f"Delete brand font error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class FetchBrandRequest(BaseModel):
+    identifier: str  # Domain or brand name
+
+
+@router.post("/brands/fetch")
+async def fetch_brand_from_brandfetch(
+    request: Request,
+    fetch_request: FetchBrandRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Fetch or refresh brand data from Brandfetch API
+    """
+    from services.brandfetch_service import BrandfetchService
+    from services.logo_storage_service import LogoStorageService
+
+    try:
+        identifier = fetch_request.identifier.strip()
+        if not identifier:
+            raise HTTPException(status_code=400, detail="Identifier is required")
+
+        supabase = get_supabase_client()
+
+        # Normalize identifier for cache lookup
+        normalized = identifier.lower().replace('https://', '').replace('http://', '').replace('www.', '')
+        if '/' in normalized:
+            normalized = normalized.split('/')[0]
+
+        # Fetch from Brandfetch API
+        async with BrandfetchService() as brandfetch:
+            logger.info(f"Fetching brand data for: {identifier}")
+
+            # Use search if it doesn't look like a domain
+            if '.' in identifier and ' ' not in identifier:
+                brand_data = await brandfetch.get_brand_data(identifier)
+            else:
+                brand_data = await brandfetch.get_brand_data_with_search(identifier)
+
+            if brand_data.get('error'):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Brand not found: {brand_data.get('error')} - {brand_data.get('message', '')}"
+                )
+
+            # Process logos - download and store in our Supabase storage
+            if brand_data.get('logos'):
+                try:
+                    async with LogoStorageService() as logo_storage:
+                        brand_domain = brand_data.get('domain', normalized)
+                        logger.info(f"Processing logos for {brand_domain}")
+                        brand_data = await logo_storage.process_brand_logos(brand_data, brand_domain)
+                except Exception as e:
+                    logger.error(f"Error processing logos: {e}")
+                    # Continue without processed logos
+
+            # Use the domain from the API response as the cache key
+            cache_key = brand_data.get('domain', normalized)
+
+            # Check if brand already exists
+            existing = supabase.table("brandfetch_cache").select("id").eq("normalized_identifier", cache_key).execute()
+
+            if existing.data:
+                # Update existing entry
+                supabase.table("brandfetch_cache").update({
+                    "api_response": brand_data,
+                    "success": True,
+                    "identifier": identifier
+                }).eq("normalized_identifier", cache_key).execute()
+                action = "updated"
+                brand_id = existing.data[0]['id']
+            else:
+                # Insert new entry
+                result = supabase.table("brandfetch_cache").insert({
+                    "identifier": identifier,
+                    "normalized_identifier": cache_key,
+                    "api_response": brand_data,
+                    "success": True
+                }).execute()
+                action = "created"
+                brand_id = result.data[0]['id'] if result.data else None
+
+            # Log the action
+            await log_admin_action(
+                admin_user_id=admin["id"],
+                action=f"fetch_brand_{action}",
+                request=request,
+                details={
+                    "identifier": identifier,
+                    "domain": brand_data.get('domain'),
+                    "brand_name": brand_data.get('brand_name')
+                }
+            )
+
+            return {
+                "success": True,
+                "message": f"Brand {action} successfully",
+                "action": action,
+                "brand": {
+                    "id": brand_id,
+                    "identifier": identifier,
+                    "normalized_identifier": cache_key,
+                    "api_response": brand_data,
+                    "success": True
+                }
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Fetch brand error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

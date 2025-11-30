@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ImageIcon, MessageSquare, Type, Sparkles, RefreshCw, X, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -606,7 +607,19 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   if (!isEditing || !isSelected) return null;
 
-  return (
+  // Calculate viewport-relative position for fixed positioning
+  const getFixedPosition = (bounds: { x: number; y: number; width: number; height: number }) => {
+    // Get the iframe element to calculate its position on screen
+    const iframe = document.querySelector(`iframe[title="Custom Component"]`);
+    const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
+
+    return {
+      x: iframeRect.left + (bounds.x * scale),
+      y: iframeRect.top + (bounds.y * scale)
+    };
+  };
+
+  return createPortal(
     <>
       {/* Floating chat for text elements */}
       <AnimatePresence>
@@ -615,10 +628,12 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute z-[100] w-72 bg-white rounded-lg border shadow-xl"
+            className="w-72 bg-white rounded-lg border shadow-xl"
             style={{
-              top: Math.max(8, (selectedElement.bounds.y * scale) - 8),
-              right: 8
+              position: 'fixed',
+              top: Math.min(Math.max(getFixedPosition(selectedElement.bounds).y - 8, 60), window.innerHeight - 300),
+              left: Math.min(Math.max(getFixedPosition(selectedElement.bounds).x + (selectedElement.bounds.width * scale) + 10, 10), window.innerWidth - 300),
+              zIndex: 9999
             }}
           >
             <div
@@ -684,10 +699,12 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
-            className="absolute z-[90] flex items-center gap-1"
+            className="flex items-center gap-1"
             style={{
-              top: Math.max(8, (selectedElement.bounds.y * scale) - 32),
-              left: Math.max(8, selectedElement.bounds.x * scale)
+              position: 'fixed',
+              top: Math.max(60, getFixedPosition(selectedElement.bounds).y - 32),
+              left: Math.max(10, getFixedPosition(selectedElement.bounds).x),
+              zIndex: 9998
             }}
           >
             <button
@@ -703,7 +720,8 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </>,
+    document.body
   );
 };
 
