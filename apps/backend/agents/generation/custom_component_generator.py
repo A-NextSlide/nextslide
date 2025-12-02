@@ -525,21 +525,58 @@ class CustomComponentGenerator:
             # Detect if this is a title slide
             is_title_slide = self._is_title_slide(slide_context)
 
+            # Get slideMode from slide_context ('interactive', 'presentation', or 'static')
+            slide_mode = slide_context.get('slide_mode', 'interactive')
+
             # Build the system prompt (specialized for title slides)
             if is_title_slide:
-                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords)
+                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, slide_mode)
             else:
-                system_prompt = self._build_system_prompt(colors, typography, style_keywords)
+                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode)
 
             # Build the user prompt with full context
             if is_title_slide:
+                # Debug: Log the theme colors for title slide
+                logger.info(f"[CUSTOM_COMPONENT] 🎨 Title slide theme colors:")
+                logger.info(f"[CUSTOM_COMPONENT]   color_palette keys: {list(colors.keys())}")
+                accent_debug = colors.get('accent_1') or colors.get('accent') or '#6366f1'
+                secondary_debug = colors.get('accent_2') or colors.get('secondary') or '#8b5cf6'
+                text_debug = colors.get('primary_text') or colors.get('text') or '#ffffff'
+                bg_debug = colors.get('primary_background') or colors.get('background') or '#0a0e27'
+                logger.info(f"[CUSTOM_COMPONENT]   --accent: {accent_debug}")
+                logger.info(f"[CUSTOM_COMPONENT]   --secondary: {secondary_debug}")
+                logger.info(f"[CUSTOM_COMPONENT]   --text: {text_debug}")
+                logger.info(f"[CUSTOM_COMPONENT]   --bg: {bg_debug}")
+                print(f"[CUSTOM_COMPONENT] 🎨 Title slide colors: accent={accent_debug}, secondary={secondary_debug}, bg={bg_debug}")
+
+                # Extract logo URL from theme for title slides
+                logo_url = None
+                brand_info = theme.get('brandInfo', {})
+                if brand_info and brand_info.get('logoUrl'):
+                    logo_url = brand_info.get('logoUrl')
+                elif theme.get('color_palette', {}).get('metadata', {}).get('logo_url'):
+                    logo_url = theme.get('color_palette', {}).get('metadata', {}).get('logo_url')
+                elif theme.get('metadata', {}).get('logo_url'):
+                    logo_url = theme.get('metadata', {}).get('logo_url')
+                elif slide_context.get('logo_url'):
+                    logo_url = slide_context.get('logo_url')
+
+                if logo_url:
+                    logger.info(f"[CUSTOM_COMPONENT] 🏢 Title slide will include logo: {logo_url[:60]}...")
+
+                # Log reference images if present
+                if reference_images and len(reference_images) > 0:
+                    logger.info(f"[CUSTOM_COMPONENT] 📸 Title slide has {len(reference_images)} design reference images")
+
                 user_prompt = self._build_title_slide_user_prompt(
                     content=content,
                     slide_context=slide_context,
                     colors=colors,
                     typography=typography,
                     width=width,
-                    height=height
+                    height=height,
+                    reference_images=reference_images,
+                    logo_url=logo_url
                 )
             else:
                 user_prompt = self._build_user_prompt(
@@ -576,16 +613,40 @@ class CustomComponentGenerator:
                 # Add instruction about the reference images
                 user_content_parts.append({
                     "type": "text",
-                    "text": "🎨 DESIGN REFERENCE IMAGES - Analyze these to match the style:\n"
+                    "text": "🎨 DESIGN REFERENCE IMAGES FROM UPLOADED FILE - Match this exact design style:\n"
                 })
 
-                # Download and encode each reference image (limit to 3)
-                for idx, img_url in enumerate(reference_images[:3]):
+                # Process each reference image (limit to 3)
+                # Can be either URLs or base64 encoded strings
+                for idx, img_ref in enumerate(reference_images[:3]):
                     try:
-                        resp = requests.get(img_url, timeout=10)
-                        if resp.status_code == 200:
+                        # Check if it's a base64 string (from slide screenshots)
+                        if img_ref.startswith('data:image/'):
+                            # Data URL format: data:image/png;base64,xxxx
+                            parts = img_ref.split(',', 1)
+                            if len(parts) == 2:
+                                header, img_b64 = parts
+                                if 'jpeg' in header or 'jpg' in header:
+                                    media_type = 'image/jpeg'
+                                elif 'gif' in header:
+                                    media_type = 'image/gif'
+                                elif 'webp' in header:
+                                    media_type = 'image/webp'
+                                else:
+                                    media_type = 'image/png'
+                            else:
+                                continue
+                        elif not img_ref.startswith('http'):
+                            # Plain base64 string (assume PNG from our PPTX/PDF screenshots)
+                            img_b64 = img_ref
+                            media_type = 'image/png'
+                        else:
+                            # It's a URL - download it
+                            resp = requests.get(img_ref, timeout=10)
+                            if resp.status_code != 200:
+                                continue
                             img_b64 = b64_module.b64encode(resp.content).decode('utf-8')
-                            # Determine media type from content-type header or URL
+                            # Determine media type from content-type header
                             content_type = resp.headers.get('content-type', 'image/png')
                             if 'jpeg' in content_type or 'jpg' in content_type:
                                 media_type = 'image/jpeg'
@@ -596,21 +657,21 @@ class CustomComponentGenerator:
                             else:
                                 media_type = 'image/png'
 
-                            user_content_parts.append({
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": img_b64
-                                }
-                            })
-                            user_content_parts.append({
-                                "type": "text",
-                                "text": f"[Reference image {idx + 1}]"
-                            })
-                            logger.info(f"[CUSTOM_COMPONENT] Added reference image {idx + 1}: {img_url[:60]}...")
+                        user_content_parts.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": img_b64
+                            }
+                        })
+                        user_content_parts.append({
+                            "type": "text",
+                            "text": f"[Uploaded slide screenshot {idx + 1} - REPLICATE THIS DESIGN]"
+                        })
+                        logger.info(f"[CUSTOM_COMPONENT] Added reference image {idx + 1} from uploaded file")
                     except Exception as e:
-                        logger.warning(f"[CUSTOM_COMPONENT] Failed to load reference image {img_url}: {e}")
+                        logger.warning(f"[CUSTOM_COMPONENT] Failed to process reference image: {e}")
 
                 # Add the main prompt text
                 user_content_parts.append({
@@ -732,9 +793,9 @@ class CustomComponentGenerator:
                     "render": html_content,
                     "width": width,
                     "height": height,
-                    "primaryColor": colors.get('accent_1', '#6366f1'),
-                    "secondaryColor": colors.get('accent_2', colors.get('accent_1', '#8b5cf6')),
-                    "textColor": colors.get('primary_text', '#ffffff'),
+                    "primaryColor": colors.get('accent_1') or colors.get('accent') or '#6366f1',
+                    "secondaryColor": colors.get('accent_2') or colors.get('secondary') or colors.get('accent') or '#8b5cf6',
+                    "textColor": colors.get('primary_text') or colors.get('text') or '#ffffff',
                     "fontFamily": body_font,
                     "heroFont": hero_font,
                     # Store prefetched images - frontend will inject these into ${propName} placeholders
@@ -758,22 +819,106 @@ class CustomComponentGenerator:
         self,
         colors: Dict[str, str],
         typography: Dict[str, str],
-        style_keywords: list
+        style_keywords: list,
+        slide_mode: str = 'interactive'
     ) -> str:
         """Build the system prompt for CustomComponent generation."""
 
         style_desc = ", ".join(style_keywords) if style_keywords else "modern, professional"
 
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
-        bg_color = colors.get('primary_background', '#0a0e27')
+        # Handle both naming conventions: accent_1/accent, primary_background/background, etc.
+        accent = colors.get('accent_1') or colors.get('accent') or '#6366f1'
+        secondary = colors.get('accent_2') or colors.get('secondary') or colors.get('accent') or '#8b5cf6'
+        text_color = colors.get('primary_text') or colors.get('text') or '#ffffff'
+        bg_color = colors.get('primary_background') or colors.get('background') or '#0a0e27'
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
-        return f"""You are a WORLD-CLASS CREATIVE TECHNOLOGIST creating STUNNING interactive web experiences.
+        # Build mode-specific creative arsenal
+        if slide_mode == 'static':
+            # Traditional PPT - clean, no animations, PPTX-exportable
+            mode_intro = """You are creating a TRADITIONAL PRESENTATION SLIDE - clean, professional, PPTX-style.
+
+NO animations, NO interactions, NO JavaScript effects. Just beautiful, static design.
+Focus on typography, layout, and visual hierarchy."""
+            creative_arsenal = """
+═══════════════════════════════════════════════════════════════
+📊 PRESENTATION COMPONENTS - CLEAN & PROFESSIONAL
+═══════════════════════════════════════════════════════════════
+
+Use these classic presentation patterns:
+- Hero text with large, bold typography
+- Clean bullet points with good spacing
+- Simple data displays (big numbers, clean tables)
+- Professional image layouts
+- Clear visual hierarchy
+
+NO animations, NO hover effects, NO JavaScript interactions.
+Think: executive boardroom presentation, exported to PowerPoint."""
+
+        elif slide_mode == 'presentation':
+            # NextGen Simple - SAME quality as interactive, just without complex interactions
+            mode_intro = """You are a WORLD-CLASS DESIGNER creating STUNNING presentation slides.
+
+You have the FULL POWER of HTML, CSS, and SVG to create BEAUTIFUL, IMPACTFUL designs.
+Create slides that look like they came from a premium design agency - Apple, Stripe, Airbnb quality.
+Focus on BOLD typography, striking visuals, and clean layouts. Subtle animations only."""
+            creative_arsenal = f"""
+═══════════════════════════════════════════════════════════════
+🎯 NEXTGEN SIMPLE - STUNNING DESIGN FOR PRESENTING
+═══════════════════════════════════════════════════════════════
+
+CREATE VISUALLY STRIKING SLIDES WITH:
+
+📊 BIG BOLD DATA
+- Hero numbers at 80-120px that COMMAND the screen
+- Clean metric cards with accent color accents
+- SVG progress rings and simple visualizations
+- Data should be the VISUAL FOCUS
+
+📝 IMPACTFUL TYPOGRAPHY
+- Titles: 56-72px bold, gradient or solid
+- Key statements that fill the space
+- Generous whitespace - let content breathe
+- Professional, clean hierarchy
+
+🎨 STUNNING LAYOUTS
+- Full-bleed backgrounds with overlays
+- Bold split layouts (image + content)
+- Glassmorphism cards with blur effects
+- Accent color highlights and underlines
+
+ANIMATIONS (SUBTLE ONLY):
+- Fade in on load: opacity 0 → 1, 0.6s ease
+- Gentle scale: 0.95 → 1
+- Staggered reveals for multiple elements
+- NO hover effects, NO click handlers, NO JavaScript interactions
+
+THIS IS STILL A FULL-SCREEN CUSTOM COMPONENT (1920x1080)
+Same structure as interactive mode, just without complex interactions."""
+
+        else:  # interactive (default)
+            # Full interactive arsenal
+            mode_intro = """You are a WORLD-CLASS CREATIVE TECHNOLOGIST creating STUNNING interactive web experiences.
 
 You have the FULL POWER of HTML, CSS, JavaScript, SVG, Canvas, and animations.
-Create something that makes people say "WOW, how did they do that?!"
+Create something that makes people say "WOW, how did they do that?!" """
+            creative_arsenal = """
+═══════════════════════════════════════════════════════════════
+🚀 CREATIVE ARSENAL - PICK THE RIGHT WEAPON
+═══════════════════════════════════════════════════════════════
+
+🎯 INTERACTIVE QUIZ - Clickable options, reveal animations, confetti on correct
+🎯 ANIMATED STATISTICS - Numbers that COUNT UP, SVG progress rings, glowing effects
+🎯 INTERACTIVE TIMELINE - Clickable nodes, animated connecting lines
+🎯 PROCESS DIAGRAM - Step boxes with animated arrows, expandable details
+🎯 COMPARISON SLIDER - Draggable before/after reveal
+🎯 ACCORDION - Click to expand/collapse with smooth animation
+🎯 ANIMATED TEXT - Typewriter, word fade-in, gradient animation
+🎯 CARD FLIP - 3D flip on click, front/back content
+
+GO WILD with animations, interactions, and visual effects!"""
+
+        return f"""{mode_intro}
 
 ═══════════════════════════════════════════════════════════════
 🎨 YOUR DESIGN SYSTEM (MANDATORY - USE THESE EXACT COLORS!)
@@ -790,7 +935,6 @@ Create something that makes people say "WOW, how did they do that?!"
 
 COLORS: Use --accent and --secondary for all accent elements. These are MANDATORY.
 FONTS: Default to {hero_font} for headings and {body_font} for body text.
-       You may override fonts if a different font makes more design sense (e.g., monospace for code).
        Include Google Fonts link: https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@400;600;700;900&family={body_font.replace(' ', '+')}:wght@400;500;600&display=swap
 
 STYLE: {style_desc}
@@ -799,80 +943,7 @@ STYLE: {style_desc}
            Access them as: const image1 = props.image1 || '';
            Use in HTML as: <img src="${{image1}}" alt="...">
            DO NOT use custom prop names - only image1, image2, image3, etc.
-
-═══════════════════════════════════════════════════════════════
-🚀 CREATIVE ARSENAL - PICK THE RIGHT WEAPON
-═══════════════════════════════════════════════════════════════
-
-🎯 INTERACTIVE QUIZ (Multiple Choice)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Clickable options that highlight on selection
-- Reveal correct/incorrect with animation
-- Confetti explosion on correct answer
-- Color feedback: green for right, red for wrong
-
-🎯 TRUE/FALSE QUIZ
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Two big buttons: TRUE | FALSE
-- Statement displayed prominently
-- Animated reveal of answer with explanation
-- Visual feedback with icons ✓ ✗
-
-🎯 INTERACTIVE POLL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Clickable options
-- Animated progress bars that fill
-- Percentage displays that count up
-- Visual hierarchy showing winner
-
-🎯 ANIMATED STATISTICS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Numbers that COUNT UP with easing
-- SVG circular progress rings
-- Animated bar charts
-- Glowing/pulsing effects
-
-🎯 INTERACTIVE TIMELINE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Clickable nodes on a horizontal line
-- Click to reveal details for each phase
-- Animated connecting line that draws itself
-- Active state with glow effect
-
-🎯 PROCESS/FLOW DIAGRAM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Step boxes connected by animated arrows
-- Click to expand each step
-- Progress indicator showing current step
-- SVG arrows that animate
-
-🎯 COMPARISON SLIDER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Draggable divider between two views
-- Before/After reveal
-- Smooth drag interaction
-- Visual contrast between states
-
-🎯 ACCORDION/EXPANDABLE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Click headers to expand/collapse
-- Smooth height animation
-- Icon rotation (+ to -)
-- Only one open at a time
-
-🎯 ANIMATED TEXT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Typewriter effect
-- Word-by-word fade in
-- Gradient text with animation
-- Highlighted phrases with glow
-
-🎯 CARD FLIP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Click to flip card 180°
-- Front shows question/term
-- Back shows answer/definition
-- 3D perspective transform
+{creative_arsenal}
 
 ═══════════════════════════════════════════════════════════════
 💎 VISUAL POLISH TECHNIQUES
@@ -890,16 +961,6 @@ background: linear-gradient(135deg, {accent}, {secondary});
 
 GLOW EFFECT:
 box-shadow: 0 0 30px {accent}40, 0 0 60px {accent}20;
-
-SMOOTH HOVER:
-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-transform: translateY(-4px) scale(1.02);
-
-PULSE ANIMATION:
-@keyframes pulse {{
-  0%, 100% {{ opacity: 1; transform: scale(1); }}
-  50% {{ opacity: 0.8; transform: scale(1.05); }}
-}}
 
 STAGGER FADE IN:
 animation: fadeIn 0.5s ease-out forwards;
@@ -1064,36 +1125,8 @@ When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
 
 **SLIDE CANVAS RULES (MANDATORY):**
 1. Content area after padding: ~1760×920px (with 80px body padding)
-2. ALL content MUST be visible without scrolling
-3. Use overflow: hidden on html,body - content that overflows is CUT OFF
-
-**FONT SIZE CONSTRAINTS:**
-- Main title (h1): MAX 56px (not 64px!) for slides with multiple sections
-- Subtitle: 20-24px
-- Card titles: 18-20px
-- Body text: 14-16px
-- Labels/metadata: 12-14px
-
-**LAYOUT FITTING RULES:**
-1. When using grids with multiple sections:
-   - Use `grid-template-rows: auto 1fr auto` with `minHeight: 0` on flex children
-   - Limit card/section heights - use `max-height` where needed
-2. For multi-section slides, calculate:
-   - Header area: ~100px max
-   - Main content: ~680-720px
-   - Footer/bottom bar: ~80-100px
-3. Use `min-height: 0` on grid/flex children to allow proper shrinking
-
-**CONTENT DENSITY:**
-- If content has 3+ info cards: reduce padding (24px instead of 40px)
-- If content has SVG/visualization + text: limit text to 2-3 cards max
-- Truncate long text with `text-overflow: ellipsis` where appropriate
-
-**TESTING CHECKLIST:**
-✓ Does everything fit in 1920×1080 without scrolling?
-✓ Is all content visible (no clipping)?
-✓ Are font sizes readable but not oversized?
-✓ Did you use `overflow: hidden` on html/body?
+2. ALL content MUST be visible without scrolling - use overflow: hidden
+3. This is a PRESENTATION slide - use large, readable text sizes. Be creative and thoughtful - avoid defaulting to card grids for every slide.
 
 ═══════════════════════════════════════════════════════════════
 📐 OUTPUT STRUCTURE
@@ -1159,11 +1192,12 @@ When the prompt includes "🌐 EXTERNAL MEDIA FROM WEBSITE" section:
         total_slides = slide_context.get('total_slides', 1)
         slide_type = slide_context.get('slide_type', 'content')
         is_full_slide = slide_context.get('is_full_slide', False)
-        background_color = slide_context.get('background_color', colors.get('primary_background', '#0a0e27'))
+        background_color = slide_context.get('background_color', colors.get('primary_background') or colors.get('background') or '#0a0e27')
 
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
+        # Handle both naming conventions: accent_1/accent, primary_background/background, etc.
+        accent = colors.get('accent_1') or colors.get('accent') or '#6366f1'
+        secondary = colors.get('accent_2') or colors.get('secondary') or colors.get('accent') or '#8b5cf6'
+        text_color = colors.get('primary_text') or colors.get('text') or '#ffffff'
         bg_color = background_color
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
@@ -1235,36 +1269,116 @@ The user originally requested: "{presentation_context}"
 DO NOT use this for content - the slide content is provided separately below.
 """
 
-        # Build design reference images section (e.g., PPT screenshots to match style)
+        # Build slide consistency section
+        total_slides = slide_context.get('total_slides', 1)
+        slide_index = slide_context.get('slide_index', 0)
+        consistency_section = f"""
+═══════════════════════════════════════════════════════════════
+🔗 DECK CONSISTENCY - Slide {slide_index + 1} of {total_slides}
+═══════════════════════════════════════════════════════════════
+
+This is slide {slide_index + 1} of {total_slides} in this presentation.
+ALL slides in this deck MUST share a cohesive design language:
+
+✅ MAINTAIN ACROSS ALL SLIDES:
+- Same color palette (use the theme colors provided)
+- Same typography hierarchy (title sizes, body fonts)
+- Consistent spacing/margins (60-80px edges)
+- Similar visual elements (card styles, icon usage)
+- Unified animation style (if any)
+
+⚠️ AVOID:
+- Wildly different layouts from one slide to the next
+- Inconsistent color usage
+- Different font styles or sizes for similar elements
+- Mix of animation styles
+"""
+
+        # Build SMART STRUCTURE guidance based on request type
+        is_short_request = slide_context.get('is_short_request', False)
+        is_interactive = slide_context.get('is_interactive', False)
+        is_formal_presentation = slide_context.get('is_formal_presentation', False)
+
+        smart_structure_section = ""
+        if is_short_request or is_interactive:
+            # For short/interactive requests - deliver content directly
+            smart_structure_section = f"""
+═══════════════════════════════════════════════════════════════
+⚡ SHORT/INTERACTIVE REQUEST - DELIVER CONTENT DIRECTLY!
+═══════════════════════════════════════════════════════════════
+
+This is a {total_slides}-slide {'interactive' if is_interactive else 'short'} request.
+
+🚨 CRITICAL RULES:
+- DO NOT create "title only" slides or intro slides
+- DO NOT add welcome messages, agenda overviews, or preamble
+- EVERY slide MUST deliver ACTUAL CONTENT
+- Jump straight into the substance the user requested
+- No "thank you" slides or conclusion fluff
+
+Example of what NOT to do:
+❌ Slide 1: "Welcome to [Topic]" with just a title
+❌ Slide with mostly empty space and a single heading
+
+Example of what TO do:
+✅ Slide 1: Immediately show the core content/visualization/data
+✅ Every slide packed with the actual information requested
+"""
+        elif is_formal_presentation:
+            # For formal presentations - standard deck structure
+            smart_structure_section = f"""
+═══════════════════════════════════════════════════════════════
+📊 FORMAL PRESENTATION - PROFESSIONAL DECK STRUCTURE
+═══════════════════════════════════════════════════════════════
+
+This is a {total_slides}-slide formal presentation.
+
+📋 STRUCTURE GUIDELINES:
+- First slide can be a strong title/intro
+- Include clear section transitions
+- End with a compelling conclusion or call-to-action
+- Maintain professional narrative flow throughout
+"""
+
+        # Build design reference images section (e.g., PPT/PDF screenshots to replicate design)
         design_reference_section = ""
         if reference_images and len(reference_images) > 0:
-            ref_urls = "\n".join([f"  - {url}" for url in reference_images[:3]])
+            num_refs = min(len(reference_images), 3)
             design_reference_section = f"""
 ═══════════════════════════════════════════════════════════════
-🎯 DESIGN REFERENCE IMAGES - MATCH THIS STYLE!
+🎯 UPLOADED SLIDE SCREENSHOTS - REPLICATE THIS EXACT DESIGN!
 ═══════════════════════════════════════════════════════════════
 
-The user has provided reference images (e.g., PPT screenshots) to match:
-{ref_urls}
+The user uploaded a PPT/PDF file with {num_refs} slide screenshot(s) provided above.
+Your job is to REPLICATE this design as closely as possible!
 
-⚠️ CRITICAL INSTRUCTIONS:
-These are DESIGN REFERENCES, NOT images to place on the slide!
+⚠️ THIS IS YOUR #1 PRIORITY - THE USER WANTS THEIR ORIGINAL DESIGN RECREATED!
 
-1. ANALYZE these reference images carefully:
-   - Color palette (primary, secondary, accent colors)
-   - Typography style (font weights, sizes, hierarchy)
-   - Layout patterns (grid, cards, spacing, alignment)
-   - Visual effects (gradients, shadows, rounded corners)
-   - Overall aesthetic (minimalist, bold, corporate, playful)
+1. CAREFULLY STUDY the uploaded slide screenshots:
+   - Exact color palette (background, text, accent colors - use the SAME hex values)
+   - Typography (font sizes, weights, styles, spacing)
+   - Layout (grid structure, element positions, margins, padding)
+   - Visual elements (shapes, icons, dividers, borders)
+   - Decorative effects (gradients, shadows, rounded corners, textures)
+   - Overall composition (hierarchy, balance, white space usage)
 
-2. REPLICATE the design style in your generated HTML:
-   - Match the color scheme closely
-   - Use similar typography hierarchy
-   - Copy the layout structure and spacing patterns
-   - Apply similar visual effects and decorations
-   - Maintain the same level of visual polish
+2. RECREATE the design in HTML/CSS:
+   - Use the EXACT same colors you see in the screenshots
+   - Match the typography hierarchy precisely
+   - Replicate the layout structure element-by-element
+   - Copy any visual effects and decorations
+   - Position elements similarly to maintain the same visual flow
 
-3. DO NOT place these images on the slide - they are for style reference only!
+3. Apply the NEW CONTENT (provided below) using the ORIGINAL DESIGN:
+   - Keep the design identical
+   - Only change the text/content to match the new slide content
+   - Preserve all visual styling from the reference
+
+4. DO NOT:
+   - Invent a new design - replicate what you see!
+   - Use our default colors - use the colors from the screenshots
+   - Change the layout - match it exactly
+   - Place the screenshot images - they are for reference only
 
 """
 
@@ -1445,7 +1559,7 @@ REQUIRED PATTERN - Copy this exactly:
 Create a STUNNING {"full presentation slide" if is_full_slide else "interactive component"} for:
 
 SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
+{smart_structure_section}{consistency_section}{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
 CONTENT:
 {content}
 
@@ -2179,12 +2293,30 @@ Think: "If Apple or Stripe built an interactive visualization for this content, 
 """
 
     def _is_title_slide(self, slide_context: Dict[str, Any]) -> bool:
-        """Detect if this is a title/cover slide."""
+        """Detect if this is a title/cover slide.
+
+        For short or interactive requests, we do NOT automatically treat
+        the first slide as a title slide - the user wants content directly.
+        """
         slide_index = slide_context.get('slide_index', 0)
         slide_type = slide_context.get('slide_type', '').lower()
         title = slide_context.get('title', '').lower()
 
-        # First slide is always title
+        # SMART DETECTION: For short/interactive requests, don't auto-title first slide
+        is_short_request = slide_context.get('is_short_request', False)
+        is_interactive = slide_context.get('is_interactive', False)
+        total_slides = slide_context.get('total_slides', 1)
+
+        # For short (≤3 slides) or interactive requests, NO automatic title slides
+        if is_short_request or is_interactive:
+            # Only treat as title if explicitly typed as 'title' or 'cover'
+            if any(t in slide_type for t in ['title', 'cover']):
+                return True
+            # Otherwise, deliver content directly - not a title slide
+            return False
+
+        # For normal/formal presentations:
+        # First slide is a title slide
         if slide_index == 0:
             return True
 
@@ -2192,7 +2324,7 @@ Think: "If Apple or Stripe built an interactive visualization for this content, 
         if any(t in slide_type for t in ['title', 'cover', 'intro', 'opening']):
             return True
 
-        # Check title keywords
+        # Check title keywords (only for formal presentations)
         if any(t in title for t in ['welcome', 'introduction', 'overview']):
             return True
 
@@ -2202,123 +2334,105 @@ Think: "If Apple or Stripe built an interactive visualization for this content, 
         self,
         colors: Dict[str, str],
         typography: Dict[str, str],
-        style_keywords: list
+        style_keywords: list,
+        slide_mode: str = 'interactive'
     ) -> str:
         """Build specialized system prompt for stunning title slides."""
 
         style_desc = ", ".join(style_keywords) if style_keywords else "modern, professional"
 
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
-        bg_color = colors.get('primary_background', '#0a0e27')
+        # Handle both naming conventions: accent_1/accent, primary_background/background, etc.
+        accent = colors.get('accent_1') or colors.get('accent') or '#6366f1'
+        secondary = colors.get('accent_2') or colors.get('secondary') or colors.get('accent') or '#8b5cf6'
+        text_color = colors.get('primary_text') or colors.get('text') or '#ffffff'
+        bg_color = colors.get('primary_background') or colors.get('background') or '#0a0e27'
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
-        return f"""You are a WORLD-CLASS MOTION GRAPHICS DESIGNER creating STUNNING ANIMATED TITLE SLIDES.
+        # Mode-specific intro for title slides
+        if slide_mode == 'static':
+            mode_intro = """You are creating a TRADITIONAL TITLE SLIDE - clean, professional, PPTX-style.
+NO animations, NO effects. Just beautiful typography and layout."""
+            animation_note = "NO animations - static design only."
+        elif slide_mode == 'presentation':
+            mode_intro = """You are a WORLD-CLASS DESIGNER creating a beautiful title slide.
+High quality design with subtle CSS transitions. No complex JavaScript interactions."""
+            animation_note = "Simple CSS transitions (fade, scale) only. No JavaScript."
+        else:
+            mode_intro = """You are a WORLD-CLASS DESIGNER creating a STUNNING ANIMATED TITLE SLIDE.
+You have full creative freedom - Apple keynotes, TED talks, award-winning design."""
+            animation_note = "Full CSS animations allowed. Be creative!"
 
-You create title slides that make audiences gasp - the kind you see at Apple keynotes, TED talks, and award shows.
+        return f"""{mode_intro}
 
 ═══════════════════════════════════════════════════════════════
-🎨 DESIGN SYSTEM (USE THESE EXACT COLORS!)
+🎨 MANDATORY COLOR PALETTE - USE THESE EXACT COLORS!
 ═══════════════════════════════════════════════════════════════
+
+These colors are from the user's theme. You MUST use them exactly:
 
 :root {{
-  --accent: {accent};
-  --secondary: {secondary};
-  --text: {text_color};
-  --bg: {bg_color};
-  --font-hero: '{hero_font}', sans-serif;
-  --font-body: '{body_font}', sans-serif;
+  --accent: {accent};      /* Primary accent color */
+  --secondary: {secondary}; /* Secondary accent color */
+  --text: {text_color};    /* Main text color */
+  --bg: {bg_color};        /* Background color */
 }}
 
+⚠️ CRITICAL: These colors define the presentation's identity!
+- Use --bg as the background (or create gradient using --bg + --accent)
+- Use --text for main text
+- Use --accent and --secondary for highlights, accents, decorations
+
 STYLE: {style_desc}
+TYPOGRAPHY: Hero font '{hero_font}', Body font '{body_font}'
+ANIMATION: {animation_note}
 
 ═══════════════════════════════════════════════════════════════
-🚀 TITLE SLIDE DESIGN PATTERNS - PICK ONE AND EXECUTE PERFECTLY
+🎯 BE CREATIVE - NO FIXED PATTERN REQUIRED!
 ═══════════════════════════════════════════════════════════════
 
-🎯 PATTERN 1: ANIMATED TEXT REVEAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Letters animate in one by one with bounce/fade
-- Gradient text that shimmers with animation
-- Subtitle fades in after title completes
-- Minimal, elegant, Apple-style
+You have FULL CREATIVE FREEDOM for this title slide. The only requirements:
 
-🎯 PATTERN 2: PARTICLE BACKGROUND
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Floating particles/dots in accent colors
-- Particles drift slowly, creating atmosphere
-- Title sits prominently over the particles
-- Feels dynamic and premium
+1. Use the EXACT colors from the palette above (--accent, --secondary, --text, --bg)
+2. Make the presentation title PROMINENT and readable (80-160px font size)
+3. Include subtitle/presenter info if provided
+4. Fill the entire slide space (1920x1080)
+5. If a LOGO is provided, include it tastefully (corner or near title)
+6. If DESIGN REFERENCE images are shown, match that visual style
 
-🎯 PATTERN 3: GRADIENT MORPH
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Background gradient slowly animates/shifts
-- Multiple color stops that smoothly transition
-- Creates a "living" background effect
-- Title uses glassmorphism or solid for contrast
+DESIGN IDEAS (pick one or invent your own):
+- Bold minimal: Giant title, accent color underline
+- Gradient hero: Title with gradient text, animated background
+- Split composition: Title on one side, abstract shapes on other
+- Geometric: Title with animated lines/circles as accents
+- Particle effect: Floating dots in accent colors behind title
+- Wave/ripple: Organic flowing elements
 
-🎯 PATTERN 4: SPOTLIGHT/GLOW EFFECT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Subtle spotlight or radial glow behind title
-- Animated pulse or breathing effect
-- Creates dramatic focus on the title
-- Premium, cinematic feel
-
-🎯 PATTERN 5: GEOMETRIC ACCENTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Animated lines, circles, or shapes
-- Shapes orbit or draw themselves
-- Creates visual interest without overwhelming
-- Modern, tech-forward aesthetic
-
-🎯 PATTERN 6: WAVE/RIPPLE EFFECT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- SVG wave animation at bottom
-- Or ripple effect behind title
-- Creates organic, flowing feel
-- Works great with gradient backgrounds
+You can create ANY design that looks stunning - just use the theme colors!
 
 ═══════════════════════════════════════════════════════════════
-💎 REQUIRED VISUAL TECHNIQUES
+💎 TECHNICAL GUIDELINES
 ═══════════════════════════════════════════════════════════════
 
-MASSIVE TYPOGRAPHY:
-- Title: 80-160px font size (HUGE!)
-- Use hero font: '{hero_font}'
+TYPOGRAPHY:
+- Title: 80-160px, bold, use '{hero_font}'
+- Subtitle: 32-48px, lighter weight
 - Letter-spacing: -0.02em to -0.04em for tightness
-- Line-height: 0.95 to 1.1 for compact feel
 
-GRADIENT TEXT (when appropriate):
-background: linear-gradient(135deg, {accent}, {secondary});
+GRADIENT TEXT (optional):
+background: linear-gradient(135deg, var(--accent), var(--secondary));
 -webkit-background-clip: text;
 -webkit-text-fill-color: transparent;
 
-GLOW EFFECTS:
-text-shadow: 0 0 40px {accent}60, 0 0 80px {accent}30;
-OR
+GLOW EFFECTS (optional):
+text-shadow: 0 0 40px {accent}60;
 box-shadow: 0 0 60px {accent}40;
 
-SMOOTH ANIMATIONS:
-- Use CSS animations with cubic-bezier easing
-- Duration: 0.5s-2s for reveals
-- animation-fill-mode: forwards for end states
-
-STAGGER EFFECTS:
-animation-delay: calc(var(--i) * 0.1s);
-
-═══════════════════════════════════════════════════════════════
-🚫 ABSOLUTELY FORBIDDEN ON TITLE SLIDES
-═══════════════════════════════════════════════════════════════
-
-❌ Static, boring layouts with no animation
-❌ Bullet points or lists (this is a TITLE slide!)
-❌ Multiple text blocks competing for attention
-❌ Tiny fonts (minimum 48px for subtitle, 80px+ for title)
+🚫 AVOID:
+❌ Bullet points or lists
+❌ Tiny fonts (minimum 48px for subtitle)
+❌ Hardcoded colors (use CSS variables!)
+❌ Cluttered designs
 ❌ Generic corporate template look
-❌ Hardcoded colors (MUST use CSS variables)
-❌ Cluttered designs - keep it CLEAN and IMPACTFUL
-❌ Decorative icons or emojis
 
 ═══════════════════════════════════════════════════════════════
 📐 OUTPUT STRUCTURE
@@ -2350,7 +2464,7 @@ animation-delay: calc(var(--i) * 0.1s);
       align-items: center;
       justify-content: center;
     }}
-    /* Your stunning animations and styles */
+    /* Your creative design here */
   </style>
 </head>
 <body>
@@ -2368,16 +2482,20 @@ animation-delay: calc(var(--i) * 0.1s);
         colors: Dict[str, str],
         typography: Dict[str, str],
         width: int,
-        height: int
+        height: int,
+        reference_images: Optional[List[str]] = None,
+        logo_url: Optional[str] = None
     ) -> str:
         """Build user prompt specifically for title slides."""
 
         title = slide_context.get('title', 'Presentation Title')
         total_slides = slide_context.get('total_slides', 1)
 
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
+        # Handle both naming conventions: accent_1/accent, primary_background/background, etc.
+        accent = colors.get('accent_1') or colors.get('accent') or '#6366f1'
+        secondary = colors.get('accent_2') or colors.get('secondary') or colors.get('accent') or '#8b5cf6'
+        text_color = colors.get('primary_text') or colors.get('text') or '#ffffff'
+        bg_color = colors.get('primary_background') or colors.get('background') or '#0a0e27'
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
         # Get presentation context (user's original request) for design cues
@@ -2411,7 +2529,46 @@ The user originally requested: "{presentation_context}"
 DO NOT use this for content - the title slide content is provided separately.
 """
 
-        return f"""═══════════════════════════════════════════════════════════════
+        # Build logo section if logo URL provided
+        logo_section = ""
+        if logo_url:
+            logo_section = f"""
+═══════════════════════════════════════════════════════════════
+🏢 BRAND LOGO - USE THIS!
+═══════════════════════════════════════════════════════════════
+
+LOGO URL: {logo_url}
+
+⚠️ IMPORTANT: Include this logo prominently on the title slide!
+- Place it tastefully (corner, near title, or as part of composition)
+- Use <img src="{logo_url}" style="object-fit: contain; max-height: 80px;">
+- DO NOT stretch or distort - use object-fit: contain
+- This is the official brand logo - it MUST appear on the title slide
+"""
+
+        # Build design reference section if reference images provided
+        design_reference_section = ""
+        if reference_images and len(reference_images) > 0:
+            num_refs = len(reference_images)
+            design_reference_section = f"""
+═══════════════════════════════════════════════════════════════
+🎯 DESIGN REFERENCE IMAGES - REPLICATE THIS STYLE!
+═══════════════════════════════════════════════════════════════
+
+{num_refs} reference image(s) from the user's uploaded file are shown above.
+Your job is to REPLICATE this design style as closely as possible!
+
+ANALYZE the reference images for:
+- Color usage (background, text, accent placement)
+- Typography style (size, weight, spacing)
+- Layout composition (centered, left-aligned, split, etc.)
+- Visual effects (gradients, shadows, geometric elements)
+- Overall aesthetic (corporate, playful, minimalist, bold, etc.)
+
+Your title slide should look like it belongs in the SAME presentation!
+"""
+
+        return f"""{design_reference_section}{logo_section}═══════════════════════════════════════════════════════════════
 🎬 CREATE A STUNNING TITLE SLIDE
 ═══════════════════════════════════════════════════════════════
 
@@ -2434,220 +2591,29 @@ DIMENSIONS: {width}px × {height}px (FILL THE ENTIRE SPACE!)
 --font-body: '{body_font}'
 
 ═══════════════════════════════════════════════════════════════
-📋 EXAMPLE: ANIMATED TEXT REVEAL TITLE SLIDE
+🚀 CREATE YOUR TITLE SLIDE!
 ═══════════════════════════════════════════════════════════════
 
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@700;900&family={body_font.replace(' ', '+')}:wght@400;600&display=swap" rel="stylesheet">
-  <style>
-    :root {{
-      --accent: {accent};
-      --secondary: {secondary};
-      --text: {text_color};
-      --bg: {colors.get('primary_background', '#0a0e27')};
-    }}
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    html, body {{
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: var(--bg);
-      font-family: '{hero_font}', sans-serif;
-    }}
-    body {{
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px;
-      position: relative;
-    }}
-
-    /* Animated gradient background */
-    .bg-gradient {{
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, var(--bg) 0%, color-mix(in srgb, var(--accent) 15%, var(--bg)) 50%, var(--bg) 100%);
-      background-size: 200% 200%;
-      animation: gradientShift 8s ease infinite;
-    }}
-
-    @keyframes gradientShift {{
-      0%, 100% {{ background-position: 0% 50%; }}
-      50% {{ background-position: 100% 50%; }}
-    }}
-
-    /* Floating particles */
-    .particles {{
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }}
-
-    .particle {{
-      position: absolute;
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: var(--accent);
-      opacity: 0.3;
-      animation: float 15s infinite ease-in-out;
-    }}
-
-    @keyframes float {{
-      0%, 100% {{ transform: translateY(0) translateX(0); }}
-      25% {{ transform: translateY(-20px) translateX(10px); }}
-      50% {{ transform: translateY(-10px) translateX(-10px); }}
-      75% {{ transform: translateY(-30px) translateX(5px); }}
-    }}
-
-    /* Main title container */
-    .content {{
-      position: relative;
-      z-index: 10;
-      text-align: center;
-      max-width: 1600px;
-    }}
-
-    /* Animated title */
-    .title {{
-      font-size: 120px;
-      font-weight: 900;
-      letter-spacing: -0.03em;
-      line-height: 1.0;
-      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 50%, var(--secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: titleReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      opacity: 0;
-      transform: translateY(40px);
-    }}
-
-    @keyframes titleReveal {{
-      to {{
-        opacity: 1;
-        transform: translateY(0);
-      }}
-    }}
-
-    /* Glow effect behind title */
-    .title-glow {{
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px;
-      height: 300px;
-      background: radial-gradient(ellipse, var(--accent) 0%, transparent 70%);
-      opacity: 0.15;
-      filter: blur(60px);
-      animation: glowPulse 4s ease-in-out infinite;
-    }}
-
-    @keyframes glowPulse {{
-      0%, 100% {{ opacity: 0.15; transform: translate(-50%, -50%) scale(1); }}
-      50% {{ opacity: 0.25; transform: translate(-50%, -50%) scale(1.1); }}
-    }}
-
-    /* Subtitle */
-    .subtitle {{
-      font-family: '{body_font}', sans-serif;
-      font-size: 32px;
-      font-weight: 400;
-      color: var(--text);
-      opacity: 0;
-      margin-top: 32px;
-      animation: subtitleFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.6s forwards;
-    }}
-
-    @keyframes subtitleFade {{
-      to {{ opacity: 0.8; }}
-    }}
-
-    /* Presenter info */
-    .presenter {{
-      font-family: '{body_font}', sans-serif;
-      font-size: 20px;
-      color: var(--accent);
-      opacity: 0;
-      margin-top: 48px;
-      animation: subtitleFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.9s forwards;
-    }}
-
-    /* Decorative line */
-    .line {{
-      width: 120px;
-      height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--secondary));
-      margin: 32px auto 0;
-      border-radius: 2px;
-      transform: scaleX(0);
-      animation: lineGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1.2s forwards;
-    }}
-
-    @keyframes lineGrow {{
-      to {{ transform: scaleX(1); }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="bg-gradient"></div>
-
-  <div class="particles">
-    <div class="particle" style="left: 10%; top: 20%; animation-delay: 0s;"></div>
-    <div class="particle" style="left: 20%; top: 60%; animation-delay: 2s;"></div>
-    <div class="particle" style="left: 35%; top: 30%; animation-delay: 4s;"></div>
-    <div class="particle" style="left: 50%; top: 70%; animation-delay: 1s;"></div>
-    <div class="particle" style="left: 65%; top: 25%; animation-delay: 3s;"></div>
-    <div class="particle" style="left: 80%; top: 55%; animation-delay: 5s;"></div>
-    <div class="particle" style="left: 90%; top: 40%; animation-delay: 2.5s;"></div>
-  </div>
-
-  <div class="content">
-    <div class="title-glow"></div>
-    <h1 class="title">The Future of AI</h1>
-    <p class="subtitle">Transforming How We Work and Live</p>
-    <div class="line"></div>
-    <p class="presenter">John Smith • TechCorp • 2024</p>
-  </div>
-</body>
-</html>
-
-═══════════════════════════════════════════════════════════════
-🚀 NOW CREATE YOUR TITLE SLIDE!
-═══════════════════════════════════════════════════════════════
-
-Create a STUNNING animated title slide for:
 TITLE: "{title}"
 {f'SUBTITLE: "{subtitle}"' if subtitle else ''}
 {f'PRESENTER: "{presenter}"' if presenter else ''}
 
-REQUIREMENTS:
-✓ MASSIVE title (80-160px) with animation
-✓ Use gradient text or solid with glow effect
-✓ Include at least ONE animation (reveal, particles, gradient shift, etc.)
-✓ Use exact CSS variables (--accent, --secondary, --text)
-✓ Fill the full {width}x{height} space
-✓ Keep it clean - title is the HERO, everything else supports it
+DIMENSIONS: {width}x{height}
 
-Choose ONE of these approaches:
-1. Animated text reveal with staggered letters
-2. Particle background with floating dots
-3. Morphing gradient background
-4. Spotlight/glow focus effect
-5. Geometric animated accents
-6. Wave/ripple animation
+REQUIREMENTS:
+✓ Use the EXACT theme colors: --accent ({accent}), --secondary ({secondary}), --text ({text_color}), --bg ({bg_color})
+✓ MASSIVE title (80-160px) that's prominent and readable
+✓ Include the Google Fonts link for '{hero_font}' and '{body_font}'
+✓ Fill the entire slide space
+✓ Make it visually stunning and memorable
+
+BE CREATIVE! You can use:
+- Gradient text effects
+- Animated backgrounds
+- Geometric shapes or patterns
+- Glow/shadow effects
+- Typography animations
+- Any design that fits the theme
 
 OUTPUT: Complete HTML document starting with <!DOCTYPE html>"""
 

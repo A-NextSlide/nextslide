@@ -428,6 +428,11 @@ class ParallelSlideOrchestrator:
                         reference_images = style_prefs.referenceImages
                         logger.info(f"[REFERENCE IMAGES] Found {len(reference_images)} design reference images")
 
+                # Include extracted images from uploaded PPTX/PDF files as available images
+                if hasattr(deck_state.deck_outline, 'extractedImages') and deck_state.deck_outline.extractedImages:
+                    available_images = list(available_images) + list(deck_state.deck_outline.extractedImages)
+                    logger.info(f"[EXTRACTED IMAGES] Added {len(deck_state.deck_outline.extractedImages)} extracted images from PPTX/PDF")
+
                 # Extract videos from deck notes (populated by ThemeAgent for real brands)
                 available_videos = []
                 if deck_state.notes and isinstance(deck_state.notes, dict):

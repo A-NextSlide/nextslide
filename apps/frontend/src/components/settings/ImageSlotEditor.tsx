@@ -1,27 +1,47 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Image as ImageIcon, Search, X, Loader2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Image as ImageIcon,
+  X,
+  Loader2,
+  Wand2,
+  Link2,
+  Layers,
+  Maximize,
+  Upload,
+  Plus
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
+import { useToast } from '@/hooks/use-toast';
+import { MediaHub, MediaSource } from '@/components/media/MediaHub';
 
 interface ImageSlotEditorProps {
   propName: string;
   label: string;
   value: string | null | undefined;
   searchQuery?: string;
-  objectFit?: 'cover' | 'contain' | 'fill';
+  objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
   componentId: string;
   onUpdate: (propName: string, value: string) => void;
   onSave: (propName: string, label: string) => void;
+  onObjectFitChange?: (fit: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down') => void;
 }
 
+type TabType = 'source' | 'edit' | 'fuse';
+
 /**
- * ImageSlotEditor - A component for selecting images in CustomComponent props
+ * ImageSlotEditor - Redesigned image editor for CustomComponent props
  *
- * Opens the global ImagePicker via a custom event and receives the selected
- * image URL back via another event.
+ * Features:
+ * - Tabbed interface: Source | AI Edit | Fuse
+ * - Object-fit selector
+ * - Image fuse with drag-drop
+ * - Clean, minimal UI
  */
 const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   propName,
@@ -32,15 +52,33 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   componentId,
   onUpdate,
   onSave,
+  onObjectFitChange,
 }) => {
-  const [isSelecting, setIsSelecting] = useState(false);
   const [localUrl, setLocalUrl] = useState(value || '');
+  const [isLoading, setIsLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('edit');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isProcessingAi, setIsProcessingAi] = useState(false);
+  const [localFit, setLocalFit] = useState(objectFit);
+
+  // Fuse state
+  const [fuseImages, setFuseImages] = useState<Array<{ name: string; url: string }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fuseInputRef = useRef<HTMLInputElement>(null);
+
   const { activeSlide } = useActiveSlide();
+  const { toast } = useToast();
 
   // Update local URL when prop value changes externally
   useEffect(() => {
     setLocalUrl(value || '');
+    setImageError(false);
   }, [value]);
+
+  useEffect(() => {
+    setLocalFit(objectFit);
+  }, [objectFit]);
 
   // Check if value is a placeholder or empty
   const isPlaceholder = !value ||
@@ -51,17 +89,14 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   // Handle image selection from the global ImagePicker
   const handleImageSelected = useCallback((event: CustomEvent) => {
     const { componentId: targetComponentId, propName: targetPropName, imageUrl } = event.detail;
-
-    // Only handle events for this specific prop
     if (targetComponentId === componentId && targetPropName === propName) {
       setLocalUrl(imageUrl);
+      setImageError(false);
       onUpdate(propName, imageUrl);
       onSave(propName, label);
-      setIsSelecting(false);
     }
   }, [componentId, propName, onUpdate, onSave, label]);
 
-  // Listen for image selection events
   useEffect(() => {
     window.addEventListener('customcomponent:image-selected' as any, handleImageSelected);
     return () => {
@@ -69,27 +104,16 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     };
   }, [handleImageSelected]);
 
-  // Open the image picker
-  const openImagePicker = () => {
-    if (!activeSlide) return;
-
-    setIsSelecting(true);
-
-    // Dispatch event to open the global ImagePicker
-    // The SlideContainer listens for this event
-    const event = new CustomEvent('image:select-placeholder', {
-      detail: {
-        componentId,
-        slideId: activeSlide.id,
-        propName, // Custom: which prop we're selecting for
-        topic: searchQuery,
-        searchQuery: searchQuery,
-        // Flag to indicate this is for a CustomComponent prop
-        isCustomComponentProp: true,
-      }
-    });
-    window.dispatchEvent(event);
-  };
+  // Handle media selection from MediaHub
+  const handleMediaSelect = useCallback((url: string) => {
+    if (url && typeof url === 'string') {
+      setLocalUrl(url);
+      setImageError(false);
+      onUpdate(propName, url);
+      onSave(propName, label);
+      toast({ title: 'Image updated' });
+    }
+  }, [propName, onUpdate, onSave, label, toast]);
 
   // Clear the image
   const clearImage = () => {
@@ -101,6 +125,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   // Handle manual URL input
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalUrl(e.target.value);
+    setImageError(false);
   };
 
   const handleUrlBlur = () => {
@@ -110,87 +135,388 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     }
   };
 
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs">{label}</Label>
+  const handleUrlKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleUrlBlur();
+    }
+  };
 
-      {/* Image Preview */}
-      <div
-        className={cn(
-          "relative w-full h-24 rounded-lg border-2 border-dashed overflow-hidden",
-          "flex items-center justify-center cursor-pointer",
-          "hover:border-primary/50 hover:bg-accent/5 transition-colors",
-          isPlaceholder ? "border-muted-foreground/30 bg-muted/20" : "border-muted"
-        )}
-        onClick={openImagePicker}
-      >
-        {isSelecting ? (
-          <div className="flex flex-col items-center gap-2 text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span className="text-[10px]">Selecting...</span>
-          </div>
-        ) : isPlaceholder ? (
-          <div className="flex flex-col items-center gap-1.5 text-muted-foreground px-2">
-            <ImageIcon className="w-6 h-6" />
-            {searchQuery && searchQuery !== 'image' ? (
-              <>
-                <span className="text-[10px] font-medium text-center">
-                  Search: "{searchQuery}"
-                </span>
-                <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground/60">
-                  <span>Click to find images</span>
-                  {objectFit === 'contain' && (
-                    <span className="px-1 py-0.5 bg-muted rounded text-[8px]">contain</span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <span className="text-[10px]">Click to select image</span>
-            )}
-          </div>
-        ) : (
-          <>
-            <img
-              src={localUrl}
-              alt={label}
-              className="w-full h-full"
-              style={{ objectFit }}
-              onError={(e) => {
-                // Show placeholder on error
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-            {/* Clear button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                clearImage();
-              }}
-              className="absolute top-1 right-1 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </>
+  // Object fit change
+  const handleFitChange = (fit: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down') => {
+    setLocalFit(fit);
+    onObjectFitChange?.(fit);
+  };
+
+  // AI Edit functionality
+  const callEditApi = async (instructions: string) => {
+    if (!localUrl || isPlaceholder) {
+      toast({ title: 'No image', description: 'Select an image first.', variant: 'destructive' });
+      return;
+    }
+
+    setIsProcessingAi(true);
+    try {
+      const resp = await fetch('/api/images/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instructions,
+          imageUrl: localUrl,
+          transparentBackground: false,
+        })
+      });
+
+      if (!resp.ok) throw new Error('Edit failed');
+      const data = await resp.json();
+      const url = data.editedUrl || data.url || data.image_url || data.imageUrl || data.image || '';
+      if (!url) throw new Error('No URL in response');
+
+      setLocalUrl(url);
+      onUpdate(propName, url);
+      onSave(propName, label);
+      setAiPrompt('');
+      toast({ title: 'Image updated' });
+    } catch (e: any) {
+      toast({ title: 'Edit failed', description: e?.message || 'Unable to edit image.', variant: 'destructive' });
+    } finally {
+      setIsProcessingAi(false);
+    }
+  };
+
+  // Fuse functionality
+  const handleFuseFile = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      setFuseImages(prev => [...prev, { name: file.name, url: dataUrl }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    files.slice(0, 3).forEach(handleFuseFile);
+  };
+
+  const handleFuseInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.slice(0, 3 - fuseImages.length).forEach(handleFuseFile);
+    e.target.value = '';
+  };
+
+  const removeFuseImage = (index: number) => {
+    setFuseImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const callFuseApi = async () => {
+    const allImages: string[] = [];
+    if (localUrl && !isPlaceholder) allImages.push(localUrl);
+    fuseImages.forEach(img => allImages.push(img.url));
+
+    if (allImages.length < 2) {
+      toast({ title: 'Need more images', description: 'Add at least 2 images to fuse.', variant: 'destructive' });
+      return;
+    }
+
+    setIsProcessingAi(true);
+    try {
+      const resp = await fetch('/api/images/fuse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: aiPrompt || 'Blend these images into a cohesive composition',
+          images: allImages,
+        })
+      });
+
+      if (!resp.ok) throw new Error('Fusion failed');
+      const data = await resp.json();
+      const url = data.url || data.imageUrl || '';
+      if (!url) throw new Error('No URL in response');
+
+      setLocalUrl(url);
+      onUpdate(propName, url);
+      onSave(propName, label);
+      setFuseImages([]);
+      setAiPrompt('');
+      toast({ title: 'Images fused successfully' });
+    } catch (e: any) {
+      toast({ title: 'Fusion failed', description: e?.message, variant: 'destructive' });
+    } finally {
+      setIsProcessingAi(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'edit' as TabType, label: 'AI Edit', icon: Wand2 },
+    { id: 'fuse' as TabType, label: 'Fuse', icon: Layers },
+    { id: 'source' as TabType, label: 'URL', icon: Link2 },
+  ];
+
+  return (
+    <div className="rounded-lg border bg-card overflow-hidden">
+      {/* Header with label */}
+      <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2">
+        <span className="text-xs font-medium truncate flex-1">{label}</span>
+        {onObjectFitChange && (
+          <Select value={localFit} onValueChange={handleFitChange}>
+            <SelectTrigger className="h-5 w-auto gap-1 px-1.5 text-[9px] border-0 bg-transparent text-muted-foreground hover:text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cover" className="text-xs">Cover</SelectItem>
+              <SelectItem value="contain" className="text-xs">Contain</SelectItem>
+              <SelectItem value="fill" className="text-xs">Fill</SelectItem>
+              <SelectItem value="none" className="text-xs">None</SelectItem>
+              <SelectItem value="scale-down" className="text-xs">Scale Down</SelectItem>
+            </SelectContent>
+          </Select>
         )}
       </div>
 
-      {/* URL Input for manual entry */}
-      <div className="flex gap-1">
-        <Input
-          value={localUrl}
-          onChange={handleUrlChange}
-          onBlur={handleUrlBlur}
-          placeholder="Enter image URL or click above"
-          className="h-7 text-[10px] flex-1"
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 px-2"
-          onClick={openImagePicker}
-        >
-          <Search className="w-3 h-3" />
-        </Button>
+      {/* Image Preview */}
+      <MediaHub
+        trigger={
+          <div
+            className={cn(
+              "relative w-full h-28 cursor-pointer group",
+              "bg-[repeating-conic-gradient(#f0f0f0_0_90deg,#fafafa_90deg_180deg)_0_0/16px_16px]",
+              isProcessingAi && "pointer-events-none"
+            )}
+          >
+            {isProcessingAi ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10">
+                <Loader2 className="w-6 h-6 animate-spin text-white" />
+                <span className="text-white text-[10px] mt-2 font-medium">Processing...</span>
+              </div>
+            ) : null}
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : isPlaceholder || imageError ? (
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground hover:text-foreground transition-colors">
+                <ImageIcon className="w-6 h-6" />
+                <span className="text-[10px]">
+                  {searchQuery && searchQuery !== 'image' ? `"${searchQuery}"` : 'Click to select'}
+                </span>
+              </div>
+            ) : (
+              <>
+                <img
+                  key={localUrl}
+                  src={localUrl}
+                  alt={label}
+                  className={cn(
+                    "w-full h-full transition-transform group-hover:scale-[1.02]",
+                    isProcessingAi && "opacity-50"
+                  )}
+                  style={{ objectFit: localFit }}
+                  onError={() => setImageError(true)}
+                  onLoad={() => setIsLoading(false)}
+                />
+                {!isProcessingAi && (
+                  <>
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                      <span className="text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                        Change
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 hover:bg-black/80 text-white transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        }
+        onSelect={handleMediaSelect}
+      />
+
+      {/* Tabs */}
+      <div className="flex border-b">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-medium transition-colors",
+              activeTab === tab.id
+                ? "text-orange-600 border-b-2 border-orange-500 bg-orange-50/50"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            )}
+          >
+            <tab.icon className="w-3 h-3" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div className="p-3">
+        {/* Source Tab */}
+        {activeTab === 'source' && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                value={localUrl}
+                onChange={handleUrlChange}
+                onBlur={handleUrlBlur}
+                onKeyDown={handleUrlKeyDown}
+                placeholder="https://..."
+                className="h-8 text-xs flex-1"
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Paste URL or click image above to browse media
+            </p>
+          </div>
+        )}
+
+        {/* AI Edit Tab */}
+        {activeTab === 'edit' && (
+          <div className="space-y-3">
+            {isPlaceholder ? (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                Select an image first to use AI editing
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Change anything: remove background, add effects, adjust colors, enhance quality, blur background..."
+                    className="min-h-[60px] text-xs resize-none"
+                    disabled={isProcessingAi}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full h-7 text-xs bg-orange-500 hover:bg-orange-600"
+                    disabled={isProcessingAi || !aiPrompt.trim()}
+                    onClick={() => callEditApi(aiPrompt)}
+                  >
+                    {isProcessingAi ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3 h-3 mr-1.5" />
+                        Apply Edit
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Fuse Tab */}
+        {activeTab === 'fuse' && (
+          <div className="space-y-3">
+            {/* Current + Fuse Images Preview */}
+            <div className="flex gap-2 flex-wrap">
+              {/* Current image thumbnail */}
+              {!isPlaceholder && (
+                <div className="relative w-12 h-12 rounded border overflow-hidden bg-muted/30">
+                  <img src={localUrl} alt="Current" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <span className="text-[8px] text-white font-medium">Base</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Fuse images */}
+              {fuseImages.map((img, idx) => (
+                <div key={idx} className="relative w-12 h-12 rounded border overflow-hidden bg-muted/30 group">
+                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeFuseImage(idx)}
+                    className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+
+              {/* Add more button */}
+              {fuseImages.length < 3 && (
+                <button
+                  onClick={() => fuseInputRef.current?.click()}
+                  className={cn(
+                    "w-12 h-12 rounded border-2 border-dashed flex items-center justify-center transition-colors",
+                    "hover:border-orange-300 hover:bg-orange-50/30 text-muted-foreground hover:text-orange-500"
+                  )}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={cn(
+                "border-2 border-dashed rounded-lg p-3 text-center transition-colors",
+                isDragging ? "border-orange-400 bg-orange-50/50" : "border-muted-foreground/20"
+              )}
+            >
+              <Upload className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+              <p className="text-[10px] text-muted-foreground">
+                Drop images here or <button onClick={() => fuseInputRef.current?.click()} className="text-orange-500 hover:underline">browse</button>
+              </p>
+            </div>
+
+            {/* Fuse prompt */}
+            <Textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="How to combine? (optional)"
+              className="min-h-[50px] text-xs resize-none"
+              disabled={isProcessingAi}
+            />
+
+            {/* Fuse button */}
+            <Button
+              size="sm"
+              className="w-full h-7 text-xs bg-orange-500 hover:bg-orange-600"
+              disabled={isProcessingAi || (isPlaceholder && fuseImages.length < 2) || (!isPlaceholder && fuseImages.length < 1)}
+              onClick={callFuseApi}
+            >
+              {isProcessingAi ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                  Fusing...
+                </>
+              ) : (
+                <>
+                  <Layers className="w-3 h-3 mr-1.5" />
+                  Fuse {(isPlaceholder ? 0 : 1) + fuseImages.length} Images
+                </>
+              )}
+            </Button>
+
+            <input
+              ref={fuseInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFuseInputChange}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

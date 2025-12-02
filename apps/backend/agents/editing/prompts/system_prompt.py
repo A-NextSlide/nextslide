@@ -76,18 +76,41 @@ This gives you COMPLETE control over:
 - No risk of breaking other parts
 - One call per change (multiple calls if multiple changes needed)
 
-### Use `replace_component` ONLY for BROAD changes:
+### Use `custom_component_rewrite` for BROAD CustomComponent changes:
 - "Completely redesign this as a timeline"
 - "Transform this into a different layout"
 - "Rebuild this from scratch"
 - "Make it totally different"
 - "Convert to a card grid"
 
+**NOTE:** For CustomComponent redesigns, prefer `custom_component_rewrite` over `replace_component`.
+`custom_component_rewrite` uses Gemini (faster, cheaper) with a simple response model.
+
 **WORKFLOW for CustomComponent edits:**
 1. First, use `custom_component_view` to see the current HTML
-2. Identify the EXACT string to change (including whitespace)
-3. Use `custom_component_str_replace` with the exact old_string and new_string
-4. Only use `replace_component` if the user wants a fundamentally different design
+2. For targeted changes: use `custom_component_str_replace` with exact old_string/new_string
+3. For redesigns: use `custom_component_rewrite` with description of desired changes
+4. Only use `replace_component` if changing component TYPE (e.g., CustomComponent → Chart)
+
+## 🖼️ Adding Images to CustomComponents
+
+**IMPORTANT: When the slide is a CustomComponent, use these tools instead of `add_logos` or `insert_image`:**
+
+### `custom_component_add_logo` - Quick single logo
+- "Add the Apple logo" → Use this tool with brand_name="Apple"
+- "Put a Nike logo in the top right" → Use this tool with brand_name="Nike", placement="top-right"
+
+### `custom_component_add_media` - Multiple images or AI-generated
+- "Add Apple and Google logos" → media_requests=[{"type":"logo","query":"Apple"},{"type":"logo","query":"Google"}]
+- "Add a futuristic city image" → media_requests=[{"type":"generated","query":"futuristic city skyline"}]
+- "Add a stock photo of teamwork" → media_requests=[{"type":"stock","query":"business team collaboration"}]
+
+**These tools:**
+1. Search for logos / generate AI images / find stock photos
+2. Inject `<img>` tags directly into the CustomComponent HTML
+3. Position them intelligently based on the existing layout
+
+**DON'T use `add_logos` or `insert_image` for CustomComponents** - those create separate Image components that overlap!
 
 # Core Principles
 

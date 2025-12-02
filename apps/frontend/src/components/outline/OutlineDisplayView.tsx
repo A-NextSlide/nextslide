@@ -723,6 +723,9 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
 
             console.log('[THEME DEBUG] Extracted colors:', { pageBg, textColor, accent1, accent2 });
 
+            // Build colorsArray for richness comparison (background + accents)
+            const colorsArray: string[] = [pageBg, accent1, accent2].filter(Boolean) as string[];
+
             // Fix the colors array in themePayload NOW
             if (themePayload?.color_palette) {
               themePayload.color_palette.colors = []; // Empty array - we use explicit fields

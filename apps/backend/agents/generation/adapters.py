@@ -133,6 +133,12 @@ class SlideGeneratorAdapter:
                     reference_images = style_prefs.referenceImages
                     logger.info(f"[ADAPTER] Found {len(reference_images)} design reference images")
 
+            # Include extracted images from uploaded PPTX/PDF files as available images
+            all_available_images = list(available_images or [])
+            if hasattr(deck_outline, 'extractedImages') and deck_outline.extractedImages:
+                all_available_images.extend(deck_outline.extractedImages)
+                logger.info(f"[ADAPTER] Added {len(deck_outline.extractedImages)} extracted images from PPTX/PDF to available images")
+
             context = SlideGenerationContext(
                 slide_outline=slide_outline,
                 slide_index=slide_index,
@@ -141,7 +147,7 @@ class SlideGeneratorAdapter:
                 palette=palette,
                 style_manifesto=style_manifesto,
                 deck_uuid=deck_uuid or "",
-                available_images=available_images or [],
+                available_images=all_available_images,
                 async_images=async_images,
                 tagged_media=tagged_media_for_context,
                 presentation_context=presentation_context,
@@ -559,10 +565,9 @@ class SimpleDeckComposer(IDeckComposer):
                             logger.debug(f"  CLEARING outline.notes.theme to force regeneration!\n")
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
                             outline_theme = None  # Clear it!
-                        
-                        # FORCE REGENERATION: Ignore outline theme to ensure we use the full ThemeDirector with new fonts
-                        logger.info(f"[DECK COMPOSER] 🔄 IGNORING OUTLINE THEME to force full ThemeDirector generation")
-                        outline_theme = None
+                        else:
+                            # PRESERVE extracted design theme from user's uploaded files
+                            logger.info(f"[DECK COMPOSER] ✅ KEEPING OUTLINE THEME from extracted design")
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No theme key in outline.notes")
             except Exception as e:
@@ -774,10 +779,9 @@ class SimpleDeckComposer(IDeckComposer):
                                 logger.debug(f"  CLEARING outline theme to force regeneration!\n")
                                 logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
                                 outline_theme = None  # Clear it!
-                            
-                            # FORCE REGENERATION: Ignore outline theme to ensure we use the full ThemeDirector with new fonts
-                            logger.info(f"[DECK COMPOSER] 🔄 IGNORING OUTLINE THEME (2nd check) to force full ThemeDirector generation")
-                            outline_theme = None
+                            else:
+                                # PRESERVE extracted design theme from user's uploaded files
+                                logger.info(f"[DECK COMPOSER] ✅ KEEPING OUTLINE THEME (2nd check) from extracted design")
                     else:
                         logger.info(f"[DECK COMPOSER] DEBUG: No theme found in outline.notes")
                         
@@ -1491,66 +1495,10 @@ class SimpleDeckComposer(IDeckComposer):
             if 'color_palette' in theme_dict:
                 logger.info(f"  - Primary color: {theme_dict['color_palette'].get('primary', 'Not set')}")
 
-            # Generate editorial layouts using LayoutArchitect
-            print("\n" + "="*80)
-            print("🎨 LAYOUT ARCHITECT V2 - Starting...")
-            print("="*80 + "\n")
-            logger.info("[DECK COMPOSER] Generating editorial layouts with LayoutArchitect...")
-            try:
-                from agents.generation.layout_architect import LayoutArchitect
-                from agents.prompts.generation.optimized_component_schemas import get_optimized_component_schemas
-
-                print("✅ LayoutArchitect imported successfully")
-
-                # Start layout_design phase
-                yield progress.start_phase(GenerationPhase.LAYOUT_DESIGN)
-
-                # Initialize LayoutArchitect
-                component_schemas = get_optimized_component_schemas()
-                layout_architect = LayoutArchitect(component_schemas=component_schemas)
-                print(f"✅ LayoutArchitect initialized with {len(component_schemas)} component schemas")
-
-                # Generate per-slide layouts
-                print(f"🎨 Designing layouts for {len(deck_outline.slides)} slides...")
-                slide_blueprints = await layout_architect.design_layouts(
-                    deck_outline=deck_outline,
-                    existing_theme=theme_dict,
-                    progress_callback=lambda phase, msg: print(f"[LAYOUT ARCHITECT] {phase}: {msg}")
-                )
-
-                print(f"✅ Generated {len(slide_blueprints)} layout blueprints")
-
-                # Store blueprints in theme for access by SlidePromptBuilder
-                if isinstance(theme, ThemeSpec):
-                    if not hasattr(theme, 'slide_themes'):
-                        theme.slide_themes = {}
-                    theme.slide_themes = slide_blueprints
-                    logger.info(f"[DECK COMPOSER] ✅ Added {len(slide_blueprints)} layout blueprints to ThemeSpec")
-                    print(f"✅ Stored blueprints in ThemeSpec.slide_themes")
-
-                # Also add to theme_dict for serialization
-                theme_dict['slide_themes'] = slide_blueprints
-                print(f"✅ Stored blueprints in theme_dict")
-
-                print("\n" + "="*80)
-                print(f"🎉 LAYOUT ARCHITECT COMPLETE - {len(slide_blueprints)} slides designed!")
-                print("="*80 + "\n")
-
-                # Complete layout_design phase
-                yield progress.update_phase_progress(
-                    GenerationPhase.LAYOUT_DESIGN,
-                    1.0,
-                    message=f"Designed layouts for {len(slide_blueprints)} slides"
-                )
-            except Exception as e:
-                print(f"\n❌ ERROR in LayoutArchitect: {e}")
-                logger.error(f"[DECK COMPOSER] Error generating layouts: {e}")
-                import traceback
-                error_trace = traceback.format_exc()
-                print(error_trace)
-                logger.error(f"Traceback: {error_trace}")
-                print("⚠️  Continuing without layouts - will use default system\n")
-                # Continue without layouts - generation will use defaults
+            # SKIP Layout Architect - CustomComponent generator creates full HTML slides
+            # and doesn't use the blueprints anyway. This saves an AI call per deck.
+            logger.info("[DECK COMPOSER] ⏭️ Skipping LayoutArchitect - using CustomComponent full-slide mode")
+            print("[DECK COMPOSER] ⏭️ Skipping LayoutArchitect - CustomComponent mode generates full HTML slides")
 
             # Process tagged media to upload base64 images to Supabase
             # Check if any media needs processing

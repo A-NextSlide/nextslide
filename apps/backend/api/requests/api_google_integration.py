@@ -1748,41 +1748,31 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
                 tmp.write(response.content)
                 temp_file_path = tmp.name
                 
-        # Step 2: Import the PPTX file
-        logger.info("Importing PPTX file")
-        importer = PPTXImporter()
+        # Step 2: Import the PPTX file using vision-based importer
+        logger.info("[IMPORT_SLIDES] Starting vision-based PPTX import...")
+        from services.vision_pptx_importer import VisionPPTXImporter
+        importer = VisionPPTXImporter()
         deck = await importer.import_file(temp_file_path)
-        
+
         # Update deck name from Google Slides title
         deck["name"] = title
-        
+
+        # Upload any embedded images to storage
+        logger.info("[IMPORT_SLIDES] Uploading images to storage...")
+        deck = await _upload_deck_images_to_storage(deck)
+
         # Add import metadata
         result_data = {
             "deck": deck,
             "importMetadata": {
-                "source": "google_slides_via_pptx",
+                "source": "google_slides_via_vision",
                 "presentation_id": presentation_id,
                 **deck.pop("metadata", {})
             }
         }
-        
-        # For large presentations, update in chunks to avoid timeout
-        try:
-            jobs_store.update(job_id, JobStatus.SUCCEEDED, result_data)
-        except Exception as e:
-            # If update fails due to size/timeout, store minimal data
-            logger.warning(f"Failed to store full deck data: {e}")
-            minimal_data = {
-                "deck": {
-                    "id": deck.get("id"),
-                    "name": deck.get("name"),
-                    "slides": len(deck.get("slides", [])),
-                    "metadata": deck.get("metadata", {})
-                },
-                "importMetadata": result_data["importMetadata"],
-                "error": "Full deck data too large for storage"
-            }
-            jobs_store.update(job_id, JobStatus.SUCCEEDED, minimal_data)
+
+        jobs_store.update(job_id, JobStatus.SUCCEEDED, result_data)
+        logger.info(f"[IMPORT_SLIDES] Completed: {len(deck.get('slides', []))} slides")
         
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
@@ -1806,34 +1796,34 @@ async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str
 async def _run_import_pptx_job(user_id: str, job_id: str, uploaded_file_path: str) -> None:
     jobs_store.update(job_id, JobStatus.RUNNING)
     try:
-        # Use the robust PPTX importer with schema validation
-        from services.robust_pptx_importer import RobustPPTXImporter
-        importer = RobustPPTXImporter()
+        # Use vision-based PPTX importer for perfect slide recreation
+        from services.vision_pptx_importer import VisionPPTXImporter
+
+        logger.info(f"[IMPORT_PPTX] Starting vision-based import...")
+        importer = VisionPPTXImporter()
         deck = await importer.import_file(uploaded_file_path)
-        
-        # Get import report for metadata
-        report = importer.get_import_report()
-        
+
         # Update deck name from filename
         deck["name"] = os.path.splitext(os.path.basename(uploaded_file_path))[0]
-        
-        # Add import metadata to result
-        import_metadata = deck.pop("metadata", {})
-        import_metadata.update({
-            "robust_import_report": report,
-            "schema_validation": report['stats'].get('schema_validation', {}),
-            "success_rate": report['success_rate'],
-            "recovery_methods": report.get('recovery_methods_used', [])
-        })
-        
+
+        # Upload any embedded images to storage
+        logger.info(f"[IMPORT_PPTX] Uploading images to storage...")
+        deck = await _upload_deck_images_to_storage(deck)
+
+        # Extract metadata
+        import_metadata = deck.get("metadata", {})
+        import_stats = import_metadata.get("import_stats", {})
+
         result_data = {
             "deck": deck,
             "importMetadata": import_metadata
         }
-        
+
         jobs_store.update(job_id, JobStatus.SUCCEEDED, result_data)
+        logger.info(f"[IMPORT_PPTX] Completed: {import_stats.get('slides', 0)} slides via {import_stats.get('method', 'unknown')}")
+
     except Exception as e:
-        logger.exception("IMPORT_PPTX job failed")
+        logger.exception("[IMPORT_PPTX] Job failed")
         jobs_store.update(job_id, JobStatus.FAILED, error=str(e))
     finally:
         # Clean up temp file
@@ -1841,6 +1831,102 @@ async def _run_import_pptx_job(user_id: str, job_id: str, uploaded_file_path: st
             os.unlink(uploaded_file_path)
         except:
             pass
+
+
+async def _upload_deck_images_to_storage(deck: Dict[str, Any]) -> Dict[str, Any]:
+    """Upload all base64 embedded images in a deck to Supabase storage.
+
+    If upload fails, strips base64 data to prevent timeout (images won't display but deck will save).
+    """
+    import hashlib
+    import asyncio
+
+    # First, collect all images that need uploading
+    upload_tasks = []
+    image_refs = []  # Track (slide_idx, comp_idx, prop_key) for each task
+
+    for slide_idx, slide in enumerate(deck.get("slides", [])):
+        for comp_idx, component in enumerate(slide.get("components", [])):
+            comp_type = component.get("type", "")
+            props = component.get("props", {})
+
+            if comp_type == "Image":
+                src = props.get("src", "")
+                if src and src.startswith("data:"):
+                    image_refs.append((slide_idx, comp_idx, "src", src))
+
+            elif comp_type == "Background":
+                bg_url = props.get("backgroundImageUrl", "")
+                if bg_url and bg_url.startswith("data:"):
+                    image_refs.append((slide_idx, comp_idx, "backgroundImageUrl", bg_url))
+
+            elif comp_type == "CustomComponent":
+                # CustomComponent may have originalImageUrl for reference
+                orig_url = props.get("originalImageUrl", "")
+                if orig_url and orig_url.startswith("data:"):
+                    image_refs.append((slide_idx, comp_idx, "originalImageUrl", orig_url))
+
+    logger.info(f"[ImageUpload] Found {len(image_refs)} embedded images to process")
+
+    if not image_refs:
+        return deck
+
+    # Try to upload images to storage
+    try:
+        from services.image_storage_service import ImageStorageService
+        storage = ImageStorageService()
+
+        async def upload_single_image(data_url: str, idx: int) -> Optional[str]:
+            """Upload a single image and return the URL or None."""
+            try:
+                header, b64_data = data_url.split(",", 1)
+                content_type = header.split(":")[1].split(";")[0] if ":" in header else "image/png"
+                file_hash = hashlib.md5(b64_data[:200].encode()).hexdigest()[:16]
+                ext = content_type.split("/")[-1].split(";")[0] if "/" in content_type else "png"
+                filename = f"pptx_{file_hash}.{ext}"
+
+                result = await storage.upload_image_from_base64(b64_data, filename, content_type)
+                if result.get("url") and not result.get("error"):
+                    return result["url"]
+            except Exception as e:
+                logger.debug(f"[ImageUpload] Image {idx} upload failed: {e}")
+            return None
+
+        async with storage:
+            # Upload in parallel batches of 5 to avoid overwhelming the server
+            batch_size = 5
+            uploaded_urls = []
+
+            for i in range(0, len(image_refs), batch_size):
+                batch = image_refs[i:i + batch_size]
+                tasks = [upload_single_image(ref[3], i + j) for j, ref in enumerate(batch)]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                uploaded_urls.extend(results)
+
+            # Apply uploaded URLs back to deck
+            images_uploaded = 0
+            for idx, (slide_idx, comp_idx, prop_key, _) in enumerate(image_refs):
+                url = uploaded_urls[idx] if idx < len(uploaded_urls) else None
+                if isinstance(url, str) and url.startswith("http"):
+                    deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = url
+                    images_uploaded += 1
+                else:
+                    # Upload failed - remove base64 to prevent timeout, use placeholder
+                    deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = ""
+                    logger.debug(f"[ImageUpload] Image {idx} cleared (upload failed)")
+
+            logger.info(f"[ImageUpload] Uploaded {images_uploaded}/{len(image_refs)} images to storage")
+
+    except Exception as e:
+        logger.warning(f"[ImageUpload] Storage upload failed: {e}, clearing embedded images")
+        # Clear all embedded images to prevent timeout
+        for slide_idx, comp_idx, prop_key, _ in image_refs:
+            try:
+                deck["slides"][slide_idx]["components"][comp_idx]["props"][prop_key] = ""
+            except (IndexError, KeyError):
+                pass
+
+    return deck
 
 
 async def _run_export_job(user_id: str, job_id: str, job_type: str, deck: Dict[str, Any], options: Optional[Dict[str, Any]]) -> None:
@@ -1910,7 +1996,7 @@ async def google_auth_callback(code: str = Query(...), state: str = Query(...)):
     )
     oauth.token_storage.upsert(record)
 
-    app_redirect = os.getenv("FRONTEND_URL", "http://localhost:3000") + "/profile?tab=integrations&google=connected"
+    app_redirect = os.getenv("FRONTEND_URL", "http://localhost:8080") + "/profile?tab=integrations&google=connected"
     return RedirectResponse(url=app_redirect)
 
 

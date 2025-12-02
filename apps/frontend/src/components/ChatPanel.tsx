@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, Target, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
+import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, ChevronRight, Target, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -330,6 +330,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // If we already have slides (e.g. from a narrative flow that generated them), use them directly
       if (initialConversationalData.slides && initialConversationalData.slides.length > 0) {
+        console.log('[ChatPanel] Using pre-generated slides from conversational agent:', initialConversationalData.slides.length, 'slides');
+
         onOutlineAgentToolCall({
           topic: initialConversationalData.topic,
           slide_count: initialConversationalData.slideCount,
@@ -349,6 +351,64 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               feedback: null
             }
           ]);
+        }
+
+        // CRITICAL: Trigger theme generation for pre-generated slides!
+        // Without this, theme is never generated when using conversational onboarding
+        const themeChanges = initialConversationalData.themeChanges;
+        (async () => {
+          try {
+            const { outlineApi } = await import('@/services/outlineApi');
+
+            // If conversation already found colors (from search), use them in stylePreferences
+            const searchedColors = themeChanges?.colors || themeChanges?.palette || themeChanges?.color_palette;
+            const searchedFont = themeChanges?.font || themeChanges?.typography?.heading?.fontFamily;
+
+            // Build minimal outline for theme generation
+            const outlineForTheme = {
+              id: deckId || `temp-${Date.now()}`,
+              title: initialConversationalData.topic || 'Presentation',
+              slides: initialConversationalData.slides.map((s: any, i: number) => ({
+                id: `slide-${i}`,
+                title: s.title,
+                content: s.content || s.key_points?.join('\n') || ''
+              })),
+              stylePreferences: {
+                initialIdea: initialConversationalData.topic,
+                vibeContext: initialConversationalData.stylePreferences,
+                // Pass any colors found during conversation search - these take priority!
+                colors: searchedColors ? {
+                  type: 'custom' as const,
+                  background: searchedColors.background || searchedColors.primary_background || '#ffffff',
+                  text: searchedColors.text || searchedColors.primary_text || '#1f2937',
+                  accent: searchedColors.accent || searchedColors.accent_1 || searchedColors.primary || '#3b82f6',
+                  secondary: searchedColors.secondary || searchedColors.accent_2 || '#6b7280',
+                } : undefined,
+                font: searchedFont
+              }
+            };
+            console.log('[ChatPanel] 🎨 Triggering theme generation for pre-generated slides');
+            console.log('[ChatPanel] 🎨 Theme changes from conversation:', themeChanges);
+            console.log('[ChatPanel] 🎨 Searched colors:', searchedColors);
+
+            // Dispatch theme_loading event so UI shows loading state
+            window.dispatchEvent(new CustomEvent('theme_preview_update', {
+              detail: { type: 'theme_loading', message: 'Generating theme...' }
+            }));
+
+            await outlineApi.generateThemeFromOutline(outlineForTheme as any, deckId, (evt) => {
+              console.log('[ChatPanel] 🎨 Theme event:', evt);
+              // Relay theme events to the UI
+              window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: evt }));
+            });
+          } catch (err) {
+            console.error('[ChatPanel] Theme generation failed:', err);
+          }
+        })();
+
+        // Clear loading state since we're using pre-generated slides
+        if (onOutlineChatGeneratingChange) {
+          onOutlineChatGeneratingChange(false);
         }
       } else {
         // No slides yet - we need to generate using the REAL streaming endpoint with Perplexity
@@ -423,7 +483,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               },
               (event) => {
                 console.log('[ChatPanel] 📥 Stream event:', event.type, event);
-                
+
+                // Handle error events from backend
+                if (event.type === 'error') {
+                  console.error('[ChatPanel] ❌ Stream error:', event.message);
+                  setMessages(prev => [
+                    ...prev,
+                    {
+                      id: `error-${Date.now()}`,
+                      type: 'ai',
+                      message: event.message || 'Sorry, I encountered an error generating your presentation. Please try again.',
+                      timestamp: new Date(),
+                      feedback: null
+                    }
+                  ]);
+
+                  // Clear loading state on error
+                  if (onOutlineChatGeneratingChange) {
+                    onOutlineChatGeneratingChange(false);
+                  }
+                  return;
+                }
+
                 // Forward events to parent for display
                 if (event.type === 'outline_structure') {
                   console.log('[ChatPanel] 📋 OUTLINE_STRUCTURE - Slide titles:', event.slideTitles);
@@ -4205,7 +4286,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     style={{
                       transition: 'opacity 180ms ease, max-height 180ms ease, margin-bottom 180ms ease',
                       opacity: input.trim().length > 0 ? 0 : 1,
-                      maxHeight: input.trim().length > 0 ? 0 : 40,
+                      maxHeight: input.trim().length > 0 ? 0 : 80,
                       marginBottom: input.trim().length > 0 ? 0 : 4,
                       pointerEvents: input.trim().length > 0 ? 'none' : 'auto'
                     }}
@@ -4217,8 +4298,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           key={p}
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setInput(p); inputRef.current?.focus(); }}
-                          className="h-6 px-1.5 rounded-full text-[11px] leading-none border border-transparent hover:border-zinc-300/70 dark:hover:border-neutral-700 hover:bg-transparent text-zinc-700 dark:text-zinc-200 transition-colors"
+                          className="h-6 px-1.5 rounded-full text-[11px] leading-none border border-transparent hover:border-zinc-300/70 dark:hover:border-neutral-700 hover:bg-transparent text-zinc-700 dark:text-zinc-200 transition-colors max-w-[200px] truncate"
                           aria-label={`Use suggestion: ${p}`}
+                          title={p}
                         >
                           {p}
                         </button>
@@ -4336,6 +4418,43 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               </div>
             </div>
 
+            {/* Component Context Viewer - shows when elements are selected */}
+            {selectedElements.length > 0 && (
+              <div className="mt-2 border-t pt-2">
+                <details className="group">
+                  <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                    <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
+                    <span>Selected component context ({selectedElements.length})</span>
+                  </summary>
+                  <div className="mt-1.5 max-h-24 overflow-auto rounded bg-muted/30 p-2">
+                    <pre className="text-[9px] text-muted-foreground font-mono whitespace-pre-wrap break-all">
+                      {JSON.stringify(
+                        selectedElements.map(sel => {
+                          // Try to find the full component data
+                          const slidesArr = Array.isArray(deckData?.slides) ? deckData.slides : [];
+                          for (const slide of slidesArr) {
+                            const comps = Array.isArray(slide?.components) ? slide.components : [];
+                            const comp = comps.find((c: any) => c.id === sel.elementId);
+                            if (comp) {
+                              return {
+                                type: comp.type,
+                                id: comp.id,
+                                props: comp.type === 'CustomComponent'
+                                  ? { ...comp.props, render: comp.props?.render ? `[HTML: ${comp.props.render.length} chars]` : undefined }
+                                  : comp.props
+                              };
+                            }
+                          }
+                          return { id: sel.elementId, label: sel.label, type: sel.elementType };
+                        }),
+                        null,
+                        2
+                      )}
+                    </pre>
+                  </div>
+                </details>
+              </div>
+            )}
 
           </div>
         </>

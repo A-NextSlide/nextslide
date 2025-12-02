@@ -151,6 +151,20 @@ class FileProcessor:
         """Process an image file"""
         try:
             content = file_info.get('content')
+
+            # If content is missing but URL is available, fetch it
+            if not content and file_info.get('url'):
+                logger.info(f"[FileProcessor] Fetching image content from URL for: {file_info.get('name', 'unknown')}")
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.get(file_info['url'])
+                        if response.status_code == 200:
+                            content = base64.b64encode(response.content).decode('utf-8')
+                            logger.info(f"[FileProcessor] Successfully fetched image content")
+                except Exception as fetch_err:
+                    logger.warning(f"[FileProcessor] Error fetching image from URL: {fetch_err}")
+
             if not content:
                 return None
             
@@ -304,8 +318,22 @@ class FileProcessor:
             file_type = file_info.get('type', '')
             filename = file_info.get('name', '')
             content = file_info.get('content')
-            
+
+            # If content is missing but URL is available, fetch it
+            if not content and file_info.get('url'):
+                logger.info(f"[FileProcessor] Fetching data file content from URL for: {filename}")
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.get(file_info['url'])
+                        if response.status_code == 200:
+                            content = base64.b64encode(response.content).decode('utf-8')
+                            logger.info(f"[FileProcessor] Successfully fetched data file content")
+                except Exception as fetch_err:
+                    logger.warning(f"[FileProcessor] Error fetching file from URL: {fetch_err}")
+
             if not content:
+                logger.warning(f"[FileProcessor] ⚠️ Data file {filename} has no content - skipping")
                 return None
             
             # For CSV files, parse the data
@@ -437,10 +465,24 @@ class FileProcessor:
             file_type = file_info.get('type', '')
             filename = file_info.get('name', '')
             content = file_info.get('content')
-            
+
+            # If content is missing but URL is available, fetch it
+            if not content and file_info.get('url'):
+                logger.info(f"[FileProcessor] Fetching document content from URL for: {filename}")
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.get(file_info['url'])
+                        if response.status_code == 200:
+                            content = base64.b64encode(response.content).decode('utf-8')
+                            logger.info(f"[FileProcessor] Successfully fetched document content")
+                except Exception as fetch_err:
+                    logger.warning(f"[FileProcessor] Error fetching document from URL: {fetch_err}")
+
             if not content:
+                logger.warning(f"[FileProcessor] ⚠️ Document {filename} has no content - skipping")
                 return None
-            
+
             # For text files, extract content
             if file_type == 'text/plain' or filename.endswith('.txt'):
                 if isinstance(content, bytes):

@@ -254,6 +254,11 @@ async def stream_theme_from_outline(
         except Exception as e:
             logger.warning(f"[THEME API] Error during stylePreferences reconstruction: {e}")
 
+        # NOTE: Brand detection is handled by ThemeDirector using AI
+        # We previously had a regex-based "fast path" here that caused bugs
+        # (e.g., matching "The" from title and returning NYTimes branding)
+        # The AI in ThemeDirector is much smarter at understanding context
+
         # Prepare director + event forwarding
         event_bus = get_event_bus()
         director = ThemeDirector()

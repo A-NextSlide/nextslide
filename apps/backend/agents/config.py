@@ -1,230 +1,156 @@
-"""
-Configuration settings for the agents package.
-"""
+"""Centralized configuration - ALL model names and settings in one place."""
 
 import os
-from typing import Optional
 from dotenv import load_dotenv
-
-# Load .env file FIRST before checking any environment variables
 load_dotenv()
 
-# Model configurations
-################################
-# Model Configuration
-################################
+# ═══════════════════════════════════════════════════════════════════════════════
+# GEMINI MODELS
+# ═══════════════════════════════════════════════════════════════════════════════
+GEMINI_FLASH = "gemini-2.5-flash"           # Fast, cheap, good quality
+GEMINI_FLASH_LITE = "gemini-2.5-flash-lite" # Fastest, cheapest
+GEMINI_PRO = "gemini-2.5-pro"               # Higher quality
+GEMINI_3_PRO = "gemini-3-pro"               # Best quality (expensive)
+GEMINI_IMAGE = "gemini-2.0-flash-exp"  # Image generation (native image output)
 
-#==============================================================================
-# DECK GENERATION MODELS
-#==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLAUDE MODELS (aliases for get_client())
+# ═══════════════════════════════════════════════════════════════════════════════
+CLAUDE_OPUS = "claude-opus-4-5"
+CLAUDE_SONNET = "claude-sonnet-4"
+CLAUDE_HAIKU = "claude-haiku-4-5"
 
-# Prefer stronger model for theme quality; fallback remains available via clients map
-THEME_STYLE_MODEL = "claude-haiku-4-5"
-COMPOSER_MODEL = "claude-haiku-4-5"
-VISUAL_LAYOUT_ANALYZER_MODEL = "claude-haiku-4-5"
-OUTLINE_PLANNING_MODEL = "perplexity-sonar"
-OUTLINE_CONTENT_MODEL = "perplexity-sonar"
-OUTLINE_RESEARCH_MODEL = "claude-haiku-4-5"
-OUTLINE_OPENAI_SEARCH_MODEL = "gpt-4o-mini"
+# Full model IDs for raw Anthropic API calls
+CLAUDE_OPUS_ID = "claude-opus-4-5-20251101"
+CLAUDE_SONNET_ID = "claude-sonnet-4-20250514"
+CLAUDE_HAIKU_ID = "claude-haiku-4-5-20251001"
 
-#==============================================================================
-# PERPLEXITY CONFIGURATION
-#==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
+# OPENAI MODELS
+# ═══════════════════════════════════════════════════════════════════════════════
+GPT_4O_MINI = "gpt-4o-mini"                 # Fast, cheap
+GPT_4_1 = "gpt-4.1"                         # Better quality
+OPENAI_IMAGE = "gpt-image-1"                # Image generation
+OPENAI_EMBEDDINGS = "text-embedding-3-small"
 
-# Toggle to enable Perplexity for single-pass outline generation (no env dependency)
-# NOTE: Only used for DETAILED mode - presentation mode uses Haiku for narrative structure
-USE_PERPLEXITY_FOR_OUTLINE = True
-PERPLEXITY_OUTLINE_MODEL = 'perplexity-sonar-pro'  # Pro model for detailed mode research
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERPLEXITY MODELS
+# ═══════════════════════════════════════════════════════════════════════════════
+PERPLEXITY_SONAR = "perplexity-sonar"       # Standard search
+PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"  # Better search
 
-# Haiku 4.5 for presentation mode (excellent narrative structure, digestible content)
-# Perplexity is great for research but poor at creating presentation-friendly narratives
-PRESENTATION_OUTLINE_MODEL = 'claude-haiku-4-5'  # Fast, visual-focused, digestible outlines for presentation mode
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL ASSIGNMENTS - What model does what
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Enable hybrid mode for detailed presentations: Perplexity research + Haiku structuring
-USE_HYBRID_RESEARCH_MODE = True  # When True, uses Perplexity for data, Haiku for structure
+# Deck Generation
+THEME_MODEL = CLAUDE_HAIKU
+COMPOSER_MODEL = CLAUDE_HAIKU
+VISUAL_ANALYZER_MODEL = CLAUDE_HAIKU
 
-# Toggle to prefer Perplexity for research/search (no env dependency)
-USE_PERPLEXITY_FOR_RESEARCH = True
-PERPLEXITY_RESEARCH_MODEL = 'perplexity-sonar'
+# Outline Generation
+OUTLINE_MODEL = PERPLEXITY_SONAR_PRO        # Research/detailed mode
+OUTLINE_PRESENTATION_MODEL = CLAUDE_HAIKU   # Presentation mode (narrative)
+OUTLINE_RESEARCH_MODEL = CLAUDE_HAIKU
 
-# Image search provider switch: "serpapi" or "perplexity"
-IMAGE_SEARCH_PROVIDER = 'serpapi'
+# Deck Editing
+ORCHESTRATOR_MODEL = CLAUDE_OPUS            # Complex editing decisions
+DECK_EDITOR_MODEL = CLAUDE_OPUS             # Component editing
+CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction
+SLIDE_STYLE_MODEL = CLAUDE_OPUS             # Styling
 
-# Perplexity model to use when IMAGE_SEARCH_PROVIDER == "perplexity"
-# Accepts aliases defined in agents.ai.clients.MODELS (e.g., "perplexity-sonar", "perplexity-sonar-pro")
-PERPLEXITY_IMAGE_MODEL = 'perplexity-sonar'
-
-#==============================================================================
-# DECK EDITING MODELS
-#==============================================================================
-
-# All editing models use Claude Opus 4.5 (most capable)
-# Gemini's function schema doesn't support complex Union/Optional types
-_has_google_key_for_editing = bool(os.environ.get('GOOGLE_API_KEY'))
-ORCHESTRATOR_MODEL = "claude-opus-4-5"  # Claude Opus 4.5 - best for complex editing decisions
-DECK_EDITOR_MODEL = "claude-opus-4-5"   # Claude Opus 4.5 - for component editing
-CONTEXT_BUILDER_MODEL = "claude-haiku-4-5"  # Keep Haiku for context (smaller, cheaper)
-SLIDE_STYLE_MODEL = "claude-opus-4-5"   # Claude Opus 4.5 - for styling
-
-#==============================================================================
-# SPECIALIZED MODELS
-#==============================================================================
-
-QUALITY_EVALUATOR_MODEL = "claude-haiku-4-5"
-FILE_ANALYSIS_MODEL = "gpt-4.1"
-OPENAI_IMAGE_MODEL = "gpt-image-1"
-GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-preview"
-
-#==============================================================================
-# CUSTOM COMPONENT GENERATION
-#==============================================================================
-
-# Model for generating CustomComponents
-# Options: "gemini-3-pro" (needs GOOGLE_API_KEY), "claude-sonnet-4", "gpt-4o"
-# Auto-fallback: Uses Gemini 3 Pro if GOOGLE_API_KEY available, otherwise Claude Sonnet 4
-_has_google_api_key = bool(os.environ.get('GOOGLE_API_KEY'))
-CUSTOM_COMPONENT_MODEL = "gemini-3-pro" if _has_google_api_key else "claude-sonnet-4"
-
-# Enable dedicated CustomComponent generation (separate from main slide generation)
-# When enabled, CustomComponents are generated by CUSTOM_COMPONENT_MODEL for higher quality
-ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN = True
-
-# Temperature for creative CustomComponent generation (higher = more creative)
+# Custom Components
+CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO       # High quality HTML generation (fast)
+CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_FLASH  # Fast edits/rewrites
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
 
-# Log which models are being used
-if ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN:
-    print(f"[CONFIG] CustomComponent model: {CUSTOM_COMPONENT_MODEL} (Google API key: {'✓' if _has_google_api_key else '✗'})")
-print(f"[CONFIG] Editing orchestrator: {ORCHESTRATOR_MODEL} | Style: {SLIDE_STYLE_MODEL}")
+# Vision/Import
+VISION_IMPORT_MODEL = GEMINI_FLASH_LITE     # PPTX slide recreation (fast, cheap)
+FILE_ANALYSIS_MODEL = GPT_4_1               # File content analysis
 
-#==============================================================================
-# IMAGE GENERATION PROVIDER SWITCH
-#==============================================================================
+# Image Generation
+IMAGE_PROVIDER = "gemini"                   # "gemini" or "openai"
+IMAGE_MODEL_GEMINI = GEMINI_IMAGE
+IMAGE_MODEL_OPENAI = OPENAI_IMAGE
 
-# Select which provider handles ALL image generation: "gemini" or "openai"
-IMAGE_PROVIDER = 'gemini'
+# Quality/Validation
+QUALITY_EVALUATOR_MODEL = CLAUDE_HAIKU
+VISUAL_VALIDATION_MODEL = CLAUDE_HAIKU
 
-# Default transparency behavior (can be overridden per-call)
-# - FULL images in slides generally should NOT be transparent
-# - SUPPORTING assets (icons/overlays) often SHOULD be transparent
-IMAGE_TRANSPARENT_DEFAULT_FULL = False
-IMAGE_TRANSPARENT_DEFAULT_SUPPORTING = True
-OPENAI_EMBEDDINGS_MODEL = "text-embedding-3-small"
-
-#==============================================================================
-# IMAGE GENERATION TOGGLES
-#==============================================================================
-
-# Disable AI image generation during slide generation; use placeholders instead
-IMAGE_GENERATION_ENABLED = False
-
-# Do not auto-apply pending searched images to placeholders on the backend
-AUTO_APPLY_PENDING_IMAGES = False
-
-#==============================================================================
-# STREAMING CONFIGURATION
-#==============================================================================
-
-# Enable streaming for slide generation (solves token limit issues)
+# ═══════════════════════════════════════════════════════════════════════════════
+# FEATURE FLAGS
+# ═══════════════════════════════════════════════════════════════════════════════
+ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN = True
 ENABLE_STREAMING = True
+ENABLE_VISUAL_VALIDATION = True
+ENABLE_ANTHROPIC_PROMPT_CACHING = True
+ENABLE_PROMPT_CACHE_PREWARM = True
+LOG_ANTHROPIC_CACHE_METRICS = True
+ENABLE_CACHE_METRICS_PROBE = True
 
-# How often to update Supabase during streaming (in seconds)
-STREAMING_UPDATE_INTERVAL = 5.0
-
-# Minimum components before updating Supabase
-STREAMING_MIN_COMPONENTS_UPDATE = 2
-
-#==============================================================================
-# GEMINI CONFIGURATION (Still needed by outline service)
-#==============================================================================
-
-USE_GEMINI_FOR_OUTLINE = False
-GEMINI_OUTLINE_MODEL = "gemini-2.5-flash-lite"
-GEMINI_ENABLE_URL_SEARCH = True  # Enable Google Search grounding for content enhancement
-GEMINI_STRUCTURED_OUTPUT_ONLY = True
-
-# Override models when Gemini is enabled
-if USE_GEMINI_FOR_OUTLINE:
-    OUTLINE_PLANNING_MODEL = GEMINI_OUTLINE_MODEL
-    OUTLINE_CONTENT_MODEL = GEMINI_OUTLINE_MODEL
-
-#==============================================================================
-# THEME GENERATION SWITCHES
-#==============================================================================
-
-# Use the new agent-based theming system (ThemeDirector). Falls back to legacy
-# ThemeStyleManager when disabled or on failure. Default ON.
+USE_PERPLEXITY_FOR_OUTLINE = True
+USE_PERPLEXITY_FOR_RESEARCH = True
+USE_HYBRID_RESEARCH_MODE = True
 USE_AGENT_THEMER = os.getenv('USE_AGENT_THEMER', 'true').lower() == 'true'
 
-#==============================================================================
-# CACHE CONFIGURATION (Still needed by cache.py)
-#==============================================================================
+IMAGE_GENERATION_ENABLED = False            # Use placeholders during generation
+AUTO_APPLY_PENDING_IMAGES = False
+IMAGE_TRANSPARENT_DEFAULT_FULL = False
+IMAGE_TRANSPARENT_DEFAULT_SUPPORTING = True
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERFORMANCE & LIMITS
+# ═══════════════════════════════════════════════════════════════════════════════
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '10'))
+MAX_PARALLEL_SLIDES = int(os.getenv('MAX_PARALLEL_SLIDES', '10'))
+DELAY_BETWEEN_SLIDES = float(os.getenv('DELAY_BETWEEN_SLIDES', '0.1'))
+AI_THREAD_TIMEOUT = int(os.getenv('AI_THREAD_TIMEOUT', '60'))
+
+STREAMING_UPDATE_INTERVAL = 5.0
+STREAMING_MIN_COMPONENTS_UPDATE = 2
+
+# Global limits
+MAX_GLOBAL_CONCURRENT_SLIDES = 50
+MAX_API_CONCURRENT_CALLS = 10
+MAX_SLIDES_PER_USER = 10
+MAX_DECKS_PER_USER = 4
+API_CALLS_PER_MINUTE = 60
+API_CALLS_PER_HOUR = 1000
+
+# Timeouts
+SLIDE_GENERATION_TIMEOUT = 300
+DECK_GENERATION_TIMEOUT = 600
+CONTINUE_GENERATION_ON_DISCONNECT = True
+CLEANUP_COMPLETED_AFTER = 3600
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CACHE
+# ═══════════════════════════════════════════════════════════════════════════════
 CACHE_DIR = "/tmp/chat-api-cache"
 USE_CACHE = False
 
-# Enable Anthropic prompt caching for Claude models (5-minute TTL via ephemeral cache blocks)
-# When enabled, Claude calls send system as content blocks with cache_control
-ENABLE_ANTHROPIC_PROMPT_CACHING = True
-
-# Prewarm the Anthropic prompt cache (writes the static prefix once before fan-out)
-ENABLE_PROMPT_CACHE_PREWARM = True
-
-# Log Anthropic cache metrics (cache_read_input_tokens, cache_creation_input_tokens)
-LOG_ANTHROPIC_CACHE_METRICS = True
-
-# Emit a tiny Anthropic probe call after typed Claude calls to log cache metrics
-# This adds a minimal extra request per slide when Claude is used
-ENABLE_CACHE_METRICS_PROBE = True
-
-#==============================================================================
-# RATE LIMIT & PARALLELISM CONFIGURATION
-#==============================================================================
-
-# Generation configuration
-MAX_WORKERS = int(os.getenv('MAX_WORKERS', '10'))
-MAX_PARALLEL_SLIDES = int(os.getenv('MAX_PARALLEL_SLIDES', '10'))
-DELAY_BETWEEN_SLIDES = float(os.getenv('DELAY_BETWEEN_SLIDES', '0.1'))  # Reduced to minimize delays
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEPRECATED - Keep for backwards compatibility, remove later
+# ═══════════════════════════════════════════════════════════════════════════════
+THEME_STYLE_MODEL = THEME_MODEL
+VISUAL_LAYOUT_ANALYZER_MODEL = VISUAL_ANALYZER_MODEL
+OUTLINE_PLANNING_MODEL = OUTLINE_MODEL
+OUTLINE_CONTENT_MODEL = OUTLINE_MODEL
+OUTLINE_OPENAI_SEARCH_MODEL = GPT_4O_MINI
+PERPLEXITY_OUTLINE_MODEL = PERPLEXITY_SONAR_PRO
+PERPLEXITY_RESEARCH_MODEL = PERPLEXITY_SONAR
+PRESENTATION_OUTLINE_MODEL = OUTLINE_PRESENTATION_MODEL
+IMAGE_SEARCH_PROVIDER = 'serpapi'
+PERPLEXITY_IMAGE_MODEL = PERPLEXITY_SONAR
+GEMINI_OUTLINE_MODEL = GEMINI_FLASH_LITE
+USE_GEMINI_FOR_OUTLINE = False
+GEMINI_ENABLE_URL_SEARCH = True
+GEMINI_STRUCTURED_OUTPUT_ONLY = True
 STRICT_MODE = os.getenv('STRICT_MODE', 'false').lower() == 'true'
-AI_THREAD_TIMEOUT = int(os.getenv('AI_THREAD_TIMEOUT', '60'))  # Default 60 seconds
+ENABLE_VISUAL_ANALYSIS = os.getenv('ENABLE_VISUAL_ANALYSIS', 'false').lower() == 'true'
+GEMINI_IMAGE_MODEL = GEMINI_IMAGE
+OPENAI_IMAGE_MODEL = OPENAI_IMAGE
+OPENAI_EMBEDDINGS_MODEL = OPENAI_EMBEDDINGS
 
-# Visual analysis configuration
-ENABLE_VISUAL_ANALYSIS = os.getenv('ENABLE_VISUAL_ANALYSIS', 'false').lower() == 'true'  # Default to False for testing
-
-# Image handling
-
-#==============================================================================
-# VISUAL VALIDATION CONFIGURATION
-#==============================================================================
-
-# Enable visual layout validation using frontend renderer + Claude
-# When enabled, each generated slide is rendered and analyzed for:
-# - Text overflow/cropping issues
-# - Elements too close to edges
-# - Overlapping components
-# - Poor spacing/alignment
-ENABLE_VISUAL_VALIDATION = True  # Set to False to disable visual validation API calls
-
-#==============================================================================
-# PRODUCTION CONCURRENCY CONFIGURATION
-#==============================================================================
-
-# Global system-wide limits
-MAX_GLOBAL_CONCURRENT_SLIDES = 50  # Total slides generating across ALL users
-MAX_API_CONCURRENT_CALLS = 10      # Concurrent calls to OpenAI/Claude APIs
-
-# Per-user limits
-MAX_SLIDES_PER_USER = 10            # Max slides one user can generate in parallel
-MAX_DECKS_PER_USER = 4             # Max concurrent deck generations per user
-
-# Rate limiting
-API_CALLS_PER_MINUTE = 60          # API calls per minute (global)
-API_CALLS_PER_HOUR = 1000          # API calls per hour (global)
-
-# Timeouts
-SLIDE_GENERATION_TIMEOUT = 300      # Timeout for single slide generation (seconds)
-DECK_GENERATION_TIMEOUT = 600      # Timeout for full deck generation (seconds)
-
-# Background generation
-CONTINUE_GENERATION_ON_DISCONNECT = True  # Continue generating even if user leaves
-CLEANUP_COMPLETED_AFTER = 3600     # Clean up completed generations after 1 hour (seconds)
+# Startup log
+print(f"[CONFIG] Custom components: {CUSTOM_COMPONENT_MODEL} | Editing: {ORCHESTRATOR_MODEL} | Vision: {VISION_IMPORT_MODEL}")

@@ -1,65 +1,18 @@
 import React, { useState, useCallback, forwardRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useDeckStore } from '@/stores/deckStore';
-import { SlideData } from '@/types/SlideTypes';
-import { ComponentInstance } from '@/types/components';
-import { createComponent } from '@/utils/componentUtils';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { toast } from "sonner"
 import { deckSyncService } from '@/lib/deckSyncService';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import { pptxImportApi } from '@/services/pptxImportApi';
 
-// Define the target width for your application's slides
-const APP_SLIDE_WIDTH_PX = 1280; // Or get this dynamically/from config
-
 interface PptxImporterProps {
   onImportComplete?: (deckId: string) => void;
-}
-
-type PptxParserData = any; // TODO: Define more specific type later
-
-// Helper function to safely get nested properties
-const getProp = (obj: any, path: string, defaultValue: any = undefined) => {
-    return path.split('.').reduce((o, p) => (o ? o[p] : defaultValue), obj);
-}
-
-// Helper to convert RGB object to hex string (returns undefined if invalid)
-const rgbToHex = (rgb: { red?: number; green?: number; blue?: number } | undefined): string | undefined => {
-    if (!rgb) return undefined;
-    const normalize = (v: number | undefined): number | undefined => {
-      if (typeof v !== 'number' || isNaN(v)) return undefined;
-      // Support 0..1 and 0..255 ranges
-      const n = v <= 1 ? v * 255 : v;
-      return Math.max(0, Math.min(255, Math.round(n)));
-    };
-    const r = normalize(rgb.red);
-    const g = normalize(rgb.green);
-    const b = normalize(rgb.blue);
-    if (r === undefined || g === undefined || b === undefined) return undefined;
-    const toHex = (c: number) => ('0' + c.toString(16)).slice(-2);
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-
-// Helper to convert PT to PX (adjust multiplier if needed)
-const ptToPx = (pt: number | undefined): number => Math.round((pt ?? 12) * 1.333); // Default to 12pt if missing
-
-// Helper to map alignment
-const mapAlign = (align: string | undefined): string => {
-    switch(align) {
-        case 'START': return 'left';
-        case 'CENTER': return 'center';
-        case 'END': return 'right';
-        case 'JUSTIFY': return 'justify';
-        default: return 'left';
-    }
 }
 
 const PptxImporter = forwardRef<HTMLInputElement, PptxImporterProps>(({ onImportComplete }, ref) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const createDefaultDeck = useDeckStore((state) => state.createDefaultDeck);
   const updateDeckData = useDeckStore((state) => state.updateDeckData);
 
   const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,11 +29,16 @@ const PptxImporter = forwardRef<HTMLInputElement, PptxImporterProps>(({ onImport
     let newDeckId: string | null = null;
 
     try {
-      // 1) Create placeholder deck
-      newDeck = await createDefaultDeck();
-      if (!newDeck || !newDeck.uuid) throw new Error("Failed to create default deck.");
-      newDeckId = newDeck.uuid;
-      toast.info(`Created base deck: ${newDeckId}. Uploading file...`);
+      // 1) Create empty deck (no default slides - import will provide them)
+      const deckId = crypto.randomUUID();
+      newDeckId = deckId;
+      newDeck = {
+        uuid: deckId,
+        name: originalFileName,
+        slides: [],
+        lastModified: new Date().toISOString(),
+      } as CompleteDeckData;
+      toast.info(`Starting import for: ${originalFileName}...`);
 
       // 2) Upload PPTX to storage to get a URL the backend can access
       const fileUrl = await uploadFile(file);
@@ -147,7 +105,7 @@ const PptxImporter = forwardRef<HTMLInputElement, PptxImporterProps>(({ onImport
       setIsProcessing(false);
       event.target.value = '';
     }
-  }, [createDefaultDeck, updateDeckData, navigate, onImportComplete]);
+  }, [updateDeckData, onImportComplete]);
 
   return (
     <input

@@ -42,7 +42,7 @@ class NarrativeFlowAnalyzer:
                 return self._generate_fallback_narrative(outline)
             
             # Import the model adapter
-            from agents.ai.clients import get_client, MODELS, CLIENTS
+            from agents.ai.clients import get_client, MODELS
             from google.genai import Client as Gemini
             
             # Prepare content for analysis

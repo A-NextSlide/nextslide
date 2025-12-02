@@ -146,8 +146,9 @@ async def stream_slide_agent_response(
 
         # First, stream a conversational response
         response_text = ""
+        from agents.config import CLAUDE_HAIKU_ID
         with client.messages.stream(
-            model="claude-haiku-4-5-20251001",
+            model=CLAUDE_HAIKU_ID,
             max_tokens=2048,
             system=SLIDE_AGENT_SYSTEM_PROMPT,
             messages=messages,

@@ -141,20 +141,24 @@ class AISlideGenerator:
             # Run the blocking invoke in a thread pool
             logger.info(f"[AI_GEN] Slide {context.slide_index + 1} entering run_in_executor...")
             loop = asyncio.get_event_loop()
+
+            # Use functools.partial to pass keyword arguments
+            import functools
+            invoke_fn = functools.partial(
+                invoke,
+                client,
+                model_name,
+                messages,
+                response_model,
+                actual_max_tokens,
+                temperature,
+                deck_uuid=context.deck_uuid,
+                slide_generation=True,
+                slide_index=context.slide_index
+            )
+
             response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,  # Use default thread pool
-                    invoke,
-                    client,
-                    model_name,
-                    messages,
-                    response_model,
-                    actual_max_tokens,
-                    temperature,  # Use variable temperature
-                    context.deck_uuid,
-                    True,  # slide_generation
-                    context.slide_index
-                ),
+                loop.run_in_executor(None, invoke_fn),
                 timeout=self.generation_timeout
             )
             

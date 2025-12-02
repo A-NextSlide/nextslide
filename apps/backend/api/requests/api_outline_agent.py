@@ -8,6 +8,7 @@ import os
 import logging
 import json
 import re
+import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from datetime import datetime
 
@@ -19,6 +20,10 @@ from agents.ai.clients import get_client, invoke
 from services.supabase_auth_service import get_auth_service
 from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
+from services.file_design_extractor import (
+    FileDesignExtractor, FileIntent, SlideStyle, FileAnalysis,
+    design_to_theme_context, content_to_outline_context
+)
 
 logger = get_logger(__name__)
 
@@ -26,16 +31,35 @@ logger = get_logger(__name__)
 # Tool definition for web search - model decides when to use it
 SEARCH_TOOL = {
     "name": "web_search",
-    "description": """Search the web for NEW information. ONLY use this when:
-- User provides a URL and asks you to look it up
-- User explicitly asks to "fetch", "look up", or "search" for something NEW
-- User asks for data NOT already in the current outline context
+    "description": """Search the web for current information, facts, and data.
 
-DO NOT use for:
-- Editing/refining existing slides (the outline already has researched data)
-- Theme changes, branding, colors, fonts
-- Simple modifications like "make it shorter" or "add more detail"
-- Anything the current outline context already covers""",
+✅ USE SEARCH when:
+1. User mentions a WELL-KNOWN COMPANY/BRAND and wants factual data about them
+   - "Anthropic pitch deck" → Search for "Anthropic funding rounds valuation revenue"
+   - "Tesla market analysis" → Search for "Tesla market cap revenue" (use current year from today's date!)
+   - "review our last round" when company is mentioned → Search for that company's actual financing history
+2. User needs CURRENT DATA: market size, statistics, trends, financials, funding rounds
+   - ALWAYS use the current year from today's date in searches, NOT hardcoded years
+3. User asks to "research", "look up", "find", or implies they need real data
+4. Creating content that would benefit from ACCURATE, VERIFIABLE information
+5. User mentions "pitch deck for [investors]" - they need REAL data to impress investors
+
+🚫 DO NOT search when:
+- User uploaded files (PDF, PPTX, etc.) - USE THEIR CONTENT INSTEAD
+- User says "summarize this", "turn this into slides", "use this content"
+- User already provided the specific content they want on slides
+- File analysis already contains the needed information
+
+🚫🚫 NEVER SEARCH FOR BRAND COLORS, LOGOS, OR FONTS:
+- DO NOT search for "[company] brand colors" or "[university] official colors"
+- DO NOT search for logos, fonts, or visual branding
+- The THEME SYSTEM handles branding via Brandfetch API (authoritative source)
+- Perplexity often returns WRONG brand colors - let ThemeDirector handle it
+- Your job is CONTENT research only, not visual/brand research
+
+💡 PROACTIVE SEARCH: When user mentions a recognizable company (Anthropic, OpenAI, Tesla, Stripe, etc.)
+and asks for pitch deck/analysis/financials, AUTOMATICALLY search for their public data.
+Don't ask "what was your last round?" - SEARCH FOR IT if it's a known company!""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -146,6 +170,26 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
             }
 
             try:
+                # If content is missing but URL is available, fetch the content
+                file_content = file.content
+                if file_content:
+                    logger.info(f"[OutlineAgent] File {file.name} has base64 content ({len(file_content)} chars)")
+                elif file.url:
+                    logger.info(f"[OutlineAgent] Fetching file content from URL for: {file.name}")
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient(timeout=30.0) as http_client:
+                            response = await http_client.get(file.url)
+                            if response.status_code == 200:
+                                file_content = base64.b64encode(response.content).decode('utf-8')
+                                logger.info(f"[OutlineAgent] Successfully fetched {len(file_content)} chars of content from URL")
+                            else:
+                                logger.warning(f"[OutlineAgent] Failed to fetch file from URL: {response.status_code}")
+                    except Exception as fetch_err:
+                        logger.warning(f"[OutlineAgent] Error fetching file from URL: {fetch_err}")
+                else:
+                    logger.warning(f"[OutlineAgent] ⚠️ File {file.name} has NO content and NO URL - cannot process!")
+
                 # Determine file category
                 is_image = file_type.startswith("image/")
                 is_pdf = file_type == "application/pdf" or filename.endswith(".pdf")
@@ -155,7 +199,7 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
 
                 content_blocks = []
 
-                if is_image and file.content:
+                if is_image and file_content:
                     # Use Claude vision for images
                     analysis["file_type"] = "image"
                     content_blocks.append({
@@ -163,7 +207,7 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
                         "source": {
                             "type": "base64",
                             "media_type": file_type,
-                            "data": file.content
+                            "data": file_content
                         }
                     })
                     content_blocks.append({
@@ -178,20 +222,55 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
 Be concise but thorough. This will be used to create presentation slides."""
                     })
 
-                elif is_pdf and file.content:
-                    # Use Claude's PDF understanding
-                    analysis["file_type"] = "document"
-                    content_blocks.append({
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": file.content
-                        }
-                    })
-                    content_blocks.append({
-                        "type": "text",
-                        "text": f"""Analyze this PDF document for creating a presentation. Extract:
+                elif is_pdf and file_content:
+                    # Check PDF size - Claude has ~25MB limit for PDFs
+                    pdf_size_mb = len(file_content) * 3 / 4 / 1024 / 1024  # base64 to bytes to MB
+                    logger.info(f"[OutlineAgent] PDF size: {pdf_size_mb:.1f}MB")
+
+                    if pdf_size_mb > 20:  # Use text extraction for large PDFs
+                        logger.info(f"[OutlineAgent] PDF too large ({pdf_size_mb:.1f}MB), using text extraction")
+                        analysis["file_type"] = "document"
+                        try:
+                            import pypdf
+                            raw_bytes = base64.b64decode(file_content)
+                            pdf_reader = pypdf.PdfReader(BytesIO(raw_bytes))
+                            text_content = []
+                            for i, page in enumerate(pdf_reader.pages[:50]):  # First 50 pages
+                                page_text = page.extract_text() or ""
+                                if page_text.strip():
+                                    text_content.append(f"--- Page {i+1} ---\n{page_text}")
+                            extracted_text = "\n\n".join(text_content)[:50000]  # Limit to 50k chars
+                            content_blocks.append({
+                                "type": "text",
+                                "text": f"""Analyze this PDF content for creating a presentation:
+
+{extracted_text}
+
+Extract:
+1. **Main Topic**: What is this document about?
+2. **Key Points**: The most important facts, statistics, and insights
+3. **Slide Suggestions**: What slides should be created from this content?
+
+Focus on content that would make great presentation slides."""
+                            })
+                        except Exception as pdf_err:
+                            logger.warning(f"[OutlineAgent] PDF text extraction failed: {pdf_err}")
+                            analysis["summary"] = f"PDF too large ({pdf_size_mb:.1f}MB) and text extraction failed"
+                            continue
+                    else:
+                        # Use Claude's native PDF understanding for smaller PDFs
+                        analysis["file_type"] = "document"
+                        content_blocks.append({
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": file_content
+                            }
+                        })
+                        content_blocks.append({
+                            "type": "text",
+                            "text": f"""Analyze this PDF document for creating a presentation. Extract:
 1. **Main Topic**: What is this document about?
 2. **Key Points**: The most important facts, statistics, and insights (bullet points)
 3. **Structure**: How is the content organized?
@@ -199,12 +278,12 @@ Be concise but thorough. This will be used to create presentation slides."""
 5. **Data/Charts**: Any numerical data that could be visualized
 
 Focus on content that would make great presentation slides."""
-                    })
+                        })
 
-                elif is_excel and file.content:
+                elif is_excel and file_content:
                     # Parse Excel/CSV data
                     analysis["file_type"] = "spreadsheet"
-                    raw_bytes = base64.b64decode(file.content)
+                    raw_bytes = base64.b64decode(file_content)
                     data_preview = ""
                     extracted_data = None
 
@@ -213,14 +292,21 @@ Focus on content that would make great presentation slides."""
                         from io import StringIO
                         text = raw_bytes.decode('utf-8', errors='ignore')
                         reader = csv.reader(StringIO(text))
-                        rows = list(reader)[:30]  # First 30 rows
+                        rows = list(reader)[:500]  # Up to 500 rows (for rolodex, contact lists, etc.)
                         if rows:
                             headers = rows[0]
                             data_rows = rows[1:] if len(rows) > 1 else []
-                            data_preview = f"Headers: {', '.join(headers[:10])}\n"
-                            for i, row in enumerate(data_rows[:10]):
-                                data_preview += f"Row {i+1}: {', '.join(row[:8])}\n"
-                            extracted_data = {"headers": headers, "sample_rows": data_rows[:20], "total_rows": len(rows)-1}
+                            total_rows = len(data_rows)
+                            # Show more rows in preview for better context
+                            data_preview = f"Headers: {', '.join(headers[:15])}\n"
+                            data_preview += f"Total rows: {total_rows}\n\n"
+                            # Show first 20 rows in preview
+                            for i, row in enumerate(data_rows[:20]):
+                                data_preview += f"Row {i+1}: {', '.join(row[:10])}\n"
+                            if total_rows > 20:
+                                data_preview += f"... and {total_rows - 20} more rows\n"
+                            # Store ALL rows (up to 500) for slide generation
+                            extracted_data = {"headers": headers, "all_rows": data_rows, "sample_rows": data_rows[:20], "total_rows": total_rows}
                     else:
                         try:
                             import openpyxl
@@ -249,50 +335,113 @@ Focus on content that would make great presentation slides."""
 {data_preview}
 
 Provide:
-1. **Data Summary**: What does this data represent?
-2. **Key Insights**: Notable trends, patterns, or statistics
-3. **Chart Recommendations**: Best chart types (bar, line, pie, etc.) for this data
-4. **Slide Suggestions**: What slides should be created? (e.g., "Market Growth slide with line chart")
-5. **Key Metrics**: The most important numbers to highlight"""
+1. **Data Type**: Is this a list of items (contacts, products, team members) OR analytical data (metrics, trends)?
+2. **Slide Strategy**:
+   - For LISTS (contacts, team, products): Recommend creating individual slides or grouped cards per item
+   - For ANALYTICS: Recommend charts and summary slides
+3. **Key Fields**: Which columns are most important to display?
+4. **Suggested Layout**: Cards, table, grid, or chart format?
+5. **Total Items**: How many items total, and how should they be organized into slides?
+
+IMPORTANT: If this looks like a contact list, team roster, product catalog, or similar LIST data:
+- Each item should get its own space on slides
+- Suggest creating slides that show individual entries (like contact cards, team member profiles)
+- Do NOT summarize the list into charts - DISPLAY the actual items"""
                     })
 
-                elif is_pptx and file.content:
-                    # Parse PPTX content
+                elif is_pptx and file_content:
+                    # Parse PPTX content using UniversalPPTXImporter for better design extraction
                     analysis["file_type"] = "presentation"
-                    raw_bytes = base64.b64decode(file.content)
+                    raw_bytes = base64.b64decode(file_content)
                     slides_content = ""
+                    design_info = ""
 
                     try:
-                        from pptx import Presentation
-                        prs = Presentation(BytesIO(raw_bytes))
-                        slides_content = f"Total slides: {len(prs.slides)}\n\n"
-                        for i, slide in enumerate(prs.slides[:15]):  # First 15 slides
-                            slides_content += f"Slide {i+1}:\n"
-                            for shape in slide.shapes:
-                                if hasattr(shape, "text") and shape.text.strip():
-                                    slides_content += f"  - {shape.text[:300]}\n"
+                        # Use the new universal importer for robust extraction
+                        from services.universal_pptx_importer import UniversalPPTXImporter
+
+                        importer = UniversalPPTXImporter()
+                        # Await the async import directly (we're already in async context)
+                        deck = await importer.import_bytes(raw_bytes, file.name)
+
+                        # Extract design summary
+                        design_summary = importer.get_design_summary()
+
+                        # Build content summary
+                        slides = deck.get("slides", [])
+                        slides_content = f"Total slides: {len(slides)}\n\n"
+
+                        for i, slide in enumerate(slides[:15]):  # First 15 slides
+                            slides_content += f"Slide {i+1}: {slide.get('title', 'Untitled')}\n"
+                            # Extract text from components
+                            for comp in slide.get("components", []):
+                                if comp.get("type") == "TiptapTextBlock":
+                                    texts = comp.get("props", {}).get("texts", [])
+                                    for t in texts[:3]:  # First 3 text segments
+                                        text = t.get("text", "")[:200]
+                                        if text.strip():
+                                            slides_content += f"  - {text}\n"
                             slides_content += "\n"
+
+                        # Build design info
+                        if design_summary:
+                            design_info = "\n\n**DESIGN INFORMATION:**\n"
+                            if design_summary.get("theme_name"):
+                                design_info += f"- Theme: {design_summary['theme_name']}\n"
+                            if design_summary.get("primary_color"):
+                                design_info += f"- Primary Color: {design_summary['primary_color']}\n"
+                            if design_summary.get("secondary_color"):
+                                design_info += f"- Secondary Color: {design_summary['secondary_color']}\n"
+                            if design_summary.get("background_color"):
+                                design_info += f"- Background Color: {design_summary['background_color']}\n"
+                            if design_summary.get("text_color"):
+                                design_info += f"- Text Color: {design_summary['text_color']}\n"
+                            if design_summary.get("heading_font"):
+                                design_info += f"- Heading Font: {design_summary['heading_font']}\n"
+                            if design_summary.get("body_font"):
+                                design_info += f"- Body Font: {design_summary['body_font']}\n"
+
+                            # Store design data for later use
+                            analysis["design_data"] = design_summary
+
+                        # Store import stats
+                        import_stats = deck.get("metadata", {}).get("import_stats", {})
+                        analysis["import_stats"] = import_stats
+
                     except Exception as e:
-                        slides_content = f"Could not parse PPTX: {str(e)}"
+                        logger.warning(f"[OutlineAgent] Universal importer failed, falling back to basic: {e}")
+                        # Fallback to basic extraction
+                        try:
+                            from pptx import Presentation
+                            prs = Presentation(BytesIO(raw_bytes))
+                            slides_content = f"Total slides: {len(prs.slides)}\n\n"
+                            for i, slide in enumerate(prs.slides[:15]):
+                                slides_content += f"Slide {i+1}:\n"
+                                for shape in slide.shapes:
+                                    if hasattr(shape, "text") and shape.text.strip():
+                                        slides_content += f"  - {shape.text[:300]}\n"
+                                slides_content += "\n"
+                        except Exception as e2:
+                            slides_content = f"Could not parse PPTX: {str(e2)}"
 
                     content_blocks.append({
                         "type": "text",
                         "text": f"""Analyze this PowerPoint presentation:
 
-{slides_content}
+{slides_content}{design_info}
 
 Provide:
 1. **Overview**: Main topic and purpose
 2. **Structure**: How is it organized?
 3. **Key Content**: Most important points from each slide
-4. **Design Notes**: Any notable design patterns or themes
-5. **Improvement Suggestions**: How could this be improved?"""
+4. **Design Notes**: Describe the visual design style, colors, fonts, and layout patterns
+5. **Design Replication**: If user wants to replicate this design, what are the key design elements?"""
                     })
 
-                elif is_doc and file.content:
+                elif is_doc and file_content:
                     # Parse document text
                     analysis["file_type"] = "document"
-                    raw_bytes = base64.b64decode(file.content)
+                    raw_bytes = base64.b64decode(file_content)
                     text_content = raw_bytes.decode('utf-8', errors='ignore')[:15000]  # First 15k chars
 
                     content_blocks.append({
@@ -338,6 +487,24 @@ Provide:
                     # Add to combined context
                     combined_context_parts.append(f"=== {file.name} ({analysis['file_type']}) ===\n{analysis_text}\n")
 
+                    # For spreadsheets with list data, include ALL the actual data rows
+                    # so slide generation can create slides for each item (contacts, team members, etc.)
+                    if analysis.get("extracted_data") and analysis["file_type"] == "spreadsheet":
+                        ed = analysis["extracted_data"]
+                        all_rows = ed.get("all_rows", ed.get("sample_rows", []))
+                        headers = ed.get("headers", [])
+                        if all_rows and len(all_rows) > 0:
+                            # Include full data for slide generation
+                            data_section = f"\n=== FULL DATA FROM {file.name} (for slide generation) ===\n"
+                            data_section += f"Headers: {', '.join(headers)}\n"
+                            data_section += f"Total items: {len(all_rows)}\n\n"
+                            # Include all rows (up to 200 for context limits)
+                            for i, row in enumerate(all_rows[:200]):
+                                data_section += f"Item {i+1}: {', '.join(str(cell) for cell in row)}\n"
+                            if len(all_rows) > 200:
+                                data_section += f"... ({len(all_rows) - 200} more items)\n"
+                            combined_context_parts.append(data_section)
+
             except Exception as file_err:
                 logger.error(f"[OutlineAgent] Error analyzing file {file.name}: {file_err}")
                 analysis["summary"] = f"Error analyzing file: {str(file_err)}"
@@ -357,6 +524,134 @@ Provide:
             "success": False,
             "analyses": [],
             "combined_context": "",
+            "error": str(e)
+        }
+
+
+async def enhanced_file_analysis(
+    files: List['FileAttachment'],
+    user_message: str = ""
+) -> Dict[str, Any]:
+    """
+    Enhanced file analysis that detects:
+    - User intent (recreate, use design only, use content only, use both)
+    - Slide style preference (traditional vs interactive)
+    - Extracts design elements for theme matching
+    - Extracts content for outline generation
+    """
+    if not files:
+        return {
+            "success": False,
+            "intent": FileIntent.USE_BOTH.value,
+            "slide_style": SlideStyle.AUTO.value,
+            "design_context": None,
+            "content_context": "",
+            "file_analyses": []
+        }
+
+    try:
+        extractor = FileDesignExtractor()
+        file_analyses = []
+        design_context = None
+        content_parts = []
+        all_extracted_images = []  # Collect images from all files
+        all_slide_screenshots = []  # Collect slide screenshots for visual design reference
+
+        # Detect intent and style from user message (same for all files)
+        intent = extractor._detect_intent(user_message)
+        slide_style = extractor._detect_slide_style(user_message)
+
+        logger.info(f"[EnhancedAnalysis] Detected intent: {intent.value}, style: {slide_style.value}")
+
+        for file in files:
+            # If content is missing but URL is available, fetch the content
+            file_content = file.content
+            if not file_content and file.url:
+                logger.info(f"[EnhancedAnalysis] Fetching file content from URL for: {file.name}")
+                try:
+                    import httpx
+                    import base64
+                    async with httpx.AsyncClient(timeout=30.0) as http_client:
+                        response = await http_client.get(file.url)
+                        if response.status_code == 200:
+                            file_content = base64.b64encode(response.content).decode('utf-8')
+                            logger.info(f"[EnhancedAnalysis] Successfully fetched content from URL")
+                except Exception as fetch_err:
+                    logger.warning(f"[EnhancedAnalysis] Error fetching file from URL: {fetch_err}")
+
+            if not file_content:
+                logger.warning(f"[EnhancedAnalysis] ⚠️ Skipping {file.name} - no content available")
+                continue
+
+            try:
+                analysis = await extractor.analyze_file(
+                    file_content=file_content,
+                    filename=file.name,
+                    file_type=file.type or "",
+                    user_message=user_message
+                )
+
+                file_analyses.append({
+                    "filename": analysis.filename,
+                    "file_type": analysis.file_type,
+                    "intent": analysis.intent.value,
+                    "slide_style": analysis.slide_style.value,
+                    "confidence": analysis.confidence,
+                    "notes": analysis.analysis_notes
+                })
+
+                # Use the first file's design for theme context (usually the main reference)
+                if design_context is None and intent in (FileIntent.USE_DESIGN_ONLY, FileIntent.USE_BOTH, FileIntent.RECREATE_EXACT):
+                    design_context = design_to_theme_context(analysis.design)
+                    logger.info(f"[EnhancedAnalysis] Extracted design: {design_context}")
+
+                # Build content context
+                if intent in (FileIntent.USE_CONTENT_ONLY, FileIntent.USE_BOTH, FileIntent.RECREATE_EXACT):
+                    content_str = content_to_outline_context(analysis.content)
+                    if content_str:
+                        content_parts.append(f"=== {file.name} ===\n{content_str}")
+
+                # Collect extracted images from uploaded files (logos, photos, etc.)
+                if analysis.extracted_images:
+                    all_extracted_images.extend(analysis.extracted_images)
+                    logger.info(f"[EnhancedAnalysis] Collected {len(analysis.extracted_images)} images from {file.name}")
+
+                # Collect slide screenshots for visual design reference
+                if analysis.slide_screenshots:
+                    all_slide_screenshots.extend(analysis.slide_screenshots)
+                    logger.info(f"[EnhancedAnalysis] Collected {len(analysis.slide_screenshots)} slide screenshots from {file.name}")
+
+            except Exception as e:
+                logger.error(f"[EnhancedAnalysis] Error analyzing {file.name}: {e}")
+                continue
+
+        if all_extracted_images:
+            logger.info(f"[EnhancedAnalysis] Total extracted images: {len(all_extracted_images)}")
+        if all_slide_screenshots:
+            logger.info(f"[EnhancedAnalysis] Total slide screenshots for visual reference: {len(all_slide_screenshots)}")
+
+        return {
+            "success": True,
+            "intent": intent.value,
+            "slide_style": slide_style.value,
+            "design_context": design_context,
+            "content_context": "\n\n".join(content_parts) if content_parts else "",
+            "file_analyses": file_analyses,
+            "extracted_images": all_extracted_images,  # Images from uploaded PPTX/PDF
+            "slide_screenshots": all_slide_screenshots  # Base64 screenshots for visual design replication
+        }
+
+    except Exception as e:
+        logger.error(f"[EnhancedAnalysis] Failed: {e}")
+        return {
+            "success": False,
+            "intent": FileIntent.USE_BOTH.value,
+            "slide_style": SlideStyle.AUTO.value,
+            "design_context": None,
+            "content_context": "",
+            "file_analyses": [],
+            "extracted_images": [],
+            "slide_screenshots": [],
             "error": str(e)
         }
 
@@ -527,7 +822,114 @@ class OutlineAgentRequest(BaseModel):
 # Agent system prompt - Conversational & Proactive
 OUTLINE_AGENT_SYSTEM_PROMPT = """You are a friendly, expert presentation planning assistant. Your job is to help users create amazing presentation outlines through natural conversation.
 
-🚨🚨🚨 **MANDATORY RULE #1 - GENERATE OUTLINE IMMEDIATELY WHEN USER PROVIDES DETAILS** 🚨🚨🚨
+**🚨 RULE #0 - RESPECT THE CONVERSATION (HIGHEST PRIORITY)**
+
+The chat history contains the AGREEMENT between you and the user. Whatever was discussed and agreed upon MUST be followed exactly:
+- If user said "summarize my deck into 10 slides" → Create exactly that from THEIR content
+- If user said "keep the same design" → Don't change colors/style, just structure content
+- If you asked clarifying questions and got answers → Use those exact answers
+- The conversation IS the spec. Don't deviate. Don't add. Don't research externally.
+
+**🚨 RULE #1 - NEVER RESEARCH WHEN USER PROVIDES CONTENT**
+
+If ANY of these are true, DO NOT use web_search:
+- [UPLOADED FILES ANALYSIS] appears in context
+- User uploaded a PDF, PPTX, or document
+- User says "summarize this", "use this content", "turn this into slides"
+- User says "same design", "keep the design", "match this style"
+
+When user provides content, your ONLY job is to:
+1. STRUCTURE their content into slides
+2. Keep their exact facts, numbers, and information
+3. DO NOT add external research, statistics, or data
+
+**ABSOLUTE FORMATTING RULES (NEVER BREAK THESE):**
+
+1. **NO EMOJIS** - NEVER use emojis in slide titles, subtitles, or key_points. Keep it professional.
+   - BAD: "Introduction to AI 🤖"
+   - GOOD: "Introduction to AI"
+
+2. **ONE TITLE PER SLIDE** - Each slide has exactly ONE title. Never combine multiple titles.
+   - BAD: "Overview | Introduction | Welcome"
+   - BAD: "Slide 1: Introduction / Slide 2: Overview"
+   - GOOD: "Introduction"
+
+3. **CLEAN KEY POINTS** - Each key_point is a single, concise statement.
+   - BAD: ["Point 1, Point 2, Point 3"]
+   - BAD: ["• First • Second • Third"]
+   - GOOD: ["Point 1", "Point 2", "Point 3"]
+
+**CRITICAL: WHEN USER UPLOADS FILES**
+
+When [UPLOADED FILES ANALYSIS] appears in the context, the user has uploaded documents/files for their presentation.
+THIS IS YOUR SOURCE OF TRUTH. You MUST:
+
+1. **USE THE FILE CONTENT EXACTLY** - Extract slide content DIRECTLY from the file analysis
+2. **DO NOT RESEARCH OR ADD CONTENT** - Do not search, do not invent statistics, do not add data not in the files
+3. **STRUCTURE THEIR CONTENT** - Your only job is to organize and structure their content into slides
+4. **PRESERVE THEIR EXACT INFORMATION** - Keep their key points, data, and insights intact - don't paraphrase into generic content
+5. **DO NOT CALL web_search** - The content is already there. Searching would replace their content with generic info.
+
+**🚨 CRITICAL: LIST DATA (CONTACTS, TEAM, PRODUCTS, ROLODEX)**
+
+When the uploaded file contains a LIST of items (contacts, team members, products, inventory):
+- The file analysis will show "Headers:" and "Item 1:", "Item 2:", etc.
+- Keywords: "rolodex", "contacts", "team roster", "directory", "catalog", "inventory"
+
+FOR LIST DATA, YOU MUST:
+1. Create ONE SLIDE PER ITEM (or group 2-4 items per slide for large lists)
+2. Put ALL the item's data in the slide content - name, email, phone, title, etc.
+3. Use the person/item name as the slide TITLE
+4. Include ALL fields from the data in the content
+
+Example with contact list CSV:
+[UPLOADED FILES ANALYSIS]
+Headers: Name, Email, Phone, Company, Title
+Item 1: John Smith, john@acme.com, 555-1234, Acme Corp, CEO
+Item 2: Jane Doe, jane@tech.io, 555-5678, Tech Inc, CTO
+Item 3: Bob Wilson, bob@startup.co, 555-9999, StartupCo, Founder
+
+YOUR RESPONSE for a "rolodex" or "contact cards":
+```json
+{
+  "action": "generate_outline",
+  "slide_count": 3,
+  "topic": "Contact Directory",
+  "slides": [
+    {"title": "John Smith", "content": "Name: John Smith\\nEmail: john@acme.com\\nPhone: 555-1234\\nCompany: Acme Corp\\nTitle: CEO"},
+    {"title": "Jane Doe", "content": "Name: Jane Doe\\nEmail: jane@tech.io\\nPhone: 555-5678\\nCompany: Tech Inc\\nTitle: CTO"},
+    {"title": "Bob Wilson", "content": "Name: Bob Wilson\\nEmail: bob@startup.co\\nPhone: 555-9999\\nCompany: StartupCo\\nTitle: Founder"}
+  ]
+}
+```
+
+**NEVER SAY "I don't have access to the file" - THE DATA IS IN THE [UPLOADED FILES ANALYSIS] SECTION!**
+
+Example with file:
+User uploads a PDF about "Q3 Financial Results"
+[UPLOADED FILES ANALYSIS]
+Revenue: $45M (up 23%)
+New customers: 1,200
+Key wins: Enterprise deal with Acme Corp
+Challenges: Supply chain delays
+
+YOUR RESPONSE should create slides using THIS EXACT DATA:
+```json
+{
+  "action": "generate_outline",
+  "slide_count": 5,
+  "topic": "Q3 Financial Results",
+  "slides": [
+    {"title": "Q3 Financial Results", "subtitle": "Performance Overview"},
+    {"title": "Revenue Growth", "key_points": ["$45M revenue", "23% increase YoY"]},
+    {"title": "Customer Acquisition", "key_points": ["1,200 new customers", "Enterprise deal with Acme Corp"]},
+    {"title": "Challenges", "key_points": ["Supply chain delays"]},
+    {"title": "Summary", "key_points": ["Strong quarter", "Growth trajectory continues"]}
+  ]
+}
+```
+
+**MANDATORY RULE #1 - GENERATE OUTLINE IMMEDIATELY WHEN USER PROVIDES DETAILS**
 
 If the user's FIRST message contains ANY of the following, IMMEDIATELY output the `generate_outline` JSON:
 - A specific topic AND slide count (e.g., "4 slides about X")
@@ -535,14 +937,9 @@ If the user's FIRST message contains ANY of the following, IMMEDIATELY output th
 - A company/brand name AND a presentation type (e.g., "pitch deck for Instacart")
 - Detailed content or structure (e.g., "comparison slide", "team slide with headshots")
 - Any indication they know what they want (specific slides, specific content)
+- **UPLOADED FILES** - If files are uploaded, generate outline from them immediately
 
-❌ WRONG: Asking "What's your audience?" when user already described 4 specific slides
-❌ WRONG: Asking clarifying questions when user gave detailed slide content
-✅ CORRECT: IMMEDIATELY generate the outline JSON and show the buttons
-
-The user wants to see their presentation, not answer more questions!
-
-🚨🚨🚨 **MANDATORY RULE #2 - THEME/COLOR CHANGES** 🚨🚨🚨
+**MANDATORY RULE #2 - THEME/COLOR CHANGES**
 
 WHEN USER MENTIONS COLORS/THEME/STYLE:
 YOU MUST OUTPUT JSON WITH "action": "update_theme"
@@ -553,9 +950,6 @@ YOU MUST OUTPUT THIS TYPE OF JSON (not just text):
 {"action": "update_theme", "theme_changes": {"colors": {"search_query": "yellow sunny golden bright"}}}
 ```
 
-❌ WRONG: Just responding "I've updated your theme with yellow colors!"
-✅ CORRECT: Output the JSON action above, THEN add a friendly message
-
 Without the JSON action, NOTHING will change. The JSON is HOW you make changes.
 
 **Your Approach:**
@@ -563,6 +957,39 @@ Without the JSON action, NOTHING will change. The JSON is HOW you make changes.
 2. **Only ask questions if truly needed** - Don't ask if user gave you enough to work with
 3. **Infer smartly** - Fill in reasonable defaults for missing details (audience, tone, etc.)
 4. **Stream your responses naturally** - Write naturally as if typing to the user in real-time
+5. **Suggest style and interactive elements** - When asking clarifying questions, offer creative options
+
+**💡 GUIDING USERS - STYLE & INTERACTIVE SUGGESTIONS:**
+
+When the user gives a vague topic, help them discover what's possible! Briefly mention:
+
+1. **Style Options** - Suggest 2-3 style directions:
+   - "Professional & corporate" vs "Modern & bold" vs "Playful & colorful"
+   - "Minimalist & clean" vs "Data-rich & detailed" vs "Visual storytelling"
+   - For specific topics: "Would you like a sleek tech startup vibe or a warmer, approachable feel?"
+
+2. **Interactive Elements** - Based on the subject, suggest unique features:
+   - **Educational topics**: "I can add interactive quizzes, step-by-step reveals, or knowledge checks"
+   - **Data/Analytics**: "Would you like animated charts, live counters, or comparison sliders?"
+   - **Product launches**: "I can create before/after reveals, feature spotlights, or demo walkthroughs"
+   - **Training/How-to**: "Want interactive checklists, progress trackers, or clickable steps?"
+   - **Timelines/History**: "I can build an animated timeline or era-by-era reveals"
+   - **Comparisons**: "Interactive side-by-side comparisons or swipe-to-reveal differences?"
+   - **Team/About Us**: "Animated team cards, role reveals, or org chart interactions?"
+
+3. **Branding Options** - Remind users they can:
+   - "If this is for a specific company, I can pull their official brand colors and logo"
+   - "Want to match a brand's style? Just tell me the company name"
+
+**Example when asking questions:**
+User: "presentation about machine learning"
+Assistant: "I'd love to help with your ML presentation! A few quick questions:
+- **Audience**: Technical engineers, business executives, or students?
+- **Style**: Should it feel like a sleek tech keynote, an academic lecture, or something more playful?
+- **Interactive elements**: I can add things like animated neural network visualizations, interactive model comparisons, or quiz slides to test understanding
+- **Slides**: How many are you thinking?"
+
+**Keep suggestions brief** - Don't overwhelm. Pick 1-2 relevant interactive ideas based on the topic.
 
 **When to Ask Questions (ONLY if ALL of these are true):**
 - User gave ONLY a vague topic (e.g., "make a presentation about physics")
@@ -576,6 +1003,17 @@ Without the JSON action, NOTHING will change. The JSON is HOW you make changes.
 - User gave detailed content (e.g., "comparison chart", "team slide with CEO")
 - User mentioned a company/brand (e.g., "for Instacart", "Nike pitch deck")
 - User said "go", "yes", "create", "build", "generate", etc.
+
+**🔍 PROACTIVE RESEARCH FOR KNOWN COMPANIES:**
+When user mentions a RECOGNIZABLE COMPANY (Anthropic, OpenAI, Tesla, Stripe, Google, Meta, etc.):
+- DO NOT ask "what was your last funding round?" - SEARCH FOR IT!
+- DO NOT ask "what's your valuation?" - SEARCH FOR IT!
+- These are PUBLIC companies with PUBLIC information - use web_search to find it!
+- Examples:
+  - "Anthropic pitch deck" → Search: "Anthropic funding rounds valuation Series B C"
+  - "review our last round" (for known company) → Search: "[company] latest funding round details"
+  - "cost analysis" (for known company) → Search: "[company] revenue expenses financials"
+- The user expects YOU to bring the data. That's what makes the tool helpful!
 
 **CRITICAL: COMPLETION TRIGGERS**
 If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), or indicates they are satisfied:
@@ -617,6 +1055,23 @@ Example Response:
 {"action": "generate_outline", "slide_count": 5, "topic": "Topic", "slides": [...]}
 ```
 
+**🎨 TRADITIONAL vs INTERACTIVE SLIDES:**
+
+When creating slides, you can suggest a slide style based on user request:
+- **TRADITIONAL**: Standard components (text blocks, images, bullet points) - good for corporate, formal, classic presentations
+- **INTERACTIVE**: CustomComponents with HTML/CSS animations - good for modern, engaging, impressive presentations
+- **AUTO**: Let the system decide based on content
+
+STYLE DETECTION:
+- User says "simple", "basic", "corporate", "professional", "formal" → TRADITIONAL
+- User says "interactive", "animated", "modern", "engaging", "cool", "impressive" → INTERACTIVE
+- No preference stated → AUTO
+
+Include in your generate_outline JSON:
+```json
+{"action": "generate_outline", "slide_style": "interactive", ...}
+```
+
 **🎤 PRESENTATION MODE vs DETAILED MODE - CRITICAL CONTENT RULES:**
 
 By default, use "detail_level": "standard" which means PRESENTATION MODE:
@@ -647,6 +1102,8 @@ When you have enough context to generate an outline, output JSON in this EXACT f
   "topic": "Introduction to Machine Learning",
   "detail_level": "standard",
   "tone": "professional",
+  "style": "modern tech keynote",  // OPTIONAL: Style/vibe (e.g., "playful", "corporate", "minimalist", "bold")
+  "brandContext": "domain.com or Brand Name",  // OPTIONAL: Pass to theme generator for branding
   "slides": [
     {
       "title": "Slide Title Here",
@@ -657,8 +1114,28 @@ When you have enough context to generate an outline, output JSON in this EXACT f
 }
 ```
 
+**Style Examples:**
+- "modern tech keynote" - sleek, bold, startup feel
+- "professional corporate" - clean, trustworthy, executive-ready
+- "playful colorful" - fun, energetic, engaging
+- "minimalist elegant" - lots of whitespace, sophisticated
+- "academic educational" - clear, structured, informative
+- "creative bold" - striking visuals, unique layouts
+
 After the JSON, add a friendly 1-sentence confirmation like:
 "I've created a 5-slide outline on machine learning. What do you think?"
+
+**🏷️ BRAND CONTEXT (IMPORTANT):**
+When the presentation is FOR or ABOUT a specific company, university, or organization:
+- Set `brandContext` to their domain (e.g., "ualberta.ca", "anthropic.com", "nike.com")
+- This tells the THEME GENERATOR to fetch their official brand colors/logo
+- DO NOT search for brand colors yourself - just pass the domain and let ThemeDirector handle it
+
+Examples:
+- "University of Alberta presentation" → `"brandContext": "ualberta.ca"`
+- "Anthropic pitch deck" → `"brandContext": "anthropic.com"`
+- "Nike marketing strategy" → `"brandContext": "nike.com"`
+- Generic topic with no brand → omit brandContext entirely
 
 🚨 **IMPORTANT**: After outputting generate_outline JSON, STOP. Do NOT auto-apply themes or make any other changes. The UI will show presentation type buttons (Simple/Detailed) for the user to choose. Wait for user to select before proceeding.
 
@@ -739,6 +1216,17 @@ When user wants to change the theme, colors, fonts, or logos (e.g., "change the 
 - "Remove the logo" → `{"action": "update_theme", "theme_changes": {"logo": {"action": "remove"}}}`
 - "Change font to Roboto" → `{"action": "update_theme", "theme_changes": {"fonts": {"family": "Roboto"}}}`
 
+**🎓 UNIVERSITY/INSTITUTION THEMED REQUESTS:**
+When user says "make it [institution] themed" or "use [university] colors" or "[school] branding":
+- "Make it UAlberta themed" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "University of Alberta", "url": "ualberta.ca"}}}`
+- "University of Alberta colors" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "University of Alberta", "url": "ualberta.ca"}}}`
+- "Make it Stanford themed" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "Stanford", "url": "stanford.edu"}}}`
+- "MIT branding" → `{"action": "update_theme", "theme_changes": {"brand": {"name": "MIT", "url": "mit.edu"}}}`
+
+**🚨 "THEMED" = UPDATE_THEME:**
+Any request containing "themed", "branding", "brand colors", "[name] colors" MUST use `update_theme` action with a brand object.
+DO NOT search for brand colors - just set the brand name and URL, and ThemeDirector will fetch from Brandfetch!
+
 4. **Scraping Media from Websites** (GIFs, images, content):
 When user wants to pull content from a specific website for their slides:
 ```json
@@ -795,10 +1283,32 @@ Convert color/aesthetic words into descriptive search queries:
 **Examples:**
 
 User: "make slides about physics"
-Assistant: I'd love to help! A few quick questions:
-- Who's your audience? (e.g., high school students, college students, general audience)
-- What's the main focus - fundamentals, a specific topic, or an overview?
-- How many slides were you thinking?
+Assistant: I'd love to help with your physics presentation! A few quick questions:
+- **Audience**: High school students, university level, or general public?
+- **Focus**: Fundamentals overview, specific topic (quantum, relativity, mechanics), or real-world applications?
+- **Style**: Would you like a clean academic look, or something more dynamic with animated diagrams?
+- **Interactive elements**: I can add things like interactive formula breakdowns, animated physics simulations, or quiz slides to test concepts
+- **Slides**: How many are you thinking?
+
+User: "Anthropic pitch deck for Series D, 6 slides for Goldman Sachs, review the last round"
+Assistant: I'll research Anthropic's funding history and create a compelling pitch deck for Goldman Sachs.
+[Uses web_search: "Anthropic latest funding round valuation revenue"] (NOTE: Use current year from today's date!)
+[Uses web_search: "Anthropic AI infrastructure costs revenue model"]
+
+Based on my research, here's your pitch deck with REAL data:
+```json
+{
+  "action": "generate_outline",
+  "slide_count": 6,
+  "topic": "Anthropic Series D Financing",
+  "slides": [
+    {"title": "Anthropic: AI Safety Leadership", "key_points": ["Founded 2021", "Latest valuation from search results", "Claude AI platform"]},
+    {"title": "Previous Round Review", "key_points": ["Use ACTUAL data from search", "Real valuation numbers", "Actual investors"]},
+    ...
+  ]
+}
+```
+I've created your pitch deck with real data from Anthropic's previous rounds.
 
 User: "create a 10-slide presentation about renewable energy for business executives"
 Assistant: ```json
@@ -948,7 +1458,7 @@ Assistant: ```json
   }
 }
 ```
-Perfect! I've updated your presentation with vibrant, fun colors that bring energy and excitement to your theme! 🎨
+Perfect! I've updated your presentation with vibrant, fun colors that bring energy and excitement to your theme.
 
 User: "make colors yellows"
 Assistant: ```json
@@ -961,7 +1471,7 @@ Assistant: ```json
   }
 }
 ```
-Done! I've updated your theme with warm, sunny yellow tones that create that inviting, energetic atmosphere! ☀️
+Done! I've updated your theme with warm, sunny yellow tones that create that inviting, energetic atmosphere.
 
 User: "pull GIFs from dyna.co for the product demo slide"
 Assistant: ```json
@@ -1011,6 +1521,13 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         scrape_result = None  # Will hold videos and scraped content if URL scraping happens
         file_context = ""
 
+        # Variables to track file analysis results
+        detected_intent = None
+        detected_slide_style = None
+        extracted_design_context = None
+        extracted_file_images = []  # Images extracted from uploaded PPTX/PDF files
+        extracted_slide_screenshots = []  # Visual reference screenshots from uploaded PPTX/PDF
+
         # Analyze uploaded files if present
         if request.files and len(request.files) > 0:
             file_names = [f.name for f in request.files]
@@ -1020,20 +1537,76 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             for i, file in enumerate(request.files):
                 yield f"data: {json.dumps({'type': 'status', 'status': 'analyzing_file', 'message': f'Analyzing {file.name}...', 'file_index': i, 'file_name': file.name, 'total_files': len(request.files)})}\n\n"
 
-            # Analyze all files
-            file_analysis = await analyze_files_for_presentation(request.files)
+            # Run both analyses in parallel for efficiency
+            basic_analysis_task = analyze_files_for_presentation(request.files)
+            enhanced_analysis_task = enhanced_file_analysis(request.files, request.message)
+
+            file_analysis, enhanced_result = await asyncio.gather(
+                basic_analysis_task,
+                enhanced_analysis_task
+            )
+
+            # Extract enhanced analysis results
+            if enhanced_result.get("success"):
+                detected_intent = enhanced_result.get("intent")
+                detected_slide_style = enhanced_result.get("slide_style")
+                extracted_design_context = enhanced_result.get("design_context")
+                extracted_file_images = enhanced_result.get("extracted_images", [])
+                extracted_slide_screenshots = enhanced_result.get("slide_screenshots", [])
+                logger.info(f"[OutlineAgent] Enhanced analysis: intent={detected_intent}, style={detected_slide_style}, images={len(extracted_file_images)}, screenshots={len(extracted_slide_screenshots)}")
 
             if file_analysis["success"] and file_analysis["combined_context"]:
-                file_context = f"\n\n[UPLOADED FILES ANALYSIS]\n{file_analysis['combined_context']}\n[END FILES ANALYSIS]\n"
+                # Build file context with intent and style information
+                intent_info = ""
+                if detected_intent:
+                    intent_info = f"\n[FILE INTENT]: {detected_intent}"
+                    if detected_intent == "use_design_only":
+                        intent_info += " (User wants to USE THE DESIGN/STYLE from these files, NOT the content)"
+                    elif detected_intent == "use_content_only":
+                        intent_info += " (User wants to USE THE CONTENT from these files, NOT the design)"
+                    elif detected_intent == "recreate_exact":
+                        intent_info += " (User wants to RECREATE these files exactly)"
+                    elif detected_intent == "use_both":
+                        intent_info += " (User wants to use BOTH design AND content from these files)"
+
+                style_info = ""
+                if detected_slide_style:
+                    style_info = f"\n[PREFERRED SLIDE STYLE]: {detected_slide_style}"
+                    if detected_slide_style == "interactive":
+                        style_info += " (User wants INTERACTIVE slides with animations)"
+                    elif detected_slide_style == "traditional":
+                        style_info += " (User wants TRADITIONAL simple slides)"
+
+                design_info = ""
+                if extracted_design_context:
+                    design_info = f"\n[EXTRACTED DESIGN]:\n{json.dumps(extracted_design_context, indent=2)}"
+                    design_info += "\n(Use these colors/fonts when generating theme)"
+
+                file_context = f"\n\n[UPLOADED FILES ANALYSIS]{intent_info}{style_info}{design_info}\n{file_analysis['combined_context']}\n[END FILES ANALYSIS]\n"
                 file_count = file_analysis['file_count']
                 logger.info(f"[OutlineAgent] File analysis complete: {file_count} files, {len(file_context)} chars context")
 
                 # Send file analysis complete event with results
-                event_data = {'type': 'status', 'status': 'files_analyzed', 'message': f'Analyzed {file_count} file(s)', 'analyses': file_analysis['analyses']}
+                event_data = {
+                    'type': 'status',
+                    'status': 'files_analyzed',
+                    'message': f'Analyzed {file_count} file(s)',
+                    'analyses': file_analysis['analyses'],
+                    'detected_intent': detected_intent,
+                    'detected_slide_style': detected_slide_style,
+                    'has_design': extracted_design_context is not None
+                }
                 yield f"data: {json.dumps(event_data)}\n\n"
             else:
                 logger.warning(f"[OutlineAgent] File analysis failed or empty: {file_analysis.get('error', 'No context')}")
                 yield f"data: {json.dumps({'type': 'status', 'status': 'file_analysis_error', 'message': file_analysis.get('error', 'Could not analyze files')})}\n\n"
+
+        # If no files sent but previousFileAnalysis exists in context, use it
+        # This allows continued conversation without re-analyzing files
+        if not file_context and request.context and request.context.get('previousFileAnalysis'):
+            previous_analysis = request.context['previousFileAnalysis']
+            file_context = f"\n\n[PREVIOUSLY ANALYZED FILES]\n{previous_analysis}\n(Files were analyzed earlier in this conversation - use the chat history for full context)\n"
+            logger.info(f"[OutlineAgent] Using previous file analysis context: {len(file_context)} chars")
 
         # Detect URLs in the message and auto-scrape them
         url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)', re.IGNORECASE)
@@ -1150,16 +1723,32 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 yield ("text", "I found some information but couldn't process it fully. Let me summarize what I know.")
                 return
 
+            from agents.config import CLAUDE_HAIKU_ID
+            # Add current date to system prompt so model knows the year
+            current_date = datetime.now().strftime("%B %d, %Y")
+            system_with_date = f"Today's date is {current_date}. Use this for any time-sensitive searches (e.g., 'latest funding round', 'recent news', '2025 data').\n\n{OUTLINE_AGENT_SYSTEM_PROMPT}"
+
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=4096,
-                system=OUTLINE_AGENT_SYSTEM_PROMPT,
+                model=CLAUDE_HAIKU_ID,
+                max_tokens=8192,  # Increased to handle large outlines with research
+                system=system_with_date,
                 messages=msgs,
                 tools=[SEARCH_TOOL],
                 temperature=0.7
             )
 
             logger.info(f"[OutlineAgent] Response stop_reason: {response.stop_reason}")
+
+            # Handle max_tokens case - response was truncated
+            if response.stop_reason == "max_tokens":
+                logger.warning("[OutlineAgent] Response hit max_tokens limit - output may be incomplete")
+                # Still yield what we have, but warn the user
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        yield ("text", block.text)
+                # Send error event to frontend
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Response was truncated. Try asking for fewer slides or less detail.'})}\n\n"
+                return
 
             # Check if model wants to use tools
             if response.stop_reason == "tool_use":
@@ -1176,6 +1765,22 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     if block.type == "tool_use" and block.name == "web_search":
                         query = block.input.get("query", "")
                         logger.info(f"[OutlineAgent] Model requested search: {query}")
+
+                        # BLOCK brand/theme searches - ThemeDirector handles this via Brandfetch
+                        query_lower = query.lower()
+                        brand_search_keywords = ['brand color', 'brand colours', 'official color', 'hex code', 'logo', 'brand guideline', 'brand identity', 'color palette', 'official font', 'typography guide']
+                        is_brand_search = any(kw in query_lower for kw in brand_search_keywords)
+
+                        if is_brand_search:
+                            logger.info(f"[OutlineAgent] 🚫 BLOCKED brand search: {query}")
+                            # Return guidance to use brandContext instead
+                            tool_result = "DO NOT search for brand colors, logos, or fonts. Instead, set brandContext in your generate_outline or update_theme JSON (e.g., 'brandContext': 'ualberta.ca') and the ThemeDirector will fetch official brand data from Brandfetch."
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": tool_result
+                            })
+                            continue
 
                         # Tell frontend we're researching
                         status_event = f"data: {json.dumps({'type': 'status', 'status': 'researching', 'query': query})}\n\n"
@@ -1362,6 +1967,78 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             if outline_data.get('action') == 'generate_outline' and scrape_result and scrape_result.get('videos'):
                 outline_data['scraped_videos'] = scrape_result['videos']
                 logger.info(f"[OutlineAgent] 🎬 Attached {len(scrape_result['videos'])} scraped videos to outline")
+
+            # Attach extracted design and slide style to generate_outline action
+            if outline_data.get('action') == 'generate_outline':
+                if extracted_design_context:
+                    outline_data['extracted_design'] = extracted_design_context
+                    logger.info(f"[OutlineAgent] 🎨 Attached extracted design context to outline")
+
+                    # CRITICAL: Convert extracted_design to stylePreferences.colors for frontend theme tab
+                    # Frontend expects stylePreferences.colors with background, text, accent1, accent2
+                    color_palette = extracted_design_context.get('color_palette', {})
+                    if color_palette:
+                        style_colors = {
+                            'type': 'custom',
+                            'background': color_palette.get('background') or color_palette.get('primary_background') or '#ffffff',
+                            'text': color_palette.get('text') or color_palette.get('primary_text') or '#000000',
+                            'accent1': color_palette.get('primary') or color_palette.get('accent') or color_palette.get('accent_1') or '#007bff',
+                            'accent2': color_palette.get('secondary') or color_palette.get('accent_2') or None,
+                            'accent3': color_palette.get('accent_3') or None
+                        }
+                        # Remove None values
+                        style_colors = {k: v for k, v in style_colors.items() if v is not None}
+
+                        # Set stylePreferences with colors so frontend theme tab works
+                        if 'stylePreferences' not in outline_data:
+                            outline_data['stylePreferences'] = {}
+                        outline_data['stylePreferences']['colors'] = style_colors
+
+                        # Also add font if available from typography
+                        typography = extracted_design_context.get('typography', {})
+                        if typography.get('hero_font'):
+                            outline_data['stylePreferences']['font'] = typography['hero_font']
+                        if typography.get('body_font'):
+                            outline_data['stylePreferences']['bodyFont'] = typography['body_font']
+
+                        logger.info(f"[OutlineAgent] 🎨 Set stylePreferences.colors from extracted design: {style_colors}")
+                if extracted_file_images:
+                    outline_data['extracted_images'] = extracted_file_images
+                    logger.info(f"[OutlineAgent] 🖼️ Attached {len(extracted_file_images)} extracted images from uploaded files")
+                # Attach slide screenshots for visual design replication
+                # These are base64 PNGs that the CustomComponentGenerator will use to SEE and replicate the design
+                if extracted_slide_screenshots:
+                    outline_data['slide_screenshots'] = extracted_slide_screenshots
+                    logger.info(f"[OutlineAgent] 📸 Attached {len(extracted_slide_screenshots)} slide screenshots for visual design reference")
+                if detected_slide_style and detected_slide_style != 'auto':
+                    # Only override if AI didn't already set it
+                    if not outline_data.get('slide_style'):
+                        outline_data['slide_style'] = detected_slide_style
+                        logger.info(f"[OutlineAgent] 🎨 Set slide_style to: {detected_slide_style}")
+                if detected_intent:
+                    outline_data['file_intent'] = detected_intent
+                    logger.info(f"[OutlineAgent] 📋 Set file_intent to: {detected_intent}")
+
+                # Pass brandContext and/or style to theme generator via stylePreferences.vibeContext
+                # Priority: brandContext (specific brand) > style (general vibe)
+                brand_context = outline_data.get('brandContext')
+                style_context = outline_data.get('style')
+
+                if brand_context or style_context:
+                    if 'stylePreferences' not in outline_data:
+                        outline_data['stylePreferences'] = {}
+                    # Combine brand and style if both present, otherwise use whichever exists
+                    if brand_context and style_context:
+                        outline_data['stylePreferences']['vibeContext'] = brand_context
+                        outline_data['stylePreferences']['style'] = style_context
+                        logger.info(f"[OutlineAgent] 🏷️ Set vibeContext={brand_context}, style={style_context}")
+                    elif brand_context:
+                        outline_data['stylePreferences']['vibeContext'] = brand_context
+                        logger.info(f"[OutlineAgent] 🏷️ Set vibeContext for theme generator: {brand_context}")
+                    else:
+                        outline_data['stylePreferences']['vibeContext'] = style_context
+                        outline_data['stylePreferences']['style'] = style_context
+                        logger.info(f"[OutlineAgent] 🎨 Set style for theme generator: {style_context}")
 
             # Attach uploaded files to generate_outline action so they're used in slide generation
             logger.info(f"[OutlineAgent] 📎 Checking file attachment: action={outline_data.get('action')}, has_files={bool(request.files)}, file_count={len(request.files) if request.files else 0}")

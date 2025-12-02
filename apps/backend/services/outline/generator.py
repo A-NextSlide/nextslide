@@ -19,10 +19,11 @@ from .chart_generator import ChartGenerator
 from .media_manager import MediaManager
 from agents.ai.clients import get_client, invoke
 from agents.config import (
-    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL, 
+    OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
     OUTLINE_RESEARCH_MODEL,
     USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
+    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE,
+    CLAUDE_HAIKU
 )
 from agents.research import OutlineResearchAgent
 from agents import config as agents_config
@@ -1895,19 +1896,55 @@ class OutlineGenerator:
             # Hard clamp to supported bounds
             slide_count = max(1, min(20, slide_count))
 
-        # Dynamic callout (quote/stat) plan based on slide count
-        if slide_count <= 5:
-            min_callouts, max_callouts = 0, 1
-            callout_distribution_note = "Prefer 0; at most 1 if truly exceptional."
-        elif slide_count <= 10:
-            min_callouts, max_callouts = 1, 2
-            callout_distribution_note = "Space them 3–5 slides apart; avoid back-to-back."
-        elif slide_count <= 15:
-            min_callouts, max_callouts = 2, 3
-            callout_distribution_note = "Space them 3–6 slides apart; avoid back-to-back."
+        # NOTE: Removed forced callout injection - let AI decide based on content
+        # User's request should drive structure, not arbitrary rules
+
+        # SMART STRUCTURE DETECTION
+        # Detect if this is an interactive/widget/demo request vs formal presentation
+        interactive_indicators = [
+            'interactive', 'widget', 'demo', 'app', 'tool', 'calculator', 'quiz',
+            'game', 'simulation', 'prototype', 'mockup', 'dashboard', 'chart',
+            'visualization', 'infographic', 'poster', 'single', 'one slide',
+            'flashcard', 'card', 'thing', 'thingy', 'quick', 'simple'
+        ]
+        formal_presentation_indicators = [
+            'presentation', 'deck', 'pitch', 'keynote', 'meeting', 'conference',
+            'report', 'proposal', 'business', 'corporate', 'training', 'lecture',
+            'seminar', 'webinar', 'workshop', 'overview', 'strategy', 'analysis'
+        ]
+
+        # Check what type of request this is
+        is_interactive = any(ind in prompt_lower for ind in interactive_indicators)
+        is_formal_presentation = any(ind in prompt_lower for ind in formal_presentation_indicators)
+        is_short_request = slide_count <= 3
+        is_long_request = slide_count >= 8
+
+        # Build smart structure rules based on detection
+        structure_rules = ""
+        if is_short_request or (is_interactive and not is_formal_presentation):
+            # SHORT OR INTERACTIVE: NO forced structure
+            structure_rules = """
+⚠️ SHORT/INTERACTIVE REQUEST DETECTED:
+- DO NOT add title slides, intro slides, agenda slides, or conclusion slides
+- DO NOT add "Thank You" or "Q&A" slides
+- EVERY slide should deliver ACTUAL CONTENT the user asked for
+- Jump straight into the content - no preamble or fluff
+- If user asked for 2 slides about X, give them 2 slides about X - NOT "Title" + "X content"
+"""
+            logger.info(f"[SMART DETECTION] ⚡ SHORT/INTERACTIVE mode: {slide_count} slides, interactive={is_interactive}")
+        elif is_long_request and is_formal_presentation:
+            # LONG FORMAL PRESENTATION: Add structure
+            structure_rules = """
+📊 FORMAL PRESENTATION DETECTED:
+- Consider starting with an engaging title/intro slide
+- Add an agenda slide for complex topics (8+ slides)
+- End with a strong conclusion or call-to-action
+- Structure content logically with clear narrative flow
+"""
+            logger.info(f"[SMART DETECTION] 📊 FORMAL PRESENTATION mode: {slide_count} slides")
         else:
-            min_callouts, max_callouts = 3, 5
-            callout_distribution_note = "Sprinkle every 3–6 slides; never back-to-back."
+            # Medium length or unclear - let AI decide naturally
+            logger.info(f"[SMART DETECTION] 🔄 NEUTRAL mode: {slide_count} slides - AI decides structure")
 
         # Pitch-aware visual simplicity rules
         pitch_outline_rules = (
@@ -1926,7 +1963,7 @@ class OutlineGenerator:
                 "Prioritize the specific details in the context over generic generation.\n"
             )
 
-        outline_prompt = f"""Create a clean presentation outline for:
+        outline_prompt = f"""Create a presentation outline for:
 {options.prompt}
 {context_instruction}
 
@@ -1934,18 +1971,15 @@ Return STRICT JSON only:
 {{
   "title": "<Deck Title>",
   "slides": ["<Slide Title 1>", "<Slide Title 2>", "..."],
-  "slide_types": ["title|agenda|content|quote|stat|divider|transition|team|conclusion", "..."]
+  "slide_types": ["content", "..."]
 }}
 
 Requirements:
 - Create exactly {slide_count} slides.
-- Slide 1 MUST be "title". For decks with ≥ 6 slides, use "conclusion" as the last slide.
-- Inject {min_callouts}–{max_callouts} dedicated CALLOUT slides of type "quote" and/or "stat".
-- Distribution: {callout_distribution_note}
-- Never place two callout slides back-to-back.
+- All slides should be type "content" (the visual design is handled separately).
 - Make titles specific and engaging (avoid generic like "Introduction").
-- Ensure slide_types aligns 1:1 with slides and uses only the allowed values.
-{pitch_outline_rules}"""
+- Focus on what the USER asked for, not on following a standard deck template.
+{structure_rules}{pitch_outline_rules}"""
 
         try:
             # Get quick outline structure - use mode-appropriate model
@@ -2002,22 +2036,19 @@ Requirements:
                 outline_data = json.loads(match.group(0))
                 presentation_title = outline_data["title"]
                 slide_titles = outline_data["slides"]
-                slide_types = outline_data.get("slide_types") or [
-                    ("title" if i == 0 else ("conclusion" if i == len(slide_titles) - 1 and len(slide_titles) >= 6 else "content"))
-                    for i in range(len(slide_titles))
-                ]
+                slide_types = outline_data.get("slide_types") or ["content"] * len(slide_titles)
             else:
                 # Fallback if parsing fails
                 presentation_title = "Presentation"
                 slide_titles = [f"Slide {i+1}" for i in range(slide_count)]
-                slide_types = ["title"] + ["content"] * max(0, slide_count - 2) + (["conclusion"] if slide_count >= 2 else [])
+                slide_types = ["content"] * slide_count
                 
         except Exception as e:
             logger.error(f"Failed to get outline structure: {e}")
             # Fallback structure with proper count
             presentation_title = "Presentation"
             slide_titles = [f"Slide {i+1}" for i in range(slide_count)]
-            slide_types = ["title"] + ["content"] * max(0, slide_count - 2) + (["conclusion"] if slide_count >= 2 else [])
+            slide_types = ["content"] * slide_count
         
         logger.debug(f"[STREAMING] Got outline: {len(slide_titles)} slides")
         
@@ -2075,19 +2106,46 @@ Requirements:
                 # PHASE 1: Research with Perplexity (get facts + citations)
                 perplexity_research = None
                 research_citations = []
-                
-                if slide_type not in ["title", "quote", "stat", "divider", "transition"]:
+
+                # Check if user provided their own data/content (skip research if so)
+                style_ctx = (options.style_context or "").lower()
+                has_user_data = any(marker in style_ctx for marker in [
+                    'uploaded files', 'file analysis', '.csv', '.xlsx', '.xls',
+                    'contacts', 'rolodex', 'from this', 'use this content',
+                    'summarize this', 'my data', 'file_intent', 'use_content',
+                    'use_both', 'recreate'
+                ])
+
+                # Also check the prompt itself
+                prompt_lower = (options.prompt or "").lower()
+                has_data_intent = any(marker in prompt_lower for marker in [
+                    'my contacts', 'my data', 'this file', 'this csv', 'this spreadsheet',
+                    'uploaded', 'from the file', 'use the data'
+                ])
+
+                skip_research = has_user_data or has_data_intent
+
+                # Check if this is list data (contacts, team, products) - define early for later use
+                is_list_slide = any(marker in style_ctx for marker in [
+                    'contacts', 'rolodex', 'contact list', 'roster', 'directory',
+                    'item 1:', 'total items:', 'headers:'
+                ])
+
+                if skip_research:
+                    logger.info(f"[SKIP RESEARCH] Slide {idx+1} ({slide_title}): User provided data - skipping Perplexity research (is_list={is_list_slide})")
+
+                if slide_type not in ["title", "quote", "stat", "divider", "transition"] and not skip_research:
                     # Research content slides with Perplexity
                     perplexity_client, perplexity_model = get_client('perplexity-sonar', wrap_with_instructor=False)
-                    
+
                     # Build comprehensive context including conversation details
                     context_parts = [options.prompt]
                     if options.style_context and options.style_context.strip():
                         # Extract custom requirements from style context (e.g., financial details, specific asks)
                         context_parts.append(options.style_context.strip())
-                    
+
                     full_context = "\n\n".join(context_parts)
-                    
+
                     research_prompt = f"""Research this slide topic and provide key facts with sources:
 
 Presentation: {presentation_title}
@@ -2236,21 +2294,49 @@ STRUCTURED FORMAT WITH SECTION HEADERS:
 CITE ALL FACTS with [1], [2], [3] etc. Use REAL data from your research.
 REMEMBER: NO IMAGE tags in content."""
                     else:
-                        # PRESENTATION MODE - FLEXIBLE MINIMAL  
+                        # PRESENTATION MODE - FLEXIBLE MINIMAL
                         logger.debug(f"[STREAMING] Slide {idx+1}: Using FLEXIBLE MINIMAL presentation mode")
-                        
+
                         research_data_section = ""
                         if perplexity_research:
                             research_data_section = f"RESEARCH DATA from Perplexity:\n{perplexity_research}\n\n"
-                        
+
                         citation_instruction = "Use inline citation numbers matching the research sources above." if research_citations else "Include facts and data."
-                        
+
                         # Include conversation context for custom requirements
                         context_for_slide = options.prompt
                         if options.style_context and options.style_context.strip():
                             context_for_slide = f"{options.prompt}\n\nAdditional context from conversation:\n{options.style_context}"
-                        
-                        slide_prompt = f"""🎤 PRESENTATION MODE - Create minimal slide content:
+
+                        # Use special prompt for list data (already detected earlier)
+                        if is_list_slide and skip_research:
+                            # Special prompt for list data - extract actual items
+                            slide_prompt = f"""📇 LIST DATA SLIDE - Display actual items from user's data:
+
+Presentation: {presentation_title}
+Slide {idx+1}: {slide_title}
+Context: {context_for_slide}
+
+INSTRUCTIONS:
+Look at the FULL DATA section in the context. Find the actual items (contacts, team members, products, etc.) that belong on this slide based on the slide title.
+
+For this slide titled "{slide_title}", extract and display the ACTUAL DATA:
+- Names, titles, emails, phone numbers, etc. from the data
+- Format as contact cards or profile entries
+- Use the EXACT information from the data file
+
+OUTPUT FORMAT (for contacts/team):
+**Name 1**
+Title/Role | email@domain.com | +1-555-1234
+
+**Name 2**
+Title/Role | email@domain.com | +1-555-5678
+
+(List 3-6 actual contacts from the data that match this slide's topic)
+
+DO NOT make up fake data - use ONLY what's in the context."""
+                        else:
+                            slide_prompt = f"""🎤 PRESENTATION MODE - Create minimal slide content:
 
 Presentation: {presentation_title}
 Slide {idx+1}: {slide_title}
@@ -2307,6 +2393,15 @@ If custom values in context (e.g., "$15M raise"), use EXACTLY those values."""
                         "search_domain_filter": ["-youtube.com", "-youtu.be", "-www.youtube.com", "-m.youtube.com"],
                         "num_search_results": 10
                     }
+                elif is_list_slide and skip_research:
+                    # List data slides need more tokens for actual data display
+                    max_tokens_for_slide = 1000  # More tokens for contact cards, profiles, etc.
+                    slide_search_params = {
+                        "return_citations": False,  # No research needed
+                        "search_recency_filter": "week",
+                        "num_search_results": 0
+                    }
+                    logger.debug(f"[LIST DATA] Slide {idx+1}: Using LIST DATA mode (1000 tokens, no search)")
                 else:
                     max_tokens_for_slide = 200  # Truly minimal for presentation mode
                     slide_search_params = {
@@ -2821,7 +2916,7 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                 slide_count=options.slide_count,
                 visual_density=options.visual_density,
                 async_images=options.async_images,
-                model='claude-haiku-4-5'  # Force Haiku
+                model=CLAUDE_HAIKU  # Force Haiku
             )
             
             # Call the standard generation with Haiku (will use standard mode logic)

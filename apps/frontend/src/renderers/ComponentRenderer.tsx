@@ -442,6 +442,12 @@ export const ComponentRenderer: React.FC<Props> = ({
         (rendererProps as any).isThumbnail = isThumbnail;
       }
 
+      // For CustomComponent, only enable element editing when isElementEditMode is true
+      // This prevents hover outlines from showing until user clicks "Edit Elements"
+      if (componentType === "CustomComponent") {
+        (rendererProps as any).isEditing = isElementEditMode;
+      }
+
       // Also pass isThumbnail to Table renderer so it can adjust spacing logic
       if (componentType === "Table") {
         (rendererProps as any).isThumbnail = isThumbnail;
@@ -657,36 +663,54 @@ export const ComponentRenderer: React.FC<Props> = ({
 
       {/*
         EXIT EDIT MODE button - shows when in element edit mode
+        Positioned inside component at top-right, tiny orange button
+        Falls back to slide top-right if component is near top edge
       */}
-      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && isElementEditMode && (
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsElementEditMode(false);
-          }}
-          style={{
-            position: 'absolute',
-            top: '-32px',
-            right: '0',
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '6px 12px',
-            background: '#FF4301',
-            color: 'white',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            fontWeight: 600,
-            fontFamily: 'system-ui',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-            pointerEvents: 'auto',
-          }}
-        >
-          ✓ Done Editing
-        </div>
-      )}
+      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && isElementEditMode && (() => {
+        // Check if component is near top of slide (would crop the button)
+        const compY = component.props?.position?.y ?? 0;
+        const isNearTop = compY < 40;
+
+        return (
+          <div
+            data-no-drag="true"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsElementEditMode(false);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: isNearTop ? 'fixed' : 'absolute',
+              top: isNearTop ? '8px' : '8px',
+              right: isNearTop ? '8px' : '8px',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+              padding: '4px 8px',
+              background: '#FF4301',
+              color: 'white',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '10px',
+              fontWeight: 600,
+              fontFamily: 'system-ui',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+              pointerEvents: 'auto',
+              opacity: 0.9,
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+            onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.9'; }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Done
+          </div>
+        );
+      })()}
 
       {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */}
       {isEditing && (effectiveIsSelected || isTextEditing) && !isBackground && !isLines && !isCroppingThis && (

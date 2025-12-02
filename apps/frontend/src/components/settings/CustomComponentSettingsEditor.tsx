@@ -363,6 +363,8 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
         );
 
       case 'image':
+        const imageFitKey = `${variable.name}_objectFit`;
+        const currentFit = componentProps[imageFitKey] || variable.objectFit || 'cover';
         return (
           <ImageSlotEditor
             key={variable.name}
@@ -370,10 +372,14 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
             label={variable.label || variable.name}
             value={currentValue}
             searchQuery={variable.searchQuery}
-            objectFit={variable.objectFit}
+            objectFit={currentFit}
             componentId={component.id}
             onUpdate={updateProp}
             onSave={saveChanges}
+            onObjectFitChange={(fit) => {
+              updateProp(imageFitKey, fit);
+              saveChanges(imageFitKey, `${variable.label || variable.name} fit`);
+            }}
           />
         );
 
@@ -554,55 +560,102 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 
       {/* HTML Slide Images - shown for HTML documents regardless of parsed variables */}
       {htmlPlaceholderImages.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <h4 className="text-xs font-medium text-muted-foreground">
             Slide Images ({htmlPlaceholderImages.length})
           </h4>
-          <div className="grid grid-cols-1 gap-3">
-            {htmlPlaceholderImages.map((imageInfo, idx) => (
-              <ImageSlotEditor
-                key={`html-image-${idx}-${imageInfo.alt}`}
-                propName={`Image${idx + 1}`}
-                label={imageInfo.alt}
-                value={imageInfo.currentSrc}
-                searchQuery={imageInfo.searchQuery}
-                objectFit="cover"
-                componentId={component.id}
-                onUpdate={(propName, imageUrl) => {
-                  // Update the HTML directly by replacing the image src
-                  // Use index-based matching to find the correct image
-                  let currentHtml = component.props.render as string;
-                  let currentIndex = 0;
-                  let replaced = false;
+          <div className="grid grid-cols-1 gap-4">
+            {htmlPlaceholderImages.map((imageInfo, idx) => {
+              const htmlFitKey = `htmlImage${idx}_objectFit`;
+              const htmlImageFit = componentProps[htmlFitKey] || 'cover';
+              return (
+                <ImageSlotEditor
+                  key={`html-image-${idx}-${imageInfo.alt}`}
+                  propName={`Image${idx + 1}`}
+                  label={imageInfo.alt}
+                  value={imageInfo.currentSrc}
+                  searchQuery={imageInfo.searchQuery}
+                  objectFit={htmlImageFit}
+                  componentId={component.id}
+                  onUpdate={(propName, imageUrl) => {
+                    // Update the HTML directly by replacing the image src
+                    let currentHtml = component.props.render as string;
+                    let currentIndex = 0;
+                    let replaced = false;
 
-                  currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
-                    if (replaced) {
+                    currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
+                      if (replaced) {
+                        currentIndex++;
+                        return imgMatch;
+                      }
+
+                      if (currentIndex === imageInfo.index) {
+                        replaced = true;
+                        if (attrs.includes('src=')) {
+                          const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
+                          return `<img${newAttrs}>`;
+                        } else {
+                          return `<img src="${imageUrl}"${attrs}>`;
+                        }
+                      }
                       currentIndex++;
                       return imgMatch;
-                    }
+                    });
 
-                    if (currentIndex === imageInfo.index) {
-                      replaced = true;
-                      if (attrs.includes('src=')) {
-                        const newAttrs = attrs.replace(/src=["'][^"']*["']/i, `src="${imageUrl}"`);
-                        return `<img${newAttrs}>`;
-                      } else {
-                        return `<img src="${imageUrl}"${attrs}>`;
+                    if (replaced) {
+                      handlePropChange('render', currentHtml, true);
+                    }
+                  }}
+                  onSave={(propName, label) => {
+                    saveComponentToHistory(`Updated image: ${label}`);
+                  }}
+                  onObjectFitChange={(fit) => {
+                    // Update object-fit in HTML style attribute
+                    let currentHtml = component.props.render as string;
+                    let currentIndex = 0;
+                    let replaced = false;
+
+                    currentHtml = currentHtml.replace(/<img([^>]*)>/gi, (imgMatch, attrs) => {
+                      if (replaced) {
+                        currentIndex++;
+                        return imgMatch;
                       }
-                    }
-                    currentIndex++;
-                    return imgMatch;
-                  });
 
-                  if (replaced) {
-                    handlePropChange('render', currentHtml, true);
-                  }
-                }}
-                onSave={(propName, label) => {
-                  saveComponentToHistory(`Updated image: ${label}`);
-                }}
-              />
-            ))}
+                      if (currentIndex === imageInfo.index) {
+                        replaced = true;
+                        // Check if style attribute exists
+                        if (attrs.includes('style=')) {
+                          // Update or add object-fit in existing style
+                          const newAttrs = attrs.replace(
+                            /style=["']([^"']*)["']/i,
+                            (styleMatch, styleContent) => {
+                              const hasObjectFit = /object-fit\s*:\s*[^;]+;?/i.test(styleContent);
+                              if (hasObjectFit) {
+                                return `style="${styleContent.replace(/object-fit\s*:\s*[^;]+;?/i, `object-fit: ${fit};`)}"`;
+                              } else {
+                                return `style="${styleContent}; object-fit: ${fit};"`;
+                              }
+                            }
+                          );
+                          return `<img${newAttrs}>`;
+                        } else {
+                          // Add style attribute
+                          return `<img style="object-fit: ${fit};"${attrs}>`;
+                        }
+                      }
+                      currentIndex++;
+                      return imgMatch;
+                    });
+
+                    if (replaced) {
+                      handlePropChange('render', currentHtml, true);
+                      updateProp(htmlFitKey, fit);
+                      saveComponentToHistory(`Updated image fit: ${imageInfo.alt}`);
+                    }
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
       )}

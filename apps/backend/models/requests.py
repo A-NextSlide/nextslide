@@ -75,9 +75,9 @@ class TaggedMediaItem(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Any additional metadata associated with the media (e.g., chart type, image dimensions).")
 
 class ExtractedDataItem(BaseModel):
-    source: str = Field(description="Filename or source description of the extracted data.")
+    source: str = Field(default="", description="Filename or source description of the extracted data.")
     chartType: Optional[str] = Field(None, description="Suggested chart type for the data (e.g., 'bar', 'line', 'pie').")
-    data: List[Dict[str, Any]] = Field(description="The actual extracted tabular data, usually an array of objects.")
+    data: Optional[List[Dict[str, Any]]] = Field(default=None, description="The actual extracted tabular data, usually an array of objects.")
     title: Optional[str] = Field(None, description="Title for the chart visualization.")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for chart configuration (e.g., legend settings).")
 
@@ -150,6 +150,7 @@ class DeckOutline(BaseModel):
     discarded_files: Optional[List[DiscardedFileItem]] = Field(None, description="Files that were uploaded but explicitly discarded or not used.")
     stylePreferences: Optional[StylePreferencesItem] = Field(None, description="User's style preferences for the deck.")
     notes: Optional[Dict[str, Any]] = Field(None, description="Narrative flow analysis including story arc, themes, and presentation tips.")
+    extractedImages: Optional[List[str]] = Field(None, description="Image URLs extracted from uploaded PPTX/PDF files for use in generated slides.")
 
 class DeckOutlineResponse(BaseModel):
     message: str

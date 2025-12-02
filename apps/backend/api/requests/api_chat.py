@@ -94,8 +94,9 @@ If you need clarification, ask ONE specific question:
 
 Be friendly, not robotic!"""
 
+            from agents.config import CLAUDE_HAIKU_ID
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=CLAUDE_HAIKU_ID,
                 max_tokens=128,
                 system=system_prompt,
                 messages=messages,

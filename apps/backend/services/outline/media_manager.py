@@ -36,10 +36,10 @@ class MediaManager:
         return category_to_type.get(category, 'other')
     
     async def assign_media_to_slides_with_ai(
-        self, 
-        slides: List[SlideContent], 
+        self,
+        slides: List[SlideContent],
         processed_files: Dict[str, Any],
-        model_name: str = "gemini-2.5-flash-lite"
+        model_name: str = None
     ) -> None:
         """Use AI to intelligently assign media files to appropriate slides"""
         if not processed_files or not processed_files.get('images'):
@@ -110,7 +110,8 @@ Only include images that have good matches. Be thoughtful and strategic about as
 
         try:
             # Get AI client
-            client, actual_model = get_client(model_name)
+            from agents.config import GEMINI_FLASH_LITE
+            client, actual_model = get_client(model_name or GEMINI_FLASH_LITE)
             
             # Make the API call without response_model for raw JSON response
             messages = [{"role": "user", "content": prompt}]

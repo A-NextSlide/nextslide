@@ -183,26 +183,27 @@ class ImageStorageService:
             # Return original URL as fallback
             return {'url': image_url, 'error': str(e)}
     
-    async def upload_image_from_base64(self, base64_data: str, filename: str, content_type: str = "image/png") -> Dict[str, Any]:
+    async def upload_image_from_base64(self, base64_data: str, filename: str, content_type: str = "image/png", folder: str = "ai-generated") -> Dict[str, Any]:
         """
         Upload an image from base64 data to Supabase storage.
-        
+
         Args:
             base64_data: Base64 encoded image data
             filename: Desired filename
             content_type: MIME type of the image
-            
+            folder: Folder path in storage bucket (default: "ai-generated")
+
         Returns:
             Dict with 'url' (Supabase URL) and 'path' (storage path)
         """
         try:
             # Decode base64 data
             image_data = base64.b64decode(base64_data)
-            
+
             # Generate unique file path
             file_hash = hashlib.md5(image_data).hexdigest()
             ext = mimetypes.guess_extension(content_type) or '.png'
-            file_path = f"ai-generated/{file_hash[:2]}/{file_hash}{ext}"
+            file_path = f"{folder}/{file_hash[:2]}/{file_hash}{ext}"
             
             # Check if file already exists
             existing = self.supabase.storage.from_(self.bucket_name).list(path=os.path.dirname(file_path))

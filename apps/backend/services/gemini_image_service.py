@@ -65,9 +65,14 @@ class GeminiImageService:
         try:
             def _invoke():
                 # The SDK returns candidates with parts; images are in inline_data
+                # Gemini 2.0+ requires response_modalities to generate images
+                from google.genai import types
                 response = self._client.models.generate_content(
                     model=self.model,
                     contents=effective_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"]
+                    )
                 )
                 return response
 
@@ -184,9 +189,13 @@ class GeminiImageService:
 
         try:
             def _invoke():
+                from google.genai import types
                 response = self._client.models.generate_content(
                     model=self.model,
                     contents=[prompt, pil_img],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"]
+                    )
                 )
                 return response
 
@@ -245,10 +254,14 @@ class GeminiImageService:
                 pil_images.append(Image.open(BytesIO(data)))
 
             def _invoke():
+                from google.genai import types
                 contents = [effective_prompt] + pil_images
                 response = self._client.models.generate_content(
                     model=self.model,
                     contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"]
+                    )
                 )
                 return response
 

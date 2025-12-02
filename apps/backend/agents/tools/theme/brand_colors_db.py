@@ -91,8 +91,8 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                 if try_domain and try_domain != identifier:
                     brand_data = await cache_service.get_brand_data(try_domain)
             
-            if not brand_data:
-                logger.info(f"[BRANDFETCH DB] No brand data found for {domain}")
+            if not brand_data or brand_data.get('error'):
+                logger.info(f"[BRANDFETCH DB] No brand data found for {identifier}")
                 return None
             
             # Extract colors, fonts, and logo from brand data

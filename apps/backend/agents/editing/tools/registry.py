@@ -22,8 +22,16 @@ from agents.editing.tools.component import (
 from agents.editing.tools.custom_component_edit import (
     CustomComponentStrReplaceArgs,
     CustomComponentViewArgs,
+    CustomComponentRewriteArgs,
     custom_component_str_replace,
     custom_component_view,
+    custom_component_rewrite,
+)
+from agents.editing.tools.custom_component_media import (
+    CustomComponentAddMediaArgs,
+    CustomComponentAddLogoArgs,
+    custom_component_add_media,
+    custom_component_add_logo,
 )
 from agents.editing.tools.slide import StyleSlideArgs, style_slide
 from agents.editing.tools.background import UpdateBackgroundArgs, update_background
@@ -87,9 +95,12 @@ def get_tools_and_call_map(
         ),
         get_create_new_component_model(component_types=available_types),
         get_replace_component_model(component_types=available_types),
-        # CustomComponent str_replace tools for fast, targeted edits
-        CustomComponentStrReplaceArgs,
-        CustomComponentViewArgs,
+        # CustomComponent editing tools (Gemini-compatible)
+        CustomComponentStrReplaceArgs,  # Fast, targeted string replacement (no AI)
+        CustomComponentViewArgs,         # View HTML content
+        CustomComponentRewriteArgs,      # Full rewrite with AI (uses simple response model)
+        CustomComponentAddMediaArgs,     # Add images (logos, generated, stock) to CustomComponent HTML
+        CustomComponentAddLogoArgs,      # Quick single logo addition to CustomComponent
         RemoveComponentArgs,
         RemoveAllContentArgs,
         RemoveComponentsByTypeArgs,
@@ -123,6 +134,10 @@ def get_tools_and_call_map(
     def replace_component_with_attachments(args, reg, deck, diff):
         return replace_component(args, reg, deck, diff, attachments=attachments)
 
+    # Create a wrapper for custom_component_rewrite that passes attachments
+    def custom_component_rewrite_with_attachments(args, reg, deck, diff):
+        return custom_component_rewrite(args, reg, deck, diff, attachments=attachments)
+
     call_map = {
         "edit_component": edit_component,
         "create_new_component": create_new_component_with_attachments,
@@ -130,9 +145,12 @@ def get_tools_and_call_map(
         "remove_all_content": remove_all_content,
         "remove_components_by_type": remove_components_by_type,
         "replace_component": replace_component_with_attachments,
-        # CustomComponent str_replace tools
+        # CustomComponent editing tools (Gemini-compatible)
         "custom_component_str_replace": custom_component_str_replace,
         "custom_component_view": custom_component_view,
+        "custom_component_rewrite": custom_component_rewrite_with_attachments,
+        "custom_component_add_media": custom_component_add_media,
+        "custom_component_add_logo": custom_component_add_logo,
         "style_slide": style_slide_with_attachments,
         "update_background": update_background,
         "create_slide": create_slide,

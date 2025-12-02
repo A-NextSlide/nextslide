@@ -573,10 +573,11 @@ Be smart about context - distinguish common words from brand references:
 
 Return ONLY valid JSON: {{"brand": "Brand Name", "domain": "brand.com"}} or {{"brand": null, "domain": null}}"""
 
-        client = get_client("claude-3-5-haiku-20241022")
+        from agents.config import CLAUDE_HAIKU
+        client = get_client(CLAUDE_HAIKU)
         response = invoke(
             client=client,
-            model="claude-3-5-haiku-20241022",
+            model=CLAUDE_HAIKU,
             messages=[{"role": "user", "content": brand_prompt}],
             max_tokens=100,
             temperature=0
@@ -2191,7 +2192,8 @@ async def process_content_enhancement(content: str, enhance_prompt: str = "") ->
         logger.info(f"Content length: {len(content)}, Enhance prompt: {enhance_prompt[:100]}...")
         
         # Use Gemini Flash-Lite for cost-effective search grounding
-        model_name = "gemini-2.5-flash-lite"
+        from agents.config import GEMINI_FLASH_LITE
+        model_name = GEMINI_FLASH_LITE
         client, actual_model = get_client(model_name)
         
         # Build the enhanced prompt that encourages search usage

@@ -1,525 +1,321 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { 
-  CalendarIcon,
-  Download,
-  TrendingUp,
-  TrendingDown,
-  Users,
-  FileStack,
-  Activity,
-  BarChart3,
-  PieChart,
-  LineChart as LineChartIcon,
-  Zap
-} from 'lucide-react';
-import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
-import { DateRange } from 'react-day-picker';
+import { RefreshCw, Users, FileStack, Loader2, TrendingUp, TrendingDown, Calendar, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { adminApi } from '@/services/adminApi';
+import { adminApi, AnalyticsOverview } from '@/services/adminApi';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart as RePieChart,
-  Pie,
-  Cell,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
-  Area,
-  AreaChart,
 } from 'recharts';
 
-type TimeRange = '7d' | '30d' | '90d' | 'custom';
-
-const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1'];
-
 const AdminAnalytics: React.FC = () => {
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 30),
-    to: new Date(),
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+  const [userTrends, setUserTrends] = useState<Array<{ date: string; signups: number; logins: number }>>([]);
+  const [deckTrends, setDeckTrends] = useState<Array<{ date: string; created: number }>>([]);
 
-  // Real data states
-  const [analyticsData, setAnalyticsData] = useState<any>(null);
-  const [userTrends, setUserTrends] = useState<any[]>([]);
-  const [deckTrends, setDeckTrends] = useState<any[]>([]);
-  
-  // Placeholder states for features not yet implemented
-  const [userRetentionData, setUserRetentionData] = useState<any[]>([]);
-  const [deckCreationData, setDeckCreationData] = useState<any[]>([]);
-  const [componentUsageData, setComponentUsageData] = useState<any[]>([]);
+  const fetchData = useCallback(async (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
+    else setLoading(true);
 
-  useEffect(() => {
-    fetchAnalyticsData();
-  }, [timeRange, dateRange]);
-
-  const fetchAnalyticsData = async () => {
     try {
-      setIsLoading(true);
-
-      // Fetch real data from API
-      const [overview, userTrendsData, deckTrendsData] = await Promise.all([
+      const [overviewData, userTrendsData, deckTrendsData] = await Promise.all([
         adminApi.getAnalyticsOverview(),
         adminApi.getUserTrends(),
-        adminApi.getDeckTrends()
+        adminApi.getDeckTrends(),
       ]);
-
-      setAnalyticsData(overview);
+      setOverview(overviewData);
       setUserTrends(userTrendsData);
       setDeckTrends(deckTrendsData);
     } catch (error) {
       console.error('Error fetching analytics:', error);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (loading) {
+    return (
+      <AdminLayoutV2>
+        <div className="p-6 flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
+        </div>
+      </AdminLayoutV2>
+    );
+  }
+
+  const formatNumber = (n: number) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toLocaleString();
   };
 
-  const generateMockData = () => {
-    // No longer used - keeping for reference
-    // User growth data
-    const userGrowth = [];
-    const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-    for (let i = days; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      userGrowth.push({
-        date: format(date, 'MMM d'),
-        signups: Math.floor(Math.random() * 20) + 5,
-        activeUsers: Math.floor(Math.random() * 200) + 100,
-        totalUsers: 1000 + (days - i) * 15,
-      });
-    }
-    setUserGrowthData(userGrowth);
-
-    // User retention cohorts
-    const retention = [
-      { cohort: 'Week 1', week1: 100, week2: 85, week3: 72, week4: 65 },
-      { cohort: 'Week 2', week1: 100, week2: 82, week3: 70, week4: 63 },
-      { cohort: 'Week 3', week1: 100, week2: 88, week3: 75, week4: 68 },
-      { cohort: 'Week 4', week1: 100, week2: 90, week3: 78, week4: 71 },
-    ];
-    setUserRetentionData(retention);
-
-    // Deck creation trends
-    const deckCreation = [];
-    for (let i = days; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      deckCreation.push({
-        date: format(date, 'MMM d'),
-        decksCreated: Math.floor(Math.random() * 50) + 20,
-        slidesCreated: Math.floor(Math.random() * 200) + 100,
-      });
-    }
-    setDeckCreationData(deckCreation);
-
-    // Component usage
-    const componentUsage = [
-      { name: 'Text', count: 2456, percentage: 35 },
-      { name: 'Image', count: 1823, percentage: 26 },
-      { name: 'Shape', count: 1267, percentage: 18 },
-      { name: 'Chart', count: 845, percentage: 12 },
-      { name: 'Table', count: 423, percentage: 6 },
-      { name: 'Other', count: 211, percentage: 3 },
-    ];
-    setComponentUsageData(componentUsage);
-
-    // Feature adoption
-    const featureAdoption = [
-      { feature: 'AI Generation', adoption: 78, trend: 12 },
-      { feature: 'Collaboration', adoption: 65, trend: 8 },
-      { feature: 'Templates', adoption: 82, trend: -3 },
-      { feature: 'Themes', adoption: 71, trend: 5 },
-      { feature: 'Export', adoption: 54, trend: 15 },
-      { feature: 'Sharing', adoption: 68, trend: 7 },
-    ];
-    setFeatureAdoptionData(featureAdoption);
+  const GrowthIndicator = ({ value, label }: { value: number; label: string }) => {
+    if (value === 0) return <span className="text-xs text-[#999]">{label}</span>;
+    const isPositive = value > 0;
+    return (
+      <span className={cn(
+        "text-xs flex items-center gap-0.5",
+        isPositive ? "text-emerald-600" : "text-red-500"
+      )}>
+        {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+        {Math.abs(value)}% {label}
+      </span>
+    );
   };
-
-  const handleTimeRangeChange = (value: TimeRange) => {
-    setTimeRange(value);
-    if (value !== 'custom') {
-      const days = value === '7d' ? 7 : value === '30d' ? 30 : 90;
-      setDateRange({
-        from: subDays(new Date(), days),
-        to: new Date(),
-      });
-    }
-  };
-
-  const MetricCard: React.FC<{
-    title: string;
-    value: string | number;
-    change?: number;
-    icon: React.ElementType;
-  }> = ({ title, value, change, icon: Icon }) => (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {change !== undefined && (
-          <div className={cn(
-            "flex items-center text-xs mt-1",
-            change > 0 ? "text-green-600" : "text-red-600"
-          )}>
-            {change > 0 ? (
-              <TrendingUp className="h-3 w-3 mr-1" />
-            ) : (
-              <TrendingDown className="h-3 w-3 mr-1" />
-            )}
-            {Math.abs(change)}% from last period
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
 
   return (
     <AdminLayoutV2>
-      <div className="w-full">
+      <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Analytics</h1>
-            <p className="text-muted-foreground mt-2">
-              Platform insights and performance metrics
+            <h1 className="text-lg font-semibold">Analytics</h1>
+            <p className="text-xs text-[#666] dark:text-[#888]">Platform metrics</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            className="h-8 text-xs"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", refreshing && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
+
+        {/* Key Metrics */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
+              <Users className="h-4 w-4" />
+              <span className="text-xs">Total Users</span>
+            </div>
+            <p className="text-2xl font-semibold tabular-nums">
+              {formatNumber(overview?.users.total || 0)}
+            </p>
+            <div className="mt-1">
+              <GrowthIndicator value={overview?.users.growthRate || 0} label="this month" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
+              <Calendar className="h-4 w-4" />
+              <span className="text-xs">Active (30d)</span>
+            </div>
+            <p className="text-2xl font-semibold tabular-nums">
+              {formatNumber(overview?.users.active30d || 0)}
+            </p>
+            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
+              {overview?.users.active24h || 0} today
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={timeRange} onValueChange={handleTimeRangeChange}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Time range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
-                <SelectItem value="90d">Last 90 days</SelectItem>
-                <SelectItem value="custom">Custom range</SelectItem>
-              </SelectContent>
-            </Select>
-            {timeRange === 'custom' && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="justify-start text-left font-normal">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange?.from ? (
-                      dateRange.to ? (
-                        <>
-                          {format(dateRange.from, "LLL dd")} -{" "}
-                          {format(dateRange.to, "LLL dd")}
-                        </>
-                      ) : (
-                        format(dateRange.from, "LLL dd")
-                      )
-                    ) : (
-                      <span>Pick a date range</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={dateRange?.from}
-                    selected={dateRange}
-                    onSelect={setDateRange}
-                    numberOfMonths={2}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
-            <Button>
-              <Download className="h-4 w-4 mr-2" />
-              Export Report
-            </Button>
+
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
+              <FileStack className="h-4 w-4" />
+              <span className="text-xs">Total Decks</span>
+            </div>
+            <p className="text-2xl font-semibold tabular-nums">
+              {formatNumber(overview?.decks.total || 0)}
+            </p>
+            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
+              {overview?.decks.createdThisWeek || 0} this week
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
+              <Layers className="h-4 w-4" />
+              <span className="text-xs">Total Slides</span>
+            </div>
+            <p className="text-2xl font-semibold tabular-nums">
+              {formatNumber(overview?.decks.totalSlides || 0)}
+            </p>
+            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
+              ~{(overview?.decks.averageSlidesPerDeck || 0).toFixed(1)} per deck
+            </p>
           </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-            <TabsTrigger value="content">Content</TabsTrigger>
-            <TabsTrigger value="performance">Performance</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-6">
-            {/* Key Metrics */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {isLoading ? (
-                <>
-                  {[...Array(8)].map((_, i) => (
-                    <Skeleton key={i} className="h-32" />
-                  ))}
-                </>
-              ) : analyticsData ? (
-                <>
-                  <MetricCard
-                    title="Total Users"
-                    value={analyticsData.users.total.toLocaleString()}
-                    icon={Users}
-                    change={analyticsData.users.growthRate}
-                  />
-                  <MetricCard
-                    title="Active Users (30d)"
-                    value={analyticsData.users.active30d.toLocaleString()}
-                    icon={Activity}
-                  />
-                  <MetricCard
-                    title="Total Decks"
-                    value={analyticsData.decks.total.toLocaleString()}
-                    icon={FileStack}
-                    change={15} // Calculate from data if available
-                  />
-                  <MetricCard
-                    title="API Calls Today"
-                    value={analyticsData.activity.apiCallsToday.toLocaleString()}
-                    icon={Zap}
-                  />
-                </>
-              ) : null}
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* User Activity */}
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg">
+            <div className="px-4 py-3 border-b border-[#eaeaea] dark:border-[#333]">
+              <span className="text-sm font-medium">User Activity</span>
+              <span className="text-xs text-[#666] dark:text-[#888] ml-2">Last 7 days</span>
             </div>
-
-            {/* User Growth Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>User Growth</CardTitle>
-                <CardDescription>
-                  New signups and active users over time
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[400px]">
-                  {isLoading ? (
-                    <Skeleton className="h-full w-full" />
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={userTrends}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="signups"
-                          stroke="#8b5cf6"
-                          strokeWidth={2}
-                          name="New Signups"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="logins"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          name="Logins"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
+            <div className="p-4 h-[200px]">
+              {userTrends.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={userTrends} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="signupsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="loginsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: '#999' }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: '#999' }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111',
+                        border: '1px solid #333',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                      }}
+                      labelStyle={{ color: '#888' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="signups"
+                      stroke="#8b5cf6"
+                      strokeWidth={1.5}
+                      fill="url(#signupsGradient)"
+                      name="Signups"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="logins"
+                      stroke="#3b82f6"
+                      strokeWidth={1.5}
+                      fill="url(#loginsGradient)"
+                      name="Logins"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-[#999]">
+                  No data available
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Feature Adoption - Coming Soon */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Feature Adoption</CardTitle>
-                <CardDescription>
-                  Percentage of users using each feature
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Feature adoption metrics coming soon</p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="users" className="space-y-6">
-            {/* User Retention Cohorts */}
-            <Card>
-              <CardHeader>
-                <CardTitle>User Retention Cohorts</CardTitle>
-                <CardDescription>
-                  Weekly retention rates by signup cohort
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[400px]">
-                  {isLoading ? (
-                    <Skeleton className="h-full w-full" />
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={userRetentionData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="cohort" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="week1" fill="#8b5cf6" name="Week 1" />
-                        <Bar dataKey="week2" fill="#3b82f6" name="Week 2" />
-                        <Bar dataKey="week3" fill="#10b981" name="Week 3" />
-                        <Bar dataKey="week4" fill="#f59e0b" name="Week 4" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-
-          </TabsContent>
-
-          <TabsContent value="content" className="space-y-6">
-            {/* Content Analytics - Coming Soon */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Content Analytics</CardTitle>
-                <CardDescription>
-                  Detailed content creation and usage metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-16 text-muted-foreground">
-                  <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg mb-2">Content analytics coming soon</p>
-                  <p className="text-sm">This will include deck creation trends, component usage, and template analytics</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Component Usage */}
-            <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 w-full">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Component Usage</CardTitle>
-                  <CardDescription>
-                    Distribution of components across all decks
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px]">
-                    {isLoading ? (
-                      <Skeleton className="h-full w-full" />
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RePieChart>
-                          <Pie
-                            data={componentUsageData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={(entry) => `${entry.name} ${entry.percentage}%`}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="count"
-                          >
-                            {componentUsageData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                        </RePieChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-
+              )}
             </div>
-          </TabsContent>
-
-          <TabsContent value="performance" className="space-y-6">
-            {/* System Performance Metrics */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">API Response Time</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">124ms</div>
-                  <p className="text-xs text-muted-foreground">avg. last 24h</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Error Rate</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">0.12%</div>
-                  <p className="text-xs text-muted-foreground">last 24h</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Uptime</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">99.98%</div>
-                  <p className="text-xs text-muted-foreground">last 30 days</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Active Sessions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">342</div>
-                  <p className="text-xs text-muted-foreground">right now</p>
-                </CardContent>
-              </Card>
+            <div className="px-4 pb-3 flex items-center gap-4 text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#8b5cf6]" />
+                Signups
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#3b82f6]" />
+                Logins
+              </span>
             </div>
+          </div>
 
-            {/* API Usage Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>API Usage</CardTitle>
-                <CardDescription>
-                  Requests per hour over the last 24 hours
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                  <div className="text-center">
-                    <LineChartIcon className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                    <p>Performance metrics will be available once monitoring is set up</p>
-                  </div>
+          {/* Deck Creation */}
+          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg">
+            <div className="px-4 py-3 border-b border-[#eaeaea] dark:border-[#333]">
+              <span className="text-sm font-medium">Deck Creation</span>
+              <span className="text-xs text-[#666] dark:text-[#888] ml-2">Last 7 days</span>
+            </div>
+            <div className="p-4 h-[200px]">
+              {deckTrends.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={deckTrends} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="decksGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: '#999' }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: '#999' }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111',
+                        border: '1px solid #333',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                      }}
+                      labelStyle={{ color: '#888' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="created"
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      fill="url(#decksGradient)"
+                      name="Decks Created"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-[#999]">
+                  No data available
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              )}
+            </div>
+            <div className="px-4 pb-3 flex items-center gap-4 text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+                Decks Created
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Table */}
+        <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#eaeaea] dark:border-[#333]">
+            <span className="text-sm font-medium">Summary</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4">
+            <div className="p-4 border-b md:border-b-0 md:border-r border-[#eaeaea] dark:border-[#333]">
+              <p className="text-xs text-[#666] dark:text-[#888] mb-1">New Users Today</p>
+              <p className="text-lg font-semibold tabular-nums">{overview?.users.newToday || 0}</p>
+            </div>
+            <div className="p-4 border-b md:border-b-0 md:border-r border-[#eaeaea] dark:border-[#333]">
+              <p className="text-xs text-[#666] dark:text-[#888] mb-1">New This Week</p>
+              <p className="text-lg font-semibold tabular-nums">{overview?.users.newThisWeek || 0}</p>
+            </div>
+            <div className="p-4 border-b md:border-b-0 md:border-r border-[#eaeaea] dark:border-[#333]">
+              <p className="text-xs text-[#666] dark:text-[#888] mb-1">Decks Today</p>
+              <p className="text-lg font-semibold tabular-nums">{overview?.decks.createdToday || 0}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-[#666] dark:text-[#888] mb-1">Avg Decks/User</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {(overview?.decks.averagePerUser || 0).toFixed(1)}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </AdminLayoutV2>
   );

@@ -401,6 +401,9 @@ export class OutlineAPI {
             }
             : null,
           logoUrl: (outline.stylePreferences as any)?.logoUrl,
+          slideMode: (outline.stylePreferences as any)?.slideMode,
+          // Slide screenshots from uploaded PPT/PDF for visual design reference
+          referenceImages: (outline.stylePreferences as any)?.referenceImages,
         }
         : undefined,
       notes: outline.notes,

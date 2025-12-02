@@ -6,6 +6,7 @@ Creates magazine-quality layouts for each slide while preserving existing theme 
 from typing import Dict, Any, List, Optional
 import json
 import asyncio
+import functools
 from models.requests import DeckOutline, SlideOutline
 from agents.ai.clients import get_client, invoke
 from agents.config import COMPOSER_MODEL
@@ -178,21 +179,17 @@ class LayoutArchitect:
 
         try:
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
+            # Use functools.partial to properly pass kwargs
+            invoke_fn = functools.partial(
                 invoke,
                 client,
                 model_name,
                 messages,
                 None,  # No response_model, we want raw JSON
                 4000,  # max_tokens
-                0.7,   # temperature
-                None,  # deck_uuid
-                False, # slide_generation
-                None,  # slide_index
-                False, # visual_analysis
-                False  # theme_generation
+                0.7    # temperature
             )
+            response = await loop.run_in_executor(None, invoke_fn)
             # Response is raw text when response_model is None
             strategy_text = response
         except Exception as e:
@@ -307,21 +304,17 @@ Return ONLY valid JSON.
 
         try:
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
+            # Use functools.partial to properly pass kwargs
+            invoke_fn = functools.partial(
                 invoke,
                 client,
                 model_name,
                 messages,
                 None,  # No response_model, we want raw JSON
                 8000,  # max_tokens
-                0.9,   # High temperature for maximum creativity
-                None,  # deck_uuid
-                False, # slide_generation
-                slide_index,  # slide_index for logging
-                False, # visual_analysis
-                False  # theme_generation
+                0.9    # High temperature for maximum creativity
             )
+            response = await loop.run_in_executor(None, invoke_fn)
             # Response is raw text when response_model is None
             blueprint_text = response
         except Exception as e:

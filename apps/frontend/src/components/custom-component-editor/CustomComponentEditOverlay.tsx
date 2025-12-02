@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Upload, ChevronUp, X, Image as ImageIcon } from 'lucide-react';
+import { ArrowUp, X, Image as ImageIcon, Type, Layout } from 'lucide-react';
 
 // Types for detected elements
 export interface DetectedElement {
@@ -35,6 +35,7 @@ const BRAND_ORANGE = '#FF4301';
  * - Hover outlines on elements
  * - Click detection and element selection
  * - Text editing in place
+ * - Container/section selection
  * - Communication with parent via postMessage
  */
 export function generateEditModeScript(componentId: string): string {
@@ -53,16 +54,24 @@ export function generateEditModeScript(componentId: string): string {
     transition: outline 0.15s ease !important;
   }
 
+  /* Container elements - show pointer */
+  .ns-editable-container {
+    cursor: pointer !important;
+    transition: outline 0.15s ease !important;
+  }
+
   /* Hover effects - subtle */
   .ns-editable-text:hover,
-  .ns-editable-image:hover {
+  .ns-editable-image:hover,
+  .ns-editable-container:hover {
     outline: 2px solid rgba(255, 67, 1, 0.5) !important;
     outline-offset: 2px !important;
   }
 
   /* Selected state */
   .ns-editable-text.ns-selected,
-  .ns-editable-image.ns-selected {
+  .ns-editable-image.ns-selected,
+  .ns-editable-container.ns-selected {
     outline: 2px solid #FF4301 !important;
     outline-offset: 2px !important;
   }
@@ -74,6 +83,18 @@ export function generateEditModeScript(componentId: string): string {
     background-color: rgba(255, 255, 255, 0.95) !important;
     min-width: 50px !important;
     cursor: text !important;
+  }
+
+  /* Image loading placeholder */
+  .ns-image-loading {
+    position: relative !important;
+    background: linear-gradient(135deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%) !important;
+    background-size: 200% 200% !important;
+    animation: ns-shimmer 1.5s ease-in-out infinite !important;
+  }
+  @keyframes ns-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>
 <script>
@@ -117,6 +138,42 @@ export function generateEditModeScript(componentId: string): string {
 
       img.classList.add('ns-editable-image');
       img.dataset.nsId = 'img-' + index;
+    });
+
+    // Container/section elements - larger structural elements
+    const containerSelectors = 'section, article, header, footer, main, aside, nav, div[class], div[id], ul, ol, table, figure, blockquote, form, fieldset, details, card, .card, [class*="card"], [class*="section"], [class*="container"], [class*="wrapper"], [class*="box"], [class*="panel"]';
+    let containerIndex = 0;
+    document.querySelectorAll(containerSelectors).forEach((el) => {
+      // Skip if already processed or is text/image
+      if (el.dataset.nsId) return;
+      if (el.classList.contains('ns-editable-text')) return;
+      if (el.classList.contains('ns-editable-image')) return;
+      // Skip tiny containers
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 80 || rect.height < 40) return;
+      // Skip full-page containers
+      if (rect.width >= window.innerWidth * 0.95 && rect.height >= window.innerHeight * 0.95) return;
+
+      el.classList.add('ns-editable-container');
+      el.dataset.nsId = 'container-' + containerIndex++;
+      el.dataset.nsType = el.tagName.toLowerCase();
+      // Store class name for better labeling
+      if (el.className) {
+        const classList = el.className.split(' ').filter(c => c && !c.startsWith('ns-'))[0];
+        if (classList) el.dataset.nsClass = classList;
+      }
+    });
+
+    // Icons and SVGs - make them clickable for replacement
+    document.querySelectorAll('svg, i[class*="icon"], i[class*="fa-"], span[class*="icon"]').forEach((el, index) => {
+      if (el.dataset.nsId) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 12 || rect.height < 12) return;
+      if (rect.width > 200 || rect.height > 200) return; // Skip large decorative SVGs
+
+      el.classList.add('ns-editable-container');
+      el.dataset.nsId = 'icon-' + index;
+      el.dataset.nsType = 'icon';
     });
   }
 
@@ -224,6 +281,64 @@ export function generateEditModeScript(componentId: string): string {
     });
   }
 
+  // Handle container element click
+  function handleContainerClick(el, e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Check if container has exactly one image inside - if so, treat as image click
+    var imagesInside = el.querySelectorAll('img');
+    if (imagesInside.length === 1) {
+      var singleImg = imagesInside[0];
+      // Make sure the image is reasonably sized (not a tiny icon)
+      var imgRect = singleImg.getBoundingClientRect();
+      if (imgRect.width > 40 && imgRect.height > 40) {
+        // Treat this as an image click
+        if (!singleImg.classList.contains('ns-editable-image')) {
+          singleImg.classList.add('ns-editable-image');
+          singleImg.dataset.nsId = singleImg.dataset.nsId || 'img-in-container';
+        }
+        handleImageClick(singleImg, e);
+        return;
+      }
+    }
+
+    // Deselect previous
+    if (selectedElement) {
+      selectedElement.classList.remove('ns-selected');
+      if (isTextEditing) {
+        finishTextEdit(selectedElement);
+      }
+    }
+
+    selectedElement = el;
+    el.classList.add('ns-selected');
+    isTextEditing = false;
+
+    // Get text content preview
+    const textContent = el.innerText || '';
+    const preview = textContent.trim().slice(0, 100);
+
+    // Get a nice label for the element
+    let label = el.dataset.nsType || el.tagName.toLowerCase();
+    if (el.dataset.nsClass) {
+      label = el.dataset.nsClass;
+    }
+    if (el.dataset.nsType === 'icon') {
+      label = 'Icon';
+    }
+
+    sendToParent('container-selected', {
+      element: {
+        id: el.dataset.nsId,
+        type: 'container',
+        tagName: label,
+        content: preview,
+        bounds: getElementBounds(el)
+      }
+    });
+  }
+
   // Finish text editing
   function finishTextEdit(el) {
     if (!el || !isTextEditing) return;
@@ -249,33 +364,45 @@ export function generateEditModeScript(componentId: string): string {
   document.addEventListener('click', function(e) {
     const target = e.target;
 
-    // Check for editable text - single click to select and edit
+    // Check if clicked directly on an image (HIGHEST priority - even inside containers)
+    if (target.tagName === 'IMG') {
+      if (target.classList.contains('ns-editable-image')) {
+        handleImageClick(target, e);
+        return;
+      }
+      // Even if not marked editable, treat images as clickable
+      target.classList.add('ns-editable-image');
+      target.dataset.nsId = target.dataset.nsId || 'img-dynamic';
+      handleImageClick(target, e);
+      return;
+    }
+
+    // Check for editable image wrapper
+    const imgEl = target.closest('.ns-editable-image');
+    if (imgEl) {
+      handleImageClick(imgEl, e);
+      return;
+    }
+
+    // Check for editable text
     const textEl = target.closest('.ns-editable-text');
     if (textEl) {
       handleTextClick(textEl, e);
       return;
     }
 
-    // Check for editable image - single click to select and notify parent
-    const imgWrapper = target.closest('.ns-image-wrapper');
-    const imgEl = target.closest('.ns-editable-image');
-    if (imgWrapper || imgEl) {
-      handleImageClick(imgWrapper || imgEl, e);
+    // Check for editable container (lower priority than text/image)
+    const containerEl = target.closest('.ns-editable-container');
+    if (containerEl) {
+      handleContainerClick(containerEl, e);
       return;
     }
 
     // Notify parent that component was clicked (for any other click)
     sendToParent('component-clicked', {});
 
-    // Click outside editable element - deselect current element
-    if (selectedElement) {
-      selectedElement.classList.remove('ns-selected');
-      if (isTextEditing) {
-        finishTextEdit(selectedElement);
-      }
-      selectedElement = null;
-      sendToParent('element-deselected', {});
-    }
+    // DON'T auto-deselect - let the parent handle deselection via toolbar close button
+    // This prevents the toolbar from disappearing when clicking on it (since it's outside iframe)
   });
 
   // Handle blur for text editing - only finish editing, don't deselect
@@ -357,20 +484,56 @@ export function generateEditModeScript(componentId: string): string {
       // Find element at the clicked position
       const elementsAtPoint = document.elementsFromPoint(x, y);
 
+      // First pass: check for images (highest priority)
       for (const el of elementsAtPoint) {
-        // Check for editable text
+        if (el.tagName === 'IMG') {
+          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
+          if (!el.classList.contains('ns-editable-image')) {
+            el.classList.add('ns-editable-image');
+            el.dataset.nsId = el.dataset.nsId || 'img-dynamic';
+          }
+          handleImageClick(el, fakeEvent);
+          return;
+        }
+        if (el.classList.contains('ns-editable-image')) {
+          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
+          handleImageClick(el, fakeEvent);
+          return;
+        }
+      }
+
+      // Second pass: check for text and containers
+      for (const el of elementsAtPoint) {
         if (el.classList.contains('ns-editable-text')) {
           const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
           handleTextClick(el, fakeEvent);
           return;
         }
 
-        // Check for editable image wrapper
-        if (el.classList.contains('ns-image-wrapper') || el.classList.contains('ns-editable-image')) {
+        if (el.classList.contains('ns-editable-container')) {
           const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
-          handleImageClick(el, fakeEvent);
+          handleContainerClick(el, fakeEvent);
           return;
         }
+      }
+    }
+
+    // Handle image update with loading state
+    if (e.data.type === 'update-image-with-placeholder') {
+      const img = document.querySelector('img[data-ns-id="' + e.data.elementId + '"]');
+      if (img) {
+        // Add loading class
+        img.classList.add('ns-image-loading');
+        // Set the new src - browser will load it
+        img.src = e.data.newSrc;
+        // Remove loading class when loaded
+        img.onload = function() {
+          img.classList.remove('ns-image-loading');
+          sendToParent('image-loaded', { elementId: e.data.elementId, newSrc: e.data.newSrc });
+        };
+        img.onerror = function() {
+          img.classList.remove('ns-image-loading');
+        };
       }
     }
   });
@@ -449,6 +612,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         onImageSelect(data.element);
       }
 
+      if (data.type === 'container-selected') {
+        setSelectedElement(data.element);
+      }
+
       if (data.type === 'element-deselected') {
         setSelectedElement(null);
       }
@@ -481,6 +648,8 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       ? `Text: "${(selectedElement.content || '').slice(0, 20)}..."`
       : selectedElement?.type === 'image'
       ? 'Image'
+      : selectedElement?.type === 'container'
+      ? `${selectedElement.tagName || 'Section'}`
       : 'Custom Component';
 
     window.dispatchEvent(new CustomEvent('chat:prefill_with_component', {
@@ -510,189 +679,156 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   if (!isEditing || !isSelected) return null;
 
-  // Calculate position for the floating chat
+  // Calculate position for the floating chat - always stay within viewport
   const getFloatingPosition = () => {
     const iframe = document.querySelector(`iframe[title="Custom Component"]`);
     const iframeRect = iframe?.getBoundingClientRect();
+    const overlayWidth = 300;
+    const overlayHeight = 160; // Approximate height
+    const padding = 16;
 
-    if (!iframeRect) return { top: 100, right: 20 };
+    if (!iframeRect) return { top: 100, left: padding };
 
-    // Position at top-right of the component with some offset
-    return {
-      top: Math.max(80, iframeRect.top + 20),
-      right: Math.max(20, window.innerWidth - iframeRect.right + 20)
-    };
+    // Try to position to the right of the component
+    let left = iframeRect.right + padding;
+    let top = iframeRect.top + 20;
+
+    // If it would go off the right edge, position to the left of component
+    if (left + overlayWidth > window.innerWidth - padding) {
+      left = iframeRect.left - overlayWidth - padding;
+    }
+
+    // If still off screen (component is wide), position inside at top-right
+    if (left < padding) {
+      left = Math.min(iframeRect.right - overlayWidth - padding, window.innerWidth - overlayWidth - padding);
+      left = Math.max(padding, left);
+    }
+
+    // Ensure top stays within viewport
+    top = Math.max(80, Math.min(top, window.innerHeight - overlayHeight - padding));
+
+    return { top, left };
   };
 
   const position = getFloatingPosition();
 
-  // Quick suggestions based on selection
+  // Creative suggestions based on selection - more specific and actionable
   const suggestions = selectedElement?.type === 'text'
     ? [
-        { label: 'Try new fonts', prompt: 'Change the font to something more modern and professional' },
-        { label: 'Rearrange layout', prompt: 'Improve the layout and spacing of this section' },
-        { label: 'Copy edit', prompt: 'Fix any grammar or spelling issues and improve clarity' },
+        { label: 'Gradient text', prompt: 'Make this text a beautiful gradient from the theme colors' },
+        { label: 'Bold + glow', prompt: 'Make this text bolder with a subtle glow effect' },
+        { label: 'Animate in', prompt: 'Add a smooth fade-in animation to this text' },
       ]
     : selectedElement?.type === 'image'
     ? [
-        { label: 'Replace image', prompt: 'Find a better image for this' },
-        { label: 'Add effects', prompt: 'Add subtle visual effects to enhance this image' },
-        { label: 'Adjust size', prompt: 'Resize this image to better fit the layout' },
+        { label: 'Swap image', prompt: 'Find and replace with a better, more professional image' },
+        { label: 'Add frame', prompt: 'Add a modern rounded frame with subtle shadow' },
+        { label: 'Overlay effect', prompt: 'Add a gradient overlay that matches the theme' },
+      ]
+    : selectedElement?.type === 'container'
+    ? [
+        { label: 'Glassmorphism', prompt: 'Apply a modern glassmorphism effect with blur and transparency' },
+        { label: 'Card style', prompt: 'Transform into a clean card with shadow and rounded corners' },
+        { label: 'Grid layout', prompt: 'Reorganize content into a clean grid layout' },
       ]
     : [
-        { label: 'Improve design', prompt: 'Improve the overall design and visual appeal' },
-        { label: 'Change colors', prompt: 'Update the color scheme to be more cohesive' },
-        { label: 'Add animation', prompt: 'Add subtle animations to make it more engaging' },
+        { label: 'Modernize', prompt: 'Apply a modern, minimalist design with better spacing' },
+        { label: 'Add depth', prompt: 'Add shadows, gradients, and layering for visual depth' },
+        { label: 'Animate', prompt: 'Add smooth entrance animations to key elements' },
       ];
+
+  // Get icon for element type
+  const getElementIcon = () => {
+    if (selectedElement?.type === 'image') return <ImageIcon size={12} className="text-[#FF4301]" />;
+    if (selectedElement?.type === 'container') return <Layout size={12} className="text-[#FF4301]" />;
+    return <Type size={12} className="text-[#FF4301]" />;
+  };
+
+  const getElementLabel = () => {
+    if (selectedElement?.type === 'image') return 'Image';
+    if (selectedElement?.type === 'container') return selectedElement.tagName || 'Section';
+    if (selectedElement?.type === 'text') return selectedElement.content?.slice(0, 20) || 'Text';
+    return 'Component';
+  };
 
   return createPortal(
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+        initial={{ opacity: 0, y: 10, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+        exit={{ opacity: 0, y: 10, scale: 0.95 }}
         transition={{ duration: 0.15 }}
-        className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
+        className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden"
         style={{
           position: 'fixed',
           top: position.top,
-          right: position.right,
-          width: 340,
+          left: position.left,
+          width: 300,
           zIndex: 9999,
         }}
       >
-        {/* Close button */}
-        <button
-          onClick={() => {
-            // Deselect element in iframe
-            const iframes = document.querySelectorAll('iframe');
-            iframes.forEach(iframe => {
-              iframe.contentWindow?.postMessage({
-                target: 'ns-custom-component-edit',
-                type: 'deselect'
-              }, '*');
-            });
-            setSelectedElement(null);
-          }}
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 z-10"
-        >
-          <X size={16} />
-        </button>
+        {/* Compact header */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 rounded bg-[#FF4301]/10 flex items-center justify-center">
+              {getElementIcon()}
+            </div>
+            <span className="text-[11px] font-medium text-gray-600 truncate max-w-[180px]">
+              {getElementLabel()}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const iframes = document.querySelectorAll('iframe');
+              iframes.forEach(iframe => {
+                iframe.contentWindow?.postMessage({
+                  target: 'ns-custom-component-edit',
+                  type: 'deselect'
+                }, '*');
+              });
+              setSelectedElement(null);
+            }}
+            className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+          >
+            <X size={12} />
+          </button>
+        </div>
 
-        {/* Input area */}
-        <div className="p-4">
-          <div className="relative">
+        {/* Input and suggestions area - compact */}
+        <div className="p-2.5 space-y-2">
+          {/* Quick suggestions - compact row */}
+          <div className="flex gap-1 overflow-x-auto scrollbar-none">
+            {suggestions.map(({ label, prompt }) => (
+              <button
+                key={label}
+                onClick={() => sendToChat(prompt)}
+                className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-gray-100 rounded-full hover:bg-[#FF4301]/10 hover:text-[#FF4301] transition-colors whitespace-nowrap flex-shrink-0"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Input row with send button */}
+          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 focus-within:border-[#FF4301]/50 focus-within:bg-white transition-colors">
             <input
               ref={inputRef}
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="What can I help with?"
-              className="w-full pr-20 py-2 text-sm text-gray-800 placeholder-gray-400 bg-transparent border-0 focus:outline-none focus:ring-0"
+              placeholder="Describe what to change..."
+              className="flex-1 text-xs text-gray-800 placeholder-gray-400 bg-transparent border-0 focus:outline-none"
             />
-
-            {/* Action buttons */}
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              <button
-                onClick={() => {
-                  // Trigger file upload for image
-                  window.dispatchEvent(new CustomEvent('image:select-placeholder', {
-                    detail: {
-                      componentId,
-                      slideId,
-                      isCustomComponentProp: true
-                    }
-                  }));
-                }}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Upload image"
-              >
-                <Upload size={16} />
-              </button>
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  isExpanded
-                    ? 'text-[#FF4301] bg-orange-50'
-                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                }`}
-                title={isExpanded ? 'Collapse' : 'Expand'}
-              >
-                <ChevronUp size={16} className={`transition-transform ${isExpanded ? '' : 'rotate-180'}`} />
-              </button>
-            </div>
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-gray-100 mt-3 pt-3">
-            {/* Selection indicator */}
-            {selectedElement && (
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-full text-xs text-gray-500">
-                  {selectedElement.type === 'image' ? (
-                    <ImageIcon size={12} className="text-gray-400" />
-                  ) : (
-                    <span className="w-3 h-3 rounded bg-[#FF4301]/20 flex items-center justify-center text-[8px] text-[#FF4301] font-bold">T</span>
-                  )}
-                  <span className="max-w-[150px] truncate">
-                    {selectedElement.type === 'image'
-                      ? 'Image selected'
-                      : selectedElement.content?.slice(0, 30) || 'Text selected'
-                    }
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Suggestions */}
-            <p className="text-xs text-gray-400 mb-2">You can try something like:</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map(({ label, prompt }) => (
-                <button
-                  key={label}
-                  onClick={() => sendToChat(prompt)}
-                  className="px-3 py-1.5 text-xs font-medium text-[#FF4301] bg-white border border-[#FF4301]/30 rounded-full hover:bg-[#FF4301]/5 hover:border-[#FF4301]/50 transition-colors"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={!inputValue.trim()}
+              className="w-5 h-5 rounded-full bg-[#FF4301] text-white flex items-center justify-center hover:bg-[#E63D00] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+            >
+              <ArrowUp size={12} />
+            </button>
           </div>
         </div>
-
-        {/* Expanded area - AI quick actions */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="border-t border-gray-100 bg-gray-50/50"
-            >
-              <div className="p-4 space-y-3">
-                <p className="text-xs font-medium text-gray-600">Quick AI Actions</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { icon: <Sparkles size={14} />, label: 'Enhance', prompt: 'Enhance and improve this' },
-                    { icon: <span className="text-xs">Aa</span>, label: 'Fix text', prompt: 'Fix any grammar or typos' },
-                    { icon: <span className="text-xs">🎨</span>, label: 'Restyle', prompt: 'Improve the visual style' },
-                    { icon: <span className="text-xs">📐</span>, label: 'Layout', prompt: 'Improve the layout and spacing' },
-                  ].map(({ icon, label, prompt }) => (
-                    <button
-                      key={label}
-                      onClick={() => sendToChat(prompt)}
-                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 bg-white rounded-lg border border-gray-200 hover:border-[#FF4301]/30 hover:text-[#FF4301] transition-colors"
-                    >
-                      {icon}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
     </AnimatePresence>,
     document.body

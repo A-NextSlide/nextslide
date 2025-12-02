@@ -73,8 +73,9 @@ IMPORTANT:
 
         # Use Haiku 4.5 for fast, accurate, DETERMINISTIC color understanding
         # temperature=0 ensures consistent results for the same input
+        from agents.config import CLAUDE_HAIKU_ID
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=CLAUDE_HAIKU_ID,
             max_tokens=300,
             temperature=0,  # Deterministic output - same input = same colors
             messages=[

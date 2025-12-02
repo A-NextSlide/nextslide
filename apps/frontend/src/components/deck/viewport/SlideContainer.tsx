@@ -405,12 +405,14 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       }
 
       setCustomComponentPropInfo(null);
+      closeImagePicker(); // Auto-dismiss picker after CustomComponent image selection
       return;
     }
 
     // Legacy handling for non-CustomComponent (keeping existing code path)
     if (customComponentPropInfo) {
       setCustomComponentPropInfo(null);
+      closeImagePicker();
       return;
     }
 

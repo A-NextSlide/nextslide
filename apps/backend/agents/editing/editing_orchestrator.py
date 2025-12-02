@@ -28,11 +28,12 @@ from utils.numbers import round_numbers
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_registry, summarize_chat_history
 from utils.deck import get_all_component_ids, get_all_slide_ids
-from concurrent.futures import ThreadPoolExecutor
+import logging
 
-call_map = {
-    "undefined": undefined_tool,
-}
+logger = logging.getLogger(__name__)
+
+# NOTE: call_map is now created per-request to avoid thread-safety issues
+# See get_tools_and_call_map() for the call_map creation
 
 class AgentState(TypedDict):
     """State maintained by the agent during processing"""
@@ -175,20 +176,27 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
 
 def orchestrate(state: AgentState, event_cb=None):
     """
-    Orchestrate the editing process
-    Fill the deck diff and the edit summary
-    """
+    Orchestrate the editing process.
 
-    # Resolve current slide id for both typed and dict slides
-    _cur = state.get('current_slide', {})
-    _cur_id = getattr(_cur, 'id', None) if not isinstance(_cur, dict) else _cur.get('id')
-    tools, _map = get_tools_and_call_map(
+    Executes tools SEQUENTIALLY to ensure proper ordering (e.g., remove before create).
+    Returns deck_diff and edit_summary.
+    """
+    from agents.editing.core import get_attr
+
+    # Get current slide ID using unified accessor
+    current_slide = state.get('current_slide', {})
+    current_slide_id = get_attr(current_slide, 'id')
+
+    # Create per-request call_map (thread-safe)
+    tools, call_map = get_tools_and_call_map(
         deck_data=state.get('deck_data', {}),
         registry=state.get('registry', {}),
-        current_slide_id=_cur_id,
-        attachments=state.get('attachments', []),  # Pass user-uploaded images to tools
+        current_slide_id=current_slide_id,
+        attachments=state.get('attachments', []),
     )
-    call_map.update(_map)
+
+    # Add undefined handler
+    call_map["undefined"] = undefined_tool
 
     descriptions = get_tools_descriptions(tools)
 
@@ -309,46 +317,54 @@ def orchestrate(state: AgentState, event_cb=None):
         except Exception:
             pass
 
-    for tool_call in tool_calls:
-        if event_cb:
-            try:
-                event_cb("agent.tool.start", {"tool": getattr(tool_call.tool, 'tool_name', 'unknown')})
-            except Exception:
-                pass
-        print(f"    DEBUG: Tool call: {tool_call}")
-
-    # Initialize an empty deck diff
+    # Initialize deck diff
     deck_diff = DeckDiff(DeckDiffBase())
     edit_summaries = []
-    
-    # Define a function to process a single tool call
-    def process_tool_call(tool_call):
-        if tool_call.tool.tool_name not in call_map:
-            raise ValueError(f"Tool name {tool_call.tool.tool_name} not found in call_map")
 
-        tool_fn = call_map.get(tool_call.tool.tool_name, undefined_tool)
-        # Create a new deck diff for each tool call
-        tool_diff = tool_fn(tool_call.tool, state.get('registry'), state.get('deck_data'), DeckDiff(DeckDiffBase()))
-        return (tool_diff, tool_call.edit_request_summary)
-    
-    # Process tool calls in parallel
-    with ThreadPoolExecutor() as executor:
-        # Submit all tool calls to the executor
-        future_results = [executor.submit(process_tool_call, tool_call) for tool_call in tool_calls]
-        
-        # Collect results as they complete
-        for idx, future in enumerate(future_results):
-            tool_call = tool_calls[idx]
-            tool_name = getattr(tool_call.tool, 'tool_name', 'unknown')
-            tool_diff, summary = future.result()
-            # Merge the tool diff into the main deck diff
+    # Execute tools SEQUENTIALLY to ensure proper ordering
+    # This is critical for operations like remove_all_content → create_new_component
+    for idx, tool_call in enumerate(tool_calls):
+        tool_name = getattr(tool_call.tool, 'tool_name', 'unknown')
+
+        if event_cb:
+            try:
+                event_cb("agent.tool.start", {"tool": tool_name})
+            except Exception:
+                pass
+
+        logger.debug(f"Executing tool {idx + 1}/{len(tool_calls)}: {tool_name}")
+
+        if tool_name not in call_map:
+            logger.error(f"Tool '{tool_name}' not found in call_map")
+            continue
+
+        try:
+            tool_fn = call_map[tool_name]
+            # Each tool gets its own diff, then merged
+            tool_diff = tool_fn(
+                tool_call.tool,
+                state.get('registry'),
+                state.get('deck_data'),
+                DeckDiff(DeckDiffBase())
+            )
             deck_diff = deck_diff.merge(tool_diff)
-            edit_summaries.append(summary)
+            edit_summaries.append(tool_call.edit_request_summary)
+
             if event_cb:
                 try:
-                    event_cb("agent.tool.finish", {"tool": tool_name, "summary": summary})
+                    event_cb("agent.tool.finish", {"tool": tool_name, "summary": tool_call.edit_request_summary})
                 except Exception:
                     pass
+
+        except Exception as e:
+            logger.error(f"Tool '{tool_name}' failed: {e}")
+            if event_cb:
+                try:
+                    event_cb("agent.tool.error", {"tool": tool_name, "error": str(e)})
+                except Exception:
+                    pass
+            # Continue with other tools instead of failing completely
+            continue
 
     return {
         "deck_diff": deck_diff,
@@ -370,75 +386,65 @@ def build_agent():
     return graph.compile() 
 
 def edit_deck(deck_data, current_slide, registry, message, chat_history, run_uuid=None, event_cb=None, attachments=None):
-    # Create a structured deck summary using cached digest snapshots
-    # Support dict or typed slide
-    _cur_id = None
-    try:
-        _cur_id = current_slide.id
-    except Exception:
-        if isinstance(current_slide, dict):
-            _cur_id = current_slide.get('id')
+    """
+    Main entry point for deck editing.
+
+    Args:
+        deck_data: The deck to edit (Pydantic model or dict)
+        current_slide: The currently selected slide
+        registry: Component registry
+        message: User's edit request
+        chat_history: Previous messages in conversation
+        run_uuid: Optional run identifier for tracing
+        event_cb: Optional callback for streaming events
+        attachments: User-uploaded files (images, data files)
+
+    Returns:
+        Dict with deck_diff, edit_summary
+    """
+    from agents.editing.core import get_attr
+
+    # Get IDs using unified accessor
+    current_slide_id = get_attr(current_slide, 'id')
+    deck_uuid = get_attr(deck_data, 'uuid')
+
+    # Get deck context snapshot
     snapshot = get_deck_context_snapshot(
-        getattr(deck_data, 'uuid', None) or (deck_data.get('uuid') if isinstance(deck_data, dict) else None),
+        deck_uuid,
         deck_data,
-        current_slide_id=_cur_id,
+        current_slide_id=current_slide_id,
     )
     deck_summary = snapshot.get('summary_text', 'Deck summary unavailable')
 
-    # Initialize the agent state
+    # Initialize agent state
     initial_state = AgentState(
-        route="gather_context",  # Start by gathering context
         deck_data=deck_data,
         registry=registry,
         deck_summary=deck_summary,
         current_slide=current_slide,
         user_message=message,
-        context=[],
         chat_history=chat_history,
-        attachments=attachments or []  # User-uploaded images/files
+        attachments=attachments or []
     )
 
-    config = {
-        "tags": ["edit_deck"],
-        "metadata": {
-            "deck_id": getattr(deck_data, 'uuid', None) or (deck_data.get('uuid') if isinstance(deck_data, dict) else None),
-            "edit_uuid": run_uuid or 'unknown'
-        }
-    }
+    logger.info(f"Starting edit for deck {deck_uuid}, slide {current_slide_id}")
 
-    print(f"DEBUG: Config: {config}")
-    # Build a new agent instance for each request to avoid state sharing
-    print(f"DEBUG: Running orchestrate() directly with streaming callbacks")
-    # Direct call to orchestrate so we can use event_cb for streaming
+    # Execute orchestration
     end_state = orchestrate(initial_state, event_cb=event_cb)
     deck_diff = end_state.get('deck_diff')
     edit_summary = end_state.get('edit_summary')
 
-    print(f"DEBUG: End state keys: {list(end_state.keys())}")
-    print(f"DEBUG: Deck diff object: {deck_diff}, type: {type(deck_diff)}")
-    print(f"DEBUG: Edit summary: {edit_summary}")
-    
-    # Safe extraction of deck_diff data
+    # Extract deck_diff data
     deck_diff_data = None
-    try:
-        if deck_diff:
-            if hasattr(deck_diff, 'deck_diff'):
-                deck_diff_data = deck_diff.deck_diff
-                print(f"DEBUG: Extracted deck_diff.deck_diff: {deck_diff_data}")
-            else:
-                deck_diff_data = deck_diff
-                print(f"DEBUG: Using deck_diff directly: {deck_diff_data}")
+    if deck_diff:
+        if hasattr(deck_diff, 'deck_diff'):
+            deck_diff_data = deck_diff.deck_diff
         else:
-            print(f"DEBUG: No deck_diff in end_state")
-    except Exception as e:
-        print(f"DEBUG: Error extracting deck_diff: {e}")
-        deck_diff_data = None
-    
-    # Return the slide diff along with other metadata
-    result = {
+            deck_diff_data = deck_diff
+
+    logger.info(f"Edit complete: {len(edit_summary.split(chr(10))) if edit_summary else 0} operations")
+
+    return {
         "deck_diff": deck_diff_data,
-        "verification": "not implemented",
         "edit_summary": edit_summary
     }
-    print(f"DEBUG: Returning result: {result}")
-    return result

@@ -261,11 +261,12 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             existing_deck = get_deck(deck_uuid)
             if existing_deck:
                 logger.warning(f"🚨 DECK ALREADY EXISTS - UUID: {deck_uuid}")
-                logger.warning(f"  - Existing deck status: {existing_deck.get('status', {}).get('state', 'unknown')}")
+                existing_status = existing_deck.get('status') or {}
+                logger.warning(f"  - Existing deck status: {existing_status.get('state', 'unknown')}")
                 logger.warning(f"  - Existing deck created: {existing_deck.get('created_at', 'unknown')}")
-                
+
                 # If deck is already completed or generating, reject this request
-                status_state = existing_deck.get('status', {}).get('state', '')
+                status_state = existing_status.get('state', '')
                 if status_state in ['completed', 'generating', 'creating']:
                     # Send deck_created first for navigation
                     yield _sse({

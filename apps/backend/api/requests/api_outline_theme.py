@@ -49,9 +49,10 @@ Available fonts:
 
 Return ONLY the exact font name, nothing else."""
 
+        from agents.config import CLAUDE_HAIKU_ID
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model=CLAUDE_HAIKU_ID,
             max_tokens=50,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}]
@@ -79,80 +80,42 @@ Return ONLY the exact font name, nothing else."""
         return 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
 
 
-async def _select_brand_fonts_ai(brand_name: str) -> Dict[str, str]:
-    """Use AI to select fonts that match a brand's personality when brand fonts aren't available."""
+async def _select_brand_fonts_ai(brand_name: str, brand_domain: Optional[str] = None) -> Dict[str, str]:
+    """
+    Use FontIntelligence to select fonts that match a brand's personality.
+    Leverages EnhancedFontService metadata + typography pairing rules.
+    """
     try:
-        import anthropic
-        from services.registry_fonts import RegistryFonts
+        from agents.tools.theme.font_intelligence import select_fonts_for_brand
 
-        # Get categorized fonts
-        font_categories = RegistryFonts.get_available_fonts()
-        available_fonts = RegistryFonts.get_all_fonts_list(None)
-
-        font_list_parts = []
-        for category, fonts_in_cat in font_categories.items():
-            if fonts_in_cat:
-                font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:25])}")
-        available_fonts_str = "\n".join(font_list_parts)
-
-        prompt = f"""Select appropriate fonts for a presentation about the brand "{brand_name}".
-
-The brand's own fonts aren't available, so select fonts that MATCH THE BRAND'S PERSONALITY.
-
-Consider:
-- Industry/sector (tech, food, luxury, sports, etc.)
-- Brand personality (modern, traditional, playful, sophisticated)
-- Target audience
-
-Available fonts:
-{available_fonts_str}
-
-Return:
-HERO: [font name]
-BODY: [font name]
-
-IMPORTANT: Hero and body MUST be DIFFERENT fonts. Only use fonts from the list above."""
-
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=100,
-            temperature=0.3,
-            messages=[{"role": "user", "content": prompt}]
+        result = await select_fonts_for_brand(
+            brand_name=brand_name,
+            brand_domain=brand_domain,
+            content_topic=None
         )
 
-        response_text = response.content[0].text.strip()
-        hero_font = None
-        body_font = None
+        hero_font = result.get('hero', 'Poppins')
+        body_font = result.get('body', 'Inter')
+        reasoning = result.get('reasoning', '')
 
-        for line in response_text.split('\n'):
-            line = line.strip()
-            if line.upper().startswith('HERO:'):
-                hero_font = line.split(':', 1)[1].strip().strip('"\'')
-            elif line.upper().startswith('BODY:'):
-                body_font = line.split(':', 1)[1].strip().strip('"\'')
+        logger.info(f"[OutlineTheme] FontIntelligence selected: hero={hero_font}, body={body_font}")
+        logger.info(f"[OutlineTheme] Reasoning: {reasoning}")
 
-        # Validate fonts exist
-        available_lower = {f.lower(): f for f in available_fonts}
-        if hero_font and hero_font.lower() in available_lower:
-            hero_font = available_lower[hero_font.lower()]
-        else:
-            hero_font = 'Montserrat'
-        if body_font and body_font.lower() in available_lower:
-            body_font = available_lower[body_font.lower()]
-        else:
-            body_font = 'Open Sans'
-
-        # Ensure different fonts
-        if hero_font.lower() == body_font.lower():
-            body_font = 'Open Sans' if hero_font != 'Open Sans' else 'Roboto'
-
-        logger.info(f"[OutlineTheme] AI selected brand fonts: hero={hero_font}, body={body_font}")
         return {'hero': hero_font, 'body': body_font}
 
     except Exception as e:
-        logger.error(f"[OutlineTheme] AI brand font selection error: {e}")
-        return {'hero': 'Montserrat', 'body': 'Open Sans'}
+        logger.error(f"[OutlineTheme] FontIntelligence error: {e}, using fallback")
+        import random
+        # Diverse fallback pairs
+        FALLBACK_PAIRS = [
+            ('Poppins', 'Inter'),
+            ('Playfair Display', 'Lato'),
+            ('Raleway', 'Nunito'),
+            ('DM Sans', 'Work Sans'),
+            ('Space Grotesk', 'Source Sans Pro'),
+        ]
+        fallback = random.choice(FALLBACK_PAIRS)
+        return {'hero': fallback[0], 'body': fallback[1]}
 
 
 class ThemeChanges(BaseModel):
@@ -358,7 +321,7 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                             else:
                                 # Brand fonts not available - use AI to select brand-appropriate fonts
                                 logger.info(f"[OutlineTheme] Brand fonts not available locally, using AI selection")
-                                brand_fonts = await _select_brand_fonts_ai(brand_name or brand_url or 'brand')
+                                brand_fonts = await _select_brand_fonts_ai(brand_name or brand_url or 'brand', brand_url)
                                 style_preferences['font'] = brand_fonts['hero']
                                 style_preferences['bodyFont'] = brand_fonts['body']
                                 theme_updates['typography'] = {

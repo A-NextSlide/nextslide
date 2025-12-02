@@ -272,3 +272,333 @@ def should_use_str_replace(edit_request: str, html_content: str) -> bool:
 
     # Default to str_replace for small edits
     return True
+
+
+# =============================================================================
+# GEMINI-COMPATIBLE CUSTOMCOMPONENT REWRITE
+# =============================================================================
+# Simplified models that work with Gemini's structured output (no complex Unions)
+
+class CustomComponentRewriteArgs(ToolModel):
+    """
+    Full rewrite of a CustomComponent's HTML using AI.
+    Use this for broad changes like redesigns, new layouts, or major overhauls.
+    For targeted edits (color, text, size), use custom_component_str_replace instead.
+    """
+    tool_name: Literal["custom_component_rewrite"] = Field(
+        description="Completely rewrite a CustomComponent's HTML. Use for redesigns or major changes."
+    )
+    component_id: str = Field(description="The id of the CustomComponent to rewrite")
+    slide_id: str = Field(description="The id of the slide containing the component")
+    rewrite_request: str = Field(description="What changes to make to the component")
+
+
+class SimpleCustomComponentResponse(BaseModel):
+    """
+    Gemini-compatible response model with NO Union types.
+    Just the essential fields for a CustomComponent.
+    """
+    html: str = Field(description="The complete HTML document starting with <!DOCTYPE html>")
+    description: str = Field(description="Brief description of what was created/changed")
+
+
+def _build_rewrite_system_prompt(
+    width: int,
+    height: int,
+    colors: dict,
+    typography: dict,
+    attachment_context: str = ""
+) -> str:
+    """
+    Build a rich system prompt for CustomComponent rewriting.
+
+    Uses the same creative patterns as the generator for full capability.
+    """
+    # Extract design tokens
+    accent = colors.get('accent_1', '#6366f1')
+    secondary = colors.get('accent_2', '#8b5cf6')
+    text_color = colors.get('primary_text', '#ffffff')
+    bg_color = colors.get('primary_background', '#0a0e27')
+
+    # Extract fonts
+    hero_font = (
+        typography.get('hero_font') or
+        (typography.get('hero_title') or {}).get('family') or
+        'Inter'
+    )
+    body_font = (
+        typography.get('body_font') or
+        (typography.get('body_text') or {}).get('family') or
+        'Inter'
+    )
+
+    return f"""You are a WORLD-CLASS CREATIVE TECHNOLOGIST modifying presentation components.
+{attachment_context}
+
+═══════════════════════════════════════════════════════════════
+🎨 DESIGN SYSTEM (USE THESE EXACT COLORS!)
+═══════════════════════════════════════════════════════════════
+
+:root {{
+  --accent: {accent};
+  --secondary: {secondary};
+  --text: {text_color};
+  --bg: {bg_color};
+  --font-hero: '{hero_font}', sans-serif;
+  --font-body: '{body_font}', sans-serif;
+}}
+
+COLORS: Use --accent and --secondary for accents. MANDATORY.
+FONTS: {hero_font} for headings, {body_font} for body.
+Google Fonts: https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@400;600;700;900&family={body_font.replace(' ', '+')}:wght@400;500;600&display=swap
+
+═══════════════════════════════════════════════════════════════
+🚀 CREATIVE ARSENAL
+═══════════════════════════════════════════════════════════════
+
+🎯 INTERACTIVE: Quiz, True/False, Poll, Accordion, Card Flip
+🎯 DATA VIZ: Animated counters, progress rings, bar charts, timelines
+🎯 EFFECTS: Typewriter, word fade-in, gradient text, glow
+
+═══════════════════════════════════════════════════════════════
+💎 VISUAL POLISH
+═══════════════════════════════════════════════════════════════
+
+GLASSMORPHISM:
+background: rgba(255,255,255,0.1);
+backdrop-filter: blur(10px);
+border: 1px solid rgba(255,255,255,0.2);
+
+GRADIENT TEXT:
+background: linear-gradient(135deg, {accent}, {secondary});
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+
+GLOW: box-shadow: 0 0 30px {accent}40;
+HOVER: transition: all 0.3s ease; transform: translateY(-4px);
+
+═══════════════════════════════════════════════════════════════
+📐 CONSTRAINTS
+═══════════════════════════════════════════════════════════════
+
+- Dimensions: {width}x{height} pixels (NO scrolling, content MUST fit)
+- Background: transparent (slide handles background)
+- Include Tailwind: <script src='https://cdn.tailwindcss.com'></script>
+- Output: Complete HTML document starting with <!DOCTYPE html>
+"""
+
+
+def custom_component_rewrite(
+    args: CustomComponentRewriteArgs,
+    registry,
+    deck_data: DeckBase,
+    deck_diff: DeckDiff,
+    attachments: Optional[List] = None
+) -> DeckDiff:
+    """
+    Rewrite a CustomComponent's HTML using Gemini.
+
+    Uses the SAME rich prompts as the generator for full creative capability.
+    """
+    from agents.ai.clients import get_client, invoke
+    from agents.config import CUSTOM_COMPONENT_MODEL
+    from agents.editing.attachment_analyzer import (
+        analyze_attachments,
+        build_multimodal_content,
+        get_attachment_context_summary,
+        FileType
+    )
+
+    # Find the component
+    component_info = find_component_by_id(deck_data, args.component_id)
+    if not component_info:
+        raise ValueError(f"Component {args.component_id} not found")
+
+    component = component_info.get('component', {})
+    if component.get('type') != 'CustomComponent':
+        raise ValueError(f"Component {args.component_id} is not a CustomComponent")
+
+    # Get current HTML and properties
+    props = component.get('props', {}) or {}
+    current_html = props.get('render', '')
+    width = props.get('width', 1760)
+    height = props.get('height', 800)
+
+    # Get theme from deck
+    deck_dict = deck_data if isinstance(deck_data, dict) else deck_data.model_dump() if hasattr(deck_data, 'model_dump') else {}
+    theme = deck_dict.get('theme', {}) or {}
+    colors = theme.get('color_palette', {}) or {}
+    typography = theme.get('typography', {}) or {}
+
+    # Analyze attachments
+    analyzed_attachments = analyze_attachments(attachments or [])
+    attachment_context = get_attachment_context_summary(analyzed_attachments)
+
+    # Check for reference images
+    has_reference = any(att.is_vision_content for att in analyzed_attachments)
+    reference_note = ""
+    if has_reference:
+        reference_note = """
+🎯 REFERENCE IMAGES PROVIDED - MATCH THIS STYLE!
+Analyze the uploaded images and replicate the design style, colors, and layout.
+"""
+
+    # Build rich system prompt with full creative capability
+    system_prompt = _build_rewrite_system_prompt(
+        width=width,
+        height=height,
+        colors=colors,
+        typography=typography,
+        attachment_context=attachment_context
+    )
+
+    # User prompt with FULL current HTML (raw Gemini API has no filename issues)
+    user_prompt = f"""CURRENT HTML:
+{current_html}
+
+MODIFICATION REQUEST:
+{args.rewrite_request}
+{reference_note}
+Apply the requested changes. Output the complete modified HTML starting with <!DOCTYPE html>."""
+
+    # Use raw Gemini API to avoid instructor's caching issues (filename too long errors)
+    # instructor's Gemini integration uses prompt content in cache filenames
+    import os
+    import json as json_module
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not gemini_key:
+            raise ValueError("GOOGLE_API_KEY not set")
+
+        gemini_client = genai.Client(api_key=gemini_key)
+
+        # Combine prompts for Gemini
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+        # Add reference images if available
+        contents = []
+        if analyzed_attachments:
+            for att in analyzed_attachments:
+                if att.is_vision_content and att.base64_data:
+                    contents.append(types.Part.from_bytes(
+                        data=__import__('base64').b64decode(att.base64_data),
+                        mime_type=att.mime_type or 'image/png'
+                    ))
+        contents.append(full_prompt)
+
+        # Make raw API call
+        from agents.config import CUSTOM_COMPONENT_EDIT_MODEL
+        response_raw = gemini_client.models.generate_content(
+            model=CUSTOM_COMPONENT_EDIT_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "html": {"type": "string", "description": "The complete HTML document"},
+                        "description": {"type": "string", "description": "Brief description"}
+                    },
+                    "required": ["html", "description"]
+                }
+            )
+        )
+
+        # Parse response - handle malformed JSON from Gemini
+        response_text = response_raw.text
+        try:
+            response_data = json_module.loads(response_text)
+        except json_module.JSONDecodeError as json_err:
+            # Gemini sometimes returns malformed JSON when HTML contains special chars
+            # Try to extract HTML directly from the response
+            logger.warning(f"JSON parse failed, attempting to extract HTML: {json_err}")
+
+            # Try to find HTML in the response (common patterns)
+            html_match = re.search(r'<!DOCTYPE html>.*?</html>', response_text, re.DOTALL | re.IGNORECASE)
+            if html_match:
+                response_data = {
+                    'html': html_match.group(0),
+                    'description': 'Rewritten component (extracted from response)'
+                }
+            else:
+                # Try to find just the html field value
+                html_field_match = re.search(r'"html"\s*:\s*"(.*?)"(?:\s*,|\s*})', response_text, re.DOTALL)
+                if html_field_match:
+                    # Unescape the JSON string
+                    html_escaped = html_field_match.group(1)
+                    html_unescaped = html_escaped.encode().decode('unicode_escape')
+                    response_data = {
+                        'html': html_unescaped,
+                        'description': 'Rewritten component (extracted from response)'
+                    }
+                else:
+                    # Last resort: if response looks like HTML, use it directly
+                    if '<!doctype' in response_text.lower() or '<html' in response_text.lower():
+                        response_data = {
+                            'html': response_text.strip(),
+                            'description': 'Rewritten component (raw response)'
+                        }
+                    else:
+                        raise ValueError(f"Could not parse Gemini response: {json_err}")
+
+        response = SimpleCustomComponentResponse(
+            html=response_data.get('html', ''),
+            description=response_data.get('description', 'Rewritten component')
+        )
+
+    except ImportError:
+        # Fallback to instructor-wrapped client if google.genai not available
+        logger.warning("google.genai not available, falling back to instructor")
+        client, model = get_client(CUSTOM_COMPONENT_MODEL)
+
+        # Build multimodal content if attachments present
+        if analyzed_attachments:
+            user_content = build_multimodal_content(analyzed_attachments, user_prompt, max_images=3)
+        else:
+            user_content = user_prompt
+
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=16384,
+            response_model=SimpleCustomComponentResponse,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            max_retries=2
+        )
+    except Exception as e:
+        logger.error(f"CustomComponent rewrite failed: {e}")
+        raise
+
+    # Validate the HTML starts correctly
+    html = response.html.strip()
+    if not html.lower().startswith('<!doctype'):
+        # Try to fix common issues
+        if '<html' in html.lower():
+            html = '<!DOCTYPE html>' + html
+        else:
+            raise ValueError("Generated HTML doesn't start with <!DOCTYPE html>")
+
+    # Get the proper component diff model from registry
+    component_diff_model = registry.get_component_diff_model('CustomComponent')
+
+    # Create the diff
+    component_diff = component_diff_model(
+        id=args.component_id,
+        type='CustomComponent',
+        props={
+            "render": html
+        }
+    )
+
+    deck_diff.update_component(args.slide_id, args.component_id, component_diff)
+
+    logger.info(f"CustomComponent rewrite complete: {response.description}")
+
+    return deck_diff

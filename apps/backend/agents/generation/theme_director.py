@@ -275,6 +275,7 @@ class ThemeDirector:
             'is_brand': False,
             'brand_name': None,
             'brand_url': None,
+            'brand_domain': None,  # Explicit domain from vibeContext
             'is_entity': False,
             'entity_name': None,
             'topic': None,
@@ -282,7 +283,20 @@ class ThemeDirector:
             'explicit_colors': [],
             'wants_gradients': self._check_wants_gradients(full_text)
         }
-        
+
+        # PRIORITY: Extract brand domain directly from vibeContext if it looks like a domain
+        # This allows outline agent to pass brand context (e.g., "ualberta.ca") directly
+        if style_dict and style_dict.get('vibeContext'):
+            vibe_context = style_dict['vibeContext'].strip()
+            # Check if vibeContext looks like a domain (has dot, no spaces, no # for colors)
+            if '.' in vibe_context and ' ' not in vibe_context and not vibe_context.startswith('#'):
+                analysis['brand_domain'] = vibe_context
+                analysis['is_brand'] = True
+                # Try to extract brand name from domain (e.g., ualberta.ca → University of Alberta)
+                domain_base = vibe_context.split('.')[0]
+                analysis['brand_name'] = domain_base.replace('-', ' ').title()
+                logger.info(f"[THEME] 🏷️ Extracted brand from vibeContext: {vibe_context} → {analysis['brand_name']}")
+
         # Quick entity detection (no AI calls)
         entity_patterns = [
             r'\b(super\s+mario|mario|luigi|pokemon|pikachu|disney|mickey\s+mouse)\b',
@@ -330,8 +344,9 @@ Examples:
 - "Stripe payment integration" → {{"brand": "Stripe", "domain": "stripe.com"}}
 - "McDonald's franchise model" → {{"brand": "McDonald's", "domain": "mcdonalds.com"}}"""
 
+            from agents.config import CLAUDE_HAIKU_ID
             response = client.messages.create(
-                model="claude-3-haiku-20240307",
+                model=CLAUDE_HAIKU_ID,
                 max_tokens=100,
                 temperature=0,
                 system="You are a brand detection expert. Return valid JSON only. Be smart about distinguishing common words from actual brand references.",
@@ -443,10 +458,11 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
             detected_domain = None
             try:
                 import json as json_module
-                client = get_client("claude-3-7-sonnet-20250219")
+                from agents.config import CLAUDE_HAIKU
+                client = get_client(CLAUDE_HAIKU)
                 brand_response = invoke(
                     client=client,
-                    model="claude-3-7-sonnet-20250219",
+                    model=CLAUDE_HAIKU,
                     messages=[{"role": "user", "content": brand_detection_prompt}],
                     max_tokens=100,
                     temperature=0
@@ -835,6 +851,9 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
         variety_seed: str
     ) -> Dict[str, Any]:
         """Fast AI-driven color acquisition."""
+        logger.info(f"[THEME DIRECTOR] _acquire_colors_fast called. style_dict keys: {list(style_dict.keys()) if style_dict else 'None'}")
+        if style_dict:
+            logger.info(f"[THEME DIRECTOR] vibeContext in style_dict: {style_dict.get('vibeContext')}")
 
         # 0. HIGHEST PRIORITY: Explicit colors from ColorConfig (user selected colors)
         explicit_colors = analysis.get('explicit_colors', [])
@@ -909,14 +928,17 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                     'metadata': {'entity': analysis['entity_name']}
                 }
         
-        # 3. PRIORITY: Check vibeContext for brand domains (like mcdonalds.com)
+        # 3. PRIORITY: Check vibeContext for brand domains (like mcdonalds.com, ualberta.ca)
         brand_domain = None
+        logger.info(f"[THEME DIRECTOR] Checking vibeContext for brand domain. style_dict={bool(style_dict)}, vibeContext={style_dict.get('vibeContext') if style_dict else None}")
         if style_dict and style_dict.get('vibeContext'):
             vibe_context = style_dict.get('vibeContext', '').strip()
             # Check if vibeContext looks like a domain
             if '.' in vibe_context and not vibe_context.startswith('#') and ' ' not in vibe_context:
                 brand_domain = vibe_context
-                logger.info(f"[THEME DIRECTOR] Found brand domain in vibeContext: {brand_domain}")
+                logger.info(f"[THEME DIRECTOR] ✅ Found brand domain in vibeContext: {brand_domain}")
+            else:
+                logger.info(f"[THEME DIRECTOR] vibeContext '{vibe_context}' doesn't look like a domain")
         
         # Also check if analysis detected a brand - use BrandColorSearcher for proper cache-first lookup
         if not brand_domain and analysis.get('is_brand') and analysis.get('brand_name'):
@@ -1037,13 +1059,36 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                                      f"Logo: {'Yes' if logo_url else 'No'}"])
                                 
                                 logger.info(f"✅ BRANDFETCH CACHE HIT for {brand_domain}: {brand_colors}")
-                                
+
+                                # Intelligently categorize brand colors into backgrounds and accents
+                                backgrounds = []
+                                accents = []
+                                for color in brand_colors:
+                                    try:
+                                        lum = self._get_luminance(color)
+                                        # Light colors (>0.7 luminance) are good for backgrounds
+                                        if lum > 0.7:
+                                            backgrounds.append(color)
+                                        else:
+                                            accents.append(color)
+                                    except Exception:
+                                        accents.append(color)
+
+                                # Ensure we have at least one background (fall back to white if no light colors)
+                                if not backgrounds:
+                                    backgrounds = ['#FFFFFF']
+                                # Ensure we have at least one accent
+                                if not accents:
+                                    accents = brand_colors[:2] if brand_colors else ['#000000']
+
+                                logger.info(f"[BRANDFETCH] Categorized colors - backgrounds: {backgrounds}, accents: {accents}")
+
                                 return {
                                     'colors': brand_colors[:8],
                                     'source': 'brandfetch_cache',
                                     'palette_name': f"{brand_info.get('company_name', brand_domain)} Brand Colors",
-                                    'backgrounds': ['#FFFFFF'] + ([brand_colors[2]] if len(brand_colors) > 2 else []),
-                                    'accents': brand_colors[:2],
+                                    'backgrounds': backgrounds[:2],
+                                    'accents': accents[:2],
                                     'metadata': {
                                         'brand': brand_info.get('company_name', brand_domain),
                                         'domain': brand_domain,
@@ -1053,11 +1098,13 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                                     }
                                 }
                             else:
+                                logger.warning(f"[THEME DIRECTOR] Brand {brand_domain} found but no colors in hex_list")
                                 await self._emit_tool_result("BrandCache.lookup", ["❌ No colors found in brand cache"])
                         else:
+                            logger.warning(f"[THEME DIRECTOR] Brand {brand_domain} not found or error: {brand_info.get('error') if brand_info else 'None'}")
                             await self._emit_tool_result("BrandCache.lookup", ["❌ Brand not found in cache"])
             except Exception as e:
-                logger.warning(f"Brandfetch cache lookup failed for {brand_domain}: {e}")
+                logger.warning(f"[THEME DIRECTOR] Brandfetch cache lookup failed for {brand_domain}: {e}")
                 await self._emit_tool_result("BrandCache.lookup", [f"❌ Cache error: {str(e)}"]) 
         
         # 4. Use SmartColorSelector (which handles palettesdb and curated fallbacks)
@@ -1675,8 +1722,9 @@ IMPORTANT:
 - Hero and body MUST be DIFFERENT fonts
 - Only use fonts from the list above"""
 
+                    from agents.config import CLAUDE_HAIKU_ID
                     response = await self.client.messages.create(
-                        model="claude-3-5-haiku-20241022",
+                        model=CLAUDE_HAIKU_ID,
                         max_tokens=100,
                         temperature=0.3,
                         messages=[{"role": "user", "content": prompt}]
@@ -1719,40 +1767,48 @@ IMPORTANT:
                     logger.warning(f"AI brand font selection failed: {e}")
                     font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
             else:
-                # Use EnhancedFontService for intelligent metadata-based selection
+                # Use FontIntelligence for intelligent metadata-based selection
                 try:
-                    font_service = EnhancedFontService()
+                    from agents.tools.theme.font_intelligence import get_font_intelligence
+                    font_intelligence = get_font_intelligence()
 
                     # Extract context from analysis
                     vibe = analysis.get('vibe', 'professional')
-                    keywords = []
-                    if analysis.get('topic'):
-                        keywords.append(analysis['topic'])
-                    if analysis.get('industry'):
-                        keywords.append(analysis['industry'])
-
+                    topic = analysis.get('topic') or analysis.get('industry')
                     audience = analysis.get('audience') or analysis.get('target_audience')
 
-                    # Get intelligent font pair with variety
-                    font_pair = font_service.select_font_pair(
-                        deck_title=title,
-                        vibe=vibe,
-                        content_keywords=keywords,
-                        target_audience=audience,
-                        variety_seed=variety_seed
-                    )
+                    # Check if we have brand context
+                    brand_name = analysis.get('brand_name')
+                    brand_domain = analysis.get('brand_domain')
+
+                    if brand_name or brand_domain:
+                        # Use brand-aware font selection
+                        font_pair = font_intelligence.select_fonts_for_brand(
+                            brand_name=brand_name or brand_domain or title,
+                            brand_domain=brand_domain,
+                            content_topic=topic
+                        )
+                    else:
+                        # Use content-aware font selection
+                        font_pair = font_intelligence.select_fonts_for_content(
+                            title=title,
+                            topic=topic,
+                            vibe=vibe,
+                            audience=audience
+                        )
 
                     font_result = {
                         'hero': font_pair['hero'],
                         'body': font_pair['body'],
-                        'source': font_pair.get('source', 'enhanced_metadata'),
-                        'hero_category': font_pair.get('hero_category'),
-                        'body_category': font_pair.get('body_category')
+                        'source': 'font_intelligence',
+                        'style': font_pair.get('style'),
+                        'reasoning': font_pair.get('reasoning')
                     }
+                    logger.info(f"[THEME] FontIntelligence selected: {font_result['hero']} + {font_result['body']} ({font_pair.get('style')})")
                 except Exception as e:
                     # Fallback to safe defaults
-                    logger.warning(f"EnhancedFontService failed, using fallback: {e}")
-                    font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
+                    logger.warning(f"FontIntelligence failed, using fallback: {e}")
+                    font_result = {'hero': 'Poppins', 'body': 'Inter', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",
@@ -2323,23 +2379,35 @@ Generate a creative, specific design style description (1-2 sentences):"""
         }
     
     def _match_fonts(self, scraped_fonts: List[str], available_fonts: List[str]) -> Dict[str, str]:
-        """Match scraped fonts to available fonts."""
+        """Match scraped fonts to available fonts with strict validation."""
         if not scraped_fonts or not available_fonts:
             return {}
-        
+
         norm = lambda s: ''.join(ch.lower() for ch in s if ch.isalnum())
         available_map = {norm(f): f for f in available_fonts}
-        
+        # Also keep a set of lowercase full names for quick lookup
+        available_lower = {f.lower(): f for f in available_fonts}
+
         def find_match(font_name: str) -> Optional[str]:
+            # First try exact match (case-insensitive)
+            if font_name.lower() in available_lower:
+                return available_lower[font_name.lower()]
+
+            # Then try normalized match (remove spaces, special chars)
             key = norm(font_name)
             if key in available_map:
                 return available_map[key]
-            
-            # Fuzzy match
-            matches = difflib.get_close_matches(key, available_map.keys(), n=1, cutoff=0.6)
+
+            # Only do fuzzy match with HIGH cutoff (0.85) to avoid false matches
+            # e.g., "Alerio Sans Serif" should NOT match "Merriweather Sans"
+            matches = difflib.get_close_matches(key, available_map.keys(), n=1, cutoff=0.85)
             if matches:
-                return available_map[matches[0]]
-            
+                matched_font = available_map[matches[0]]
+                logger.info(f"[FONT MATCH] Fuzzy matched '{font_name}' → '{matched_font}'")
+                return matched_font
+
+            # Font not available - log and return None
+            logger.warning(f"[FONT MATCH] Brand font '{font_name}' not available in registry, skipping")
             return None
         
         result = {}
@@ -2366,6 +2434,7 @@ Generate a creative, specific design style description (1-2 sentences):"""
     async def _ai_select_complementary_body_font(self, hero_font: str, title: str, vibe: str, available_fonts: List[str]) -> str:
         """Use AI to intelligently select a complementary body font from 700+ available fonts."""
         try:
+            from services.registry_fonts import RegistryFonts
             # Get categorized fonts for better AI context
             font_categories = RegistryFonts.get_available_fonts()
 
@@ -2391,8 +2460,11 @@ Available fonts by category:
 
 Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
 
-            response = await self.client.messages.create(
-                model="claude-3-5-haiku-20241022",
+            from agents.config import CLAUDE_HAIKU_ID
+            # Use get_client instead of self.client which doesn't exist
+            client, model = get_client("claude-haiku", wrap_with_instructor=False)
+            response = await client.messages.create(
+                model=CLAUDE_HAIKU_ID,
                 max_tokens=50,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt}]
@@ -2621,15 +2693,24 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
         """Convert style preferences to dict."""
         if not style_prefs:
             return None
-        
+
         try:
-            if hasattr(style_prefs, '__dict__'):
-                return style_prefs.__dict__
+            # Handle Pydantic models (v2 uses model_dump, v1 uses dict)
+            if hasattr(style_prefs, 'model_dump'):
+                result = style_prefs.model_dump()
+                logger.info(f"[THEME DIRECTOR] Converted stylePreferences via model_dump: vibeContext={result.get('vibeContext')}")
+                return result
+            elif hasattr(style_prefs, 'dict'):
+                result = style_prefs.dict()
+                logger.info(f"[THEME DIRECTOR] Converted stylePreferences via dict(): vibeContext={result.get('vibeContext')}")
+                return result
             elif isinstance(style_prefs, dict):
                 return style_prefs
-        except Exception:
-            pass
-        
+            elif hasattr(style_prefs, '__dict__'):
+                return style_prefs.__dict__
+        except Exception as e:
+            logger.warning(f"[THEME DIRECTOR] Failed to convert stylePreferences: {e}")
+
         return None
     
     def _sanitize_for_event(self, data: Any) -> Any:

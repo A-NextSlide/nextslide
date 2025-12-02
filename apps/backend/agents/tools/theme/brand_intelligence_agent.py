@@ -139,8 +139,9 @@ class BrandIntelligenceAgent:
         """
         
         try:
+            from agents.config import GPT_4O_MINI
             response = self.openai_client.chat.completions.create(
-                model="gpt-4",
+                model=GPT_4O_MINI,
                 messages=[
                     {"role": "system", "content": "You are a brand intelligence expert. Analyze user requests and extract brand context. Always respond in valid JSON format."},
                     {"role": "user", "content": context_prompt}
@@ -244,8 +245,9 @@ class BrandIntelligenceAgent:
         """
         
         try:
+            from agents.config import GPT_4O_MINI
             response = self.openai_client.chat.completions.create(
-                model="gpt-4",
+                model=GPT_4O_MINI,
                 messages=[
                     {"role": "system", "content": "You are a color semantics expert. Analyze brand colors and determine their semantic roles. Always respond in valid JSON format."},
                     {"role": "user", "content": semantic_prompt}

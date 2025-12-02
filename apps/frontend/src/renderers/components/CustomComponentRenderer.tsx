@@ -267,7 +267,7 @@ export const CustomComponentRenderer: React.FC<{
     if (!isEditing || isThumbnail) return;
 
     const handleImageSelected = (event: CustomEvent) => {
-      const { componentId, propName, imageUrl } = event.detail || {};
+      const { componentId, propName, imageUrl, elementId } = event.detail || {};
 
       // Only handle events for this component
       if (componentId !== component.id) return;
@@ -278,6 +278,17 @@ export const CustomComponentRenderer: React.FC<{
         DEBUG_CUSTOM_COMPONENT && console.warn('[CustomComponentRenderer] Missing propName or imageUrl');
         return;
       }
+
+      // Send loading state to iframe first (show placeholder)
+      const iframes = document.querySelectorAll('iframe');
+      iframes.forEach(iframe => {
+        iframe.contentWindow?.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'update-image-with-placeholder',
+          elementId: elementId || propName,
+          newSrc: imageUrl
+        }, '*');
+      });
 
       // Get current props
       const currentProps = component.props.props || {};
@@ -298,6 +309,10 @@ export const CustomComponentRenderer: React.FC<{
         }
       });
       DEBUG_CUSTOM_COMPONENT && DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponentRenderer] Component update dispatched');
+
+      // Clear selected element to auto-dismiss picker state
+      setSelectedElement(null);
+      setShowImageToolbar(false);
     };
 
     window.addEventListener('customcomponent:image-selected', handleImageSelected as EventListener);
@@ -1386,6 +1401,10 @@ export const CustomComponentRenderer: React.FC<{
   const [aiChatMessage, setAiChatMessage] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [containerBoundsState, setContainerBoundsState] = useState<DOMRect | null>(null);
+  // State for drag-drop file upload in container edit mode
+  const [containerDragOver, setContainerDragOver] = useState(false);
+  const [containerUploadedFile, setContainerUploadedFile] = useState<{name: string, url: string} | null>(null);
+  const containerFileInputRef = useRef<HTMLInputElement>(null);
 
   // Update container bounds when resizing
   useEffect(() => {
@@ -1814,10 +1833,9 @@ export const CustomComponentRenderer: React.FC<{
 
         if (event.data.type === 'image-clicked' || event.data.type === 'image-selected') {
           setSelectedElement(event.data.element);
-          // Use existing image picker
-          const imgSrc = event.data.element.src || '';
+          setShowImageToolbar(true);
+          // Also open image picker for quick replacement
           const imgAlt = event.data.element.alt || 'image';
-
           window.dispatchEvent(new CustomEvent('image:select-placeholder', {
             detail: {
               componentId: component.id,
@@ -1827,9 +1845,15 @@ export const CustomComponentRenderer: React.FC<{
               topic: imgAlt,
               isCustomComponentImage: true,
               elementId: event.data.element.id,
+              autoDismiss: true,
             }
           }));
-          setShowImageToolbar(false);
+        }
+
+        if (event.data.type === 'container-selected') {
+          setSelectedElement(event.data.element);
+          setShowAiChatBubble(false);
+          setAiChatMessage('');
         }
 
         if (event.data.type === 'element-deselected') {
@@ -2102,7 +2126,7 @@ export const CustomComponentRenderer: React.FC<{
 
   // Handler for AI-based element editing - dispatches to main chat panel
   const handleElementAiEdit = useCallback((element: DetectedElement, instruction: string) => {
-    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, instruction });
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] AI Edit request:', { type: element.type, id: element.id, instruction });
 
     // Create a descriptive label for the component chip in chat
     let label = 'Custom Component';
@@ -2110,15 +2134,23 @@ export const CustomComponentRenderer: React.FC<{
       const preview = element.content.slice(0, 20);
       label = `Text: "${preview}${element.content.length > 20 ? '...' : ''}"`;
     } else if (element.type === 'image') {
-      label = 'Image Element';
+      label = 'Image';
+    } else if (element.type === 'container') {
+      label = element.tagName || 'Section';
     }
 
-    // Build the prompt - include context about what element is being edited
-    let prompt = instruction;
+    // Build the prompt with SPECIFIC element targeting info
+    let prompt = '';
+
     if (element.type === 'text' && element.content) {
-      prompt = `Edit this text: "${element.content.slice(0, 100)}${element.content.length > 100 ? '...' : ''}"\n\nInstruction: ${instruction}`;
+      prompt = `In this custom HTML component, find and edit ONLY this specific text element: "${element.content.slice(0, 150)}${element.content.length > 150 ? '...' : ''}"\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this exact text element, do not change anything else.`;
     } else if (element.type === 'image') {
-      prompt = `Edit the image in this component. Instruction: ${instruction}`;
+      prompt = `In this custom HTML component, edit the image${element.alt ? ` with alt text "${element.alt}"` : ''}.\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this specific image element.`;
+    } else if (element.type === 'container') {
+      const contentPreview = element.content ? element.content.slice(0, 100) : '';
+      prompt = `In this custom HTML component, find and edit ONLY the ${element.tagName || 'section'} element${contentPreview ? ` that contains: "${contentPreview}..."` : ''}.\n\nMake this change: ${instruction}\n\nIMPORTANT: Only modify this specific ${element.tagName || 'section'} element and its contents, do not change other parts of the component.`;
+    } else {
+      prompt = instruction;
     }
 
     // Dispatch event to prefill chat panel with the component and prompt
@@ -2128,7 +2160,14 @@ export const CustomComponentRenderer: React.FC<{
         slideId: component.slideId,
         label,
         prompt,
-        elementType: 'CustomComponent'
+        elementType: 'CustomComponent',
+        // Include element details for better targeting
+        elementDetails: {
+          type: element.type,
+          id: element.id,
+          tagName: element.tagName,
+          content: element.content?.slice(0, 200),
+        }
       }
     }));
 
@@ -2370,68 +2409,278 @@ export const CustomComponentRenderer: React.FC<{
           );
         })()}
 
-        {/* IMAGE ELEMENT - uses existing image picker via 'image:select-placeholder' event */}
+        {/* IMAGE ELEMENT TOOLBAR - rendered as portal when image is selected */}
+        {selectedElement && selectedElement.type === 'image' && createPortal(
+          <AnimatePresence>
+            <ImageElementToolbar
+              element={selectedElement}
+              scale={scale}
+              onSwap={(newUrl) => handleImageSwap(selectedElement, newUrl)}
+              onAiEdit={(instruction) => handleElementAiEdit(selectedElement, instruction)}
+              onClose={() => {
+                setSelectedElement(null);
+                setShowImageToolbar(false);
+                iframeRef.current?.contentWindow?.postMessage({
+                  target: 'ns-custom-component-edit',
+                  type: 'deselect'
+                }, '*');
+              }}
+            />
+          </AnimatePresence>,
+          document.body
+        )}
 
-        {/* TEXT ELEMENT AI EDIT TOOLBAR - rendered as portal when text is selected */}
+        {/* TEXT ELEMENT - Small floating AI button (doesn't block editing) */}
         {selectedElement && selectedElement.type === 'text' && createPortal(
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + (selectedElement.bounds.y * scale) - 40),
+              left: Math.max(10, (iframeRef.current?.getBoundingClientRect().left || 0) + (selectedElement.bounds.x * scale) + (selectedElement.bounds.width * scale) + 8),
+              zIndex: 9999,
+              display: 'flex',
+              gap: '4px',
+            }}
+          >
+            {/* AI button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAiChatBubble(!showAiChatBubble);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="Edit with AI"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: '1px solid #e5e5e5',
+                background: showAiChatBubble ? '#FF4301' : 'white',
+                color: showAiChatBubble ? 'white' : '#FF4301',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
+              </svg>
+            </button>
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedElement(null);
+                setShowAiChatBubble(false);
+                setAiChatMessage('');
+                iframeRef.current?.contentWindow?.postMessage({
+                  target: 'ns-custom-component-edit',
+                  type: 'deselect'
+                }, '*');
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                border: '1px solid #e5e5e5',
+                background: 'white',
+                color: '#666',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* AI Chat popup - only shows when AI button is clicked */}
+            {showAiChatBubble && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '40px',
+                  left: 0,
+                  width: '280px',
+                  background: 'white',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e5e5',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Input area */}
+                <div style={{ padding: '12px 12px 8px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '2px', height: '16px', backgroundColor: '#FF4301', borderRadius: '1px' }} />
+                    <input
+                      type="text"
+                      value={aiChatMessage}
+                      onChange={(e) => setAiChatMessage(e.target.value)}
+                      placeholder="Rewrite or enhance..."
+                      disabled={isAiProcessing}
+                      autoFocus
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        outline: 'none',
+                        fontSize: '13px',
+                        color: '#333',
+                        background: 'transparent',
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter' && !e.shiftKey && aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                          e.preventDefault();
+                          handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                {/* Bottom bar with suggestions + send */}
+                <div style={{ padding: '6px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', gap: '4px', flex: 1, overflowX: 'auto' }}>
+                    {['Make punchier', 'Add flair', 'Simplify'].map(label => (
+                      <button
+                        key={label}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isAiProcessing && selectedElement) {
+                            handleElementAiEdit(selectedElement, label);
+                          }
+                        }}
+                        disabled={isAiProcessing}
+                        style={{
+                          padding: '4px 10px',
+                          background: '#f5f5f5',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontSize: '10px',
+                          cursor: isAiProcessing ? 'default' : 'pointer',
+                          color: '#666',
+                          fontWeight: 500,
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ width: '1px', height: '18px', backgroundColor: '#e5e5e5' }} />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (aiChatMessage.trim() && !isAiProcessing && selectedElement) {
+                        handleElementAiEdit(selectedElement, aiChatMessage.trim());
+                      }
+                    }}
+                    disabled={!aiChatMessage.trim() || isAiProcessing}
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '50%',
+                      border: 'none',
+                      background: (aiChatMessage.trim() && !isAiProcessing) ? '#FF4301' : '#e5e5e5',
+                      cursor: (aiChatMessage.trim() && !isAiProcessing) ? 'pointer' : 'default',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                      <polyline points="18 15 12 9 6 15" />
+                    </svg>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>,
+          document.body
+        )}
+
+        {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
+        {selectedElement && selectedElement.type === 'container' && (() => {
+          // Calculate position to stay within viewport
+          const panelWidth = 300;
+          const panelHeight = 280;
+          const padding = 16;
+          const iframeRect = iframeRef.current?.getBoundingClientRect();
+
+          // Calculate element's position in viewport coordinates
+          const elementX = (iframeRect?.left || 0) + (selectedElement.bounds.x * scale);
+          const elementY = (iframeRect?.top || 0) + (selectedElement.bounds.y * scale);
+          const elementWidth = selectedElement.bounds.width * scale;
+
+          // Try to position to the right of the element
+          let panelLeft = elementX + elementWidth + padding;
+          let panelTop = elementY;
+
+          // If it would go off the right edge, position to the left
+          if (panelLeft + panelWidth > window.innerWidth - padding) {
+            panelLeft = elementX - panelWidth - padding;
+          }
+
+          // If still off screen, position inside viewport
+          if (panelLeft < padding) {
+            panelLeft = Math.min(elementX + elementWidth - panelWidth, window.innerWidth - panelWidth - padding);
+            panelLeft = Math.max(padding, panelLeft);
+          }
+
+          // Ensure top stays within viewport
+          panelTop = Math.max(80, Math.min(panelTop, window.innerHeight - panelHeight - padding));
+
+          return createPortal(
           <AnimatePresence>
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: 'fixed',
-                top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + (selectedElement.bounds.y * scale) - 44),
-                left: Math.max(10, (iframeRef.current?.getBoundingClientRect().left || 0) + (selectedElement.bounds.x * scale)),
+                top: panelTop,
+                left: panelLeft,
                 zIndex: 9999,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
+                width: `${panelWidth}px`,
               }}
             >
-              {/* AI Edit Button */}
+              {/* ChatPanel-style input box */}
               <div
-                style={{ display: 'flex', gap: '6px', alignItems: 'center' }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: 'white',
+                  borderRadius: '16px',
+                  border: '1px solid #e5e5e5',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                  overflow: 'hidden',
+                }}
               >
+                {/* Close button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    e.preventDefault();
-                    setShowAiChatBubble(!showAiChatBubble);
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    background: showAiChatBubble ? '#FF4301' : 'white',
-                    color: showAiChatBubble ? 'white' : '#333',
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    fontFamily: 'system-ui',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
-                  </svg>
-                  AI Edit
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
                     setSelectedElement(null);
                     setShowAiChatBubble(false);
-                    // Tell iframe to deselect
+                    setAiChatMessage('');
                     iframeRef.current?.contentWindow?.postMessage({
                       target: 'ns-custom-component-edit',
                       type: 'deselect'
@@ -2439,106 +2688,131 @@ export const CustomComponentRenderer: React.FC<{
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   style={{
-                    padding: '8px',
-                    background: 'white',
-                    border: '1px solid #ddd',
-                    borderRadius: '8px',
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px',
+                    padding: '4px',
+                    background: 'transparent',
+                    border: 'none',
                     cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    color: '#999',
+                    zIndex: 10,
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M18 6L6 18M6 6l12 12" />
                   </svg>
                 </button>
-              </div>
 
-              {/* AI Chat Bubble */}
-              {showAiChatBubble && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    width: '320px',
-                    background: 'white',
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{
-                    padding: '12px 16px',
-                    background: '#FF4301',
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 3v18M3 12h18M7.5 7.5l9 9M16.5 7.5l-9 9" />
-                    </svg>
-                    <span style={{ fontSize: '14px', fontWeight: 600 }}>Edit with AI</span>
-                  </div>
-                  <div style={{ padding: '16px' }}>
-                    <div style={{
-                      padding: '10px 12px',
-                      background: '#f5f5f5',
+                {/* Input area with drag-drop support */}
+                <>
+                  <div
+                    style={{
+                      padding: '12px',
+                      border: containerDragOver ? '2px dashed #FF4301' : '2px dashed transparent',
                       borderRadius: '8px',
-                      marginBottom: '12px',
-                      fontSize: '12px',
-                      color: '#666',
-                    }}>
-                      "{selectedElement.content?.slice(0, 80)}{(selectedElement.content?.length || 0) > 80 ? '...' : ''}"
+                      background: containerDragOver ? 'rgba(255, 67, 1, 0.05)' : 'transparent',
+                      margin: '8px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onDragOver={(e) => { e.preventDefault(); setContainerDragOver(true); }}
+                    onDragLeave={() => setContainerDragOver(false)}
+                    onDrop={async (e: React.DragEvent) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContainerDragOver(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                        try {
+                          const { uploadFile } = await import('@/utils/fileUploadUtils');
+                          const url = await uploadFile(file);
+                          setContainerUploadedFile({ name: file.name, url });
+                        } catch (err) {
+                          console.error('Upload failed:', err);
+                        }
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <div style={{ width: '2px', height: '18px', backgroundColor: '#FF4301', borderRadius: '1px', marginTop: '3px', flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <input
+                          type="text"
+                          value={aiChatMessage}
+                          onChange={(e) => setAiChatMessage(e.target.value)}
+                          placeholder={containerDragOver ? "Drop image here..." : "Describe your changes..."}
+                          disabled={isAiProcessing}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                          style={{
+                            width: '100%',
+                            border: 'none',
+                            outline: 'none',
+                            fontSize: '14px',
+                            color: '#333',
+                            background: 'transparent',
+                            padding: 0,
+                            fontFamily: 'system-ui, -apple-system, sans-serif',
+                          }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              if ((aiChatMessage.trim() || containerUploadedFile) && !isAiProcessing && selectedElement) {
+                                const msg = containerUploadedFile
+                                  ? `${aiChatMessage.trim()} [Reference image: ${containerUploadedFile.url}]`
+                                  : aiChatMessage.trim();
+                                handleElementAiEdit(selectedElement, msg);
+                                setContainerUploadedFile(null);
+                              }
+                            }
+                          }}
+                        />
+                        {/* Uploaded file preview */}
+                        {containerUploadedFile && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '6px 8px', background: '#f5f5f5', borderRadius: '6px' }}>
+                            <img src={containerUploadedFile.url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                            <span style={{ fontSize: '11px', color: '#666', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{containerUploadedFile.name}</span>
+                            <button onClick={() => setContainerUploadedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                      <input
-                        type="text"
-                        value={aiChatMessage}
-                        onChange={(e) => setAiChatMessage(e.target.value)}
-                        placeholder="Tell AI what to change..."
-                        disabled={isAiProcessing}
-                        style={{
-                          flex: 1,
-                          padding: '10px 14px',
-                          border: '1px solid #ddd',
-                          borderRadius: '8px',
-                          fontSize: '14px',
-                          outline: 'none',
-                          opacity: isAiProcessing ? 0.6 : 1,
-                        }}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter' && aiChatMessage.trim() && !isAiProcessing && selectedElement) {
-                            handleElementAiEdit(selectedElement, aiChatMessage.trim());
-                          }
-                        }}
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (aiChatMessage.trim() && !isAiProcessing && selectedElement) {
-                            handleElementAiEdit(selectedElement, aiChatMessage.trim());
-                          }
-                        }}
-                        disabled={!aiChatMessage.trim() || isAiProcessing}
-                        style={{
-                          padding: '10px 16px',
-                          background: (aiChatMessage.trim() && !isAiProcessing) ? '#FF4301' : '#ccc',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: (aiChatMessage.trim() && !isAiProcessing) ? 'pointer' : 'default',
-                          fontWeight: 600,
-                          minWidth: '70px',
-                        }}
-                      >
-                        {isAiProcessing ? '...' : 'Send'}
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {['Shorten', 'Expand', 'Make professional', 'Make casual'].map(label => (
+                  </div>
+
+                  {/* Bottom bar */}
+                  <div style={{ padding: '4px 12px 10px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {/* Upload button */}
+                    <input ref={containerFileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          const { uploadFile } = await import('@/utils/fileUploadUtils');
+                          const url = await uploadFile(file);
+                          setContainerUploadedFile({ name: file.name, url });
+                        } catch (err) {
+                          console.error('Upload failed:', err);
+                        }
+                      }
+                    }} />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); containerFileInputRef.current?.click(); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#999', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title="Upload image"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                    </button>
+
+                    {/* Suggestions */}
+                    <div style={{ display: 'flex', gap: '4px', flex: 1, overflowX: 'auto' }}>
+                      {(selectedElement?.tagName?.toLowerCase().includes('img') || selectedElement?.content?.includes('image')
+                        ? ['Remove background', 'Add soft shadow', 'Round corners']
+                        : ['Glassmorphism + blur', 'Floating card', 'Gradient mesh bg']
+                      ).map(label => (
                         <button
                           key={label}
                           onClick={(e) => {
@@ -2548,28 +2822,67 @@ export const CustomComponentRenderer: React.FC<{
                             }
                           }}
                           disabled={isAiProcessing}
+                          onMouseDown={(e) => e.stopPropagation()}
                           style={{
-                            padding: '6px 12px',
-                            background: isAiProcessing ? '#e0e0e0' : '#f0f0f0',
+                            padding: '4px 10px',
+                            background: '#f5f5f5',
                             border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '12px',
+                            borderRadius: '12px',
+                            fontSize: '10px',
                             cursor: isAiProcessing ? 'default' : 'pointer',
-                            color: '#444',
-                            opacity: isAiProcessing ? 0.6 : 1,
+                            color: '#666',
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
                           }}
                         >
                           {label}
                         </button>
                       ))}
                     </div>
+
+                    <div style={{ width: '1px', height: '20px', backgroundColor: '#e5e5e5' }} />
+
+                    {/* Send button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if ((aiChatMessage.trim() || containerUploadedFile) && !isAiProcessing && selectedElement) {
+                          const msg = containerUploadedFile
+                            ? `${aiChatMessage.trim()} [Reference image: ${containerUploadedFile.url}]`
+                            : aiChatMessage.trim();
+                          handleElementAiEdit(selectedElement, msg);
+                          setContainerUploadedFile(null);
+                        }
+                      }}
+                      disabled={(!aiChatMessage.trim() && !containerUploadedFile) || isAiProcessing}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: ((aiChatMessage.trim() || containerUploadedFile) && !isAiProcessing) ? '#FF4301' : '#e5e5e5',
+                        color: 'white',
+                        cursor: ((aiChatMessage.trim() || containerUploadedFile) && !isAiProcessing) ? 'pointer' : 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="18 15 12 9 6 15" />
+                      </svg>
+                    </button>
                   </div>
-                </motion.div>
-              )}
+                </>
+              </div>
             </motion.div>
           </AnimatePresence>,
           document.body
-        )}
+        );
+        })()}
       </div>
     </ErrorBoundary>
   );

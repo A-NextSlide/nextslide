@@ -48,6 +48,7 @@ PyJWT==2.10.1
 
 # Data file parsing for attachments
 openpyxl>=3.1.3
+pypdf>=4.0.0
 
 # Email Service (optional - for production magic links)
 resend==2.11.0  # For professional email sending
