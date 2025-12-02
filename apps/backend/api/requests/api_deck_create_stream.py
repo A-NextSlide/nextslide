@@ -112,6 +112,12 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 if 'stylePreferences' not in outline_dict and request.stylePreferences:
                     outline_dict['stylePreferences'] = request.stylePreferences
 
+                # Filter out any legacy upgrade slides (no longer used, popup shown instead)
+                outline_dict['slides'] = [
+                    slide for slide in outline_dict.get('slides', [])
+                    if not slide.get('is_upgrade_slide') and slide.get('type') != 'upgrade_paywall'
+                ]
+
                 for i, slide in enumerate(outline_dict.get('slides', [])):
                     if 'id' not in slide: slide['id'] = f"slide-{deck_uuid}-{i}"
                     # Ensure other essential slide fields have defaults if missing
@@ -587,7 +593,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                             pass
                         yield _sse(update)
                         await asyncio.sleep(0.01)
-                    
+
                 # Send a final summary event without duplicating the 'deck_complete' event
                 response_data = {
                     'type': 'composition_complete',

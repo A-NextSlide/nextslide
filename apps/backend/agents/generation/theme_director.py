@@ -2266,10 +2266,15 @@ Context: {prompt[:200] if prompt else 'general presentation'}
 Generate a creative, specific design style description (1-2 sentences):"""
 
         try:
-            response = await invoke(
-                system_prompt,
-                user_prompt,
-                model="haiku",
+            from agents.config import CLAUDE_HAIKU
+            client, actual_model = get_client(CLAUDE_HAIKU)
+            response = invoke(
+                client=client,
+                model=actual_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
                 temperature=0.8  # Higher temperature for creativity
             )
             style = response.strip()
@@ -2764,7 +2769,8 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
     
     def _is_near_black(self, color: str) -> bool:
         try:
-            return self._estimate_brightness(color) < 0.05
+            # Threshold increased to 0.15 to include dark colors like #1a1a1a (brightness ~0.10)
+            return self._estimate_brightness(color) < 0.15
         except Exception:
             return False
     

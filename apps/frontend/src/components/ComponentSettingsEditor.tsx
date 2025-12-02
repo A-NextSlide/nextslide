@@ -132,16 +132,24 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
   }, []); // No dependencies needed since scrollRef is a ref
 
   // Prevent scroll chaining/bounce to outer containers when at edges
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+  // Use native event listener for proper passive: false handling
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const deltaY = e.deltaY;
-    const atTop = el.scrollTop <= 0 && deltaY < 0;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight && deltaY > 0;
-    if (atTop || atBottom) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+
+    const handleWheel = (e: WheelEvent) => {
+      const deltaY = e.deltaY;
+      // Use threshold of 2px to handle sub-pixel rendering on macOS
+      const atTop = el.scrollTop <= 0 && deltaY < 0;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2 && deltaY > 0;
+      if (atTop || atBottom) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
   }, []);
   
   // Initialize scroll indicators when content is ready
@@ -583,12 +591,11 @@ const ComponentSettingsEditor: React.FC<ComponentSettingsEditorProps> = ({
           <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
         )}
         
-        <div 
+        <div
           ref={scrollRef}
           className="h-full overflow-auto p-3"
           onScroll={handleScroll}
-          onWheel={handleWheel}
-          style={{ ['overflowAnchor' as any]: 'auto', overscrollBehavior: 'none', overscrollBehaviorY: 'none', overscrollBehaviorX: 'none', scrollbarGutter: 'stable both-edges' }}
+          style={{ overscrollBehavior: 'contain', scrollbarGutter: 'stable both-edges' }}
         >
           {activeTab === 'component' && (
             <div className="space-y-6">

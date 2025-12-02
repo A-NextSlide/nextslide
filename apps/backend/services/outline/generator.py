@@ -1899,53 +1899,6 @@ class OutlineGenerator:
         # NOTE: Removed forced callout injection - let AI decide based on content
         # User's request should drive structure, not arbitrary rules
 
-        # SMART STRUCTURE DETECTION
-        # Detect if this is an interactive/widget/demo request vs formal presentation
-        interactive_indicators = [
-            'interactive', 'widget', 'demo', 'app', 'tool', 'calculator', 'quiz',
-            'game', 'simulation', 'prototype', 'mockup', 'dashboard', 'chart',
-            'visualization', 'infographic', 'poster', 'single', 'one slide',
-            'flashcard', 'card', 'thing', 'thingy', 'quick', 'simple'
-        ]
-        formal_presentation_indicators = [
-            'presentation', 'deck', 'pitch', 'keynote', 'meeting', 'conference',
-            'report', 'proposal', 'business', 'corporate', 'training', 'lecture',
-            'seminar', 'webinar', 'workshop', 'overview', 'strategy', 'analysis'
-        ]
-
-        # Check what type of request this is
-        is_interactive = any(ind in prompt_lower for ind in interactive_indicators)
-        is_formal_presentation = any(ind in prompt_lower for ind in formal_presentation_indicators)
-        is_short_request = slide_count <= 3
-        is_long_request = slide_count >= 8
-
-        # Build smart structure rules based on detection
-        structure_rules = ""
-        if is_short_request or (is_interactive and not is_formal_presentation):
-            # SHORT OR INTERACTIVE: NO forced structure
-            structure_rules = """
-⚠️ SHORT/INTERACTIVE REQUEST DETECTED:
-- DO NOT add title slides, intro slides, agenda slides, or conclusion slides
-- DO NOT add "Thank You" or "Q&A" slides
-- EVERY slide should deliver ACTUAL CONTENT the user asked for
-- Jump straight into the content - no preamble or fluff
-- If user asked for 2 slides about X, give them 2 slides about X - NOT "Title" + "X content"
-"""
-            logger.info(f"[SMART DETECTION] ⚡ SHORT/INTERACTIVE mode: {slide_count} slides, interactive={is_interactive}")
-        elif is_long_request and is_formal_presentation:
-            # LONG FORMAL PRESENTATION: Add structure
-            structure_rules = """
-📊 FORMAL PRESENTATION DETECTED:
-- Consider starting with an engaging title/intro slide
-- Add an agenda slide for complex topics (8+ slides)
-- End with a strong conclusion or call-to-action
-- Structure content logically with clear narrative flow
-"""
-            logger.info(f"[SMART DETECTION] 📊 FORMAL PRESENTATION mode: {slide_count} slides")
-        else:
-            # Medium length or unclear - let AI decide naturally
-            logger.info(f"[SMART DETECTION] 🔄 NEUTRAL mode: {slide_count} slides - AI decides structure")
-
         # Pitch-aware visual simplicity rules
         pitch_outline_rules = (
             "- PITCH MODE — Visual Simplicity: Favor fewer, high‑impact bullets.\n"
@@ -1978,8 +1931,15 @@ Requirements:
 - Create exactly {slide_count} slides.
 - All slides should be type "content" (the visual design is handled separately).
 - Make titles specific and engaging (avoid generic like "Introduction").
-- Focus on what the USER asked for, not on following a standard deck template.
-{structure_rules}{pitch_outline_rules}"""
+
+CRITICAL - SMART STRUCTURE BASED ON CONTEXT:
+- READ the user's request carefully. What are they ACTUALLY asking for?
+- For SHORT requests (1-3 slides) or interactive/demo/widget requests: DO NOT add title slides, intros, agendas, or conclusions. EVERY slide should deliver actual content.
+- For LONG formal presentations (8+ slides about business/strategy/training topics): Consider adding a title slide, agenda, and conclusion for good narrative flow.
+- For MEDIUM requests or unclear intent: Use your judgment based on the content.
+- NEVER waste slides on fluff. If user asks for "2 slides about X", give them 2 slides OF X, not "Title" + "X".
+- Match the structure to what makes sense for the user's actual request.
+{pitch_outline_rules}"""
 
         try:
             # Get quick outline structure - use mode-appropriate model

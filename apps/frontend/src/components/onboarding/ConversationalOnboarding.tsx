@@ -1,10 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send, Sparkles, ArrowLeft, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
 import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
+import { ThinkingStatusDisplay, ThemeChatBlock, OutlineChatBlock } from '@/components/chat';
+import type { ThemeBlockData, OutlineBlockData, OutlineSlide } from '@/components/chat';
+import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
+import { ThemeEditorData, OutlinePreviewData, ThemeColorPalette } from '@/types/chatBlocks';
+import { useFontLoader } from '@/hooks/useFontLoading';
+import { useThemeStore } from '@/stores/themeStore';
 
 // Helper to render markdown-like formatting
 const renderText = (text: string) => {
@@ -57,6 +63,9 @@ interface Message {
   showPresentationSelection?: boolean;
   showSlideModeSelection?: boolean;
   attachments?: AttachmentPreview[];
+  // Inline chat blocks
+  themeBlock?: ThemeEditorData;
+  outlineBlock?: OutlinePreviewData;
 }
 
 interface CollectedData {
@@ -140,20 +149,209 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusPhase, setStatusPhase] = useState<string | null>(null);
+  // File upload confirmation - ask if for reference or direct use
+  const [pendingFileConfirmation, setPendingFileConfirmation] = useState<{
+    files: Array<{ file: File; previewUrl?: string }>;
+  } | null>(null);
+
+  // Thinking steps for rich progress display
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+  // Streaming text from model (for showing thoughts line-by-line)
+  const [streamingText, setStreamingText] = useState<string>('');
+
+  // Inline theme editor state
+  const [themeBlock, setThemeBlock] = useState<ThemeEditorData | null>(null);
+  const [themeBlockCollapsed, setThemeBlockCollapsed] = useState(true); // Start collapsed
+  const [isThemeLoading, setIsThemeLoading] = useState(false); // Track theme generation
+  const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
+  const [outlineBlockCollapsed, setOutlineBlockCollapsed] = useState(true); // Start collapsed
+
+  // Font loader and theme store
+  const { loadThemeFonts, isLoading: isFontLoading } = useFontLoader();
+  const { setOutlineDeckTheme, getOutlineDeckTheme } = useThemeStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to add thinking step
+  const addThinkingStep = useCallback((status: string, message?: string, query?: string) => {
+    const phaseConfig = STATUS_PHASES[status as StatusPhase] || {
+      icon: '⋯',
+      label: status,
+      color: '#6B7280',
+      activeLabel: status,
+    };
+
+    const step: ThinkingStep = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      phase: status,
+      label: phaseConfig.activeLabel || phaseConfig.label,
+      detail: message || query,
+      status: 'active',
+      timestamp: new Date(),
+    };
+
+    setThinkingSteps(prev => {
+      // Mark previous step as completed
+      const updated = prev.map(s => ({ ...s, status: 'completed' as const }));
+      return [...updated, step];
+    });
+  }, []);
+
+  // Clear thinking steps
+  const clearThinkingSteps = useCallback(() => {
+    setThinkingSteps([]);
+  }, []);
+
+  // Build theme block from outline data - always creates a theme with defaults
+  const buildThemeBlockFromOutline = useCallback((outlineData: OutlineData): ThemeEditorData => {
+    const stylePrefs = outlineData.stylePreferences || {};
+    const colors = stylePrefs.colors || {};
+
+    // Default playful colors for Pikachu-like topics, professional otherwise
+    const topic = (outlineData.topic || '').toLowerCase();
+    const isPlayful = ['pikachu', 'pokemon', 'game', 'cartoon', 'fun', 'kids'].some(k => topic.includes(k));
+
+    const defaultColors = isPlayful
+      ? { bg: '#FFDC00', text: '#1A1A1A', accent1: '#FF4301', accent2: '#3B4CCA' }  // Yellow/Red/Blue
+      : { bg: '#FFFFFF', text: '#1F2937', accent1: '#FF4301', accent2: '#3B82F6' }; // White/Orange/Blue
+
+    return {
+      themeId: `theme-${Date.now()}`,
+      colors: {
+        primary_background: colors.background || defaultColors.bg,
+        primary_text: colors.text || defaultColors.text,
+        accent_1: colors.accent1 || defaultColors.accent1,
+        accent_2: colors.accent2 || colors.accent1 || defaultColors.accent2,
+        colors: [colors.accent1, colors.accent2, colors.accent3].filter(Boolean) as string[] || [defaultColors.accent1, defaultColors.accent2],
+        backgrounds: [colors.background].filter(Boolean) as string[] || [defaultColors.bg],
+      },
+      typography: {
+        headingFont: stylePrefs.font || (isPlayful ? 'Fredoka' : 'Inter'),
+        bodyFont: stylePrefs.bodyFont || (isPlayful ? 'Nunito' : 'Inter'),
+      },
+      branding: {
+        logoUrl: stylePrefs.logoUrl,
+        brandName: outlineData.brandContext,
+        brandDomain: outlineData.brandContext,
+      },
+      designStyle: outlineData.style || (isPlayful ? 'playful' : 'modern'),
+      vibeContext: outlineData.brandContext || outlineData.style || outlineData.topic,
+      isEditable: true,
+    };
+  }, []);
+
+  // Handle theme color change from inline editor
+  const handleThemeColorChange = useCallback((colorKey: keyof ThemeColorPalette | string, hex: string) => {
+    setThemeBlock(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        colors: {
+          ...prev.colors,
+          [colorKey]: hex,
+        },
+      };
+    });
+  }, []);
+
+  // Handle theme font change from inline editor
+  const handleThemeFontChange = useCallback(async (fontType: 'heading' | 'body', fontFamily: string) => {
+    // Load the font first
+    await loadThemeFonts(
+      fontType === 'heading' ? fontFamily : themeBlock?.typography.headingFont || 'Inter',
+      fontType === 'body' ? fontFamily : themeBlock?.typography.bodyFont || 'Inter'
+    );
+
+    setThemeBlock(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        typography: {
+          ...prev.typography,
+          [fontType === 'heading' ? 'headingFont' : 'bodyFont']: fontFamily,
+        },
+      };
+    });
+  }, [loadThemeFonts, themeBlock]);
+
+  // Handle brand change from inline editor
+  const handleBrandChange = useCallback((brand: { name?: string; logoUrl?: string }) => {
+    setThemeBlock(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        branding: {
+          ...prev.branding,
+          brandName: brand.name ?? prev.branding?.brandName,
+          logoUrl: brand.logoUrl ?? prev.branding?.logoUrl,
+        },
+      };
+    });
+  }, []);
+
+  // Apply theme to store (and by extension, the deck)
+  const applyThemeToStore = useCallback(() => {
+    if (!themeBlock) return;
+
+    // Build theme payload in the format expected by the theme store
+    const colors = themeBlock.colors;
+    const accentsArray = [colors.accent_1, colors.accent_2].filter(Boolean);
+
+    const themePayload = {
+      color_palette: {
+        primary_background: colors.primary_background,
+        primary_text: colors.primary_text,
+        accent_1: colors.accent_1,
+        accent_2: colors.accent_2,
+        // CRITICAL: accent_1, accent_2 at FRONT tells AI which are primary brand colors
+        colors: [...accentsArray, ...(colors.colors || [])],
+        backgrounds: colors.backgrounds || [colors.primary_background],
+        text_colors: { primary: colors.primary_text },
+        metadata: {
+          logo_url: themeBlock.branding?.logoUrl,
+        },
+      },
+      typography: {
+        hero_title: { family: themeBlock.typography.headingFont },
+        body_text: { family: themeBlock.typography.bodyFont },
+      },
+    };
+
+    // Store in theme store
+    setOutlineDeckTheme(themePayload);
+
+    // Also update collected data stylePreferences
+    setCollectedData(prev => ({
+      ...prev,
+      stylePreferences: JSON.stringify({
+        colors: {
+          type: 'custom',
+          background: colors.primary_background,
+          text: colors.primary_text,
+          accent1: colors.accent_1,
+          accent2: colors.accent_2,
+        },
+        font: themeBlock.typography.headingFont,
+        bodyFont: themeBlock.typography.bodyFont,
+        logoUrl: themeBlock.branding?.logoUrl,
+        vibeContext: themeBlock.vibeContext,
+      }),
+    }));
+
+    console.log('[ConversationalOnboarding] Applied theme to store:', themePayload);
+  }, [themeBlock, setOutlineDeckTheme]);
 
   // Notify parent of processing state changes
   useEffect(() => {
     onProcessingChange?.(isProcessing || isAgentTyping);
   }, [isProcessing, isAgentTyping, onProcessingChange]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change, thinking steps update, or streaming text changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, thinkingSteps, isAgentTyping, streamingText]);
 
   // Auto-focus input
   useEffect(() => {
@@ -236,6 +434,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
     try {
       setIsAgentTyping(true);
+      // Clear streaming text at the start of each message
+      setStreamingText('');
 
       // Convert new files to base64 and add to persistent files
       let newFilesToAdd: FileAttachment[] = [];
@@ -284,16 +484,21 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       for await (const event of generator) {
         if (event.type === 'text') {
           assistantMessage += event.content;
+          // Update streaming text for live display (show thoughts as they come in)
+          setStreamingText(prev => prev + event.content);
           // Clear status when we get actual text
           setStatusMessage(null);
           setStatusPhase(null);
         } else if (event.type === 'status') {
-          // Handle status updates - show to user
+          // Handle status updates - show to user with rich thinking steps
           console.log('[ConversationalOnboarding] Status:', event.status, event.message);
           const status = (event as any).status;
           const message = (event as any).message || (event as any).query;
 
-          // Map status to user-friendly messages
+          // Add thinking step for rich progress display
+          addThinkingStep(status, message, (event as any).query);
+
+          // Map status to user-friendly messages (for fallback display)
           if (status === 'thinking') {
             setStatusPhase('thinking');
             setStatusMessage('Processing your request...');
@@ -355,6 +560,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       setIsAgentTyping(false);
       setStatusMessage(null);
       setStatusPhase(null);
+      clearThinkingSteps();
 
       // Check if agent wants to generate outline
       if (outlineData && outlineData.action === 'generate_outline') {
@@ -367,7 +573,136 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
         setAnalyzedFileNames(new Set());
         setFileAnalysisContext(null);
 
-        // Show the planning message
+        // Build theme block - fetch brand colors if we have brandContext
+        console.log('[ConversationalOnboarding] 🎨 Building theme from outlineData:', {
+          topic: outlineData.topic,
+          stylePreferences: outlineData.stylePreferences,
+          brandContext: outlineData.brandContext,
+          style: outlineData.style,
+        });
+
+        // Start with defaults, then fetch real theme from backend
+        let newThemeBlock = buildThemeBlockFromOutline(outlineData);
+        setThemeBlock(newThemeBlock);
+        setThemeBlockCollapsed(true);
+
+        // ALWAYS attempt to fetch theme colors from backend
+        // Use brandContext, style, or topic as vibeContext for theme generation
+        const vibeContext = outlineData.brandContext || outlineData.style || outlineData.topic;
+        if (vibeContext) {
+          // Set loading state BEFORE calling API
+          setIsThemeLoading(true);
+
+          const themeMessage = outlineData.brandContext
+            ? `Fetching brand colors for ${outlineData.brandContext}...`
+            : 'Generating theme colors...';
+          console.log('[ConversationalOnboarding] 🏷️ Theme generation:', vibeContext);
+          addThinkingStep('fetching_brand', themeMessage, vibeContext);
+
+          // Call theme generation API to get brand colors
+          (async () => {
+            try {
+              const { outlineApi } = await import('@/services/outlineApi');
+              const tempOutlineId = `temp-${Date.now()}`;
+
+              const themeOutline = {
+                id: tempOutlineId,
+                title: outlineData.topic || 'Presentation',
+                slides: outlineData.slides?.map((s, i) => ({
+                  id: `slide-${i}`,
+                  title: s.title,
+                  content: s.content || s.key_points?.join('\n') || '',
+                })) || [{ id: 'slide-0', title: outlineData.topic || 'Presentation', content: '' }],
+                stylePreferences: {
+                  initialIdea: outlineData.topic,
+                  vibeContext: vibeContext,
+                }
+              };
+
+              console.log('[ConversationalOnboarding] 🎨 Calling generateThemeFromOutline with vibeContext:', vibeContext);
+
+              const themeResult = await outlineApi.generateThemeFromOutline(
+                themeOutline as any,
+                tempOutlineId,
+                (evt) => {
+                  console.log('[ConversationalOnboarding] 🎨 Theme event:', evt.type, evt);
+                  if ((evt as any).type === 'theme_generated' || (evt as any).type === 'theme_preview_update') {
+                    const theme = (evt as any).theme || evt;
+                    if (theme?.color_palette) {
+                      console.log('[ConversationalOnboarding] ✅ Got brand colors:', theme.color_palette);
+                      // Update theme block with brand colors
+                      setThemeBlock(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          colors: {
+                            primary_background: theme.color_palette.primary_background || prev.colors.primary_background,
+                            primary_text: theme.color_palette.primary_text || prev.colors.primary_text,
+                            accent_1: theme.color_palette.accent_1 || prev.colors.accent_1,
+                            accent_2: theme.color_palette.accent_2 || prev.colors.accent_2,
+                            colors: theme.color_palette.colors || prev.colors.colors,
+                            backgrounds: theme.color_palette.backgrounds || prev.colors.backgrounds,
+                          },
+                          typography: {
+                            headingFont: theme.typography?.hero_title?.family || prev.typography.headingFont,
+                            bodyFont: theme.typography?.body_text?.family || prev.typography.bodyFont,
+                          },
+                          branding: {
+                            ...prev.branding,
+                            logoUrl: theme.logo?.url || theme.logo_info?.url || prev.branding?.logoUrl,
+                          },
+                        };
+                      });
+                      // Theme received - stop loading
+                      setIsThemeLoading(false);
+                      completeThinkingStep('fetching_brand');
+                    }
+                  }
+                }
+              );
+
+              // Also check the final result
+              if (themeResult?.theme?.color_palette) {
+                console.log('[ConversationalOnboarding] ✅ Final theme result:', themeResult.theme);
+                setIsThemeLoading(false);
+              }
+            } catch (err) {
+              console.error('[ConversationalOnboarding] ❌ Failed to fetch brand colors:', err);
+              setIsThemeLoading(false);
+              completeThinkingStep('fetching_brand');
+            }
+          })();
+        } else {
+          // No vibeContext, no theme loading needed
+          setIsThemeLoading(false);
+        }
+
+        // Load fonts
+        loadThemeFonts(newThemeBlock.typography.headingFont, newThemeBlock.typography.bodyFont);
+        console.log('[ConversationalOnboarding] ✅ Built initial theme block:', newThemeBlock);
+
+        // Build outline block for preview - include ALL content that will be on slides
+        if (outlineData.slides && outlineData.slides.length > 0) {
+          console.log('[ConversationalOnboarding] 📋 Building outline block with', outlineData.slides.length, 'slides');
+          const outlinePreview: OutlinePreviewData = {
+            outlineId: `outline-${Date.now()}`,
+            title: outlineData.topic || 'Your Presentation',
+            slides: outlineData.slides.map((s, i) => ({
+              id: `slide-${i}`,
+              title: s.title,
+              subtitle: s.subtitle,
+              keyPoints: s.key_points,
+              content: s.content, // Include narrative/content if available
+            })),
+          };
+          setOutlineBlock(outlinePreview);
+          setOutlineBlockCollapsed(true); // Keep collapsed for compact view
+          console.log('[ConversationalOnboarding] ✅ Built outline block:', outlinePreview);
+        } else {
+          console.log('[ConversationalOnboarding] ⚠️ No slides in outlineData');
+        }
+
+        // Show the planning message with inline blocks
         addAgentMessage(
           assistantMessage || "Here's the plan for your presentation:"
         );
@@ -386,6 +721,10 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
         // Ask about slide mode (interactive vs static)
         setTimeout(() => {
+          console.log('[ConversationalOnboarding] 🔄 Setting stage to slide_mode_selection, blocks:', {
+            hasThemeBlock: !!themeBlock,
+            hasOutlineBlock: !!outlineBlock,
+          });
           setStage('slide_mode_selection');
           addMessage(
             'assistant',
@@ -455,6 +794,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       setIsProcessing(false);
       setStatusMessage(null);
       setStatusPhase(null);
+      setStreamingText(''); // Clear streaming text when done
       // Auto-focus input after processing is done and input is re-enabled
       setTimeout(() => {
         inputRef.current?.focus();
@@ -476,6 +816,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       setCollectedData(prev => ({ ...prev, slideMode }));
       setStage('confirmed');
 
+      // Apply theme to store BEFORE completing (so it's available for generation)
+      applyThemeToStore();
+
       const confirmMessage = slideMode === 'interactive'
         ? "Creating your deeply interactive, next-generation presentation..."
         : slideMode === 'presentation'
@@ -490,12 +833,29 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
         console.log('[ConversationalOnboarding] - outlineFlow?.topic:', outlineFlow?.topic);
         console.log('[ConversationalOnboarding] - style sources: brandContext=', outlineFlow?.brandContext, 'vibeContext=', outlineFlow?.stylePreferences?.vibeContext, 'style=', outlineFlow?.style);
 
+        // Build stylePreferences from theme block if available
+        const stylePreferencesFromTheme = themeBlock ? {
+          colors: {
+            type: 'custom' as const,
+            background: themeBlock.colors.primary_background,
+            text: themeBlock.colors.primary_text,
+            accent1: themeBlock.colors.accent_1,
+            accent2: themeBlock.colors.accent_2,
+          },
+          font: themeBlock.typography.headingFont,
+          bodyFont: themeBlock.typography.bodyFont,
+          logoUrl: themeBlock.branding?.logoUrl,
+          vibeContext: themeBlock.vibeContext,
+        } : null;
+
         onComplete({
           ...collectedData,
           topic: outlineFlow?.topic || collectedData.topic,
           // Style for theme generation (e.g., brand name, domain, or style descriptor)
           // Agent outputs this as brandContext, or it can be in stylePreferences.vibeContext
           style: outlineFlow?.brandContext || outlineFlow?.stylePreferences?.vibeContext || outlineFlow?.style || collectedData.style,
+          // Pass the edited stylePreferences from theme block if available
+          stylePreferences: stylePreferencesFromTheme ? JSON.stringify(stylePreferencesFromTheme) : collectedData.stylePreferences,
           slideCount: collectedData.slideCount || outlineFlow?.slide_count,
           detailLevel: collectedData.detailLevel || 'quick',
           presentationType: 'simple',
@@ -527,7 +887,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
-      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 400)}px`;
     }
   }, [input]);
 
@@ -556,11 +916,32 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     }
 
     if (validFiles.length > 0) {
-      setUploadedFiles(prev => [...prev, ...validFiles]);
+      // Show confirmation dialog asking how to use the files
+      setPendingFileConfirmation({ files: validFiles });
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Handle file confirmation - user chooses how to use uploaded files
+  const handleFileConfirmation = (useDirectly: boolean) => {
+    if (!pendingFileConfirmation) return;
+
+    const { files } = pendingFileConfirmation;
+    setUploadedFiles(prev => [...prev, ...files]);
+
+    if (useDirectly) {
+      // Add instruction for AI to use content directly
+      const fileNames = files.map(f => f.file.name).join(', ');
+      addMessage('user', `Use the content from ${fileNames} directly in the slides. Don't summarize or change it - use it exactly as provided.`);
+    } else {
+      // Files are for reference/inspiration only
+      const fileNames = files.map(f => f.file.name).join(', ');
+      addMessage('user', `I've uploaded ${fileNames} for reference and design inspiration. Use it to inform the style and structure but create fresh content.`);
+    }
+
+    setPendingFileConfirmation(null);
   };
 
   const handleRemoveFile = (index: number) => {
@@ -698,8 +1079,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               </div>
             </div>
 
-            {/* Agent-provided buttons */}
-            {message.role === 'assistant' && message.buttons && message.buttons.length > 0 && (
+            {/* Agent-provided buttons - hide when slide mode selection is showing */}
+            {message.role === 'assistant' && message.buttons && message.buttons.length > 0 && !message.showSlideModeSelection && (
               <div className="flex gap-2 mt-3 ml-2 animate-in slide-in-from-bottom-2 flex-wrap">
                 {message.buttons.map((button, btnIndex) => (
                   <Button
@@ -719,9 +1100,142 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               </div>
             )}
 
+            {/* Chat Blocks: Theme & Outline - show after last assistant message in planning */}
+            {message.role === 'assistant' && index === messages.length - 1 && (stage === 'planning' || stage === 'slide_mode_selection') && (themeBlock || outlineBlock) && (
+              <div className="mt-4 mb-3 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* Theme Block */}
+                {themeBlock && (
+                  <ThemeChatBlock
+                    data={{
+                      colors: {
+                        background: themeBlock.colors.primary_background,
+                        text: themeBlock.colors.primary_text,
+                        accent: themeBlock.colors.accent_1,
+                      },
+                      fonts: {
+                        heading: themeBlock.typography.headingFont,
+                        body: themeBlock.typography.bodyFont,
+                      },
+                      logo: themeBlock.branding?.logoUrl,
+                      brandName: themeBlock.branding?.brandName || themeBlock.vibeContext,
+                    }}
+                    onColorChange={(key, hex) => {
+                      const colorMap = { background: 'primary_background', text: 'primary_text', accent: 'accent_1' };
+                      handleThemeColorChange(colorMap[key], hex);
+                    }}
+                    onFontChange={(type, font) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        typography: {
+                          ...prev.typography,
+                          [type === 'heading' ? 'headingFont' : 'bodyFont']: font,
+                        }
+                      } : prev);
+                      // Also update outlineFlow
+                      if (outlineFlow) {
+                        setOutlineFlow(prev => prev ? {
+                          ...prev,
+                          theme: {
+                            ...prev.theme,
+                            typography: {
+                              ...(prev.theme?.typography || {}),
+                              [type === 'heading' ? 'hero_title' : 'body_text']: { family: font }
+                            }
+                          }
+                        } : prev);
+                      }
+                    }}
+                    onLogoChange={(url) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        branding: { ...prev.branding, logoUrl: url || undefined }
+                      } : prev);
+                      if (outlineFlow) {
+                        setOutlineFlow(prev => prev ? {
+                          ...prev,
+                          theme: {
+                            ...prev.theme,
+                            logo: url ? { url } : undefined
+                          }
+                        } : prev);
+                      }
+                    }}
+                    onBrandNameChange={(name) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        branding: { ...prev.branding, brandName: name }
+                      } : prev);
+                    }}
+                    isEditable={!isProcessing}
+                    isLoading={isThemeLoading}
+                  />
+                )}
+
+                {/* Outline Block */}
+                {outlineBlock && (
+                  <OutlineChatBlock
+                    data={{
+                      title: outlineBlock.title,
+                      slides: outlineBlock.slides.map(s => ({
+                        id: s.id,
+                        title: s.title,
+                        subtitle: s.subtitle,
+                        keyPoints: s.keyPoints,
+                        content: s.content,
+                      })),
+                    }}
+                    onSlideEdit={(slideId, updates) => {
+                      setOutlineBlock(prev => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          slides: prev.slides.map(s =>
+                            s.id === slideId ? { ...s, ...updates } : s
+                          ),
+                        };
+                      });
+                      if (outlineFlow) {
+                        const idx = parseInt(slideId.replace('slide-', ''));
+                        const updatedSlides = [...(outlineFlow.slides || [])];
+                        if (updatedSlides[idx]) {
+                          updatedSlides[idx] = {
+                            ...updatedSlides[idx],
+                            title: updates.title ?? updatedSlides[idx].title,
+                            content: updates.content ?? updatedSlides[idx].content,
+                            key_points: updates.keyPoints ?? updatedSlides[idx].key_points,
+                          };
+                          setOutlineFlow({ ...outlineFlow, slides: updatedSlides });
+                        }
+                      }
+                    }}
+                    onSlideAdd={() => {
+                      const newSlide = { id: `slide-${outlineBlock.slides.length}`, title: 'New Slide', content: '' };
+                      setOutlineBlock(prev => prev ? { ...prev, slides: [...prev.slides, newSlide] } : prev);
+                      if (outlineFlow) {
+                        setOutlineFlow({ ...outlineFlow, slides: [...(outlineFlow.slides || []), { title: 'New Slide', content: '' }] });
+                      }
+                    }}
+                    onSlideDelete={(slideId) => {
+                      setOutlineBlock(prev => {
+                        if (!prev) return prev;
+                        return { ...prev, slides: prev.slides.filter(s => s.id !== slideId) };
+                      });
+                      if (outlineFlow) {
+                        const idx = parseInt(slideId.replace('slide-', ''));
+                        const updatedSlides = [...(outlineFlow.slides || [])];
+                        updatedSlides.splice(idx, 1);
+                        setOutlineFlow({ ...outlineFlow, slides: updatedSlides });
+                      }
+                    }}
+                    isEditable={!isProcessing}
+                  />
+                )}
+              </div>
+            )}
+
             {/* Slide Mode Selection - 3 Side-by-Side Slide Previews */}
             {message.role === 'assistant' && message.showSlideModeSelection && (
-              <div className="mt-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="grid grid-cols-3 gap-3 w-full max-w-[720px]">
 
                   {/* NextGen Slide - Interactive (Recommended) */}
@@ -730,12 +1244,19 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     disabled={isProcessing}
                     className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ring-2 ring-[#FF4301]/60 shadow-lg shadow-orange-500/10"
                   >
+                    {/* Recommended badge - centered on top of slide */}
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
+                      <span className="text-[9px] font-semibold bg-gradient-to-r from-orange-500 to-orange-600 text-white px-2.5 py-1 rounded-full shadow-lg shadow-orange-500/30">
+                        ✨ Recommended
+                      </span>
+                    </div>
+
                     {/* Mini slide preview - Interactive style */}
                     <div className="aspect-[16/10] bg-gradient-to-br from-[#1a1a2e] to-[#16213e] p-3 relative overflow-hidden">
                       {/* Animated gradient orb */}
                       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full blur-xl opacity-60 group-hover:scale-125 transition-transform duration-500" />
                       {/* Content mockup */}
-                      <div className="relative z-10 h-full flex flex-col justify-between">
+                      <div className="relative z-10 h-full flex flex-col justify-between pt-4">
                         <div className="w-3/4 h-2 bg-white/90 rounded-full" />
                         <div className="flex gap-1.5 justify-center">
                           <div className="w-8 h-6 bg-gradient-to-br from-purple-400 to-pink-400 rounded opacity-80 group-hover:translate-y-[-2px] transition-transform" />
@@ -752,9 +1273,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                       <div className="absolute bottom-4 left-4 w-0.5 h-0.5 bg-purple-300 rounded-full animate-pulse delay-300" />
                     </div>
 
-                    {/* Label */}
-                    <div className="bg-gradient-to-br from-[#FF4301] to-[#FF6B35] px-3 py-2.5 text-white relative">
-                      <span className="absolute top-1.5 right-1.5 text-[8px] font-medium bg-white/25 px-1.5 py-0.5 rounded">Recommended</span>
+                    {/* Label - full orange fill */}
+                    <div className="bg-gradient-to-r from-[#FF4301] to-[#FF6B35] px-3 py-2.5 text-white flex-shrink-0">
                       <div className="font-bold text-sm">NextGen</div>
                       <div className="text-[10px] text-white/80 leading-tight mt-0.5">Next-gen interactive design</div>
                     </div>
@@ -855,43 +1375,111 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           </div>
         ))}
 
-        {/* Agent Typing/Status Indicator - Subtle, on-brand design */}
+        {/* Agent Typing/Status Indicator - Inline with chat as assistant message */}
         {isAgentTyping && (
-          <div className="flex justify-start animate-in slide-in-from-bottom-4">
-            <div className="flex items-start gap-2 px-1">
-              {/* Small pulsing orange dot */}
-              <div className="flex-shrink-0 mt-1.5">
-                <span
-                  className="block w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ backgroundColor: '#FF4301' }}
+          <div className="flex w-full animate-in slide-in-from-bottom-4 duration-300 justify-start">
+            <div className="max-w-[85%] rounded-2xl px-5 py-3.5 shadow-md bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100 border border-zinc-200/50 dark:border-zinc-700/50">
+              {thinkingSteps.length > 0 ? (
+                <ThinkingStatusDisplay
+                  steps={thinkingSteps}
+                  isActive={true}
                 />
-              </div>
+              ) : streamingText ? (
+                /* Show streaming text line-by-line like slide gen chat panel */
+                <div className="space-y-1">
+                  {streamingText
+                    .split('\n')
+                    .filter(line => line.trim())
+                    .slice(-6) // Show last 6 lines to avoid overwhelming
+                    .map((line, idx, arr) => {
+                      // Skip lines that look like JSON
+                      if (line.trim().startsWith('{') || line.trim().startsWith('"') || line.trim().startsWith('[')) {
+                        return null;
+                      }
+                      // Clean up markdown and formatting
+                      const cleanLine = line
+                        .replace(/\*\*/g, '')
+                        .replace(/```json/g, '')
+                        .replace(/```/g, '')
+                        .trim();
+                      if (!cleanLine) return null;
 
-              {/* Clean inline status text */}
-              <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-                <span className="font-medium" style={{ color: '#FF4301' }}>
-                  {statusPhase === 'analyzing' ? 'Analyzing' :
-                   statusPhase === 'analyzed' ? 'Done analyzing' :
-                   statusPhase === 'researching' ? 'Searching the web' :
-                   statusPhase === 'scraping' ? 'Reading page' :
-                   statusPhase === 'scraped' ? 'Processing' :
-                   statusPhase === 'error' ? 'Hmm' :
-                   'Thinking'}
-                </span>
-                {' '}
-                <span className="text-zinc-500 dark:text-zinc-400">
-                  {statusMessage || 'about your request'}
-                </span>
-                {/* Subtle animated ellipsis */}
-                <span className="inline-flex ml-0.5 text-zinc-400">
-                  <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
-                  <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
-                  <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
-                </span>
-              </p>
+                      const isLatest = idx === arr.length - 1;
+                      return (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "flex items-start gap-2 text-sm animate-in fade-in duration-200",
+                            isLatest ? "text-orange-600 dark:text-orange-400" : "text-zinc-500 dark:text-zinc-500"
+                          )}
+                        >
+                          <span className="mt-0.5 flex-shrink-0 text-xs">
+                            {isLatest ? '›' : '•'}
+                          </span>
+                          <span className={cn(
+                            "leading-relaxed",
+                            isLatest && "font-medium"
+                          )}>
+                            {cleanLine.length > 100 ? cleanLine.slice(0, 100) + '...' : cleanLine}
+                          </span>
+                        </div>
+                      );
+                    })
+                    .filter(Boolean)
+                  }
+                  {/* Typing indicator */}
+                  <div className="text-xs text-zinc-400 pl-5">
+                    thinking...
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {statusPhase === 'analyzing' ? 'Analyzing your files...' :
+                   statusPhase === 'researching' ? `Researching: ${statusMessage || 'gathering info'}` :
+                   statusPhase === 'scraping' ? 'Reading content...' :
+                   statusMessage || 'Thinking...'}
+                </div>
+              )}
             </div>
           </div>
         )}
+
+        {/* File Upload Confirmation Dialog */}
+        {pendingFileConfirmation && (
+          <div className="flex w-full animate-in slide-in-from-bottom-4 duration-300 justify-start">
+            <div className="max-w-[85%] rounded-xl border bg-white dark:bg-zinc-900 shadow-lg border-orange-200 dark:border-orange-700/50 overflow-hidden">
+              <div className="px-4 py-3 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800/30">
+                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  How should I use {pendingFileConfirmation.files.length === 1 ? 'this file' : 'these files'}?
+                </p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {pendingFileConfirmation.files.map((f, i) => (
+                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-800/30 text-orange-700 dark:text-orange-300">
+                      {f.file.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="p-3 flex gap-2">
+                <button
+                  onClick={() => handleFileConfirmation(true)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition-colors"
+                >
+                  Use Content Directly
+                  <span className="block text-[10px] opacity-80 font-normal">Include exact content in slides</span>
+                </button>
+                <button
+                  onClick={() => handleFileConfirmation(false)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm font-medium transition-colors"
+                >
+                  Reference Only
+                  <span className="block text-[10px] opacity-70 font-normal">For style/design inspiration</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Fallback: Show "Continue" button after 1+ user messages if no outline generated yet */}
         {!isAgentTyping && !isProcessing && (stage === 'conversing' || stage === 'chat') && messages.filter(m => m.role === 'user').length >= 1 && (
@@ -1008,9 +1596,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  placeholder={isDraggingOver ? "Drop files here..." : "Type your message or drag & drop files..."}
-                  disabled={isAgentTyping || isProcessing}
-                  className="w-full bg-transparent border-0 text-[#383636] dark:text-gray-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 pt-4 pb-4 pl-4 pr-2 resize-none text-base overflow-y-auto max-h-[200px] min-h-[60px] font-sans"
+                  placeholder={isDraggingOver ? "Drop files here..." : (isAgentTyping ? "Type your next message..." : "Type your message or drag & drop files...")}
+                  disabled={isProcessing}
+                  className="w-full bg-transparent border-0 text-[#383636] dark:text-gray-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 pt-4 pb-4 pl-4 pr-2 resize-none text-base overflow-y-auto max-h-[400px] min-h-[60px] font-sans"
                   rows={1}
                 />
               </div>
@@ -1025,7 +1613,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                 />
                 <Button
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isAgentTyping || isProcessing}
+                  disabled={isProcessing}
                   size="icon"
                   variant="ghost"
                   className={cn(
@@ -1047,7 +1635,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     // TODO: Implement link input functionality
                     console.log('Link button clicked');
                   }}
-                  disabled={isAgentTyping || isProcessing}
+                  disabled={isProcessing}
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"

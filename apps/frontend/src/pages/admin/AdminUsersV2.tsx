@@ -21,11 +21,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  ChevronLeft, 
+import {
+  Search,
+  Filter,
+  Download,
+  ChevronLeft,
   ChevronRight,
   User,
   Mail,
@@ -40,17 +40,40 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Activity
+  Activity,
+  Trash2,
+  Ban,
+  RefreshCw,
+  Key,
+  LogOut,
+  UserCog,
+  Crown,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { adminApi, UserSummary } from '@/services/adminApi';
+import { adminApi, UserSummary, UserStats } from '@/services/adminApi';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 const AdminUsersV2: React.FC = () => {
@@ -63,12 +86,17 @@ const AdminUsersV2: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
-  const [userStats, setUserStats] = useState({
+  const [userStats, setUserStats] = useState<UserStats>({
     totalActive: 0,
     newThisWeek: 0,
     adminCount: 0,
     verifiedCount: 0
   });
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserSummary | null>(null);
+  const [deleteType, setDeleteType] = useState<'soft' | 'hard'>('soft');
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchUsers();
@@ -84,23 +112,13 @@ const AdminUsersV2: React.FC = () => {
         sortBy,
         sortOrder,
       });
-      
+
       setUsers(response.users);
       setTotalPages(response.totalPages);
       setTotalUsers(response.total);
 
-      // Calculate user stats
-      const stats = {
-        totalActive: response.users.filter(u => u.lastActive && 
-          new Date(u.lastActive) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-        ).length,
-        newThisWeek: response.users.filter(u => 
-          new Date(u.createdAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-        ).length,
-        adminCount: response.users.filter(u => u.isAdmin).length,
-        verifiedCount: response.users.filter(u => u.emailVerified).length
-      };
-      setUserStats(stats);
+      // Use stats from API response (calculated across all users, not just current page)
+      setUserStats(response.stats);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -176,6 +194,138 @@ const AdminUsersV2: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // User action handlers
+  const handleUpdateRole = async (userId: string, newRole: 'user' | 'admin') => {
+    try {
+      setActionLoading(userId);
+      await adminApi.updateUser(userId, { role: newRole });
+      toast({
+        title: 'Role updated',
+        description: `User role has been updated to ${newRole}`,
+      });
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update user role',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSuspendUser = async (userId: string) => {
+    try {
+      setActionLoading(userId);
+      await adminApi.performUserAction(userId, { action: 'suspend' });
+      toast({
+        title: 'User suspended',
+        description: 'User has been suspended successfully',
+      });
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to suspend user',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReactivateUser = async (userId: string) => {
+    try {
+      setActionLoading(userId);
+      await adminApi.performUserAction(userId, { action: 'reactivate' });
+      toast({
+        title: 'User reactivated',
+        description: 'User has been reactivated successfully',
+      });
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to reactivate user',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    try {
+      setActionLoading(userToDelete.id);
+      const action = deleteType === 'hard' ? 'hard_delete' : 'delete';
+      await adminApi.performUserAction(userToDelete.id, { action });
+      toast({
+        title: deleteType === 'hard' ? 'User permanently deleted' : 'User deleted',
+        description: deleteType === 'hard'
+          ? 'User and all their data have been permanently removed'
+          : 'User has been marked as deleted',
+      });
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+      setDeleteType('soft');
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete user',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleClearSessions = async (userId: string) => {
+    try {
+      setActionLoading(userId);
+      await adminApi.performUserAction(userId, { action: 'clear_sessions' });
+      toast({
+        title: 'Sessions cleared',
+        description: 'All user sessions have been invalidated. They will need to sign in again.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to clear sessions',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResetPassword = async (userId: string, email: string) => {
+    try {
+      setActionLoading(userId);
+      await adminApi.performUserAction(userId, { action: 'reset_password' });
+      toast({
+        title: 'Password reset email sent',
+        description: `A password reset link has been sent to ${email}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to send password reset email',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openDeleteDialog = (user: UserSummary, type: 'soft' | 'hard' = 'soft') => {
+    setUserToDelete(user);
+    setDeleteType(type);
+    setDeleteDialogOpen(true);
+  };
+
   const getActivityStatus = (lastActive: string | null): { label: string; color: string } => {
     if (!lastActive) return { label: 'Never', color: 'text-gray-500' };
     
@@ -224,7 +374,7 @@ const AdminUsersV2: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="space-y-6 w-full">
+      <div className="space-y-6 w-full p-6">
         {/* Stats Cards */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">
@@ -405,17 +555,29 @@ const AdminUsersV2: React.FC = () => {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {user.emailVerified ? (
-                            <Badge variant="outline" className="gap-1 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300">
-                              <CheckCircle className="h-3 w-3" />
-                              Verified
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="gap-1 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
-                              <Clock className="h-3 w-3" />
-                              Pending
-                            </Badge>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {user.status === 'suspended' ? (
+                              <Badge variant="outline" className="gap-1 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300">
+                                <Ban className="h-3 w-3" />
+                                Suspended
+                              </Badge>
+                            ) : user.status === 'deleted' ? (
+                              <Badge variant="outline" className="gap-1 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+                                <XCircle className="h-3 w-3" />
+                                Deleted
+                              </Badge>
+                            ) : user.emailVerified ? (
+                              <Badge variant="outline" className="gap-1 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300">
+                                <CheckCircle className="h-3 w-3" />
+                                Verified
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="gap-1 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
+                                <Clock className="h-3 w-3" />
+                                Pending
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {user.isAdmin ? (
@@ -445,21 +607,116 @@ const AdminUsersV2: React.FC = () => {
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={actionLoading === user.id}>
+                                {actionLoading === user.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <MoreVertical className="h-4 w-4" />
+                                )}
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuLabel>User Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem asChild>
                                 <Link to={`/admin/users/${user.id}`} className="flex items-center gap-2">
                                   <ExternalLink className="h-4 w-4" />
                                   View Details
                                 </Link>
                               </DropdownMenuItem>
+
+                              {/* Role Management */}
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="gap-2">
+                                  <UserCog className="h-4 w-4" />
+                                  Change Role
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  <DropdownMenuItem
+                                    onClick={() => handleUpdateRole(user.id, 'user')}
+                                    disabled={user.role === 'user'}
+                                    className="gap-2"
+                                  >
+                                    <User className="h-4 w-4" />
+                                    Set as User
+                                    {user.role === 'user' && <CheckCircle className="h-3 w-3 ml-auto text-green-500" />}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleUpdateRole(user.id, 'admin')}
+                                    disabled={user.role === 'admin'}
+                                    className="gap-2"
+                                  >
+                                    <Crown className="h-4 w-4" />
+                                    Set as Admin
+                                    {user.role === 'admin' && <CheckCircle className="h-3 w-3 ml-auto text-green-500" />}
+                                  </DropdownMenuItem>
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-red-600">
-                                Suspend User
+
+                              {/* Account Management */}
+                              <DropdownMenuItem
+                                onClick={() => handleResetPassword(user.id, user.email)}
+                                className="gap-2"
+                              >
+                                <Key className="h-4 w-4" />
+                                Send Password Reset
                               </DropdownMenuItem>
+
+                              <DropdownMenuItem
+                                onClick={() => handleClearSessions(user.id)}
+                                className="gap-2"
+                              >
+                                <LogOut className="h-4 w-4" />
+                                Clear All Sessions
+                              </DropdownMenuItem>
+
+                              <DropdownMenuSeparator />
+
+                              {/* Status Actions */}
+                              {user.status === 'suspended' ? (
+                                <DropdownMenuItem
+                                  onClick={() => handleReactivateUser(user.id)}
+                                  className="gap-2 text-green-600"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Reactivate User
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() => handleSuspendUser(user.id)}
+                                  className="gap-2 text-orange-600"
+                                >
+                                  <Ban className="h-4 w-4" />
+                                  Suspend User
+                                </DropdownMenuItem>
+                              )}
+
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="gap-2 text-red-600">
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete User
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  <DropdownMenuItem
+                                    onClick={() => openDeleteDialog(user, 'soft')}
+                                    className="gap-2"
+                                  >
+                                    <Ban className="h-4 w-4" />
+                                    Soft Delete
+                                    <span className="text-xs text-gray-500 ml-auto">Preserves data</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => openDeleteDialog(user, 'hard')}
+                                    className="gap-2 text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Permanent Delete
+                                    <span className="text-xs text-red-500 ml-auto">Cannot undo</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -518,6 +775,58 @@ const AdminUsersV2: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className={deleteType === 'hard' ? 'text-red-600' : ''}>
+              {deleteType === 'hard' ? 'Permanently Delete User' : 'Delete User'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Are you sure you want to {deleteType === 'hard' ? 'permanently' : ''} delete <strong>{userToDelete?.email}</strong>?
+              </p>
+              {deleteType === 'hard' ? (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 mt-2">
+                  <p className="text-red-700 dark:text-red-300 font-medium text-sm">
+                    Warning: This action cannot be undone!
+                  </p>
+                  <ul className="text-red-600 dark:text-red-400 text-sm mt-1 list-disc list-inside">
+                    <li>The user will be removed from Supabase Auth</li>
+                    <li>All user decks will be permanently deleted</li>
+                    <li>The user record will be removed from the database</li>
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  The user will be marked as deleted. Their data will be preserved but they will no longer be able to access the platform.
+                </p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setUserToDelete(null);
+              setDeleteType('soft');
+            }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteUser}
+              className={deleteType === 'hard' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'}
+              disabled={actionLoading === userToDelete?.id}
+            >
+              {actionLoading === userToDelete?.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                deleteType === 'hard' ? 'Permanently Delete' : 'Delete User'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayoutV2>
   );
 };

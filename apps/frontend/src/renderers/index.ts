@@ -82,6 +82,7 @@ import './components/MathRenderer';
 import './components/DiagramRenderer';
 import './components/SmartLayoutRenderer';
 import './components/StatCardRenderer';
+import './components/UpgradePaywallRenderer';
 
 // Auto-register chart renderers from the new charts system
 import '@/charts/renderers/BaseChartRenderer';

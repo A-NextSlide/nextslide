@@ -139,6 +139,25 @@ async def stream_theme_from_outline(
                         if color and color not in brand_colors:
                             brand_colors.append(color)
 
+            # DEFAULT COLORS that should NOT trigger fast path reconstruction
+            # These are placeholders, not real brand colors
+            DEFAULT_PLACEHOLDER_COLORS = {
+                '#3b82f6', '#6b7280', '#9ca3af', '#ffffff', '#1a1a1a', '#1f2937',
+                '#3B82F6', '#6B7280', '#9CA3AF', '#FFFFFF', '#1A1A1A', '#1F2937',  # Uppercase variants
+            }
+
+            # Check if colors are just defaults (not real brand colors)
+            is_default_colors = brand_colors and all(c in DEFAULT_PLACEHOLDER_COLORS for c in brand_colors)
+
+            # Also check if vibe suggests we need AI color generation (playful, colorful, vibrant, etc.)
+            vibe_needs_ai_colors = vibe_context and any(kw in (vibe_context or '').lower() for kw in [
+                'playful', 'colorful', 'vibrant', 'fun', 'candy', 'bright', 'neon', 'rainbow'
+            ])
+
+            if is_default_colors and vibe_needs_ai_colors:
+                logger.info(f"[THEME API] 🎨 Skipping fast path - default colors + playful vibe needs AI generation")
+                brand_colors = []  # Clear to trigger ThemeDirector path
+
             if style_prefs and brand_colors:
                 logger.info(f"[THEME API] ✅ CREATING THEME FROM BRAND DATA (avoiding regeneration)")
                 logger.info(f"[THEME API] Brand colors: {brand_colors}")
@@ -166,7 +185,8 @@ async def stream_theme_from_outline(
                     is_fun_topic = any(keyword in combined_context for keyword in [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
-                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
+                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
+                        'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
                     ])
 
                     if is_fun_topic:
@@ -524,6 +544,21 @@ async def theme_from_outline_json(
                         if color and color not in brand_colors:
                             brand_colors.append(color)
 
+            # DEFAULT COLORS that should NOT trigger fast path reconstruction
+            DEFAULT_PLACEHOLDER_COLORS = {
+                '#3b82f6', '#6b7280', '#9ca3af', '#ffffff', '#1a1a1a', '#1f2937',
+                '#3B82F6', '#6B7280', '#9CA3AF', '#FFFFFF', '#1A1A1A', '#1F2937',
+            }
+
+            is_default_colors = brand_colors and all(c in DEFAULT_PLACEHOLDER_COLORS for c in brand_colors)
+            vibe_needs_ai_colors = vibe_context and any(kw in (vibe_context or '').lower() for kw in [
+                'playful', 'colorful', 'vibrant', 'fun', 'candy', 'bright', 'neon', 'rainbow'
+            ])
+
+            if is_default_colors and vibe_needs_ai_colors:
+                logger.info(f"[THEME JSON] 🎨 Skipping fast path - default colors + playful vibe needs AI generation")
+                brand_colors = []
+
             if style_prefs and brand_colors:
                 logger.info(f"[THEME JSON] ✅ CREATING THEME FROM BRAND DATA (avoiding regeneration)")
                 logger.info(f"[THEME JSON] Brand colors: {brand_colors}")
@@ -551,7 +586,8 @@ async def theme_from_outline_json(
                     is_fun_topic = any(keyword in combined_context for keyword in [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
-                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
+                        'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
+                        'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
                     ])
 
                     if is_fun_topic:

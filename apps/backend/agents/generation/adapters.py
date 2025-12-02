@@ -901,13 +901,30 @@ class SimpleDeckComposer(IDeckComposer):
                         vibe_context = getattr(style_prefs, 'vibeContext', None)
                         logger.info(f"[DECK COMPOSER] DEBUG: vibe_context: {vibe_context}")
                     
-                        # Get font
+                        # Get font from stylePreferences
                         brand_fonts = getattr(style_prefs, 'font', None)
-                        logger.info(f"[DECK COMPOSER] DEBUG: brand_fonts: {brand_fonts}")
-                    
-                        # Get logo
+                        logger.info(f"[DECK COMPOSER] DEBUG: brand_fonts from stylePrefs: {brand_fonts}")
+
+                        # Get logo from stylePreferences
                         logo_url = getattr(style_prefs, 'logoUrl', None)
-                        logger.info(f"[DECK COMPOSER] DEBUG: logo_url: {logo_url[:100] if logo_url else None}...")
+                        logger.info(f"[DECK COMPOSER] DEBUG: logo_url from stylePrefs: {logo_url[:100] if logo_url else None}...")
+
+                        # If no font/logo in stylePreferences, try to get from brand database
+                        if not brand_fonts or not logo_url:
+                            brand_identifier = vibe_context or getattr(style_prefs, 'initialIdea', None)
+                            if brand_identifier:
+                                try:
+                                    from agents.tools.theme.brand_colors_db import get_brand_colors
+                                    db_brand_data = get_brand_colors(brand_identifier)
+                                    if db_brand_data:
+                                        if not brand_fonts and db_brand_data.get('fonts'):
+                                            brand_fonts = db_brand_data['fonts'][0] if db_brand_data['fonts'] else None
+                                            logger.info(f"[DECK COMPOSER] ✅ Got brand font from database: {brand_fonts}")
+                                        if not logo_url and db_brand_data.get('logo_url'):
+                                            logo_url = db_brand_data['logo_url']
+                                            logger.info(f"[DECK COMPOSER] ✅ Got logo from database: {logo_url[:60] if logo_url else None}...")
+                                except Exception as e:
+                                    logger.debug(f"[DECK COMPOSER] Could not get brand data from DB: {e}")
                     
                         # Get colors from ColorConfigItem
                         colors_config = getattr(style_prefs, 'colors', None)
@@ -1077,36 +1094,49 @@ class SimpleDeckComposer(IDeckComposer):
                             if user_accent3:
                                 user_colors.append(user_accent3)
                             
-                            if user_colors:
+                            if user_colors or user_background or user_text:
                                 logger.info(f"[DECK COMPOSER] 🎨 USER COLOR OVERRIDE: Applying user's selected colors from theme tab")
                                 logger.info(f"[DECK COMPOSER] User colors: {user_colors}, background: {user_background}, text: {user_text}")
-                                
-                                # Update the existing theme with user's colors
-                                if hasattr(theme, 'color_palette') and theme.color_palette:
-                                    theme.color_palette['accent_1'] = user_colors[0] if len(user_colors) > 0 else theme.color_palette.get('accent_1')
-                                    theme.color_palette['accent_2'] = user_colors[1] if len(user_colors) > 1 else (user_colors[0] if len(user_colors) > 0 else theme.color_palette.get('accent_2'))
-                                    theme.color_palette['colors'] = user_colors
-                                    if user_background:
-                                        theme.color_palette['primary_background'] = user_background
-                                    if user_text:
-                                        theme.color_palette['primary_text'] = user_text
-                                elif hasattr(theme, 'raw') and isinstance(theme.raw, dict):
-                                    cp = theme.raw.get('color_palette', {})
-                                    cp['accent_1'] = user_colors[0] if len(user_colors) > 0 else cp.get('accent_1')
-                                    cp['accent_2'] = user_colors[1] if len(user_colors) > 1 else (user_colors[0] if len(user_colors) > 0 else cp.get('accent_2'))
-                                    cp['colors'] = user_colors
+
+                                # Helper to update color palette dict
+                                def _update_color_palette(cp: Dict[str, Any]):
+                                    if user_colors:
+                                        cp['accent_1'] = user_colors[0] if len(user_colors) > 0 else cp.get('accent_1')
+                                        cp['accent_2'] = user_colors[1] if len(user_colors) > 1 else (user_colors[0] if len(user_colors) > 0 else cp.get('accent_2'))
+                                        cp['colors'] = user_colors
+                                        cp['accents'] = user_colors
                                     if user_background:
                                         cp['primary_background'] = user_background
+                                        cp['backgrounds'] = [user_background]
                                     if user_text:
                                         cp['primary_text'] = user_text
-                                    theme.raw['color_palette'] = cp
-                                
-                                # Also update palette if it exists
+
+                                # Update ThemeSpec (direct color_palette attribute)
+                                if hasattr(theme, 'color_palette') and isinstance(theme.color_palette, dict):
+                                    _update_color_palette(theme.color_palette)
+                                    logger.info(f"[DECK COMPOSER] ✅ Updated ThemeSpec.color_palette")
+
+                                # Update ThemeDocument (color_palette inside deck_theme)
+                                if hasattr(theme, 'deck_theme') and isinstance(theme.deck_theme, dict):
+                                    if 'color_palette' not in theme.deck_theme:
+                                        theme.deck_theme['color_palette'] = {}
+                                    _update_color_palette(theme.deck_theme['color_palette'])
+                                    logger.info(f"[DECK COMPOSER] ✅ Updated ThemeDocument.deck_theme.color_palette")
+
+                                # Update raw dict if present
+                                if hasattr(theme, 'raw') and isinstance(theme.raw, dict):
+                                    if 'color_palette' not in theme.raw:
+                                        theme.raw['color_palette'] = {}
+                                    _update_color_palette(theme.raw['color_palette'])
+
+                                # Also update palette dict if it exists
                                 if palette and isinstance(palette, dict):
-                                    palette['colors'] = user_colors
+                                    if user_colors:
+                                        palette['colors'] = user_colors
+                                        palette['accents'] = user_colors
                                     if user_background:
                                         palette['backgrounds'] = [user_background]
-                                    logger.info(f"[DECK COMPOSER] ✅ Updated palette with user colors: {palette.get('colors')}")
+                                    logger.info(f"[DECK COMPOSER] ✅ Updated palette with user colors: {palette.get('colors')}, backgrounds: {palette.get('backgrounds')}")
                 except Exception as e:
                     logger.warning(f"[DECK COMPOSER] Error applying user color override: {e}")
             

@@ -1636,35 +1636,6 @@ class SlideGeneratorV2(ISlideGenerator):
             style_prefs = context.deck_outline.stylePreferences
             slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None) or 'interactive'
 
-        # SMART STRUCTURE DETECTION - determine if this is short/interactive request
-        pres_ctx_lower = (context.presentation_context or '').lower()
-        interactive_indicators = [
-            'interactive', 'widget', 'demo', 'app', 'tool', 'calculator', 'quiz',
-            'game', 'simulation', 'prototype', 'mockup', 'dashboard', 'chart',
-            'visualization', 'infographic', 'poster', 'single', 'one slide',
-            'flashcard', 'card', 'thing', 'thingy', 'quick', 'simple'
-        ]
-        formal_presentation_indicators = [
-            'presentation', 'deck', 'pitch', 'keynote', 'meeting', 'conference',
-            'report', 'proposal', 'business', 'corporate', 'training', 'lecture',
-            'seminar', 'webinar', 'workshop', 'overview', 'strategy', 'analysis'
-        ]
-        is_interactive = any(ind in pres_ctx_lower for ind in interactive_indicators)
-        is_formal_presentation = any(ind in pres_ctx_lower for ind in formal_presentation_indicators)
-        is_short_request = context.total_slides <= 3
-        is_long_request = context.total_slides >= 8
-
-        # Log smart detection for debugging
-        logger.info(f"[SMART DETECTION] Slide {context.slide_index + 1}/{context.total_slides}")
-        logger.info(f"[SMART DETECTION] is_short_request={is_short_request} (total_slides={context.total_slides})")
-        logger.info(f"[SMART DETECTION] is_interactive={is_interactive}, is_formal_presentation={is_formal_presentation}")
-        if is_short_request or (is_interactive and not is_formal_presentation):
-            print(f"[SMART DETECTION] ⚡ SHORT/INTERACTIVE mode - delivering content directly (no title slides)")
-        elif is_formal_presentation and is_long_request:
-            print(f"[SMART DETECTION] 📊 FORMAL PRESENTATION mode - standard deck structure")
-        else:
-            print(f"[SMART DETECTION] 🔄 NEUTRAL mode - AI decides structure")
-
         # Generate a FULL-SLIDE CustomComponent (1920x1080, position 0,0)
         enhanced = await self.custom_component_generator.generate(
             content=content,
@@ -1677,11 +1648,7 @@ class SlideGeneratorV2(ISlideGenerator):
                 'is_full_slide': True,  # Signal this is a full-slide component
                 'background_color': bg_color,
                 'presentation_context': context.presentation_context,  # User's original request for design cues
-                'slide_mode': slide_mode,  # 'interactive', 'presentation', or 'static'
-                # Smart structure detection flags
-                'is_short_request': is_short_request,
-                'is_interactive': is_interactive and not is_formal_presentation,
-                'is_formal_presentation': is_formal_presentation and is_long_request,
+                'slide_mode': slide_mode  # 'interactive', 'presentation', or 'static'
             },
             width=1920,
             height=1080,

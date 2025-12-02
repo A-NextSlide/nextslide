@@ -41,6 +41,7 @@ export interface OutlineSlide {
   title: string;
   subtitle?: string;
   key_points?: string[];
+  content?: string;  // Narrative/detailed content for the slide
 }
 
 export interface ThemeChanges {
@@ -70,7 +71,7 @@ export interface UploadedMedia {
 }
 
 export interface OutlineData {
-  action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme';
+  action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme' | 'generate_theme';
   slide_count?: number;
   topic?: string;
   detail_level?: 'quick' | 'standard' | 'detailed';
@@ -84,6 +85,30 @@ export interface OutlineData {
   }>;
   theme_changes?: ThemeChanges;
   uploadedMedia?: UploadedMedia[];  // Files uploaded through chat that should be used in slides
+  // Style/theme preferences from the agent
+  stylePreferences?: {
+    colors?: {
+      background?: string;
+      text?: string;
+      accent1?: string;
+      accent2?: string;
+      accent3?: string;
+    };
+    font?: string;
+    bodyFont?: string;
+    logoUrl?: string;
+    vibeContext?: string;
+  };
+  brandContext?: string;  // Brand name or domain detected
+  style?: string;  // Style descriptor (e.g., "playful", "professional")
+  // For generate_theme action
+  context?: {
+    topic?: string;
+    vibeContext?: string;
+    brand?: string;
+    brandDomain?: string;
+    mood?: string;
+  };
 }
 
 export interface AgentOutlineEvent {
@@ -127,13 +152,72 @@ export interface AgentResearchEvent {
   citations: string[];
 }
 
+// NEW: Thinking step event for granular progress tracking
+export interface AgentThinkingStepEvent {
+  type: 'thinking_step';
+  step: {
+    id: string;
+    phase: string;
+    label: string;
+    detail?: string;
+    status: 'pending' | 'active' | 'completed' | 'error';
+    expandedContent?: string;
+    citations?: string[];
+  };
+}
+
+// NEW: Chat block event for inline editable content
+export interface AgentChatBlockEvent {
+  type: 'chat_block';
+  block_type: 'theme_editor' | 'outline_preview' | 'research_card';
+  data: {
+    // For theme_editor
+    themeId?: string;
+    colors?: {
+      primary_background: string;
+      primary_text: string;
+      accent_1: string;
+      accent_2: string;
+      colors: string[];
+      backgrounds?: string[];
+    };
+    typography?: {
+      headingFont: string;
+      bodyFont: string;
+    };
+    branding?: {
+      logoUrl?: string;
+      brandName?: string;
+      brandDomain?: string;
+    };
+    designStyle?: string;
+    vibeContext?: string;
+    isEditable?: boolean;
+    // For outline_preview
+    outlineId?: string;
+    title?: string;
+    slides?: Array<{
+      id: string;
+      title: string;
+      subtitle?: string;
+      keyPoints?: string[];
+    }>;
+    // For research_card
+    query?: string;
+    content?: string;
+    citations?: string[];
+  };
+}
+
 export type AgentEvent =
   | AgentTextEvent
   | AgentOutlineEvent
   | AgentErrorEvent
   | AgentDoneEvent
   | AgentStatusEvent
-  | AgentResearchEvent;
+  | AgentResearchEvent
+  | AgentThinkingStepEvent
+  | AgentChatBlockEvent;
 
 /**
  * Try to extract partial slide data from streaming JSON text
@@ -292,8 +376,9 @@ function isValidOutlineData(parsed: any): boolean {
   const hasSlides = parsed.slides && Array.isArray(parsed.slides);
   const hasUpdatedSlides = parsed.updated_slides && Array.isArray(parsed.updated_slides);
   const hasThemeChanges = parsed.theme_changes && typeof parsed.theme_changes === 'object';
+  const isGenerateTheme = parsed.action === 'generate_theme' && parsed.context;
 
-  return hasSlides || hasUpdatedSlides || hasThemeChanges;
+  return hasSlides || hasUpdatedSlides || hasThemeChanges || isGenerateTheme;
 }
 
 /**

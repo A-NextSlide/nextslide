@@ -392,7 +392,7 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
                   <Textarea
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Change anything: remove background, add effects, adjust colors, enhance quality, blur background..."
+                    placeholder="Make any change to this image..."
                     className="min-h-[60px] text-xs resize-none"
                     disabled={isProcessingAi}
                   />

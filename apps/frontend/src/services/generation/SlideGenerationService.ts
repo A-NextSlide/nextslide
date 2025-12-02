@@ -4,6 +4,7 @@ import { SSEHandler } from './SSEHandler';
 import { GenerationStateManager } from './GenerationStateManager';
 import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { authService } from '@/services/authService';
+import { useThemeStore } from '@/stores/themeStore';
 
 export interface GenerationOptions {
   deckId: string;
@@ -183,10 +184,37 @@ export class SlideGenerationService {
       slideCount: outline.slides.length
     });
 
+    // Get theme/style preferences from theme store and window
+    const themeStore = useThemeStore.getState();
+    const storedTheme = themeStore.getOutlineDeckTheme?.(deckId) || themeStore.getOutlineDeckTheme?.(outline.id);
+    const windowPrefs = (window as any)?.__slideGenerationPreferences || {};
+
+    // Build style_preferences from stored theme and window preferences
+    let stylePreferences: any = null;
+
+    if (storedTheme || windowPrefs.vibeContext) {
+      stylePreferences = {
+        // Include vibeContext for brand-aware theme generation
+        vibeContext: windowPrefs.vibeContext || outline.stylePreferences?.vibeContext,
+        // Include pre-generated theme data
+        deck_theme: storedTheme,
+        // Merge any existing outline style preferences
+        ...outline.stylePreferences,
+      };
+
+      console.log('[SlideGenerationService] Including style_preferences with theme:', {
+        hasStoredTheme: !!storedTheme,
+        hasVibeContext: !!stylePreferences.vibeContext,
+        colorPalette: storedTheme?.color_palette ? 'present' : 'absent',
+      });
+    }
+
     return {
       // CRITICAL: Send deck_id to backend so it knows which deck to update
       deck_id: deckId,
       outline,
+      // Include style_preferences if we have theme data (to skip theme regeneration)
+      ...(stylePreferences ? { style_preferences: stylePreferences } : {}),
       // Map toggle: ON (autoSelectImages=true) => async_images=false (auto-apply). Default false when unspecified.
       async_images: ((): boolean => {
         const pref = (window as any)?.__slideGenerationPreferences?.autoSelectImages;

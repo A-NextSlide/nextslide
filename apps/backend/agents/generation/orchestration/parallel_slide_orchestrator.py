@@ -148,16 +148,10 @@ class ParallelSlideOrchestrator:
             except Exception as e:
                 logger.warning(f"[PREWARM] Skipped due to error: {e}")
         
-        # Create tasks for all slides with minimal delay
+        # Create ALL tasks at once for true parallelism - semaphore controls concurrency
         tasks = []
-        logger.debug(f"Creating tasks for {len(deck_state.deck_outline.slides)} slides")
+        logger.debug(f"Creating {len(deck_state.deck_outline.slides)} slide tasks in parallel")
         for i, slide_outline in enumerate(deck_state.deck_outline.slides):
-            # Add small delay between starting slides to avoid overwhelming the system
-            if i > 0 and options.delay_between_slides > 0:
-                delay = min(options.delay_between_slides * 0.1, 0.1)
-                logger.debug(f"Adding {delay}s delay before starting slide {i+1}")
-                await asyncio.sleep(delay)
-
             logger.debug(f"Creating task for slide {i+1}: {slide_outline.title}")
             task = asyncio.create_task(
                 self._generate_slide_with_streaming(
@@ -166,7 +160,7 @@ class ParallelSlideOrchestrator:
                 )
             )
             tasks.append(task)
-        logger.debug(f"All {len(tasks)} slide tasks created")
+        logger.info(f"[PARALLEL] All {len(tasks)} slide tasks created simultaneously (max concurrent: {options.max_parallel_slides})")
         
         # Process events from queue as they arrive
         async def process_events():

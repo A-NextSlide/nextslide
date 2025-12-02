@@ -66,8 +66,25 @@ const AuthCallback: React.FC = () => {
         // They use hash-based tokens instead
         const isRecoveryFlow = type === 'recovery' || type === 'email_confirmation';
 
-        if (code && !isRecoveryFlow) {
-          // PKCE flow - exchange code for session (OAuth only)
+        if (accessToken) {
+          // Implicit flow - set session from hash tokens (priority for OAuth)
+          console.log('[AuthCallback] Attempting to set session from hash tokens...');
+
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          });
+
+          session = data?.session;
+          sessionError = error;
+
+          if (error) {
+            console.error('[AuthCallback] Set session error:', error);
+          } else {
+            console.log('[AuthCallback] Session set successfully');
+          }
+        } else if (code && !isRecoveryFlow) {
+          // PKCE flow fallback - exchange code for session
           console.log('[AuthCallback] Attempting PKCE code exchange...');
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           session = data?.session;
@@ -75,33 +92,15 @@ const AuthCallback: React.FC = () => {
 
           if (error) {
             console.error('[AuthCallback] Code exchange error:', error);
-            // Log the full error for debugging
             console.error('[AuthCallback] Full error details:', JSON.stringify(error, null, 2));
           } else {
             console.log('[AuthCallback] Code exchange successful');
           }
-        } else if (accessToken) {
-          // Implicit/hash flow - set session from tokens
-          console.log('[AuthCallback] Attempting to set session from hash tokens...');
-          const expiresIn = parseInt(hashParams.get('expires_in') || '3600');
-          const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-          
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken || '',
-          });
-          
-          session = data?.session;
-          sessionError = error;
-          
-          if (error) {
-            console.error('[AuthCallback] Set session error:', error);
-          } else {
-            console.log('[AuthCallback] Session set successfully');
-          }
         } else {
-          // No auth params - try to get existing session
+          // No auth params - try to get existing session (detectSessionInUrl may have handled it)
           console.log('[AuthCallback] No auth params found, checking existing session...');
+          // Small delay to let detectSessionInUrl process the URL
+          await new Promise(resolve => setTimeout(resolve, 100));
           const { data, error } = await supabase.auth.getSession();
           session = data?.session;
           sessionError = error;

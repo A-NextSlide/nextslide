@@ -16,11 +16,18 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+interface LabeledColors {
+  background: string;
+  text: string;
+  accent: string;
+  accent2: string;
+}
+
 interface EditableBrandData {
   brand_name: string;
   domain: string;
   logo_url: string;
-  colors: string[];
+  colors: LabeledColors;
   fonts: string[];
 }
 
@@ -37,7 +44,12 @@ const AdminBrands: React.FC = () => {
     brand_name: '',
     domain: '',
     logo_url: '',
-    colors: [],
+    colors: {
+      background: '#FFFFFF',
+      text: '#1A1A1A',
+      accent: '#3B82F6',
+      accent2: '#6B7280',
+    },
     fonts: [],
   });
   const [saving, setSaving] = useState(false);
@@ -108,7 +120,7 @@ const AdminBrands: React.FC = () => {
       brand_name: brand.api_response?.brand_name || brand.identifier || '',
       domain: brand.api_response?.domain || brand.normalized_identifier || '',
       logo_url: logoUrl,
-      colors: getColorArray(brand),
+      colors: getLabeledColors(brand),
       fonts: getFonts(brand),
     });
   };
@@ -131,9 +143,13 @@ const AdminBrands: React.FC = () => {
       parsedData.brand_name = editedBrandData.brand_name;
       parsedData.domain = editedBrandData.domain;
 
-      // Update colors - preserve structure but update values
-      if (!parsedData.colors) parsedData.colors = {};
-      parsedData.colors.primary = editedBrandData.colors.map(hex => ({ hex, type: 'primary' }));
+      // Update colors with labeled structure (matches theme_agent.py)
+      parsedData.colors = {
+        background: editedBrandData.colors.background,
+        text: editedBrandData.colors.text,
+        accent: editedBrandData.colors.accent,
+        accent2: editedBrandData.colors.accent2,
+      };
 
       // Update fonts
       if (editedBrandData.fonts.length > 0) {
@@ -181,24 +197,10 @@ const AdminBrands: React.FC = () => {
     }
   };
 
-  const handleColorChange = (index: number, newColor: string) => {
+  const handleLabeledColorChange = (key: keyof LabeledColors, newColor: string) => {
     setEditedBrandData(prev => ({
       ...prev,
-      colors: prev.colors.map((c, i) => i === index ? newColor : c)
-    }));
-  };
-
-  const handleAddColor = () => {
-    setEditedBrandData(prev => ({
-      ...prev,
-      colors: [...prev.colors, '#000000']
-    }));
-  };
-
-  const handleRemoveColor = (index: number) => {
-    setEditedBrandData(prev => ({
-      ...prev,
-      colors: prev.colors.filter((_, i) => i !== index)
+      colors: { ...prev.colors, [key]: newColor }
     }));
   };
 
@@ -278,41 +280,88 @@ const AdminBrands: React.FC = () => {
     }
   };
 
-  const getColorArray = (brand: Brand): string[] => {
-    const colors: string[] = [];
+  const getLabeledColors = (brand: Brand): LabeledColors => {
     const apiResponse = brand.api_response;
+    const defaultColors: LabeledColors = {
+      background: '#FFFFFF',
+      text: '#1A1A1A',
+      accent: '#3B82F6',
+      accent2: '#6B7280',
+    };
 
-    const extractColors = (colorData: any) => {
-      if (!colorData) return;
+    if (!apiResponse?.colors) return defaultColors;
 
-      if (Array.isArray(colorData)) {
-        colorData.forEach((color: any) => {
-          if (typeof color === 'string') {
-            if (!colors.includes(color)) colors.push(color);
-          } else if (color?.hex && !colors.includes(color.hex)) {
-            colors.push(color.hex);
-          }
-        });
-      } else if (typeof colorData === 'object') {
-        Object.values(colorData).forEach(value => {
-          if (Array.isArray(value)) {
-            value.forEach((color: any) => {
-              if (typeof color === 'string') {
-                if (!colors.includes(color)) colors.push(color);
-              } else if (color?.hex && !colors.includes(color.hex)) {
-                colors.push(color.hex);
-              }
-            });
+    const colors = apiResponse.colors;
+
+    // Check if already labeled format (matching theme_agent.py structure)
+    if (typeof colors.background === 'string' || typeof colors.text === 'string' || typeof colors.accent === 'string') {
+      return {
+        background: colors.background || defaultColors.background,
+        text: colors.text || defaultColors.text,
+        accent: colors.accent || defaultColors.accent,
+        accent2: colors.accent2 || defaultColors.accent2,
+      };
+    }
+
+    // Extract from various Brandfetch formats
+    const extractedColors: string[] = [];
+
+    // Case 1: colors is directly an array of hex strings
+    if (Array.isArray(colors)) {
+      colors.forEach((c: any) => {
+        const hex = typeof c === 'string' ? c : c?.hex;
+        if (hex && !extractedColors.includes(hex)) extractedColors.push(hex);
+      });
+    }
+
+    // Case 2: colors.hex_list (SimpleBrandfetchCache format)
+    if (Array.isArray(colors.hex_list)) {
+      colors.hex_list.forEach((c: string) => {
+        if (c && !extractedColors.includes(c)) extractedColors.push(c);
+      });
+    }
+
+    // Case 3: colors.hex array
+    if (Array.isArray(colors.hex)) {
+      colors.hex.forEach((c: string) => {
+        if (c && !extractedColors.includes(c)) extractedColors.push(c);
+      });
+    }
+
+    // Case 4: colors.primary/accent/dark/light arrays with hex objects
+    const colorArrays = ['primary', 'accent', 'dark', 'light'];
+    for (const key of colorArrays) {
+      if (Array.isArray(colors[key])) {
+        colors[key].forEach((color: any) => {
+          const hex = typeof color === 'string' ? color : color?.hex;
+          if (hex && !extractedColors.includes(hex)) {
+            extractedColors.push(hex);
           }
         });
       }
-    };
-
-    if (apiResponse?.colors) {
-      extractColors(apiResponse.colors);
     }
 
-    return colors.slice(0, 12);
+    // Case 5: Fallback - iterate all object values
+    if (extractedColors.length === 0 && typeof colors === 'object') {
+      Object.values(colors).forEach((value: any) => {
+        if (Array.isArray(value)) {
+          value.forEach((color: any) => {
+            const hex = typeof color === 'string' ? color : color?.hex;
+            if (hex && !extractedColors.includes(hex)) {
+              extractedColors.push(hex);
+            }
+          });
+        }
+      });
+    }
+
+    // Map extracted colors to labeled structure (matches theme_agent.py)
+    return {
+      background: defaultColors.background,
+      text: defaultColors.text,
+      accent: extractedColors[0] || defaultColors.accent,
+      accent2: extractedColors[1] || defaultColors.accent2,
+    };
   };
 
   const getFonts = (brand: Brand): string[] => {
@@ -508,7 +557,7 @@ const AdminBrands: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {brands.map((brand) => {
-                    const colors = getColorArray(brand);
+                    const labeledColors = getLabeledColors(brand);
                     const fonts = getFonts(brand);
                     const brandName = brand.api_response?.brand_name || brand.identifier;
                     const domain = brand.api_response?.domain || brand.normalized_identifier;
@@ -571,23 +620,21 @@ const AdminBrands: React.FC = () => {
 
                           {/* Colors */}
                           <div>
-                            <Label className="text-xs text-muted-foreground">Colors</Label>
-                            <div className="flex items-center gap-1 mt-1 flex-wrap">
-                              {colors.length > 0 ? (
-                                colors.slice(0, 8).map((color, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="w-5 h-5 rounded border border-gray-300 dark:border-gray-600 cursor-pointer hover:scale-110 transition-transform"
-                                    style={{ backgroundColor: color }}
-                                    title={color}
-                                  />
-                                ))
-                              ) : (
-                                <span className="text-xs text-muted-foreground italic">No colors</span>
-                              )}
-                              {colors.length > 8 && (
-                                <span className="text-xs text-muted-foreground">+{colors.length - 8}</span>
-                              )}
+                            <Label className="text-xs text-muted-foreground mb-1.5 block">Colors</Label>
+                            <div className="flex gap-1">
+                              {[
+                                { key: 'accent', label: 'Accent' },
+                                { key: 'accent2', label: 'Accent 2' },
+                                { key: 'background', label: 'Background' },
+                                { key: 'text', label: 'Text' },
+                              ].map(({ key, label }) => (
+                                <div
+                                  key={key}
+                                  className="w-6 h-6 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm"
+                                  style={{ backgroundColor: labeledColors[key as keyof LabeledColors] }}
+                                  title={`${label}: ${labeledColors[key as keyof LabeledColors]}`}
+                                />
+                              ))}
                             </div>
                           </div>
 
@@ -881,53 +928,35 @@ const AdminBrands: React.FC = () => {
                   </div>
 
                   {/* Colors Section */}
-                  <div className="bg-muted/30 rounded-lg p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Brand Colors</h3>
-                      <Button size="sm" variant="outline" onClick={handleAddColor} className="h-8">
-                        <Plus className="h-3 w-3 mr-1" />
-                        Add Color
-                      </Button>
-                    </div>
-                    {editedBrandData.colors.length > 0 ? (
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {editedBrandData.colors.map((color, index) => (
-                          <div key={index} className="flex items-center gap-2 bg-white dark:bg-gray-900 rounded-lg p-2 border">
+                  <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Brand Colors</h3>
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        { key: 'accent' as const, label: 'Accent' },
+                        { key: 'accent2' as const, label: 'Accent 2' },
+                        { key: 'background' as const, label: 'Background' },
+                        { key: 'text' as const, label: 'Text' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">{label}</Label>
+                          <div className="flex items-center gap-1.5">
                             <input
                               type="color"
-                              value={color}
-                              onChange={(e) => handleColorChange(index, e.target.value)}
-                              className="w-10 h-10 rounded-md border-0 cursor-pointer"
-                              style={{ backgroundColor: color }}
+                              value={editedBrandData.colors[key]}
+                              onChange={(e) => handleLabeledColorChange(key, e.target.value)}
+                              className="w-8 h-8 rounded border border-gray-200 dark:border-gray-700 cursor-pointer flex-shrink-0"
                             />
                             <Input
-                              value={color}
-                              onChange={(e) => handleColorChange(index, e.target.value.toUpperCase())}
+                              value={editedBrandData.colors[key]}
+                              onChange={(e) => handleLabeledColorChange(key, e.target.value.toUpperCase())}
                               placeholder="#000000"
-                              className="font-mono text-xs h-8 flex-1"
+                              className="font-mono text-xs h-8"
                               maxLength={7}
                             />
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleRemoveColor(index)}
-                              className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-muted-foreground">
-                        <Palette className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No colors defined</p>
-                        <Button size="sm" variant="outline" onClick={handleAddColor} className="mt-2">
-                          <Plus className="h-3 w-3 mr-1" />
-                          Add First Color
-                        </Button>
-                      </div>
-                    )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Fonts Section */}

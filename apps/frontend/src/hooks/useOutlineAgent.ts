@@ -124,20 +124,52 @@ export function useOutlineAgent() {
           if (event.type === 'text') {
             accumulatedText += event.content;
 
-            // Remove JSON blocks from display text
-            // First try to remove ```json...``` blocks
-            displayText = accumulatedText.replace(/```json\s*[\s\S]*?\s*```/g, '');
+            // Remove JSON blocks from display text - use robust bracket matching
+            displayText = accumulatedText;
 
-            // Also handle plain json blocks (starts with "json" on its own line)
-            // Match from "json" line through the closing }
-            displayText = displayText.replace(/^json\s*$[\s\S]*?^\}$/gm, '');
+            // Remove ```json...``` code blocks
+            displayText = displayText.replace(/```json[\s\S]*?```/g, '');
 
-            // Clean up any remaining JSON-like patterns that start with { and look like our format
-            if (displayText.includes('"action"') && displayText.includes('"slides"')) {
-              displayText = displayText.replace(/\{[\s\S]*"action"[\s\S]*\}/g, '');
-            }
+            // Remove standalone JSON objects that look like our action format
+            // Use bracket counting for proper matching
+            const removeActionJson = (text: string): string => {
+              let result = '';
+              let i = 0;
+              while (i < text.length) {
+                if (text[i] === '{') {
+                  const remaining = text.slice(i);
+                  if (remaining.includes('"action"') && (remaining.includes('"update_slides"') || remaining.includes('"updated_slides"') || remaining.includes('"slides"'))) {
+                    let braceCount = 0;
+                    let j = i;
+                    let inString = false;
+                    let escapeNext = false;
 
-            displayText = displayText.trim();
+                    while (j < text.length) {
+                      const char = text[j];
+                      if (escapeNext) { escapeNext = false; j++; continue; }
+                      if (char === '\\' && inString) { escapeNext = true; j++; continue; }
+                      if (char === '"' && !escapeNext) {
+                        inString = !inString;
+                      } else if (!inString) {
+                        if (char === '{') braceCount++;
+                        else if (char === '}') {
+                          braceCount--;
+                          if (braceCount === 0) { i = j + 1; break; }
+                        }
+                      }
+                      j++;
+                    }
+                    if (braceCount !== 0) break; // Incomplete JSON - still streaming
+                    continue;
+                  }
+                }
+                result += text[i];
+                i++;
+              }
+              return result;
+            };
+
+            displayText = removeActionJson(displayText).trim();
 
             // Update the AI message with display text (without JSON)
             setMessages((prev) => {

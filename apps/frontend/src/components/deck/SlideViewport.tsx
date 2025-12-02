@@ -31,8 +31,8 @@ import { shareService } from '@/services/shareService';
 import { useDeckStore } from '@/stores/deckStore';
 import { CommentsPanel } from './CommentsPanel';
 
-// Lazy load the waiting game - now using the awesome SlideFactoryOverlay!
-const SlideFactoryOverlay = lazy(() => import('@/components/common/SlideFactoryOverlay'));
+// Lazy load the waiting game
+const SlideAreaGame = lazy(() => import('./SlideAreaGame'));
 
 interface SlideViewportProps {
   slides: SlideData[];
@@ -712,27 +712,19 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       ref={viewportRef}
       className="flex-1 relative overflow-hidden flex items-center justify-center max-w-full w-full h-full bg-background"
     >
-      {/* Waiting Game Overlay - The Slide Factory! 🏭 */}
+      {/* Waiting Game Overlay */}
       {showWaitingGame && (
         <Suspense fallback={
           <div className="absolute inset-0 bg-slate-900 flex items-center justify-center z-50">
-            <div className="text-center">
-              <div className="text-4xl mb-2 animate-bounce">🏭</div>
-              <span className="text-gray-400">Loading The Slide Factory...</span>
-            </div>
+            <span className="text-gray-400">Loading game...</span>
           </div>
         }>
-          <SlideFactoryOverlay 
-            isVisible={showWaitingGame}
-            slideProgress={deckStatus?.totalSlides ? { 
-              current: deckStatus.completedSlides || 0, 
-              total: deckStatus.totalSlides 
-            } : undefined}
-            onClose={() => {
+          <div className="absolute inset-0 z-50">
+            <SlideAreaGame onClose={() => {
               setShowWaitingGame(false);
               window.dispatchEvent(new CustomEvent('hide-waiting-game'));
-            }} 
-          />
+            }} />
+          </div>
         </Suspense>
       )}
 

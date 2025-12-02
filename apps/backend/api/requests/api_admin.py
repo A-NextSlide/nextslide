@@ -31,12 +31,21 @@ class UserSummary(BaseModel):
     storageUsed: int = 0
     status: str = "active"
     role: str = "user"
+    isAdmin: bool = False
+    emailVerified: bool = False
+
+class UserStats(BaseModel):
+    totalActive: int = 0
+    newThisWeek: int = 0
+    adminCount: int = 0
+    verifiedCount: int = 0
 
 class UsersListResponse(BaseModel):
     users: List[UserSummary]
     total: int
     page: int
     totalPages: int
+    stats: UserStats
 
 class UserMetrics(BaseModel):
     totalDecks: int = 0
@@ -296,29 +305,57 @@ async def list_users(
     List all users with pagination and search
     """
     try:
+        import os
         supabase = get_supabase_client()
-        
+        service_key = os.getenv("SUPABASE_SERVICE_KEY")
+        supabase_url = os.getenv("SUPABASE_URL")
+
         # Build query
         query = supabase.table("users").select("*", count="exact")
-        
+
         # Apply search
         if search:
             query = query.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
-        
+
         # Apply pagination
         offset = (page - 1) * limit
         query = query.range(offset, offset + limit - 1)
-        
+
         # Apply sorting
         query = query.order(sort_by, desc=(sort_order == "desc"))
-        
+
         # Execute query
         response = query.execute()
-        
+
+        # Get auth data from Supabase Admin API for accurate last_sign_in and email_confirmed
+        auth_data_map = {}
+        if service_key and supabase_url:
+            try:
+                # Fetch all auth users to get accurate data
+                auth_response = httpx.get(
+                    f"{supabase_url}/auth/v1/admin/users",
+                    headers={
+                        "apikey": service_key,
+                        "Authorization": f"Bearer {service_key}"
+                    },
+                    params={"per_page": 1000},
+                    timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+                )
+                if auth_response.status_code == 200:
+                    auth_users = auth_response.json().get("users", [])
+                    for auth_user in auth_users:
+                        auth_data_map[auth_user["id"]] = {
+                            "last_sign_in_at": auth_user.get("last_sign_in_at"),
+                            "email_confirmed_at": auth_user.get("email_confirmed_at"),
+                            "created_at": auth_user.get("created_at"),
+                        }
+            except Exception as e:
+                logger.warning(f"Failed to fetch auth data: {str(e)}")
+
         # Get deck counts for each user - use fallback if RPC function doesn't exist
         user_ids = [user["id"] for user in response.data]
         deck_counts = {}
-        
+
         if user_ids:
             try:
                 # Try RPC function first
@@ -331,22 +368,87 @@ async def list_users(
                 for user_id in user_ids:
                     count_response = supabase.table("decks").select("uuid", count="exact").eq("user_id", user_id).execute()
                     deck_counts[user_id] = count_response.count or 0
-        
-        # Format users
+
+        # Format users - merge with auth data
         users = []
         for user in response.data:
+            user_id = user["id"]
+            user_role = user.get("role", "user")
+            auth_info = auth_data_map.get(user_id, {})
+
+            # Use auth data if available, otherwise fallback to users table
+            last_sign_in = auth_info.get("last_sign_in_at") or user.get("last_sign_in_at")
+            email_confirmed = auth_info.get("email_confirmed_at") or user.get("email_confirmed_at")
+            is_verified = email_confirmed is not None or user.get("email_verified", False)
+
             users.append(UserSummary(
-                id=user["id"],
-                email=user.get("email", ""),  # Handle missing email
+                id=user_id,
+                email=user.get("email", ""),
                 fullName=user.get("full_name"),
                 createdAt=user.get("created_at", datetime.utcnow().isoformat()),
-                lastActive=user.get("last_sign_in_at"),  # Changed to lastActive
-                deckCount=deck_counts.get(user["id"], 0),  # Changed to deckCount
-                storageUsed=0,  # TODO: Calculate actual storage
+                lastActive=last_sign_in,
+                deckCount=deck_counts.get(user_id, 0),
+                storageUsed=0,
                 status=user.get("status", "active"),
-                role=user.get("role", "user")
+                role=user_role,
+                isAdmin=user_role == "admin",
+                emailVerified=is_verified
             ))
-        
+
+        # Calculate aggregate stats using auth data for accuracy
+        stats = UserStats()
+        try:
+            # Get total admin count from users table
+            admin_response = supabase.table("users").select("id", count="exact").eq("role", "admin").execute()
+            stats.adminCount = admin_response.count or 0
+
+            # Calculate verified and active counts from auth data
+            if auth_data_map:
+                seven_days_ago = datetime.utcnow() - timedelta(days=7)
+                verified_count = 0
+                active_count = 0
+                new_this_week = 0
+
+                for user_id, auth_info in auth_data_map.items():
+                    # Count verified
+                    if auth_info.get("email_confirmed_at"):
+                        verified_count += 1
+
+                    # Count active in last 7 days
+                    if auth_info.get("last_sign_in_at"):
+                        try:
+                            last_sign_in = datetime.fromisoformat(auth_info["last_sign_in_at"].replace("Z", "+00:00"))
+                            if last_sign_in.replace(tzinfo=None) > seven_days_ago:
+                                active_count += 1
+                        except:
+                            pass
+
+                    # Count new this week
+                    if auth_info.get("created_at"):
+                        try:
+                            created = datetime.fromisoformat(auth_info["created_at"].replace("Z", "+00:00"))
+                            if created.replace(tzinfo=None) > seven_days_ago:
+                                new_this_week += 1
+                        except:
+                            pass
+
+                stats.verifiedCount = verified_count
+                stats.totalActive = active_count
+                stats.newThisWeek = new_this_week
+            else:
+                # Fallback to users table queries
+                verified_response = supabase.table("users").select("id", count="exact").eq("email_verified", True).execute()
+                stats.verifiedCount = verified_response.count or 0
+
+                seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+                active_response = supabase.table("users").select("id", count="exact").gte("last_sign_in_at", seven_days_ago).execute()
+                stats.totalActive = active_response.count or 0
+
+                new_response = supabase.table("users").select("id", count="exact").gte("created_at", seven_days_ago).execute()
+                stats.newThisWeek = new_response.count or 0
+        except Exception as e:
+            logger.warning(f"Error calculating user stats: {str(e)}")
+
         # Log the action
         await log_admin_action(
             admin_user_id=admin["id"],
@@ -354,12 +456,13 @@ async def list_users(
             request=request,
             details={"page": page, "search": search}
         )
-        
+
         return UsersListResponse(
             users=users,
             total=response.count or 0,
             page=page,
-            totalPages=max(1, (response.count or 0) // limit + (1 if (response.count or 0) % limit > 0 else 0))
+            totalPages=max(1, (response.count or 0) // limit + (1 if (response.count or 0) % limit > 0 else 0)),
+            stats=stats
         )
         
     except Exception as e:
@@ -563,7 +666,7 @@ async def perform_user_action(
         supabase = get_supabase_client()
         
         # Validate action
-        valid_actions = ["suspend", "delete", "reset_password", "clear_sessions", "reactivate"]
+        valid_actions = ["suspend", "delete", "hard_delete", "reset_password", "clear_sessions", "reactivate"]
         if action_request.action not in valid_actions:
             raise HTTPException(status_code=400, detail=f"Invalid action. Must be one of: {', '.join(valid_actions)}")
         
@@ -593,18 +696,138 @@ async def perform_user_action(
                 "status": "deleted",
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("id", user_id).execute()
-            
+
+        elif action_request.action == "hard_delete":
+            # Hard delete - permanently remove user from auth.users and users table
+            import os
+            service_key = os.getenv("SUPABASE_SERVICE_KEY")
+            supabase_url = os.getenv("SUPABASE_URL")
+
+            if not service_key:
+                raise HTTPException(status_code=500, detail="Service key not configured for hard delete")
+
+            # First, delete from Supabase Auth using Admin API
+            try:
+                delete_response = httpx.delete(
+                    f"{supabase_url}/auth/v1/admin/users/{user_id}",
+                    headers={
+                        "apikey": service_key,
+                        "Authorization": f"Bearer {service_key}"
+                    },
+                    timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+                )
+
+                if delete_response.status_code not in [200, 204]:
+                    logger.warning(f"Auth delete response: {delete_response.status_code} - {delete_response.text}")
+                    # Continue anyway to clean up the users table
+            except Exception as e:
+                logger.error(f"Error deleting from auth.users: {str(e)}")
+                # Continue anyway to clean up the users table
+
+            # Delete user's decks
+            supabase.table("decks").delete().eq("user_id", user_id).execute()
+
+            # Delete from users table
+            supabase.table("users").delete().eq("id", user_id).execute()
+
+            logger.info(f"Hard deleted user {user_id} ({user_email})")
+
         elif action_request.action == "reset_password":
-            # This would need to use Supabase Admin API with service role key
-            # For now, we'll just log the action
-            logger.info(f"Password reset requested for user {user_email}")
-            
+            # Generate password reset link via Supabase Admin API, then send via Resend
+            import os
+            from services.email_service import send_password_reset_email
+
+            service_key = os.getenv("SUPABASE_SERVICE_KEY")
+            supabase_url = os.getenv("SUPABASE_URL")
+            frontend_url = os.getenv("FRONTEND_URL", "https://nextslide.ai")
+
+            logger.info(f"Password reset requested for {user_email}")
+
+            if not service_key:
+                logger.error("SUPABASE_SERVICE_KEY not configured")
+                raise HTTPException(status_code=500, detail="Service key not configured")
+
+            if not supabase_url:
+                logger.error("SUPABASE_URL not configured")
+                raise HTTPException(status_code=500, detail="Supabase URL not configured")
+
+            try:
+                # Generate password reset link using Admin API
+                logger.info(f"Generating reset link via {supabase_url}/auth/v1/admin/generate_link")
+                link_response = httpx.post(
+                    f"{supabase_url}/auth/v1/admin/generate_link",
+                    headers={
+                        "apikey": service_key,
+                        "Authorization": f"Bearer {service_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "type": "recovery",
+                        "email": user_email,
+                        "redirect_to": f"{frontend_url}/reset-password"
+                    },
+                    timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+                )
+
+                logger.info(f"Generate link response: {link_response.status_code}")
+
+                if link_response.status_code not in [200, 201]:
+                    logger.error(f"Generate link failed: {link_response.status_code} - {link_response.text}")
+                    raise HTTPException(status_code=500, detail=f"Failed to generate password reset link: {link_response.text}")
+
+                # Extract the reset link from response
+                link_data = link_response.json()
+                logger.info(f"Link data keys: {link_data.keys()}")
+                reset_link = link_data.get("action_link") or link_data.get("properties", {}).get("action_link")
+
+                if not reset_link:
+                    logger.error(f"No action_link in response: {link_data}")
+                    raise HTTPException(status_code=500, detail="Failed to extract password reset link from response")
+
+                logger.info(f"Got reset link, sending email via Resend")
+
+                # Send email via Resend
+                email_sent = send_password_reset_email(user_email, reset_link)
+                if not email_sent:
+                    logger.error("Resend email failed")
+                    raise HTTPException(status_code=500, detail="Failed to send password reset email via Resend")
+
+                logger.info(f"Password reset email sent to {user_email} via Resend")
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Password reset error: {str(e)}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"Password reset failed: {str(e)}")
+
         elif action_request.action == "clear_sessions":
-            # Mark all active sessions as ended
-            supabase.table("user_sessions").update({
-                "is_active": False,
-                "ended_at": datetime.utcnow().isoformat()
-            }).eq("user_id", user_id).eq("is_active", True).execute()
+            # Sign out user from all sessions using Supabase Admin API
+            import os
+            from services.email_service import send_session_cleared_email
+
+            service_key = os.getenv("SUPABASE_SERVICE_KEY")
+            supabase_url = os.getenv("SUPABASE_URL")
+
+            if not service_key:
+                raise HTTPException(status_code=500, detail="Service key not configured")
+
+            # Use the admin API to sign out the user (invalidates all refresh tokens)
+            signout_response = httpx.post(
+                f"{supabase_url}/auth/v1/admin/users/{user_id}/logout",
+                headers={
+                    "apikey": service_key,
+                    "Authorization": f"Bearer {service_key}"
+                },
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+            )
+
+            if signout_response.status_code not in [200, 204]:
+                logger.warning(f"Session clear response: {signout_response.status_code} - {signout_response.text}")
+
+            # Notify user via email
+            send_session_cleared_email(user_email)
+
+            logger.info(f"Cleared all sessions for user {user_id}")
         
         # Log the action
         await log_admin_action(

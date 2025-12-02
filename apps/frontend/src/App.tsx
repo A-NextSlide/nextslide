@@ -49,6 +49,9 @@ import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
+import Pricing from './pages/Pricing';
+import { CreditsProvider } from './context/CreditsContext';
+import UpgradePrompt from './components/billing/UpgradePrompt';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -393,6 +396,7 @@ const AppContent = () => {
                 }
               />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="/pricing" element={<Pricing />} />
               <Route path="/smart-gallery" element={<SmartGallery />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
@@ -440,13 +444,16 @@ function App() {
           <Sonner />
           <BrowserRouter>
             <SupabaseAuthProvider>
-              <UserRecordInitializer />
-              <AppContent />
-              {DevPerformanceHUD ? (
-                <React.Suspense fallback={null}>
-                  <DevPerformanceHUD />
-                </React.Suspense>
-              ) : null}
+              <CreditsProvider>
+                <UserRecordInitializer />
+                <AppContent />
+                <UpgradePrompt />
+                {DevPerformanceHUD ? (
+                  <React.Suspense fallback={null}>
+                    <DevPerformanceHUD />
+                  </React.Suspense>
+                ) : null}
+              </CreditsProvider>
             </SupabaseAuthProvider>
           </BrowserRouter>
         </TooltipProvider>

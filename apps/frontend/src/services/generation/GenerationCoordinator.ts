@@ -395,8 +395,25 @@ export class GenerationCoordinator extends EventTarget {
             // Handle errors (treat non-fatal errors as informational)
             if (data.type === 'error') {
               const errorPayload: any = (data as any).data ?? data;
+              const errorCode = errorPayload?.error || data?.error;
               const isValidation = typeof errorPayload?.message === 'string' && errorPayload.message.includes('validation error');
               const isFatal = Boolean(errorPayload?.fatal || errorPayload?.severity === 'fatal' || errorPayload?.code === 'fatal' || errorPayload?.stop_generation === true);
+
+              // Handle insufficient credits error - this is fatal
+              if (errorCode === 'INSUFFICIENT_CREDITS' || errorPayload?.error === 'INSUFFICIENT_CREDITS') {
+                console.error('[GenerationCoordinator] Insufficient credits error:', errorPayload);
+                const remaining = errorPayload?.remaining ?? 0;
+                const required = errorPayload?.required ?? 0;
+                const plan = errorPayload?.plan ?? 'free';
+                const error = new Error(`INSUFFICIENT_CREDITS:${JSON.stringify({ remaining, required, plan })}`);
+                throw error;
+              }
+
+              // Handle billing error - this is fatal
+              if (errorCode === 'BILLING_ERROR' || errorPayload?.error === 'BILLING_ERROR') {
+                console.error('[GenerationCoordinator] Billing error:', errorPayload);
+                throw new Error('BILLING_ERROR:Could not verify credit balance');
+              }
 
               if (isValidation) {
                 console.error('[GenerationCoordinator] Validation error:', errorPayload.message);

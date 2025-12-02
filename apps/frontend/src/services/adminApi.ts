@@ -12,6 +12,15 @@ export interface UserSummary {
   storageUsed: number;
   status: 'active' | 'suspended' | 'deleted';
   role: 'user' | 'admin' | 'super_admin';
+  isAdmin: boolean;
+  emailVerified: boolean;
+}
+
+export interface UserStats {
+  totalActive: number;
+  newThisWeek: number;
+  adminCount: number;
+  verifiedCount: number;
 }
 
 export interface GetUsersResponse {
@@ -19,6 +28,7 @@ export interface GetUsersResponse {
   total: number;
   page: number;
   totalPages: number;
+  stats: UserStats;
 }
 
 export interface UserDetail {
@@ -266,13 +276,29 @@ class AdminApi {
         storageUsed: user.storageUsed || user.storage_used || 0,
         status: user.status || 'active',
         role: user.role || 'user',
+        isAdmin: user.isAdmin || user.is_admin || user.role === 'admin',
+        emailVerified: user.emailVerified || user.email_verified || false,
       }));
+
+      // Map stats from backend response
+      const stats: UserStats = response.stats ? {
+        totalActive: response.stats.totalActive || 0,
+        newThisWeek: response.stats.newThisWeek || 0,
+        adminCount: response.stats.adminCount || 0,
+        verifiedCount: response.stats.verifiedCount || 0,
+      } : {
+        totalActive: 0,
+        newThisWeek: 0,
+        adminCount: 0,
+        verifiedCount: 0,
+      };
 
       return {
         users,
         total: response.total,
         page: response.page,
         totalPages: response.totalPages || Math.ceil(response.total / (params?.limit || 20)),
+        stats,
       };
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -282,6 +308,12 @@ class AdminApi {
         total: 0,
         page: 1,
         totalPages: 0,
+        stats: {
+          totalActive: 0,
+          newThisWeek: 0,
+          adminCount: 0,
+          verifiedCount: 0,
+        },
       };
     }
   }
@@ -533,16 +565,39 @@ class AdminApi {
     role?: 'user' | 'admin';
     metadata?: Record<string, any>;
   }): Promise<{ success: boolean; user: UserSummary }> {
-    // TODO: Implement when backend is ready
-    throw new Error('Not implemented');
+    try {
+      const response = await this.request<any>(`/admin/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+      return {
+        success: true,
+        user: response.user,
+      };
+    } catch (error) {
+      console.error('Error updating user:', error);
+      throw error;
+    }
   }
 
   async performUserAction(userId: string, action: {
-    action: 'reset_password' | 'verify_email' | 'clear_sessions' | 'export_data' | 'delete_account';
+    action: 'suspend' | 'reactivate' | 'delete' | 'hard_delete' | 'reset_password' | 'clear_sessions';
     reason?: string;
   }): Promise<{ success: boolean; message: string; data?: any }> {
-    // TODO: Implement when backend is ready
-    throw new Error('Not implemented');
+    try {
+      const response = await this.request<any>(`/admin/users/${userId}/actions`, {
+        method: 'POST',
+        body: JSON.stringify(action),
+      });
+      return {
+        success: response.success,
+        message: response.message,
+        data: response.data,
+      };
+    } catch (error) {
+      console.error('Error performing user action:', error);
+      throw error;
+    }
   }
 
   // Deck actions

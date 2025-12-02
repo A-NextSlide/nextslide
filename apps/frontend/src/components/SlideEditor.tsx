@@ -185,7 +185,105 @@ const SlideEditorContent: React.FC = () => {
   const { isHistoryPanelOpen } = useVersionHistory();
   const { deckId } = useParams<{ deckId: string }>();
   const isPendingDeck = searchParams.get('pending') === 'true';
-  
+  const shouldGenerate = searchParams.get('generate') === 'true';
+
+  // Handle pending generation from DeckList (navigated directly without deck existing in DB)
+  const pendingGenerationHandledRef = useRef(false);
+  useEffect(() => {
+    if (!shouldGenerate || !deckId || pendingGenerationHandledRef.current) return;
+
+    const pendingGenStr = sessionStorage.getItem('pendingGeneration');
+    if (!pendingGenStr) {
+      console.log('[SlideEditor] No pending generation found in sessionStorage');
+      return;
+    }
+
+    try {
+      const pendingGen = JSON.parse(pendingGenStr);
+      console.log('[SlideEditor] 🚀 Found pending generation context:', {
+        outlineId: pendingGen.outline?.id,
+        slideCount: pendingGen.outline?.slides?.length,
+        hasBrandContext: pendingGen.hasBrandContext,
+        brandContext: pendingGen.brandContext,
+      });
+
+      // Verify the pending generation is for this deck
+      if (pendingGen.outline?.id !== deckId) {
+        console.log('[SlideEditor] Pending generation is for different deck, ignoring');
+        return;
+      }
+
+      pendingGenerationHandledRef.current = true;
+
+      // Clear from sessionStorage so it doesn't run again
+      sessionStorage.removeItem('pendingGeneration');
+
+      // Populate deck store with the outline data
+      const outlineData = {
+        id: pendingGen.outline.id,
+        title: pendingGen.outline.title,
+        slides: pendingGen.outline.slides,
+        stylePreferences: pendingGen.stylePreferences,
+      };
+
+      console.log('[SlideEditor] 🚀 Populating deck store with outline:', outlineData.title);
+
+      // Set up the deck data with outline for generation
+      useDeckStore.getState().updateDeckData({
+        uuid: deckId,
+        name: outlineData.title,
+        outline: outlineData,
+        data: { outline: outlineData },
+        slides: [], // Will be populated by generation
+      });
+
+      // Store theme if available
+      if (pendingGen.themePayload) {
+        const { useThemeStore } = require('@/stores/themeStore');
+        useThemeStore.getState().setOutlineDeckTheme?.(deckId, pendingGen.themePayload);
+      }
+
+      // Store style preferences for generation
+      if (typeof window !== 'undefined') {
+        (window as any).__slideGenerationPreferences = {
+          ...pendingGen.stylePreferences,
+          vibeContext: pendingGen.brandContext || pendingGen.stylePreferences?.vibeContext,
+        };
+      }
+
+      console.log('[SlideEditor] 🚀 Deck store populated, triggering generation directly');
+
+      // Mark that we're handling this to prevent auto-start from running too
+      hasAttemptedAutoStartRef.current = true;
+
+      // Trigger generation after a small delay to ensure state is updated
+      // Use retry mechanism since __triggerGeneration may not be set up yet
+      const tryTriggerGeneration = (retries = 0) => {
+        const coordinator = GenerationCoordinator.getInstance();
+        if (coordinator.isGenerating(deckId)) {
+          console.log('[SlideEditor] 🚀 Generation already in progress');
+          return;
+        }
+
+        if (typeof window !== 'undefined' && (window as any).__triggerGeneration) {
+          console.log('[SlideEditor] 🚀 Starting generation from pendingGeneration handler');
+          (window as any).__triggerGeneration();
+        } else if (retries < 10) {
+          // Retry after a short delay if trigger function not available yet
+          console.log('[SlideEditor] Waiting for trigger function, retry', retries + 1);
+          setTimeout(() => tryTriggerGeneration(retries + 1), 100);
+        } else {
+          console.error('[SlideEditor] Failed to find trigger function after 10 retries');
+        }
+      };
+
+      setTimeout(() => tryTriggerGeneration(), 100);
+
+    } catch (err) {
+      console.error('[SlideEditor] Failed to parse pending generation:', err);
+    }
+  }, [shouldGenerate, deckId]);
+
   // Constants for panel management
   const CHAT_MIN_SIZE = 22; // Reduced from 22 to give more space to slides
   const COLLAPSE_THRESHOLD = 3;
@@ -1585,6 +1683,18 @@ const SlideEditorContent: React.FC = () => {
     // Simply call startGeneration - the coordinator handles all duplicate prevention
     await startGeneration({ auto: true });
   }, [startGeneration]);
+
+  // Expose trigger function for pendingGeneration handler
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__triggerGeneration = handleStartGeneration;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__triggerGeneration;
+      }
+    };
+  }, [handleStartGeneration]);
 
   // Effect to ensure chat panel is visible during generation
   useEffect(() => {

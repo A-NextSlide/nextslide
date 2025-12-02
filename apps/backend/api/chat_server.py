@@ -160,6 +160,7 @@ from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_file_analysis import router as file_analysis_router
+from api.requests.api_billing import router as billing_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -260,6 +261,7 @@ app.include_router(agent_messages_router)
 app.include_router(google_router)
 app.include_router(theme_router)
 app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analysis"])
+app.include_router(billing_router, prefix="/api", tags=["Billing"])
 
 # Global registry storage
 REGISTRY = None
@@ -298,8 +300,46 @@ def read_root():
     return {"message": "Slide Sorcery Chat API is running"}
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def api_chat_endpoint(request: ChatRequest):
+async def api_chat_endpoint(request: ChatRequest, token: Optional[str] = Depends(get_auth_header)):
     global REGISTRY
+
+    # Check and consume credits for chat
+    user_id = None
+    if token:
+        from services.supabase_auth_service import get_auth_service
+        from services.billing_service import get_billing_service, CreditAction
+
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token)
+        if user:
+            user_id = user.get('id')
+            billing = get_billing_service()
+
+            # Check credits before processing
+            has_credits, cost, remaining = await billing.check_credits(user_id, CreditAction.AI_CHAT)
+            if not has_credits:
+                logger.warning(f"User {user_id} has insufficient credits for chat: {remaining} < {cost}")
+                # Return a special response indicating no credits
+                return ChatResponse(
+                    response="__INSUFFICIENT_CREDITS__",
+                    debug_info={"error": "insufficient_credits", "remaining": remaining, "required": cost}
+                )
+
+            # Consume credits
+            success, remaining_after, _ = await billing.consume_credits(
+                user_id,
+                CreditAction.AI_CHAT,
+                metadata={"deck_id": request.deck_id if hasattr(request, 'deck_id') else None},
+                description="AI chat message"
+            )
+            if not success:
+                logger.warning(f"Failed to consume credits for user {user_id}")
+                return ChatResponse(
+                    response="__INSUFFICIENT_CREDITS__",
+                    debug_info={"error": "insufficient_credits", "remaining": remaining_after, "required": cost}
+                )
+            logger.info(f"User {user_id} consumed {cost} credit for chat, remaining: {remaining_after}")
+
     return await process_api_chat(request, REGISTRY)
 
 @app.post("/api/registry")
@@ -743,6 +783,63 @@ async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: O
                 logger.info(f"Associating deck {request.deck_id} with user {user_id}")
                 # Associate the deck with the user
                 auth_service.associate_deck_with_user(user_id, request.deck_id)
+
+                # Check and consume credits for slide generation
+                from services.billing_service import get_billing_service, CreditAction
+                billing = get_billing_service()
+                num_slides = len(request.outline.slides) if request.outline and request.outline.slides else 0
+
+                if num_slides > 0:
+                    # Check if user has enough credits for all slides
+                    # Each slide costs 5 credits
+                    total_cost = num_slides * billing.get_credit_cost(CreditAction.SLIDE_GENERATION)
+                    balance = await billing.get_user_balance(user_id)
+
+                    if balance:
+                        logger.info(f"User {user_id} balance: {balance.remaining_credits} credits, needs {total_cost} for {num_slides} slides")
+
+                        if balance.remaining_credits < total_cost:
+                            # Check if user can use overage (Pro/Enterprise plan)
+                            if balance.plan_id not in ('pro', 'enterprise'):
+                                # Return error for insufficient credits
+                                logger.warning(f"User {user_id} has insufficient credits: {balance.remaining_credits} < {total_cost}")
+                                async def insufficient_credits_stream():
+                                    yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'Not enough credits to generate slides', 'required': total_cost, 'remaining': balance.remaining_credits, 'plan': balance.plan_id})}\n\n"
+                                return StreamingResponse(
+                                    insufficient_credits_stream(),
+                                    media_type="text/event-stream",
+                                    headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+                                )
+
+                        # Consume credits for the entire deck upfront
+                        success, remaining, overage = await billing.consume_credits(
+                            user_id,
+                            CreditAction.SLIDE_GENERATION,
+                            metadata={"deck_id": request.deck_id, "num_slides": num_slides, "total_cost": total_cost},
+                            description=f"Generate {num_slides} slides for deck {request.deck_id}",
+                            quantity=num_slides  # Consume credits for all slides at once
+                        )
+
+                        if not success:
+                            logger.warning(f"Failed to consume credits for user {user_id}")
+                            async def failed_credits_stream():
+                                yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'Could not consume credits', 'remaining': remaining})}\n\n"
+                            return StreamingResponse(
+                                failed_credits_stream(),
+                                media_type="text/event-stream",
+                                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+                            )
+
+                        logger.info(f"Consumed {total_cost} credits for {num_slides} slides, remaining: {remaining}")
+                    else:
+                        logger.warning(f"Could not get balance for user {user_id}, blocking request")
+                        async def no_balance_stream():
+                            yield f"data: {json.dumps({'type': 'error', 'error': 'BILLING_ERROR', 'message': 'Could not verify credit balance'})}\n\n"
+                        return StreamingResponse(
+                            no_balance_stream(),
+                            media_type="text/event-stream",
+                            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+                        )
         except Exception as e:
             logger.warning(f"Could not associate deck with user: {e}")
 
@@ -899,7 +996,79 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
     # Record this request
     _recent_deck_creations[request_hash] = current_time
     logger.info(f"Request recorded with hash: {request_hash}")
-    
+
+    # ===== CREDIT TRACKING =====
+    # Check credits and determine how many slides we can generate
+    num_slides = len(outline.get('slides', []))
+    slides_to_generate = num_slides
+    is_partial_generation = False
+    hidden_slides_count = 0
+    force_sequential = False
+
+    if user_id and num_slides > 0:
+        from services.billing_service import get_billing_service, CreditAction
+        billing = get_billing_service()
+
+        credit_per_slide = billing.get_credit_cost(CreditAction.SLIDE_GENERATION)
+        total_cost = num_slides * credit_per_slide
+        balance = await billing.get_user_balance(user_id)
+
+        if balance:
+            logger.info(f"[CREDITS] User {user_id} balance: {balance.remaining_credits} credits, needs {total_cost} for {num_slides} slides")
+
+            # For pro/enterprise, allow full generation
+            if balance.plan_id in ('pro', 'enterprise'):
+                slides_to_generate = num_slides
+            else:
+                # Calculate how many slides user can afford
+                affordable_slides = balance.remaining_credits // credit_per_slide
+
+                if affordable_slides < num_slides:
+                    # Partial generation - generate what they can afford
+                    slides_to_generate = max(0, affordable_slides)  # At least 0
+                    hidden_slides_count = num_slides - slides_to_generate
+                    is_partial_generation = True
+                    force_sequential = True  # Generate sequentially for partial generations
+
+                    logger.info(f"[CREDITS] PARTIAL: User can afford {slides_to_generate}/{num_slides} slides. {hidden_slides_count} slides will not be generated.")
+
+                    # Truncate outline to only include affordable slides (no upgrade slide anymore)
+                    if slides_to_generate > 0:
+                        outline['slides'] = outline.get('slides', [])[:slides_to_generate]
+                        logger.info(f"[CREDITS] Truncated outline to {slides_to_generate} slides")
+                    else:
+                        # User has 0 credits - empty slides (frontend will handle)
+                        outline['slides'] = []
+                        slides_to_generate = 0
+                        logger.info(f"[CREDITS] User has no credits. No slides will be generated.")
+
+            # Consume credits for the slides we're actually generating (not the upgrade slide)
+            if slides_to_generate > 0:
+                actual_cost = slides_to_generate * credit_per_slide
+                success, remaining, overage = await billing.consume_credits(
+                    user_id,
+                    CreditAction.SLIDE_GENERATION,
+                    metadata={
+                        "deck_id": outline.get('id'),
+                        "num_slides": slides_to_generate,
+                        "total_cost": actual_cost,
+                        "is_partial": is_partial_generation,
+                        "hidden_slides": hidden_slides_count
+                    },
+                    description=f"Generate {slides_to_generate} slides for deck",
+                    quantity=slides_to_generate
+                )
+
+                if success:
+                    logger.info(f"[CREDITS] CONSUMED: {actual_cost} credits for {slides_to_generate} slides. Remaining: {remaining}")
+                else:
+                    logger.warning(f"[CREDITS] FAILED to consume credits for user {user_id}")
+        else:
+            logger.warning(f"[CREDITS] Could not get balance for user {user_id}")
+    elif not user_id:
+        logger.info("[CREDITS] No user_id - skipping credit tracking (anonymous user)")
+    # ===== END CREDIT TRACKING =====
+
     try:
         # Use global registry
         global REGISTRY
@@ -911,16 +1080,21 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         from agents.config import MAX_PARALLEL_SLIDES, DELAY_BETWEEN_SLIDES
         
         # Create the request object with the data from the raw request
+        # Use sequential generation (max_parallel=1) for partial/paywall generations
+        effective_max_parallel = 1 if force_sequential else request.get('max_parallel', MAX_PARALLEL_SLIDES)
+
         create_request = CreateDeckFromOutlineRequest(
             outline=outline,
             stylePreferences=request.get('stylePreferences'),
-            max_parallel=request.get('max_parallel', MAX_PARALLEL_SLIDES),
+            max_parallel=effective_max_parallel,
             delay_between_slides=request.get('delay_between_slides', DELAY_BETWEEN_SLIDES),
             async_images=request.get('async_images', False)  # Default to auto-apply mode to show image recommendations
         )
-        
-        # Store user_id in request for later use
+
+        # Store metadata in request for later use
         create_request._user_id = user_id
+        create_request._is_partial_generation = is_partial_generation
+        create_request._hidden_slides_count = hidden_slides_count
         
         # Create the streaming response
         generator = stream_deck_creation(create_request, REGISTRY)

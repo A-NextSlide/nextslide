@@ -99,23 +99,41 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
             colors_data = brand_data.get('colors', {})
             fonts_data = brand_data.get('fonts', [])
             logos_data = brand_data.get('logos', {})
-            
+
             # Extract color list with categories
             colors = []
             color_categories = {}  # Map hex to category (background, text, accent)
-            if colors_data:
-                if isinstance(colors_data, dict) and colors_data.get('hex_list'):
+            labeled_colors = {}  # Store explicitly labeled colors from admin
+
+            if colors_data and isinstance(colors_data, dict):
+                # Check for labeled format first (from admin panel edits)
+                # Format: { background: "#...", text: "#...", accent: "#...", accent2: "#..." }
+                if colors_data.get('background') or colors_data.get('accent'):
+                    logger.info(f"[BRANDFETCH DB] Found labeled colors format")
+                    labeled_colors = {
+                        'background': colors_data.get('background'),
+                        'text': colors_data.get('text'),
+                        'accent': colors_data.get('accent'),
+                        'accent2': colors_data.get('accent2'),
+                    }
+                    # Build colors list from labeled values
+                    for key in ['accent', 'accent2', 'background', 'text']:
+                        if labeled_colors.get(key):
+                            colors.append(labeled_colors[key])
+                            color_categories[labeled_colors[key]] = key
+                elif colors_data.get('hex_list'):
                     colors = colors_data['hex_list']
-                elif isinstance(colors_data, list):
-                    # Handle format where colors is a list of objects with hex and category
-                    for c in colors_data:
-                        if isinstance(c, dict) and c.get('hex'):
-                            hex_color = c.get('hex')
-                            colors.append(hex_color)
-                            # Preserve category information
-                            category = c.get('category') or c.get('type')
-                            if category:
-                                color_categories[hex_color] = category
+
+            elif colors_data and isinstance(colors_data, list):
+                # Handle format where colors is a list of objects with hex and category
+                for c in colors_data:
+                    if isinstance(c, dict) and c.get('hex'):
+                        hex_color = c.get('hex')
+                        colors.append(hex_color)
+                        # Preserve category information
+                        category = c.get('category') or c.get('type')
+                        if category:
+                            color_categories[hex_color] = category
             
             # Extract font list  
             fonts = []
@@ -154,9 +172,23 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
             
             if colors:
                 # Build categorized color lists based on the category information
-                backgrounds = [c for c in colors if color_categories.get(c) == 'background']
-                texts = [c for c in colors if color_categories.get(c) == 'text']
-                accents = [c for c in colors if color_categories.get(c) == 'accent']
+                # Check for labeled format first (admin panel edits)
+                if labeled_colors.get('background'):
+                    backgrounds = [labeled_colors['background']]
+                else:
+                    backgrounds = [c for c in colors if color_categories.get(c) == 'background']
+
+                if labeled_colors.get('text'):
+                    texts = [labeled_colors['text']]
+                else:
+                    texts = [c for c in colors if color_categories.get(c) == 'text']
+
+                if labeled_colors.get('accent'):
+                    accents = [labeled_colors['accent']]
+                    if labeled_colors.get('accent2'):
+                        accents.append(labeled_colors['accent2'])
+                else:
+                    accents = [c for c in colors if color_categories.get(c) == 'accent']
 
                 result = {
                     "colors": colors,
@@ -168,10 +200,11 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                     "color_categories": color_categories,  # Include category mapping
                     "backgrounds": backgrounds if backgrounds else None,
                     "accents": accents if accents else None,
-                    "text_colors": texts if texts else None  # Return text colors for brand cache
+                    "text_colors": texts if texts else None,  # Return text colors for brand cache
+                    "labeled_colors": labeled_colors if labeled_colors else None,  # Pass through admin-edited labels
                 }
 
-                logger.info(f"[BRANDFETCH DB] ✅ Found brand data for {brand_name}: {len(colors)} colors ({len(backgrounds)} bg, {len(texts)} text, {len(accents)} accent), {len(fonts)} fonts, logo: {bool(logo_url)}")
+                logger.info(f"[BRANDFETCH DB] ✅ Found brand data for {brand_name}: {len(colors)} colors ({len(backgrounds)} bg, {len(texts)} text, {len(accents)} accent), {len(fonts)} fonts, logo: {bool(logo_url)}, labeled: {bool(labeled_colors)}")
                 return result
             else:
                 logger.info(f"[BRANDFETCH DB] Brand data found but no colors for {domain}")

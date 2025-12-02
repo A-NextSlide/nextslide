@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { BROWSER } from '@/utils/browser';
-import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Image as ImageIcon, FileText, Table, Presentation, File } from 'lucide-react';
+import { Bot, User, ThumbsUp, ThumbsDown, Loader2, CheckCircle2, Image as ImageIcon, FileText, Table, Presentation, File, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { COLORS } from '@/utils/colors';
 import { Progress } from '@/components/ui/progress';
@@ -10,6 +10,8 @@ import { EnhancedDeckProgress } from './deck/EnhancedDeckProgress';
 import { GenerationProgress } from './common/GenerationProgress';
 import { motion } from 'framer-motion';
 import TypewriterText from '@/components/common/TypewriterText';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 export type MessageType = 'ai' | 'user' | 'system';
 export type FeedbackType = 'positive' | 'negative' | null;
@@ -168,10 +170,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   
   
   // Hide truly empty messages unless we're explicitly showing a loader or a streaming/progress UI
-  if (!isLoading && !isStreamingMessage) {
+  if (!isLoading && !isStreamingMessage && !metadata?.isCreditsExhausted) {
     if (safeMessage.trim().length === 0) {
       return null;
     }
+  }
+
+  // Handle credits exhausted message with upgrade CTA
+  if (metadata?.isCreditsExhausted) {
+    return (
+      <div className="flex w-full mb-3 items-start animate-fade-in justify-start">
+        <div className="flex-shrink-0 mr-3">
+          <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center">
+            <Zap size={18} />
+          </div>
+        </div>
+        <div className="flex-1 max-w-[85%]">
+          <div className="rounded-xl px-4 py-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+              You've run out of credits
+            </p>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
+              Upgrade your plan to continue creating amazing presentations.
+            </p>
+            <UpgradeButton />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Removed debug logging for font optimization button
@@ -616,6 +642,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         </div>
       )}
     </div>
+  );
+};
+
+// Helper component for upgrade button with navigation
+const UpgradeButton: React.FC = () => {
+  const navigate = useNavigate();
+  return (
+    <Button
+      size="sm"
+      onClick={() => navigate('/pricing')}
+      className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-8"
+    >
+      <Zap className="h-3 w-3 mr-1.5" />
+      Upgrade Plan
+    </Button>
   );
 };
 

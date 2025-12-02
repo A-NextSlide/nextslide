@@ -48,6 +48,11 @@ class FontRegistryService:
         "Raleway": {"category": "sans-serif", "variants": ["300", "400", "500", "600", "700", "800", "900"]},
         "Work Sans": {"category": "sans-serif", "variants": ["300", "400", "500", "600", "700", "800", "900"]},
         "Nunito": {"category": "sans-serif", "variants": ["300", "400", "600", "700", "800", "900"]},
+        # DIN-like fonts (German industrial style)
+        "Barlow": {"category": "sans-serif", "variants": ["100", "200", "300", "400", "500", "600", "700", "800", "900"]},
+        "Barlow Condensed": {"category": "sans-serif", "variants": ["100", "200", "300", "400", "500", "600", "700", "800", "900"]},
+        "IBM Plex Sans": {"category": "sans-serif", "variants": ["100", "200", "300", "400", "500", "600", "700"]},
+        "Fira Sans": {"category": "sans-serif", "variants": ["100", "200", "300", "400", "500", "600", "700", "800", "900"]},
 
         # Serif
         "Playfair Display": {"category": "serif", "variants": ["400", "700", "900"]},

@@ -34,32 +34,22 @@ SEARCH_TOOL = {
     "description": """Search the web for current information, facts, and data.
 
 ✅ USE SEARCH when:
-1. User mentions a WELL-KNOWN COMPANY/BRAND and wants factual data about them
-   - "Anthropic pitch deck" → Search for "Anthropic funding rounds valuation revenue"
-   - "Tesla market analysis" → Search for "Tesla market cap revenue" (use current year from today's date!)
-   - "review our last round" when company is mentioned → Search for that company's actual financing history
-2. User needs CURRENT DATA: market size, statistics, trends, financials, funding rounds
-   - ALWAYS use the current year from today's date in searches, NOT hardcoded years
-3. User asks to "research", "look up", "find", or implies they need real data
-4. Creating content that would benefit from ACCURATE, VERIFIABLE information
-5. User mentions "pitch deck for [investors]" - they need REAL data to impress investors
+1. User needs FACTUAL DATA you don't have: company financials, market stats, current events, scientific facts
+2. User mentions a topic that requires REAL INFORMATION: courses, lectures, research, analysis
+3. User implies they want you to FIND or RESEARCH something (e.g., "pick a lecture online", "find examples")
+4. Creating content about SPECIFIC TOPICS where accuracy matters (science, business, technology, academics)
+5. User asks about a KNOWN ENTITY (company, university, course) and needs accurate facts about it
 
 🚫 DO NOT search when:
-- User uploaded files (PDF, PPTX, etc.) - USE THEIR CONTENT INSTEAD
-- User says "summarize this", "turn this into slides", "use this content"
-- User already provided the specific content they want on slides
+- User uploaded files - USE THEIR CONTENT INSTEAD
+- User already provided the specific content they want
 - File analysis already contains the needed information
 
-🚫🚫 NEVER SEARCH FOR BRAND COLORS, LOGOS, OR FONTS:
-- DO NOT search for "[company] brand colors" or "[university] official colors"
-- DO NOT search for logos, fonts, or visual branding
-- The THEME SYSTEM handles branding via Brandfetch API (authoritative source)
-- Perplexity often returns WRONG brand colors - let ThemeDirector handle it
-- Your job is CONTENT research only, not visual/brand research
+🚫🚫 NEVER SEARCH FOR BRAND COLORS, LOGOS, OR FONTS - the theme system handles branding separately.
 
-💡 PROACTIVE SEARCH: When user mentions a recognizable company (Anthropic, OpenAI, Tesla, Stripe, etc.)
-and asks for pitch deck/analysis/financials, AUTOMATICALLY search for their public data.
-Don't ask "what was your last round?" - SEARCH FOR IT if it's a known company!""",
+💡 DEFAULT TO SEARCHING: If you're about to generate content on a topic and you're not 100% certain of the facts,
+SEARCH FIRST. It's better to search and get accurate info than to make up content.
+Academic topics, scientific content, business data - always search to ensure accuracy.""",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -1004,16 +994,17 @@ Assistant: "I'd love to help with your ML presentation! A few quick questions:
 - User mentioned a company/brand (e.g., "for Instacart", "Nike pitch deck")
 - User said "go", "yes", "create", "build", "generate", etc.
 
-**🔍 PROACTIVE RESEARCH FOR KNOWN COMPANIES:**
-When user mentions a RECOGNIZABLE COMPANY (Anthropic, OpenAI, Tesla, Stripe, Google, Meta, etc.):
-- DO NOT ask "what was your last funding round?" - SEARCH FOR IT!
-- DO NOT ask "what's your valuation?" - SEARCH FOR IT!
-- These are PUBLIC companies with PUBLIC information - use web_search to find it!
-- Examples:
-  - "Anthropic pitch deck" → Search: "Anthropic funding rounds valuation Series B C"
-  - "review our last round" (for known company) → Search: "[company] latest funding round details"
-  - "cost analysis" (for known company) → Search: "[company] revenue expenses financials"
-- The user expects YOU to bring the data. That's what makes the tool helpful!
+**🔍 PROACTIVE RESEARCH - USE web_search AUTOMATICALLY:**
+
+When you need FACTUAL CONTENT for the presentation, SEARCH FOR IT instead of making it up:
+- Company data, financials, market info → SEARCH
+- Academic/scientific topics → SEARCH for accurate facts
+- Course content, lectures → SEARCH for real material
+- Current events, statistics → SEARCH
+
+**DEFAULT TO SEARCHING**: If you're about to write content and you're not 100% certain of the facts,
+use web_search FIRST. Don't ask the user for data you can look up yourself.
+The user expects YOU to bring accurate information - that's what makes the tool helpful!
 
 **CRITICAL: COMPLETION TRIGGERS**
 If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), or indicates they are satisfied:

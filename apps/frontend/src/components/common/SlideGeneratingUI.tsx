@@ -354,6 +354,8 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
         </svg>
       </div>
 
+
+
       {/* Progress bar - Always visible at bottom, styled like theme generation */}
       <div className="absolute bottom-4 left-4 right-4">
         <div className="flex items-center justify-between mb-2">
@@ -367,7 +369,7 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
               MozOsxFontSmoothing: 'grayscale'
             }}
           >
-            {slideNumber && totalSlides ? `🏭 Building Slide ${slideNumber}/${totalSlides}` : '🏭 Building Theme'}
+            {slideNumber && totalSlides ? `Generating Slide ${slideNumber}` : 'Generating Theme'}
           </span>
           <span 
             className="text-sm font-bold"
@@ -379,28 +381,19 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
             {Math.round(animatedProgress)}%
           </span>
         </div>
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
           <motion.div
-            className="h-2 rounded-full relative"
-            style={{ 
-              background: 'linear-gradient(90deg, #FF4301, #FF6B35, #FF4301)',
-              backgroundSize: '200% 100%',
-            }}
+            className="h-1.5 rounded-full relative"
+            style={{ backgroundColor: lineColor }}
             initial={{ width: 0 }}
-            animate={{ 
-              width: `${animatedProgress}%`,
-              backgroundPosition: ['0% 0%', '100% 0%'],
-            }}
-            transition={{ 
-              width: { duration: 0.3, ease: "easeOut" },
-              backgroundPosition: { duration: 2, repeat: Infinity, ease: 'linear' },
-            }}
+            animate={{ width: `${animatedProgress}%` }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           >
             {/* Shimmer effect on progress bar */}
             <div 
               className="absolute inset-0"
               style={{
-                background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)`,
+                background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)`,
                 animation: 'shimmer 1.5s infinite'
               }}
             />

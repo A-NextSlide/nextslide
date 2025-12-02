@@ -413,7 +413,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       } else {
         // No slides yet - we need to generate using the REAL streaming endpoint with Perplexity
         // Construct a prompt from the collected data
-        const topic = initialConversationalData.topic;
+        let topic = initialConversationalData.topic;
         const slideCount = initialConversationalData.slideCount;
         const detailLevel = initialConversationalData.detailLevel || 'standard';
         const chatHistory = initialConversationalData.chatHistory;
@@ -422,6 +422,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const uploadedMediaFromAgent = initialConversationalData.uploadedMedia || [];
 
         console.log('[ChatPanel] 📸 Uploaded media from agent:', uploadedMediaFromAgent.length, uploadedMediaFromAgent);
+
+        // If no topic, try to extract from chat history (user's first message)
+        if (!topic && chatHistory && chatHistory.length > 0) {
+          const firstUserMessage = chatHistory.find((msg: any) => msg.role === 'user');
+          if (firstUserMessage?.content) {
+            topic = firstUserMessage.content;
+            console.log('[ChatPanel] Extracted topic from chat history:', topic);
+          }
+        }
 
         // Only create a prompt if we have a valid topic
         let prompt = topic ? `Create a presentation about ${topic}.` : '';
@@ -432,6 +441,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         // If no valid prompt, don't proceed with generation
         if (!prompt.trim()) {
           console.warn('[ChatPanel] No valid topic provided, skipping generation');
+          // CRITICAL: Clear loading state to prevent frozen UI
+          if (onOutlineChatGeneratingChange) {
+            onOutlineChatGeneratingChange(false);
+          }
           return;
         }
 
@@ -3372,12 +3385,74 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           } else if (event.type === 'text') {
             fullResponse += event.content;
 
-            // Remove JSON from display
-            let displayText = fullResponse.replace(/```json\s*[\s\S]*?\s*```/g, '');
-            displayText = displayText.replace(/^json\s*$[\s\S]*?^\}$/gm, '');
-            if (displayText.includes('"action"') && displayText.includes('"slides"')) {
-              displayText = displayText.replace(/\{[\s\S]*"action"[\s\S]*\}/g, '');
-            }
+            // Remove JSON from display - use robust bracket matching
+            let displayText = fullResponse;
+
+            // Remove ```json...``` code blocks
+            displayText = displayText.replace(/```json[\s\S]*?```/g, '');
+
+            // Remove standalone JSON objects that look like our action format
+            // Use bracket counting for proper matching
+            const removeActionJson = (text: string): string => {
+              let result = '';
+              let i = 0;
+              while (i < text.length) {
+                // Look for potential JSON start
+                if (text[i] === '{') {
+                  // Check if this looks like an action JSON by peeking ahead
+                  const remaining = text.slice(i);
+                  if (remaining.includes('"action"') && (remaining.includes('"update_slides"') || remaining.includes('"updated_slides"') || remaining.includes('"slides"'))) {
+                    // Find matching closing brace using bracket counting
+                    let braceCount = 0;
+                    let j = i;
+                    let inString = false;
+                    let escapeNext = false;
+
+                    while (j < text.length) {
+                      const char = text[j];
+
+                      if (escapeNext) {
+                        escapeNext = false;
+                        j++;
+                        continue;
+                      }
+
+                      if (char === '\\' && inString) {
+                        escapeNext = true;
+                        j++;
+                        continue;
+                      }
+
+                      if (char === '"' && !escapeNext) {
+                        inString = !inString;
+                      } else if (!inString) {
+                        if (char === '{') braceCount++;
+                        else if (char === '}') {
+                          braceCount--;
+                          if (braceCount === 0) {
+                            // Found the complete JSON object - skip it
+                            i = j + 1;
+                            break;
+                          }
+                        }
+                      }
+                      j++;
+                    }
+
+                    if (braceCount !== 0) {
+                      // Incomplete JSON - skip to end (still streaming)
+                      break;
+                    }
+                    continue;
+                  }
+                }
+                result += text[i];
+                i++;
+              }
+              return result;
+            };
+
+            displayText = removeActionJson(displayText);
             displayText = displayText.trim();
 
             // Update AI message in real-time, but preserve thinking/researching states
@@ -3875,6 +3950,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           effectiveSelections,
           attachmentMeta.map(a => ({ name: a.name, type: a.mimeType, size: a.size }))
         );
+      }
+
+      // Check for insufficient credits response
+      if (data.message === '__INSUFFICIENT_CREDITS__' || data.response === '__INSUFFICIENT_CREDITS__') {
+        const creditsMessageId = `credits-${Date.now()}`;
+        setMessages(prevMessages => [
+          ...prevMessages,
+          {
+            id: creditsMessageId,
+            type: 'ai',
+            message: '',
+            timestamp: new Date(),
+            feedback: null,
+            metadata: {
+              isCreditsExhausted: true,
+              remaining: data.debug_info?.remaining || 0,
+              required: data.debug_info?.required || 1
+            }
+          }
+        ]);
+        setIsLoading(false);
+        return;
       }
 
       // Create timestamp for assistant response

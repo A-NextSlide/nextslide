@@ -225,20 +225,20 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
         </div>
       )}
 
-      {/* Play game button - small but inviting! */}
+      {/* Play game button - small, grey, left-aligned */}
       {!isComplete && !gameOpen && (
         <button
           onClick={openGame}
-          className="mt-1 py-1.5 px-3 rounded-lg text-[10px] text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 transition-all flex items-center gap-1.5 border border-purple-500/20"
+          className="mt-1 py-1 px-2 rounded text-[10px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50 transition-all flex items-center gap-1.5"
         >
-          <Gamepad2 className="w-3.5 h-3.5" />
-          <span>🏭 Visit The Slide Factory Arcade!</span>
+          <Gamepad2 className="w-3 h-3" />
+          <span>This takes a minute. Play a game?</span>
         </button>
       )}
       {gameOpen && !isComplete && (
-        <span className="mt-1 text-[10px] text-purple-500 dark:text-purple-400 flex items-center gap-1.5">
-          <Gamepad2 className="w-3 h-3 animate-pulse" />
-          🎮 Playing games in the Factory...
+        <span className="mt-1 text-[10px] text-muted-foreground/50 flex items-center gap-1.5">
+          <Gamepad2 className="w-3 h-3" />
+          Game running in slide area
         </span>
       )}
 
