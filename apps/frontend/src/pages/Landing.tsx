@@ -173,13 +173,14 @@ const Landing: React.FC = () => {
   ];
 
   const comparisonFeatures = [
+    { feature: 'AI-Powered Generation', nextslide: true, gamma: true, canva: true, beautifulai: true },
     { feature: 'Custom Component System', nextslide: true, gamma: false, canva: false, beautifulai: false },
-    { feature: 'Agentic AI Editor', nextslide: true, gamma: false, canva: false, beautifulai: false },
+    { feature: 'Agentic AI Editor', nextslide: true, gamma: 'basic', canva: false, beautifulai: false },
     { feature: 'Full Design Control', nextslide: true, gamma: 'limited', canva: true, beautifulai: 'limited' },
-    { feature: 'Advanced Charts & Data', nextslide: true, gamma: 'basic', canva: 'basic', beautifulai: 'basic' },
-    { feature: 'Interactive Components', nextslide: true, gamma: false, canva: false, beautifulai: false },
+    { feature: 'Advanced Charts & Data', nextslide: true, gamma: 'basic', canva: true, beautifulai: 'basic' },
+    { feature: 'Interactive Elements', nextslide: true, gamma: false, canva: false, beautifulai: false },
     { feature: 'Real-time Collaboration', nextslide: true, gamma: true, canva: true, beautifulai: true },
-    { feature: 'Export to PowerPoint', nextslide: true, gamma: true, canva: 'limited', beautifulai: true },
+    { feature: 'Export to PowerPoint', nextslide: true, gamma: true, canva: true, beautifulai: true },
   ];
 
   const faqs = [
@@ -574,44 +575,47 @@ const Landing: React.FC = () => {
           </div>
 
           {/* Matrix */}
-          <div className="animate-on-scroll opacity-0 rounded-2xl border-2 border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-black/50">
+          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl">
             {/* Header */}
-            <div className="grid grid-cols-5 border-b border-black/10 dark:border-white/10">
-              <div className="p-4 text-sm font-bold text-black/50 dark:text-white/50" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                FEATURES
+            <div className="grid grid-cols-5 bg-zinc-50 dark:bg-zinc-800/50">
+              <div className="p-5 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                Features
               </div>
               {competitors.map((comp, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className={cn(
-                    "p-4 text-center text-sm font-bold",
-                    comp.isUs 
-                      ? "bg-[#FF4301]/10 text-[#FF4301]" 
-                      : "text-black/60 dark:text-white/60"
+                    "p-5 text-center text-sm font-bold",
+                    comp.isUs
+                      ? "bg-[#FF4301] text-white"
+                      : "text-black/70 dark:text-white/70"
                   )}
                   style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
                 >
                   {comp.name}
-                  {comp.isUs && <span className="ml-1">★</span>}
                 </div>
               ))}
             </div>
 
             {/* Rows */}
             {comparisonFeatures.map((row, idx) => (
-              <div 
-                key={idx} 
+              <div
+                key={idx}
                 className={cn(
-                  "grid grid-cols-5",
-                  idx !== comparisonFeatures.length - 1 && "border-b border-black/5 dark:border-white/5"
+                  "grid grid-cols-5 transition-colors",
+                  idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
+                  idx !== comparisonFeatures.length - 1 && "border-b border-black/5 dark:border-white/5",
+                  "hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
                 )}
               >
-                <div className="p-4 text-sm font-medium text-black dark:text-white">
+                <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
                   {row.feature}
                 </div>
-                <div className={cn("p-4 flex items-center justify-center", "bg-[#FF4301]/5")}>
+                <div className={cn("p-4 flex items-center justify-center", "bg-[#FF4301]/10")}>
                   {row.nextslide === true ? (
-                    <Check className="w-5 h-5 text-[#FF4301]" />
+                    <div className="w-6 h-6 rounded-full bg-[#FF4301] flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
                   ) : (
                     <X className="w-5 h-5 text-black/20 dark:text-white/20" />
                   )}
@@ -620,7 +624,7 @@ const Landing: React.FC = () => {
                   {row.gamma === true ? (
                     <Check className="w-5 h-5 text-green-500" />
                   ) : row.gamma === 'limited' || row.gamma === 'basic' ? (
-                    <span className="text-xs text-black/40 dark:text-white/40 uppercase">{row.gamma}</span>
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.gamma}</span>
                   ) : (
                     <X className="w-5 h-5 text-black/20 dark:text-white/20" />
                   )}
@@ -629,7 +633,7 @@ const Landing: React.FC = () => {
                   {row.canva === true ? (
                     <Check className="w-5 h-5 text-green-500" />
                   ) : row.canva === 'limited' || row.canva === 'basic' ? (
-                    <span className="text-xs text-black/40 dark:text-white/40 uppercase">{row.canva}</span>
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.canva}</span>
                   ) : (
                     <X className="w-5 h-5 text-black/20 dark:text-white/20" />
                   )}
@@ -638,7 +642,7 @@ const Landing: React.FC = () => {
                   {row.beautifulai === true ? (
                     <Check className="w-5 h-5 text-green-500" />
                   ) : row.beautifulai === 'limited' || row.beautifulai === 'basic' ? (
-                    <span className="text-xs text-black/40 dark:text-white/40 uppercase">{row.beautifulai}</span>
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.beautifulai}</span>
                   ) : (
                     <X className="w-5 h-5 text-black/20 dark:text-white/20" />
                   )}
