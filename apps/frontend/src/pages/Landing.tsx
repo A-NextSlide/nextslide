@@ -689,12 +689,12 @@ const Landing: React.FC = () => {
                 if (isAudience) {
                   if (value === 'both') {
                     return (
-                      <div className={cn("flex items-center gap-1.5", isUs ? "text-white" : "")}>
-                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white/20" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                      <div className="flex items-center gap-1.5">
+                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
                           <Building2 className="w-3 h-3" />
                           <span>B2B</span>
                         </div>
-                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white/20" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
                           <User className="w-3 h-3" />
                           <span>B2C</span>
                         </div>
