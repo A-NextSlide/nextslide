@@ -556,6 +556,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             : el.iframeBounds,
         }));
 
+        console.log('[CustomComponentEdit] Virtual elements populated:', elements.length, elements.map(e => ({ id: e.id, type: e.type })));
         setVirtualElements(elements);
       }
 
@@ -590,17 +591,26 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   // Handle element selection - for TEXT, start editing immediately (single click)
   const handleSelectElement = useCallback((elementId: string) => {
+    console.log('[CustomComponentEdit] handleSelectElement called:', elementId);
     const element = virtualElements.find(e => e.id === elementId);
-    if (!element) return;
+    if (!element) {
+      console.log('[CustomComponentEdit] Element not found in virtualElements');
+      return;
+    }
+    console.log('[CustomComponentEdit] Element found:', element.type, element.selector);
 
     // For TEXT elements: start editing immediately on single click (like before)
     if (element.type === 'text') {
+      console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage({
           target: 'ns-custom-component-edit',
           type: 'start-text-edit',
           selector: element.selector,
         }, '*');
+        console.log('[CustomComponentEdit] Sent start-text-edit message');
+      } else {
+        console.log('[CustomComponentEdit] No iframe contentWindow!');
       }
       // No selection overlay for text - go straight to editing
       setSelectedElementId(null);

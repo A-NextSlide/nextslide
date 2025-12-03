@@ -37,7 +37,7 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
         cursor: element.type === 'text' ? 'text' : 'pointer',
         zIndex: isSelected ? 25 : 20,
         // Debug: uncomment to see hit areas
-        // backgroundColor: 'rgba(255, 0, 0, 0.1)',
+        backgroundColor: 'rgba(255, 0, 0, 0.1)',
       }}
       onClick={(e) => {
         e.stopPropagation();
