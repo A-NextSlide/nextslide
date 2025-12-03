@@ -458,44 +458,117 @@ class SerpAPIService:
         return []
 
     def _process_image_results(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Processes raw SerpAPI Google Images results into a structured format."""
+        """Processes raw SerpAPI Google Images results into a structured format.
+
+        Strategy:
+        - SerpAPI thumbnails (serpapi.com/searches/...) are ALWAYS reliable
+        - Original URLs from preferred domains (Wikipedia, Imgur) are reliable
+        - Original URLs from blocked domains (Facebook, Pinterest) will fail
+        - For blocked domains, use SerpAPI thumbnail which is cached and works
+        """
         photos = []
         images_results = data.get('images_results', [])
-        
+
+        # Domains that ALWAYS return redirects/blocks - never use original
+        BLOCKED_DOMAINS = {
+            'facebook.com', 'fbcdn.net', 'fb.com',
+            'pinterest.com', 'pinimg.com',
+            'instagram.com', 'cdninstagram.com',
+            'twitter.com', 'twimg.com', 'x.com',
+            'tiktok.com',
+            'linkedin.com',
+            'reddit.com', 'redd.it',  # Often blocks
+            'deviantart.com',  # Blocks hotlinking
+        }
+
+        # Domains known to be reliable for direct image access
+        PREFERRED_DOMAINS = {
+            'wikimedia.org', 'wikipedia.org',
+            'imgur.com', 'i.imgur.com',
+            'cloudinary.com',
+            'googleusercontent.com',
+            'ggpht.com',
+            'gstatic.com',
+            'staticflickr.com', 'flickr.com',
+            'unsplash.com', 'images.unsplash.com',
+            'pexels.com', 'images.pexels.com',
+        }
+
         for idx, image_data in enumerate(images_results):
-            # Extract image information
-            original_url = image_data.get('original')
-            thumbnail_url = image_data.get('thumbnail')
+            original_url = image_data.get('original', '')
+            # SerpAPI thumbnail - hosted on serpapi.com, ALWAYS works
+            thumbnail_url = image_data.get('thumbnail', '')
             title = image_data.get('title', 'Google Images result')
             source = image_data.get('source', 'Unknown source')
             link = image_data.get('link', '')
-            
+
             # Skip if no usable image URL
-            if not original_url:
+            if not original_url and not thumbnail_url:
                 continue
-            
+
+            # Check original URL domain
+            original_domain = ''
+            if original_url:
+                try:
+                    original_domain = urllib.parse.urlparse(original_url).netloc.lower()
+                except:
+                    pass
+
+            is_blocked = any(blocked in original_domain for blocked in BLOCKED_DOMAINS)
+            is_preferred = any(pref in original_domain for pref in PREFERRED_DOMAINS)
+            is_serpapi_thumbnail = thumbnail_url and 'serpapi.com' in thumbnail_url
+
+            # URL selection priority:
+            # 1. Preferred domain original (Wikipedia, Imgur, etc.) - high quality, reliable
+            # 2. SerpAPI cached thumbnail - always works, decent quality
+            # 3. Unknown domain original - might work, try it
+            # 4. Never use blocked domain originals
+            if is_blocked:
+                # MUST use SerpAPI thumbnail - original will fail
+                best_url = thumbnail_url if is_serpapi_thumbnail else thumbnail_url or original_url
+                logger.debug(f"Blocked domain {original_domain}, using thumbnail: {title[:40]}")
+            elif is_preferred:
+                # Use original - it's from a reliable source
+                best_url = original_url
+            elif is_serpapi_thumbnail:
+                # Unknown domain - prefer SerpAPI thumbnail for reliability
+                # Original is kept as fallback
+                best_url = original_url  # Try original first, thumbnail as backup
+            else:
+                best_url = original_url
+
             processed_photo = {
-                'id': f'serpapi_{idx}_{hash(original_url) % 10000}',
+                'id': f'serpapi_{idx}_{hash(original_url or thumbnail_url) % 10000}',
                 'photographer': source,
                 'photographer_url': link,
                 'page_url': link,
-                'url': original_url,
+                'url': best_url,
+                'original_url': original_url,
+                'thumbnail_url': thumbnail_url,  # SerpAPI cached version - ALWAYS works
                 'alt': title,
                 'width': image_data.get('original_width'),
                 'height': image_data.get('original_height'),
                 'src': {
-                    'original': original_url,
-                    'large': original_url,
+                    'original': original_url or thumbnail_url,
+                    'large': original_url or thumbnail_url,
                     'medium': thumbnail_url or original_url,
                     'small': thumbnail_url or original_url,
                     'thumbnail': thumbnail_url or original_url
                 },
                 'source': 'google_images',
-                'serpapi_data': image_data  # Keep original data for reference
+                'is_preferred_source': is_preferred,
+                'is_blocked_source': is_blocked,
+                'serpapi_data': image_data
             }
-            
+
             photos.append(processed_photo)
-        
+
+        # Sort: preferred sources first, then non-blocked, then blocked
+        photos.sort(key=lambda p: (
+            not p.get('is_preferred_source', False),  # Preferred first
+            p.get('is_blocked_source', False),  # Non-blocked before blocked
+        ))
+
         return {
             'photos': photos,
             'total_results': len(photos),
