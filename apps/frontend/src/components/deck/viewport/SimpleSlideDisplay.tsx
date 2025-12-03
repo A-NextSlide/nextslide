@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Slide from '../../Slide';
 import { SlideData } from '@/types/SlideTypes';
 import { ComponentInstance } from '@/types/components';
 import { DeckStatus } from '@/types/DeckTypes';
 import SlideGeneratingUI from '../../common/SlideGeneratingUI';
 import SelectionRectangle from '@/components/SelectionRectangle';
+import { GenerationProgressTracker, ProgressState } from '@/services/generation/GenerationProgressTracker';
 
 interface SimpleSlideDisplayProps {
   slide: SlideData | null;
@@ -33,8 +34,30 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
   containerWidth,
   containerHeight
 }) => {
+  // Track generation progress from the tracker
+  const [progressState, setProgressState] = useState<ProgressState | null>(null);
+
+  useEffect(() => {
+    const tracker = GenerationProgressTracker.getInstance();
+    const handleUpdate = (state: ProgressState) => {
+      setProgressState(state);
+    };
+    tracker.on('update', handleUpdate);
+    tracker.on('progressUpdate', handleUpdate);
+    setProgressState(tracker.getState());
+    return () => {
+      tracker.off('update', handleUpdate);
+      tracker.off('progressUpdate', handleUpdate);
+    };
+  }, []);
+
+  // Calculate slides completed and in progress from tracker state
+  const slidesCompleted = progressState?.slides?.filter(s => s.status === 'completed').length || 0;
+  const slidesInProgress = progressState?.slides?.filter(s => s.status === 'generating').length || 0;
+  const elapsedTime = progressState?.elapsedTime || 0;
+
   if (!slide) return null;
-  
+
   const isDeckGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
   const hasComponents = Array.isArray(slide.components) && slide.components.length > 0;
   
@@ -45,8 +68,11 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
         <SlideGeneratingUI
           slideNumber={slideIndex + 1}
           totalSlides={deckStatus?.totalSlides || slides.length || 6}
-          progress={deckStatus?.progress || 0}
-          message={deckStatus?.message || `Generating slide ${slideIndex + 1}`}
+          progress={progressState?.progress || deckStatus?.progress || 0}
+          message={progressState?.message || deckStatus?.message || `Generating slide ${slideIndex + 1}`}
+          slidesCompleted={slidesCompleted}
+          slidesInProgress={slidesInProgress}
+          elapsedTime={elapsedTime}
         />
       );
     }
@@ -95,8 +121,11 @@ const SimpleSlideDisplay: React.FC<SimpleSlideDisplayProps> = ({
     <SlideGeneratingUI
       slideNumber={slideIndex + 1}
       totalSlides={slides.length || 6}
-      progress={0}
+      progress={progressState?.progress || 0}
       message="Preparing slide"
+      slidesCompleted={slidesCompleted}
+      slidesInProgress={slidesInProgress}
+      elapsedTime={elapsedTime}
     />
   );
 };
