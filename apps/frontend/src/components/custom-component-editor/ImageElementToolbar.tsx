@@ -146,11 +146,15 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
       initial={{ opacity: 0, x: -10, scale: 0.95 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: -10, scale: 0.95 }}
+      // CRITICAL: Stop all events from bubbling to ElementHitArea
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: position.top,
         left: position.left,
-        zIndex: 9999
+        zIndex: 10001 // Higher than ElementHitArea's max z-index (10000)
       }}
       className="w-[320px] bg-white rounded-xl border shadow-2xl overflow-hidden"
     >
@@ -229,32 +233,40 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
         {activeTab === 'swap' && (
           <>
             {/* MediaHub - Primary action */}
-            <MediaHub
-              trigger={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-9 text-xs font-medium bg-white hover:bg-orange-50"
-                  style={{
-                    borderColor: BRAND_ORANGE,
-                    borderWidth: '2px',
-                    color: BRAND_ORANGE
-                  }}
-                >
-                  <ImageIcon size={14} className="mr-2" />
-                  Browse Images
-                </Button>
-              }
-              onSelect={(url) => {
-                if (url && typeof url === 'string') {
-                  onSwap(url);
-                  toast({ title: 'Image updated', description: 'Image has been replaced.' });
-                  onClose();
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <MediaHub
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-9 text-xs font-medium bg-white hover:bg-orange-50"
+                    style={{
+                      borderColor: BRAND_ORANGE,
+                      borderWidth: '2px',
+                      color: BRAND_ORANGE
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ImageIcon size={14} className="mr-2" />
+                    Browse Images
+                  </Button>
                 }
-              }}
-              defaultSearchTerm={element.alt || undefined}
-              autoSearch={!!element.alt}
-            />
+                onSelect={(url) => {
+                  if (url && typeof url === 'string') {
+                    onSwap(url);
+                    toast({ title: 'Image updated', description: 'Image has been replaced.' });
+                    onClose();
+                  }
+                }}
+                defaultSearchTerm={element.alt || undefined}
+                autoSearch={!!element.alt}
+              />
+            </div>
 
             {/* Upload */}
             <input

@@ -2130,7 +2130,7 @@ export const CustomComponentRenderer: React.FC<{
   const handleImageSwap = useCallback((element: DetectedElement, newImageUrl: string) => {
     if (!stableIframeSrcDoc || !element.src) return;
 
-    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
+    console.log('[CustomComponent] Image swap:', { oldSrc: element.src?.slice(0, 50), newSrc: newImageUrl?.slice(0, 50) });
 
     // Replace the old image src with the new one
     let updatedHtml = stableIframeSrcDoc;
@@ -2143,28 +2143,42 @@ export const CustomComponentRenderer: React.FC<{
     updatedHtml = updatedHtml.replace(pattern, `src="${newImageUrl}"`);
 
     if (updatedHtml !== stableIframeSrcDoc) {
+      // FIRST: Update the iframe directly so user sees immediate feedback
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'update-image',
+          elementId: element.id,
+          newSrc: newImageUrl
+        }, '*');
+        console.log('[CustomComponent] Sent update-image to iframe');
+      }
+
+      // THEN: Update the component state
       updateComponent(component.id, {
         props: {
           ...component.props,
           render: updatedHtml
         }
       });
-      DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Updated HTML with new image');
+      console.log('[CustomComponent] Updated HTML with new image');
 
       // CRITICAL: Immediately persist changes to backend
       setTimeout(() => {
         try {
           useEditorStore.getState().applyDraftChanges();
-          DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted image changes to backend');
+          console.log('[CustomComponent] Persisted image changes to backend');
         } catch (e) {
           console.error('[CustomComponent] Failed to persist image changes:', e);
         }
       }, 300);
+    } else {
+      console.warn('[CustomComponent] HTML replacement failed - old URL not found in HTML');
     }
 
     setSelectedElement(null);
     setShowImageToolbar(false);
-  }, [stableIframeSrcDoc, updateComponent, component.id, component.props]);
+  }, [stableIframeSrcDoc, updateComponent, component.id, component.props, iframeRef]);
 
   // Handler for AI-based element editing - dispatches to main chat panel
   const handleElementAiEdit = useCallback((element: DetectedElement, instruction: string) => {

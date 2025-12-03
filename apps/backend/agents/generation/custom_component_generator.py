@@ -955,7 +955,7 @@ class CustomComponentGenerator:
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} / {body_font}
-IMAGES: props.image1, props.image2 → const img = props.image1 || '';{logo_info}"""
+IMAGES: Use the EXACT URLs provided in the user prompt. NEVER use unsplash.com, pexels.com, or any stock photo URLs.{logo_info}"""
 
         if slide_mode == 'static':
             # Traditional PPT - beautiful, clean, professional (no interactivity)
@@ -1175,24 +1175,30 @@ USER UPLOADS:
 """
 
         # Build prefetched images section - these are REAL URLs we've already fetched!
+        # CRITICAL: Tell the AI the ACTUAL URLS to use, not props.imageX placeholders
         prefetched_images_section = ""
         if prefetched_images and len(prefetched_images) > 0:
             # Filter to just the image props (not the _query hints)
             image_props = {k: v for k, v in prefetched_images.items() if not k.endswith('_query')}
 
             if image_props:
-                # Build list with descriptions
+                # Build list with ACTUAL URLs - don't use props, use direct URLs!
                 image_lines = []
                 for prop_name in sorted(image_props.keys()):
+                    url = image_props[prop_name]
                     query = prefetched_images.get(f"{prop_name}_query", "image")
-                    image_lines.append(f"  ✓ {prop_name} - shows: {query}")
+                    # Show shortened URL and description
+                    short_url = url[:80] + '...' if len(url) > 80 else url
+                    image_lines.append(f"  ✓ {query}: {short_url}")
 
                 image_list = "\n".join(image_lines)
-                prop_names = list(image_props.keys())
 
                 prefetched_images_section = f"""
-IMAGES AVAILABLE (use props.image1, props.image2, etc.):
+🖼️ USE THESE EXACT IMAGE URLS (already hosted on our servers):
 {image_list}
+
+IMPORTANT: Use these URLs DIRECTLY in src attributes. Do NOT use placeholder URLs like unsplash.com or pexels.com.
+Example: <img src="https://auth.nextslide.ai/storage/v1/..." alt="Description">
 """
 
         # Build logo section if logo URL is available
@@ -1602,6 +1608,7 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         from services.image_storage_service import ImageStorageService
 
         if not html:
+            logger.warning("[BUCKET_UPLOAD] No HTML provided")
             return html
 
         # Our bucket domains - URLs from these should NOT be re-uploaded
@@ -1610,18 +1617,24 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         def is_our_url(url: str) -> bool:
             return any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS)
 
-        # Find all external image URLs in img tags
-        img_url_pattern = r'<img\s+([^>]*?)src=["\']+(https?://[^\s"\'>]+)["\']([^>]*)>'
-        matches = list(re.finditer(img_url_pattern, html, flags=re.IGNORECASE))
+        # Find all external image URLs in img tags - simpler, more robust pattern
+        # Match: <img ... src="URL" ...> or <img ... src='URL' ...>
+        img_pattern = r'<img\s+[^>]*?src=(["\'])(https?://[^"\']+)\1[^>]*>'
+        matches = list(re.finditer(img_pattern, html, flags=re.IGNORECASE))
+
+        logger.info(f"[BUCKET_UPLOAD] Scanning HTML ({len(html)} chars), found {len(matches)} img tags with http(s) URLs")
+        print(f"[BUCKET_UPLOAD] 🔍 Found {len(matches)} img tags with URLs")
 
         external_urls = []
         for match in matches:
             url = match.group(2)
             if not is_our_url(url) and not url.startswith('data:'):
                 external_urls.append((match, url))
+                logger.info(f"[BUCKET_UPLOAD] External URL found: {url[:70]}...")
 
         if not external_urls:
             logger.debug("[BUCKET_UPLOAD] No external URLs to upload")
+            print("[BUCKET_UPLOAD] ✅ No external URLs found - all images already using bucket URLs")
             return html
 
         logger.info(f"[BUCKET_UPLOAD] Found {len(external_urls)} external URLs to upload")
@@ -1631,34 +1644,38 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         result = html
         uploaded_count = 0
 
-        async with ImageStorageService() as storage:
-            for match, external_url in external_urls:
-                try:
-                    # Upload to our bucket
-                    upload_result = await storage.upload_image_from_url(external_url)
+        try:
+            async with ImageStorageService() as storage:
+                for match, external_url in external_urls:
+                    try:
+                        logger.info(f"[BUCKET_UPLOAD] Uploading: {external_url[:70]}...")
+                        # Upload to our bucket
+                        upload_result = await storage.upload_image_from_url(external_url)
 
-                    if 'error' not in upload_result and upload_result.get('url'):
-                        bucket_url = upload_result['url']
+                        if 'error' not in upload_result and upload_result.get('url'):
+                            bucket_url = upload_result['url']
 
-                        # Build replacement string
-                        before = match.group(1)
-                        after = match.group(3)
-                        old_tag = match.group(0)
-                        new_tag = f'<img {before}src="{bucket_url}"{after}>'
+                            # Simply replace the URL in the matched img tag
+                            old_tag = match.group(0)
+                            new_tag = old_tag.replace(external_url, bucket_url)
 
-                        # Replace in result
-                        result = result.replace(old_tag, new_tag, 1)
-                        uploaded_count += 1
+                            # Replace in result
+                            result = result.replace(old_tag, new_tag, 1)
+                            uploaded_count += 1
 
-                        logger.info(f"[BUCKET_UPLOAD] ✅ Uploaded: {external_url[:40]}... -> {bucket_url[:40]}...")
-                        print(f"[BUCKET_UPLOAD] ✅ {external_url[:30]}... -> bucket")
-                    else:
-                        logger.warning(f"[BUCKET_UPLOAD] Failed to upload: {external_url[:50]}...")
-                        print(f"[BUCKET_UPLOAD] ⚠️ Failed: {external_url[:30]}...")
+                            logger.info(f"[BUCKET_UPLOAD] ✅ Uploaded: {external_url[:40]}... -> {bucket_url[:40]}...")
+                            print(f"[BUCKET_UPLOAD] ✅ {external_url[:30]}... -> bucket")
+                        else:
+                            error_msg = upload_result.get('error', 'Unknown error')
+                            logger.warning(f"[BUCKET_UPLOAD] Failed to upload: {external_url[:50]}... - {error_msg}")
+                            print(f"[BUCKET_UPLOAD] ⚠️ Failed: {external_url[:30]}... - {error_msg}")
 
-                except Exception as e:
-                    logger.error(f"[BUCKET_UPLOAD] Exception uploading {external_url[:50]}: {e}")
-                    print(f"[BUCKET_UPLOAD] ❌ Error: {external_url[:30]}... - {e}")
+                    except Exception as e:
+                        logger.error(f"[BUCKET_UPLOAD] Exception uploading {external_url[:50]}: {e}", exc_info=True)
+                        print(f"[BUCKET_UPLOAD] ❌ Error: {external_url[:30]}... - {e}")
+        except Exception as e:
+            logger.error(f"[BUCKET_UPLOAD] Failed to create ImageStorageService: {e}", exc_info=True)
+            print(f"[BUCKET_UPLOAD] ❌ Storage service error: {e}")
 
         # Also handle background-image URLs
         bg_url_pattern = r'(background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\))'
