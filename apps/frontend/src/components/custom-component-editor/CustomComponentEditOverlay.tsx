@@ -1,9 +1,27 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUp, X, Image as ImageIcon, Type, Layout } from 'lucide-react';
+/**
+ * CustomComponentEditOverlay - Full slide-level editing for custom components
+ *
+ * This component provides a complete editing experience for elements inside
+ * custom components, including:
+ * - Element selection with pink borders (matching slide level)
+ * - Drag with zero-lag CSS variables
+ * - Resize with 8-direction handles
+ * - Inline text editing via iframe contentEditable
+ *
+ * Parent component (CustomComponentRenderer) handles the UI for element selection.
+ */
 
-// Types for detected elements
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+
+import { VirtualElement, Bounds } from './types';
+import { CoordinateTranslator, createCoordinateTranslator } from './coordinateTranslator';
+import { ElementHitArea } from './ElementHitArea';
+import { ElementSelectionOverlay } from './ElementSelectionOverlay';
+import { useElementDrag } from './useElementDrag';
+import { useElementResize } from './useElementResize';
+
+// Legacy DetectedElement type for backwards compatibility
 export interface DetectedElement {
   id: string;
   type: 'text' | 'image' | 'container' | 'other';
@@ -22,70 +40,42 @@ interface CustomComponentEditOverlayProps {
   isSelected: boolean;
   srcDoc: string;
   scale: number;
+  containerWidth: number;
+  containerHeight: number;
   onHtmlUpdate: (newHtml: string) => void;
-  onImageSelect: (element: DetectedElement) => void;
+  onElementSelect: (element: DetectedElement | null) => void;
+  iframeRef?: React.RefObject<HTMLIFrameElement>;
 }
 
-// Brand colors
-const BRAND_ORANGE = '#FF4301';
-
 /**
- * Generate the edit mode script to inject into the iframe
- * This script handles:
- * - Hover outlines on elements
- * - Click detection and element selection
- * - Text editing in place
- * - Container/section selection
- * - Communication with parent via postMessage
+ * Generate the enhanced edit mode script for the iframe
+ * Now includes: full layout extraction, style mutation handlers, hide/show
  */
 export function generateEditModeScript(componentId: string): string {
   return `
-<!-- NEXTSLIDE EDIT MODE -->
+<!-- NEXTSLIDE EDIT MODE V2 -->
 <style id="ns-edit-mode-styles">
-  /* Text elements - show text cursor */
-  .ns-editable-text {
-    cursor: text !important;
-    transition: outline 0.15s ease !important;
-  }
-
-  /* Image elements - show pointer */
-  .ns-editable-image {
-    cursor: pointer !important;
-    transition: outline 0.15s ease !important;
-  }
-
-  /* Container elements - show pointer */
-  .ns-editable-container {
-    cursor: pointer !important;
-    transition: outline 0.15s ease !important;
-  }
-
-  /* Hover effects - subtle */
+  /* Hover effects - subtle blue outline */
   .ns-editable-text:hover,
   .ns-editable-image:hover,
   .ns-editable-container:hover {
-    outline: 2px solid rgba(255, 67, 1, 0.5) !important;
+    outline: 2px solid rgba(0, 123, 255, 0.3) !important;
     outline-offset: 2px !important;
   }
 
-  /* Selected state */
+  /* Selected state - handled by overlay now, keep subtle */
   .ns-editable-text.ns-selected,
   .ns-editable-image.ns-selected,
   .ns-editable-container.ns-selected {
-    outline: 2px solid #FF4301 !important;
-    outline-offset: 2px !important;
+    outline: none !important;
   }
 
-  /* Text being actively edited */
-  .ns-text-editing {
-    outline: 2px solid #FF4301 !important;
-    outline-offset: 2px !important;
-    background-color: rgba(255, 255, 255, 0.95) !important;
-    min-width: 50px !important;
-    cursor: text !important;
+  /* Hidden state for overlay editing */
+  .ns-hidden-for-edit {
+    visibility: hidden !important;
   }
 
-  /* Image loading placeholder */
+  /* Image loading shimmer */
   .ns-image-loading {
     position: relative !important;
     background: linear-gradient(135deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%) !important;
@@ -96,38 +86,103 @@ export function generateEditModeScript(componentId: string): string {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
+
+  /* Disable pointer events in edit mode - overlay handles interactions */
+  body.ns-overlay-mode * {
+    pointer-events: none !important;
+  }
+  body.ns-overlay-mode {
+    pointer-events: auto !important;
+  }
 </style>
 <script>
 (function() {
   const COMPONENT_ID = '${componentId}';
-  let selectedElement = null;
-  let isTextEditing = false;
+  let overlayMode = false;
 
-  // Mark text elements as editable (no badges or overlays - keep it clean)
+  // Detect positioning strategy
+  function detectPositioningStrategy(el, style) {
+    if (style.position === 'absolute' || style.position === 'fixed') return 'absolute';
+    if (el.parentElement) {
+      const parentStyle = getComputedStyle(el.parentElement);
+      if (parentStyle.display === 'flex') return 'flex-item';
+      if (parentStyle.display === 'grid') return 'grid-item';
+    }
+    if (style.position === 'relative') return 'relative';
+    return 'static';
+  }
+
+  // Extract full element layout
+  function extractElementLayout(el, type) {
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    const strategy = detectPositioningStrategy(el, style);
+
+    return {
+      id: el.dataset.nsId,
+      type: type,
+      tagName: el.tagName.toLowerCase(),
+      iframeBounds: {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+      },
+      bounds: {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+      },
+      positioningStrategy: strategy,
+      computedStyle: {
+        position: style.position,
+        top: style.top,
+        left: style.left,
+        right: style.right,
+        bottom: style.bottom,
+        width: style.width,
+        height: style.height,
+        transform: style.transform,
+        margin: style.margin,
+        fontSize: style.fontSize,
+        fontFamily: style.fontFamily,
+        fontWeight: style.fontWeight,
+        color: style.color,
+        textAlign: style.textAlign,
+        lineHeight: style.lineHeight,
+        letterSpacing: style.letterSpacing
+      },
+      textContent: el.textContent?.trim().slice(0, 500),
+      htmlContent: el.innerHTML,
+      src: el.src,
+      alt: el.alt,
+      selector: '[data-ns-id="' + el.dataset.nsId + '"]',
+      // All elements can be dragged - styleMutator handles positioning strategy appropriately
+      // For flex/grid items, only resize will take effect (position determined by layout)
+      isDraggable: true,
+      isResizable: true
+    };
+  }
+
+  // Mark elements as editable
   let setupRan = false;
   function setupEditableElements() {
-    // Only run once per iframe load
     if (setupRan) return;
     setupRan = true;
 
-    // Text elements - only process leaf elements with direct text
+    // Text elements
     const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button';
     document.querySelectorAll(textSelectors).forEach((el, index) => {
-      // Skip if already processed
       if (el.dataset.nsId) return;
-
-      // Only get direct text nodes (not from children)
       const directText = Array.from(el.childNodes)
         .filter(node => node.nodeType === Node.TEXT_NODE)
         .map(node => node.textContent || '')
         .join('')
         .trim();
-
-      // Only mark as editable if it has meaningful text
       if (directText && directText.length > 1) {
-        el.classList.add('ns-editable-text');
         el.dataset.nsId = 'text-' + index;
-        el.dataset.nsOriginal = directText;
+        el.classList.add('ns-editable-text');
       }
     });
 
@@ -135,57 +190,43 @@ export function generateEditModeScript(componentId: string): string {
     document.querySelectorAll('img').forEach((img, index) => {
       if (img.dataset.nsId) return;
       if (img.width < 30 || img.height < 30) return;
-
-      img.classList.add('ns-editable-image');
       img.dataset.nsId = 'img-' + index;
+      img.classList.add('ns-editable-image');
     });
 
-    // Container/section elements - larger structural elements
-    const containerSelectors = 'section, article, header, footer, main, aside, nav, div[class], div[id], ul, ol, table, figure, blockquote, form, fieldset, details, card, .card, [class*="card"], [class*="section"], [class*="container"], [class*="wrapper"], [class*="box"], [class*="panel"]';
+    // Container elements
+    const containerSelectors = 'section, article, header, footer, main, aside, nav, div[class], div[id], ul, ol, figure, blockquote, [class*="card"], [class*="section"], [class*="container"]';
     let containerIndex = 0;
     document.querySelectorAll(containerSelectors).forEach((el) => {
-      // Skip if already processed or is text/image
       if (el.dataset.nsId) return;
       if (el.classList.contains('ns-editable-text')) return;
-      if (el.classList.contains('ns-editable-image')) return;
-      // Skip tiny containers
       const rect = el.getBoundingClientRect();
       if (rect.width < 80 || rect.height < 40) return;
-      // Skip full-page containers
       if (rect.width >= window.innerWidth * 0.95 && rect.height >= window.innerHeight * 0.95) return;
-
-      el.classList.add('ns-editable-container');
       el.dataset.nsId = 'container-' + containerIndex++;
-      el.dataset.nsType = el.tagName.toLowerCase();
-      // Store class name for better labeling
-      if (el.className) {
-        const classList = el.className.split(' ').filter(c => c && !c.startsWith('ns-'))[0];
-        if (classList) el.dataset.nsClass = classList;
-      }
-    });
-
-    // Icons and SVGs - make them clickable for replacement
-    document.querySelectorAll('svg, i[class*="icon"], i[class*="fa-"], span[class*="icon"]').forEach((el, index) => {
-      if (el.dataset.nsId) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 12 || rect.height < 12) return;
-      if (rect.width > 200 || rect.height > 200) return; // Skip large decorative SVGs
-
       el.classList.add('ns-editable-container');
-      el.dataset.nsId = 'icon-' + index;
-      el.dataset.nsType = 'icon';
     });
   }
 
-  // Get element bounds relative to viewport
-  function getElementBounds(el) {
-    const rect = el.getBoundingClientRect();
-    return {
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height
-    };
+  // Extract all elements
+  function extractAllElements() {
+    const elements = [];
+
+    document.querySelectorAll('.ns-editable-text').forEach(el => {
+      elements.push(extractElementLayout(el, 'text'));
+    });
+
+    document.querySelectorAll('.ns-editable-image').forEach(el => {
+      elements.push(extractElementLayout(el, 'image'));
+    });
+
+    document.querySelectorAll('.ns-editable-container').forEach(el => {
+      if (!el.classList.contains('ns-editable-text') && !el.classList.contains('ns-editable-image')) {
+        elements.push(extractElementLayout(el, 'container'));
+      }
+    });
+
+    return elements;
   }
 
   // Send message to parent
@@ -198,257 +239,59 @@ export function generateEditModeScript(componentId: string): string {
     }, '*');
   }
 
-  // Handle text element click
-  function handleTextClick(el, e) {
-    // If already editing this element, let normal click behavior position cursor
-    if (selectedElement === el && isTextEditing) {
-      // Don't prevent default - let the click position the cursor naturally
-      return;
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Deselect previous element if different
-    if (selectedElement && selectedElement !== el) {
-      selectedElement.classList.remove('ns-selected');
-      if (isTextEditing) {
-        finishTextEdit(selectedElement);
-      }
-    }
-
-    selectedElement = el;
-    el.classList.add('ns-selected');
-
-    // Enter text edit mode
-    isTextEditing = true;
-    el.classList.add('ns-text-editing');
-    el.contentEditable = 'true';
-    el.focus();
-
-    // Position cursor at click location instead of selecting all
-    // Get click position relative to element
-    const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    if (range) {
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    sendToParent('element-selected', {
-      element: {
-        id: el.dataset.nsId,
-        type: 'text',
-        tagName: el.tagName.toLowerCase(),
-        content: el.dataset.nsOriginal || el.textContent,
-        bounds: getElementBounds(el)
-      }
-    });
-  }
-
-  // Handle image element click
-  function handleImageClick(el, e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Find the actual img element
-    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
-    if (!img) return;
-
-    // Deselect previous
-    if (selectedElement) {
-      selectedElement.classList.remove('ns-selected');
-      if (isTextEditing) {
-        finishTextEdit(selectedElement);
-      }
-    }
-
-    selectedElement = img;
-    img.classList.add('ns-selected');
-    isTextEditing = false;
-
-    // Send image-selected event (different from element-selected)
-    // This triggers the image settings editor in parent
-    sendToParent('image-selected', {
-      element: {
-        id: img.dataset.nsId,
-        type: 'image',
-        tagName: 'img',
-        src: img.src,
-        alt: img.alt || '',
-        bounds: getElementBounds(img)
-      }
-    });
-  }
-
-  // Handle container element click
-  function handleContainerClick(el, e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Check if container has exactly one image inside - if so, treat as image click
-    var imagesInside = el.querySelectorAll('img');
-    if (imagesInside.length === 1) {
-      var singleImg = imagesInside[0];
-      // Make sure the image is reasonably sized (not a tiny icon)
-      var imgRect = singleImg.getBoundingClientRect();
-      if (imgRect.width > 40 && imgRect.height > 40) {
-        // Treat this as an image click
-        if (!singleImg.classList.contains('ns-editable-image')) {
-          singleImg.classList.add('ns-editable-image');
-          singleImg.dataset.nsId = singleImg.dataset.nsId || 'img-in-container';
-        }
-        handleImageClick(singleImg, e);
-        return;
-      }
-    }
-
-    // Deselect previous
-    if (selectedElement) {
-      selectedElement.classList.remove('ns-selected');
-      if (isTextEditing) {
-        finishTextEdit(selectedElement);
-      }
-    }
-
-    selectedElement = el;
-    el.classList.add('ns-selected');
-    isTextEditing = false;
-
-    // Get text content preview
-    const textContent = el.innerText || '';
-    const preview = textContent.trim().slice(0, 100);
-
-    // Get a nice label for the element
-    let label = el.dataset.nsType || el.tagName.toLowerCase();
-    if (el.dataset.nsClass) {
-      label = el.dataset.nsClass;
-    }
-    if (el.dataset.nsType === 'icon') {
-      label = 'Icon';
-    }
-
-    sendToParent('container-selected', {
-      element: {
-        id: el.dataset.nsId,
-        type: 'container',
-        tagName: label,
-        content: preview,
-        bounds: getElementBounds(el)
-      }
-    });
-  }
-
-  // Finish text editing
-  function finishTextEdit(el) {
-    if (!el || !isTextEditing) return;
-
-    el.classList.remove('ns-text-editing');
-    el.contentEditable = 'false';
-    isTextEditing = false;
-
-    const newText = el.textContent?.trim();
-    const originalText = el.dataset.nsOriginal;
-
-    if (newText && newText !== originalText) {
-      el.dataset.nsOriginal = newText;
-      sendToParent('text-changed', {
-        elementId: el.dataset.nsId,
-        oldText: originalText,
-        newText: newText
-      });
-    }
-  }
-
-  // Single click - select element and start editing immediately
-  document.addEventListener('click', function(e) {
-    const target = e.target;
-
-    // Check if clicked directly on an image (HIGHEST priority - even inside containers)
-    if (target.tagName === 'IMG') {
-      if (target.classList.contains('ns-editable-image')) {
-        handleImageClick(target, e);
-        return;
-      }
-      // Even if not marked editable, treat images as clickable
-      target.classList.add('ns-editable-image');
-      target.dataset.nsId = target.dataset.nsId || 'img-dynamic';
-      handleImageClick(target, e);
-      return;
-    }
-
-    // Check for editable image wrapper
-    const imgEl = target.closest('.ns-editable-image');
-    if (imgEl) {
-      handleImageClick(imgEl, e);
-      return;
-    }
-
-    // Check for editable text
-    const textEl = target.closest('.ns-editable-text');
-    if (textEl) {
-      handleTextClick(textEl, e);
-      return;
-    }
-
-    // Check for editable container (lower priority than text/image)
-    const containerEl = target.closest('.ns-editable-container');
-    if (containerEl) {
-      handleContainerClick(containerEl, e);
-      return;
-    }
-
-    // Notify parent that component was clicked (for any other click)
-    sendToParent('component-clicked', {});
-
-    // DON'T auto-deselect - let the parent handle deselection via toolbar close button
-    // This prevents the toolbar from disappearing when clicking on it (since it's outside iframe)
-  });
-
-  // Handle blur for text editing - only finish editing, don't deselect
-  // (deselection is handled by clicking outside or pressing Escape)
-  document.addEventListener('focusout', function(e) {
-    if (isTextEditing && selectedElement) {
-      // Delay to allow click handling on parent toolbar
-      setTimeout(() => {
-        if (isTextEditing && selectedElement) {
-          // Only finish the text editing, keep element selected
-          finishTextEdit(selectedElement);
-          // Keep ns-selected class so outline stays visible
-        }
-      }, 300);
-    }
-  });
-
-  // Handle Enter key to finish editing
-  document.addEventListener('keydown', function(e) {
-    if (isTextEditing && e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (selectedElement) {
-        finishTextEdit(selectedElement);
-        selectedElement.classList.remove('ns-selected');
-        selectedElement = null;
-      }
-    }
-    if (e.key === 'Escape') {
-      if (selectedElement) {
-        // Restore original text
-        if (isTextEditing) {
-          selectedElement.textContent = selectedElement.dataset.nsOriginal;
-          selectedElement.classList.remove('ns-text-editing');
-          selectedElement.contentEditable = 'false';
-          isTextEditing = false;
-        }
-        selectedElement.classList.remove('ns-selected');
-        selectedElement = null;
-      }
-    }
-  });
-
   // Listen for messages from parent
   window.addEventListener('message', function(e) {
     if (e.data?.target !== 'ns-custom-component-edit') return;
 
+    // Extract all elements request
+    if (e.data.type === 'extract-elements') {
+      const elements = extractAllElements();
+      sendToParent('elements-extracted', { elements: elements });
+    }
+
+    // Apply style mutation
+    if (e.data.type === 'apply-style-mutation') {
+      const el = document.querySelector(e.data.selector);
+      if (el && e.data.styles) {
+        Object.keys(e.data.styles).forEach(key => {
+          el.style[key] = e.data.styles[key];
+        });
+      }
+    }
+
+    // Hide element for overlay editing
+    if (e.data.type === 'hide-element') {
+      const el = document.querySelector(e.data.selector);
+      if (el) {
+        el.classList.add('ns-hidden-for-edit');
+      }
+    }
+
+    // Show element after overlay editing
+    if (e.data.type === 'show-element') {
+      const el = document.querySelector(e.data.selector);
+      if (el) {
+        el.classList.remove('ns-hidden-for-edit');
+      }
+    }
+
+    // Update element HTML content
+    if (e.data.type === 'update-element-html') {
+      const el = document.querySelector(e.data.selector);
+      if (el && e.data.html) {
+        el.innerHTML = e.data.html;
+      }
+    }
+
+    // Update element text content
+    if (e.data.type === 'update-text') {
+      const el = document.querySelector('[data-ns-id="' + e.data.elementId + '"]');
+      if (el) {
+        el.textContent = e.data.newText;
+      }
+    }
+
+    // Update image
     if (e.data.type === 'update-image') {
       const img = document.querySelector('img[data-ns-id="' + e.data.elementId + '"]');
       if (img) {
@@ -457,76 +300,12 @@ export function generateEditModeScript(componentId: string): string {
       }
     }
 
-    if (e.data.type === 'update-text') {
-      const el = document.querySelector('[data-ns-id="' + e.data.elementId + '"]');
-      if (el) {
-        el.textContent = e.data.newText;
-        el.dataset.nsOriginal = e.data.newText;
-        sendToParent('text-updated', { elementId: e.data.elementId, newText: e.data.newText });
-      }
-    }
-
-    if (e.data.type === 'deselect') {
-      if (selectedElement) {
-        selectedElement.classList.remove('ns-selected');
-        if (isTextEditing) {
-          finishTextEdit(selectedElement);
-        }
-        selectedElement = null;
-      }
-    }
-
-    // Handle trigger-element-select from parent (when user double-clicks overlay)
-    if (e.data.type === 'trigger-element-select') {
-      const x = e.data.x;
-      const y = e.data.y;
-
-      // Find element at the clicked position
-      const elementsAtPoint = document.elementsFromPoint(x, y);
-
-      // First pass: check for images (highest priority)
-      for (const el of elementsAtPoint) {
-        if (el.tagName === 'IMG') {
-          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
-          if (!el.classList.contains('ns-editable-image')) {
-            el.classList.add('ns-editable-image');
-            el.dataset.nsId = el.dataset.nsId || 'img-dynamic';
-          }
-          handleImageClick(el, fakeEvent);
-          return;
-        }
-        if (el.classList.contains('ns-editable-image')) {
-          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
-          handleImageClick(el, fakeEvent);
-          return;
-        }
-      }
-
-      // Second pass: check for text and containers
-      for (const el of elementsAtPoint) {
-        if (el.classList.contains('ns-editable-text')) {
-          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
-          handleTextClick(el, fakeEvent);
-          return;
-        }
-
-        if (el.classList.contains('ns-editable-container')) {
-          const fakeEvent = { preventDefault: function(){}, stopPropagation: function(){} };
-          handleContainerClick(el, fakeEvent);
-          return;
-        }
-      }
-    }
-
-    // Handle image update with loading state
+    // Update image with loading state
     if (e.data.type === 'update-image-with-placeholder') {
       const img = document.querySelector('img[data-ns-id="' + e.data.elementId + '"]');
       if (img) {
-        // Add loading class
         img.classList.add('ns-image-loading');
-        // Set the new src - browser will load it
         img.src = e.data.newSrc;
-        // Remove loading class when loaded
         img.onload = function() {
           img.classList.remove('ns-image-loading');
           sendToParent('image-loaded', { elementId: e.data.elementId, newSrc: e.data.newSrc });
@@ -536,9 +315,71 @@ export function generateEditModeScript(componentId: string): string {
         };
       }
     }
+
+    // Start text editing with contentEditable
+    if (e.data.type === 'start-text-edit') {
+      const el = document.querySelector(e.data.selector);
+      if (el) {
+        el.contentEditable = 'true';
+        el.focus();
+        el.classList.add('ns-editing-text');
+
+        // Select all text
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Handle blur to end editing
+        const handleBlur = function() {
+          el.contentEditable = 'false';
+          el.classList.remove('ns-editing-text');
+          el.removeEventListener('blur', handleBlur);
+
+          // Notify parent of text change
+          sendToParent('text-changed', {
+            elementId: el.dataset.nsId,
+            selector: e.data.selector,
+            newText: el.textContent,
+            newHtml: el.innerHTML
+          });
+        };
+        el.addEventListener('blur', handleBlur);
+
+        // Handle Enter to end editing (but Shift+Enter for newline)
+        el.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Enter' && !ev.shiftKey) {
+            ev.preventDefault();
+            el.blur();
+          }
+          if (ev.key === 'Escape') {
+            ev.preventDefault();
+            el.blur();
+          }
+        });
+      }
+    }
+
+    // Enable/disable overlay mode
+    if (e.data.type === 'set-overlay-mode') {
+      overlayMode = e.data.enabled;
+      if (overlayMode) {
+        document.body.classList.add('ns-overlay-mode');
+      } else {
+        document.body.classList.remove('ns-overlay-mode');
+      }
+    }
+
+    // Deselect all
+    if (e.data.type === 'deselect') {
+      document.querySelectorAll('.ns-selected').forEach(el => {
+        el.classList.remove('ns-selected');
+      });
+    }
   });
 
-  // Initialize on load - only once
+  // Initialize
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
       setupEditableElements();
@@ -560,7 +401,6 @@ export function injectEditMode(html: string, componentId: string): string {
 
   const editScript = generateEditModeScript(componentId);
 
-  // Inject before </body> or at end
   if (html.includes('</body>')) {
     return html.replace('</body>', editScript + '</body>');
   } else if (html.includes('</html>')) {
@@ -571,10 +411,70 @@ export function injectEditMode(html: string, componentId: string): string {
 }
 
 /**
- * CustomComponentEditOverlay
- *
- * Renders a sleek floating chat input for editing custom components.
- * Design inspired by modern AI-assisted editing interfaces.
+ * Convert VirtualElement to DetectedElement for backwards compatibility
+ */
+function toDetectedElement(ve: VirtualElement): DetectedElement {
+  return {
+    id: ve.id,
+    type: ve.type === 'icon' || ve.type === 'shape' ? 'other' : ve.type,
+    tagName: ve.tagName,
+    bounds: ve.bounds,
+    content: ve.textContent,
+    src: ve.src,
+    alt: ve.alt,
+    selector: ve.selector,
+  };
+}
+
+/**
+ * Inner component that uses the drag/resize hooks
+ */
+const ElementInteractionLayer: React.FC<{
+  element: VirtualElement;
+  coordinator: CoordinateTranslator;
+  iframeRef: React.RefObject<HTMLIFrameElement>;
+  onPositionChange: (bounds: Bounds, styles: Record<string, string>) => void;
+  onDragEnd: (bounds: Bounds, styles: Record<string, string>) => void;
+  onResizeChange: (bounds: Bounds, styles: Record<string, string>) => void;
+  onResizeEnd: (bounds: Bounds, styles: Record<string, string>) => void;
+  onDoubleClick: () => void;
+}> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const { isDragging, dragOffset, handleDragStart } = useElementDrag({
+    element,
+    coordinator,
+    iframeRef,
+    overlayRef,
+    onPositionChange,
+    onDragEnd,
+  });
+
+  const { isResizing, resizeDirection, handleResizeStart } = useElementResize({
+    element,
+    coordinator,
+    iframeRef,
+    onSizeChange: onResizeChange,
+    onResizeEnd,
+  });
+
+  return (
+    <ElementSelectionOverlay
+      element={element}
+      coordinator={coordinator}
+      isDragging={isDragging}
+      isResizing={isResizing}
+      dragOffset={dragOffset}
+      onDragStart={handleDragStart}
+      onResizeStart={handleResizeStart}
+      onDoubleClick={onDoubleClick}
+      overlayRef={overlayRef}
+    />
+  );
+};
+
+/**
+ * CustomComponentEditOverlay - Main component
  */
 export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProps> = ({
   componentId,
@@ -583,13 +483,49 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   isSelected,
   srcDoc,
   scale,
+  containerWidth,
+  containerHeight,
   onHtmlUpdate,
-  onImageSelect
+  onElementSelect,
+  iframeRef: externalIframeRef,
 }) => {
-  const [selectedElement, setSelectedElement] = useState<DetectedElement | null>(null);
-  const [inputValue, setInputValue] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // State
+  const [virtualElements, setVirtualElements] = useState<VirtualElement[]>([]);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
+
+  // Refs
+  const internalIframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = externalIframeRef || internalIframeRef;
+  const coordinatorRef = useRef<CoordinateTranslator | null>(null);
+
+  // Selected element
+  const selectedElement = useMemo(
+    () => virtualElements.find(e => e.id === selectedElementId) || null,
+    [virtualElements, selectedElementId]
+  );
+
+  // Initialize/update coordinator
+  useEffect(() => {
+    if (iframeRef.current && containerWidth > 0) {
+      coordinatorRef.current = createCoordinateTranslator(
+        iframeRef.current,
+        containerWidth,
+        containerHeight
+      );
+    }
+  }, [iframeRef, containerWidth, containerHeight, scale]);
+
+  // Request elements from iframe when ready
+  const requestElements = useCallback(() => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'extract-elements',
+      }, '*');
+    }
+  }, [iframeRef]);
 
   // Listen for messages from iframe
   useEffect(() => {
@@ -600,237 +536,248 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       if (data?.source !== 'ns-custom-component-edit') return;
       if (data?.componentId !== componentId) return;
 
-      console.log('[EditOverlay] Message from iframe:', data.type, data);
-
-      if (data.type === 'element-selected') {
-        setSelectedElement(data.element);
+      if (data.type === 'edit-mode-ready') {
+        setIsReady(true);
+        // Request element extraction
+        setTimeout(requestElements, 100);
       }
 
+      if (data.type === 'elements-extracted' && data.elements) {
+        // Update coordinator
+        if (iframeRef.current) {
+          coordinatorRef.current?.update(iframeRef.current);
+        }
+
+        // Convert iframe bounds to parent viewport bounds
+        const elements: VirtualElement[] = data.elements.map((el: any) => ({
+          ...el,
+          bounds: coordinatorRef.current
+            ? coordinatorRef.current.iframeToParent(el.iframeBounds)
+            : el.iframeBounds,
+        }));
+
+        setVirtualElements(elements);
+      }
+
+      // Legacy image-selected handler for ImageElementToolbar
       if (data.type === 'image-selected') {
-        setSelectedElement(data.element);
-        // Trigger image picker/settings for this custom component image
-        onImageSelect(data.element);
+        const el = virtualElements.find(e => e.id === data.element?.id);
+        if (el) {
+          setSelectedElementId(el.id);
+          onElementSelect(toDetectedElement(el));
+        }
       }
 
-      if (data.type === 'container-selected') {
-        setSelectedElement(data.element);
-      }
-
-      if (data.type === 'element-deselected') {
-        setSelectedElement(null);
-      }
-
+      // Handle text editing finished - re-enable hit areas
       if (data.type === 'text-changed') {
-        handleTextUpdate(data.elementId, data.oldText, data.newText);
+        setEditingTextId(null);
+        // Request fresh element data after text edit
+        setTimeout(requestElements, 100);
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isEditing, isSelected, componentId, onImageSelect]);
+  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect]);
 
-  // Handle text update in HTML
-  const handleTextUpdate = useCallback((elementId: string, oldText: string, newText: string) => {
-    if (!srcDoc || !oldText || !newText) return;
-
-    const escapedOld = oldText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(escapedOld, 'g');
-    const updatedHtml = srcDoc.replace(pattern, newText);
-
-    if (updatedHtml !== srcDoc) {
-      onHtmlUpdate(updatedHtml);
+  // Re-extract elements when srcDoc changes
+  useEffect(() => {
+    if (isReady && isEditing && isSelected) {
+      const timeoutId = setTimeout(requestElements, 200);
+      return () => clearTimeout(timeoutId);
     }
-  }, [srcDoc, onHtmlUpdate]);
+  }, [srcDoc, isReady, isEditing, isSelected, requestElements]);
 
-  // Send message to chat panel
-  const sendToChat = useCallback((prompt: string) => {
-    const label = selectedElement?.type === 'text'
-      ? `Text: "${(selectedElement.content || '').slice(0, 20)}..."`
-      : selectedElement?.type === 'image'
-      ? 'Image'
-      : selectedElement?.type === 'container'
-      ? `${selectedElement.tagName || 'Section'}`
-      : 'Custom Component';
+  // Handle element selection
+  const handleSelectElement = useCallback((elementId: string) => {
+    setSelectedElementId(elementId);
+    setEditingTextId(null);
 
-    window.dispatchEvent(new CustomEvent('chat:prefill_with_component', {
-      detail: {
-        componentId,
-        slideId,
-        label,
-        prompt,
-        elementType: 'CustomComponent'
+    // Notify parent of selection change
+    const element = virtualElements.find(e => e.id === elementId);
+    if (element) {
+      onElementSelect(toDetectedElement(element));
+    }
+
+    // Notify iframe
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'deselect',
+      }, '*');
+    }
+  }, [iframeRef, virtualElements, onElementSelect]);
+
+  // Handle double-click for text editing
+  const handleDoubleClick = useCallback((element: VirtualElement) => {
+    if (element.type === 'text') {
+      // Use iframe's contentEditable for inline text editing (like before)
+      // Send message to iframe to make element editable
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'start-text-edit',
+          selector: element.selector,
+        }, '*');
       }
-    }));
-    setInputValue('');
-  }, [componentId, slideId, selectedElement]);
-
-  const handleSubmit = useCallback(() => {
-    if (inputValue.trim()) {
-      sendToChat(inputValue.trim());
+      // Clear overlay selection and set editing state so hit areas are disabled
+      setSelectedElementId(null);
+      setEditingTextId(element.id); // Disable hit areas during editing
+      onElementSelect(null);
+    } else if (element.type === 'image') {
+      onElementSelect(toDetectedElement(element));
     }
-  }, [inputValue, sendToChat]);
+  }, [iframeRef, onElementSelect]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
+  // Handle position change (during drag)
+  const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
+    if (!selectedElement) return;
+
+    // Apply styles to iframe element
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'apply-style-mutation',
+        selector: selectedElement.selector,
+        styles,
+      }, '*');
     }
-  }, [handleSubmit]);
+  }, [selectedElement, iframeRef]);
 
+  // Handle drag end
+  const handleDragEnd = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
+    if (!selectedElement) return;
+
+    // Update virtual element bounds
+    setVirtualElements(prev => prev.map(e =>
+      e.id === selectedElement.id
+        ? {
+            ...e,
+            iframeBounds: newBounds,
+            bounds: coordinatorRef.current?.iframeToParent(newBounds) || newBounds,
+          }
+        : e
+    ));
+
+    // Request fresh element data
+    setTimeout(requestElements, 100);
+  }, [selectedElement, requestElements]);
+
+  // Handle resize change
+  const handleResizeChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
+    if (!selectedElement) return;
+
+    // Apply styles to iframe element
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'apply-style-mutation',
+        selector: selectedElement.selector,
+        styles,
+      }, '*');
+    }
+  }, [selectedElement, iframeRef]);
+
+  // Handle resize end
+  const handleResizeEnd = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
+    if (!selectedElement) return;
+
+    // Update virtual element bounds
+    setVirtualElements(prev => prev.map(e =>
+      e.id === selectedElement.id
+        ? {
+            ...e,
+            iframeBounds: newBounds,
+            bounds: coordinatorRef.current?.iframeToParent(newBounds) || newBounds,
+          }
+        : e
+    ));
+
+    // Request fresh element data
+    setTimeout(requestElements, 100);
+  }, [selectedElement, requestElements]);
+
+  // Handle text edit finish
+  const handleTextEditFinish = useCallback((newHtml: string, newText: string) => {
+    if (!editingTextId) return;
+
+    const element = virtualElements.find(e => e.id === editingTextId);
+    if (!element) return;
+
+    // Update iframe element
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'update-element-html',
+        selector: element.selector,
+        html: newHtml,
+      }, '*');
+    }
+
+    setEditingTextId(null);
+
+    // Request fresh element data
+    setTimeout(requestElements, 100);
+  }, [editingTextId, virtualElements, iframeRef, requestElements]);
+
+  // Handle text edit cancel
+  const handleTextEditCancel = useCallback(() => {
+    setEditingTextId(null);
+  }, []);
+
+  // Handle deselect
+  const handleDeselect = useCallback(() => {
+    setSelectedElementId(null);
+    setEditingTextId(null);
+
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'deselect',
+      }, '*');
+    }
+  }, [iframeRef]);
+
+  // Don't render if not in edit mode
   if (!isEditing || !isSelected) return null;
 
-  // Calculate position for the floating chat - always stay within viewport
-  const getFloatingPosition = () => {
-    const iframe = document.querySelector(`iframe[title="Custom Component"]`);
-    const iframeRect = iframe?.getBoundingClientRect();
-    const overlayWidth = 300;
-    const overlayHeight = 160; // Approximate height
-    const padding = 16;
-
-    if (!iframeRect) return { top: 100, left: padding };
-
-    // Try to position to the right of the component
-    let left = iframeRect.right + padding;
-    let top = iframeRect.top + 20;
-
-    // If it would go off the right edge, position to the left of component
-    if (left + overlayWidth > window.innerWidth - padding) {
-      left = iframeRect.left - overlayWidth - padding;
-    }
-
-    // If still off screen (component is wide), position inside at top-right
-    if (left < padding) {
-      left = Math.min(iframeRect.right - overlayWidth - padding, window.innerWidth - overlayWidth - padding);
-      left = Math.max(padding, left);
-    }
-
-    // Ensure top stays within viewport
-    top = Math.max(80, Math.min(top, window.innerHeight - overlayHeight - padding));
-
-    return { top, left };
-  };
-
-  const position = getFloatingPosition();
-
-  // Creative suggestions based on selection - more specific and actionable
-  const suggestions = selectedElement?.type === 'text'
-    ? [
-        { label: 'Gradient text', prompt: 'Make this text a beautiful gradient from the theme colors' },
-        { label: 'Bold + glow', prompt: 'Make this text bolder with a subtle glow effect' },
-        { label: 'Animate in', prompt: 'Add a smooth fade-in animation to this text' },
-      ]
-    : selectedElement?.type === 'image'
-    ? [
-        { label: 'Swap image', prompt: 'Find and replace with a better, more professional image' },
-        { label: 'Add frame', prompt: 'Add a modern rounded frame with subtle shadow' },
-        { label: 'Overlay effect', prompt: 'Add a gradient overlay that matches the theme' },
-      ]
-    : selectedElement?.type === 'container'
-    ? [
-        { label: 'Glassmorphism', prompt: 'Apply a modern glassmorphism effect with blur and transparency' },
-        { label: 'Card style', prompt: 'Transform into a clean card with shadow and rounded corners' },
-        { label: 'Grid layout', prompt: 'Reorganize content into a clean grid layout' },
-      ]
-    : [
-        { label: 'Modernize', prompt: 'Apply a modern, minimalist design with better spacing' },
-        { label: 'Add depth', prompt: 'Add shadows, gradients, and layering for visual depth' },
-        { label: 'Animate', prompt: 'Add smooth entrance animations to key elements' },
-      ];
-
-  // Get icon for element type
-  const getElementIcon = () => {
-    if (selectedElement?.type === 'image') return <ImageIcon size={12} className="text-[#FF4301]" />;
-    if (selectedElement?.type === 'container') return <Layout size={12} className="text-[#FF4301]" />;
-    return <Type size={12} className="text-[#FF4301]" />;
-  };
-
-  const getElementLabel = () => {
-    if (selectedElement?.type === 'image') return 'Image';
-    if (selectedElement?.type === 'container') return selectedElement.tagName || 'Section';
-    if (selectedElement?.type === 'text') return selectedElement.content?.slice(0, 20) || 'Text';
-    return 'Component';
-  };
-
   return createPortal(
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-        transition={{ duration: 0.15 }}
-        className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden"
-        style={{
-          position: 'fixed',
-          top: position.top,
-          left: position.left,
-          width: 300,
-          zIndex: 9999,
-        }}
-      >
-        {/* Compact header */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50/50">
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-4 rounded bg-[#FF4301]/10 flex items-center justify-center">
-              {getElementIcon()}
-            </div>
-            <span className="text-[11px] font-medium text-gray-600 truncate max-w-[180px]">
-              {getElementLabel()}
-            </span>
-          </div>
-          <button
-            onClick={() => {
-              const iframes = document.querySelectorAll('iframe');
-              iframes.forEach(iframe => {
-                iframe.contentWindow?.postMessage({
-                  target: 'ns-custom-component-edit',
-                  type: 'deselect'
-                }, '*');
-              });
-              setSelectedElement(null);
-            }}
-            className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
+    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 100 }}>
+      {/* Element hit areas for click detection */}
+      {virtualElements.map(element => (
+        <ElementHitArea
+          key={element.id}
+          element={element}
+          isSelected={element.id === selectedElementId}
+          onSelect={() => handleSelectElement(element.id)}
+          onDoubleClick={() => handleDoubleClick(element)}
+          disabled={!!editingTextId}
+        />
+      ))}
 
-        {/* Input and suggestions area - compact */}
-        <div className="p-2.5 space-y-2">
-          {/* Quick suggestions - compact row */}
-          <div className="flex gap-1 overflow-x-auto scrollbar-none">
-            {suggestions.map(({ label, prompt }) => (
-              <button
-                key={label}
-                onClick={() => sendToChat(prompt)}
-                className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-gray-100 rounded-full hover:bg-[#FF4301]/10 hover:text-[#FF4301] transition-colors whitespace-nowrap flex-shrink-0"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+      {/* Selection overlay with handles */}
+      {selectedElement && coordinatorRef.current && (
+        <ElementInteractionLayer
+          element={selectedElement}
+          coordinator={coordinatorRef.current}
+          iframeRef={iframeRef as React.RefObject<HTMLIFrameElement>}
+          onPositionChange={handlePositionChange}
+          onDragEnd={handleDragEnd}
+          onResizeChange={handleResizeChange}
+          onResizeEnd={handleResizeEnd}
+          onDoubleClick={() => handleDoubleClick(selectedElement)}
+        />
+      )}
 
-          {/* Input row with send button */}
-          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 focus-within:border-[#FF4301]/50 focus-within:bg-white transition-colors">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe what to change..."
-              className="flex-1 text-xs text-gray-800 placeholder-gray-400 bg-transparent border-0 focus:outline-none"
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={!inputValue.trim()}
-              className="w-5 h-5 rounded-full bg-[#FF4301] text-white flex items-center justify-center hover:bg-[#E63D00] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-            >
-              <ArrowUp size={12} />
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </AnimatePresence>,
+      {/* Note: Floating chat panel removed - parent component (CustomComponentRenderer)
+          handles the UI for text/image/container selection via its own state and components:
+          - Text: Small floating AI button with chat popup
+          - Image: ImageElementToolbar
+          - Container: ChatPanel style editor
+
+          Text editing is now handled inline via iframe contentEditable (start-text-edit message)
+      */}
+    </div>,
     document.body
   );
 };

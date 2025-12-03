@@ -164,7 +164,8 @@ export const ComponentRenderer: React.FC<Props> = ({
   const isEditingThisGroup = isInGroup && editingGroupId === component.props.parentId;
 
   // Always allow dragging - the drag handler will determine if it should drag the group or individual
-  const effectiveDraggable = isDraggable;
+  // BUT: Disable component-level dragging for CustomComponents in element edit mode
+  const effectiveDraggable = isDraggable && !(componentType === 'CustomComponent' && isElementEditMode);
 
   // Use component drag hook with proper interface
   const { isDragging, visualDragOffset, snapGuides: dragSnapGuides, handleDragStart, didJustDrag } = useComponentDrag({
@@ -530,6 +531,12 @@ export const ComponentRenderer: React.FC<Props> = ({
           return;
         }
 
+        // Don't start component-level drag for CustomComponents in element edit mode
+        // Element-level dragging is handled by CustomComponentEditOverlay
+        if (componentType === 'CustomComponent' && isElementEditMode) {
+          return;
+        }
+
         if (isEditing && e.button === 0 && !isBackground) {
           handleDragStart(e);
         }
@@ -720,9 +727,11 @@ export const ComponentRenderer: React.FC<Props> = ({
           onDragStart={handleDragStart}
           onDragEnd={() => { }}
           onResize={handleResize}
-          isResizable={isResizable}
-          isRotatable={isRotatable}
-          isDraggable={effectiveDraggable}
+          // Disable resize/rotate/drag for CustomComponents when in element edit mode
+          // Element-level editing is handled by CustomComponentEditOverlay
+          isResizable={isResizable && !(componentType === 'CustomComponent' && isElementEditMode)}
+          isRotatable={isRotatable && !(componentType === 'CustomComponent' && isElementEditMode)}
+          isDraggable={effectiveDraggable && !(componentType === 'CustomComponent' && isElementEditMode)}
           isTextEditing={isTextEditing}
           isMultiSelected={isInMultiSelection} // Pass multi-selection state
         >

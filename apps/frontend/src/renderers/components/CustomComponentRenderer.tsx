@@ -2037,6 +2037,31 @@ export const CustomComponentRenderer: React.FC<{
     return () => observer.disconnect();
   }, [containerWidth]);
 
+  // Handler for HTML updates from CustomComponentEditOverlay
+  const handleHtmlUpdate = useCallback((newHtml: string) => {
+    if (!newHtml) return;
+
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] HTML update from overlay, length:', newHtml.length);
+
+    // Update the component with new HTML
+    updateComponent(component.id, {
+      props: {
+        ...component.props,
+        render: newHtml
+      }
+    });
+
+    // Persist changes
+    setTimeout(() => {
+      try {
+        useEditorStore.getState().applyDraftChanges();
+        DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] Persisted HTML changes to backend');
+      } catch (e) {
+        console.error('[CustomComponent] Failed to persist HTML changes:', e);
+      }
+    }, 300);
+  }, [updateComponent, component.id, component.props]);
+
   // Handler for text editing inside custom component
   const handleTextEdit = useCallback((element: DetectedElement, newText: string) => {
     if (!stableIframeSrcDoc || !element.selector) return;
@@ -2178,11 +2203,16 @@ export const CustomComponentRenderer: React.FC<{
   }, [component.id, component.slideId]);
 
   // Handle element selection from overlay
-  const handleElementSelect = useCallback((element: DetectedElement) => {
+  const handleElementSelect = useCallback((element: DetectedElement | null) => {
     setSelectedElement(element);
-    if (element.type === 'image') {
+    if (element?.type === 'image') {
       setShowImageToolbar(true);
+    } else {
+      setShowImageToolbar(false);
     }
+    // Reset AI chat state on selection change
+    setShowAiChatBubble(false);
+    setAiChatMessage('');
   }, []);
 
   return (
@@ -2243,7 +2273,22 @@ export const CustomComponentRenderer: React.FC<{
           )}
 
           {/* ELEMENT-LEVEL EDIT OVERLAY for selected custom components */}
-          {/* Edit mode is now injected directly into the iframe srcDoc for better element interaction */}
+          {/* Renders interaction layer over the iframe with hit areas, selection, drag/resize, and text editing */}
+          {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (
+            <CustomComponentEditOverlay
+              componentId={component.id}
+              slideId={component.slideId}
+              isEditing={effectiveIsEditMode}
+              isSelected={isSelected}
+              srcDoc={stableIframeSrcDoc}
+              scale={scale}
+              containerWidth={containerWidth}
+              containerHeight={containerHeight}
+              onHtmlUpdate={handleHtmlUpdate}
+              onElementSelect={handleElementSelect}
+              iframeRef={iframeRef}
+            />
+          )}
 
           {/* Non-iframe content */}
           {!isIframeComponent && (
