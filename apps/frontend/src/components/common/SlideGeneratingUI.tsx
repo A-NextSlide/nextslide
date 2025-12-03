@@ -6,6 +6,9 @@ interface SlideGeneratingUIProps {
   slideNumber?: number;
   totalSlides?: number;
   message?: string;
+  slidesCompleted?: number;
+  slidesInProgress?: number;
+  elapsedTime?: number;
 }
 
 // Define different slide layout sketches - these will be drawn as if being sketched
@@ -168,18 +171,23 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
   progress = 0,
   slideNumber,
   totalSlides,
-  message
+  message,
+  slidesCompleted = 0,
+  slidesInProgress = 0,
+  elapsedTime = 0
 }) => {
   // Animated progress state - initialize with current progress
   const [animatedProgress, setAnimatedProgress] = useState(progress);
   const [currentSketchIndex, setCurrentSketchIndex] = useState(0);
-  
+  const [localElapsed, setLocalElapsed] = useState(elapsedTime);
+
   // Use refs to track animation state without causing re-renders
   const targetProgressRef = useRef(progress);
   const animatedProgressRef = useRef(progress);
   const lastTimeRef = useRef(Date.now());
   const animationIdRef = useRef<number | null>(null);
   const isComponentVisibleRef = useRef(true);
+  const startTimeRef = useRef(Date.now());
   
   // Update target when progress prop changes
   useEffect(() => {
@@ -287,9 +295,31 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
         setCurrentSketchIndex((prev) => (prev + 1) % slideSketchLayouts.length);
       }
     }, cycleTime);
-    
+
     return () => clearInterval(interval);
   }, []);
+
+  // Track elapsed time locally for smooth updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isComponentVisibleRef.current) {
+        setLocalElapsed(Date.now() - startTimeRef.current);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Format elapsed time
+  const formatElapsed = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    }
+    return `${seconds}s`;
+  };
 
   // Color scheme based on theme
   const isDarkMode = document.documentElement.classList.contains('dark');
@@ -358,10 +388,11 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
 
       {/* Progress bar - Always visible at bottom, styled like theme generation */}
       <div className="absolute bottom-4 left-4 right-4">
-        <div className="flex items-center justify-between mb-2">
-          <span 
+        {/* Status line with slide info */}
+        <div className="flex items-center justify-between mb-1">
+          <span
             className="text-sm font-black tracking-wider"
-            style={{ 
+            style={{
               color: textColor,
               fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
               textTransform: 'uppercase',
@@ -369,11 +400,40 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
               MozOsxFontSmoothing: 'grayscale'
             }}
           >
-            {slideNumber && totalSlides ? `Generating Slide ${slideNumber}` : 'Generating Theme'}
+            {totalSlides && totalSlides > 0
+              ? slidesCompleted > 0 || slidesInProgress > 0
+                ? `${slidesCompleted}/${totalSlides} slides`
+                : 'Preparing slides'
+              : 'Creating theme'}
           </span>
-          <span 
+          <span
+            className="text-xs font-medium"
+            style={{
+              color: isDarkMode ? '#888' : '#666',
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+            }}
+          >
+            {formatElapsed(localElapsed)}
+          </span>
+        </div>
+        {/* Secondary status line */}
+        <div className="flex items-center justify-between mb-2">
+          <span
+            className="text-xs font-medium"
+            style={{
+              color: isDarkMode ? '#888' : '#666',
+              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+            }}
+          >
+            {slidesInProgress > 0
+              ? `${slidesInProgress} generating now`
+              : totalSlides && slidesCompleted === totalSlides
+                ? 'Finalizing'
+                : message || 'Processing'}
+          </span>
+          <span
             className="text-sm font-bold"
-            style={{ 
+            style={{
               color: lineColor,
               fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
             }}
@@ -390,7 +450,7 @@ export const SlideGeneratingUI: React.FC<SlideGeneratingUIProps> = ({
             transition={{ duration: 0.3, ease: "easeOut" }}
           >
             {/* Shimmer effect on progress bar */}
-            <div 
+            <div
               className="absolute inset-0"
               style={{
                 background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)`,

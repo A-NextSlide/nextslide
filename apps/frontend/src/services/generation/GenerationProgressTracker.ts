@@ -63,7 +63,7 @@ export class GenerationProgressTracker extends EventEmitter {
     initialization: {
       id: 'initialization',
       label: 'Setting up',
-      emoji: '🚀',
+      emoji: '',
       progressRange: [0, 15],
       substeps: {
         'deck_setup': 'Creating deck structure',
@@ -74,7 +74,7 @@ export class GenerationProgressTracker extends EventEmitter {
     theme_generation: {
       id: 'theme_generation',
       label: 'Creating theme',
-      emoji: '🎨',
+      emoji: '',
       progressRange: [15, 30],
       substeps: {
         'colors': 'Selecting color palette',
@@ -85,7 +85,7 @@ export class GenerationProgressTracker extends EventEmitter {
     layout_design: {
       id: 'layout_design',
       label: 'Creating blueprint',
-      emoji: '📐',
+      emoji: '',
       progressRange: [30, 40],
       substeps: {
         'designing_layouts': 'Designing editorial layouts',
@@ -96,7 +96,7 @@ export class GenerationProgressTracker extends EventEmitter {
     image_collection: {
       id: 'image_collection',
       label: 'Finding images',
-      emoji: '🖼️',
+      emoji: '',
       progressRange: [40, 55],
       substeps: {
         'search': 'Searching image libraries',
@@ -107,13 +107,13 @@ export class GenerationProgressTracker extends EventEmitter {
     slide_generation: {
       id: 'slide_generation',
       label: 'Generating slides',
-      emoji: '📝',
+      emoji: '',
       progressRange: [55, 95]
     },
     finalization: {
       id: 'finalization',
       label: 'Finalizing',
-      emoji: '✨',
+      emoji: '',
       progressRange: [95, 100],
       substeps: {
         'visual_analysis': 'Analyzing visual coherence',
@@ -676,8 +676,8 @@ export class GenerationProgressTracker extends EventEmitter {
   private formatMessage(message: string, phase?: string, substep?: string): string {
     // Normalize raw backend tokens (e.g., ai_generation)
     const normalized = this.normalizeTokens(message, substep, phase);
-    // Strip any existing emojis from the message
-    return normalized.replace(/^[🚀🎨📐🖼️📝✨]\s*/, '');
+    // Strip any emojis from the message (comprehensive emoji regex)
+    return normalized.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]/gu, '').trim();
   }
   
   private setTargetProgress(progress: number) {

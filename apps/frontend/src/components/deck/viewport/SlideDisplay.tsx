@@ -14,6 +14,7 @@ import SlideGeneratingUI from '../../common/SlideGeneratingUI';
 import { useTheme } from 'next-themes';
 import { useDeckStore } from '@/stores/deckStore';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
+import { GenerationProgressTracker, ProgressState } from '@/services/generation/GenerationProgressTracker';
 
 interface SlideDisplayProps {
   slides: SlideData[];
@@ -46,10 +47,34 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const { theme } = useTheme();
-  
+
+  // Track generation progress from the tracker
+  const [progressState, setProgressState] = useState<ProgressState | null>(null);
+
+  // Subscribe to progress tracker updates
+  useEffect(() => {
+    const tracker = GenerationProgressTracker.getInstance();
+    const handleUpdate = (state: ProgressState) => {
+      setProgressState(state);
+    };
+    tracker.on('update', handleUpdate);
+    tracker.on('progressUpdate', handleUpdate);
+    // Get initial state
+    setProgressState(tracker.getState());
+    return () => {
+      tracker.off('update', handleUpdate);
+      tracker.off('progressUpdate', handleUpdate);
+    };
+  }, []);
+
+  // Calculate slides completed and in progress from tracker state
+  const slidesCompleted = progressState?.slides?.filter(s => s.status === 'completed').length || 0;
+  const slidesInProgress = progressState?.slides?.filter(s => s.status === 'generating').length || 0;
+  const elapsedTime = progressState?.elapsedTime || 0;
+
   // Get deck's lastModified to force re-render on restore
   const lastModified = useDeckStore(state => state.deckData.lastModified);
-  
+
   // Get activeComponents from context for edit mode
   const { activeComponents } = useActiveSlide();
 
@@ -308,10 +333,13 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
             {!forceWhite && (
               <div className="absolute inset-0 w-full h-full overflow-hidden">
                 <SlideGeneratingUI
-                  slideNumber={1}
+                  slideNumber={slidesCompleted + 1}
                   totalSlides={deckStatus.totalSlides}
-                  progress={deckStatus.progress || 0}
-                  message={deckStatus.message || "Creating your presentation"}
+                  progress={progressState?.progress || deckStatus.progress || 0}
+                  message={progressState?.message || deckStatus.message || "Creating your presentation"}
+                  slidesCompleted={slidesCompleted}
+                  slidesInProgress={slidesInProgress}
+                  elapsedTime={elapsedTime}
                 />
               </div>
             )}
@@ -359,8 +387,11 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
                 <SlideGeneratingUI
                   slideNumber={1}
                   totalSlides={deckStatus?.totalSlides || 1}
-                  progress={0}
+                  progress={progressState?.progress || 0}
                   message="Preparing your presentation"
+                  slidesCompleted={0}
+                  slidesInProgress={0}
+                  elapsedTime={0}
                 />
               </div>
             )}
