@@ -50,7 +50,7 @@ export function useElementResize({
 
   // Throttle for updates
   const lastUpdateRef = useRef(0);
-  const UPDATE_THROTTLE = 33; // ~30fps
+  const UPDATE_THROTTLE = 16; // ~60fps for smooth resize
 
   const handleResizeStart = useCallback((e: React.MouseEvent, direction: ResizeDirection) => {
     if (!element.isResizable) return;

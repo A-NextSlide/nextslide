@@ -588,18 +588,33 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [srcDoc, isReady, isEditing, isSelected, requestElements]);
 
-  // Handle element selection
+  // Handle element selection - for TEXT, start editing immediately (single click)
   const handleSelectElement = useCallback((elementId: string) => {
-    setSelectedElementId(elementId);
-    setEditingTextId(null);
-
-    // Notify parent of selection change
     const element = virtualElements.find(e => e.id === elementId);
-    if (element) {
-      onElementSelect(toDetectedElement(element));
+    if (!element) return;
+
+    // For TEXT elements: start editing immediately on single click (like before)
+    if (element.type === 'text') {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'start-text-edit',
+          selector: element.selector,
+        }, '*');
+      }
+      // No selection overlay for text - go straight to editing
+      setSelectedElementId(null);
+      setEditingTextId(element.id);
+      onElementSelect(null);
+      return;
     }
 
-    // Notify iframe
+    // For IMAGE/CONTAINER: show selection overlay
+    setSelectedElementId(elementId);
+    setEditingTextId(null);
+    onElementSelect(toDetectedElement(element));
+
+    // Notify iframe to clear any previous selection styling
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
@@ -608,26 +623,14 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef, virtualElements, onElementSelect]);
 
-  // Handle double-click for text editing
+  // Handle double-click - for non-text elements that might need special handling
   const handleDoubleClick = useCallback((element: VirtualElement) => {
-    if (element.type === 'text') {
-      // Use iframe's contentEditable for inline text editing (like before)
-      // Send message to iframe to make element editable
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-          target: 'ns-custom-component-edit',
-          type: 'start-text-edit',
-          selector: element.selector,
-        }, '*');
-      }
-      // Clear overlay selection and set editing state so hit areas are disabled
-      setSelectedElementId(null);
-      setEditingTextId(element.id); // Disable hit areas during editing
-      onElementSelect(null);
-    } else if (element.type === 'image') {
+    // Text already handles single-click editing, double-click does nothing extra
+    if (element.type === 'image') {
+      // Could open image settings or similar
       onElementSelect(toDetectedElement(element));
     }
-  }, [iframeRef, onElementSelect]);
+  }, [onElementSelect]);
 
   // Handle position change (during drag)
   const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {

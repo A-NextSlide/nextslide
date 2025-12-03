@@ -2485,8 +2485,12 @@ export const CustomComponentRenderer: React.FC<{
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
-              top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + (selectedElement.bounds.y * scale) - 40),
-              left: Math.max(10, (iframeRef.current?.getBoundingClientRect().left || 0) + (selectedElement.bounds.x * scale) + (selectedElement.bounds.width * scale) + 8),
+              // Position at top-right of component (iframe), not overlapping
+              top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + 8),
+              left: Math.min(
+                window.innerWidth - 100, // Don't go off right edge
+                (iframeRef.current?.getBoundingClientRect().right || 0) + 8
+              ),
               zIndex: 9999,
               display: 'flex',
               gap: '4px',
@@ -2663,30 +2667,24 @@ export const CustomComponentRenderer: React.FC<{
 
         {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
         {selectedElement && selectedElement.type === 'container' && (() => {
-          // Calculate position to stay within viewport
+          // Calculate position to stay within viewport - position at top-right of component
           const panelWidth = 300;
           const panelHeight = 280;
           const padding = 16;
           const iframeRect = iframeRef.current?.getBoundingClientRect();
 
-          // Calculate element's position in viewport coordinates
-          const elementX = (iframeRect?.left || 0) + (selectedElement.bounds.x * scale);
-          const elementY = (iframeRect?.top || 0) + (selectedElement.bounds.y * scale);
-          const elementWidth = selectedElement.bounds.width * scale;
+          // Position at top-right of the component (iframe), not overlapping
+          let panelLeft = (iframeRect?.right || 0) + padding;
+          let panelTop = Math.max(80, (iframeRect?.top || 0) + padding);
 
-          // Try to position to the right of the element
-          let panelLeft = elementX + elementWidth + padding;
-          let panelTop = elementY;
-
-          // If it would go off the right edge, position to the left
+          // If it would go off the right edge, position to the left of component
           if (panelLeft + panelWidth > window.innerWidth - padding) {
-            panelLeft = elementX - panelWidth - padding;
+            panelLeft = (iframeRect?.left || 0) - panelWidth - padding;
           }
 
           // If still off screen, position inside viewport
           if (panelLeft < padding) {
-            panelLeft = Math.min(elementX + elementWidth - panelWidth, window.innerWidth - panelWidth - padding);
-            panelLeft = Math.max(padding, panelLeft);
+            panelLeft = window.innerWidth - panelWidth - padding;
           }
 
           // Ensure top stays within viewport

@@ -47,9 +47,9 @@ export function useElementDrag({
     iframeBounds: Bounds;
   } | null>(null);
 
-  // Throttle for iframe updates
+  // Throttle for iframe updates - use requestAnimationFrame timing (~16ms = 60fps)
   const lastUpdateRef = useRef(0);
-  const UPDATE_THROTTLE = 50; // 20 updates/sec for iframe, but CSS vars update every frame
+  const UPDATE_THROTTLE = 16; // 60 updates/sec for smooth iframe updates
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     if (!element.isDraggable) return;
