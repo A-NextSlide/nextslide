@@ -126,11 +126,9 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div id="login-page" className="fixed inset-0 min-h-screen bg-[#F5F5DC] dark:bg-zinc-900 flex items-center justify-center px-6 py-12 overflow-y-auto isolate">
+    <div id="login-page" className="fixed inset-0 min-h-screen bg-white dark:bg-black flex items-center justify-center px-6 py-12 overflow-y-auto isolate">
       {/* Inner container to ensure proper centering */}
       <div className="w-full max-w-md mx-auto relative z-10">
-      {/* Noise overlay */}
-      <div className="noise-overlay pointer-events-none"></div>
 
       {/* Back button */}
         <Button
@@ -156,7 +154,6 @@ const Login: React.FC = () => {
               liftPx={-4}
               xLiftPx={-4}
               rightLiftPx={0}
-              useDot
             />
           </div>
 
@@ -350,7 +347,7 @@ const Login: React.FC = () => {
               WELCOME BACK
             </h1>
             <p className="text-zinc-600 dark:text-zinc-400">
-              Sign in to continue to Next.Slide
+              Sign in to continue to NextSlide
             </p>
           </div>
 
@@ -531,19 +528,6 @@ const Login: React.FC = () => {
         </div>
       </div>
 
-      {/* CSS for noise overlay */}
-      <style>{`
-        .noise-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          opacity: 0.03;
-          z-index: 1;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-        }
-      `}</style>
     </div>
   );
 };
