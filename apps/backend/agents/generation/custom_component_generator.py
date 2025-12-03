@@ -1182,23 +1182,32 @@ USER UPLOADS:
             image_props = {k: v for k, v in prefetched_images.items() if not k.endswith('_query')}
 
             if image_props:
-                # Build list with ACTUAL URLs - don't use props, use direct URLs!
-                image_lines = []
-                for prop_name in sorted(image_props.keys()):
+                # Build EXPLICIT image assignments with FULL URLs
+                image_assignments = []
+                for i, prop_name in enumerate(sorted(image_props.keys()), 1):
                     url = image_props[prop_name]
                     query = prefetched_images.get(f"{prop_name}_query", "image")
-                    # Show shortened URL and description
-                    short_url = url[:80] + '...' if len(url) > 80 else url
-                    image_lines.append(f"  ✓ {query}: {short_url}")
+                    # Give FULL URL, no truncation!
+                    image_assignments.append(f'IMAGE_{i} ({query}): src="{url}"')
 
-                image_list = "\n".join(image_lines)
+                image_block = "\n".join(image_assignments)
 
                 prefetched_images_section = f"""
-🖼️ USE THESE EXACT IMAGE URLS (already hosted on our servers):
-{image_list}
+═══════════════════════════════════════════════════════════════
+🚨 MANDATORY: USE THESE EXACT IMAGE URLs IN YOUR HTML 🚨
+═══════════════════════════════════════════════════════════════
+{image_block}
 
-IMPORTANT: Use these URLs DIRECTLY in src attributes. Do NOT use placeholder URLs like unsplash.com or pexels.com.
-Example: <img src="https://auth.nextslide.ai/storage/v1/..." alt="Description">
+CRITICAL RULES:
+1. Copy-paste these EXACT URLs into your <img src="..."> tags
+2. DO NOT generate ANY image URLs yourself (no unsplash, pexels, placeholder.com)
+3. DO NOT use placeholder text like "placeholder" or empty src=""
+4. Use descriptive alt text based on the image description in parentheses
+5. If you need more images, repeat from IMAGE_1
+
+Example of CORRECT usage:
+<img src="{list(image_props.values())[0]}" alt="{prefetched_images.get(list(image_props.keys())[0] + '_query', 'Image')}" class="hero-img">
+═══════════════════════════════════════════════════════════════
 """
 
         # Build logo section if logo URL is available

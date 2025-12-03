@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ImageStorageService:
     """Service for uploading and managing images in Supabase storage."""
-    
+
     def __init__(self):
         """Initialize the image storage service."""
         self.supabase = get_supabase_client()
@@ -22,6 +22,14 @@ class ImageStorageService:
         self.session = None
         self._cache = {}  # URL -> Supabase URL cache
         self._session_owner = False  # Track if we created the session
+
+    def _get_clean_public_url(self, file_path: str) -> str:
+        """Get public URL and strip trailing '?' that Supabase sometimes adds."""
+        public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+        # Supabase Python client sometimes adds trailing '?' which breaks images
+        if public_url and public_url.endswith('?'):
+            public_url = public_url[:-1]
+        return public_url
         
     async def __aenter__(self):
         """Async context manager entry."""
@@ -146,7 +154,7 @@ class ImageStorageService:
             
             if any(f['name'] == file_name for f in existing):
                 logger.debug(f"Image already exists in storage: {file_path}")
-                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                public_url = self._get_clean_public_url(file_path)
                 result = {'url': public_url, 'path': file_path, 'cached': True}
                 self._cache[image_url] = result
                 return result
@@ -157,9 +165,9 @@ class ImageStorageService:
                 file=content,
                 file_options={"content-type": content_type}
             )
-            
-            # Get public URL
-            public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+
+            # Get public URL (cleaned of trailing ?)
+            public_url = self._get_clean_public_url(file_path)
             
             result = {
                 'url': public_url,
@@ -211,7 +219,7 @@ class ImageStorageService:
             
             if any(f['name'] == file_name for f in existing):
                 logger.debug(f"AI image already exists in storage: {file_path}")
-                public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+                public_url = self._get_clean_public_url(file_path)
                 return {'url': public_url, 'path': file_path, 'cached': True}
             
             # Upload to Supabase
@@ -220,9 +228,9 @@ class ImageStorageService:
                 file=image_data,
                 file_options={"content-type": content_type}
             )
-            
-            # Get public URL
-            public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(file_path)
+
+            # Get public URL (cleaned of trailing ?)
+            public_url = self._get_clean_public_url(file_path)
             
             result = {
                 'url': public_url,
