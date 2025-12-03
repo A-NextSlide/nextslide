@@ -681,28 +681,18 @@ export class GenerationProgressTracker extends EventEmitter {
   }
   
   private setTargetProgress(progress: number) {
-    // If we're in slide generation phase, calculate based on slide completion
+    // Calculate progress based on actual slide completion when in slide generation phase
     if (this.state.phase === 'slide_generation' && this.state.totalSlides > 0) {
       const completedSlides = this.state.slides.filter(s => s.status === 'completed').length;
+      // 55-95% range for slide generation
       const slideProgress = 55 + (completedSlides / this.state.totalSlides) * 40;
-      this.targetProgress = Math.max(this.targetProgress, Math.min(95, slideProgress));
+      this.targetProgress = slideProgress;
     } else {
-      // For other phases, ensure we respect phase boundaries
-      const phase = this.phases[this.state.phase];
-      if (phase) {
-        const [min, max] = phase.progressRange;
-        // If progress is 0-100, map it to phase range
-        if (progress <= 100) {
-          const phaseProgress = min + (progress / 100) * (max - min);
-          this.targetProgress = Math.max(this.targetProgress, Math.min(max, phaseProgress));
-        } else {
-          // Direct progress value
-          this.targetProgress = Math.max(this.targetProgress, Math.min(100, progress));
-        }
-      } else {
-        this.targetProgress = Math.max(this.targetProgress, Math.min(100, progress));
-      }
+      // Use the progress value directly
+      this.targetProgress = Math.min(100, progress);
     }
+    // Immediately update state
+    this.startProgressAnimation();
   }
 
   // Replace raw backend keys like "ai_generation" with friendly labels
@@ -824,38 +814,12 @@ export class GenerationProgressTracker extends EventEmitter {
     return { images, imagesByTopic };
   }
   
-  // Smooth progress animation
+  // Direct progress update - no fake animation
   private startProgressAnimation() {
-    const animate = () => {
-      // Smooth interpolation towards target
-      const diff = this.targetProgress - this.state.smoothProgress;
-      const acceleration = diff * 0.1; // Acceleration based on distance
-      this.progressVelocity = this.progressVelocity * 0.9 + acceleration; // Damping
-      
-      // Update smooth progress
-      this.state.smoothProgress += this.progressVelocity;
-      this.state.progress = Math.round(this.state.smoothProgress);
-      
-      // Throttled progressUpdate emit to reduce UI churn
-      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const shouldEmit =
-        (now - this.lastProgressEmitTs) >= this.MIN_PROGRESS_EMIT_INTERVAL_MS ||
-        Math.abs(this.state.progress - this.lastEmittedProgress) >= this.MIN_PROGRESS_DELTA;
-      if (shouldEmit) {
-        this.emit('progressUpdate', this.state);
-        this.lastProgressEmitTs = now;
-        this.lastEmittedProgress = this.state.progress;
-      }
-      
-      if (this.isAnimating) {
-        this.animationFrame = requestAnimationFrame(animate);
-      }
-    };
-    
-    if (!this.isAnimating) {
-      this.isAnimating = true;
-      this.animationFrame = requestAnimationFrame(animate);
-    }
+    // Just set progress directly from target
+    this.state.progress = Math.round(this.targetProgress);
+    this.state.smoothProgress = this.targetProgress;
+    this.emit('progressUpdate', this.state);
   }
 
   // Public controls to pause/resume animation when idle
