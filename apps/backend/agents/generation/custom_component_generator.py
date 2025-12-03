@@ -172,82 +172,34 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
     try:
         client, model_name = get_client("claude-haiku-4-5")
 
-        prompt = f"""You are a visual designer planning EXACTLY what images a presentation slide needs.
+        prompt = f"""Generate simple Google Image search terms for a presentation slide.
 
-=== PRESENTATION CONTEXT ===
-{context_block}
+SLIDE TITLE: {slide_title}
+SLIDE CONTENT: {content[:800]}
+CONTEXT: {context_block}
 
-=== THIS SLIDE ===
-TITLE: {slide_title}
-CONTENT: {content[:1200]}
-POSITION: Slide {slide_index + 1} of {total_slides}
+RULES - Keep searches SHORT and SEARCHABLE:
+1. 2-4 words per search (NOT long phrases)
+2. Use the MAIN SUBJECT only - no adjectives like "bold", "dramatic", "HD", "4K"
+3. If content mentions specific things (Pikachu, Tesla Model 3), use those exact names
+4. ONE subject per search - don't combine multiple things
 
-=== YOUR TASK ===
-STEP 1: Analyze the slide content and decide what SPECIFIC visual elements it needs:
-- Does it need a HERO IMAGE? (main visual focal point)
-- Does it need PRODUCT/CHARACTER images? (specific items mentioned)
-- Does it need ACTION SHOTS? (people doing things)
-- Does it need BACKGROUND/ATMOSPHERE images?
-- Does it need ICONS or LOGOS?
+GOOD examples:
+- "esports arena" (not "esports arena panoramic crowd lights dramatic")
+- "Pikachu Pokemon" (not "Pikachu Pokemon cute official art standing pose")
+- "Tesla factory" (not "Tesla Gigafactory aerial drone shot 2024 professional")
+- "pro gamer" (not "pro gamer headset focused close-up dramatic lighting")
 
-STEP 2: For EACH visual element needed, create a PRECISE Google search query.
+BAD - too long/specific:
+- "video game champion character portrait bold dramatic lighting" ❌
+- "esports players intense duel match on stage HD" ❌
 
-=== CRITICAL RULES ===
+GOOD - simple and findable:
+- "esports player gaming" ✓
+- "video game character" ✓
 
-1. EACH QUERY = ONE SPECIFIC VISUAL ELEMENT
-   Don't just search for "the slide topic" - search for the EXACT thing you'd put in that spot.
-
-   BAD: Slide about esports → "esports" (too vague, what visual element?)
-   GOOD:
-   - Hero image → "esports arena panoramic crowd lights 2024"
-   - Player photo → "pro gamer headset focused close-up"
-   - Logo → "League of Legends logo transparent"
-
-2. NEVER COMBINE MULTIPLE SUBJECTS INTO ONE SEARCH
-   If the slide needs images of Pichu, Pikachu, and Raichu - that's THREE separate searches!
-   BAD: "Pichu Pikachu Raichu evolution" (will return group photo)
-   GOOD: ["Pichu Pokemon cute", "Pikachu Pokemon", "Raichu Pokemon powerful"]
-
-3. IF CONTENT MENTIONS SPECIFIC THINGS, SEARCH FOR THOSE EXACT THINGS
-   Content mentions "Squirtle" → search "Squirtle Pokemon" NOT "turtle"
-   Content mentions "Tesla Model 3" → search "Tesla Model 3 red" NOT "electric car"
-   Content mentions "Korean esports" → search "Korean esports arena Seoul" NOT "gaming"
-
-3. THINK ABOUT HOW THE IMAGE WILL BE USED
-   - Hero/background → wide, high-res, dramatic: "esports stadium aerial view 4K"
-   - Thumbnail/icon → clear, centered subject: "Pikachu Pokemon icon PNG"
-   - Person photo → professional, good lighting: "esports commentator casting booth"
-   - Product shot → clean, detailed: "Tesla Model 3 white studio shot"
-
-4. ADD SPECIFICITY THAT HELPS GOOGLE
-   - Year: "2024" for current events
-   - Quality: "HD", "4K", "professional photo"
-   - Style: "official art", "promotional", "screenshot"
-   - Angle: "aerial view", "close-up", "wide shot"
-
-=== EXAMPLES ===
-
-Slide: "The Rise of Korean Esports" with content about T1 winning Worlds
-Visual elements needed:
-1. Hero image of Korean esports arena → "T1 League of Legends Worlds 2024 trophy celebration"
-2. Crowd atmosphere → "Korean esports fans cheering arena lights"
-3. Player action → "Faker T1 playing on stage Worlds"
-
-Slide: "Water-Type Pokemon Overview" with content about Squirtle evolution
-Visual elements needed:
-1. First Pokemon → "Squirtle Pokemon official art cute"
-2. Second Pokemon → "Wartortle Pokemon official art standing"
-3. Third Pokemon → "Blastoise Pokemon official art powerful"
-(NOTE: Search for EACH character SEPARATELY - don't combine them into one search!)
-
-Slide: "Tesla Q4 Production Numbers" with factory stats
-Visual elements needed:
-1. Factory hero → "Tesla Gigafactory Texas aerial drone shot 2024"
-2. Production line → "Tesla Model Y assembly line robots"
-3. Finished cars → "Tesla vehicles lined up delivery center"
-
-Return ONLY a JSON array of 3-5 PRECISE search queries:
-["exact search for element 1", "exact search for element 2", "exact search for element 3"]"""
+Return ONLY a JSON array of 3-5 SHORT search terms:
+["term1", "term2", "term3"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
