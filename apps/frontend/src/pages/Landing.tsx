@@ -170,60 +170,41 @@ const Landing: React.FC = () => {
     }
   ];
 
-  // Competitor data for visual comparison
-  const competitorSlides = [
-    {
-      name: 'PowerPoint',
-      tagline: 'Manual labor, dated templates',
-      limitations: ['Hours of manual work', 'Outdated templates', 'No AI generation'],
-      mockupBg: '#1e3a5f',
-      mockupAccent: '#4a90d9'
-    },
-    {
-      name: 'Google Slides',
-      tagline: 'Basic and uninspiring',
-      limitations: ['Limited design options', 'No AI features', 'Generic layouts'],
-      mockupBg: '#f8f9fa',
-      mockupAccent: '#4285f4',
-      isDark: false
-    },
-    {
-      name: 'Gamma',
-      tagline: 'Cards, not real slides',
-      limitations: ['Card-style only', 'Fixed components', 'Limited customization'],
-      mockupBg: '#1a1a2e',
-      mockupAccent: '#6c63ff'
-    },
-    {
-      name: 'Canva',
-      tagline: 'Templates, not presentations',
-      limitations: ['Template-locked', 'Thin AI content', 'Consumer-focused'],
-      mockupBg: '#7c3aed',
-      mockupAccent: '#a78bfa'
-    },
-    {
-      name: 'Beautiful.ai',
-      tagline: 'Smart but restrictive',
-      limitations: ['Auto-locked layouts', 'No custom components', 'Expensive enterprise'],
-      mockupBg: '#0f172a',
-      mockupAccent: '#38bdf8'
-    }
+  // Alternative tools for 1v1 comparison
+  const alternativeTools = [
+    { name: 'PowerPoint', shortName: 'PPT' },
+    { name: 'Google Slides', shortName: 'Slides' },
+    { name: 'Gamma', shortName: 'Gamma' },
+    { name: 'Canva', shortName: 'Canva' },
+    { name: 'Beautiful.ai', shortName: 'B.ai' }
   ];
 
-  // Auto-rotate competitors
+  // Comparison features for 1v1 matrix
+  const comparisonRows = [
+    { feature: 'AI Generation', nextslide: 'Full deck in 30s', values: ['Copilot addon', 'None', 'Cards only', 'Basic', 'Basic'] },
+    { feature: 'Custom Components', nextslide: true, values: [false, false, false, false, false] },
+    { feature: 'Agentic AI Editor', nextslide: true, values: [false, false, false, false, false] },
+    { feature: 'Design Control', nextslide: 'Full', values: ['Full (manual)', 'Limited', 'Limited', 'Template-based', 'Auto-layout'] },
+    { feature: 'Interactive + Traditional', nextslide: true, values: [false, false, 'Interactive only', false, false] },
+    { feature: 'Enterprise + Consumer', nextslide: true, values: ['Enterprise', 'Consumer', 'Consumer', 'Consumer', 'Enterprise'] },
+    { feature: 'Real-time Collaboration', nextslide: true, values: [true, true, true, true, true] },
+    { feature: 'Export to PPTX', nextslide: true, values: [true, true, true, true, true] },
+  ];
+
+  // Auto-rotate alternatives
   useEffect(() => {
     if (competitorInteracted) return;
 
     competitorRotateRef.current = setInterval(() => {
-      setActiveCompetitor((prev) => (prev + 1) % competitorSlides.length);
+      setActiveCompetitor((prev) => (prev + 1) % alternativeTools.length);
     }, 4000);
 
     return () => {
       if (competitorRotateRef.current) clearInterval(competitorRotateRef.current);
     };
-  }, [competitorInteracted, competitorSlides.length]);
+  }, [competitorInteracted, alternativeTools.length]);
 
-  const handleCompetitorClick = (index: number) => {
+  const handleAlternativeClick = (index: number) => {
     setCompetitorInteracted(true);
     setActiveCompetitor(index);
     if (competitorRotateRef.current) {
@@ -554,16 +535,16 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Visual 1v1 Comparison */}
-      <section id="compare" className="py-24 px-8 bg-zinc-900">
-        <div className="max-w-[1300px] mx-auto">
-          <div className="text-center mb-16 animate-on-scroll opacity-0">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF4301]/20 border border-[#FF4301]/30 mb-6">
+      {/* 1v1 Comparison Matrix */}
+      <section id="compare" className="py-24 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
+        <div className="max-w-[900px] mx-auto">
+          <div className="text-center mb-12 animate-on-scroll opacity-0">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF4301]/10 border border-[#FF4301]/20 mb-6">
               <Crown className="w-4 h-4 text-[#FF4301]" />
               <span className="text-sm font-bold text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>SEE THE DIFFERENCE</span>
             </div>
             <h2
-              className="text-white mb-4"
+              className="text-black dark:text-white mb-4"
               style={{
                 fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                 fontWeight: 900,
@@ -573,178 +554,113 @@ const Landing: React.FC = () => {
                 textTransform: 'uppercase'
               }}
             >
-              NextSlide vs. Everyone Else
+              NextSlide vs. {alternativeTools[activeCompetitor].name}
             </h2>
-            <p className="text-xl text-white/60 max-w-2xl mx-auto">
-              Same prompt. Different results.
+            <p className="text-lg text-black/60 dark:text-white/60 max-w-xl mx-auto">
+              A side-by-side comparison
             </p>
           </div>
 
-          {/* 1v1 Visual Comparison */}
-          <div className="animate-on-scroll opacity-0 grid lg:grid-cols-2 gap-6 items-start">
-            {/* NextSlide - Big and prominent */}
-            <div className="relative">
-              <div className="absolute -top-3 left-4 z-10">
-                <div className="bg-[#FF4301] text-white px-4 py-1.5 rounded-full text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                  NextSlide
-                </div>
+          {/* Tool selector tabs */}
+          <div className="flex justify-center gap-2 mb-8 flex-wrap">
+            {alternativeTools.map((tool, i) => (
+              <button
+                key={i}
+                onClick={() => handleAlternativeClick(i)}
+                className={cn(
+                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
+                  i === activeCompetitor
+                    ? "bg-zinc-900 dark:bg-white text-white dark:text-black"
+                    : "bg-black/5 dark:bg-white/10 text-black/60 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/20"
+                )}
+              >
+                {tool.name}
+              </button>
+            ))}
+          </div>
+
+          {/* 1v1 Comparison Table */}
+          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl">
+            {/* Header */}
+            <div className="grid grid-cols-3">
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                Feature
               </div>
-              <div className="rounded-2xl overflow-hidden border-2 border-[#FF4301] bg-zinc-800 shadow-2xl shadow-[#FF4301]/20">
-                {/* Browser chrome */}
-                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border-b border-white/10">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                    <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                    <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                  </div>
-                  <div className="flex-1 mx-4">
-                    <div className="bg-zinc-700 rounded-md px-3 py-1 text-xs text-white/50 font-mono">nextslide.ai/deck/example</div>
-                  </div>
-                </div>
-                {/* Slide mockup */}
-                <div className="aspect-[16/10] bg-gradient-to-br from-[#FF4301] via-[#FF6B35] to-[#FF8C5A] p-8 flex flex-col justify-between">
-                  <div>
-                    <div className="text-white/80 text-sm font-medium mb-2">Q4 2024 Results</div>
-                    <div className="text-white text-3xl md:text-4xl font-bold mb-4" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                      Revenue Growth
-                    </div>
-                    <div className="text-white/90 text-lg">+47% Year over Year</div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="bg-white/20 backdrop-blur rounded-xl p-4 flex-1">
-                      <div className="text-white/70 text-xs mb-1">ARR</div>
-                      <div className="text-white text-2xl font-bold">$12.4M</div>
-                    </div>
-                    <div className="bg-white/20 backdrop-blur rounded-xl p-4 flex-1">
-                      <div className="text-white/70 text-xs mb-1">Customers</div>
-                      <div className="text-white text-2xl font-bold">2,847</div>
-                    </div>
-                    <div className="bg-white/20 backdrop-blur rounded-xl p-4 flex-1">
-                      <div className="text-white/70 text-xs mb-1">NPS</div>
-                      <div className="text-white text-2xl font-bold">72</div>
-                    </div>
-                  </div>
-                </div>
-                {/* Features */}
-                <div className="p-4 bg-zinc-800/80 flex flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5 bg-[#FF4301]/20 text-[#FF4301] px-3 py-1.5 rounded-full text-xs font-medium">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Custom Components</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-[#FF4301]/20 text-[#FF4301] px-3 py-1.5 rounded-full text-xs font-medium">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>AI Editor</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-[#FF4301]/20 text-[#FF4301] px-3 py-1.5 rounded-full text-xs font-medium">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Full Control</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-[#FF4301]/20 text-[#FF4301] px-3 py-1.5 rounded-full text-xs font-medium">
-                    <Check className="w-3.5 h-3.5" />
-                    <span>B2B + B2C</span>
-                  </div>
-                </div>
+              <div className="p-4 bg-[#FF4301] text-center">
+                <div className="text-white text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>NextSlide</div>
+              </div>
+              <div className="p-4 bg-zinc-100 dark:bg-zinc-800 text-center">
+                <div className="text-black/70 dark:text-white/70 text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>{alternativeTools[activeCompetitor].name}</div>
               </div>
             </div>
 
-            {/* Competitors - Scrollable carousel */}
-            <div className="relative">
-              <div className="absolute -top-3 left-4 z-10">
-                <div className="bg-zinc-600 text-white/80 px-4 py-1.5 rounded-full text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                  {competitorSlides[activeCompetitor].name}
-                </div>
-              </div>
-              <div className="rounded-2xl overflow-hidden border border-white/10 bg-zinc-800 shadow-xl">
-                {/* Browser chrome */}
-                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border-b border-white/10">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-white/20" />
-                    <div className="w-3 h-3 rounded-full bg-white/20" />
-                    <div className="w-3 h-3 rounded-full bg-white/20" />
-                  </div>
-                  <div className="flex-1 mx-4">
-                    <div className="bg-zinc-700 rounded-md px-3 py-1 text-xs text-white/50 font-mono">{competitorSlides[activeCompetitor].name.toLowerCase().replace(' ', '')}.com</div>
-                  </div>
-                </div>
-                {/* Competitor slide mockup */}
+            {/* Rows */}
+            {comparisonRows.map((row, idx) => {
+              const altValue = row.values[activeCompetitor];
+
+              const renderValue = (value: boolean | string, isNextSlide: boolean) => {
+                if (value === true) {
+                  return (
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center mx-auto",
+                      isNextSlide ? "bg-[#FF4301]" : "bg-green-500"
+                    )}>
+                      <Check className="w-5 h-5 text-white" />
+                    </div>
+                  );
+                }
+                if (value === false) {
+                  return <X className="w-6 h-6 text-black/20 dark:text-white/20 mx-auto" />;
+                }
+                // String value
+                return (
+                  <span className={cn(
+                    "text-sm font-medium",
+                    isNextSlide ? "text-[#FF4301]" : "text-black/70 dark:text-white/70"
+                  )}>
+                    {value}
+                  </span>
+                );
+              };
+
+              return (
                 <div
-                  className="aspect-[16/10] p-8 flex flex-col justify-between transition-all duration-500"
-                  style={{ backgroundColor: competitorSlides[activeCompetitor].mockupBg }}
+                  key={idx}
+                  className={cn(
+                    "grid grid-cols-3",
+                    idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
+                    idx !== comparisonRows.length - 1 && "border-b border-black/5 dark:border-white/5"
+                  )}
                 >
-                  <div>
-                    <div className={cn("text-sm font-medium mb-2", competitorSlides[activeCompetitor].isDark === false ? "text-black/50" : "text-white/50")}>Q4 2024 Results</div>
-                    <div className={cn("text-2xl md:text-3xl font-bold mb-4", competitorSlides[activeCompetitor].isDark === false ? "text-black" : "text-white")}>
-                      Revenue Growth
-                    </div>
-                    <div className={cn("text-base", competitorSlides[activeCompetitor].isDark === false ? "text-black/70" : "text-white/70")}>+47% Year over Year</div>
+                  <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
+                    {row.feature}
                   </div>
-                  {/* Generic boxes to show boring layout */}
-                  <div className="flex gap-3">
-                    <div
-                      className="rounded-lg p-3 flex-1 opacity-60"
-                      style={{ backgroundColor: competitorSlides[activeCompetitor].mockupAccent }}
-                    >
-                      <div className={cn("text-xs mb-1", competitorSlides[activeCompetitor].isDark === false ? "text-black/50" : "text-white/70")}>ARR</div>
-                      <div className={cn("text-lg font-bold", competitorSlides[activeCompetitor].isDark === false ? "text-black" : "text-white")}>$12.4M</div>
-                    </div>
-                    <div
-                      className="rounded-lg p-3 flex-1 opacity-60"
-                      style={{ backgroundColor: competitorSlides[activeCompetitor].mockupAccent }}
-                    >
-                      <div className={cn("text-xs mb-1", competitorSlides[activeCompetitor].isDark === false ? "text-black/50" : "text-white/70")}>Customers</div>
-                      <div className={cn("text-lg font-bold", competitorSlides[activeCompetitor].isDark === false ? "text-black" : "text-white")}>2,847</div>
-                    </div>
+                  <div className="p-4 flex items-center justify-center bg-[#FF4301]/5">
+                    {renderValue(row.nextslide, true)}
+                  </div>
+                  <div className="p-4 flex items-center justify-center">
+                    {renderValue(altValue, false)}
                   </div>
                 </div>
-                {/* Limitations */}
-                <div className="p-4 bg-zinc-800/80">
-                  <div className="text-white/40 text-xs mb-2 font-medium">{competitorSlides[activeCompetitor].tagline}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {competitorSlides[activeCompetitor].limitations.map((limitation, i) => (
-                      <div key={i} className="flex items-center gap-1.5 bg-zinc-700/50 text-white/50 px-3 py-1.5 rounded-full text-xs">
-                        <X className="w-3.5 h-3.5" />
-                        <span>{limitation}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Competitor selector */}
-              <div className="flex justify-center gap-2 mt-4">
-                {competitorSlides.map((comp, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleCompetitorClick(i)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
-                      i === activeCompetitor
-                        ? "bg-white/20 text-white"
-                        : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60"
-                    )}
-                  >
-                    {comp.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           {/* Key differentiators */}
-          <div className="mt-16 grid md:grid-cols-3 gap-6">
+          <div className="mt-12 grid md:grid-cols-3 gap-6">
             {[
               { icon: Bot, title: 'Agentic AI Editor', description: 'Our AI edits with you—real-time suggestions, smart formatting, context-aware changes.' },
               { icon: Layers, title: 'Custom Components', description: 'Build anything. Interactive cards, animated diagrams, data viz. No template limits.' },
               { icon: Settings, title: 'Full Control', description: 'Every element is editable. Move, resize, restyle. Your presentation, your rules.' }
             ].map((item, i) => (
-              <div key={i} className="animate-on-scroll opacity-0 p-6 rounded-2xl bg-white/5 border border-white/10">
-                <div className="w-12 h-12 rounded-xl bg-[#FF4301]/20 flex items-center justify-center mb-4">
+              <div key={i} className="animate-on-scroll opacity-0 p-6 rounded-2xl bg-white dark:bg-black/50 border border-black/10 dark:border-white/10">
+                <div className="w-12 h-12 rounded-xl bg-[#FF4301]/10 flex items-center justify-center mb-4">
                   <item.icon className="w-6 h-6 text-[#FF4301]" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+                <h3 className="text-lg font-bold text-black dark:text-white mb-2" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   {item.title}
                 </h3>
-                <p className="text-sm text-white/60 leading-relaxed">
+                <p className="text-sm text-black/60 dark:text-white/60 leading-relaxed">
                   {item.description}
                 </p>
               </div>
