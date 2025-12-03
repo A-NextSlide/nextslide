@@ -895,10 +895,10 @@ const ChatTargetDemo: React.FC<{ showAiHints?: boolean }> = ({ showAiHints = fal
   const [typed, setTyped] = useState('');
 
   const prompts = [
-    'Make this slide more visual',
-    'Add a comparison chart',
-    'Change colors to blue theme',
-    'Add my company logo',
+    'Add a fun 8-question quiz based on this content',
+    'Make this 80s pop art themed with neon colors',
+    'Create an interactive demo showing the key concept',
+    'Add team photos and company logos to this slide',
   ];
 
   useEffect(() => {
