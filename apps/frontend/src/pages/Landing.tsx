@@ -423,66 +423,35 @@ const Landing: React.FC = () => {
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                     </div>
-                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px]">{activeDeck?.name || '...'}</span>
+                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px]">Example Presentation</span>
                   </div>
-                  <span className="text-[11px] text-white/40">{activeDeckSlideIndex + 1}/{activeDeck?.slides?.length || 0}</span>
+                  <span className="text-[11px] text-white/40">1/5</span>
                 </div>
 
                 {/* Content with slide sidebar */}
                 <div className="flex">
                   {/* Slide thumbnails sidebar - larger */}
                   <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
-                    {activeDeck?.slides?.slice(0, 10).map((slide, idx) => (
+                    {[...Array(5)].map((_, idx) => (
                       <div
                         key={idx}
-                        onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(idx); }}
                         className={cn(
-                          "aspect-video rounded overflow-hidden cursor-pointer transition-all relative",
-                          idx === activeDeckSlideIndex
-                            ? "ring-2 ring-[#FF4301]"
-                            : "opacity-50 hover:opacity-80"
+                          "aspect-video rounded overflow-hidden relative bg-white/5",
+                          idx === 0 ? "ring-2 ring-[#FF4301]" : "opacity-50"
                         )}
-                      >
-                        <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                          <MiniSlide slide={slide} responsive={true} />
-                        </Suspense>
-                        <div className="absolute inset-0 z-10" />
-                      </div>
+                      />
                     ))}
                   </div>
 
                   {/* Main slide */}
                   <div className="flex-1 p-4">
                     <div className="aspect-video relative rounded-lg overflow-hidden bg-black">
-                      {isLoadingShowcase ? (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
-                        </div>
-                      ) : activeSlide ? (
-                        <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" /></div>}>
-                          <MiniSlide slide={activeSlide} responsive={true} />
-                        </Suspense>
-                      ) : null}
-
-                      {/* Nav arrows */}
-                      {activeDeck && activeDeck.slides.length > 1 && (
-                        <>
-                          <button
-                            onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.max(0, prev - 1)); }}
-                            disabled={activeDeckSlideIndex === 0}
-                            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-20 transition-all"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.min(activeDeck.slides.length - 1, prev + 1)); }}
-                            disabled={activeDeckSlideIndex === activeDeck.slides.length - 1}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-20 transition-all"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                        <div className="text-white/40 text-2xl font-medium mb-2">Coming Soon</div>
+                        <p className="text-white/30 text-sm max-w-sm">
+                          We're curating our best example presentations.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -494,40 +463,29 @@ const Landing: React.FC = () => {
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
                 <div className="p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
-                  {isLoadingShowcase ? (
-                    [...Array(3)].map((_, i) => (
-                      <div key={i} className="h-20 bg-white/5 rounded-lg animate-pulse" />
-                    ))
-                  ) : showcaseDecks.map((deck, index) => (
+                  {[...Array(4)].map((_, index) => (
                     <div
-                      key={deck.uuid}
-                      onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); }}
+                      key={index}
                       className={cn(
-                        "rounded-lg overflow-hidden cursor-pointer transition-all relative",
-                        index === activeShowcaseIndex
+                        "rounded-lg overflow-hidden relative",
+                        index === 0
                           ? "ring-2 ring-[#FF4301]"
-                          : "ring-1 ring-white/5 hover:ring-white/20"
+                          : "ring-1 ring-white/5"
                       )}
                     >
-                      <div className="aspect-[16/9] relative overflow-hidden bg-black">
-                        <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                          {deck.slides[0] && <MiniSlide slide={deck.slides[0]} responsive={true} />}
-                        </Suspense>
+                      <div className="aspect-[16/9] relative overflow-hidden bg-white/5">
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                         <div className="absolute bottom-0 left-0 right-0 p-2">
-                          <h5 className={cn(
-                            "font-semibold text-xs truncate",
-                            index === activeShowcaseIndex ? "text-[#FF4301]" : "text-white"
-                          )}>
-                            {deck.name}
-                          </h5>
-                          <p className="text-[10px] text-white/50">{deck.slideCount} slides</p>
+                          <div className={cn(
+                            "h-3 rounded w-20 mb-1",
+                            index === 0 ? "bg-[#FF4301]/30" : "bg-white/20"
+                          )} />
+                          <div className="h-2 rounded w-12 bg-white/10" />
                         </div>
-                        {index === activeShowcaseIndex && (
+                        {index === 0 && (
                           <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4301]" />
                         )}
                       </div>
-                      <div className="absolute inset-0 z-10" />
                     </div>
                   ))}
                 </div>
