@@ -168,6 +168,8 @@ const Landing: React.FC = () => {
 
   const competitors = [
     { name: 'NextSlide', isUs: true },
+    { name: 'PowerPoint', isUs: false, isLegacy: true },
+    { name: 'Google Slides', isUs: false, isLegacy: true },
     { name: 'Gamma', isUs: false },
     { name: 'Canva', isUs: false },
     { name: 'Beautiful.ai', isUs: false },
@@ -181,21 +183,21 @@ const Landing: React.FC = () => {
         stars.push(
           <Star
             key={i}
-            className={cn("w-4 h-4", isUs ? "fill-white text-white" : "fill-amber-400 text-amber-400")}
+            className={cn("w-4 h-4", isUs ? "fill-[#FF4301] text-[#FF4301]" : "fill-amber-400 text-amber-400")}
           />
         );
       } else if (i === Math.ceil(rating) && rating % 1 !== 0) {
         stars.push(
           <div key={i} className="relative w-4 h-4">
-            <Star className={cn("w-4 h-4 absolute", isUs ? "text-white/30" : "text-amber-400/30")} />
+            <Star className={cn("w-4 h-4 absolute", isUs ? "text-[#FF4301]/30" : "text-amber-400/30")} />
             <div className="absolute overflow-hidden" style={{ width: `${(rating % 1) * 100}%` }}>
-              <Star className={cn("w-4 h-4", isUs ? "fill-white text-white" : "fill-amber-400 text-amber-400")} />
+              <Star className={cn("w-4 h-4", isUs ? "fill-[#FF4301] text-[#FF4301]" : "fill-amber-400 text-amber-400")} />
             </div>
           </div>
         );
       } else {
         stars.push(
-          <Star key={i} className={cn("w-4 h-4", isUs ? "text-white/30" : "text-black/20 dark:text-white/20")} />
+          <Star key={i} className={cn("w-4 h-4", isUs ? "text-[#FF4301]/30" : "text-black/20 dark:text-white/20")} />
         );
       }
     }
@@ -207,59 +209,76 @@ const Landing: React.FC = () => {
       feature: 'Design Quality',
       isRating: true,
       nextslide: 5,
+      powerpoint: 2,
+      googleslides: 1.5,
       gamma: 3,
       canva: 2.5,
       beautifulai: 3.5
     },
     {
-      feature: 'AI Output',
-      nextslide: 'Full presentations',
-      gamma: 'Card-style only',
+      feature: 'AI Generation',
+      nextslide: 'Full decks',
+      powerpoint: 'Copilot basic',
+      googleslides: 'None',
+      gamma: 'Cards only',
       canva: 'Thin content',
-      beautifulai: 'Generic slides'
+      beautifulai: 'Generic'
+    },
+    {
+      feature: 'Slide Format',
+      isFormat: true,
+      nextslide: 'both',
+      powerpoint: 'traditional',
+      googleslides: 'traditional',
+      gamma: 'interactive',
+      canva: 'traditional',
+      beautifulai: 'traditional'
     },
     {
       feature: 'Target Audience',
       isAudience: true,
       nextslide: 'both',
+      powerpoint: 'business',
+      googleslides: 'consumer',
       gamma: 'consumer',
       canva: 'consumer',
       beautifulai: 'consumer'
     },
     {
       feature: 'Custom Components',
-      nextslide: true,
-      gamma: false,
-      canva: false,
-      beautifulai: false
+      nextslide: 'Unlimited',
+      powerpoint: 'Manual only',
+      googleslides: 'Manual only',
+      gamma: 'Fixed set',
+      canva: 'Fixed set',
+      beautifulai: 'Smart slides'
     },
     {
       feature: 'Agentic AI Editor',
       nextslide: true,
+      powerpoint: false,
+      googleslides: false,
       gamma: false,
       canva: false,
       beautifulai: false
     },
     {
-      feature: 'Full Design Control',
-      nextslide: true,
-      gamma: 'limited',
-      canva: 'limited',
-      beautifulai: 'locked'
-    },
-    {
-      feature: 'PowerPoint Export',
-      nextslide: 'Clean export',
-      gamma: 'Broken layouts',
-      canva: true,
-      beautifulai: 'Format issues'
+      feature: 'Design Control',
+      nextslide: 'Full control',
+      powerpoint: 'Full but manual',
+      googleslides: 'Basic',
+      gamma: 'Limited',
+      canva: 'Template locked',
+      beautifulai: 'Auto-locked'
     },
     {
       feature: 'Enterprise Ready',
       nextslide: true,
+      powerpoint: true,
+      googleslides: true,
       gamma: false,
-      canva: 'limited',
-      beautifulai: 'expensive'
+      canva: 'Limited',
+      beautifulai: 'Expensive'
     },
   ];
 
@@ -655,24 +674,27 @@ const Landing: React.FC = () => {
           </div>
 
           {/* Matrix */}
-          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl">
+          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl overflow-x-auto">
             {/* Header */}
-            <div className="grid grid-cols-5 bg-zinc-50 dark:bg-zinc-800/50">
-              <div className="p-5 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+            <div className="grid grid-cols-7 min-w-[900px] bg-zinc-50 dark:bg-zinc-800/50">
+              <div className="p-4 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                 Features
               </div>
               {competitors.map((comp, i) => (
                 <div
                   key={i}
                   className={cn(
-                    "p-5 text-center text-sm font-bold",
+                    "p-4 text-center text-xs font-bold",
                     comp.isUs
                       ? "bg-[#FF4301] text-white"
-                      : "text-black/70 dark:text-white/70"
+                      : comp.isLegacy
+                        ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400"
+                        : "text-black/70 dark:text-white/70"
                   )}
                   style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
                 >
                   {comp.name}
+                  {comp.isLegacy && <div className="text-[9px] font-normal opacity-70">Legacy</div>}
                 </div>
               ))}
             </div>
@@ -680,31 +702,70 @@ const Landing: React.FC = () => {
             {/* Rows */}
             {comparisonFeatures.map((row, idx) => {
               // Helper to render cell value
-              const renderCell = (value: any, isUs: boolean = false, isRating: boolean = false, isAudience: boolean = false) => {
+              const renderCell = (value: any, isUs: boolean = false, isRating: boolean = false, isAudience: boolean = false, isFormat: boolean = false) => {
                 // Rating row
                 if (isRating && typeof value === 'number') {
                   return renderStars(value, isUs);
+                }
+                // Format row (Interactive + Traditional)
+                if (isFormat) {
+                  if (value === 'both') {
+                    return (
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={cn("flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                          <Sparkles className="w-3 h-3" />
+                          <span>Interactive</span>
+                        </div>
+                        <div className={cn("flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                          <Layers className="w-3 h-3" />
+                          <span>Traditional</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (value === 'interactive') {
+                    return (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[9px] font-bold">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Interactive only</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[9px] font-bold">
+                      <Layers className="w-3 h-3" />
+                      <span>Traditional only</span>
+                    </div>
+                  );
                 }
                 // Audience row
                 if (isAudience) {
                   if (value === 'both') {
                     return (
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                      <div className="flex items-center gap-1">
+                        <div className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
                           <Building2 className="w-3 h-3" />
                           <span>B2B</span>
                         </div>
-                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                        <div className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold", isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
                           <User className="w-3 h-3" />
                           <span>B2C</span>
                         </div>
                       </div>
                     );
                   }
+                  if (value === 'business') {
+                    return (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[9px] font-bold">
+                        <Building2 className="w-3 h-3" />
+                        <span>Business</span>
+                      </div>
+                    );
+                  }
                   return (
-                    <div className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-bold">
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[9px] font-bold">
                       <User className="w-3 h-3" />
-                      <span>Consumer only</span>
+                      <span>Consumer</span>
                     </div>
                   );
                 }
@@ -712,7 +773,7 @@ const Landing: React.FC = () => {
                 if (value === true) {
                   if (isUs) {
                     return (
-                      <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center">
+                      <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
                         <Check className="w-4 h-4 text-[#FF4301]" />
                       </div>
                     );
@@ -725,36 +786,36 @@ const Landing: React.FC = () => {
                 }
                 // String values - check if positive or negative
                 if (typeof value === 'string') {
-                  const negativeKeywords = ['limited', 'basic', 'locked', 'broken', 'issues', 'expensive', 'card-style', 'thin', 'generic'];
-                  const positiveKeywords = ['full', 'clean', 'both'];
+                  const negativeKeywords = ['limited', 'basic', 'locked', 'broken', 'issues', 'expensive', 'card', 'thin', 'generic', 'none', 'manual', 'fixed', 'auto-locked', 'copilot'];
+                  const positiveKeywords = ['full', 'clean', 'both', 'unlimited'];
                   const isNegative = negativeKeywords.some(kw => value.toLowerCase().includes(kw));
                   const isPositive = positiveKeywords.some(kw => value.toLowerCase().includes(kw));
 
                   if (isUs) {
                     return (
-                      <div className="flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                        <span className="text-[11px] font-bold text-white uppercase">{value}</span>
+                      <div className="flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-[#FF4301]" />
+                        <span className="text-[10px] font-bold text-[#FF4301] uppercase">{value}</span>
                       </div>
                     );
                   }
 
                   if (isNegative) {
                     return (
-                      <span className="text-[10px] font-medium text-red-600 dark:text-red-400 uppercase bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
+                      <span className="text-[9px] font-medium text-red-600 dark:text-red-400 uppercase bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">
                         {value}
                       </span>
                     );
                   }
                   if (isPositive) {
                     return (
-                      <span className="text-[10px] font-medium text-green-600 dark:text-green-400 uppercase bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                      <span className="text-[9px] font-medium text-green-600 dark:text-green-400 uppercase bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
                         {value}
                       </span>
                     );
                   }
                   return (
-                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">
+                    <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
                       {value}
                     </span>
                   );
@@ -766,26 +827,32 @@ const Landing: React.FC = () => {
                 <div
                   key={idx}
                   className={cn(
-                    "grid grid-cols-5 transition-colors",
+                    "grid grid-cols-7 min-w-[900px] transition-colors",
                     idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
                     idx !== comparisonFeatures.length - 1 && "border-b border-black/5 dark:border-white/5",
                     "hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
                   )}
                 >
-                  <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
+                  <div className="p-3 text-sm font-medium text-black dark:text-white flex items-center">
                     {row.feature}
                   </div>
-                  <div className={cn("p-4 flex items-center justify-center", "bg-[#FF4301]/10")}>
-                    {renderCell(row.nextslide, true, row.isRating, row.isAudience)}
+                  <div className={cn("p-3 flex items-center justify-center", "bg-[#FF4301]/10")}>
+                    {renderCell(row.nextslide, true, row.isRating, row.isAudience, row.isFormat)}
                   </div>
-                  <div className="p-4 flex items-center justify-center">
-                    {renderCell(row.gamma, false, row.isRating, row.isAudience)}
+                  <div className="p-3 flex items-center justify-center bg-zinc-100/50 dark:bg-zinc-800/50">
+                    {renderCell(row.powerpoint, false, row.isRating, row.isAudience, row.isFormat)}
                   </div>
-                  <div className="p-4 flex items-center justify-center">
-                    {renderCell(row.canva, false, row.isRating, row.isAudience)}
+                  <div className="p-3 flex items-center justify-center bg-zinc-100/50 dark:bg-zinc-800/50">
+                    {renderCell(row.googleslides, false, row.isRating, row.isAudience, row.isFormat)}
                   </div>
-                  <div className="p-4 flex items-center justify-center">
-                    {renderCell(row.beautifulai, false, row.isRating, row.isAudience)}
+                  <div className="p-3 flex items-center justify-center">
+                    {renderCell(row.gamma, false, row.isRating, row.isAudience, row.isFormat)}
+                  </div>
+                  <div className="p-3 flex items-center justify-center">
+                    {renderCell(row.canva, false, row.isRating, row.isAudience, row.isFormat)}
+                  </div>
+                  <div className="p-3 flex items-center justify-center">
+                    {renderCell(row.beautifulai, false, row.isRating, row.isAudience, row.isFormat)}
                   </div>
                 </div>
               );
