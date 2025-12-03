@@ -704,7 +704,7 @@ const Landing: React.FC = () => {
 
                   if (isUs) {
                     return (
-                      <span className="text-[10px] font-bold text-white uppercase">{value}</span>
+                      <span className="text-[10px] font-bold text-[#FF4301] uppercase">{value}</span>
                     );
                   }
                   if (isNegative) {
