@@ -144,7 +144,23 @@ class ImageStorageService:
                         content_type = response.headers.get('Content-Type', 'image/jpeg')
                 else:
                     raise
-            
+
+            # CRITICAL: Validate that we actually got an image, not HTML/redirect
+            # Some sites return HTML redirect pages instead of images
+            if content[:15].lower().startswith(b'<!doctype') or content[:6].lower().startswith(b'<html'):
+                logger.warning(f"Downloaded HTML instead of image (likely redirect): {self._truncate_data_url(image_url)}")
+                raise Exception("Downloaded HTML redirect page instead of image")
+
+            # Also check content-type - if it says text/html, it's not an image
+            if 'text/html' in content_type.lower():
+                logger.warning(f"Content-type is HTML, not image: {self._truncate_data_url(image_url)}")
+                raise Exception("Server returned HTML instead of image")
+
+            # Validate minimum size - real images are at least a few KB
+            if len(content) < 1000:
+                logger.warning(f"Downloaded content too small to be a real image ({len(content)} bytes): {self._truncate_data_url(image_url)}")
+                raise Exception(f"Downloaded content too small ({len(content)} bytes)")
+
             # Generate file path
             file_path = self._generate_file_path(image_url, content_type)
             
