@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRight, Check, Menu, X, Play, Clock, Frown, DollarSign,
   Zap, Palette, Brain, ChevronDown, ChevronUp,
-  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown
+  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 
@@ -29,11 +29,6 @@ const Landing: React.FC = () => {
 
   // Sticky CTA text
   const [ctaText, setCtaText] = useState('Get Started Free');
-
-  // Competitor comparison state
-  const [activeCompetitor, setActiveCompetitor] = useState(0);
-  const [competitorInteracted, setCompetitorInteracted] = useState(false);
-  const competitorRotateRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load showcase decks
   useEffect(() => {
@@ -170,47 +165,79 @@ const Landing: React.FC = () => {
     }
   ];
 
-  // Alternative tools for 1v1 comparison
-  const alternativeTools = [
-    { name: 'PowerPoint', shortName: 'PPT' },
-    { name: 'Google Slides', shortName: 'Slides' },
-    { name: 'Gamma', shortName: 'Gamma' },
-    { name: 'Canva', shortName: 'Canva' },
-    { name: 'Beautiful.ai', shortName: 'B.ai' }
+  // All tools for comparison (NextSlide first, then others)
+  const allTools = [
+    { name: 'NextSlide', isUs: true },
+    { name: 'PowerPoint', isLegacy: true },
+    { name: 'Google Slides', isLegacy: true },
+    { name: 'Gamma' },
+    { name: 'Canva' },
+    { name: 'Beautiful.ai' }
   ];
 
-  // Comparison features for 1v1 matrix
-  const comparisonRows = [
-    { feature: 'AI Generation', nextslide: 'Full deck in 30s', values: ['Copilot addon', 'None', 'Cards only', 'Basic', 'Basic'] },
-    { feature: 'Custom Components', nextslide: true, values: [false, false, false, false, false] },
-    { feature: 'Agentic AI Editor', nextslide: true, values: [false, false, false, false, false] },
-    { feature: 'Design Control', nextslide: 'Full', values: ['Full (manual)', 'Limited', 'Limited', 'Template-based', 'Auto-layout'] },
-    { feature: 'Interactive + Traditional', nextslide: true, values: [false, false, 'Interactive only', false, false] },
-    { feature: 'Enterprise + Consumer', nextslide: true, values: ['Enterprise', 'Consumer', 'Consumer', 'Consumer', 'Enterprise'] },
-    { feature: 'Real-time Collaboration', nextslide: true, values: [true, true, true, true, true] },
-    { feature: 'Export to PPTX', nextslide: true, values: [true, true, true, true, true] },
-  ];
-
-  // Auto-rotate alternatives
-  useEffect(() => {
-    if (competitorInteracted) return;
-
-    competitorRotateRef.current = setInterval(() => {
-      setActiveCompetitor((prev) => (prev + 1) % alternativeTools.length);
-    }, 4000);
-
-    return () => {
-      if (competitorRotateRef.current) clearInterval(competitorRotateRef.current);
-    };
-  }, [competitorInteracted, alternativeTools.length]);
-
-  const handleAlternativeClick = (index: number) => {
-    setCompetitorInteracted(true);
-    setActiveCompetitor(index);
-    if (competitorRotateRef.current) {
-      clearInterval(competitorRotateRef.current);
+  // Render star rating
+  const renderStars = (rating: number, isUs: boolean = false) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      if (i <= Math.floor(rating)) {
+        stars.push(
+          <Star
+            key={i}
+            className={cn("w-4 h-4", isUs ? "fill-[#FF4301] text-[#FF4301]" : "fill-amber-400 text-amber-400")}
+          />
+        );
+      } else if (i === Math.ceil(rating) && rating % 1 !== 0) {
+        stars.push(
+          <div key={i} className="relative w-4 h-4">
+            <Star className={cn("w-4 h-4 absolute", isUs ? "text-[#FF4301]/30" : "text-amber-400/30")} />
+            <div className="absolute overflow-hidden" style={{ width: `${(rating % 1) * 100}%` }}>
+              <Star className={cn("w-4 h-4", isUs ? "fill-[#FF4301] text-[#FF4301]" : "fill-amber-400 text-amber-400")} />
+            </div>
+          </div>
+        );
+      } else {
+        stars.push(
+          <Star key={i} className={cn("w-4 h-4", isUs ? "text-[#FF4301]/30" : "text-black/20 dark:text-white/20")} />
+        );
+      }
     }
+    return <div className="flex gap-0.5">{stars}</div>;
   };
+
+  // Comparison data - researched info
+  const comparisonRows = [
+    {
+      feature: 'Design Quality',
+      isRating: true,
+      values: [5, 2, 1.5, 3, 2.5, 3.5] // NextSlide, PPT, Google, Gamma, Canva, Beautiful.ai
+    },
+    {
+      feature: 'AI Generation',
+      values: ['Full decks', 'Copilot basic', 'None', 'Cards only', 'Thin content', 'Generic']
+    },
+    {
+      feature: 'Custom Components',
+      values: ['Unlimited', 'Manual only', 'Manual only', 'Fixed set', 'Fixed set', 'Smart slides']
+    },
+    {
+      feature: 'Agentic AI Editor',
+      values: [true, false, false, false, false, false]
+    },
+    {
+      feature: 'Design Control',
+      values: ['Full control', 'Full but manual', 'Basic', 'Limited', 'Template locked', 'Auto-locked']
+    },
+    {
+      feature: 'Target Audience',
+      isAudience: true,
+      values: ['B2B + B2C', 'Enterprise', 'Consumer', 'Consumer', 'Consumer', 'Enterprise']
+    },
+    {
+      feature: 'Slide Format',
+      isFormat: true,
+      values: ['Interactive + Traditional', 'Traditional', 'Traditional', 'Interactive only', 'Traditional', 'Traditional']
+    },
+  ];
 
   const faqs = [
     {
@@ -535,13 +562,13 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* 1v1 Comparison Matrix */}
+      {/* Comparison Matrix - NextSlide vs. Others */}
       <section id="compare" className="py-24 px-8 bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-        <div className="max-w-[900px] mx-auto">
+        <div className="max-w-[1100px] mx-auto">
           <div className="text-center mb-12 animate-on-scroll opacity-0">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF4301]/10 border border-[#FF4301]/20 mb-6">
               <Crown className="w-4 h-4 text-[#FF4301]" />
-              <span className="text-sm font-bold text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>SEE THE DIFFERENCE</span>
+              <span className="text-sm font-bold text-[#FF4301]" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>THE NEW STANDARD</span>
             </div>
             <h2
               className="text-black dark:text-white mb-4"
@@ -554,93 +581,179 @@ const Landing: React.FC = () => {
                 textTransform: 'uppercase'
               }}
             >
-              NextSlide vs. {alternativeTools[activeCompetitor].name}
+              NextSlide vs. Others
             </h2>
             <p className="text-lg text-black/60 dark:text-white/60 max-w-xl mx-auto">
-              A side-by-side comparison
+              See how we compare to the alternatives
             </p>
           </div>
 
-          {/* Tool selector tabs */}
-          <div className="flex justify-center gap-2 mb-8 flex-wrap">
-            {alternativeTools.map((tool, i) => (
-              <button
-                key={i}
-                onClick={() => handleAlternativeClick(i)}
-                className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-all",
-                  i === activeCompetitor
-                    ? "bg-zinc-900 dark:bg-white text-white dark:text-black"
-                    : "bg-black/5 dark:bg-white/10 text-black/60 dark:text-white/60 hover:bg-black/10 dark:hover:bg-white/20"
-                )}
-              >
-                {tool.name}
-              </button>
-            ))}
-          </div>
-
-          {/* 1v1 Comparison Table */}
-          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl">
+          {/* Comparison Table */}
+          <div className="animate-on-scroll opacity-0 rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-zinc-900/80 shadow-xl overflow-x-auto">
             {/* Header */}
-            <div className="grid grid-cols-3">
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
+            <div className="grid grid-cols-7 min-w-[900px] bg-zinc-50 dark:bg-zinc-800/50">
+              <div className="p-4 text-xs font-bold text-black/40 dark:text-white/40 uppercase tracking-wider" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                 Feature
               </div>
-              <div className="p-4 bg-[#FF4301] text-center">
-                <div className="text-white text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>NextSlide</div>
-              </div>
-              <div className="p-4 bg-zinc-100 dark:bg-zinc-800 text-center">
-                <div className="text-black/70 dark:text-white/70 text-sm font-bold" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>{alternativeTools[activeCompetitor].name}</div>
-              </div>
+              {allTools.map((tool, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "p-4 text-center",
+                    tool.isUs
+                      ? "bg-[#FF4301]"
+                      : tool.isLegacy
+                        ? "bg-zinc-200 dark:bg-zinc-700"
+                        : "bg-zinc-100 dark:bg-zinc-800"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "text-xs font-bold",
+                      tool.isUs ? "text-white" : tool.isLegacy ? "text-zinc-500 dark:text-zinc-400" : "text-black/70 dark:text-white/70"
+                    )}
+                    style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
+                  >
+                    {tool.name}
+                  </div>
+                  {tool.isLegacy && <div className="text-[9px] font-normal text-zinc-500 dark:text-zinc-400">Legacy</div>}
+                </div>
+              ))}
             </div>
 
             {/* Rows */}
             {comparisonRows.map((row, idx) => {
-              const altValue = row.values[activeCompetitor];
-
-              const renderValue = (value: boolean | string, isNextSlide: boolean) => {
+              // Helper to render cell value
+              const renderCell = (value: any, isUs: boolean, toolIdx: number) => {
+                // Rating row - use star system
+                if (row.isRating && typeof value === 'number') {
+                  return renderStars(value, isUs);
+                }
+                // Boolean true
                 if (value === true) {
                   return (
                     <div className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center mx-auto",
-                      isNextSlide ? "bg-[#FF4301]" : "bg-green-500"
+                      "w-6 h-6 rounded-full flex items-center justify-center mx-auto",
+                      isUs ? "bg-white" : "bg-green-500"
                     )}>
-                      <Check className="w-5 h-5 text-white" />
+                      <Check className={cn("w-4 h-4", isUs ? "text-[#FF4301]" : "text-white")} />
                     </div>
                   );
                 }
+                // Boolean false
                 if (value === false) {
-                  return <X className="w-6 h-6 text-black/20 dark:text-white/20 mx-auto" />;
+                  return <X className="w-5 h-5 text-black/20 dark:text-white/20 mx-auto" />;
                 }
-                // String value
-                return (
-                  <span className={cn(
-                    "text-sm font-medium",
-                    isNextSlide ? "text-[#FF4301]" : "text-black/70 dark:text-white/70"
-                  )}>
-                    {value}
-                  </span>
-                );
+                // Audience row - special styling
+                if (row.isAudience) {
+                  if (value === 'B2B + B2C') {
+                    return (
+                      <div className="flex items-center justify-center gap-1">
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                          isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        )}>B2B</span>
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                          isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        )}>B2C</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                      {value}
+                    </span>
+                  );
+                }
+                // Format row - special styling
+                if (row.isFormat) {
+                  if (value === 'Interactive + Traditional') {
+                    return (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                          isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        )}>Interactive</span>
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                          isUs ? "bg-white text-[#FF4301]" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        )}>Traditional</span>
+                      </div>
+                    );
+                  }
+                  if (value === 'Interactive only') {
+                    return (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        Interactive only
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                      {value}
+                    </span>
+                  );
+                }
+                // String values - color code based on sentiment
+                if (typeof value === 'string') {
+                  const negativeKeywords = ['limited', 'basic', 'locked', 'thin', 'generic', 'none', 'manual', 'fixed', 'auto-locked', 'copilot'];
+                  const positiveKeywords = ['full', 'unlimited'];
+                  const isNegative = negativeKeywords.some(kw => value.toLowerCase().includes(kw));
+                  const isPositive = positiveKeywords.some(kw => value.toLowerCase().includes(kw));
+
+                  if (isUs) {
+                    return (
+                      <span className="text-[10px] font-bold text-white uppercase">{value}</span>
+                    );
+                  }
+                  if (isNegative) {
+                    return (
+                      <span className="text-[9px] font-medium text-red-600 dark:text-red-400 uppercase bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">
+                        {value}
+                      </span>
+                    );
+                  }
+                  if (isPositive) {
+                    return (
+                      <span className="text-[9px] font-medium text-green-600 dark:text-green-400 uppercase bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
+                        {value}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                      {value}
+                    </span>
+                  );
+                }
+                return null;
               };
 
               return (
                 <div
                   key={idx}
                   className={cn(
-                    "grid grid-cols-3",
+                    "grid grid-cols-7 min-w-[900px] transition-colors",
                     idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
-                    idx !== comparisonRows.length - 1 && "border-b border-black/5 dark:border-white/5"
+                    idx !== comparisonRows.length - 1 && "border-b border-black/5 dark:border-white/5",
+                    "hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
                   )}
                 >
-                  <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
+                  <div className="p-3 text-sm font-medium text-black dark:text-white flex items-center">
                     {row.feature}
                   </div>
-                  <div className="p-4 flex items-center justify-center bg-[#FF4301]/5">
-                    {renderValue(row.nextslide, true)}
-                  </div>
-                  <div className="p-4 flex items-center justify-center">
-                    {renderValue(altValue, false)}
-                  </div>
+                  {row.values.map((value, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "p-3 flex items-center justify-center",
+                        i === 0 ? "bg-[#FF4301]/10" : (i <= 2 ? "bg-zinc-100/50 dark:bg-zinc-800/50" : "")
+                      )}
+                    >
+                      {renderCell(value, i === 0, i)}
+                    </div>
+                  ))}
                 </div>
               );
             })}
