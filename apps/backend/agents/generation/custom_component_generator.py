@@ -172,34 +172,37 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
     try:
         client, model_name = get_client("claude-haiku-4-5")
 
-        prompt = f"""Generate simple Google Image search terms for a presentation slide.
+        prompt = f"""Extract the SPECIFIC names/entities mentioned in this slide for image search.
 
 SLIDE TITLE: {slide_title}
-SLIDE CONTENT: {content[:800]}
-CONTEXT: {context_block}
+SLIDE CONTENT: {content[:1000]}
 
-RULES - Keep searches SHORT and SEARCHABLE:
-1. 2-4 words per search (NOT long phrases)
-2. Use the MAIN SUBJECT only - no adjectives like "bold", "dramatic", "HD", "4K"
-3. If content mentions specific things (Pikachu, Tesla Model 3), use those exact names
-4. ONE subject per search - don't combine multiple things
+YOUR JOB: Find the ACTUAL NAMES of things mentioned - characters, people, products, places, brands.
 
-GOOD examples:
-- "esports arena" (not "esports arena panoramic crowd lights dramatic")
-- "Pikachu Pokemon" (not "Pikachu Pokemon cute official art standing pose")
-- "Tesla factory" (not "Tesla Gigafactory aerial drone shot 2024 professional")
-- "pro gamer" (not "pro gamer headset focused close-up dramatic lighting")
+RULES:
+1. USE EXACT NAMES from the content - "Princess Zelda" not "video game princess"
+2. USE SPECIFIC CHARACTERS - "Sheik Zelda" not "ninja character"
+3. USE BRAND NAMES - "Tesla Model 3" not "electric car"
+4. USE REAL NAMES - "Faker T1" not "esports player"
+5. Keep 2-4 words per search
+6. ONE entity per search
 
-BAD - too long/specific:
-- "video game champion character portrait bold dramatic lighting" ❌
-- "esports players intense duel match on stage HD" ❌
+EXAMPLES:
 
-GOOD - simple and findable:
-- "esports player gaming" ✓
-- "video game character" ✓
+Content: "Zelda transforms into Sheik to hide from Ganondorf"
+→ ["Sheik Zelda", "Ganondorf", "Princess Zelda"]
+NOT → ["video game character", "ninja warrior"]
 
-Return ONLY a JSON array of 3-5 SHORT search terms:
-["term1", "term2", "term3"]"""
+Content: "Pikachu evolves from Pichu into Raichu"
+→ ["Pikachu", "Pichu Pokemon", "Raichu"]
+NOT → ["electric mouse", "yellow pokemon"]
+
+Content: "T1 Faker wins Worlds championship"
+→ ["Faker T1", "League of Legends Worlds"]
+NOT → ["esports player", "gaming tournament"]
+
+Return ONLY a JSON array of 3-5 SPECIFIC names from the content:
+["name1", "name2", "name3"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(

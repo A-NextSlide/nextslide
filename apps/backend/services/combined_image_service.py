@@ -377,10 +377,30 @@ class CombinedImageService:
                             img['url'] = result['url']
                             img['supabase_path'] = result.get('path')
                         else:
-                            # If upload failed, skip this image
-                            logger.warning(f"Failed to upload image, skipping: {img['url']}")
-                            continue
-                
+                            # FALLBACK: Try thumbnail URL if original failed
+                            thumbnail_url = img.get('thumbnail_url') or img.get('src', {}).get('thumbnail')
+                            if thumbnail_url and thumbnail_url != img['url']:
+                                logger.info(f"Original failed, trying thumbnail: {thumbnail_url[:80]}...")
+                                result = await self.storage.upload_image_from_url(
+                                    image_url=thumbnail_url,
+                                    metadata={
+                                        'photographer': img.get('photographer'),
+                                        'alt': img.get('alt'),
+                                        'source': 'serpapi_thumbnail'
+                                    }
+                                )
+                                if 'error' not in result:
+                                    img['original_url'] = img['url']
+                                    img['url'] = result['url']
+                                    img['supabase_path'] = result.get('path')
+                                    img['used_thumbnail'] = True
+                                else:
+                                    logger.warning(f"Failed to upload image (both URLs), skipping: {img['url']}")
+                                    continue
+                            else:
+                                logger.warning(f"Failed to upload image, skipping: {img['url']}")
+                                continue
+
                 updated_images.append(img)
                 
             except Exception as e:
@@ -420,7 +440,7 @@ class CombinedImageService:
                 # Skip if already a Supabase URL
                 if 'supabase' in img['url']:
                     return img
-                    
+
                 result = await self.storage.upload_image_from_url(
                     image_url=img['url'],
                     metadata={
@@ -434,9 +454,28 @@ class CombinedImageService:
                     img['url'] = result['url']
                     img['supabase_path'] = result.get('path')
                     return img
-                else:
-                    logger.warning(f"Failed to upload image: {result.get('error')}")
-                    return None
+
+                # FALLBACK: Try thumbnail URL if original failed
+                thumbnail_url = img.get('thumbnail_url') or img.get('src', {}).get('thumbnail')
+                if thumbnail_url and thumbnail_url != img['url']:
+                    logger.info(f"Original URL failed, trying thumbnail: {thumbnail_url[:80]}...")
+                    result = await self.storage.upload_image_from_url(
+                        image_url=thumbnail_url,
+                        metadata={
+                            'photographer': img.get('photographer'),
+                            'alt': img.get('alt'),
+                            'source': 'serpapi_thumbnail'
+                        }
+                    )
+                    if 'error' not in result:
+                        img['original_url'] = img['url']
+                        img['url'] = result['url']
+                        img['supabase_path'] = result.get('path')
+                        img['used_thumbnail'] = True
+                        return img
+
+                logger.warning(f"Failed to upload image (both original and thumbnail): {result.get('error')}")
+                return None
                     
         except Exception as e:
             logger.error(f"Error uploading image to Supabase: {str(e)}")
