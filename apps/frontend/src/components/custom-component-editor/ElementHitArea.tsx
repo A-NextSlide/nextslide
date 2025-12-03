@@ -35,9 +35,10 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
         height: element.bounds.height,
         pointerEvents: 'auto',
         cursor: element.type === 'text' ? 'text' : 'pointer',
-        zIndex: isSelected ? 25 : 20,
+        // Text elements need higher z-index than containers so they're clickable
+        zIndex: isSelected ? 35 : (element.type === 'text' ? 30 : (element.type === 'image' ? 25 : 20)),
         // Debug: uncomment to see hit areas
-        backgroundColor: 'rgba(255, 0, 0, 0.1)',
+        backgroundColor: element.type === 'text' ? 'rgba(0, 255, 0, 0.15)' : (element.type === 'image' ? 'rgba(0, 0, 255, 0.15)' : 'rgba(255, 0, 0, 0.1)'),
       }}
       onClick={(e) => {
         e.stopPropagation();
