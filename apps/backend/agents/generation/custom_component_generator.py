@@ -31,7 +31,8 @@ _GEMINI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent Gemini calls
 async def prefetch_images_for_content(
     content: str,
     slide_title: str,
-    max_images: int = 5
+    max_images: int = 5,
+    slide_context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, str]:
     """
     Pre-fetch images for slide content BEFORE generation.
@@ -43,6 +44,7 @@ async def prefetch_images_for_content(
         content: The slide content to analyze
         slide_title: The slide title for additional context
         max_images: Maximum number of images to fetch
+        slide_context: Full slide context including presentation_context, slide_type, etc.
 
     Returns:
         Dict mapping prop names to our Supabase URLs, e.g.:
@@ -63,8 +65,8 @@ async def prefetch_images_for_content(
         logger.warning(f"[PREFETCH] Could not init SerpAPI: {e}")
         return {}
 
-    # Extract search terms using AI for better quality
-    search_terms = await _extract_image_search_terms_with_ai(content, slide_title)
+    # Extract search terms using AI with FULL CONTEXT for better quality
+    search_terms = await _extract_image_search_terms_with_ai(content, slide_title, slide_context)
     if not search_terms:
         print("[PREFETCH] ⚠️ No search terms extracted")
         return {}
@@ -128,38 +130,124 @@ async def prefetch_images_for_content(
     return prefetched
 
 
-async def _extract_image_search_terms_with_ai(content: str, slide_title: str, presentation_context: str = "") -> List[str]:
+async def _extract_image_search_terms_with_ai(content: str, slide_title: str, slide_context: Optional[Dict[str, Any]] = None) -> List[str]:
     """
-    Use AI to extract SMART, CONTEXTUAL image search terms.
+    Use AI to generate PRECISE Google Image search queries for SPECIFIC visual elements.
 
-    This produces much better results than regex-based extraction because it understands:
-    - The actual topic of the slide
-    - Industry context
-    - What kinds of images would be relevant
+    This function must:
+    1. FIRST analyze what visual elements the slide needs (hero image, icons, backgrounds, etc.)
+    2. THEN generate a precise search query for EACH specific element
+    3. Each query should find EXACTLY the right image for its purpose
     """
     from agents.ai.clients import get_client, invoke
+
+    # Extract all available context
+    slide_context = slide_context or {}
+    presentation_context = slide_context.get('presentation_context', '')
+    presentation_topic = slide_context.get('presentation_topic', '')
+    slide_type = slide_context.get('slide_type', '')
+    slide_index = slide_context.get('slide_index', 0)
+    total_slides = slide_context.get('total_slides', 1)
+    deck_title = slide_context.get('deck_title', '')
+    industry = slide_context.get('industry', '')
+    audience = slide_context.get('audience', '')
+
+    # Build rich context string
+    context_parts = []
+    if presentation_context:
+        context_parts.append(f"PRESENTATION TOPIC: {presentation_context}")
+    if deck_title and deck_title != slide_title:
+        context_parts.append(f"DECK TITLE: {deck_title}")
+    if presentation_topic:
+        context_parts.append(f"MAIN SUBJECT: {presentation_topic}")
+    if industry:
+        context_parts.append(f"INDUSTRY: {industry}")
+    if audience:
+        context_parts.append(f"AUDIENCE: {audience}")
+    if slide_type:
+        context_parts.append(f"SLIDE TYPE: {slide_type}")
+
+    context_block = "\n".join(context_parts) if context_parts else "No additional context"
 
     try:
         client, model_name = get_client("claude-haiku-4-5")
 
-        prompt = f"""You are generating Google Image search queries for a presentation slide.
+        prompt = f"""You are a visual designer planning EXACTLY what images a presentation slide needs.
 
-SLIDE: {slide_title}
-CONTENT: {content[:800]}
-{f"CONTEXT: {presentation_context}" if presentation_context else ""}
+=== PRESENTATION CONTEXT ===
+{context_block}
 
-Generate 4-5 search queries like you'd type into Google Images. Think:
-- What PHOTO would best illustrate this slide?
-- Use specific nouns: "Tesla factory robots" not "manufacturing"
-- Include brand/company names when mentioned
-- 2-4 words per query, like real Google searches
-- NO generic words: business, success, teamwork, strategy, growth, professional
+=== THIS SLIDE ===
+TITLE: {slide_title}
+CONTENT: {content[:1200]}
+POSITION: Slide {slide_index + 1} of {total_slides}
 
-GOOD: "Instacart delivery driver", "Kroger warehouse automation", "grocery app UI"
-BAD: "fulfillment model", "AI experience", "retail expansion"
+=== YOUR TASK ===
+STEP 1: Analyze the slide content and decide what SPECIFIC visual elements it needs:
+- Does it need a HERO IMAGE? (main visual focal point)
+- Does it need PRODUCT/CHARACTER images? (specific items mentioned)
+- Does it need ACTION SHOTS? (people doing things)
+- Does it need BACKGROUND/ATMOSPHERE images?
+- Does it need ICONS or LOGOS?
 
-Return ONLY a JSON array:
-["query 1", "query 2", "query 3", "query 4"]"""
+STEP 2: For EACH visual element needed, create a PRECISE Google search query.
+
+=== CRITICAL RULES ===
+
+1. EACH QUERY = ONE SPECIFIC VISUAL ELEMENT
+   Don't just search for "the slide topic" - search for the EXACT thing you'd put in that spot.
+
+   BAD: Slide about esports → "esports" (too vague, what visual element?)
+   GOOD:
+   - Hero image → "esports arena panoramic crowd lights 2024"
+   - Player photo → "pro gamer headset focused close-up"
+   - Logo → "League of Legends logo transparent"
+
+2. NEVER COMBINE MULTIPLE SUBJECTS INTO ONE SEARCH
+   If the slide needs images of Pichu, Pikachu, and Raichu - that's THREE separate searches!
+   BAD: "Pichu Pikachu Raichu evolution" (will return group photo)
+   GOOD: ["Pichu Pokemon cute", "Pikachu Pokemon", "Raichu Pokemon powerful"]
+
+3. IF CONTENT MENTIONS SPECIFIC THINGS, SEARCH FOR THOSE EXACT THINGS
+   Content mentions "Squirtle" → search "Squirtle Pokemon" NOT "turtle"
+   Content mentions "Tesla Model 3" → search "Tesla Model 3 red" NOT "electric car"
+   Content mentions "Korean esports" → search "Korean esports arena Seoul" NOT "gaming"
+
+3. THINK ABOUT HOW THE IMAGE WILL BE USED
+   - Hero/background → wide, high-res, dramatic: "esports stadium aerial view 4K"
+   - Thumbnail/icon → clear, centered subject: "Pikachu Pokemon icon PNG"
+   - Person photo → professional, good lighting: "esports commentator casting booth"
+   - Product shot → clean, detailed: "Tesla Model 3 white studio shot"
+
+4. ADD SPECIFICITY THAT HELPS GOOGLE
+   - Year: "2024" for current events
+   - Quality: "HD", "4K", "professional photo"
+   - Style: "official art", "promotional", "screenshot"
+   - Angle: "aerial view", "close-up", "wide shot"
+
+=== EXAMPLES ===
+
+Slide: "The Rise of Korean Esports" with content about T1 winning Worlds
+Visual elements needed:
+1. Hero image of Korean esports arena → "T1 League of Legends Worlds 2024 trophy celebration"
+2. Crowd atmosphere → "Korean esports fans cheering arena lights"
+3. Player action → "Faker T1 playing on stage Worlds"
+
+Slide: "Water-Type Pokemon Overview" with content about Squirtle evolution
+Visual elements needed:
+1. First Pokemon → "Squirtle Pokemon official art cute"
+2. Second Pokemon → "Wartortle Pokemon official art standing"
+3. Third Pokemon → "Blastoise Pokemon official art powerful"
+(NOTE: Search for EACH character SEPARATELY - don't combine them into one search!)
+
+Slide: "Tesla Q4 Production Numbers" with factory stats
+Visual elements needed:
+1. Factory hero → "Tesla Gigafactory Texas aerial drone shot 2024"
+2. Production line → "Tesla Model Y assembly line robots"
+3. Finished cars → "Tesla vehicles lined up delivery center"
+
+Return ONLY a JSON array of 3-5 PRECISE search queries:
+["exact search for element 1", "exact search for element 2", "exact search for element 3"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -387,6 +475,57 @@ def _extract_fonts_from_typography(typography: Dict[str, Any]) -> Tuple[str, str
     return (hero_font, body_font)
 
 
+def _extract_logo_from_theme(theme: Dict[str, Any]) -> Optional[str]:
+    """
+    Extract logo URL from theme dict.
+
+    Handles multiple possible structures:
+    - theme.brandInfo.logoUrl
+    - theme.color_palette.metadata.logo_url
+    - theme.logo.url
+    - theme.logo (direct URL string)
+
+    Returns logo URL or None if not found.
+    """
+    if not theme:
+        logger.debug("[LOGO] No theme dict provided")
+        return None
+
+    logo_url = None
+
+    # Try brandInfo.logoUrl (most common from frontend)
+    brand_info = theme.get('brandInfo', {})
+    if isinstance(brand_info, dict):
+        logo_url = brand_info.get('logoUrl')
+        if logo_url:
+            logger.debug(f"[LOGO] Found in brandInfo.logoUrl: {logo_url[:60]}...")
+            return logo_url
+
+    # Try color_palette.metadata.logo_url
+    color_palette = theme.get('color_palette', {})
+    if isinstance(color_palette, dict):
+        metadata = color_palette.get('metadata', {})
+        if isinstance(metadata, dict):
+            logo_url = metadata.get('logo_url')
+            if logo_url:
+                logger.debug(f"[LOGO] Found in color_palette.metadata.logo_url: {logo_url[:60]}...")
+                return logo_url
+
+    # Try theme.logo.url or theme.logo (direct string)
+    logo = theme.get('logo')
+    if isinstance(logo, dict):
+        logo_url = logo.get('url')
+        if logo_url:
+            logger.debug(f"[LOGO] Found in logo.url: {logo_url[:60]}...")
+            return logo_url
+    elif isinstance(logo, str) and logo.startswith('http'):
+        logger.debug(f"[LOGO] Found direct logo URL: {logo[:60]}...")
+        return logo
+
+    logger.debug("[LOGO] No logo URL found in theme")
+    return None
+
+
 class CustomComponentGenerator:
     """
     Generates creative CustomComponents using Gemini 3 Pro.
@@ -474,24 +613,35 @@ class CustomComponentGenerator:
                             print(f"[CUSTOM_COMPONENT]   {key}: {val}")
 
             # PRE-FETCH IMAGES if not already provided and auto_prefetch enabled
-            # Skip for title slides (they typically don't need images)
+            # Note: We now prefetch for ALL slides including title slides because
+            # Gemini often generates HTML with images even for title/cover slides
             slide_title = slide_context.get('title', '')
-            is_title_slide_check = self._is_title_slide(slide_context)
 
-            if not prefetched_images and auto_prefetch and not is_title_slide_check and not external_media:
+            # Debug: Log why prefetch might be skipped
+            logger.info(f"[CUSTOM_COMPONENT] Prefetch check: prefetched={bool(prefetched_images)}, auto_prefetch={auto_prefetch}, external_media={bool(external_media)}")
+            print(f"[CUSTOM_COMPONENT] 🔍 Prefetch check: prefetched={bool(prefetched_images)}, auto={auto_prefetch}, ext_media={bool(external_media)}")
+
+            # ALWAYS prefetch if we don't have images, regardless of external_media
+            # (external_media may exist but be empty, and we still need images)
+            if not prefetched_images and auto_prefetch:
                 logger.info("[CUSTOM_COMPONENT] Auto-prefetching images for content...")
                 print("[CUSTOM_COMPONENT] 🔍 Pre-fetching images before generation...")
                 try:
                     prefetched_images = await prefetch_images_for_content(
                         content=content,
                         slide_title=slide_title,
-                        max_images=5
+                        max_images=5,
+                        slide_context=slide_context  # Pass full context for smarter search terms!
                     )
                     if prefetched_images:
                         logger.info(f"[CUSTOM_COMPONENT] Pre-fetched {len(prefetched_images)} images")
                         print(f"[CUSTOM_COMPONENT] ✅ Pre-fetched {len(prefetched_images)} images: {list(prefetched_images.keys())}")
+                    else:
+                        logger.warning("[CUSTOM_COMPONENT] Prefetch returned empty/None!")
+                        print("[CUSTOM_COMPONENT] ⚠️ Prefetch returned empty - no images found")
                 except Exception as e:
-                    logger.warning(f"[CUSTOM_COMPONENT] Image prefetch failed: {e}")
+                    logger.error(f"[CUSTOM_COMPONENT] Image prefetch EXCEPTION: {e}", exc_info=True)
+                    print(f"[CUSTOM_COMPONENT] ❌ Prefetch exception: {e}")
                     prefetched_images = {}
 
             # CRITICAL: Convert external_media images to prefetched_images format for injection
@@ -514,7 +664,8 @@ class CustomComponentGenerator:
                         prefetched_images = await prefetch_images_for_content(
                             content=content,
                             slide_title=slide_title,
-                            max_images=5
+                            max_images=5,
+                            slide_context=slide_context  # Pass full context for smarter search terms!
                         )
                         if prefetched_images:
                             print(f"[CUSTOM_COMPONENT] ✅ Fallback prefetch got {len(prefetched_images)} images")
@@ -525,11 +676,22 @@ class CustomComponentGenerator:
             # Detect if this is a title slide
             is_title_slide = self._is_title_slide(slide_context)
 
+            # Get slide_mode from context: 'interactive' (NextGen) or 'static' (Traditional PPT)
+            slide_mode = slide_context.get('slide_mode', 'interactive')
+
+            # Extract logo URL from theme
+            logo_url = _extract_logo_from_theme(theme)
+            if logo_url:
+                logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...")
+                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}...")
+            else:
+                logger.debug("[CUSTOM_COMPONENT] No logo URL in theme")
+
             # Build the system prompt (specialized for title slides)
             if is_title_slide:
-                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords)
+                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url)
             else:
-                system_prompt = self._build_system_prompt(colors, typography, style_keywords)
+                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url)
 
             # Build the user prompt with full context
             if is_title_slide:
@@ -539,7 +701,8 @@ class CustomComponentGenerator:
                     colors=colors,
                     typography=typography,
                     width=width,
-                    height=height
+                    height=height,
+                    logo_url=logo_url
                 )
             else:
                 user_prompt = self._build_user_prompt(
@@ -553,7 +716,8 @@ class CustomComponentGenerator:
                     external_media=external_media,
                     uploaded_media=uploaded_media,
                     prefetched_images=prefetched_images,
-                    reference_images=reference_images
+                    reference_images=reference_images,
+                    logo_url=logo_url
                 )
 
             # Get client and generate
@@ -709,6 +873,10 @@ class CustomComponentGenerator:
             elif has_placeholders:
                 print(f"[CUSTOM_COMPONENT] ❌ NO IMAGES TO INJECT but HTML has placeholders!")
 
+            # CRITICAL FALLBACK: Upload any external URLs still in HTML to our bucket
+            # This catches cases where prefetch failed or AI generated unexpected URLs
+            html_content = await self._upload_external_urls_to_bucket(html_content)
+
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[CUSTOM_COMPONENT] Generated in {elapsed:.1f}s ({len(html_content)} chars)")
 
@@ -719,6 +887,12 @@ class CustomComponentGenerator:
             if image_props:
                 logger.info(f"[CUSTOM_COMPONENT] Including {len(image_props)} prefetched images in component props")
                 print(f"[CUSTOM_COMPONENT] 📸 Storing {len(image_props)} image URLs in props: {list(image_props.keys())}")
+
+            # Add logo to props if available
+            if logo_url:
+                image_props['logoUrl'] = logo_url
+                logger.info(f"[CUSTOM_COMPONENT] Including logo URL in component props")
+                print(f"[CUSTOM_COMPONENT] 🖼️ Storing logo URL in props")
 
             # Extract fonts using the helper
             hero_font, body_font = _extract_fonts_from_typography(typography)
@@ -737,6 +911,7 @@ class CustomComponentGenerator:
                     "textColor": colors.get('primary_text', '#ffffff'),
                     "fontFamily": body_font,
                     "heroFont": hero_font,
+                    "logoUrl": logo_url,  # Store logo URL directly in props
                     # Store prefetched images - frontend will inject these into ${propName} placeholders
                     "props": image_props
                 },
@@ -758,7 +933,9 @@ class CustomComponentGenerator:
         self,
         colors: Dict[str, str],
         typography: Dict[str, str],
-        style_keywords: list
+        style_keywords: list,
+        slide_mode: str = 'interactive',
+        logo_url: Optional[str] = None
     ) -> str:
         """Build the system prompt for CustomComponent generation."""
 
@@ -770,45 +947,78 @@ class CustomComponentGenerator:
         bg_color = colors.get('primary_background', '#0a0e27')
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
-        return f"""You are an elite creative designer with complete freedom. Create beautiful, unique slides.
+        # Logo instructions if available
+        logo_info = ""
+        if logo_url:
+            logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header when appropriate"
 
-THEME COLORS & FONTS:
-  --accent: {accent}
-  --secondary: {secondary}
-  --text: {text_color}
-  --bg: {bg_color}
-  Fonts: {hero_font} (headings), {body_font} (body)
+        # Base theme info (same for all modes)
+        theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
+FONTS: {hero_font} / {body_font}
+IMAGES: props.image1, props.image2 → const img = props.image1 || '';{logo_info}"""
 
-IMAGES: Access as props.image1, props.image2, etc.
-  const image1 = props.image1 || '';
-  <img src="${{image1}}" style="object-fit:cover;">
+        if slide_mode == 'static':
+            # Traditional PPT - beautiful, clean, professional (no interactivity)
+            return f"""You create stunning presentation slides like Apple Keynote or premium PowerPoint templates.
 
-CREATIVE FREEDOM:
-Design like you have weeks to craft this. Full-bleed backgrounds, diagonal slants,
-asymmetric layouts, floating elements, bold typography, glassmorphism, gradients,
-subtle animations, hover interactions - whatever makes the content shine.
+{theme_info}
 
-Each slide should feel intentionally designed, not templated.
-Think Apple keynote, Stripe, or award-winning editorial design.
+DESIGN PRINCIPLES:
+- Bold, impactful typography (titles 56-80px, big hero numbers)
+- Generous whitespace, elegant layouts
+- Beautiful charts and data visualizations (bar, pie, donut)
+- High-quality iconography and imagery
+- Professional color usage with accent highlights
+- Clean visual hierarchy
 
-OUTPUT: Complete HTML with Tailwind CSS.
+CONTENT STYLE:
+- BIG stats and numbers displayed prominently ("87%", "$2.4M", "+42%")
+- Minimal text - let visuals tell the story
+- Short punchy bullet points (max 5-7 words each)
+- Icons paired with key points
+- Professional imagery and illustrations
 
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@400;700;900&family={body_font.replace(' ', '+')}:wght@400;600&display=swap" rel="stylesheet">
-  <style>
-    :root {{ --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}; }}
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    html, body {{ width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: '{body_font}', sans-serif; color: var(--text); }}
-  </style>
-</head>
-<body>
-  <!-- Your design -->
-</body>
-</html>"""
+STRICTLY FORBIDDEN:
+- NO JavaScript, NO onclick handlers
+- NO hover effects, NO animations
+- NO interactive elements (quizzes, accordions, sliders)
+- NO CSS animations or transitions
+
+Think: Premium consulting deck, investor pitch, executive presentation.
+Every slide should be screenshot-worthy and PPTX-export ready.
+
+OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"""
+
+        else:  # interactive (default) - NextGen with FULL CREATIVE POWER
+            return f"""You are an elite creative technologist. Build INTERACTIVE experiences that make people say "WOW!"
+
+{theme_info}
+
+INTERACTIVE ARSENAL - use these:
+• Animated diagrams that BUILD on click
+• Interactive timelines - click nodes to reveal content
+• Quizzes with clickable answers, feedback, confetti
+• Animated counters that count up
+• Before/after comparison sliders
+• Hover-to-reveal cards that flip or expand
+• Click-through step-by-step processes
+• Expandable accordions
+• Drag interactions
+• SVG animations that draw themselves
+
+EVERY INTERACTIVE ELEMENT MUST:
+- Have working onclick/onmouseover handlers
+- DO something visible when clicked/hovered
+- Provide satisfying feedback (animations, state changes)
+- Be discoverable and intuitive
+
+Match the design to content:
+- Quote? Beautiful typography, elegant entrance
+- Data? Animated counters, interactive charts
+- Process? Click-through steps
+- Educational? Explorable, clickable, quiz-able
+
+OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
 
     def _build_user_prompt(
         self,
@@ -822,7 +1032,8 @@ OUTPUT: Complete HTML with Tailwind CSS.
         external_media: Optional[Dict[str, Any]] = None,
         uploaded_media: Optional[list] = None,
         prefetched_images: Optional[Dict[str, str]] = None,
-        reference_images: Optional[List[str]] = None
+        reference_images: Optional[List[str]] = None,
+        logo_url: Optional[str] = None
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -984,8 +1195,18 @@ IMAGES AVAILABLE (use props.image1, props.image2, etc.):
 {image_list}
 """
 
+        # Build logo section if logo URL is available
+        logo_section = ""
+        if logo_url:
+            logo_section = f"""
+BRAND LOGO (place in top-left or top-right corner):
+  ✓ logoUrl: {logo_url}
+  Usage: <img src="{logo_url}" alt="Logo" style="height: 40px; width: auto;">
+  Placement: Top corner, semi-transparent if over busy background
+"""
+
         return f"""{full_slide_instructions}SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}
+{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
 CONTENT:
 {content}
 
@@ -1062,17 +1283,31 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         with real URLs from prefetched images.
 
         This runs AFTER AI generation to ensure images appear regardless of what the AI generated.
+        Also replaces external URLs (Unsplash, etc.) that AI might have hardcoded.
         """
         import re
 
-        if not html or not prefetched_images:
+        if not html:
             return html
+
+        # Ensure prefetched_images is at least an empty dict
+        prefetched_images = prefetched_images or {}
 
         # Get only actual image URLs (not the _query hints)
         image_urls = [v for k, v in prefetched_images.items() if not k.endswith('_query') and v.startswith('http')]
 
         if not image_urls:
-            logger.warning("[IMAGE_INJECT] No valid image URLs to inject")
+            # Even without prefetched images, we should log any external URLs found
+            # so we can diagnose issues
+            external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', html, flags=re.IGNORECASE)
+            if external_matches:
+                OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
+                external_to_replace = [url for url in external_matches if not any(d in url.lower() for d in OUR_BUCKET_DOMAINS)]
+                if external_to_replace:
+                    logger.warning(f"[IMAGE_INJECT] No prefetched images but found {len(external_to_replace)} external URLs that need replacement!")
+                    for url in external_to_replace[:3]:
+                        logger.warning(f"[IMAGE_INJECT]   - UNREPLACED: {url[:70]}...")
+                    print(f"[IMAGE_INJECT] ⚠️ Found {len(external_to_replace)} external URLs but no images to replace them!")
             return html
 
         logger.info(f"[IMAGE_INJECT] Starting guaranteed injection with {len(image_urls)} images")
@@ -1081,6 +1316,13 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         result = html
         images_injected = 0
         image_index = 0
+
+        # Our bucket domain - images from here should NOT be replaced
+        OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
+
+        def is_our_url(url: str) -> bool:
+            """Check if URL is from our storage bucket."""
+            return any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS)
 
         # PATTERN 1: Replace ${propName} patterns with real URLs
         # Matches: src="${image1}" or src="${anyPropName}"
@@ -1110,6 +1352,31 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         var_pattern = r'<img\s+([^>]*?)src=["\']?\$\{+\s*(\w+)\s*\}+["\']?([^>]*?)>'
         result = re.sub(var_pattern, replace_variable_src, result, flags=re.IGNORECASE)
 
+        # PATTERN 1.5: Replace props.imageX references (e.g., src="props.image1")
+        def replace_props_reference(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            prop_name = match.group(2)  # e.g., "image1"
+            after = match.group(3)
+
+            # Check if we have this exact prop
+            if prop_name in prefetched_images and prefetched_images[prop_name].startswith('http'):
+                url = prefetched_images[prop_name]
+            elif image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced props.{prop_name} with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ props.{prop_name} -> {url[:40]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        # Match: src="props.image1" or src='props.image2'
+        props_ref_pattern = r'<img\s+([^>]*?)src=["\']props\.(\w+)["\']([^>]*?)>'
+        result = re.sub(props_ref_pattern, replace_props_reference, result, flags=re.IGNORECASE)
+
         # PATTERN 2: Replace empty or placeholder src with real URLs
         # Matches: src="" or src="placeholder" or src='placeholder'
         def replace_placeholder_src(match):
@@ -1131,7 +1398,176 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         placeholder_pattern = r'<img\s+([^>]*?)src=["\'](?:placeholder|)["\']([^>]*?)>'
         result = re.sub(placeholder_pattern, replace_placeholder_src, result, flags=re.IGNORECASE)
 
-        # PATTERN 3: Replace JavaScript variable assignments
+        # PATTERN 2.5: Replace relative/local image paths (image1.jpg, img.png, etc.) with our bucket URLs
+        # This catches AI that outputs local file paths expecting them to be replaced
+        def replace_local_file_src(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            local_path = match.group(2)
+            after = match.group(3)
+
+            # Get the next available image
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced local file '{local_path}' with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ LOCAL: {local_path} -> {url[:40]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        # Match img tags with relative paths like image1.jpg, photo.png, img-hero.webp, etc.
+        # Excludes: http://, https://, data:, blob:, ${, and our bucket URLs
+        local_file_pattern = r'<img\s+([^>]*?)src=["\']([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))["\']([^>]*?)>'
+        result = re.sub(local_file_pattern, replace_local_file_src, result, flags=re.IGNORECASE)
+
+        # PATTERN 2.6: Replace local file paths in background-image CSS (e.g., url("image2.jpg"))
+        def replace_local_bg_image(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)  # Everything before the URL (e.g., "background-image: url(")
+            local_path = match.group(2)  # The local file path (e.g., "image2.jpg")
+            after = match.group(3)  # Everything after (e.g., ")")
+
+            # Get the next available image
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced local BG file '{local_path}' with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ LOCAL-BG: {local_path} -> {url[:40]}...")
+            return f'{before}{url}{after}'
+
+        # Match background-image: url('image.jpg') or url("image.png") - local files only
+        local_bg_pattern = r'(background-image:\s*url\([\'"]?)([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))([\'"]?\))'
+        result = re.sub(local_bg_pattern, replace_local_bg_image, result, flags=re.IGNORECASE)
+
+        # Also match inline style with local background-image
+        inline_local_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)([a-zA-Z0-9_\-\.]+\.(?:jpg|jpeg|png|gif|webp|svg|avif))([\'"]?\)[^"\']*["\'])'
+        result = re.sub(inline_local_bg_pattern, replace_local_bg_image, result, flags=re.IGNORECASE)
+
+        # PATTERN 2.7: Replace props.imageX references in background-image CSS
+        def replace_props_bg_image(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)
+            prop_name = match.group(2)  # e.g., "image1"
+            after = match.group(3)
+
+            # Check if we have this exact prop
+            if prop_name in prefetched_images and prefetched_images[prop_name].startswith('http'):
+                url = prefetched_images[prop_name]
+            elif image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced BG props.{prop_name} with {url[:50]}...")
+            print(f"[IMAGE_INJECT] ✅ BG-props.{prop_name} -> {url[:40]}...")
+            return f'{before}{url}{after}'
+
+        # Match background-image: url('props.image1') or url("props.image2")
+        props_bg_pattern = r'(background-image:\s*url\([\'"]?)props\.(\w+)([\'"]?\))'
+        result = re.sub(props_bg_pattern, replace_props_bg_image, result, flags=re.IGNORECASE)
+
+        # Also inline style
+        inline_props_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)props\.(\w+)([\'"]?\)[^"\']*["\'])'
+        result = re.sub(inline_props_bg_pattern, replace_props_bg_image, result, flags=re.IGNORECASE)
+
+        # PATTERN 3: Replace EXTERNAL image URLs (Unsplash, Pexels, etc.) with our bucket URLs
+        # This catches AI that hardcodes stock photo URLs instead of using props
+        def replace_external_img_src(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)  # attributes before src=
+            external_url = match.group(2)  # the URL
+            after = match.group(3)  # attributes after src="..."
+
+            # Skip if it's already from our bucket
+            if is_our_url(external_url):
+                logger.debug(f"[IMAGE_INJECT] Skipping our bucket URL: {external_url[:50]}...")
+                return match.group(0)
+
+            # Skip data URLs
+            if external_url.startswith('data:'):
+                logger.debug(f"[IMAGE_INJECT] Skipping data URL")
+                return match.group(0)
+
+            # Check if we have images available
+            if not image_urls:
+                logger.warning(f"[IMAGE_INJECT] No images available to replace external URL: {external_url[:50]}...")
+                return match.group(0)
+
+            # Replace with our prefetched image
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced external URL {external_url[:40]}... with {url[:40]}...")
+            print(f"[IMAGE_INJECT] ✅ EXTERNAL: {external_url[:30]}... -> {url[:30]}...")
+            return f'<img {before}src="{url}"{after}>'
+
+        # Match img tags with http/https URLs that are NOT from our bucket
+        # DEBUG: Count external URLs before replacement
+        external_matches = re.findall(r'<img[^>]+src=["\']?(https?://[^\s"\'>]+)["\']?', result, flags=re.IGNORECASE)
+        if external_matches:
+            external_to_replace = [url for url in external_matches if not is_our_url(url)]
+            logger.info(f"[IMAGE_INJECT] Found {len(external_matches)} URLs in img tags, {len(external_to_replace)} are external")
+            for url in external_to_replace[:5]:  # Log first 5 external
+                logger.info(f"[IMAGE_INJECT]   - [EXTERNAL] {url[:70]}...")
+        else:
+            logger.info(f"[IMAGE_INJECT] No URLs found in img tags")
+
+        # Pattern: <img ...before_attrs... src="https://external.url" ...after_attrs...>
+        # Groups: (1) attrs before src, (2) URL, (3) attrs after src value
+        # NOTE: Pattern must match the structure used in replace function: <img {before}src="{url}"{after}>
+        external_url_pattern = r'<img\s+([^>]*?)src=["\']+(https?://[^\s"\'>]+)["\']([^>]*)>'
+        result = re.sub(external_url_pattern, replace_external_img_src, result, flags=re.IGNORECASE)
+
+        # PATTERN 4: Replace background-image: url(...) CSS with our bucket URLs
+        # This catches divs with background images (Unsplash, etc.)
+        def replace_background_image_url(match):
+            nonlocal images_injected, image_index
+            before = match.group(1)  # Everything before the URL
+            external_url = match.group(2)  # The URL itself
+            after = match.group(3)  # Everything after the URL
+
+            # Skip if it's already from our bucket
+            if is_our_url(external_url):
+                return match.group(0)
+
+            # Skip data URLs and gradients
+            if external_url.startswith('data:') or external_url.startswith('linear') or external_url.startswith('radial'):
+                return match.group(0)
+
+            # Replace with our prefetched image
+            if image_index < len(image_urls):
+                url = image_urls[image_index]
+                image_index += 1
+            else:
+                url = image_urls[images_injected % len(image_urls)]
+
+            images_injected += 1
+            logger.info(f"[IMAGE_INJECT] Replaced background-image URL {external_url[:40]}... with {url[:40]}...")
+            print(f"[IMAGE_INJECT] ✅ BG-IMAGE: {external_url[:30]}... -> {url[:30]}...")
+            return f'{before}{url}{after}'
+
+        # Match background-image: url('...') or url("...") or url(...)
+        bg_image_pattern = r'(background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\))'
+        result = re.sub(bg_image_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
+
+        # Also match inline style background-image
+        inline_bg_pattern = r'(style=["\'][^"\']*background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\)[^"\']*["\'])'
+        result = re.sub(inline_bg_pattern, replace_background_image_url, result, flags=re.IGNORECASE)
+
+        # PATTERN 5: Replace JavaScript variable assignments
         # const image1 = props.image1 || 'placeholder' -> const image1 = 'https://...'
         for key, url in prefetched_images.items():
             if key.endswith('_query') or not url.startswith('http'):
@@ -1152,6 +1588,107 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
             # No placeholders found - try to add images to the first suitable container
             logger.warning("[IMAGE_INJECT] No placeholders found - adding images to content")
             print("[IMAGE_INJECT] ⚠️ No placeholders found, attempting to add images...")
+
+        return result
+
+    async def _upload_external_urls_to_bucket(self, html: str) -> str:
+        """
+        CRITICAL FALLBACK: Find any external image URLs in HTML and upload them to our bucket.
+
+        This ensures that even if prefetching failed or AI generated unexpected URLs,
+        the final HTML will always use our bucket URLs.
+        """
+        import re
+        from services.image_storage_service import ImageStorageService
+
+        if not html:
+            return html
+
+        # Our bucket domains - URLs from these should NOT be re-uploaded
+        OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
+
+        def is_our_url(url: str) -> bool:
+            return any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS)
+
+        # Find all external image URLs in img tags
+        img_url_pattern = r'<img\s+([^>]*?)src=["\']+(https?://[^\s"\'>]+)["\']([^>]*)>'
+        matches = list(re.finditer(img_url_pattern, html, flags=re.IGNORECASE))
+
+        external_urls = []
+        for match in matches:
+            url = match.group(2)
+            if not is_our_url(url) and not url.startswith('data:'):
+                external_urls.append((match, url))
+
+        if not external_urls:
+            logger.debug("[BUCKET_UPLOAD] No external URLs to upload")
+            return html
+
+        logger.info(f"[BUCKET_UPLOAD] Found {len(external_urls)} external URLs to upload")
+        print(f"[BUCKET_UPLOAD] 🔄 Uploading {len(external_urls)} external images to bucket...")
+
+        # Upload each external URL to our bucket
+        result = html
+        uploaded_count = 0
+
+        async with ImageStorageService() as storage:
+            for match, external_url in external_urls:
+                try:
+                    # Upload to our bucket
+                    upload_result = await storage.upload_image_from_url(external_url)
+
+                    if 'error' not in upload_result and upload_result.get('url'):
+                        bucket_url = upload_result['url']
+
+                        # Build replacement string
+                        before = match.group(1)
+                        after = match.group(3)
+                        old_tag = match.group(0)
+                        new_tag = f'<img {before}src="{bucket_url}"{after}>'
+
+                        # Replace in result
+                        result = result.replace(old_tag, new_tag, 1)
+                        uploaded_count += 1
+
+                        logger.info(f"[BUCKET_UPLOAD] ✅ Uploaded: {external_url[:40]}... -> {bucket_url[:40]}...")
+                        print(f"[BUCKET_UPLOAD] ✅ {external_url[:30]}... -> bucket")
+                    else:
+                        logger.warning(f"[BUCKET_UPLOAD] Failed to upload: {external_url[:50]}...")
+                        print(f"[BUCKET_UPLOAD] ⚠️ Failed: {external_url[:30]}...")
+
+                except Exception as e:
+                    logger.error(f"[BUCKET_UPLOAD] Exception uploading {external_url[:50]}: {e}")
+                    print(f"[BUCKET_UPLOAD] ❌ Error: {external_url[:30]}... - {e}")
+
+        # Also handle background-image URLs
+        bg_url_pattern = r'(background-image:\s*url\([\'"]?)(https?://[^\'")\s]+)([\'"]?\))'
+        bg_matches = list(re.finditer(bg_url_pattern, result, flags=re.IGNORECASE))
+
+        for match in bg_matches:
+            url = match.group(2)
+            if not is_our_url(url) and not url.startswith('data:'):
+                try:
+                    async with ImageStorageService() as storage:
+                        upload_result = await storage.upload_image_from_url(url)
+
+                        if 'error' not in upload_result and upload_result.get('url'):
+                            bucket_url = upload_result['url']
+                            before = match.group(1)
+                            after = match.group(3)
+                            old_css = match.group(0)
+                            new_css = f'{before}{bucket_url}{after}'
+                            result = result.replace(old_css, new_css, 1)
+                            uploaded_count += 1
+                            logger.info(f"[BUCKET_UPLOAD] ✅ BG uploaded: {url[:40]}...")
+
+                except Exception as e:
+                    logger.error(f"[BUCKET_UPLOAD] Exception uploading BG {url[:50]}: {e}")
+
+        if uploaded_count > 0:
+            logger.info(f"[BUCKET_UPLOAD] Successfully uploaded {uploaded_count} images to bucket")
+            print(f"[BUCKET_UPLOAD] 🎉 Uploaded {uploaded_count} images to bucket!")
+        else:
+            logger.warning("[BUCKET_UPLOAD] No images were successfully uploaded")
 
         return result
 
@@ -1493,11 +2030,10 @@ THINK LIKE A DESIGNER:
         self,
         colors: Dict[str, str],
         typography: Dict[str, str],
-        style_keywords: list
+        style_keywords: list,
+        logo_url: Optional[str] = None
     ) -> str:
         """Build specialized system prompt for stunning title slides."""
-
-        style_desc = ", ".join(style_keywords) if style_keywords else "modern, professional"
 
         accent = colors.get('accent_1', '#6366f1')
         secondary = colors.get('accent_2', '#8b5cf6')
@@ -1505,152 +2041,36 @@ THINK LIKE A DESIGNER:
         bg_color = colors.get('primary_background', '#0a0e27')
         hero_font, body_font = _extract_fonts_from_typography(typography)
 
-        return f"""You are a WORLD-CLASS MOTION GRAPHICS DESIGNER creating STUNNING ANIMATED TITLE SLIDES.
+        # Logo instructions for title slides
+        logo_info = ""
+        if logo_url:
+            logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height)"
 
-You create title slides that make audiences gasp - the kind you see at Apple keynotes, TED talks, and award shows.
+        return f"""You are an award-winning motion graphics designer. Create BREATHTAKING title slides.
 
-═══════════════════════════════════════════════════════════════
-🎨 DESIGN SYSTEM (USE THESE EXACT COLORS!)
-═══════════════════════════════════════════════════════════════
+THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
+FONTS: {hero_font} (hero) / {body_font} (body){logo_info}
 
-:root {{
-  --accent: {accent};
-  --secondary: {secondary};
-  --text: {text_color};
-  --bg: {bg_color};
-  --font-hero: '{hero_font}', sans-serif;
-  --font-body: '{body_font}', sans-serif;
-}}
+DESIGN PHILOSOPHY:
+- Cinematic, editorial, high-fashion quality
+- Dramatic typography as the hero (120-200px titles)
+- Atmospheric backgrounds (gradients, glows, particles, blur effects)
+- Elegant entrance animations (fade, slide, reveal, scale)
+- Maximum 4 elements: logo (if provided), title, optional subtitle, optional accent
 
-STYLE: {style_desc}
+TYPOGRAPHY CRAFT:
+- Tight letter-spacing (-0.02em to -0.05em)
+- Gradient text or dramatic shadows for depth
+- Strategic use of font weights (light vs black contrast)
 
-═══════════════════════════════════════════════════════════════
-🚀 TITLE SLIDE DESIGN PATTERNS - PICK ONE AND EXECUTE PERFECTLY
-═══════════════════════════════════════════════════════════════
+ATMOSPHERE:
+- Radial glows, soft blurs, light leaks
+- Subtle particle systems or floating elements
+- Animated gradient backgrounds
+- Cinematic color grading
 
-🎯 PATTERN 1: ANIMATED TEXT REVEAL
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Letters animate in one by one with bounce/fade
-- Gradient text that shimmers with animation
-- Subtitle fades in after title completes
-- Minimal, elegant, Apple-style
-
-🎯 PATTERN 2: PARTICLE BACKGROUND
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Floating particles/dots in accent colors
-- Particles drift slowly, creating atmosphere
-- Title sits prominently over the particles
-- Feels dynamic and premium
-
-🎯 PATTERN 3: GRADIENT MORPH
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Background gradient slowly animates/shifts
-- Multiple color stops that smoothly transition
-- Creates a "living" background effect
-- Title uses glassmorphism or solid for contrast
-
-🎯 PATTERN 4: SPOTLIGHT/GLOW EFFECT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Subtle spotlight or radial glow behind title
-- Animated pulse or breathing effect
-- Creates dramatic focus on the title
-- Premium, cinematic feel
-
-🎯 PATTERN 5: GEOMETRIC ACCENTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Animated lines, circles, or shapes
-- Shapes orbit or draw themselves
-- Creates visual interest without overwhelming
-- Modern, tech-forward aesthetic
-
-🎯 PATTERN 6: WAVE/RIPPLE EFFECT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- SVG wave animation at bottom
-- Or ripple effect behind title
-- Creates organic, flowing feel
-- Works great with gradient backgrounds
-
-═══════════════════════════════════════════════════════════════
-💎 REQUIRED VISUAL TECHNIQUES
-═══════════════════════════════════════════════════════════════
-
-MASSIVE TYPOGRAPHY:
-- Title: 80-160px font size (HUGE!)
-- Use hero font: '{hero_font}'
-- Letter-spacing: -0.02em to -0.04em for tightness
-- Line-height: 0.95 to 1.1 for compact feel
-
-GRADIENT TEXT (when appropriate):
-background: linear-gradient(135deg, {accent}, {secondary});
--webkit-background-clip: text;
--webkit-text-fill-color: transparent;
-
-GLOW EFFECTS:
-text-shadow: 0 0 40px {accent}60, 0 0 80px {accent}30;
-OR
-box-shadow: 0 0 60px {accent}40;
-
-SMOOTH ANIMATIONS:
-- Use CSS animations with cubic-bezier easing
-- Duration: 0.5s-2s for reveals
-- animation-fill-mode: forwards for end states
-
-STAGGER EFFECTS:
-animation-delay: calc(var(--i) * 0.1s);
-
-═══════════════════════════════════════════════════════════════
-🚫 ABSOLUTELY FORBIDDEN ON TITLE SLIDES
-═══════════════════════════════════════════════════════════════
-
-❌ Static, boring layouts with no animation
-❌ Bullet points or lists (this is a TITLE slide!)
-❌ Multiple text blocks competing for attention
-❌ Tiny fonts (minimum 48px for subtitle, 80px+ for title)
-❌ Generic corporate template look
-❌ Hardcoded colors (MUST use CSS variables)
-❌ Cluttered designs - keep it CLEAN and IMPACTFUL
-❌ Decorative icons or emojis
-
-═══════════════════════════════════════════════════════════════
-📐 OUTPUT STRUCTURE
-═══════════════════════════════════════════════════════════════
-
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@400;700;900&family={body_font.replace(' ', '+')}:wght@400;600&display=swap" rel="stylesheet">
-  <style>
-    :root {{
-      --accent: {accent};
-      --secondary: {secondary};
-      --text: {text_color};
-      --bg: {bg_color};
-    }}
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    html, body {{
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: var(--bg);
-      font-family: '{hero_font}', sans-serif;
-      color: var(--text);
-    }}
-    body {{
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }}
-    /* Your stunning animations and styles */
-  </style>
-</head>
-<body>
-  <!-- STUNNING ANIMATED TITLE CONTENT -->
-  <script>
-    // Optional: JavaScript for complex animations
-  </script>
-</body>
-</html>"""
+OUTPUT: Complete HTML/CSS/JS starting with <!DOCTYPE html>
+Use CSS variables. Smooth animations (cubic-bezier). Fill 1920x1080."""
 
     def _build_title_slide_user_prompt(
         self,
@@ -1659,20 +2079,17 @@ animation-delay: calc(var(--i) * 0.1s);
         colors: Dict[str, str],
         typography: Dict[str, str],
         width: int,
-        height: int
+        height: int,
+        logo_url: Optional[str] = None
     ) -> str:
         """Build user prompt specifically for title slides."""
 
         title = slide_context.get('title', 'Presentation Title')
-        total_slides = slide_context.get('total_slides', 1)
-
         accent = colors.get('accent_1', '#6366f1')
         secondary = colors.get('accent_2', '#8b5cf6')
         text_color = colors.get('primary_text', '#ffffff')
+        bg_color = colors.get('primary_background', '#0a0e27')
         hero_font, body_font = _extract_fonts_from_typography(typography)
-
-        # Get presentation context (user's original request) for design cues
-        presentation_context = slide_context.get('presentation_context', '')
 
         # Parse content for subtitle/presenter info
         subtitle = ""
@@ -1683,264 +2100,34 @@ animation-delay: calc(var(--i) * 0.1s);
                 subtitle = lines[0] if len(lines) > 0 else ""
                 presenter = lines[1] if len(lines) > 1 else ""
 
-        # Build design context section if user provided design cues
-        design_context_section = ""
-        if presentation_context:
-            design_context_section = f"""
-═══════════════════════════════════════════════════════════════
-🎨 USER'S DESIGN PREFERENCES (Review for style/design cues ONLY)
-═══════════════════════════════════════════════════════════════
-
-The user originally requested: "{presentation_context}"
-
-⚠️ IMPORTANT: Review this ONLY for design/style hints such as:
-- Visual style preferences (minimalist, bold, playful, corporate, etc.)
-- Animation preferences (subtle, dramatic, none, etc.)
-- Layout preferences (clean, dense, spacious, etc.)
-- Mood/tone (professional, fun, serious, energetic, etc.)
-
-DO NOT use this for content - the title slide content is provided separately.
+        # Build logo section for title slides
+        logo_section = ""
+        if logo_url:
+            logo_section = f"""
+BRAND LOGO: {logo_url}
+  - Place in top-left or top-right corner
+  - Height: 40-60px, width: auto
+  - Example: <img src="{logo_url}" alt="Logo" style="position: absolute; top: 40px; left: 40px; height: 50px; width: auto;">
 """
 
-        return f"""═══════════════════════════════════════════════════════════════
-🎬 CREATE A STUNNING TITLE SLIDE
-═══════════════════════════════════════════════════════════════
+        return f"""TITLE SLIDE: "{title}"
+{f'Subtitle: "{subtitle}"' if subtitle else ''}
+{f'Presenter: "{presenter}"' if presenter else ''}
 
-PRESENTATION TITLE: "{title}"
-SUBTITLE/TAGLINE: "{subtitle}"
-PRESENTER/INFO: "{presenter}"
-TOTAL SLIDES: {total_slides}
+SIZE: {width}x{height}px
 
-DIMENSIONS: {width}px × {height}px (FILL THE ENTIRE SPACE!)
-{design_context_section}
+COLORS: accent={accent}, secondary={secondary}, text={text_color}, bg={bg_color}
+FONTS: {hero_font} / {body_font}
+{logo_section}
+Create a cinematic, editorial-quality title slide. Think movie poster, fashion magazine, Apple keynote.
 
-═══════════════════════════════════════════════════════════════
-🎨 DESIGN TOKENS
-═══════════════════════════════════════════════════════════════
+Be creative with:
+- Atmospheric effects (glows, gradients, blur, particles)
+- Dramatic typography (150px+, tight tracking, gradient or shadow)
+- Elegant animations (reveals, fades, subtle motion)
+- Visual depth (layers, transparency, lighting effects)
 
---accent: {accent}
---secondary: {secondary}
---text: {text_color}
---font-hero: '{hero_font}'
---font-body: '{body_font}'
-
-═══════════════════════════════════════════════════════════════
-📋 EXAMPLE: ANIMATED TEXT REVEAL TITLE SLIDE
-═══════════════════════════════════════════════════════════════
-
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family={hero_font.replace(' ', '+')}:wght@700;900&family={body_font.replace(' ', '+')}:wght@400;600&display=swap" rel="stylesheet">
-  <style>
-    :root {{
-      --accent: {accent};
-      --secondary: {secondary};
-      --text: {text_color};
-      --bg: {colors.get('primary_background', '#0a0e27')};
-    }}
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    html, body {{
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: var(--bg);
-      font-family: '{hero_font}', sans-serif;
-    }}
-    body {{
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px;
-      position: relative;
-    }}
-
-    /* Animated gradient background */
-    .bg-gradient {{
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, var(--bg) 0%, color-mix(in srgb, var(--accent) 15%, var(--bg)) 50%, var(--bg) 100%);
-      background-size: 200% 200%;
-      animation: gradientShift 8s ease infinite;
-    }}
-
-    @keyframes gradientShift {{
-      0%, 100% {{ background-position: 0% 50%; }}
-      50% {{ background-position: 100% 50%; }}
-    }}
-
-    /* Floating particles */
-    .particles {{
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }}
-
-    .particle {{
-      position: absolute;
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: var(--accent);
-      opacity: 0.3;
-      animation: float 15s infinite ease-in-out;
-    }}
-
-    @keyframes float {{
-      0%, 100% {{ transform: translateY(0) translateX(0); }}
-      25% {{ transform: translateY(-20px) translateX(10px); }}
-      50% {{ transform: translateY(-10px) translateX(-10px); }}
-      75% {{ transform: translateY(-30px) translateX(5px); }}
-    }}
-
-    /* Main title container */
-    .content {{
-      position: relative;
-      z-index: 10;
-      text-align: center;
-      max-width: 1600px;
-    }}
-
-    /* Animated title */
-    .title {{
-      font-size: 120px;
-      font-weight: 900;
-      letter-spacing: -0.03em;
-      line-height: 1.0;
-      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 50%, var(--secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: titleReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      opacity: 0;
-      transform: translateY(40px);
-    }}
-
-    @keyframes titleReveal {{
-      to {{
-        opacity: 1;
-        transform: translateY(0);
-      }}
-    }}
-
-    /* Glow effect behind title */
-    .title-glow {{
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px;
-      height: 300px;
-      background: radial-gradient(ellipse, var(--accent) 0%, transparent 70%);
-      opacity: 0.15;
-      filter: blur(60px);
-      animation: glowPulse 4s ease-in-out infinite;
-    }}
-
-    @keyframes glowPulse {{
-      0%, 100% {{ opacity: 0.15; transform: translate(-50%, -50%) scale(1); }}
-      50% {{ opacity: 0.25; transform: translate(-50%, -50%) scale(1.1); }}
-    }}
-
-    /* Subtitle */
-    .subtitle {{
-      font-family: '{body_font}', sans-serif;
-      font-size: 32px;
-      font-weight: 400;
-      color: var(--text);
-      opacity: 0;
-      margin-top: 32px;
-      animation: subtitleFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.6s forwards;
-    }}
-
-    @keyframes subtitleFade {{
-      to {{ opacity: 0.8; }}
-    }}
-
-    /* Presenter info */
-    .presenter {{
-      font-family: '{body_font}', sans-serif;
-      font-size: 20px;
-      color: var(--accent);
-      opacity: 0;
-      margin-top: 48px;
-      animation: subtitleFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.9s forwards;
-    }}
-
-    /* Decorative line */
-    .line {{
-      width: 120px;
-      height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--secondary));
-      margin: 32px auto 0;
-      border-radius: 2px;
-      transform: scaleX(0);
-      animation: lineGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1.2s forwards;
-    }}
-
-    @keyframes lineGrow {{
-      to {{ transform: scaleX(1); }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="bg-gradient"></div>
-
-  <div class="particles">
-    <div class="particle" style="left: 10%; top: 20%; animation-delay: 0s;"></div>
-    <div class="particle" style="left: 20%; top: 60%; animation-delay: 2s;"></div>
-    <div class="particle" style="left: 35%; top: 30%; animation-delay: 4s;"></div>
-    <div class="particle" style="left: 50%; top: 70%; animation-delay: 1s;"></div>
-    <div class="particle" style="left: 65%; top: 25%; animation-delay: 3s;"></div>
-    <div class="particle" style="left: 80%; top: 55%; animation-delay: 5s;"></div>
-    <div class="particle" style="left: 90%; top: 40%; animation-delay: 2.5s;"></div>
-  </div>
-
-  <div class="content">
-    <div class="title-glow"></div>
-    <h1 class="title">The Future of AI</h1>
-    <p class="subtitle">Transforming How We Work and Live</p>
-    <div class="line"></div>
-    <p class="presenter">John Smith • TechCorp • 2024</p>
-  </div>
-</body>
-</html>
-
-═══════════════════════════════════════════════════════════════
-🚀 NOW CREATE YOUR TITLE SLIDE!
-═══════════════════════════════════════════════════════════════
-
-Create a STUNNING animated title slide for:
-TITLE: "{title}"
-{f'SUBTITLE: "{subtitle}"' if subtitle else ''}
-{f'PRESENTER: "{presenter}"' if presenter else ''}
-
-REQUIREMENTS:
-✓ MASSIVE title (80-160px) with animation
-✓ Use gradient text or solid with glow effect
-✓ Include at least ONE animation (reveal, particles, gradient shift, etc.)
-✓ Use exact CSS variables (--accent, --secondary, --text)
-✓ Fill the full {width}x{height} space
-✓ Keep it clean - title is the HERO, everything else supports it
-
-Choose ONE of these approaches:
-1. Animated text reveal with staggered letters
-2. Particle background with floating dots
-3. Morphing gradient background
-4. Spotlight/glow focus effect
-5. Geometric animated accents
-6. Wave/ripple animation
-
-OUTPUT: Complete HTML document starting with <!DOCTYPE html>"""
+Keep it minimal - the title is everything. Maximum {4 if logo_url else 3} visual elements total."""
 
     def _wrap_in_html(self, content: str) -> str:
         """Wrap partial HTML in a complete document."""

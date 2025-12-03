@@ -213,7 +213,7 @@ const AppContent = () => {
         <ThemeProvider>
           {/* Monitor for deck data changes */}
           <DeckMonitor onChange={handleDeckDataChange} />
-          <TemporaryPasswordGate enabled={import.meta.env.VITE_ENABLE_TEMP_GATE !== 'false'} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'NextBeta'}>
+          <TemporaryPasswordGate enabled={false} password={import.meta.env.VITE_TEMP_GATE_PASSWORD || 'NextBeta'}>
             <Routes>
               {/* Legacy alias: redirect settings/integrations to profile integrations */}
               <Route path="/settings/integrations" element={<RouteRedirect to="/profile?tab=integrations" />} />

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
-import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
+import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Pencil, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useDeckStore } from '@/stores/deckStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,6 +25,7 @@ import { useTypewriter } from '@/hooks/useTypewriter';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API_CONFIG } from '@/config/environment';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import OutlineEditor from '@/components/outline/OutlineEditor';
 import OutlineDisplayView from '@/components/outline/OutlineDisplayView';
 import { authService } from '@/services/authService';
 
@@ -55,8 +56,6 @@ import { useSlideGeneration } from '@/hooks/useSlideGeneration';
 import { GenerationCoordinator } from '@/services/generation/GenerationCoordinator';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { useCredits } from '@/context/CreditsContext';
-import CreditWarningDialog from '@/components/billing/CreditWarningDialog';
 import { useThemeStore } from '@/stores/themeStore';
 import AppearanceOnboarding, { THEME_ONBOARDING_KEY } from '@/components/onboarding/AppearanceOnboarding';
 import ConversationalOnboarding from '@/components/onboarding/ConversationalOnboarding';
@@ -646,17 +645,8 @@ const DeckList: React.FC = () => {
     pauseDuration: 2000
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
   const [linkInput, setLinkInput] = useState('');
-
-  // Auto-resize hero textarea
-  useEffect(() => {
-    if (heroTextareaRef.current) {
-      heroTextareaRef.current.style.height = 'auto';
-      heroTextareaRef.current.style.height = `${Math.min(heroTextareaRef.current.scrollHeight, 300)}px`;
-    }
-  }, [heroInput]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -728,10 +718,6 @@ const DeckList: React.FC = () => {
   const [currentOutline, setCurrentOutline] = useState<FrontendDeckOutline | null>(null);
   const [showOutlineView, setShowOutlineView] = useState(false);
   const [outlineCurrentSlideIndex, setOutlineCurrentSlideIndex] = useState(0);
-  // Auto-trigger generation when outline has slides from conversational flow
-  const [autoTriggerGeneration, setAutoTriggerGeneration] = useState(false);
-  // Skip outline UI when auto-generating from chat
-  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
 
   // Initialize OutlineManager here
   const {
@@ -765,6 +751,31 @@ const DeckList: React.FC = () => {
     handleSlideReorder(fromSlide.id, toSlide.id);
   }, [currentOutline, handleSlideReorder]);
 
+  // Handle manual mode creation
+  const handleManualMode = useCallback(() => {
+    // Create a manual outline with initial slide
+    const manualOutline = {
+      id: uuidv4(),
+      title: 'Manual Presentation',
+      topic: 'Manual Presentation',
+      slides: [{
+        id: uuidv4(),
+        title: 'Slide 1',
+        content: '',
+        deepResearch: false,
+        taggedMedia: [],
+        narrative_role: 'supporting',
+        slide_type: 'content',
+        speaker_notes: '',
+        chartData: null,
+        chartType: null
+      }],
+      isManualMode: true
+    };
+
+    setCurrentOutline(manualOutline);
+  }, [setCurrentOutline]);
+
   // State to hold conversational data for outline generation
   const [conversationalData, setConversationalData] = useState<{
     topic?: string;
@@ -780,18 +791,6 @@ const DeckList: React.FC = () => {
       url?: string;
       size?: number;
     }>;
-    // CRITICAL: Include slides from the conversational agent!
-    slides?: Array<{
-      title: string;
-      subtitle?: string;
-      content?: string;
-      key_points?: string[];
-    }>;
-    narrative?: string;
-    slideMode?: 'interactive' | 'presentation' | 'static';
-    chatHistory?: Array<{ role: string; content: string }>;
-    themeChanges?: any;
-    slideScreenshots?: string[];
   } | null>(null);
 
   // Handle "Create with AI" - show conversational onboarding
@@ -800,14 +799,12 @@ const DeckList: React.FC = () => {
   }, []);
 
   // Handle completion of conversational onboarding
-  const handleConversationalComplete = useCallback(async (data: {
+  const handleConversationalComplete = useCallback((data: {
     topic?: string;
     stylePreferences?: string;
-    // Style/vibe for theme generation (e.g., "modern", "playful", "corporate", brand name, or domain)
-    style?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
-    slideMode?: 'interactive' | 'presentation' | 'static';
+    slideMode?: 'interactive' | 'static';
     themeChanges?: any;
     uploadedFiles?: File[];
     uploadedMedia?: Array<{
@@ -818,24 +815,11 @@ const DeckList: React.FC = () => {
       url?: string;
       size?: number;
     }>;
-    // Slide screenshots from uploaded PPT/PDF for visual design reference
-    slideScreenshots?: string[];
-    // CRITICAL: Slides generated by the outline agent - use these directly!
-    slides?: Array<{
-      title: string;
-      subtitle?: string;
-      content?: string;
-      key_points?: string[];
-    }>;
-    // Narrative explanation from the agent
-    narrative?: string;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
     console.log('[DeckList] Uploaded media from agent:', data.uploadedMedia?.length || 0, data.uploadedMedia);
     console.log('[DeckList] Slide mode:', data.slideMode || 'interactive (default)');
-    console.log('[DeckList] Slide screenshots for design ref:', data.slideScreenshots?.length || 0);
-    console.log('[DeckList] PRE-GENERATED SLIDES from agent:', data.slides?.length || 0, 'slides');
 
     // Hide conversational onboarding
     setShowConversationalOnboarding(false);
@@ -846,17 +830,11 @@ const DeckList: React.FC = () => {
     themeStore.setThemeReady(false); // Reset theme ready state
 
     // Update style preferences with collected data - CLEAR any old colors!
-    // Include referenceImages from slide screenshots for visual design replication
-    // Use data.style for vibeContext (brand/style), fall back to stylePreferences
-    const vibeContext = data.style || data.stylePreferences;
-    console.log('[DeckList] 🎨 Using vibeContext for theme:', vibeContext);
     setStylePreferences({
       initialIdea: data.topic,
-      vibeContext: vibeContext,
+      vibeContext: data.stylePreferences,
       colors: undefined, // Clear old colors so API colors take precedence
       slideMode: data.slideMode || 'interactive', // Default to interactive
-      // Pass slide screenshots as referenceImages so AI can SEE and replicate the design
-      referenceImages: data.slideScreenshots,
     });
 
     // Store conversational data to trigger generation
@@ -905,288 +883,21 @@ const DeckList: React.FC = () => {
 
     // Show outline view - OutlineEditor will see conversationalData and start generation
     // Create a placeholder outline so the view doesn't stay blank
-    // CRITICAL: Use pre-generated slides from the agent if available!
     const newOutlineId = uuidv4();
-
-    // Build stylePreferences from themeChanges AND stylePreferences
-    // themeChanges can have different structures: colors, palette, color_palette
-    console.log('[DeckList] Building stylePrefs from themeChanges:', data.themeChanges);
-    console.log('[DeckList] data.stylePreferences:', data.stylePreferences);
-
-    // Parse stylePreferences if it's a JSON string
-    let parsedStylePrefsForOutline: any = null;
-    if (data.stylePreferences) {
-      try {
-        parsedStylePrefsForOutline = typeof data.stylePreferences === 'string'
-          ? JSON.parse(data.stylePreferences)
-          : data.stylePreferences;
-      } catch (e) {
-        console.log('[DeckList] Could not parse stylePreferences for outline:', e);
-      }
-    }
-
-    const tc = data.themeChanges;
-    const tcColors = tc?.colors || tc?.palette || tc?.color_palette;
-
-    // Merge stylePreferences from theme block with themeChanges
-    const stylePrefsFromTheme = {
-      colors: {
-        type: 'custom' as const,
-        background: parsedStylePrefsForOutline?.colors?.background || tcColors?.background || tcColors?.primary_background || '#ffffff',
-        text: parsedStylePrefsForOutline?.colors?.text || tcColors?.text || tcColors?.primary_text || '#1a1a1a',
-        accent: parsedStylePrefsForOutline?.colors?.accent1 || tcColors?.accent || tcColors?.accent_1 || tcColors?.primary || '#3b82f6',
-        secondary: parsedStylePrefsForOutline?.colors?.accent2 || tcColors?.secondary || tcColors?.accent_2 || '#6b7280',
-      },
-      // Include font and logo info for generation
-      font: parsedStylePrefsForOutline?.font,
-      bodyFont: parsedStylePrefsForOutline?.bodyFont,
-      logoUrl: parsedStylePrefsForOutline?.logoUrl,
-      vibeContext: parsedStylePrefsForOutline?.vibeContext,
-    };
-    console.log('[DeckList] Built stylePrefsFromTheme:', stylePrefsFromTheme);
-
-    // CRITICAL: Use pre-generated slides from the agent if available!
-    // This bypasses the outline editing view and goes straight to generation
-    const hasPreGeneratedSlides = data.slides && data.slides.length > 0;
-
-    console.log('[DeckList] 🚀🚀🚀 CHECKING PRE-GENERATED SLIDES:', {
-      hasSlides: !!data.slides,
-      slideCount: data.slides?.length || 0,
-      hasPreGeneratedSlides,
-      firstSlide: data.slides?.[0],
-    });
-
-    const outlineSlides: FrontendSlideOutline[] = hasPreGeneratedSlides
-      ? data.slides!.map((s, i) => ({
-          id: `slide-${i}`,
-          title: s.title,
-          subtitle: s.subtitle || '',
-          // Build content from key_points and/or content
-          content: s.content || (s.key_points?.map(kp => `• ${kp}`).join('\n')) || '',
-          type: 'content' as const,
-          status: 'pending' as const,
-          thumbnail: '',
-          notes: '',
-          layout: 'default' as const,
-        }))
-      : [];
-
-    const newOutline: FrontendDeckOutline = {
+    const placeholderOutline: FrontendDeckOutline = {
       id: newOutlineId,
       title: data.topic || 'Generating Presentation...',
-      stylePreferences: stylePrefsFromTheme,
-      slides: outlineSlides
+      slides: []
     };
-
-    console.log('[DeckList] Created outline with', outlineSlides.length, 'pre-generated slides');
-
+    
     // CRITICAL: Clear any cached theme for this new outline ID
     // This ensures fresh theme from API is used
     themeStore.setOutlineDeckTheme?.(newOutlineId, null);
     themeStore.clearOutlineThemeRequested?.(newOutlineId);
-
-    setCurrentOutline(newOutline);
-
-    // If we have pre-generated slides, skip outline view and go directly to generation
-    if (hasPreGeneratedSlides) {
-      console.log('[DeckList] 🚀 Pre-generated slides detected - skipping outline view, going to generation');
-
-      // DON'T show outline view - go directly to generation
-      setShowOutlineView(false);
-      setIsOutlineChatGenerating(false);
-
-      // Check if we have brandContext - theme will be regenerated with brand colors during generation
-      // Define this BEFORE the if block so it's accessible in generationContext
-      const hasBrandContext = parsedStylePrefsForOutline?.vibeContext || vibeContext;
-
-      // Build theme payload from parsed stylePreferences (may have defaults)
-      if (parsedStylePrefsForOutline) {
-        const accent1 = parsedStylePrefsForOutline.colors?.accent1 || '#FF4301';
-        const accent2 = parsedStylePrefsForOutline.colors?.accent2 || '#3B82F6';
-        const bgColor = parsedStylePrefsForOutline.colors?.background || '#FFFFFF';
-        const textColor = parsedStylePrefsForOutline.colors?.text || '#1A1A1A';
-        const themePayload = {
-          color_palette: {
-            primary_background: bgColor,
-            primary_text: textColor,
-            accent_1: accent1,
-            accent_2: accent2,
-            colors: [accent1, accent2].filter(Boolean),
-            backgrounds: [bgColor].filter(Boolean),
-            text_colors: { primary: textColor },
-          },
-          typography: {
-            hero_title: { family: parsedStylePrefsForOutline.font || 'Inter' },
-            body_text: { family: parsedStylePrefsForOutline.bodyFont || 'Inter' },
-          },
-          logo: parsedStylePrefsForOutline.logoUrl ? { url: parsedStylePrefsForOutline.logoUrl } : undefined,
-          logo_info: parsedStylePrefsForOutline.logoUrl ? { url: parsedStylePrefsForOutline.logoUrl } : undefined,
-          brandInfo: parsedStylePrefsForOutline.logoUrl ? { logoUrl: parsedStylePrefsForOutline.logoUrl } : undefined,
-        };
-
-        if (hasBrandContext) {
-          console.log('[DeckList] 🎨 Has brandContext - theme will be fetched during generation:', hasBrandContext);
-          // Don't set theme as ready - let generation fetch proper brand colors
-        } else {
-          console.log('[DeckList] 🎨 Using pre-built theme from chat:', themePayload);
-          themeStore.setOutlineDeckTheme?.(newOutlineId, themePayload);
-          themeStore.setThemeReady(true);
-        }
-      }
-
-      // DON'T show intermediate page - navigate immediately to deck page
-      // Store outline and style data in sessionStorage for deck page to pick up
-      console.log('[DeckList] 🚀 Starting generation for pre-generated slides');
-      console.log('[DeckList] 🚀 Outline:', {
-        id: newOutline.id,
-        title: newOutline.title,
-        slideCount: newOutline.slides?.length || 0
-      });
-
-      // ===== PRE-GENERATION CREDIT CHECK =====
-      const slideCount = newOutline.slides?.length || 6;
-      const requiredCredits = slideCount; // ~1 credit per slide
-
-      try {
-        const { billingApi } = await import('@/services/billingApi');
-        const freshBalance = await billingApi.getBalance();
-
-        if (freshBalance) {
-          const remaining = freshBalance.remaining_credits;
-          const planId = freshBalance.plan_id;
-          const planName = freshBalance.plan_name || 'Free';
-
-          // Only block if user has 0 credits AND is not on pro/enterprise
-          if (planId !== 'pro' && planId !== 'enterprise' && remaining === 0) {
-            console.log('[DeckList] User has 0 credits - showing warning dialog (conversational flow)');
-            setCreditWarningData({
-              remainingCredits: remaining,
-              requiredCredits,
-              slideCount,
-              planName,
-              isPartial: false,
-            });
-            setShowCreditWarning(true);
-            return; // Don't proceed - user has no credits at all
-          }
-        }
-      } catch (err) {
-        console.error('Failed to check credits (conversational flow):', err);
-        // Continue with generation if credit check fails
-      }
-      // ===== END PRE-GENERATION CREDIT CHECK =====
-
-      // Store everything the deck page needs to start generation
-      const generationContext = {
-        outline: newOutline,
-        stylePreferences: {
-          initialIdea: data.topic,
-          vibeContext: vibeContext,
-          slideMode: data.slideMode || 'interactive',
-          referenceImages: data.slideScreenshots,
-        },
-        themePayload: parsedStylePrefsForOutline ? {
-          color_palette: {
-            primary_background: parsedStylePrefsForOutline.colors?.background || '#FFFFFF',
-            primary_text: parsedStylePrefsForOutline.colors?.text || '#1A1A1A',
-            accent_1: parsedStylePrefsForOutline.colors?.accent1 || '#FF4301',
-            accent_2: parsedStylePrefsForOutline.colors?.accent2 || '#3B82F6',
-          },
-          typography: {
-            hero_title: { family: parsedStylePrefsForOutline.font || 'Inter' },
-            body_text: { family: parsedStylePrefsForOutline.bodyFont || 'Inter' },
-          },
-          logo: parsedStylePrefsForOutline.logoUrl ? { url: parsedStylePrefsForOutline.logoUrl } : undefined,
-        } : null,
-        hasBrandContext: !!hasBrandContext,
-        brandContext: hasBrandContext,
-      };
-
-      sessionStorage.setItem('pendingGeneration', JSON.stringify(generationContext));
-      console.log('[DeckList] 🚀 Stored generation context, navigating to deck page');
-
-      // Navigate immediately - deck page will handle generation
-      navigate(`/deck/${newOutline.id}?new=true&generate=true`);
-      return;
-    }
-
-    // Only show outline view if we DON'T have pre-generated slides
-    setIsOutlineChatGenerating(true);
+    
+    setCurrentOutline(placeholderOutline);
+    setIsOutlineChatGenerating(true); // Immediately show loading state
     setShowOutlineView(true);
-
-    // Only regenerate theme if we don't have pre-generated slides
-    console.log('[DeckList] 🎨 Triggering theme generation for conversational flow');
-    (async () => {
-      try {
-        const { outlineApi } = await import('@/services/outlineApi');
-
-        // Build outline for theme generation - use slides if available, otherwise minimal outline
-        const slidesForTheme = data.slides && data.slides.length > 0
-          ? data.slides.map((s: any, i: number) => ({
-              id: `slide-${i}`,
-              title: s.title,
-              content: s.content || s.key_points?.join('\n') || ''
-            }))
-          : [{ id: 'slide-0', title: data.topic || 'Presentation', content: '' }];
-
-        // Build colors in the format the backend expects (ColorConfigItem)
-        const themeColors = data.themeChanges?.colors || data.themeChanges?.palette;
-        let colorsConfig = null;
-        if (themeColors) {
-          // themeColors could be an array of hex colors or an object with color fields
-          if (Array.isArray(themeColors)) {
-            colorsConfig = {
-              type: 'custom' as const,
-              background: themeColors.find((c: string) => c.toLowerCase().includes('fff') || c.toLowerCase().includes('faf')) || '#ffffff',
-              text: '#1a1a1a',
-              accent1: themeColors[0] || '#3b82f6',
-              accent2: themeColors[1] || themeColors[0] || '#6b7280',
-              accent3: themeColors[2] || themeColors[0] || '#9ca3af',
-            };
-          } else if (typeof themeColors === 'object') {
-            colorsConfig = {
-              type: 'custom' as const,
-              background: themeColors.background || themeColors.primary_background || '#ffffff',
-              text: themeColors.text || themeColors.primary_text || '#1a1a1a',
-              accent1: themeColors.accent1 || themeColors.accent_1 || themeColors.accent || '#3b82f6',
-              accent2: themeColors.accent2 || themeColors.accent_2 || themeColors.secondary || '#6b7280',
-              accent3: themeColors.accent3 || themeColors.accent_3 || '#9ca3af',
-            };
-          }
-        }
-        console.log('[DeckList] 🎨 Built colorsConfig from themeChanges:', colorsConfig);
-
-        // Use data.style for vibeContext (brand/style), fall back to stylePreferences
-        const themeVibeContext = data.style || data.stylePreferences;
-        console.log('[DeckList] 🎨 Theme vibeContext:', themeVibeContext);
-
-        const outlineForTheme = {
-          id: newOutlineId,
-          title: data.topic || 'Presentation',
-          slides: slidesForTheme,
-          stylePreferences: {
-            initialIdea: data.topic,
-            vibeContext: themeVibeContext,
-            // Pass colors in the format the backend expects
-            colors: colorsConfig,
-          }
-        };
-
-        // Dispatch theme_loading event so UI shows loading state
-        window.dispatchEvent(new CustomEvent('theme_preview_update', {
-          detail: { type: 'theme_loading', message: 'Generating theme...' }
-        }));
-
-        console.log('[DeckList] 🎨 Calling generateThemeFromOutline with outline:', outlineForTheme);
-        await outlineApi.generateThemeFromOutline(outlineForTheme as any, newOutlineId, (evt) => {
-          console.log('[DeckList] 🎨 Theme event:', evt);
-          window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: evt }));
-        });
-        console.log('[DeckList] 🎨 Theme generation complete');
-      } catch (err) {
-        console.error('[DeckList] Theme generation failed:', err);
-      }
-    })();
   }, []);
 
   // Function to load shared decks
@@ -1233,17 +944,6 @@ const DeckList: React.FC = () => {
     slideTitle?: string;
   } | null>(null);
 
-  // Credit warning dialog state
-  const { balance: creditBalance, refreshBalance } = useCredits();
-  const [showCreditWarning, setShowCreditWarning] = useState(false);
-  const [creditWarningData, setCreditWarningData] = useState<{
-    remainingCredits: number;
-    requiredCredits: number;
-    slideCount: number;
-    planName: string;
-    isPartial: boolean;
-  } | null>(null);
-
 
 
   // Get progress info from useOutlineChat through OutlineEditor
@@ -1283,9 +983,7 @@ const DeckList: React.FC = () => {
     autoSelectImages?: boolean;
     referenceLinks?: string[];
     enableResearch?: boolean;
-    slideMode?: 'interactive' | 'static' | 'presentation';
-    // Slide screenshots from uploaded PPT/PDF for visual design reference
-    referenceImages?: string[];
+    slideMode?: 'interactive' | 'static';
   }>({});
 
   // Auto-open Google import modal on successful OAuth redirect
@@ -1389,7 +1087,7 @@ const DeckList: React.FC = () => {
   }, []);
 
   // Simplified deck generation using GenerationCoordinator
-  const handleGenerateDeckInternal = useCallback(async (skipCreditCheck = false) => {
+  const handleGenerateDeckInternal = useCallback(async () => {
     // Validate outline
     if (!currentOutline) {
       toast({
@@ -1409,45 +1107,6 @@ const DeckList: React.FC = () => {
       });
       return;
     }
-
-    // ===== PRE-GENERATION CREDIT CHECK =====
-    // Only block if user has absolutely 0 credits (can't generate anything)
-    const slideCount = currentOutline.slides.length;
-    const creditsPerSlide = 5;
-    const requiredCredits = slideCount * creditsPerSlide;
-
-    if (!skipCreditCheck) {
-      try {
-        const { billingApi } = await import('@/services/billingApi');
-        const freshBalance = await billingApi.getBalance();
-
-        if (freshBalance) {
-          const remaining = freshBalance.remaining_credits;
-          const planId = freshBalance.plan_id;
-          const planName = freshBalance.plan_name || 'Free';
-
-          // Only block if user has 0 credits AND is not on pro/enterprise
-          if (planId !== 'pro' && planId !== 'enterprise' && remaining === 0) {
-            console.log('[CreditCheck] User has 0 credits - showing warning dialog');
-            // Reset auto-generating flag so UI doesn't stay stuck
-            setIsAutoGenerating(false);
-            setCreditWarningData({
-              remainingCredits: remaining,
-              requiredCredits,
-              slideCount,
-              planName,
-              isPartial: false,
-            });
-            setShowCreditWarning(true);
-            return; // Don't proceed - user has no credits at all
-          }
-        }
-      } catch (err) {
-        console.error('Failed to check credits:', err);
-        // Continue with generation if credit check fails
-      }
-    }
-    // ===== END PRE-GENERATION CHECK =====
 
     setIsDeckGenerating(true);
     setGenerationProgress(null);
@@ -1476,8 +1135,6 @@ const DeckList: React.FC = () => {
       }
 
       navigatedDeckId = targetDeckId;
-      // Reset auto-generating flag before navigation
-      setIsAutoGenerating(false);
       navigate(`/deck/${targetDeckId}?new=true`);
     };
 
@@ -1639,70 +1296,6 @@ const DeckList: React.FC = () => {
         };
       }
 
-      // CRITICAL: If no theme exists, generate one BEFORE starting slide generation!
-      // This ensures slides use the proper theme colors, not defaults
-      if (!finalTheme) {
-        console.log('[DeckList] ⚠️ No theme found - generating theme before slide generation');
-        try {
-          const { outlineApi } = await import('@/services/outlineApi');
-
-          // Build outline for theme generation - use vibeContext/brandContext for brand colors
-          const themeVibeContext = stylePreferences?.vibeContext ||
-                                   (currentOutline as any)?.stylePreferences?.vibeContext ||
-                                   (currentOutline as any)?.brandContext ||
-                                   currentOutline.title;
-
-          console.log('[DeckList] 🎨 Generating theme with vibeContext:', themeVibeContext);
-
-          const outlineForTheme = {
-            id: currentOutline.id,
-            title: currentOutline.title || 'Presentation',
-            slides: currentOutline.slides.map((s: any, i: number) => ({
-              id: s.id || `slide-${i}`,
-              title: s.title,
-              content: s.content || ''
-            })),
-            stylePreferences: {
-              initialIdea: currentOutline.title,
-              vibeContext: themeVibeContext
-            }
-          };
-
-          // Show theme loading toast
-          toast({
-            title: "Generating theme...",
-            description: "Creating a theme for your presentation",
-          });
-
-          // Generate theme and wait for it
-          const themeResult = await outlineApi.generateThemeFromOutline(
-            outlineForTheme as any,
-            currentOutline.id,
-            (evt) => {
-              // Handle theme events
-              if ((evt as any).type === 'theme_generated') {
-                const theme = (evt as any).theme;
-                if (theme?.color_palette) {
-                  finalTheme = theme;
-                  // Store in theme store for UI update
-                  useThemeStore.getState().setOutlineDeckTheme?.(currentOutline.id, theme);
-                  console.log('[DeckList] ✅ Theme generated successfully:', theme.color_palette);
-                }
-              }
-            }
-          );
-
-          // If we got a theme from the result
-          if (themeResult?.theme?.color_palette) {
-            finalTheme = themeResult.theme;
-            useThemeStore.getState().setOutlineDeckTheme?.(currentOutline.id, themeResult.theme);
-          }
-        } catch (err) {
-          console.error('[DeckList] Theme generation before slides failed:', err);
-          // Continue without theme - backend will use defaults
-        }
-      }
-
       const outlineWithTheme: any = {
         ...currentOutline,
         notes: {
@@ -1711,11 +1304,7 @@ const DeckList: React.FC = () => {
         }
       };
 
-      // DON'T navigate yet - wait for generation to return the actual deck ID
-      // The backend creates the deck in the database during generation
-      console.log('[DeckList] 🚀 Starting generation - will navigate after deck is created');
-
-      // Start generation - will navigate after we get the real deck ID
+      // Start generation - this will return immediately with deck ID
       const resultPromise = coordinator.generateFromOutline(
         outlineWithTheme,
         stylePreferences,
@@ -1723,12 +1312,21 @@ const DeckList: React.FC = () => {
           // Pass events to slide generation hook
           onSlideImagesFound(event);
 
-          // Track slide generation progress (deck page will handle this)
+          // Handle deck creation start - capture deck ID immediately
+          const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId || (event as any).deckUUID;
+          if (emittedDeckId) {
+            deckId = emittedDeckId;
+            persistDeckContext(emittedDeckId);
+            navigateToDeck(emittedDeckId);
+          }
+
+          // Track slide generation progress - but we're already on the deck page
           if (event.type === 'slide_started' || event.type === 'progress') {
             const slideIndex = event.slide_index || event.data?.slide_index || 0;
             const slideTitle = event.slide_title || event.data?.slide_title || '';
             const totalSlides = event.total_slides || currentOutline?.slides?.length || 0;
 
+            // Still update progress for any UI that might be showing it
             setGenerationProgress({
               currentSlide: slideIndex + 1,
               totalSlides: totalSlides,
@@ -1738,7 +1336,10 @@ const DeckList: React.FC = () => {
 
           // Handle completion
           if (event.type === 'deck_complete' || event.type === 'complete') {
+            // Clear generation progress
             setGenerationProgress(null);
+
+            // Clean up active generation marker
             if (typeof window !== 'undefined') {
               delete (window as any).__activeGenerationDeckId;
             }
@@ -1746,17 +1347,11 @@ const DeckList: React.FC = () => {
         }
       );
 
-      // Wait for generation to complete (for toast/credit check)
+      // Wait for the generation to complete
       const result = await resultPromise;
       deckId = result.deckId;
-
-      // NOW navigate - deck exists in database
-      if (deckId) {
-        console.log('[DeckList] ✅ Deck created with ID:', deckId, '- navigating now');
-        persistDeckContext(deckId);
-        setIsAutoGenerating(false);
-        navigate(`/deck/${deckId}?new=true`);
-      }
+      persistDeckContext(deckId);
+      navigateToDeck(deckId);
 
       toast({
         title: "🎉 Deck Created!",
@@ -1764,83 +1359,11 @@ const DeckList: React.FC = () => {
         duration: 3000,
       });
 
-      // ===== POST-GENERATION CREDIT CHECK =====
-      // Show upgrade dialog if user is now out of credits
-      try {
-        const { billingApi } = await import('@/services/billingApi');
-        const postBalance = await billingApi.getBalance();
-
-        if (postBalance) {
-          const remaining = postBalance.remaining_credits;
-          const planId = postBalance.plan_id;
-          const planName = postBalance.plan_name || 'Free';
-
-          // If user is on free plan and now has 0 credits, show upgrade dialog
-          if (planId === 'free' && remaining === 0) {
-            // Small delay so the success toast shows first
-            setTimeout(() => {
-              setCreditWarningData({
-                remainingCredits: 0,
-                requiredCredits: 0,
-                slideCount: 0,
-                planName,
-                isPartial: false,
-              });
-              setShowCreditWarning(true);
-            }, 1500);
-          }
-        }
-      } catch (err) {
-        // Silently fail - don't interrupt the success flow
-        console.error('Failed to check post-generation credits:', err);
-      }
-      // ===== END POST-GENERATION CHECK =====
-
     } catch (error: any) {
       console.error('[DeckList] Error generating deck:', error);
 
-      // Handle insufficient credits error
-      if (error.message?.startsWith('INSUFFICIENT_CREDITS:')) {
-        try {
-          const data = JSON.parse(error.message.replace('INSUFFICIENT_CREDITS:', ''));
-          toast({
-            variant: "destructive",
-            title: "Out of Credits",
-            description: `You have ${data.remaining} credits remaining, but need ${data.required} to generate this presentation.`,
-            action: (
-              <button
-                onClick={() => navigate('/pricing')}
-                className="bg-white text-black px-3 py-1 rounded text-sm font-medium hover:bg-gray-100"
-              >
-                Upgrade
-              </button>
-            ),
-            duration: 10000,
-          });
-        } catch {
-          toast({
-            variant: "destructive",
-            title: "Out of Credits",
-            description: "You don't have enough credits to generate this presentation.",
-            action: (
-              <button
-                onClick={() => navigate('/pricing')}
-                className="bg-white text-black px-3 py-1 rounded text-sm font-medium hover:bg-gray-100"
-              >
-                Upgrade
-              </button>
-            ),
-            duration: 10000,
-          });
-        }
-      } else if (error.message?.startsWith('BILLING_ERROR:')) {
-        toast({
-          variant: "destructive",
-          title: "Billing Error",
-          description: "Could not verify your credit balance. Please try again.",
-        });
-      } else if (!error.message?.includes('already in progress')) {
-        // Only show error toast if it's not a duplicate generation
+      // Only show error toast if it's not a duplicate generation
+      if (!error.message?.includes('already in progress')) {
         toast({
           variant: "destructive",
           title: "Error",
@@ -1858,42 +1381,7 @@ const DeckList: React.FC = () => {
     handleGenerateDeckInternal();
   }, [handleGenerateDeckInternal]);
 
-  // Store handleGenerateDeckInternal in a ref to avoid cleanup issues
-  const handleGenerateDeckInternalRef = useRef(handleGenerateDeckInternal);
-  useEffect(() => {
-    handleGenerateDeckInternalRef.current = handleGenerateDeckInternal;
-  }, [handleGenerateDeckInternal]);
 
-  // Auto-trigger generation when conversational flow provides slides
-  useEffect(() => {
-    console.log('[DeckList] 🔍 Auto-trigger effect check:', {
-      autoTriggerGeneration,
-      hasOutline: !!currentOutline,
-      hasSlides: !!currentOutline?.slides,
-      slideCount: currentOutline?.slides?.length || 0
-    });
-
-    if (autoTriggerGeneration && currentOutline?.slides && currentOutline.slides.length > 0) {
-      console.log('[DeckList] 🚀 Auto-triggering generation with', currentOutline.slides.length, 'slides');
-      console.log('[DeckList] 🚀 Current outline ID:', currentOutline.id);
-      console.log('[DeckList] 🚀 Current outline title:', currentOutline.title);
-      setAutoTriggerGeneration(false); // Reset flag before triggering
-
-      // Trigger immediately - no delay needed since state is already settled
-      const triggerGeneration = async () => {
-        console.log('[DeckList] 🚀 Executing handleGenerateDeckInternal...');
-        try {
-          await handleGenerateDeckInternalRef.current();
-          console.log('[DeckList] 🚀 Generation initiated successfully');
-        } catch (err) {
-          console.error('[DeckList] 🚀 Generation failed:', err);
-          setIsAutoGenerating(false);
-        }
-      };
-
-      triggerGeneration();
-    }
-  }, [autoTriggerGeneration, currentOutline]);
 
   // Handle resize drag functionality
   useEffect(() => {
@@ -2041,6 +1529,10 @@ const DeckList: React.FC = () => {
                     <FilePlus className="mr-2 h-4 w-4" />
                     <span>Blank Presentation</span>
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleManualMode} className="cursor-pointer">
+                    <Pencil className="mr-2 h-4 w-4" />
+                    <span>Create Outline</span>
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowGoogleImport(true)} className="cursor-pointer">
                     <span className="mr-2 inline-flex items-center justify-center h-4 w-4">
                       <svg className="h-4 w-4" viewBox="0 0 256 262" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -2071,9 +1563,8 @@ const DeckList: React.FC = () => {
         >
           {/* NEW PRESENTATION BUTTON moved to header */}
 
-          {/* Hide header during auto-generation - we skip outline view entirely */}
-          {currentOutline && !isAutoGenerating && !showConversationalOnboarding && (
-            <div className="h-[64px] flex-shrink-0">
+          {currentOutline && (
+            <div className={(currentOutline as any).isManualMode ? "h-[48px] flex-shrink-0" : "h-[64px] flex-shrink-0"}>
               <OutlineHeader
                 currentOutline={currentOutline}
                 isGenerating={isResearching || isOutlineChatGenerating || isDeckGenerating}
@@ -2094,7 +1585,7 @@ const DeckList: React.FC = () => {
           <div className="flex-1 overflow-hidden">
             <div className={cn(
               "w-full h-full",
-              currentOutline ? "flex pt-6 px-8" : "flex justify-center items-center"
+              currentOutline ? (currentOutline as any).isManualMode ? "flex pt-2" : "flex pt-6 px-8" : "flex justify-center items-center"
             )}>
               {showConversationalOnboarding ? (
                 // Show conversational onboarding
@@ -2115,48 +1606,46 @@ const DeckList: React.FC = () => {
                     onProcessingChange={setIsAgentThinking}
                   />
                 </div>
-              ) : isAutoGenerating ? (
-                // Show generation loading when auto-generating from chat
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-950">
-                  <div className="text-center space-y-6 animate-in fade-in duration-500">
-                    {/* Animated icon */}
-                    <div className="relative mx-auto w-20 h-20">
-                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 animate-pulse opacity-20" />
-                      <div className="absolute inset-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 animate-spin" style={{ animationDuration: '3s' }}>
-                        <div className="absolute inset-0 rounded-full bg-white dark:bg-zinc-900" style={{ margin: '3px' }} />
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Sparkles className="w-8 h-8 text-orange-500 animate-pulse" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-xl font-semibold text-zinc-800 dark:text-zinc-100">
-                        Creating your presentation
-                      </p>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2">
-                        Generating {currentOutline?.slides?.length || 0} slides...
-                      </p>
-                    </div>
-
-                    {/* Progress dots */}
-                    <div className="flex justify-center gap-2">
-                      {[0, 1, 2].map((i) => (
-                        <div
-                          key={i}
-                          className="w-2 h-2 rounded-full bg-orange-500 animate-bounce"
-                          style={{ animationDelay: `${i * 0.15}s` }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
               ) : (currentOutline || showOutlineView) ? (
                 <div className={cn(
                   "flex flex-row",
                   isMounted ? "animate-fade-in" : "opacity-0"
                 )} style={{ width: '100%' }}>
-                  {/* Left Panel: Chat */}
+                  {/* Left: Chat Panel (or OutlineEditor for manual mode) */}
+                  {(currentOutline as any)?.isManualMode ? (
+                    // Manual mode: Full width OutlineEditor
+                    <div className="flex-1 h-full relative overflow-visible">
+                      <OutlineEditor
+                        createDefaultDeck={createDefaultDeckForOutline}
+                        updateDeckData={updateDeckDataForOutline}
+                        navigate={navigate}
+                        toast={toast}
+                        dismiss={dismiss}
+                        setIsOutlineProcessing={setIsOutlineProcessing}
+                        currentOutline={currentOutline}
+                        setCurrentOutline={setCurrentOutline}
+                        handleAddSlide={handleAddSlide}
+                        handleSlideTitleChange={handleSlideTitleChange}
+                        handleSlideContentChange={handleSlideContentChange}
+                        handleSlideReorder={handleSlideReorder}
+                        handleToggleDeepResearch={handleToggleDeepResearch}
+                        handleDeleteSlide={handleDeleteSlide}
+                        isDeckGenerating={isDeckGenerating}
+                        researchingSlides={researchingSlides}
+                        onOutlineChatGeneratingChange={setIsOutlineChatGenerating}
+                        onProgressUpdate={(stage, progress) => {
+                          setOutlineProgress({ stage, progress });
+                        }}
+                        onStylePreferencesUpdate={handleStylePreferencesUpdate}
+                        onUploadedFilesChange={setUploadedFiles}
+                        isDeckListReady={showStar}
+                        onResearchEventsUpdate={handleResearchEventsUpdate}
+                      />
+                    </div>
+                  ) : (
+                    // AI mode: Split view with Chat on left, Outline cards on right
+                    <>
+                      {/* Left Panel: Chat */}
                       <div style={{ width: '360px', marginLeft: '0' }} className="h-full pr-4 border-r border-border/20 flex-shrink-0">
                         <ChatPanel
                           outlineMode={true}
@@ -2189,21 +1678,11 @@ const DeckList: React.FC = () => {
 
                                 console.log('[DeckList] 📋 Current outline has', prev.slides?.length, 'slides before update');
 
-                                // Build content: prefer content, then key_points, then subtitle for title slides
-                                let streamSlideContent = slide.content || '';
-                                if (!streamSlideContent && slide.key_points && slide.key_points.length > 0) {
-                                  streamSlideContent = slide.key_points.map((kp: any) => `• ${kp}`).join('\n');
-                                }
-                                // For title slides without key_points, use subtitle as content placeholder
-                                if (!streamSlideContent && slide.subtitle) {
-                                  streamSlideContent = slide.subtitle;
-                                }
-
                                 const newSlide: FrontendSlideOutline = {
                                   id: slide.id || uuidv4(),
                                   title: slide.title,
                                   subtitle: slide.subtitle || '',
-                                  content: streamSlideContent,
+                                  content: slide.content || (slide.key_points ? slide.key_points.map((kp: any) => `• ${kp}`).join('\n') : ''),
                                   type: 'content',
                                   status: 'pending',
                                   thumbnail: '',
@@ -2342,23 +1821,13 @@ const DeckList: React.FC = () => {
                               const existingSlide = currentOutline?.slides?.[i];
                               const slideId = existingSlide ? existingSlide.id : (s.id || uuidv4());
 
-                              // Build content: prefer content, then key_points, then subtitle for title slides
-                              let slideContent = s.content || '';
-                              if (!slideContent && s.key_points && s.key_points.length > 0) {
-                                slideContent = s.key_points.map((kp: any) => `• ${kp}`).join('\n');
-                              }
-                              // For title slides without key_points, use subtitle as content placeholder
-                              if (!slideContent && s.subtitle) {
-                                slideContent = s.subtitle;
-                              }
-
-                              console.log(`[DeckList] 📄 Slide ${i}: title="${s.title}", content length=${slideContent.length}, has key_points=${!!s.key_points}`);
+                              console.log(`[DeckList] 📄 Slide ${i}: title="${s.title}", content length=${s.content?.length || 0}, has key_points=${!!s.key_points}`);
 
                               return {
                                 id: slideId,
                                 title: s.title,
                                 subtitle: s.subtitle || '',
-                                content: slideContent,
+                                content: s.content || (s.key_points ? s.key_points.map((kp: any) => `• ${kp}`).join('\n') : ''),
                                 type: s.type || 'content',
                                 status: s.status || 'pending',
                                 thumbnail: s.thumbnail || '',
@@ -2493,10 +1962,12 @@ const DeckList: React.FC = () => {
                           researchingSlides={researchingSlides}
                           researchEvents={outlineResearchEvents}
                         />
-                  </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
-                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300">
+                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300 dark:bg-zinc-950">
                   {/* Particle Background */}
 
 
@@ -2536,7 +2007,7 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-end bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  "relative flex items-center bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
                                   isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
@@ -2556,22 +2027,19 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative min-h-[56px]">
-                                  <textarea
-                                    ref={heroTextareaRef}
-                                    className="w-full border-none shadow-none focus-visible:ring-0 focus:ring-0 focus:outline-none min-h-[56px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 py-4 font-sans dark:text-zinc-100 resize-none text-base leading-relaxed overflow-hidden"
+                                <div className="flex-1 relative">
+                                  <Input
+                                    className="w-full border-none shadow-none focus-visible:ring-0 h-14 bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 font-sans dark:text-zinc-100"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && !e.shiftKey && (heroInput.trim() || uploadedFiles.length > 0)) {
-                                        e.preventDefault();
+                                      if (e.key === 'Enter' && (heroInput.trim() || uploadedFiles.length > 0)) {
                                         setShowConversationalOnboarding(true);
                                       }
                                     }}
-                                    rows={1}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-4 h-[56px] text-lg text-slate-400 dark:text-zinc-500">
+                                    <div className="absolute inset-0 pointer-events-none flex items-center px-4 text-lg text-slate-400 dark:text-zinc-500">
                                       <span className="whitespace-pre">I want to create </span>
                                       <span className="text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="animate-pulse text-orange-500">|</span>
@@ -2960,7 +2428,6 @@ const DeckList: React.FC = () => {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
-
                   </div>
                 </div>
               )}
@@ -2968,22 +2435,6 @@ const DeckList: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Credit Warning Dialog - rendered outside conditionals so it works in all views */}
-      <CreditWarningDialog
-        open={showCreditWarning}
-        onClose={() => setShowCreditWarning(false)}
-        remainingCredits={creditWarningData?.remainingCredits ?? 0}
-        requiredCredits={creditWarningData?.requiredCredits ?? 0}
-        slideCount={creditWarningData?.slideCount ?? 0}
-        planName={creditWarningData?.planName ?? 'Free'}
-        isPartialGeneration={creditWarningData?.isPartial}
-        onProceedPartial={() => {
-          setShowCreditWarning(false);
-          // Continue with generation - skip credit check since user confirmed
-          handleGenerateDeckInternal(true);
-        }}
-      />
     </div>
   );
 };
