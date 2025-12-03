@@ -259,6 +259,32 @@ export function generateEditModeScript(componentId: string): string {
       }
     }
 
+    // Extract full HTML for saving
+    if (e.data.type === 'extract-html') {
+      // Remove edit-mode-specific attributes and classes before saving
+      const clone = document.documentElement.cloneNode(true);
+      clone.querySelectorAll('[data-ns-id]').forEach(el => {
+        el.removeAttribute('data-ns-id');
+        el.removeAttribute('data-ns-original');
+        el.removeAttribute('data-ns-type');
+        el.removeAttribute('data-ns-class');
+        el.classList.remove('ns-editable-text', 'ns-editable-image', 'ns-editable-container');
+        el.classList.remove('ns-selected', 'ns-text-editing', 'ns-editing-text');
+      });
+      // Remove the edit mode script and styles
+      const editScript = clone.querySelector('#ns-edit-mode-styles');
+      if (editScript) editScript.remove();
+      const scriptTags = clone.querySelectorAll('script');
+      scriptTags.forEach(s => {
+        if (s.textContent && s.textContent.includes('ns-custom-component-edit')) {
+          s.remove();
+        }
+      });
+      // Get clean HTML
+      const cleanHtml = clone.innerHTML;
+      sendToParent('html-extracted', { html: cleanHtml });
+    }
+
     // Hide element for overlay editing
     if (e.data.type === 'hide-element') {
       const el = document.querySelector(e.data.selector);
@@ -527,6 +553,16 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef]);
 
+  // Request HTML extraction to save changes
+  const requestHtmlExtraction = useCallback(() => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'extract-html',
+      }, '*');
+    }
+  }, [iframeRef]);
+
   // Listen for messages from iframe
   useEffect(() => {
     if (!isEditing || !isSelected) return;
@@ -568,17 +604,24 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         }
       }
 
-      // Handle text editing finished - re-enable hit areas
+      // Handle text editing finished - re-enable hit areas and save
       if (data.type === 'text-changed') {
         setEditingTextId(null);
         // Request fresh element data after text edit
         setTimeout(requestElements, 100);
+        // Save the updated HTML
+        setTimeout(requestHtmlExtraction, 200);
+      }
+
+      // Handle HTML extraction response - save to parent
+      if (data.type === 'html-extracted' && data.html) {
+        onHtmlUpdate(data.html);
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect]);
+  }, [isEditing, isSelected, componentId, iframeRef, requestElements, requestHtmlExtraction, virtualElements, onElementSelect, onHtmlUpdate]);
 
   // Re-extract elements when srcDoc changes
   useEffect(() => {
@@ -664,7 +707,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
     // Request fresh element data
     setTimeout(requestElements, 100);
-  }, [selectedElement, requestElements]);
+    // Save the updated HTML
+    setTimeout(requestHtmlExtraction, 200);
+  }, [selectedElement, requestElements, requestHtmlExtraction]);
 
   // Handle resize change
   const handleResizeChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -698,7 +743,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
     // Request fresh element data
     setTimeout(requestElements, 100);
-  }, [selectedElement, requestElements]);
+    // Save the updated HTML
+    setTimeout(requestHtmlExtraction, 200);
+  }, [selectedElement, requestElements, requestHtmlExtraction]);
 
   // Handle text edit finish
   const handleTextEditFinish = useCallback((newHtml: string, newText: string) => {
