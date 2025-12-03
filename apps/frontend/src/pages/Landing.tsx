@@ -206,19 +206,6 @@ const Landing: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-      {/* Sticky Evolving CTA */}
-      {scrollY > 400 && (
-        <div className="fixed bottom-8 right-8 z-50 animate-on-scroll opacity-0 in-view">
-          <Button
-            size="lg"
-            onClick={() => navigate('/signup')}
-            className="bg-[#FF4301] hover:bg-[#E63901] text-white px-8 py-6 text-base font-semibold shadow-2xl"
-          >
-            {ctaText}
-            <ArrowRight className="ml-2 w-5 h-5" />
-          </Button>
-        </div>
-      )}
 
       {/* Navigation */}
       <nav
@@ -324,15 +311,15 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Live Showcase */}
-      <section id="showcase" className="py-12 px-8 bg-gradient-to-b from-zinc-900 to-black">
-        <div className="max-w-[1200px] mx-auto">
-          <div className="text-center mb-8 animate-on-scroll opacity-0">
+      <section id="showcase" className="py-16 px-8 bg-gradient-to-b from-zinc-900 to-black">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center mb-10 animate-on-scroll opacity-0">
             <h2
-              className="text-white mb-2"
+              className="text-white mb-3"
               style={{
                 fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                 fontWeight: 900,
-                fontSize: 'clamp(28px, 3.5vw, 40px)',
+                fontSize: 'clamp(36px, 4.5vw, 52px)',
                 lineHeight: '1.1',
                 letterSpacing: '-0.02em',
                 textTransform: 'uppercase'
@@ -340,30 +327,30 @@ const Landing: React.FC = () => {
             >
               See it in action
             </h2>
-            <p className="text-base text-white/60">Real presentations built with NextSlide</p>
+            <p className="text-xl text-white/60">Real presentations built with NextSlide</p>
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            <div className="grid lg:grid-cols-[1fr_300px] gap-4">
+            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-start">
               {/* Main slide viewer with left sidebar */}
-              <div className="rounded-xl overflow-hidden bg-zinc-900/80 border border-white/10">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10">
                 {/* Top bar */}
-                <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50 border-b border-white/5">
+                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
                   <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 rounded-full bg-white/20" />
-                      <div className="w-2 h-2 rounded-full bg-white/20" />
-                      <div className="w-2 h-2 rounded-full bg-white/20" />
+                    <div className="flex gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                     </div>
-                    <span className="text-[10px] text-white/40 font-mono truncate max-w-[200px]">{activeDeck?.name || '...'}</span>
+                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px]">{activeDeck?.name || '...'}</span>
                   </div>
-                  <span className="text-[10px] text-white/40">{activeDeckSlideIndex + 1}/{activeDeck?.slides?.length || 0}</span>
+                  <span className="text-[11px] text-white/40">{activeDeckSlideIndex + 1}/{activeDeck?.slides?.length || 0}</span>
                 </div>
 
                 {/* Content with slide sidebar */}
                 <div className="flex">
-                  {/* Slide thumbnails sidebar */}
-                  <div className="w-20 border-r border-white/5 bg-black/20 p-1.5 space-y-1 overflow-y-auto max-h-[280px] custom-scrollbar">
+                  {/* Slide thumbnails sidebar - larger */}
+                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
                     {activeDeck?.slides?.slice(0, 10).map((slide, idx) => (
                       <div
                         key={idx}
@@ -372,7 +359,7 @@ const Landing: React.FC = () => {
                           "aspect-video rounded overflow-hidden cursor-pointer transition-all relative",
                           idx === activeDeckSlideIndex
                             ? "ring-2 ring-[#FF4301]"
-                            : "opacity-60 hover:opacity-100"
+                            : "opacity-50 hover:opacity-80"
                         )}
                       >
                         <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
@@ -384,14 +371,14 @@ const Landing: React.FC = () => {
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-3">
+                  <div className="flex-1 p-4">
                     <div className="aspect-video relative rounded-lg overflow-hidden bg-black">
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-8 h-8 border-3 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
+                          <div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
                         </div>
                       ) : activeSlide ? (
-                        <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="w-8 h-8 border-3 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" /></div>}>
+                        <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" /></div>}>
                           <MiniSlide slide={activeSlide} responsive={true} />
                         </Suspense>
                       ) : null}
@@ -402,14 +389,14 @@ const Landing: React.FC = () => {
                           <button
                             onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.max(0, prev - 1)); }}
                             disabled={activeDeckSlideIndex === 0}
-                            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white disabled:opacity-20 transition-all"
+                            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-20 transition-all"
                           >
                             <ChevronLeft className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.min(activeDeck.slides.length - 1, prev + 1)); }}
                             disabled={activeDeckSlideIndex === activeDeck.slides.length - 1}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white disabled:opacity-20 transition-all"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-20 transition-all"
                           >
                             <ChevronRight className="w-4 h-4" />
                           </button>
@@ -421,14 +408,14 @@ const Landing: React.FC = () => {
               </div>
 
               {/* Deck gallery */}
-              <div className="rounded-xl overflow-hidden bg-zinc-900/50 border border-white/10">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10">
                 <div className="px-3 py-2 border-b border-white/5">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 space-y-2 overflow-y-auto max-h-[320px] custom-scrollbar">
+                <div className="p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
                   {isLoadingShowcase ? (
                     [...Array(3)].map((_, i) => (
-                      <div key={i} className="h-24 bg-white/5 rounded-lg animate-pulse" />
+                      <div key={i} className="h-20 bg-white/5 rounded-lg animate-pulse" />
                     ))
                   ) : showcaseDecks.map((deck, index) => (
                     <div
@@ -445,7 +432,7 @@ const Landing: React.FC = () => {
                         <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
                           {deck.slides[0] && <MiniSlide slide={deck.slides[0]} responsive={true} />}
                         </Suspense>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                         <div className="absolute bottom-0 left-0 right-0 p-2">
                           <h5 className={cn(
                             "font-semibold text-xs truncate",
@@ -463,8 +450,8 @@ const Landing: React.FC = () => {
                     </div>
                   ))}
                 </div>
-                {/* CTA inside deck gallery */}
-                <div className="p-2 pt-0">
+                {/* CTA */}
+                <div className="p-2 border-t border-white/5 flex-shrink-0">
                   <Button
                     className="w-full bg-[#FF4301] hover:bg-[#E63901] text-white text-xs font-semibold h-9"
                     onClick={() => navigate('/signup')}
