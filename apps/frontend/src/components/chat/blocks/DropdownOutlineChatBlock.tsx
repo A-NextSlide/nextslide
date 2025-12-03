@@ -8,6 +8,17 @@ import React, { useState, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Trash2, Plus, ChevronDown, ChevronRight, Loader2, Pencil, Check, X, GripVertical } from 'lucide-react';
 
+// Helper to render text with **bold** markdown
+const renderBoldMarkdown = (text: string): React.ReactNode => {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+};
+
 export interface OutlineSlide {
   id: string;
   title: string;
@@ -428,7 +439,7 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
                                     )}
                                     onClick={(e) => isEditable && startEditing(e, slide.id, 'keyPoint', point, pointIndex)}
                                   >
-                                    {point}
+                                    {renderBoldMarkdown(point)}
                                   </span>
                                   {isEditable && (
                                     <button

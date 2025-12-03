@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRight, Check, Menu, X, Play, Clock, Frown, DollarSign,
   Zap, Palette, Brain, ChevronDown, ChevronUp,
-  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown
+  ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown,
+  Star, Building2, User, Sparkles
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
 
@@ -172,15 +173,94 @@ const Landing: React.FC = () => {
     { name: 'Beautiful.ai', isUs: false },
   ];
 
+  // Render star rating
+  const renderStars = (rating: number, isUs: boolean = false) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      if (i <= Math.floor(rating)) {
+        stars.push(
+          <Star
+            key={i}
+            className={cn("w-4 h-4", isUs ? "fill-white text-white" : "fill-amber-400 text-amber-400")}
+          />
+        );
+      } else if (i === Math.ceil(rating) && rating % 1 !== 0) {
+        stars.push(
+          <div key={i} className="relative w-4 h-4">
+            <Star className={cn("w-4 h-4 absolute", isUs ? "text-white/30" : "text-amber-400/30")} />
+            <div className="absolute overflow-hidden" style={{ width: `${(rating % 1) * 100}%` }}>
+              <Star className={cn("w-4 h-4", isUs ? "fill-white text-white" : "fill-amber-400 text-amber-400")} />
+            </div>
+          </div>
+        );
+      } else {
+        stars.push(
+          <Star key={i} className={cn("w-4 h-4", isUs ? "text-white/30" : "text-black/20 dark:text-white/20")} />
+        );
+      }
+    }
+    return <div className="flex gap-0.5">{stars}</div>;
+  };
+
   const comparisonFeatures = [
-    { feature: 'AI-Powered Generation', nextslide: true, gamma: true, canva: true, beautifulai: true },
-    { feature: 'Custom Component System', nextslide: true, gamma: false, canva: false, beautifulai: false },
-    { feature: 'Agentic AI Editor', nextslide: true, gamma: 'basic', canva: false, beautifulai: false },
-    { feature: 'Full Design Control', nextslide: true, gamma: 'limited', canva: true, beautifulai: 'limited' },
-    { feature: 'Advanced Charts & Data', nextslide: true, gamma: 'basic', canva: true, beautifulai: 'basic' },
-    { feature: 'Interactive Elements', nextslide: true, gamma: false, canva: false, beautifulai: false },
-    { feature: 'Real-time Collaboration', nextslide: true, gamma: true, canva: true, beautifulai: true },
-    { feature: 'Export to PowerPoint', nextslide: true, gamma: true, canva: true, beautifulai: true },
+    {
+      feature: 'Design Quality',
+      isRating: true,
+      nextslide: 5,
+      gamma: 3,
+      canva: 2.5,
+      beautifulai: 3.5
+    },
+    {
+      feature: 'AI Output',
+      nextslide: 'Full presentations',
+      gamma: 'Card-style only',
+      canva: 'Thin content',
+      beautifulai: 'Generic slides'
+    },
+    {
+      feature: 'Target Audience',
+      isAudience: true,
+      nextslide: 'both',
+      gamma: 'consumer',
+      canva: 'consumer',
+      beautifulai: 'consumer'
+    },
+    {
+      feature: 'Custom Components',
+      nextslide: true,
+      gamma: false,
+      canva: false,
+      beautifulai: false
+    },
+    {
+      feature: 'Agentic AI Editor',
+      nextslide: true,
+      gamma: false,
+      canva: false,
+      beautifulai: false
+    },
+    {
+      feature: 'Full Design Control',
+      nextslide: true,
+      gamma: 'limited',
+      canva: 'limited',
+      beautifulai: 'locked'
+    },
+    {
+      feature: 'PowerPoint Export',
+      nextslide: 'Clean export',
+      gamma: 'Broken layouts',
+      canva: true,
+      beautifulai: 'Format issues'
+    },
+    {
+      feature: 'Enterprise Ready',
+      nextslide: true,
+      gamma: false,
+      canva: 'limited',
+      beautifulai: 'expensive'
+    },
   ];
 
   const faqs = [
@@ -598,57 +678,118 @@ const Landing: React.FC = () => {
             </div>
 
             {/* Rows */}
-            {comparisonFeatures.map((row, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "grid grid-cols-5 transition-colors",
-                  idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
-                  idx !== comparisonFeatures.length - 1 && "border-b border-black/5 dark:border-white/5",
-                  "hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
-                )}
-              >
-                <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
-                  {row.feature}
-                </div>
-                <div className={cn("p-4 flex items-center justify-center", "bg-[#FF4301]/10")}>
-                  {row.nextslide === true ? (
-                    <div className="w-6 h-6 rounded-full bg-[#FF4301] flex items-center justify-center">
-                      <Check className="w-4 h-4 text-white" />
+            {comparisonFeatures.map((row, idx) => {
+              // Helper to render cell value
+              const renderCell = (value: any, isUs: boolean = false, isRating: boolean = false, isAudience: boolean = false) => {
+                // Rating row
+                if (isRating && typeof value === 'number') {
+                  return renderStars(value, isUs);
+                }
+                // Audience row
+                if (isAudience) {
+                  if (value === 'both') {
+                    return (
+                      <div className={cn("flex items-center gap-1.5", isUs ? "text-white" : "")}>
+                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white/20" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                          <Building2 className="w-3 h-3" />
+                          <span>B2B</span>
+                        </div>
+                        <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold", isUs ? "bg-white/20" : "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400")}>
+                          <User className="w-3 h-3" />
+                          <span>B2C</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-bold">
+                      <User className="w-3 h-3" />
+                      <span>Consumer only</span>
                     </div>
-                  ) : (
-                    <X className="w-5 h-5 text-black/20 dark:text-white/20" />
+                  );
+                }
+                // Boolean true
+                if (value === true) {
+                  if (isUs) {
+                    return (
+                      <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center">
+                        <Check className="w-4 h-4 text-[#FF4301]" />
+                      </div>
+                    );
+                  }
+                  return <Check className="w-5 h-5 text-green-500" />;
+                }
+                // Boolean false
+                if (value === false) {
+                  return <X className="w-5 h-5 text-black/20 dark:text-white/20" />;
+                }
+                // String values - check if positive or negative
+                if (typeof value === 'string') {
+                  const negativeKeywords = ['limited', 'basic', 'locked', 'broken', 'issues', 'expensive', 'card-style', 'thin', 'generic'];
+                  const positiveKeywords = ['full', 'clean', 'both'];
+                  const isNegative = negativeKeywords.some(kw => value.toLowerCase().includes(kw));
+                  const isPositive = positiveKeywords.some(kw => value.toLowerCase().includes(kw));
+
+                  if (isUs) {
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-white" />
+                        <span className="text-[11px] font-bold text-white uppercase">{value}</span>
+                      </div>
+                    );
+                  }
+
+                  if (isNegative) {
+                    return (
+                      <span className="text-[10px] font-medium text-red-600 dark:text-red-400 uppercase bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
+                        {value}
+                      </span>
+                    );
+                  }
+                  if (isPositive) {
+                    return (
+                      <span className="text-[10px] font-medium text-green-600 dark:text-green-400 uppercase bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                        {value}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">
+                      {value}
+                    </span>
+                  );
+                }
+                return null;
+              };
+
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "grid grid-cols-5 transition-colors",
+                    idx % 2 === 0 ? "bg-white dark:bg-zinc-900/50" : "bg-zinc-50/50 dark:bg-zinc-800/30",
+                    idx !== comparisonFeatures.length - 1 && "border-b border-black/5 dark:border-white/5",
+                    "hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
                   )}
+                >
+                  <div className="p-4 text-sm font-medium text-black dark:text-white flex items-center">
+                    {row.feature}
+                  </div>
+                  <div className={cn("p-4 flex items-center justify-center", "bg-[#FF4301]/10")}>
+                    {renderCell(row.nextslide, true, row.isRating, row.isAudience)}
+                  </div>
+                  <div className="p-4 flex items-center justify-center">
+                    {renderCell(row.gamma, false, row.isRating, row.isAudience)}
+                  </div>
+                  <div className="p-4 flex items-center justify-center">
+                    {renderCell(row.canva, false, row.isRating, row.isAudience)}
+                  </div>
+                  <div className="p-4 flex items-center justify-center">
+                    {renderCell(row.beautifulai, false, row.isRating, row.isAudience)}
+                  </div>
                 </div>
-                <div className="p-4 flex items-center justify-center">
-                  {row.gamma === true ? (
-                    <Check className="w-5 h-5 text-green-500" />
-                  ) : row.gamma === 'limited' || row.gamma === 'basic' ? (
-                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.gamma}</span>
-                  ) : (
-                    <X className="w-5 h-5 text-black/20 dark:text-white/20" />
-                  )}
-                </div>
-                <div className="p-4 flex items-center justify-center">
-                  {row.canva === true ? (
-                    <Check className="w-5 h-5 text-green-500" />
-                  ) : row.canva === 'limited' || row.canva === 'basic' ? (
-                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.canva}</span>
-                  ) : (
-                    <X className="w-5 h-5 text-black/20 dark:text-white/20" />
-                  )}
-                </div>
-                <div className="p-4 flex items-center justify-center">
-                  {row.beautifulai === true ? (
-                    <Check className="w-5 h-5 text-green-500" />
-                  ) : row.beautifulai === 'limited' || row.beautifulai === 'basic' ? (
-                    <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">{row.beautifulai}</span>
-                  ) : (
-                    <X className="w-5 h-5 text-black/20 dark:text-white/20" />
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Differentiators */}
