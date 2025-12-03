@@ -6,7 +6,6 @@ import { useEditorState } from '@/context/EditorStateContext';
 import { useActiveSlide } from '@/context/ActiveSlideContext';
 import SelectionBoundingBox from '@/components/SelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
-import { Pencil } from 'lucide-react';
 
 // Import TypeBox registry
 import { registry } from '@/registry';
@@ -118,22 +117,14 @@ export const ComponentRenderer: React.FC<Props> = ({
   const croppingComponentId = useEditorSettingsStore(state => state.croppingComponentId);
   const isCroppingThis = isCroppingImage && croppingComponentId === componentId && componentType === 'Image';
 
-  // Element edit mode for CustomComponents - when true, iframe is directly interactive
-  const [isElementEditMode, setIsElementEditMode] = useState(false);
+  // Element edit mode for CustomComponents - auto-enabled when component is selected in edit mode
+  // This allows immediate text/image editing without requiring a separate "Edit Elements" click
+  const isElementEditMode = isEditing && effectiveIsSelected && componentType === 'CustomComponent';
 
-  // Exit element edit mode when component is deselected
-  useEffect(() => {
-    if (!effectiveIsSelected && isElementEditMode) {
-      setIsElementEditMode(false);
-    }
-  }, [effectiveIsSelected, isElementEditMode]);
-
-  // Function to enter element edit mode
+  // Function to enter element edit mode - no longer needed since it's auto-enabled, but kept for compatibility
   const enterElementEditMode = useCallback(() => {
-    if (componentType === 'CustomComponent') {
-      setIsElementEditMode(true);
-    }
-  }, [componentType]);
+    // No-op since element edit mode is now automatic
+  }, []);
 
   // Clear text-edit mode when switching to a different component
   // This ensures text editing doesn't stick when user selects another component
@@ -164,8 +155,7 @@ export const ComponentRenderer: React.FC<Props> = ({
   const isEditingThisGroup = isInGroup && editingGroupId === component.props.parentId;
 
   // Always allow dragging - the drag handler will determine if it should drag the group or individual
-  // BUT: Disable component-level dragging for CustomComponents in element edit mode
-  const effectiveDraggable = isDraggable && !(componentType === 'CustomComponent' && isElementEditMode);
+  const effectiveDraggable = isDraggable;
 
   // Use component drag hook with proper interface
   const { isDragging, visualDragOffset, snapGuides: dragSnapGuides, handleDragStart, didJustDrag } = useComponentDrag({
@@ -553,10 +543,11 @@ export const ComponentRenderer: React.FC<Props> = ({
         document.getElementById('snap-guide-portal') || document.querySelector('.slide-container') || document.body
       )}
 
-      {/* 
+      {/*
         CLICK CAPTURE OVERLAY for CustomComponents in edit mode
         This invisible overlay captures clicks since iframes have pointerEvents: none.
         Only render when NOT selected - when selected, SelectionBoundingBox handles interactions.
+        Click to select, then drag from bounding box.
       */}
       {isEditing && componentType === 'CustomComponent' && !effectiveIsSelected && (
         <div
@@ -565,159 +556,19 @@ export const ComponentRenderer: React.FC<Props> = ({
             inset: 0,
             zIndex: 5, // Below selection UI but above content
             background: 'transparent',
-            cursor: effectiveDraggable ? 'move' : 'default',
+            cursor: 'pointer',
             pointerEvents: 'auto',
           }}
           onClick={handleClick}
           onMouseDown={(e) => {
-            if (e.button === 0) {
-              handleDragStart(e);
-            }
+            // Just select on click - don't start drag
+            // Drag is handled by SelectionBoundingBox after selection
+            e.stopPropagation();
           }}
         />
       )}
 
-      {/*
-        DRAG OVERLAY for selected CustomComponents
-        Shows when NOT in element edit mode - allows dragging and has edit button
-      */}
-      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && !isElementEditMode && (
-        <>
-          {/* Full drag overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 15,
-              background: 'transparent',
-              cursor: isDragging ? 'grabbing' : 'move',
-              pointerEvents: 'auto',
-            }}
-            onMouseDown={(e) => {
-              const target = e.target as HTMLElement;
-              if (target.style.cursor?.includes('resize')) return;
-              if (target.closest('[data-edit-elements-btn]')) return;
-              if (e.button === 0) {
-                handleDragStart(e);
-              }
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              enterElementEditMode();
-            }}
-          />
-          {/* Edit Elements button */}
-          <div
-            data-edit-elements-btn="true"
-            onClick={(e) => {
-              e.stopPropagation();
-              enterElementEditMode();
-            }}
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              zIndex: 20,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              background: '#FF4301',
-              color: 'white',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              boxShadow: '0 4px 12px rgba(255, 67, 1, 0.4)',
-              pointerEvents: 'auto',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(255, 67, 1, 0.5)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 67, 1, 0.4)';
-            }}
-          >
-            <Pencil size={16} />
-            Edit Elements
-          </div>
-          {/* Hint text */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '12px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 20,
-              padding: '4px 10px',
-              background: 'rgba(0,0,0,0.7)',
-              color: 'white',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontFamily: 'system-ui',
-              pointerEvents: 'none',
-            }}
-          >
-            Right-click or click button to edit • Drag to move
-          </div>
-        </>
-      )}
-
-      {/*
-        EXIT EDIT MODE button - shows when in element edit mode
-        Positioned inside component at top-right, tiny orange button
-        Falls back to slide top-right if component is near top edge
-      */}
-      {isEditing && componentType === 'CustomComponent' && effectiveIsSelected && isElementEditMode && (() => {
-        // Check if component is near top of slide (would crop the button)
-        const compY = component.props?.position?.y ?? 0;
-        const isNearTop = compY < 40;
-
-        return (
-          <div
-            data-no-drag="true"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setIsElementEditMode(false);
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              position: isNearTop ? 'fixed' : 'absolute',
-              top: isNearTop ? '8px' : '8px',
-              right: isNearTop ? '8px' : '8px',
-              zIndex: 9999,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-              padding: '4px 8px',
-              background: '#FF4301',
-              color: 'white',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '10px',
-              fontWeight: 600,
-              fontFamily: 'system-ui',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-              pointerEvents: 'auto',
-              opacity: 0.9,
-              transition: 'opacity 0.15s',
-            }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.9'; }}
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Done
-          </div>
-        );
-      })()}
+      {/* Element edit mode is now automatic for CustomComponents when selected in edit mode */}
 
       {/* Render selection bounding box only when editing and selected, OR when text editing is active (to prevent unmount during blur) */}
       {isEditing && (effectiveIsSelected || isTextEditing) && !isBackground && !isLines && !isCroppingThis && (
@@ -727,11 +578,9 @@ export const ComponentRenderer: React.FC<Props> = ({
           onDragStart={handleDragStart}
           onDragEnd={() => { }}
           onResize={handleResize}
-          // Disable resize/rotate/drag for CustomComponents when in element edit mode
-          // Element-level editing is handled by CustomComponentEditOverlay
-          isResizable={isResizable && !(componentType === 'CustomComponent' && isElementEditMode)}
-          isRotatable={isRotatable && !(componentType === 'CustomComponent' && isElementEditMode)}
-          isDraggable={effectiveDraggable && !(componentType === 'CustomComponent' && isElementEditMode)}
+          isResizable={isResizable}
+          isRotatable={isRotatable}
+          isDraggable={effectiveDraggable}
           isTextEditing={isTextEditing}
           isMultiSelected={isInMultiSelection} // Pass multi-selection state
         >

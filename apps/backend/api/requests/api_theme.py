@@ -182,12 +182,15 @@ async def stream_theme_from_outline(
                     vibe_lower = (vibe_context or '').lower()
                     combined_context = f"{title_lower} {vibe_lower}"
 
-                    is_fun_topic = any(keyword in combined_context for keyword in [
+                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                    import re
+                    fun_keywords = [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
                         'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
                         'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
-                    ])
+                    ]
+                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', combined_context) for kw in fun_keywords)
 
                     if is_fun_topic:
                         # Use playful fonts for fun topics
@@ -583,12 +586,15 @@ async def theme_from_outline_json(
                     vibe_lower = (vibe_context or '').lower()
                     combined_context = f"{title_lower} {vibe_lower}"
 
-                    is_fun_topic = any(keyword in combined_context for keyword in [
+                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                    import re
+                    fun_keywords = [
                         'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                         'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
                         'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite',
                         'candy', 'sweets', 'colorful', 'vibrant', 'playful', 'bright', 'neon', 'rainbow'
-                    ])
+                    ]
+                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', combined_context) for kw in fun_keywords)
 
                     if is_fun_topic:
                         # Use playful fonts for fun topics

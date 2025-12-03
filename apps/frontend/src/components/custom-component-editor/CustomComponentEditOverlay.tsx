@@ -43,7 +43,7 @@ interface CustomComponentEditOverlayProps {
   containerWidth: number;
   containerHeight: number;
   onHtmlUpdate: (newHtml: string) => void;
-  onElementSelect: (element: DetectedElement | null) => void;
+  onElementSelect: (element: DetectedElement | null, cursorX?: number, cursorY?: number) => void;
   iframeRef?: React.RefObject<HTMLIFrameElement>;
 }
 
@@ -257,6 +257,12 @@ export function generateEditModeScript(componentId: string): string {
           el.style[key] = e.data.styles[key];
         });
       }
+    }
+
+    // Get full HTML for persistence
+    if (e.data.type === 'get-html') {
+      const html = document.documentElement.outerHTML;
+      sendToParent('html-response', { html: html });
     }
 
     // Hide element for overlay editing
@@ -575,11 +581,17 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         // Request fresh element data after text edit
         setTimeout(requestElements, 100);
       }
+
+      // Handle HTML response for persistence
+      if (data.type === 'html-response' && data.html) {
+        console.log('[CustomComponentEdit] Received HTML for persistence, length:', data.html.length);
+        onHtmlUpdate(data.html);
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect]);
+  }, [isEditing, isSelected, componentId, iframeRef, requestElements, virtualElements, onElementSelect, onHtmlUpdate]);
 
   // Re-extract elements when srcDoc changes
   useEffect(() => {
@@ -590,8 +602,8 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   }, [srcDoc, isReady, isEditing, isSelected, requestElements]);
 
   // Handle element selection - for TEXT, start editing immediately (single click)
-  const handleSelectElement = useCallback((elementId: string) => {
-    console.log('[CustomComponentEdit] handleSelectElement called:', elementId);
+  const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
+    console.log('[CustomComponentEdit] handleSelectElement called:', elementId, 'cursor:', cursorX, cursorY);
     const element = virtualElements.find(e => e.id === elementId);
     if (!element) {
       console.log('[CustomComponentEdit] Element not found in virtualElements');
@@ -622,7 +634,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     // For IMAGE/CONTAINER: show selection overlay
     setSelectedElementId(elementId);
     setEditingTextId(null);
-    onElementSelect(toDetectedElement(element));
+    onElementSelect(toDetectedElement(element), cursorX, cursorY);
 
     // Notify iframe to clear any previous selection styling
     if (iframeRef.current?.contentWindow) {
@@ -672,9 +684,17 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         : e
     ));
 
+    // Request HTML from iframe and persist changes
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'get-html',
+      }, '*');
+    }
+
     // Request fresh element data
     setTimeout(requestElements, 100);
-  }, [selectedElement, requestElements]);
+  }, [selectedElement, requestElements, iframeRef]);
 
   // Handle resize change
   const handleResizeChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -706,9 +726,17 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         : e
     ));
 
+    // Request HTML from iframe and persist changes
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'get-html',
+      }, '*');
+    }
+
     // Request fresh element data
     setTimeout(requestElements, 100);
-  }, [selectedElement, requestElements]);
+  }, [selectedElement, requestElements, iframeRef]);
 
   // Handle text edit finish
   const handleTextEditFinish = useCallback((newHtml: string, newText: string) => {
@@ -762,7 +790,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           key={element.id}
           element={element}
           isSelected={element.id === selectedElementId}
-          onSelect={() => handleSelectElement(element.id)}
+          onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
           onDoubleClick={() => handleDoubleClick(element)}
           disabled={!!editingTextId}
         />

@@ -7,10 +7,10 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 from services.deck_sharing_service import get_sharing_service
-from utils.supabase import get_deck
+from utils.supabase import get_deck, get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -208,4 +208,267 @@ async def duplicate_public_deck(
         raise
     except Exception as e:
         logger.error(f"Error duplicating deck: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to duplicate deck") 
+        raise HTTPException(status_code=500, detail="Failed to duplicate deck")
+
+
+# Viewer registration models
+class ViewerRegistrationRequest(BaseModel):
+    """Request to register a viewer's email for a shared deck."""
+    email: EmailStr = Field(..., description="Viewer's email address")
+    name: Optional[str] = Field(None, description="Viewer's name (optional)")
+    company: Optional[str] = Field(None, description="Viewer's company (optional)")
+
+
+class ViewerRegistrationResponse(BaseModel):
+    """Response after registering viewer email."""
+    success: bool
+    message: str
+    viewer_id: Optional[str] = None
+
+
+@router.post("/deck/{short_code}/viewer", response_model=ViewerRegistrationResponse)
+async def register_viewer(
+    short_code: str,
+    request: ViewerRegistrationRequest,
+    http_request: Request
+):
+    """
+    Register a viewer's email before they can access an email-gated deck.
+    This stores the viewer info and returns a viewer_id that can be used to access the deck.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get share link info to verify it exists and requires email
+        share_result = supabase.table('deck_shares').select(
+            'id, deck_uuid, metadata, is_active'
+        ).eq('short_code', short_code).eq('is_active', True).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found or expired")
+
+        share_data = share_result.data[0]
+        share_id = share_data['id']
+
+        # Get client info
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        user_agent = http_request.headers.get("user-agent", "unknown")
+
+        # Normalize email
+        email_normalized = request.email.strip().lower()
+
+        # Check if viewer already registered for this share link (same email, same day)
+        existing = supabase.table('share_viewers').select('id').eq(
+            'share_id', share_id
+        ).eq('email', email_normalized).execute()
+
+        if existing.data:
+            # Viewer already registered, return their existing ID
+            return ViewerRegistrationResponse(
+                success=True,
+                message="Welcome back! You can now view the presentation.",
+                viewer_id=existing.data[0]['id']
+            )
+
+        # Insert new viewer record
+        viewer_data = {
+            'share_id': share_id,
+            'email': email_normalized,
+            'name': request.name,
+            'company': request.company,
+            'client_ip': client_ip,
+            'user_agent': user_agent,
+            'registered_at': datetime.utcnow().isoformat()
+        }
+
+        result = supabase.table('share_viewers').insert(viewer_data).execute()
+
+        if result.data:
+            viewer_id = result.data[0]['id']
+            logger.info(f"Registered viewer {email_normalized} for share {short_code}")
+
+            return ViewerRegistrationResponse(
+                success=True,
+                message="Thanks! You can now view the presentation.",
+                viewer_id=viewer_id
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to register viewer")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error registering viewer: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to register viewer")
+
+
+@router.get("/deck/{short_code}/check-email-required")
+async def check_email_required(short_code: str):
+    """
+    Check if a share link requires email registration before viewing.
+    Returns whether email is required and the deck metadata for preview.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get share link info
+        share_result = supabase.table('deck_shares').select(
+            'id, deck_uuid, metadata, is_active, share_type'
+        ).eq('short_code', short_code).eq('is_active', True).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found or expired")
+
+        share_data = share_result.data[0]
+        metadata = share_data.get('metadata') or {}
+        require_email = metadata.get('require_email', False)
+
+        # Get basic deck info for preview (name only)
+        deck_result = supabase.table('decks').select('name').eq(
+            'uuid', share_data['deck_uuid']
+        ).execute()
+
+        deck_name = deck_result.data[0]['name'] if deck_result.data else "Untitled Presentation"
+
+        return {
+            'require_email': require_email,
+            'share_type': share_data['share_type'],
+            'deck_name': deck_name
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking email requirement: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to check share link")
+
+
+# View tracking models
+class StartViewSessionRequest(BaseModel):
+    """Request to start a view tracking session."""
+    session_id: str = Field(..., description="Unique browser session ID")
+    viewer_id: Optional[str] = Field(None, description="Viewer ID if email was collected")
+    device_type: Optional[str] = Field(None, description="desktop, mobile, or tablet")
+    referrer_url: Optional[str] = Field(None, description="Referrer URL")
+
+
+class UpdateViewSessionRequest(BaseModel):
+    """Request to update a view session with slide data."""
+    session_id: str = Field(..., description="Session ID to update")
+    slide_views: list = Field(default=[], description="Array of {slideIndex, timeSpentMs}")
+    duration_seconds: int = Field(0, description="Total view duration in seconds")
+    slides_viewed: int = Field(0, description="Number of unique slides viewed")
+
+
+@router.post("/deck/{short_code}/view/start")
+async def start_view_session(
+    short_code: str,
+    request: StartViewSessionRequest,
+    http_request: Request
+):
+    """Start tracking a view session for analytics."""
+    try:
+        supabase = get_supabase_client()
+
+        # Get share link info
+        share_result = supabase.table('deck_shares').select('id').eq(
+            'short_code', short_code
+        ).eq('is_active', True).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        share_id = share_result.data[0]['id']
+
+        # Get client info
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        user_agent = http_request.headers.get("user-agent", "")
+
+        # Parse user agent for browser/OS (basic parsing)
+        browser = "Unknown"
+        os_name = "Unknown"
+        if "Chrome" in user_agent:
+            browser = "Chrome"
+        elif "Firefox" in user_agent:
+            browser = "Firefox"
+        elif "Safari" in user_agent:
+            browser = "Safari"
+        elif "Edge" in user_agent:
+            browser = "Edge"
+
+        if "Windows" in user_agent:
+            os_name = "Windows"
+        elif "Mac" in user_agent:
+            os_name = "macOS"
+        elif "Linux" in user_agent:
+            os_name = "Linux"
+        elif "Android" in user_agent:
+            os_name = "Android"
+        elif "iOS" in user_agent or "iPhone" in user_agent:
+            os_name = "iOS"
+
+        # Create view event
+        event_data = {
+            'share_id': share_id,
+            'session_id': request.session_id,
+            'viewer_id': request.viewer_id,
+            'device_type': request.device_type or 'desktop',
+            'browser': browser,
+            'os': os_name,
+            'referrer_url': request.referrer_url,
+            'referrer_source': 'direct' if not request.referrer_url else 'referral',
+            'client_ip': client_ip,
+            'user_agent': user_agent[:500] if user_agent else None
+        }
+
+        result = supabase.table('share_view_events').insert(event_data).execute()
+
+        if result.data:
+            return {'success': True, 'event_id': result.data[0]['id']}
+        else:
+            return {'success': False}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting view session: {str(e)}")
+        # Don't fail the view - just log the error
+        return {'success': False, 'error': str(e)}
+
+
+@router.post("/deck/{short_code}/view/update")
+async def update_view_session(
+    short_code: str,
+    request: UpdateViewSessionRequest
+):
+    """Update a view session with slide engagement data."""
+    try:
+        supabase = get_supabase_client()
+
+        # Get share ID
+        share_result = supabase.table('deck_shares').select('id').eq(
+            'short_code', short_code
+        ).eq('is_active', True).execute()
+
+        if not share_result.data:
+            return {'success': False}
+
+        share_id = share_result.data[0]['id']
+
+        # Update the view event
+        update_data = {
+            'slide_views': request.slide_views,
+            'duration_seconds': request.duration_seconds,
+            'slides_viewed': request.slides_viewed,
+            'ended_at': datetime.utcnow().isoformat()
+        }
+
+        result = supabase.table('share_view_events').update(update_data).eq(
+            'share_id', share_id
+        ).eq('session_id', request.session_id).execute()
+
+        return {'success': bool(result.data)}
+
+    except Exception as e:
+        logger.error(f"Error updating view session: {str(e)}")
+        return {'success': False}

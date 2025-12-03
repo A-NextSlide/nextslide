@@ -1606,9 +1606,72 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
         )
         
         font_result = {}
-        
-        if scraped_fonts:
-            # Match scraped fonts to available
+
+        # CRITICAL: Check for fun/playful topics FIRST - before using brand fonts!
+        # Fun topics (Pokemon, Mario, etc.) should ALWAYS get playful fonts, even if brand fonts exist
+        entity_name = (analysis.get('entity_name') or '').lower() if analysis.get('entity_name') else ''
+        is_fun_entity = any(keyword in entity_name for keyword in [
+            'pikachu', 'pokemon', 'pokémon', 'mario', 'luigi', 'disney', 'mickey',
+            'cartoon', 'game', 'toy', 'character', 'sonic', 'zelda', 'kirby',
+            'spongebob', 'nickelodeon', 'pixar', 'dreamworks', 'lego', 'nerf',
+            'barbie', 'hot wheels', 'transformers', 'paw patrol', 'peppa pig'
+        ]) if entity_name else False
+
+        # Check if title suggests kids/fun topic
+        # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+        import re
+        title_lower = (title or '').lower() if title else ''
+        fun_keywords = [
+            'pikachu', 'pokemon', 'pokémon', 'pokedex', 'pokédex', 'kids', 'children',
+            'game', 'fun', 'play', 'cartoon', 'toy', 'party', 'arcade', 'retro',
+            'gaming', 'birthday', 'silly', 'celebration', 'video', 'anime', 'manga',
+            'superhero', 'comic', 'animated'
+        ]
+        is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_keywords) if title_lower else False
+
+        if is_fun_entity or is_fun_topic:
+            # OVERRIDE: Use playful fonts - even if brand fonts exist!
+            logger.info(f"🎨 FUN TOPIC DETECTED (PRIORITY CHECK): {entity_name or title} → Using PLAYFUL fonts")
+            print(f"\n🎨🎨🎨 FUN TOPIC DETECTED - OVERRIDING BRAND FONTS 🎨🎨🎨")
+            print(f"   Title: '{title}'")
+            print(f"   Entity: '{entity_name}'")
+            print(f"   is_fun_entity: {is_fun_entity}")
+            print(f"   is_fun_topic: {is_fun_topic}")
+            print(f"   → Selecting CREATIVE, PLAYFUL fonts!\n")
+
+            # Rotate through playful font combinations
+            import hashlib
+            seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
+
+            playful_combos = [
+                {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                {'hero': 'Fredoka', 'body': 'Quicksand'},
+                {'hero': 'Righteous', 'body': 'Poppins'},
+                {'hero': 'Bungee', 'body': 'Asap'},
+                {'hero': 'Bangers', 'body': 'Rubik'},
+                {'hero': 'Titan One', 'body': 'Cabin'},
+                {'hero': 'Pacifico', 'body': 'Comfortaa'},
+                {'hero': 'Press Start 2P', 'body': 'Space Mono'}
+            ]
+
+            combo_idx = seed_hash % len(playful_combos)
+            selected_combo = playful_combos[combo_idx]
+
+            font_result = {
+                'hero': selected_combo['hero'],
+                'body': selected_combo['body'],
+                'source': 'fun_topic_override',
+                'hero_category': 'playful',
+                'body_category': 'friendly'
+            }
+
+            logger.info(f"✅ PLAYFUL FONTS (PRIORITY): Hero={font_result['hero']}, Body={font_result['body']}")
+            print(f"✅✅✅ PLAYFUL FONTS SELECTED (PRIORITY) ✅✅✅")
+            print(f"   Hero: {font_result['hero']}")
+            print(f"   Body: {font_result['body']}")
+            print(f"   Combo: {combo_idx + 1}/{len(playful_combos)}\n")
+        elif scraped_fonts:
+            # Match scraped fonts to available (only if NOT a fun topic)
             try:
                 from models.registry import ComponentRegistry
                 registry = ComponentRegistry()
@@ -1627,61 +1690,8 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                     logger.info(f"[THEME] AI selected body font '{body_font}' to complement hero '{hero_font}'")
 
         if not font_result:
-            # CRITICAL: Check if this is a fun/playful entity (Pikachu, Pokemon, etc.)
-            entity_name = (analysis.get('entity_name') or '').lower() if analysis.get('entity_name') else ''
-            is_fun_entity = any(keyword in entity_name for keyword in [
-                'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
-                'cartoon', 'game', 'toy', 'character'
-            ]) if entity_name else False
-            
-            # Check if title suggests kids/fun topic
-            title_lower = (title or '').lower() if title else ''
-            is_fun_topic = any(keyword in title_lower for keyword in [
-                'pikachu', 'pokemon', 'kids', 'children', 'game', 'fun', 'play',
-                'cartoon', 'toy', 'party', 'arcade', 'retro', 'gaming', 'birthday',
-                'silly', 'celebration', 'video'
-            ]) if title_lower else False
-            
-            if is_fun_entity or is_fun_topic:
-                # OVERRIDE: Use playful fonts!
-                logger.info(f"🎨 FUN TOPIC DETECTED: {entity_name or title} → Using PLAYFUL fonts")
-                print(f"\n🎨🎨🎨 FUN TOPIC DETECTED IN THEME_DIRECTOR 🎨🎨🎨")
-                print(f"   Title: '{title}'")
-                print(f"   Entity: '{entity_name}'")
-                print(f"   → Selecting CREATIVE, PLAYFUL fonts!\n")
-                
-                # Rotate through playful font combinations
-                import hashlib
-                seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
-                
-                playful_combos = [
-                    {'hero': 'Bebas Neue', 'body': 'Nunito'},
-                    {'hero': 'Fredoka', 'body': 'Quicksand'},
-                    {'hero': 'Righteous', 'body': 'Poppins'},
-                    {'hero': 'Bungee', 'body': 'Asap'},
-                    {'hero': 'Bangers', 'body': 'Rubik'},
-                    {'hero': 'Titan One', 'body': 'Cabin'},
-                    {'hero': 'Pacifico', 'body': 'Comfortaa'},
-                    {'hero': 'Press Start 2P', 'body': 'Space Mono'}
-                ]
-                
-                combo_idx = seed_hash % len(playful_combos)
-                selected_combo = playful_combos[combo_idx]
-                
-                font_result = {
-                    'hero': selected_combo['hero'],
-                    'body': selected_combo['body'],
-                    'source': 'fun_topic_override',
-                    'hero_category': 'playful',
-                    'body_category': 'friendly'
-                }
-                
-                logger.info(f"✅ PLAYFUL FONTS: Hero={font_result['hero']}, Body={font_result['body']}")
-                print(f"✅✅✅ PLAYFUL FONTS SELECTED ✅✅✅")
-                print(f"   Hero: {font_result['hero']}")
-                print(f"   Body: {font_result['body']}")
-                print(f"   Combo: {combo_idx + 1}/{len(playful_combos)}\n")
-            elif analysis.get('is_brand') and analysis.get('brand_name'):
+            # Fun topics are already handled above with priority - this handles remaining cases
+            if analysis.get('is_brand') and analysis.get('brand_name'):
                 # BRAND DETECTED but brand fonts not available - use AI to select brand-appropriate fonts
                 brand_name = analysis.get('brand_name')
                 logger.info(f"🏷️ BRAND DETECTED: {brand_name} → Selecting brand-appropriate fonts with AI")

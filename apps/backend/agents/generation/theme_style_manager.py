@@ -3,6 +3,7 @@ Theme and style management - handles design system generation and analysis.
 """
 import json
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Dict, Any, Optional, List
@@ -968,7 +969,7 @@ NO OTHER TEXT. Just the 8 lines above with real colors.
                 # CRITICAL: Check for fun/playful topics FIRST!
                 title_lower = title.lower()
                 vibe_lower = vibe.lower()
-                
+
                 # Expanded keyword list with MORE coverage
                 fun_keywords = [
                     'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
@@ -976,9 +977,9 @@ NO OTHER TEXT. Just the 8 lines above with real colors.
                     'toy', 'toys', 'party', 'arcade', 'retro', 'gaming', 'video game',
                     'nintendo', 'sega', 'sonic', 'zelda', 'playstation'
                 ]
-                
-                # Check each keyword and log matches
-                matched_keywords = [kw for kw in fun_keywords if kw in title_lower]
+
+                # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                matched_keywords = [kw for kw in fun_keywords if re.search(rf'\b{re.escape(kw)}\b', title_lower)]
                 is_fun_topic = len(matched_keywords) > 0
                 
                 print(f"🔍 Fun keywords found in title: {matched_keywords}")

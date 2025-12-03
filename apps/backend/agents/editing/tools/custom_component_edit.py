@@ -12,6 +12,7 @@ This enables fast, targeted edits without regenerating entire components.
 from typing import List, Union, Literal, Optional, Tuple
 from pydantic import BaseModel, Field, create_model
 from html import unescape
+from difflib import SequenceMatcher
 import logging
 import re
 
@@ -36,54 +37,206 @@ def strip_html_tags(html: str) -> str:
     return text
 
 
+def normalize_whitespace(text: str) -> str:
+    """Collapse all whitespace to single spaces."""
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def normalize_whitespace_aggressive(text: str) -> str:
+    """Remove ALL whitespace for matching purposes."""
+    return re.sub(r'\s+', '', text)
+
+
+def find_fuzzy_match(html: str, search_text: str, threshold: float = 0.85) -> Tuple[Optional[str], float]:
+    """
+    Find the best fuzzy match for search_text in html using sliding window.
+
+    Uses SequenceMatcher (similar to Aider's approach) to find approximate matches.
+    Returns: (matched_string, similarity_ratio)
+    """
+    if not search_text or not html:
+        return None, 0.0
+
+    search_len = len(search_text)
+    best_match = None
+    best_ratio = 0.0
+    best_pos = -1
+
+    # Optimization: if search text is very long, use larger step size
+    step = 1 if search_len < 100 else max(1, search_len // 20)
+
+    # Try exact length first
+    for i in range(0, len(html) - search_len + 1, step):
+        candidate = html[i:i + search_len]
+        ratio = SequenceMatcher(None, search_text, candidate, autojunk=False).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = candidate
+            best_pos = i
+
+    # If we found a good match with stepping, refine around that position
+    if best_pos >= 0 and step > 1:
+        start = max(0, best_pos - step)
+        end = min(len(html) - search_len + 1, best_pos + step)
+        for i in range(start, end):
+            candidate = html[i:i + search_len]
+            ratio = SequenceMatcher(None, search_text, candidate, autojunk=False).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = candidate
+                best_pos = i
+
+    # Also try varying lengths (±15%) to handle whitespace differences
+    for length_mult in [0.9, 1.1, 0.85, 1.15]:
+        adj_len = int(search_len * length_mult)
+        if adj_len < 5 or adj_len > len(html):
+            continue
+        for i in range(0, len(html) - adj_len + 1, step):
+            candidate = html[i:i + adj_len]
+            ratio = SequenceMatcher(None, search_text, candidate, autojunk=False).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = candidate
+
+    if best_ratio >= threshold:
+        return best_match, best_ratio
+
+    return None, best_ratio
+
+
+def find_whitespace_normalized_match(html: str, search_text: str) -> Optional[str]:
+    """
+    Find match by normalizing whitespace in both strings.
+
+    Returns the actual HTML substring that matches when whitespace is normalized.
+    """
+    normalized_search = normalize_whitespace(search_text)
+    if not normalized_search:
+        return None
+
+    # Build a mapping of normalized positions to original positions
+    # This lets us find the original substring after matching normalized versions
+
+    # Strategy: slide through HTML, normalize each window, compare
+    search_len = len(search_text)
+
+    # Try windows of varying sizes (whitespace can expand or contract)
+    for window_mult in [1.0, 1.2, 1.5, 0.8, 2.0]:
+        window_size = int(search_len * window_mult)
+        if window_size < 5 or window_size > len(html):
+            continue
+
+        for i in range(len(html) - window_size + 1):
+            candidate = html[i:i + window_size]
+            normalized_candidate = normalize_whitespace(candidate)
+
+            if normalized_candidate == normalized_search:
+                return candidate
+
+            # Also try aggressive normalization (remove all whitespace)
+            if normalize_whitespace_aggressive(candidate) == normalize_whitespace_aggressive(search_text):
+                return candidate
+
+    return None
+
+
 def find_text_in_html(html: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     Find text in HTML and return the actual HTML substring to replace.
 
+    Uses multiple strategies (inspired by Aider and Cursor):
+    1. Exact match
+    2. Whitespace-normalized match
+    3. Case-insensitive match
+    4. Fuzzy match using SequenceMatcher
+    5. Partial match suggestions
+
     Returns: (found, actual_html_string, suggestion)
     """
-    # First try exact match
+    logger.debug(f"find_text_in_html: searching for '{search_text[:100]}...' (len={len(search_text)})")
+
+    # 1. First try exact match (fastest)
     if search_text in html:
+        logger.debug("find_text_in_html: exact match found")
         return True, search_text, None
 
-    # Normalize the search text
-    normalized_search = re.sub(r'\s+', ' ', search_text).strip()
+    # 2. Try whitespace-normalized match
+    normalized_match = find_whitespace_normalized_match(html, search_text)
+    if normalized_match:
+        logger.debug(f"find_text_in_html: whitespace-normalized match found")
+        return True, normalized_match, "Matched with normalized whitespace"
 
-    # Try to find in plain text content
-    plain_text = strip_html_tags(html)
-
-    if normalized_search in plain_text:
-        # The text exists but might be wrapped in HTML tags
-        # Try to find a close match in the original HTML
-
-        # Escape special regex characters in search text
-        escaped_search = re.escape(normalized_search)
-        # Allow for HTML tags between words
-        pattern = escaped_search.replace(r'\ ', r'(?:\s|<[^>]+>)*')
-
-        match = re.search(pattern, html, re.IGNORECASE)
-        if match:
-            return True, match.group(0), None
-
-    # Try case-insensitive match
+    # 3. Try case-insensitive exact match
     lower_html = html.lower()
     lower_search = search_text.lower()
     if lower_search in lower_html:
-        # Find the actual case in original
         idx = lower_html.find(lower_search)
         actual = html[idx:idx + len(search_text)]
-        return True, actual, f"Found with different case: '{actual}'"
+        logger.debug(f"find_text_in_html: case-insensitive match found")
+        return True, actual, f"Found with different case: '{actual[:50]}...'"
 
-    # Try to find partial match (first 30 chars)
+    # 4. Try whitespace-normalized + case-insensitive
+    normalized_search = normalize_whitespace(search_text).lower()
+    for window_mult in [1.0, 1.2, 1.5, 0.8, 2.0]:
+        window_size = int(len(search_text) * window_mult)
+        if window_size < 5 or window_size > len(html):
+            continue
+        for i in range(len(html) - window_size + 1):
+            candidate = html[i:i + window_size]
+            if normalize_whitespace(candidate).lower() == normalized_search:
+                logger.debug(f"find_text_in_html: normalized+case-insensitive match found")
+                return True, candidate, "Matched with normalized whitespace and case"
+
+    # 5. Try fuzzy matching (SequenceMatcher) - most flexible
+    fuzzy_match, ratio = find_fuzzy_match(html, search_text, threshold=0.85)
+    if fuzzy_match:
+        logger.info(f"find_text_in_html: fuzzy match found (similarity={ratio:.2%})")
+        return True, fuzzy_match, f"Fuzzy match (similarity={ratio:.2%})"
+
+    # 6. Try matching just the text content (strip HTML tags from search)
+    plain_search = strip_html_tags(search_text)
+    if plain_search and len(plain_search) > 10:
+        # Look for this plain text in the HTML
+        escaped_search = re.escape(plain_search)
+        # Allow for HTML tags and whitespace between words
+        pattern = escaped_search.replace(r'\ ', r'(?:\s|<[^>]+>)*')
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            logger.debug(f"find_text_in_html: plain text pattern match found")
+            return True, match.group(0), "Matched plain text content with flexible whitespace"
+
+    # 7. Generate helpful suggestions for debugging
+    suggestion = None
+
+    # Check if partial match exists
     if len(search_text) > 30:
         partial = search_text[:30]
         if partial in html:
-            # Find where it actually ends in the HTML
             idx = html.find(partial)
-            # Look for the rest of the content
-            return False, None, f"Partial match found at position {idx}. The text may be split across HTML elements."
+            context = html[max(0, idx-20):idx+50]
+            suggestion = f"Partial match at position {idx}. Context: ...{context}..."
+        else:
+            # Try even shorter prefix
+            short_partial = search_text[:15]
+            if short_partial in html:
+                idx = html.find(short_partial)
+                suggestion = f"Very short partial match at position {idx}. Search text may have significant differences."
 
-    return False, None, None
+    # Check if the content exists but is structured differently
+    plain_text = strip_html_tags(html)
+    plain_search = strip_html_tags(search_text) if '<' in search_text else search_text
+    if plain_search and plain_search in plain_text:
+        suggestion = "Text content exists but HTML structure differs significantly. Try searching for just the text without HTML tags."
+
+    # Report best fuzzy match even if below threshold
+    if ratio > 0.5:
+        if suggestion:
+            suggestion += f" Best fuzzy match had {ratio:.0%} similarity."
+        else:
+            suggestion = f"Best fuzzy match had {ratio:.0%} similarity (threshold is 85%)."
+
+    logger.debug(f"find_text_in_html: no match found. Best fuzzy ratio: {ratio:.2%}")
+    return False, None, suggestion
 
 
 class StrReplaceEdit(BaseModel):
@@ -159,15 +312,18 @@ def custom_component_str_replace(
             logger.info(f"str_replace: {suggestion}")
     else:
         # Provide helpful error with suggestions
-        error_msg = f"Could not find old_string in HTML."
+        searched_preview = args.old_string[:100] + "..." if len(args.old_string) > 100 else args.old_string
+        error_msg = f"Could not find old_string in HTML.\n\nSearched for: '{searched_preview}'"
         if suggestion:
-            error_msg += f" Suggestion: {suggestion}"
+            error_msg += f"\n\nSuggestion: {suggestion}"
 
         # Also provide a snippet of the HTML to help debugging
         plain_text = strip_html_tags(current_html)
         if len(plain_text) > 500:
             plain_text = plain_text[:500] + "..."
         error_msg += f"\n\nVisible text content: {plain_text}"
+
+        logger.warning(f"str_replace failed: searched for '{searched_preview}'")
 
         raise ValueError(error_msg)
 

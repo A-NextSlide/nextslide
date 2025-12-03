@@ -1018,15 +1018,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             editorStore.removeDraftComponent(slideId, compId, true);
           });
 
-          // For updates and additions, check if slide has unsaved local changes
-          // If so, skip to avoid overwriting user edits
-          try {
-            const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
-            if (hasLocal) {
-              console.log('[ChatPanel] Skipping updates/additions for slide with local changes', { slideId });
-              return;
-            }
-          } catch { }
+          // For updates and additions, check if slide has unsaved LOCAL (user manual) changes
+          // If so, skip to avoid overwriting user edits - BUT only for non-agent edits
+          // Agent edits (isEditDiff=true) should always be applied to overwrite previous agent changes
+          if (!isEditDiff) {
+            try {
+              const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
+              if (hasLocal) {
+                console.log('[ChatPanel] Skipping updates/additions for slide with local changes', { slideId });
+                return;
+              }
+            } catch { }
+          } else {
+            console.log('[ChatPanel] Applying agent edit regardless of local changes', { slideId, isEditDiff });
+          }
 
           // Apply component updates
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
@@ -1092,7 +1097,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, []);
 
   // Apply compact preview slides without refreshing whole deck
-  const applyPreviewSlidesRespectingEditMode = useCallback((previewSlides: any[]) => {
+  const applyPreviewSlidesRespectingEditMode = useCallback((previewSlides: any[], isAgentEdit = false) => {
     if (!Array.isArray(previewSlides) || previewSlides.length === 0) return;
     // HARD GUARD: If deck is already completed, do not apply preview slides
     try {
@@ -1143,12 +1148,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const slideId = previewSlide?.id;
         if (!slideId) return;
         // If this slide has local unsaved changes, don't overwrite its draft
-        try {
-          const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
-          if (hasLocal) {
-            return;
-          }
-        } catch { }
+        // BUT allow agent edits to always go through
+        if (!isAgentEdit) {
+          try {
+            const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
+            if (hasLocal) {
+              console.log('[ChatPanel] Skipping preview slide merge for slide with local changes', { slideId });
+              return;
+            }
+          } catch { }
+        } else {
+          console.log('[ChatPanel] Applying agent preview slide merge regardless of local changes', { slideId });
+        }
         const previewComponents: any[] = Array.isArray(previewSlide.components) ? previewSlide.components : [];
         const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
 
@@ -1861,6 +1872,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }, 0);
                   proposedDiffsRef.current.delete(editId);
 
+                  // CRITICAL FIX: Mark slides as unchanged since backend has already persisted them
+                  // This prevents false "unsaved changes" warnings and allows subsequent agent edits
+                  try {
+                    const editorStore = useEditorStore.getState();
+                    ((diff as any).slides_to_update || []).forEach((slideDiff: any) => {
+                      if (slideDiff?.slide_id && typeof editorStore.markSlideAsUnchanged === 'function') {
+                        editorStore.markSlideAsUnchanged(slideDiff.slide_id);
+                        console.log('[Realtime][edit.applied] Marked slide as unchanged (backend persisted)', { slideId: slideDiff.slide_id });
+                      }
+                    });
+                  } catch { }
+
                   // CRITICAL FIX: Keep preview guards active for 2 seconds to prevent Supabase realtime
                   // from overwriting agent-applied changes with stale data
                   // The local diff has already been applied, and we need to give the database time to commit
@@ -1896,6 +1919,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     // eslint-disable-next-line @typescript-eslint/no-floating-promises
                     maybeOptimizeFontsForDiff(diff);
 
+                    // CRITICAL FIX: Mark slides as unchanged since backend has already persisted them
+                    try {
+                      const editorStore = useEditorStore.getState();
+                      ((diff as any).slides_to_update || []).forEach((slideDiff: any) => {
+                        if (slideDiff?.slide_id && typeof editorStore.markSlideAsUnchanged === 'function') {
+                          editorStore.markSlideAsUnchanged(slideDiff.slide_id);
+                          console.log('[Realtime][edit.applied] Marked slide as unchanged (backend persisted, message path)', { slideId: slideDiff.slide_id });
+                        }
+                      });
+                    } catch { }
+
                     // CRITICAL FIX: Keep preview guards active for 2 seconds
                     try {
                       const agentEditTimestamp = Date.now();
@@ -1924,7 +1958,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
                     if (normalizedAppliedSlides.length > 0) {
                       console.log('[Realtime][edit.applied] applying slide payload fallback', { count: normalizedAppliedSlides.length });
-                      applyPreviewSlidesRespectingEditMode(normalizedAppliedSlides);
+                      applyPreviewSlidesRespectingEditMode(normalizedAppliedSlides, true);  // Pass true - this is an agent edit
                       try {
                         const ids = normalizedAppliedSlides.map((sl: any) => sl?.id).filter((v: any) => typeof v === 'string');
                         if (ids.length > 0) {

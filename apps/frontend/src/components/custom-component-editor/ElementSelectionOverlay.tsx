@@ -74,14 +74,14 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
   return (
     <div
       ref={overlayRef}
-      className="absolute"
+      className="fixed"
       style={{
         left: bounds.x,
         top: bounds.y,
         width: bounds.width,
         height: bounds.height,
         pointerEvents: 'none',
-        zIndex: 40,
+        zIndex: 15000, // Above element hit areas (10000 for text)
         // CSS variables for zero-lag drag - applied by useElementDrag
         transform: isDragging ? 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))' : undefined,
       }}

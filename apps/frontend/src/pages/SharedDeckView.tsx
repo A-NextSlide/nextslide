@@ -74,6 +74,13 @@ const SharedDeckView: React.FC = () => {
   const [canEdit, setCanEdit] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
+  // Email gate state
+  const [requiresEmail, setRequiresEmail] = useState(false);
+  const [viewerEmail, setViewerEmail] = useState('');
+  const [viewerName, setViewerName] = useState('');
+  const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
+  const [deckName, setDeckName] = useState('');
+
   const isPresenting = usePresentationStore(state => state.isPresenting);
   const enterPresentation = usePresentationStore(state => state.enterPresentation);
   const setPendingPresentation = useReturnBannerStore(state => state.setPendingPresentation);
@@ -81,20 +88,153 @@ const SharedDeckView: React.FC = () => {
   // Track if we've loaded the deck (to distinguish exit from initial load)
   const hasLoadedDeck = useRef(false);
 
+  // View tracking refs
+  const sessionIdRef = useRef<string>(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  const viewStartTimeRef = useRef<number>(Date.now());
+  const slideTimesRef = useRef<Map<number, number>>(new Map()); // slideIndex -> time spent in ms
+  const currentSlideStartRef = useRef<number>(Date.now());
+  const lastSlideIndexRef = useRef<number>(0);
+
+  // Track time spent on current slide
+  const trackSlideTime = (slideIndex: number) => {
+    const now = Date.now();
+    const timeSpent = now - currentSlideStartRef.current;
+
+    // Add time to the previous slide
+    const prevSlideIndex = lastSlideIndexRef.current;
+    const existingTime = slideTimesRef.current.get(prevSlideIndex) || 0;
+    slideTimesRef.current.set(prevSlideIndex, existingTime + timeSpent);
+
+    // Reset for new slide
+    currentSlideStartRef.current = now;
+    lastSlideIndexRef.current = slideIndex;
+  };
+
+  // Send tracking data to server
+  const sendTrackingData = () => {
+    if (!shareCode || !hasLoadedDeck.current) return;
+
+    // Track time on current slide before sending
+    trackSlideTime(lastSlideIndexRef.current);
+
+    // Convert map to array
+    const slideViews = Array.from(slideTimesRef.current.entries()).map(([slideIndex, timeSpentMs]) => ({
+      slideIndex,
+      timeSpentMs
+    }));
+
+    const durationSeconds = Math.floor((Date.now() - viewStartTimeRef.current) / 1000);
+
+    shareService.updateViewSession(shareCode, sessionIdRef.current, slideViews, durationSeconds);
+  };
+
   // When presentation mode exits (user clicks X or presses Escape), redirect to landing with banner
   useEffect(() => {
     if (hasLoadedDeck.current && !isPresenting && deck && shareCode) {
+      // Send final tracking data before leaving
+      sendTrackingData();
+
       // User exited the presentation - redirect to landing with return banner
       setPendingPresentation(shareCode, deck.name || 'your presentation');
       navigate('/');
     }
   }, [isPresenting, deck, shareCode, navigate, setPendingPresentation]);
 
+  // Track slide changes
+  useEffect(() => {
+    if (hasLoadedDeck.current) {
+      trackSlideTime(currentSlideIndex);
+    }
+  }, [currentSlideIndex]);
+
+  // Periodically send tracking data (every 30 seconds)
+  useEffect(() => {
+    if (!hasLoadedDeck.current || !shareCode) return;
+
+    const interval = setInterval(() => {
+      sendTrackingData();
+    }, 30000);
+
+    // Also send on page unload
+    const handleBeforeUnload = () => {
+      sendTrackingData();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [shareCode]);
+
   useEffect(() => {
     if (shareCode) {
-      loadSharedDeck();
+      checkEmailRequirement();
     }
   }, [shareCode]);
+
+  const checkEmailRequirement = async () => {
+    if (!shareCode) return;
+
+    setIsLoading(true);
+    try {
+      const response = await shareService.checkEmailRequired(shareCode);
+      if (response.success && response.data) {
+        setDeckName(response.data.deck_name);
+        if (response.data.require_email) {
+          // Check if we already have a viewer_id in session storage
+          const storedViewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+          if (storedViewerId) {
+            // Already registered, load the deck
+            loadSharedDeck();
+          } else {
+            // Need to collect email first
+            setRequiresEmail(true);
+            setIsLoading(false);
+          }
+        } else {
+          // No email required, load directly
+          loadSharedDeck();
+        }
+      } else {
+        // Fall back to loading deck directly (old links without metadata)
+        loadSharedDeck();
+      }
+    } catch (err) {
+      // Fall back to loading deck directly
+      loadSharedDeck();
+    }
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viewerEmail.trim() || !shareCode) return;
+
+    setIsSubmittingEmail(true);
+    try {
+      const response = await shareService.registerViewer(shareCode, viewerEmail, viewerName || undefined);
+      if (response.success && response.data) {
+        // Store viewer_id in session storage so they don't have to re-enter
+        sessionStorage.setItem(`viewer_${shareCode}`, response.data.viewer_id);
+        setRequiresEmail(false);
+        loadSharedDeck();
+      } else {
+        toast({
+          title: "Error",
+          description: response.error || "Failed to register. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "An error occurred. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmittingEmail(false);
+    }
+  };
 
   const loadSharedDeck = async (withPassword?: string) => {
     if (!shareCode) return;
@@ -134,6 +274,16 @@ const SharedDeckView: React.FC = () => {
 
         // Mark that we've loaded the deck (for exit detection)
         hasLoadedDeck.current = true;
+
+        // Start view tracking session
+        const viewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+        const deviceType = /Mobile|Android|iPhone/i.test(navigator.userAgent)
+          ? (/iPad|Tablet/i.test(navigator.userAgent) ? 'tablet' : 'mobile')
+          : 'desktop';
+
+        shareService.startViewSession(shareCode, sessionIdRef.current, viewerId || undefined, deviceType);
+        viewStartTimeRef.current = Date.now();
+        currentSlideStartRef.current = Date.now();
 
         // Enter presentation mode automatically
         enterPresentation();
@@ -344,6 +494,83 @@ const SharedDeckView: React.FC = () => {
         <div className="text-center">
           <Loader2 size={48} className="animate-spin mx-auto mb-4 text-primary" />
           <p className="text-lg text-muted-foreground">Loading shared deck...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Email gate UI
+  if (requiresEmail) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-b from-zinc-900 to-zinc-950">
+        <div className="w-full max-w-sm">
+          <div className="bg-white rounded-2xl overflow-hidden shadow-2xl">
+            {/* Orange accent line */}
+            <div className="h-1 bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00]" />
+
+            <div className="p-6">
+              {/* Header */}
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 bg-[#FF6B00]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg viewBox="0 0 64 64" width={24} height={24}>
+                    <path d="M8 8 L56 56" stroke="#FF4301" strokeWidth={11} strokeLinecap="round" />
+                    <path d="M56 8 L8 56" stroke="#FF4301" strokeWidth={11} strokeLinecap="round" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-bold text-zinc-900 mb-1">
+                  {deckName || 'Presentation'}
+                </h2>
+                <p className="text-sm text-zinc-500">
+                  Enter your email to view this presentation
+                </p>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleEmailSubmit} className="space-y-3">
+                <div>
+                  <Input
+                    type="email"
+                    placeholder="Your email"
+                    value={viewerEmail}
+                    onChange={(e) => setViewerEmail(e.target.value)}
+                    autoFocus
+                    disabled={isSubmittingEmail}
+                    className="h-10 text-sm"
+                    required
+                  />
+                </div>
+                <div>
+                  <Input
+                    type="text"
+                    placeholder="Your name (optional)"
+                    value={viewerName}
+                    onChange={(e) => setViewerName(e.target.value)}
+                    disabled={isSubmittingEmail}
+                    className="h-10 text-sm"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingEmail || !viewerEmail.trim()}
+                  className="w-full h-10 bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white font-semibold shadow-lg shadow-orange-500/20"
+                >
+                  {isSubmittingEmail ? (
+                    <>
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    'View Presentation'
+                  )}
+                </Button>
+              </form>
+
+              {/* Privacy note */}
+              <p className="text-[10px] text-zinc-400 text-center mt-4">
+                Your email will only be shared with the presenter
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     );

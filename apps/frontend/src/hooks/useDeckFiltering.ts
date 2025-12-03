@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { CompleteDeckData } from '@/types/DeckTypes';
 
 export interface UseDeckFilteringReturn {
@@ -9,14 +9,13 @@ export interface UseDeckFilteringReturn {
 
 export const useDeckFiltering = (decks: CompleteDeckData[]): UseDeckFilteringReturn => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredDecks, setFilteredDecks] = useState<CompleteDeckData[]>(decks);
 
-  useEffect(() => {
+  const filteredDecks = useMemo(() => {
+    if (!searchQuery.trim()) return decks;
     const lowercasedQuery = searchQuery.toLowerCase();
-    const newFilteredDecks = decks.filter(deck =>
+    return decks.filter(deck =>
       (deck.name || '').toLowerCase().includes(lowercasedQuery)
     );
-    setFilteredDecks(newFilteredDecks);
   }, [searchQuery, decks]);
 
   return {

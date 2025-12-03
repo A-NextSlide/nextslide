@@ -176,6 +176,61 @@ class AuthService {
       window.location.href = redirectTo;
     } catch {}
   }
+
+  /**
+   * Get user's onboarding state (welcome shown, presentation count)
+   */
+  async getOnboardingState(): Promise<{
+    welcome_shown: boolean;
+    presentations_created: number;
+    show_ai_hints: boolean;
+  } | null> {
+    try {
+      const token = await this.getAuthTokenAsync();
+      if (!token) return null;
+
+      const response = await fetch(this.getAuthUrl('/auth/user/onboarding-state'), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('[AuthService] Failed to get onboarding state:', response.status);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[AuthService] Error getting onboarding state:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Mark that the welcome message has been shown to the user
+   */
+  async markWelcomeShown(): Promise<boolean> {
+    try {
+      const token = await this.getAuthTokenAsync();
+      if (!token) return false;
+
+      const response = await fetch(this.getAuthUrl('/auth/user/mark-welcome-shown'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error('[AuthService] Error marking welcome shown:', error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance

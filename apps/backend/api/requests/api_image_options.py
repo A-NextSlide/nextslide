@@ -131,26 +131,28 @@ async def search_image_options(request: ImageOptionsRequest, registry: Component
 async def apply_selected_images(request: ApplyImagesRequest, registry: ComponentRegistry) -> ApplyImagesResponse:
     """
     Apply user-selected images to deck slides.
-    
-    This endpoint takes the user's image selections and applies them
-    to the appropriate image placeholders in the deck slides.
-    
+
+    This endpoint takes the user's image selections, uploads them to Supabase storage,
+    and applies the Supabase URLs to the appropriate image placeholders in the deck slides.
+
     Args:
         request: The apply images request
         registry: The component registry
-        
+
     Returns:
         ApplyImagesResponse indicating success/failure
     """
+    from services.image_storage_service import ImageStorageService
+
     try:
         logger.info(
             f"Applying selected images to deck {request.deck_uuid}: "
             f"{len(request.image_selections)} slides"
         )
-        
-        # Initialize persistence directly
+
+        # Initialize persistence and storage services
         persistence = DeckPersistence()
-        
+
         # Get current deck data
         deck_data = await persistence.get_deck_with_retry(request.deck_uuid)
         if not deck_data:
@@ -160,45 +162,67 @@ async def apply_selected_images(request: ApplyImagesRequest, registry: Component
                 slides_updated=0,
                 message=f"Deck {request.deck_uuid} not found"
             )
-        
+
         slides_updated = 0
-        
-        # Apply images to each slide
-        for slide_id, image_urls in request.image_selections.items():
-            # Find slide index by ID
-            slide_index = next(
-                (i for i, slide in enumerate(deck_data.get('slides', [])) 
-                 if slide.get('id') == slide_id),
-                None
-            )
-            
-            if slide_index is None:
-                logger.warning(f"Slide {slide_id} not found in deck")
-                continue
-            
-            slide_data = deck_data['slides'][slide_index]
-            
-            # Find Image components
-            image_components = [
-                (i, comp) for i, comp in enumerate(slide_data.get('components', []))
-                if comp.get('type') == 'Image'
-            ]
-            
-            if not image_components:
-                logger.warning(f"No Image components in slide {slide_id}")
-                continue
-            
-            # Apply selected images to components
-            for idx, (comp_idx, component) in enumerate(image_components):
-                if idx < len(image_urls):
-                    component['props']['src'] = image_urls[idx]
-                    component['props']['alt'] = f"Selected image {idx + 1}"
-                    logger.info(f"Applied image {idx + 1} to slide {slide_id}")
-            
-            # Save updated slide
-            await persistence.update_slide(request.deck_uuid, slide_index, slide_data)
-            slides_updated += 1
-        
+
+        # Use image storage service to upload images to Supabase
+        async with ImageStorageService() as storage:
+            # Apply images to each slide
+            for slide_id, image_urls in request.image_selections.items():
+                # Find slide index by ID
+                slide_index = next(
+                    (i for i, slide in enumerate(deck_data.get('slides', []))
+                     if slide.get('id') == slide_id),
+                    None
+                )
+
+                if slide_index is None:
+                    logger.warning(f"Slide {slide_id} not found in deck")
+                    continue
+
+                slide_data = deck_data['slides'][slide_index]
+
+                # Find Image components
+                image_components = [
+                    (i, comp) for i, comp in enumerate(slide_data.get('components', []))
+                    if comp.get('type') == 'Image'
+                ]
+
+                if not image_components:
+                    logger.warning(f"No Image components in slide {slide_id}")
+                    continue
+
+                # Apply selected images to components (upload to Supabase first)
+                for idx, (comp_idx, component) in enumerate(image_components):
+                    if idx < len(image_urls):
+                        original_url = image_urls[idx]
+
+                        # Upload to Supabase if not already a Supabase URL
+                        if 'supabase' not in original_url:
+                            try:
+                                upload_result = await storage.upload_image_from_url(original_url)
+                                if 'error' not in upload_result and upload_result.get('url'):
+                                    supabase_url = upload_result['url']
+                                    component['props']['src'] = supabase_url
+                                    component['props']['original_src'] = original_url
+                                    logger.info(f"Uploaded and applied image {idx + 1} to slide {slide_id}")
+                                else:
+                                    # Fallback to original URL if upload fails
+                                    component['props']['src'] = original_url
+                                    logger.warning(f"Upload failed, using original URL for image {idx + 1}")
+                            except Exception as upload_err:
+                                logger.warning(f"Error uploading image: {upload_err}, using original URL")
+                                component['props']['src'] = original_url
+                        else:
+                            # Already a Supabase URL
+                            component['props']['src'] = original_url
+
+                        component['props']['alt'] = f"Selected image {idx + 1}"
+
+                # Save updated slide
+                await persistence.update_slide(request.deck_uuid, slide_index, slide_data)
+                slides_updated += 1
+
         logger.info(f"Successfully updated {slides_updated} slides with selected images")
         
         # Update deck status

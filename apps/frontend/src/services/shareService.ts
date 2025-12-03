@@ -17,12 +17,23 @@ export interface ShareLink {
   access_count?: number;
   last_accessed_at?: string | null;
   is_active?: boolean;
+  require_email?: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface ShareViewer {
+  id: string;
+  email: string;
+  name?: string;
+  company?: string;
+  registered_at: string;
 }
 
 export interface CreateShareLinkRequest {
   share_type: 'view' | 'edit';
   expires_in_hours?: number;
   metadata?: Record<string, any>;
+  require_email?: boolean;
 }
 
 export interface ShareLinkResponse {
@@ -253,18 +264,17 @@ class ShareService {
 
   async getShareAnalytics(shareId: string): Promise<ApiResponse<ShareAnalytics>> {
     try {
-      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/decks/shares/${shareId}/analytics`, {
+      // Use the new real analytics endpoint
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/decks/shares/${shareId}/analytics-real`, {
         headers: this.getAuthHeaders()
       });
 
       const data = await response.json();
-      
-      console.log('[ShareService] Analytics response:', data);
-      
+
       if (!response.ok) {
         return {
           success: false,
-          error: data.error || 'Failed to fetch share analytics'
+          error: data.error || data.detail || 'Failed to fetch share analytics'
         };
       }
 
@@ -278,6 +288,44 @@ class ShareService {
         success: false,
         error: error instanceof Error ? error.message : 'Network error'
       };
+    }
+  }
+
+  async startViewSession(shortCode: string, sessionId: string, viewerId?: string, deviceType?: string): Promise<ApiResponse<{ event_id: string }>> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/view/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          viewer_id: viewerId,
+          device_type: deviceType,
+          referrer_url: document.referrer || undefined
+        })
+      });
+
+      const data = await response.json();
+      return { success: data.success, data };
+    } catch (error) {
+      return { success: false, error: 'Network error' };
+    }
+  }
+
+  async updateViewSession(shortCode: string, sessionId: string, slideViews: Array<{ slideIndex: number; timeSpentMs: number }>, durationSeconds: number): Promise<void> {
+    try {
+      await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/view/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          slide_views: slideViews,
+          duration_seconds: durationSeconds,
+          slides_viewed: new Set(slideViews.map(sv => sv.slideIndex)).size
+        })
+      });
+    } catch (error) {
+      // Silent fail - don't interrupt the user experience
+      console.error('[ShareService] Error updating view session:', error);
     }
   }
 
@@ -387,6 +435,86 @@ class ShareService {
     const baseUrl = window.location.origin;
     const path = shareType === 'view' ? `/p/${shortCode}` : `/e/${shortCode}`;
     return `${baseUrl}${path}`;
+  }
+
+  async checkEmailRequired(shortCode: string): Promise<ApiResponse<{ require_email: boolean; share_type: string; deck_name: string }>> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/check-email-required`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || data.detail || 'Failed to check share link'
+        };
+      }
+
+      return {
+        success: true,
+        data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network error'
+      };
+    }
+  }
+
+  async registerViewer(shortCode: string, email: string, name?: string, company?: string): Promise<ApiResponse<{ viewer_id: string; message: string }>> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/viewer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name, company })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || data.detail || 'Failed to register'
+        };
+      }
+
+      return {
+        success: true,
+        data: { viewer_id: data.viewer_id, message: data.message }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network error'
+      };
+    }
+  }
+
+  async getShareViewers(shareId: string): Promise<ApiResponse<{ viewers: ShareViewer[]; total: number }>> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/decks/shares/${shareId}/viewers`, {
+        headers: this.getAuthHeaders()
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || data.detail || 'Failed to get viewers'
+        };
+      }
+
+      return {
+        success: true,
+        data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network error'
+      };
+    }
   }
 
   async getSharedDecks(filter: 'shared' | 'all' = 'shared'): Promise<ApiResponse<any[]>> {

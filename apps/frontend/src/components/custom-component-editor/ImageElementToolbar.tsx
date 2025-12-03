@@ -7,7 +7,8 @@ import {
   X,
   Loader2,
   Eraser,
-  Wand2
+  Wand2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectedElement } from './CustomComponentEditOverlay';
@@ -20,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 interface ImageElementToolbarProps {
   element: DetectedElement;
   scale: number;
+  cursorPosition?: { x: number; y: number } | null;
   onSwap: (newImageUrl: string) => void;
   onAiEdit: (instruction: string) => void;
   onClose: () => void;
@@ -35,6 +37,7 @@ const BRAND_ORANGE = '#FF4301';
 export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
   element,
   scale,
+  cursorPosition,
   onSwap,
   onAiEdit,
   onClose
@@ -99,38 +102,39 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
     { label: 'Brighten', prompt: 'Make the image brighter and more vibrant' },
   ];
 
-  // Position toolbar near the element - always stay within viewport
+  // Position toolbar at top-right of the selected element, shift left if needed to stay in slide
   const getToolbarPosition = () => {
     const toolbarWidth = 320;
     const toolbarHeight = 380;
-    const padding = 16;
+    const padding = 12;
 
-    // Get iframe bounds to calculate actual position
+    // Get element and iframe position in viewport coordinates
     const iframe = document.querySelector(`iframe[title="Custom Component"]`);
     const iframeRect = iframe?.getBoundingClientRect();
 
-    // Calculate element's position in viewport coordinates
-    const elementX = (iframeRect?.left || 0) + (element.bounds.x * scale);
-    const elementY = (iframeRect?.top || 0) + (element.bounds.y * scale);
-    const elementWidth = element.bounds.width * scale;
+    const elementRight = (iframeRect?.left || 0) + element.bounds.x + element.bounds.width;
+    const elementTop = (iframeRect?.top || 0) + element.bounds.y;
 
-    // Try to position to the right of the element
-    let left = elementX + elementWidth + padding;
-    let top = elementY;
+    // Use iframe right edge as the boundary (not viewport) to avoid overlapping sidebar
+    const maxRight = iframeRect?.right || window.innerWidth;
 
-    // If it would go off the right edge, position to the left
-    if (left + toolbarWidth > window.innerWidth - padding) {
-      left = elementX - toolbarWidth - padding;
+    // Position at top-right corner of element
+    let left = elementRight + padding;
+    let top = elementTop;
+
+    // If it would go past the slide area, shift left just enough to fit
+    if (left + toolbarWidth > maxRight) {
+      left = maxRight - toolbarWidth - padding;
     }
 
-    // If still off screen, position inside viewport
-    if (left < padding) {
-      left = Math.min(elementX + elementWidth - toolbarWidth, window.innerWidth - toolbarWidth - padding);
-      left = Math.max(padding, left);
+    // Ensure left doesn't go past the left edge of the iframe
+    const minLeft = iframeRect?.left || padding;
+    if (left < minLeft) {
+      left = minLeft;
     }
 
     // Ensure top stays within viewport
-    top = Math.max(80, Math.min(top, window.innerHeight - toolbarHeight - padding));
+    top = Math.max(padding, Math.min(top, window.innerHeight - toolbarHeight - padding));
 
     return { top, left };
   };
@@ -228,13 +232,17 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
             <MediaHub
               trigger={
                 <Button
-                  variant="default"
+                  variant="outline"
                   size="sm"
-                  className="w-full h-9 text-xs font-medium"
-                  style={{ backgroundColor: BRAND_ORANGE }}
+                  className="w-full h-9 text-xs font-medium bg-white hover:bg-orange-50"
+                  style={{
+                    borderColor: BRAND_ORANGE,
+                    borderWidth: '2px',
+                    color: BRAND_ORANGE
+                  }}
                 >
-                  <RefreshCw size={14} className="mr-2" />
-                  Choose from library
+                  <ImageIcon size={14} className="mr-2" />
+                  Browse Images
                 </Button>
               }
               onSelect={(url) => {
@@ -244,6 +252,8 @@ export const ImageElementToolbar: React.FC<ImageElementToolbarProps> = ({
                   onClose();
                 }
               }}
+              defaultSearchTerm={element.alt || undefined}
+              autoSearch={!!element.alt}
             />
 
             {/* Upload */}

@@ -256,7 +256,12 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
   ];
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
+    <div
+      className="rounded-lg border bg-card overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ position: 'relative', zIndex: 20000 }}
+    >
       {/* Header with label */}
       <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2">
         <span className="text-xs font-medium truncate flex-1">{label}</span>

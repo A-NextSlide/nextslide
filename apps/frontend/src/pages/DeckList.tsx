@@ -20,6 +20,7 @@ import DeckCard from '@/components/deck/DeckCard';
 import { ModeToggle } from "@/components/ui/ModeToggle";
 import { UserMenu } from "@/components/ui/UserMenu";
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTypewriter } from '@/hooks/useTypewriter';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -61,8 +62,10 @@ import AppearanceOnboarding, { THEME_ONBOARDING_KEY } from '@/components/onboard
 import ConversationalOnboarding from '@/components/onboarding/ConversationalOnboarding';
 import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
+import { CreditWarningDialog } from '@/components/billing/CreditWarningDialog';
+import WelcomeModal from '@/components/common/WelcomeModal';
 
-// Rotating words animation for hero heading - vertical slot machine style  
+// Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
 
 const RotatingWords = () => {
@@ -100,29 +103,31 @@ const RotatingWords = () => {
     'PROPOSALS': '10ch',
     'STRATEGIES': '11ch',
     'REPORTS': '8ch',
-    'DOCS': '5ch', 
+    'DOCS': '5ch',
     'NOTES': '6ch',
     'IDEAS': '5.5ch',
   };
-  
+
   return (
-    <span 
+    <span
       className="text-orange-500 inline-block overflow-hidden transition-[width] duration-300"
-      style={{ 
+      style={{
         height: '1em',
         width: wordWidths[WORDS[currentIndex]],
         verticalAlign: 'baseline',
+        position: 'relative',
+        top: '0.15em',
       }}
     >
       <span
         className="flex flex-col"
-        style={{ 
+        style={{
           transform: `translateY(-${currentIndex * 1}em)`,
           transition: 'transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
         {WORDS.map((word) => (
-          <span 
+          <span
             key={word}
             className="whitespace-nowrap"
             style={{ height: '1em', lineHeight: '1em' }}
@@ -604,6 +609,86 @@ const DeckList: React.FC = () => {
   const { toast, dismiss } = useToast();
   const [isOutlineProcessing, setIsOutlineProcessing] = useState(false);
 
+  // State to hold pending outline data for auto-resume after upgrade
+  const [pendingOutlineData, setPendingOutlineData] = useState<{
+    outlineFlow: any;
+    collectedData: any;
+    pendingSlideMode: 'interactive' | 'static';
+  } | null>(null);
+  const [shouldResumeGeneration, setShouldResumeGeneration] = useState(false);
+
+  // Check for pending outline from localStorage (user upgrading after credit warning)
+  // and auto-resume generation if user now has enough credits
+  useEffect(() => {
+    const checkPendingOutline = async () => {
+      if (!isAuthenticated) return;
+
+      const savedOutline = localStorage.getItem('nextslide_pending_outline');
+      if (!savedOutline) return;
+
+      try {
+        const parsed = JSON.parse(savedOutline);
+
+        // Check if the saved data is recent (within 24 hours)
+        const savedAt = new Date(parsed.savedAt);
+        const hoursSinceSave = (Date.now() - savedAt.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceSave > 24) {
+          console.log('[DeckList] Pending outline is too old, removing');
+          localStorage.removeItem('nextslide_pending_outline');
+          return;
+        }
+
+        console.log('[DeckList] Found pending outline from localStorage:', parsed);
+        console.log('[DeckList] Pending slide mode:', parsed.pendingSlideMode);
+
+        // Check if user now has enough credits
+        const { billingApi } = await import('@/services/billingApi');
+        const balance = await billingApi.getBalance();
+        const requiredCredits = (parsed.outlineFlow?.slides?.length || 5) * 5;
+
+        console.log('[DeckList] Credit check for pending outline:', {
+          remaining: balance.remaining_credits,
+          required: requiredCredits,
+          canProceed: balance.remaining_credits >= requiredCredits,
+          slideMode: parsed.pendingSlideMode,
+        });
+
+        if (balance.remaining_credits >= requiredCredits) {
+          // User has enough credits now! Store the pending data and show confirmation
+          setPendingOutlineData({
+            outlineFlow: parsed.outlineFlow,
+            collectedData: parsed.collectedData,
+            pendingSlideMode: parsed.pendingSlideMode || 'interactive',
+          });
+
+          // Show toast asking if they want to continue - clicking sets flag to trigger generation
+          toast({
+            title: "Welcome back!",
+            description: `Your "${parsed.outlineFlow?.topic || 'presentation'}" is ready to generate.`,
+            action: (
+              <Button
+                size="sm"
+                onClick={() => {
+                  console.log('[DeckList] Generate Now clicked, setting shouldResumeGeneration=true');
+                  setShouldResumeGeneration(true);
+                }}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                Generate Now
+              </Button>
+            ),
+            duration: 15000, // Show for 15 seconds
+          });
+        }
+      } catch (error) {
+        console.error('[DeckList] Failed to parse pending outline:', error);
+        localStorage.removeItem('nextslide_pending_outline');
+      }
+    };
+
+    checkPendingOutline();
+  }, [isAuthenticated, toast]);
+
   // State for resizable panel
   const [deckListWidth, setDeckListWidth] = useState(20); // Default width 20%
   const [isResizing, setIsResizing] = useState(false);
@@ -616,6 +701,56 @@ const DeckList: React.FC = () => {
   const [showAppearanceOnboarding, setShowAppearanceOnboarding] = useState(false);
   const [showConversationalOnboarding, setShowConversationalOnboarding] = useState(false);
   const [isAgentThinking, setIsAgentThinking] = useState(false);
+  // Credit warning dialog state
+  const [showCreditWarning, setShowCreditWarning] = useState(false);
+  const [creditWarningData, setCreditWarningData] = useState<{
+    remaining: number;
+    required: number;
+    slideCount: number;
+  }>({ remaining: 0, required: 0, slideCount: 0 });
+
+  // Welcome modal and AI hints state
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showAiHints, setShowAiHints] = useState(false);
+  const [userName, setUserName] = useState<string | undefined>();
+
+  // Check user onboarding state on mount
+  useEffect(() => {
+    const checkOnboardingState = async () => {
+      if (!isAuthenticated) return;
+
+      try {
+        // Get user name from Supabase session
+        const { data: { session } } = await supabase.auth.getSession();
+        const userEmail = session?.user?.email;
+        const userMetadata = session?.user?.user_metadata;
+        const displayName = userMetadata?.full_name || userMetadata?.name || userEmail?.split('@')[0];
+        setUserName(displayName);
+
+        // Check onboarding state from backend
+        const onboardingState = await authService.getOnboardingState();
+        if (onboardingState) {
+          // Show welcome modal if not shown before
+          if (!onboardingState.welcome_shown) {
+            setShowWelcomeModal(true);
+          }
+          // Show AI hints for first 2 presentations
+          setShowAiHints(onboardingState.show_ai_hints);
+        }
+      } catch (error) {
+        console.error('[DeckList] Error checking onboarding state:', error);
+      }
+    };
+
+    checkOnboardingState();
+  }, [isAuthenticated]);
+
+  // Handle welcome modal close
+  const handleWelcomeClose = async () => {
+    setShowWelcomeModal(false);
+    await authService.markWelcomeShown();
+  };
+
   const [heroInput, setHeroInput] = useState('');
   const [isUserTyping, setIsUserTyping] = useState(false);
 
@@ -799,12 +934,13 @@ const DeckList: React.FC = () => {
   }, []);
 
   // Handle completion of conversational onboarding
-  const handleConversationalComplete = useCallback((data: {
+  const handleConversationalComplete = useCallback(async (data: {
     topic?: string;
     stylePreferences?: string;
+    style?: string;
     slideCount?: number;
     detailLevel?: 'quick' | 'standard' | 'detailed';
-    slideMode?: 'interactive' | 'static';
+    slideMode?: 'interactive' | 'static';  // 'interactive' = NextGen, 'static' = Traditional PPT
     themeChanges?: any;
     uploadedFiles?: File[];
     uploadedMedia?: Array<{
@@ -815,90 +951,242 @@ const DeckList: React.FC = () => {
       url?: string;
       size?: number;
     }>;
+    slideScreenshots?: string[];
+    slides?: Array<{
+      title: string;
+      subtitle?: string;
+      content?: string;
+      key_points?: string[];
+    }>;
+    narrative?: string;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
     console.log('[DeckList] Uploaded media from agent:', data.uploadedMedia?.length || 0, data.uploadedMedia);
     console.log('[DeckList] Slide mode:', data.slideMode || 'interactive (default)');
+    console.log('[DeckList] Pre-generated slides:', data.slides?.length || 0);
 
-    // Hide conversational onboarding
-    setShowConversationalOnboarding(false);
+    // Check if we have pre-generated slides - if so, DON'T hide conversational onboarding yet
+    // We'll navigate directly to the deck, and the component will unmount naturally
+    const hasPreGeneratedSlides = data.slides && data.slides.length > 0;
 
-    // CRITICAL: Clear any cached theme data from previous outlines
-    // This ensures fresh theme colors from the API are used, not stale cached colors
-    const themeStore = useThemeStore.getState();
-    themeStore.setThemeReady(false); // Reset theme ready state
-
-    // Update style preferences with collected data - CLEAR any old colors!
-    setStylePreferences({
-      initialIdea: data.topic,
-      vibeContext: data.stylePreferences,
-      colors: undefined, // Clear old colors so API colors take precedence
-      slideMode: data.slideMode || 'interactive', // Default to interactive
-    });
-
-    // Store conversational data to trigger generation
-    setConversationalData(data);
-
-    // Apply theme changes immediately if present
-    if (data.themeChanges) {
-      console.log('[DeckList] Applying theme changes from conversation:', data.themeChanges);
-      const themeStore = useThemeStore.getState();
-
-      if (data.themeChanges.brand) {
-        const brandName = data.themeChanges.brand.name || 'Custom Brand';
-        // Create a custom theme based on the brand
-        const newThemeId = themeStore.addCustomTheme({
-          name: brandName,
-          page: {
-            backgroundColor: '#FFFFFF',
-          },
-          typography: {
-            paragraph: {
-              fontFamily: 'Inter',
-              color: '#000000',
-              fontSize: '16px',
-              fontWeight: 400,
-              lineHeight: 1.5
-            },
-            heading: {
-              fontFamily: 'Inter',
-              color: '#000000',
-              fontSize: '32px',
-              fontWeight: 700
-            }
-          },
-          accent1: '#FF4301',
-          accent2: '#333333'
-        });
-        themeStore.setWorkspaceTheme(newThemeId);
-      } else if (data.themeChanges.colors) {
-        // If just colors were requested, we might want to trigger a theme generation
-        // Theme will be marked ready when the actual theme is applied in OutlineDisplayView
-      }
-
-      // DON'T set themeReady(true) here - let OutlineDisplayView show loading until actual theme arrives
-      // themeStore.setThemeReady(true);
+    // Only hide onboarding if we're going to outline view (no pre-generated slides)
+    // For pre-generated slides, keep it visible during the transition to avoid flash
+    if (!hasPreGeneratedSlides) {
+      setShowConversationalOnboarding(false);
     }
 
-    // Show outline view - OutlineEditor will see conversationalData and start generation
-    // Create a placeholder outline so the view doesn't stay blank
+    // CRITICAL: Clear any cached theme data from previous outlines
+    const themeStore = useThemeStore.getState();
+    themeStore.setThemeReady(false);
+
+    // Parse stylePreferences if it's a JSON string (from ThemeChatBlock)
+    let parsedStylePrefs: any = null;
+    if (data.stylePreferences) {
+      try {
+        parsedStylePrefs = typeof data.stylePreferences === 'string'
+          ? JSON.parse(data.stylePreferences)
+          : data.stylePreferences;
+      } catch (e) {
+        console.log('[DeckList] Could not parse stylePreferences:', e);
+      }
+    }
+
+    const vibeContext = data.style || parsedStylePrefs?.vibeContext || data.stylePreferences;
+
+    // Update style preferences
+    setStylePreferences({
+      initialIdea: data.topic,
+      vibeContext: vibeContext,
+      colors: undefined,
+      slideMode: data.slideMode || 'interactive',
+      referenceImages: data.slideScreenshots,
+    });
+
+    setConversationalData(data);
+
+    if (hasPreGeneratedSlides) {
+      console.log('[DeckList] 🚀 Pre-generated slides detected - skipping outline view');
+
+      // Build outline with pre-generated slides
+      const newOutlineId = uuidv4();
+      const outlineSlides: FrontendSlideOutline[] = data.slides!.map((s, i) => ({
+        id: `slide-${i}`,
+        title: s.title,
+        subtitle: s.subtitle || '',
+        content: s.content || (s.key_points?.map(kp => `• ${kp}`).join('\n')) || '',
+        type: 'content' as const,
+        status: 'pending' as const,
+        thumbnail: '',
+        notes: '',
+        layout: 'default' as const,
+      }));
+
+      // Build theme payload from parsed style prefs FIRST so we can include it in outline.notes
+      const themePayload = parsedStylePrefs ? {
+        color_palette: {
+          primary_background: parsedStylePrefs.colors?.background || '#FFFFFF',
+          primary_text: parsedStylePrefs.colors?.text || '#1A1A1A',
+          accent_1: parsedStylePrefs.colors?.accent1 || '#FF4301',
+          accent_2: parsedStylePrefs.colors?.accent2 || '#3B82F6',
+        },
+        typography: {
+          hero_title: { family: parsedStylePrefs.font || 'Inter' },
+          body_text: { family: parsedStylePrefs.bodyFont || 'Inter' },
+        },
+        logo: parsedStylePrefs.logoUrl ? { url: parsedStylePrefs.logoUrl } : undefined,
+      } : null;
+
+      // CRITICAL: Include notes.theme in outline so backend uses it without regenerating
+      const newOutline: FrontendDeckOutline & { notes?: { theme?: any } } = {
+        id: newOutlineId,
+        title: data.topic || 'New Presentation',
+        stylePreferences: {
+          vibeContext: vibeContext,
+          slideMode: data.slideMode || 'interactive',
+          referenceImages: data.slideScreenshots,
+        },
+        slides: outlineSlides,
+        // CRITICAL: Embed theme in notes so backend finds it and uses it directly
+        notes: themePayload ? { theme: themePayload } : undefined,
+      };
+
+      console.log('[DeckList] 🎨 Theme embedded in outline.notes:', themePayload ? 'YES' : 'NO');
+      console.log('[DeckList] 🎨 Theme fonts:', themePayload?.typography);
+
+      // Store theme from parsed style prefs in store as well
+      if (themePayload) {
+        themeStore.setOutlineDeckTheme?.(newOutlineId, themePayload);
+      }
+
+      // DON'T set currentOutline - it would trigger the outline view to show!
+      // We're going straight to generation and navigation
+      setShowOutlineView(false);
+
+      try {
+        const coordinator = GenerationCoordinator.getInstance();
+
+        // Build style preferences for generation - reuse the themePayload we already built
+        const genStylePrefs = {
+          vibeContext: vibeContext,
+          slideMode: data.slideMode || 'interactive',
+          referenceImages: data.slideScreenshots,
+          deck_theme: themePayload || undefined,
+        };
+
+        console.log('[DeckList] 🚀 Starting generation with outline:', newOutline.title);
+
+        const result = await coordinator.generateFromOutline(
+          newOutline,
+          genStylePrefs,
+          (event) => {
+            // Navigate to deck when we get the deck ID
+            const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
+            if (emittedDeckId) {
+              console.log('[DeckList] 🚀 Got deck ID, navigating:', emittedDeckId);
+              // Clear pending outline since generation succeeded
+              localStorage.removeItem('nextslide_pending_outline');
+              navigate(`/deck/${emittedDeckId}?new=true`);
+            }
+          }
+        );
+
+        // Fallback navigation if event didn't trigger it
+        if (result.deckId) {
+          // Clear pending outline since generation succeeded
+          localStorage.removeItem('nextslide_pending_outline');
+          navigate(`/deck/${result.deckId}?new=true`);
+        }
+      } catch (error: any) {
+        console.error('[DeckList] Generation error:', error);
+        setIsDeckGenerating(false);
+        setShowConversationalOnboarding(false); // Hide on error so user can see error toast
+
+        // Check if this is an insufficient credits error
+        const errorMessage = error?.message || '';
+        if (errorMessage.includes('INSUFFICIENT_CREDITS')) {
+          try {
+            // Parse the credit info from the error message
+            const match = errorMessage.match(/INSUFFICIENT_CREDITS:(.+)/);
+            if (match) {
+              const creditInfo = JSON.parse(match[1]);
+              setCreditWarningData({
+                remaining: creditInfo.remaining || 0,
+                required: creditInfo.required || 0,
+                slideCount: data.slides?.length || 0,
+              });
+              setShowCreditWarning(true);
+              return;
+            }
+          } catch (e) {
+            console.error('[DeckList] Failed to parse credit info:', e);
+          }
+          // Fallback if parsing fails
+          setCreditWarningData({
+            remaining: 0,
+            required: (data.slides?.length || 6) * 5,
+            slideCount: data.slides?.length || 6,
+          });
+          setShowCreditWarning(true);
+          return;
+        }
+
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message || "Failed to generate presentation",
+        });
+      }
+      return;
+    }
+
+    // No pre-generated slides - show outline view (original flow)
     const newOutlineId = uuidv4();
     const placeholderOutline: FrontendDeckOutline = {
       id: newOutlineId,
       title: data.topic || 'Generating Presentation...',
       slides: []
     };
-    
-    // CRITICAL: Clear any cached theme for this new outline ID
-    // This ensures fresh theme from API is used
+
     themeStore.setOutlineDeckTheme?.(newOutlineId, null);
     themeStore.clearOutlineThemeRequested?.(newOutlineId);
-    
+
     setCurrentOutline(placeholderOutline);
-    setIsOutlineChatGenerating(true); // Immediately show loading state
+    setIsOutlineChatGenerating(true);
     setShowOutlineView(true);
-  }, []);
+  }, [navigate, toast]);
+
+  // Effect to resume generation when user clicks "Generate Now" in toast
+  useEffect(() => {
+    if (shouldResumeGeneration && pendingOutlineData) {
+      console.log('[DeckList] Resuming generation with pending outline data:', pendingOutlineData);
+
+      const { outlineFlow, collectedData, pendingSlideMode } = pendingOutlineData;
+
+      // Build the data object for handleConversationalComplete
+      const resumeData = {
+        topic: outlineFlow?.topic,
+        stylePreferences: collectedData?.stylePreferences,
+        style: outlineFlow?.brandContext || outlineFlow?.style,
+        slideCount: outlineFlow?.slides?.length,
+        detailLevel: collectedData?.detailLevel || 'quick',
+        slideMode: pendingSlideMode,
+        slides: outlineFlow?.slides,
+        uploadedMedia: outlineFlow?.uploadedMedia,
+        slideScreenshots: outlineFlow?.slide_screenshots,
+      };
+
+      console.log('[DeckList] Calling handleConversationalComplete with:', resumeData);
+
+      // Clear state and localStorage
+      localStorage.removeItem('nextslide_pending_outline');
+      setPendingOutlineData(null);
+      setShouldResumeGeneration(false);
+
+      // Call handleConversationalComplete
+      handleConversationalComplete(resumeData);
+    }
+  }, [shouldResumeGeneration, pendingOutlineData, handleConversationalComplete]);
 
   // Function to load shared decks
   const loadSharedDecks = useCallback(async () => {
@@ -1595,7 +1883,8 @@ const DeckList: React.FC = () => {
                     slideCount={slideCount}
                     initialUploadedFiles={uploadedFiles}
                     onComplete={(data) => {
-                      setShowConversationalOnboarding(false);
+                      // Don't hide onboarding here - handleConversationalComplete decides when to hide
+                      // For pre-generated slides, we keep it visible until navigation to avoid flash
                       setUploadedFiles([]); // Clear files after handoff
                       handleConversationalComplete(data);
                     }}
@@ -2007,7 +2296,7 @@ const DeckList: React.FC = () => {
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
                                 className={cn(
-                                  "relative flex items-center bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
+                                  "relative flex items-end bg-white dark:bg-zinc-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-black/30 border p-2 transition-all duration-300 focus-within:shadow-2xl focus-within:border-orange-500/50 focus-within:ring-4 focus-within:ring-orange-500/10",
                                   isHeroDraggingOver ? "border-orange-500 border-dashed border-2 bg-orange-50 dark:bg-orange-950/30" : "border-slate-200 dark:border-zinc-700"
                                 )}
                                 onDragEnter={handleHeroDragEnter}
@@ -2027,19 +2316,26 @@ const DeckList: React.FC = () => {
                                 )}
 
                                 {/* Input Field with Typewriter Placeholder */}
-                                <div className="flex-1 relative">
-                                  <Input
-                                    className="w-full border-none shadow-none focus-visible:ring-0 h-14 bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 font-sans dark:text-zinc-100"
+                                <div className="flex-1 relative min-h-[48px]">
+                                  <Textarea
+                                    className="w-full border-none shadow-none focus-visible:ring-0 min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-base leading-normal"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && (heroInput.trim() || uploadedFiles.length > 0)) {
+                                      if (e.key === 'Enter' && !e.shiftKey && (heroInput.trim() || uploadedFiles.length > 0)) {
+                                        e.preventDefault();
                                         setShowConversationalOnboarding(true);
                                       }
                                     }}
+                                    rows={1}
+                                    onInput={(e) => {
+                                      const target = e.target as HTMLTextAreaElement;
+                                      target.style.height = '48px';
+                                      target.style.height = Math.min(target.scrollHeight, 150) + 'px';
+                                    }}
                                   />
                                   {!heroInput && (
-                                    <div className="absolute inset-0 pointer-events-none flex items-center px-4 text-lg text-slate-400 dark:text-zinc-500">
+                                    <div className="absolute top-0 left-0 right-0 pointer-events-none flex items-center px-4 h-[48px] text-lg text-slate-400 dark:text-zinc-500">
                                       <span className="whitespace-pre">I want to create </span>
                                       <span className="text-slate-300 dark:text-zinc-600">{typewriterText}</span>
                                       <span className="animate-pulse text-orange-500">|</span>
@@ -2048,10 +2344,10 @@ const DeckList: React.FC = () => {
                                 </div>
 
                                 {/* Actions Divider */}
-                                <div className="h-8 w-px bg-slate-200 dark:bg-zinc-700 mx-2"></div>
+                                <div className="h-8 w-px bg-slate-200 dark:bg-zinc-700 mx-2 self-center"></div>
 
                                 {/* Action Buttons */}
-                                <div className="flex items-center gap-1 pr-2">
+                                <div className="flex items-center gap-1 pr-2 flex-shrink-0">
                                   {/* Upload Button */}
                                   <Button
                                     variant="ghost"
@@ -2399,6 +2695,23 @@ const DeckList: React.FC = () => {
                     />
 
                     <GoogleSlidesImportModal open={showGoogleImport} onOpenChange={setShowGoogleImport} />
+
+                    {/* Credit Warning Dialog - shows when user has insufficient credits */}
+                    <CreditWarningDialog
+                      open={showCreditWarning}
+                      onClose={() => setShowCreditWarning(false)}
+                      remainingCredits={creditWarningData.remaining}
+                      requiredCredits={creditWarningData.required}
+                      slideCount={creditWarningData.slideCount}
+                      planName="free"
+                    />
+
+                    {/* Welcome Modal - shows once on first login */}
+                    <WelcomeModal
+                      isOpen={showWelcomeModal}
+                      onClose={handleWelcomeClose}
+                      userName={userName}
+                    />
 
                     <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
                       <AlertDialogContent>

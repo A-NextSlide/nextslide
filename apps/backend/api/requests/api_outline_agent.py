@@ -2096,3 +2096,97 @@ async def outline_agent_chat(
     except Exception as e:
         logger.error(f"[OutlineAgent] Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class GenerateSlideContentRequest(BaseModel):
+    """Request to generate detailed content for a single slide."""
+    slide_title: str = Field(..., description="The title of the slide")
+    slide_index: int = Field(..., description="The index of the slide in the presentation")
+    total_slides: int = Field(..., description="Total number of slides in the presentation")
+    presentation_topic: str = Field(..., description="The main topic of the presentation")
+    presentation_context: Optional[str] = Field(None, description="Additional context about the presentation")
+    existing_key_points: Optional[List[str]] = Field(None, description="Any existing key points for this slide")
+    file_content: Optional[str] = Field(None, description="Content from uploaded files relevant to this slide")
+
+
+class GenerateSlideContentResponse(BaseModel):
+    """Response with generated slide content."""
+    content: str = Field(..., description="The detailed narrative content for the slide")
+    key_points: List[str] = Field(default_factory=list, description="Key bullet points for the slide")
+
+
+@router.post("/generate-slide-content", response_model=GenerateSlideContentResponse)
+async def generate_slide_content(
+    request: GenerateSlideContentRequest,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """
+    Generate detailed content for a single slide on demand.
+    Uses AI to create compelling narrative content and key points.
+    """
+    try:
+        logger.info(f"[OutlineAgent] Generating content for slide: {request.slide_title}")
+
+        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+
+        # Build the prompt
+        prompt = f"""Generate detailed content for a presentation slide.
+
+PRESENTATION CONTEXT:
+- Topic: {request.presentation_topic}
+- Slide {request.slide_index + 1} of {request.total_slides}
+- Slide Title: "{request.slide_title}"
+{f'- Additional Context: {request.presentation_context}' if request.presentation_context else ''}
+{f'- Existing Key Points: {", ".join(request.existing_key_points)}' if request.existing_key_points else ''}
+{f'- Source Material: {request.file_content[:2000]}...' if request.file_content and len(request.file_content) > 2000 else f'- Source Material: {request.file_content}' if request.file_content else ''}
+
+Generate:
+1. A compelling narrative paragraph (2-4 sentences) that explains the main point of this slide
+2. 3-5 key bullet points that capture the essential information
+
+Format your response as JSON:
+{{
+    "content": "The narrative paragraph...",
+    "key_points": ["Point 1", "Point 2", "Point 3"]
+}}
+
+Make the content:
+- Informative and specific (use real facts/data when available)
+- Engaging and professional
+- Appropriate for the slide's position in the presentation flow
+- Concise but substantive"""
+
+        response = await asyncio.to_thread(
+            client.messages.create,
+            model=model,
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        # Parse the response
+        response_text = response.content[0].text
+
+        # Try to extract JSON from the response
+        try:
+            # Find JSON in the response
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                result = json.loads(json_match.group())
+                return GenerateSlideContentResponse(
+                    content=result.get("content", ""),
+                    key_points=result.get("key_points", [])
+                )
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: use the response as content
+        return GenerateSlideContentResponse(
+            content=response_text,
+            key_points=request.existing_key_points or []
+        )
+
+    except Exception as e:
+        logger.error(f"[OutlineAgent] Error generating slide content: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

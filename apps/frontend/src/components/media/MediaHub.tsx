@@ -22,6 +22,8 @@ export type OnMediaSelect = (url: string, type: 'image' | 'video' | 'icon' | 'ot
 interface MediaHubProps {
     trigger?: React.ReactNode;
     onSelect: OnMediaSelect;
+    defaultSearchTerm?: string; // Pre-fill search when opening
+    autoSearch?: boolean; // Auto-trigger search when opening with defaultSearchTerm
 }
 
 interface RecentMedia {
@@ -32,9 +34,12 @@ interface RecentMedia {
 }
 
 // Wrap with forwardRef, using the correct element type (HTMLButtonElement)
-export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect }, ref) => {
+export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<MediaSource>('generate'); // Default to AI Generate tab
+    // Start on search tab if we have a search term to show
+    const [activeTab, setActiveTab] = useState<MediaSource>(defaultSearchTerm ? 'search' : 'generate');
+    // Token to trigger auto-search once per popover open
+    const [searchToken, setSearchToken] = useState<number>(0);
     const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked
     const [preventClose, setPreventClose] = useState(false); // Prevent closing during generation
     
@@ -217,14 +222,19 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
     };
 
     return (
-        <Popover 
-            open={isOpen} 
+        <Popover
+            open={isOpen}
             onOpenChange={(open) => {
                 // Don't close if we're preventing it
                 if (!open && preventClose) {
                     return;
                 }
                 setIsOpen(open);
+                // When opening with a search term, switch to search tab and trigger auto-search
+                if (open && defaultSearchTerm && autoSearch) {
+                    setActiveTab('search');
+                    setSearchToken(prev => prev + 1);
+                }
             }}
         >
             <Tooltip>
@@ -246,17 +256,18 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                     <p className="text-xs">Add Media</p>
                 </TooltipContent>
             </Tooltip>
-            <PopoverContent 
-                className="w-96 p-0" 
-                side="top" 
-                align="start" 
+            <PopoverContent
+                className="w-96 p-0"
+                side="top"
+                align="start"
+                style={{ zIndex: 99999 }}
                 onOpenAutoFocus={(e) => e.preventDefault()}
                 onInteractOutside={(e) => {
                     // Prevent closing when interacting with tabs or generate content
                     const target = e.target as HTMLElement;
-                    if (target.closest('[role="tabpanel"]') || 
+                    if (target.closest('[role="tabpanel"]') ||
                         target.closest('.generate-content') ||
-                        target.closest('[role="tablist"]') || 
+                        target.closest('[role="tablist"]') ||
                         target.closest('[role="tab"]')) {
                         e.preventDefault();
                     }
@@ -306,7 +317,11 @@ export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger,
                             <VideoTab onSelect={(url, type) => handleSelect(url, type, 'video')} />
                         </TabsContent>
                          <TabsContent value="search">
-                             <SearchTab onSelect={(url, type) => handleSelect(url, type, 'search')} />
+                             <SearchTab
+                                 onSelect={(url, type) => handleSelect(url, type, 'search')}
+                                 defaultSearchTerm={defaultSearchTerm}
+                                 autoSearchToken={autoSearch ? searchToken : undefined}
+                             />
                          </TabsContent>
                         <TabsContent value="generate" className="space-y-3 generate-content">
                             <div className="space-y-2">

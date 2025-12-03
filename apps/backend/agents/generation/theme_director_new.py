@@ -375,9 +375,124 @@ class ThemeDirector:
         )
         
         font_result = {}
-        
-        if scraped_fonts:
-            # Match scraped fonts to available
+
+        # CRITICAL: Check for fun/playful topics FIRST - before using brand fonts!
+        # Fun topics (Pokemon, Mario, etc.) should ALWAYS get playful fonts, even if brand fonts exist
+        entity_name = analysis.get('entity_name', '').lower()
+        is_fun_entity = any(keyword in entity_name for keyword in [
+            'pikachu', 'pokemon', 'pokémon', 'mario', 'luigi', 'disney', 'mickey',
+            'cartoon', 'game', 'toy', 'character', 'arcade', 'retro',
+            'sonic', 'zelda', 'minecraft', 'roblox', 'kirby', 'spongebob',
+            'nickelodeon', 'pixar', 'dreamworks', 'lego', 'nerf', 'barbie',
+            'hot wheels', 'transformers', 'paw patrol', 'peppa pig'
+        ])
+
+        # Check if title/content suggests creative/fun/casual topic
+        title_lower = title.lower()
+        prompt_lower = (analysis.get('topic', '') + ' ' + analysis.get('vibe', '')).lower()
+        full_context = f"{title_lower} {prompt_lower}"
+
+        # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+        import re
+        fun_keywords = [
+            # Kids/Fun
+            'pikachu', 'pokemon', 'pokémon', 'pokedex', 'pokédex', 'kids', 'children',
+            'game', 'fun', 'play', 'cartoon', 'toy', 'party', 'arcade', 'retro', 'playful',
+            # Gaming/Tech Culture
+            'gaming', 'esports', 'twitch', 'stream', 'gamer', 'pixel',
+            '8bit', '8-bit', 'minecraft', 'roblox', 'fortnite',
+            # Creative/Artistic
+            'creative', 'artistic', 'design', 'art', 'music', 'festival',
+            'concert', 'band', 'artist', 'gallery', 'exhibition',
+            # Retro/Vintage
+            '80s', '70s', '60s', 'vintage', 'retro', 'nostalgic', 'throwback',
+            'disco', 'groovy', 'psychedelic',
+            # Casual/Social
+            'casual', 'social', 'community', 'meetup', 'hangout', 'club',
+            'hobby', 'passion', 'enthusiast', 'anime', 'manga', 'superhero', 'comic', 'animated'
+        ]
+        is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', full_context) for kw in fun_keywords)
+
+        if is_fun_entity or is_fun_topic:
+            # OVERRIDE: Use playful fonts for fun topics - even if brand fonts exist!
+            logger.info(f"🎨 FUN TOPIC DETECTED (PRIORITY CHECK): {entity_name or title} → Using PLAYFUL fonts")
+            print(f"\n🎨🎨🎨 FUN TOPIC DETECTED - OVERRIDING BRAND FONTS 🎨🎨🎨")
+            print(f"   Title: '{title}'")
+            print(f"   Entity: '{entity_name}'")
+            print(f"   is_fun_entity: {is_fun_entity}")
+            print(f"   is_fun_topic: {is_fun_topic}")
+            print(f"   → Selecting CREATIVE, PLAYFUL fonts!\n")
+
+            # Get available fonts to validate our choices
+            try:
+                from models.registry import ComponentRegistry
+                registry = ComponentRegistry()
+                available_fonts = RegistryFonts.get_available_fonts(registry)
+            except Exception:
+                available_fonts = RegistryFonts.get_all_fonts_list()
+
+            available_fonts_lower = {f.lower(): f for f in available_fonts}
+
+            # Rotate through playful font combinations
+            import hashlib
+            seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
+
+            # Playful font combos - include both Google Fonts and creative fonts
+            playful_combos = [
+                # Google Fonts - guaranteed to work
+                {'hero': 'Bebas Neue', 'body': 'Nunito'},
+                {'hero': 'Bangers', 'body': 'Rubik'},
+                {'hero': 'Fredoka', 'body': 'Quicksand'},
+                {'hero': 'Bungee', 'body': 'Asap'},
+                {'hero': 'Titan One', 'body': 'Cabin'},
+                {'hero': 'Righteous', 'body': 'Poppins'},
+                {'hero': 'Pacifico', 'body': 'Comfortaa'},
+                {'hero': 'Press Start 2P', 'body': 'Space Mono'},
+                # Creative fonts
+                {'hero': 'Arcade Quest - 8Bit Font', 'body': 'Poppins'},
+                {'hero': 'Pixel Impact - Retro 8Bit Font', 'body': 'Nunito'},
+                {'hero': 'Double Bubble 3D Typeface', 'body': 'Varela Round'},
+                {'hero': 'Chunky Charmer - Bold Typeface', 'body': 'Cabin'},
+            ]
+
+            # Validate combo exists, otherwise try next one
+            for attempt in range(len(playful_combos)):
+                combo_idx = (seed_hash + attempt) % len(playful_combos)
+                selected_combo = playful_combos[combo_idx]
+
+                hero_exists = selected_combo['hero'].lower() in available_fonts_lower
+                body_exists = selected_combo['body'].lower() in available_fonts_lower
+
+                if hero_exists and body_exists:
+                    # Get properly cased names from registry
+                    font_result = {
+                        'hero': available_fonts_lower[selected_combo['hero'].lower()],
+                        'body': available_fonts_lower[selected_combo['body'].lower()],
+                        'source': 'fun_topic_override',
+                        'hero_category': 'playful',
+                        'body_category': 'friendly'
+                    }
+                    logger.info(f"✅ PLAYFUL FONTS (PRIORITY): Hero={font_result['hero']}, Body={font_result['body']}")
+                    print(f"✅✅✅ PLAYFUL FONTS SELECTED (PRIORITY) ✅✅✅")
+                    print(f"   Hero: {font_result['hero']}")
+                    print(f"   Body: {font_result['body']}")
+                    print(f"   Combo: {combo_idx + 1}/{len(playful_combos)}\n")
+                    break
+                else:
+                    logger.warning(f"⚠️  Combo {combo_idx} has missing fonts: hero_exists={hero_exists}, body_exists={body_exists}")
+            else:
+                # None of the combos worked, fall back to guaranteed available fonts
+                logger.warning("⚠️  No playful combos available, using fallback")
+                font_result = {
+                    'hero': 'Bebas Neue',
+                    'body': 'Poppins',
+                    'source': 'fun_topic_fallback',
+                    'hero_category': 'bold',
+                    'body_category': 'sans-serif'
+                }
+                print(f"⚠️  FALLBACK FONTS: Hero=Bebas Neue, Body=Poppins")
+        elif scraped_fonts:
+            # Match scraped fonts to available (only if NOT a fun topic)
             try:
                 from models.registry import ComponentRegistry
                 registry = ComponentRegistry()
@@ -387,157 +502,44 @@ class ThemeDirector:
             matched = self._match_fonts(scraped_fonts, available_fonts)
             if matched:
                 font_result = matched
-        
+
         if not font_result:
-            # CRITICAL: Check if this is a fun/playful/creative entity
-            # These should get CREATIVE fonts, not boring corporate ones!
-            entity_name = analysis.get('entity_name', '').lower()
-            is_fun_entity = any(keyword in entity_name for keyword in [
-                'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
-                'cartoon', 'game', 'toy', 'character', 'arcade', 'retro',
-                'sonic', 'zelda', 'minecraft', 'roblox'
-            ])
+            # Use EnhancedFontService for intelligent metadata-based selection
+            try:
+                font_service = EnhancedFontService()
 
-            # Check if title/content suggests creative/fun/casual topic
-            title_lower = title.lower()
-            prompt_lower = (analysis.get('topic', '') + ' ' + analysis.get('vibe', '')).lower()
-            full_context = f"{title_lower} {prompt_lower}"
+                # Extract context from analysis
+                vibe = analysis.get('vibe', 'professional')
+                keywords = []
+                if analysis.get('topic'):
+                    keywords.append(analysis['topic'])
+                if analysis.get('industry'):
+                    keywords.append(analysis['industry'])
 
-            is_fun_topic = any(keyword in full_context for keyword in [
-                # Kids/Fun
-                'pikachu', 'pokemon', 'kids', 'children', 'game', 'fun', 'play',
-                'cartoon', 'toy', 'party', 'arcade', 'retro', 'playful',
-                # Gaming/Tech Culture
-                'gaming', 'esports', 'twitch', 'stream', 'gamer', 'pixel',
-                '8bit', '8-bit', 'minecraft', 'roblox', 'fortnite',
-                # Creative/Artistic
-                'creative', 'artistic', 'design', 'art', 'music', 'festival',
-                'concert', 'band', 'artist', 'gallery', 'exhibition',
-                # Retro/Vintage
-                '80s', '70s', '60s', 'vintage', 'retro', 'nostalgic', 'throwback',
-                'disco', 'groovy', 'psychedelic',
-                # Casual/Social
-                'casual', 'social', 'community', 'meetup', 'hangout', 'club',
-                'hobby', 'passion', 'enthusiast'
-            ])
-            
-            if is_fun_entity or is_fun_topic:
-                # OVERRIDE: Use playful fonts for fun topics!
-                logger.info(f"🎨 FUN TOPIC DETECTED: {entity_name or title} → Using PLAYFUL fonts")
-                print(f"🎨 FUN TOPIC DETECTED: '{entity_name or title}' → Selecting CREATIVE, PLAYFUL fonts")
-                
-                # Get available fonts to validate our choices
-                try:
-                    from models.registry import ComponentRegistry
-                    registry = ComponentRegistry()
-                    available_fonts = RegistryFonts.get_available_fonts(registry)
-                except Exception:
-                    available_fonts = RegistryFonts.get_all_fonts_list()
-                
-                available_fonts_lower = {f.lower(): f for f in available_fonts}
-                
-                # Rotate through playful font combinations
-                # ONLY include fonts we know exist in the registry!
-                import hashlib
-                seed_hash = int(hashlib.md5(variety_seed.encode()).hexdigest(), 16)
-                
-                # CREATIVE PIXELBUDDHA FONTS - Much more interesting than boring Google Fonts!
-                playful_combos = [
-                    # Arcade/Gaming/Retro themes
-                    {'hero': 'Arcade Quest - 8Bit Font', 'body': 'Poppins'},
-                    {'hero': 'Pixel Impact - Retro 8Bit Font', 'body': 'Nunito'},
-                    {'hero': 'Plump Pixel - Bouncy 8-Bit Font', 'body': 'Quicksand'},
+                audience = analysis.get('audience') or analysis.get('target_audience')
 
-                    # Retro 80s/Groovy themes
-                    {'hero': 'Binary Groove - Groovy 1980\'s Typeface', 'body': 'Raleway'},
-                    {'hero': 'Cosmic Hippie - Groovy Font', 'body': 'Work Sans'},
-                    {'hero': 'Boho Melody - Groovy Typeface', 'body': 'Outfit'},
+                # Get intelligent font pair with variety
+                font_pair = font_service.select_font_pair(
+                    deck_title=title,
+                    vibe=vibe,
+                    content_keywords=keywords,
+                    target_audience=audience,
+                    variety_seed=variety_seed
+                )
 
-                    # Playful/Bubble/Fun themes
-                    {'hero': 'Double Bubble 3D Typeface', 'body': 'Varela Round'},
-                    {'hero': 'Chunky Charmer - Bold Typeface', 'body': 'Cabin'},
-
-                    # Bold Modern Creative
-                    {'hero': 'Kickbox - Bold Family Typeface', 'body': 'DM Sans'},
-                    {'hero': 'Gridiron Glory - Sport Typeface', 'body': 'Roboto'},
-
-                    # Fallback to Google Fonts if PixelBuddha not available
-                    {'hero': 'Bebas Neue', 'body': 'Nunito'},
-                    {'hero': 'Bangers', 'body': 'Rubik'},
-                    {'hero': 'Fredoka', 'body': 'Quicksand'},
-                    {'hero': 'Bungee', 'body': 'Asap'}
-                ]
-                
-                # Validate combo exists, otherwise try next one
-                for attempt in range(len(playful_combos)):
-                    combo_idx = (seed_hash + attempt) % len(playful_combos)
-                    selected_combo = playful_combos[combo_idx]
-                    
-                    hero_exists = selected_combo['hero'].lower() in available_fonts_lower
-                    body_exists = selected_combo['body'].lower() in available_fonts_lower
-                    
-                    if hero_exists and body_exists:
-                        # Get properly cased names from registry
-                        font_result = {
-                            'hero': available_fonts_lower[selected_combo['hero'].lower()],
-                            'body': available_fonts_lower[selected_combo['body'].lower()],
-                            'source': 'fun_topic_override',
-                            'hero_category': 'playful',
-                            'body_category': 'friendly'
-                        }
-                        logger.info(f"✅ Selected playful fonts: Hero={font_result['hero']}, Body={font_result['body']}")
-                        print(f"✅ PLAYFUL FONTS SELECTED: Hero={font_result['hero']}, Body={font_result['body']}")
-                        break
-                    else:
-                        logger.warning(f"⚠️  Combo {combo_idx} has missing fonts: hero_exists={hero_exists}, body_exists={body_exists}")
-                else:
-                    # None of the combos worked, fall back to guaranteed available fonts
-                    logger.warning("⚠️  No playful combos available, using fallback")
-                    font_result = {
-                        'hero': 'Bebas Neue',  # Guaranteed available
-                        'body': 'Poppins',     # Guaranteed available  
-                        'source': 'fun_topic_fallback',
-                        'hero_category': 'bold',
-                        'body_category': 'sans-serif'
-                    }
-                    print(f"⚠️  FALLBACK FONTS: Hero=Bebas Neue, Body=Poppins")
-            else:
-                # Use EnhancedFontService for intelligent metadata-based selection
-                try:
-                    font_service = EnhancedFontService()
-                    
-                    # Extract context from analysis
-                    vibe = analysis.get('vibe', 'professional')
-                    keywords = []
-                    if analysis.get('topic'):
-                        keywords.append(analysis['topic'])
-                    if analysis.get('industry'):
-                        keywords.append(analysis['industry'])
-
-                    audience = analysis.get('audience') or analysis.get('target_audience')
-
-                    # Get intelligent font pair with variety
-                    font_pair = font_service.select_font_pair(
-                        deck_title=title,
-                        vibe=vibe,
-                        content_keywords=keywords,
-                        target_audience=audience,
-                        variety_seed=variety_seed
-                    )
-                    
-                    font_result = {
-                        'hero': font_pair['hero'],
-                        'body': font_pair['body'],
-                        'source': font_pair.get('source', 'enhanced_metadata'),
-                        'hero_category': font_pair.get('hero_category'),
-                        'body_category': font_pair.get('body_category')
-                    }
-                except Exception as e:
-                    # Fallback to safe defaults
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"EnhancedFontService failed, using fallback: {e}")
-                    font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
+                font_result = {
+                    'hero': font_pair['hero'],
+                    'body': font_pair['body'],
+                    'source': font_pair.get('source', 'enhanced_metadata'),
+                    'hero_category': font_pair.get('hero_category'),
+                    'body_category': font_pair.get('body_category')
+                }
+            except Exception as e:
+                # Fallback to safe defaults
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"EnhancedFontService failed, using fallback: {e}")
+                font_result = {'hero': 'Montserrat', 'body': 'Roboto', 'source': 'fallback'}
         
         await self._emit_tool_result(
             "FontSelector.select_fonts",

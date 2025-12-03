@@ -273,9 +273,9 @@ const Landing: React.FC = () => {
       </nav>
 
       {/* Hero */}
-      <section className="relative pt-32 pb-20 px-8">
+      <section className="relative min-h-screen flex items-center justify-center px-8 pt-16">
         <div className="max-w-[1400px] mx-auto">
-          <div className="text-center max-w-4xl mx-auto mb-12 animate-on-scroll opacity-0">
+          <div className="text-center max-w-4xl mx-auto animate-on-scroll opacity-0">
             <h1
               className="text-black dark:text-white mb-6"
               style={{
@@ -324,205 +324,154 @@ const Landing: React.FC = () => {
       </section>
 
       {/* Live Showcase */}
-      <section id="showcase" className="py-24 px-8 bg-white dark:bg-black/30">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="text-center mb-12 animate-on-scroll opacity-0">
+      <section id="showcase" className="py-12 px-8 bg-gradient-to-b from-zinc-900 to-black">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-8 animate-on-scroll opacity-0">
             <h2
-              className="text-black dark:text-white mb-4"
+              className="text-white mb-2"
               style={{
                 fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
                 fontWeight: 900,
-                fontSize: 'clamp(36px, 5vw, 56px)',
+                fontSize: 'clamp(28px, 3.5vw, 40px)',
                 lineHeight: '1.1',
                 letterSpacing: '-0.02em',
                 textTransform: 'uppercase'
               }}
             >
-              Made with NextSlide
+              See it in action
             </h2>
-            <p className="text-xl text-black/60 dark:text-white/60">
-              Real presentations. No templates.
-            </p>
+            <p className="text-base text-white/60">Real presentations built with NextSlide</p>
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            {/* Main showcase container */}
-            <div className="grid lg:grid-cols-[1fr_320px] gap-6">
-              {/* Main slide viewer */}
-              <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-                {/* Browser chrome with deck name */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-400" />
-                    <div className="w-3 h-3 rounded-full bg-yellow-400" />
-                    <div className="w-3 h-3 rounded-full bg-green-400" />
-                  </div>
-                  <div className="flex-1 flex items-center justify-center gap-3">
-                    <div className="px-3 py-1 bg-black/5 dark:bg-white/10 rounded text-xs text-black/50 dark:text-white/50 font-mono">
-                      nextslide.ai/deck/{activeDeck?.uuid?.slice(0, 8) || '...'}
+            <div className="grid lg:grid-cols-[1fr_300px] gap-4">
+              {/* Main slide viewer with left sidebar */}
+              <div className="rounded-xl overflow-hidden bg-zinc-900/80 border border-white/10">
+                {/* Top bar */}
+                <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50 border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 rounded-full bg-white/20" />
+                      <div className="w-2 h-2 rounded-full bg-white/20" />
+                      <div className="w-2 h-2 rounded-full bg-white/20" />
                     </div>
+                    <span className="text-[10px] text-white/40 font-mono truncate max-w-[200px]">{activeDeck?.name || '...'}</span>
                   </div>
+                  <span className="text-[10px] text-white/40">{activeDeckSlideIndex + 1}/{activeDeck?.slides?.length || 0}</span>
                 </div>
 
-                {/* Content area with slides */}
+                {/* Content with slide sidebar */}
                 <div className="flex">
                   {/* Slide thumbnails sidebar */}
-                  <div className="w-24 lg:w-32 border-r border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] p-2 space-y-1.5 overflow-y-auto" style={{ maxHeight: '420px' }}>
-                    {isLoadingShowcase ? (
-                      [...Array(5)].map((_, i) => (
-                        <div key={i} className="aspect-video bg-black/5 dark:bg-white/5 rounded animate-pulse" />
-                      ))
-                    ) : activeDeck?.slides?.slice(0, 8).map((slide, idx) => (
-                      <button
+                  <div className="w-20 border-r border-white/5 bg-black/20 p-1.5 space-y-1 overflow-y-auto max-h-[280px] custom-scrollbar">
+                    {activeDeck?.slides?.slice(0, 10).map((slide, idx) => (
+                      <div
                         key={idx}
-                        onClick={() => {
-                          handleUserInteraction();
-                          setActiveDeckSlideIndex(idx);
-                        }}
+                        onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(idx); }}
                         className={cn(
-                          "w-full aspect-video rounded overflow-hidden border-2 transition-all cursor-pointer",
+                          "aspect-video rounded overflow-hidden cursor-pointer transition-all relative",
                           idx === activeDeckSlideIndex
-                            ? "border-[#FF4301] ring-2 ring-[#FF4301]/20"
-                            : "border-transparent hover:border-black/20 dark:hover:border-white/20"
+                            ? "ring-2 ring-[#FF4301]"
+                            : "opacity-60 hover:opacity-100"
                         )}
                       >
-                        <Suspense fallback={<div className="w-full h-full bg-black/5 dark:bg-white/5" />}>
-                          <MiniSlide slide={slide} responsive={true} className="pointer-events-none" />
+                        <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                          <MiniSlide slide={slide} responsive={true} />
                         </Suspense>
-                      </button>
+                        <div className="absolute inset-0 z-10" />
+                      </div>
                     ))}
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-4 lg:p-6">
-                    <div className="aspect-video relative rounded-xl overflow-hidden bg-black/5 dark:bg-white/5 shadow-lg">
+                  <div className="flex-1 p-3">
+                    <div className="aspect-video relative rounded-lg overflow-hidden bg-black">
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
+                          <div className="w-8 h-8 border-3 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
                         </div>
                       ) : activeSlide ? (
-                        <Suspense fallback={
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 border-4 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" />
-                          </div>
-                        }>
+                        <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><div className="w-8 h-8 border-3 border-[#FF4301]/30 border-t-[#FF4301] rounded-full animate-spin" /></div>}>
                           <MiniSlide slide={activeSlide} responsive={true} />
                         </Suspense>
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-black/30 dark:text-white/30">
-                          No slides
-                        </div>
-                      )}
+                      ) : null}
 
-                      {/* Navigation arrows */}
+                      {/* Nav arrows */}
                       {activeDeck && activeDeck.slides.length > 1 && (
                         <>
                           <button
-                            onClick={() => {
-                              handleUserInteraction();
-                              setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
-                            }}
+                            onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.max(0, prev - 1)); }}
                             disabled={activeDeckSlideIndex === 0}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-30 transition-all"
+                            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white disabled:opacity-20 transition-all"
                           >
                             <ChevronLeft className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => {
-                              handleUserInteraction();
-                              setActiveDeckSlideIndex(prev => Math.min(activeDeck.slides.length - 1, prev + 1));
-                            }}
+                            onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(prev => Math.min(activeDeck.slides.length - 1, prev + 1)); }}
                             disabled={activeDeckSlideIndex === activeDeck.slides.length - 1}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white disabled:opacity-30 transition-all"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white disabled:opacity-20 transition-all"
                           >
                             <ChevronRight className="w-4 h-4" />
                           </button>
                         </>
                       )}
-
-                      {/* Slide counter */}
-                      <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/60 rounded text-xs text-white/80">
-                        {activeDeckSlideIndex + 1} / {activeDeck?.slides?.length || 0}
-                      </div>
-                    </div>
-
-                    {/* Deck info below main slide */}
-                    <div className="mt-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-lg font-bold text-black dark:text-white" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                          {activeDeck?.name || 'Loading...'}
-                        </h3>
-                        <p className="text-sm text-black/50 dark:text-white/50">{activeDeck?.slideCount || 0} slides</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-xs border-[#FF4301]/30 text-[#FF4301] hover:bg-[#FF4301]/10"
-                        onClick={() => navigate('/signup')}
-                      >
-                        Create Your Own
-                        <ArrowRight className="ml-1.5 w-3 h-3" />
-                      </Button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Deck gallery sidebar */}
-              <div className="rounded-2xl border-2 border-black/10 dark:border-white/10 overflow-hidden bg-[#FCFBF8] dark:bg-[#0a0a0a]">
-                <div className="px-4 py-3 border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                  <h4 className="text-sm font-bold text-black/70 dark:text-white/70" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
-                    EXPLORE EXAMPLES
-                  </h4>
+              {/* Deck gallery */}
+              <div className="rounded-xl overflow-hidden bg-zinc-900/50 border border-white/10">
+                <div className="px-3 py-2 border-b border-white/5">
+                  <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-3 space-y-2 overflow-y-auto" style={{ maxHeight: '480px' }}>
+                <div className="p-2 space-y-2 overflow-y-auto max-h-[320px] custom-scrollbar">
                   {isLoadingShowcase ? (
-                    [...Array(4)].map((_, i) => (
-                      <div key={i} className="rounded-lg bg-black/5 dark:bg-white/5 animate-pulse h-24" />
+                    [...Array(3)].map((_, i) => (
+                      <div key={i} className="h-24 bg-white/5 rounded-lg animate-pulse" />
                     ))
                   ) : showcaseDecks.map((deck, index) => (
-                    <button
+                    <div
                       key={deck.uuid}
-                      onClick={() => {
-                        handleUserInteraction();
-                        setActiveShowcaseIndex(index);
-                        setActiveDeckSlideIndex(0);
-                      }}
+                      onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); }}
                       className={cn(
-                        "w-full rounded-xl overflow-hidden border-2 transition-all text-left cursor-pointer",
+                        "rounded-lg overflow-hidden cursor-pointer transition-all relative",
                         index === activeShowcaseIndex
-                          ? "border-[#FF4301] bg-[#FF4301]/5 dark:bg-[#FF4301]/10"
-                          : "border-transparent hover:border-black/20 dark:hover:border-white/20 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+                          ? "ring-2 ring-[#FF4301]"
+                          : "ring-1 ring-white/5 hover:ring-white/20"
                       )}
                     >
-                      <div className="flex items-center gap-3 p-2 pointer-events-none">
-                        {/* Deck thumbnail */}
-                        <div className="w-16 h-9 rounded-md overflow-hidden flex-shrink-0 border border-black/10 dark:border-white/10">
-                          <Suspense fallback={<div className="w-full h-full bg-black/5 dark:bg-white/5" />}>
-                            {deck.slides[0] && <MiniSlide slide={deck.slides[0]} responsive={true} className="pointer-events-none" />}
-                          </Suspense>
-                        </div>
-                        {/* Deck info */}
-                        <div className="flex-1 min-w-0">
+                      <div className="aspect-[16/9] relative overflow-hidden bg-black">
+                        <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                          {deck.slides[0] && <MiniSlide slide={deck.slides[0]} responsive={true} />}
+                        </Suspense>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                        <div className="absolute bottom-0 left-0 right-0 p-2">
                           <h5 className={cn(
-                            "text-sm font-semibold truncate leading-tight",
-                            index === activeShowcaseIndex
-                              ? "text-[#FF4301]"
-                              : "text-black dark:text-white"
+                            "font-semibold text-xs truncate",
+                            index === activeShowcaseIndex ? "text-[#FF4301]" : "text-white"
                           )}>
                             {deck.name}
                           </h5>
-                          <p className="text-xs text-black/50 dark:text-white/50">
-                            {deck.slideCount} slides
-                          </p>
+                          <p className="text-[10px] text-white/50">{deck.slideCount} slides</p>
                         </div>
-                        {/* Active indicator */}
                         {index === activeShowcaseIndex && (
-                          <div className="w-2 h-2 rounded-full bg-[#FF4301] flex-shrink-0" />
+                          <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4301]" />
                         )}
                       </div>
-                    </button>
+                      <div className="absolute inset-0 z-10" />
+                    </div>
                   ))}
+                </div>
+                {/* CTA inside deck gallery */}
+                <div className="p-2 pt-0">
+                  <Button
+                    className="w-full bg-[#FF4301] hover:bg-[#E63901] text-white text-xs font-semibold h-9"
+                    onClick={() => navigate('/signup')}
+                  >
+                    Create Your Own
+                    <ArrowRight className="ml-1.5 w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
             </div>
@@ -999,6 +948,24 @@ const Landing: React.FC = () => {
         .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255,255,255,0.05);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.2);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255,255,255,0.3);
+        }
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.2) rgba(255,255,255,0.05);
         }
       `}</style>
     </div>

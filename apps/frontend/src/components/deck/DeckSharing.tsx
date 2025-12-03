@@ -60,7 +60,7 @@ import {
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics } from '@/services/shareService';
+import { shareService, ShareLink, ApiResponse, CollaboratorResponse, ShareAnalytics, ShareViewer } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { formatDistanceToNow } from 'date-fns';
 import { useDeckStore } from '@/stores/deckStore';
@@ -93,7 +93,8 @@ interface ShareLinkExtended extends ShareLink {
   password?: string;
   max_uses?: number;
   used_count?: number;
-  name?: string; // Add name field
+  name?: string;
+  require_email?: boolean;
 }
 
 
@@ -117,6 +118,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const [requirePassword, setRequirePassword] = useState(false);
   const [password, setPassword] = useState('');
   const [maxUses, setMaxUses] = useState<number | undefined>(undefined);
+  const [requireEmail, setRequireEmail] = useState(false);
   
   // Edit mode states
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -132,6 +134,10 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
   const [selectedLinkForAnalytics, setSelectedLinkForAnalytics] = useState<ShareLink | null>(null);
   const [analyticsData, setAnalyticsData] = useState<ShareAnalytics | null>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+
+  // Viewers state (emails collected)
+  const [viewers, setViewers] = useState<ShareViewer[]>([]);
+  const [isLoadingViewers, setIsLoadingViewers] = useState(false);
 
   // Load existing share links and collaborators when dialog opens
   useEffect(() => {
@@ -225,7 +231,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
       const expiresInHours = expiresIn === 'never' ? undefined : parseInt(expiresIn);
       const request: any = {
         share_type: shareType,
-        expires_in_hours: expiresInHours
+        expires_in_hours: expiresInHours,
+        require_email: requireEmail
       };
 
       // Add password and max uses if enabled
@@ -261,7 +268,8 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
         setPassword('');
         setRequirePassword(false);
         setMaxUses(undefined);
-        
+        setRequireEmail(false);
+
         await loadShareData();
       } else {
         toast({
@@ -496,61 +504,76 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
     });
   };
 
+  const loadViewers = async (shareId: string) => {
+    setIsLoadingViewers(true);
+    try {
+      const response = await shareService.getShareViewers(shareId);
+      if (response.success && response.data) {
+        setViewers(response.data.viewers);
+      }
+    } catch (error) {
+      console.error('[DeckSharing] Error loading viewers:', error);
+    } finally {
+      setIsLoadingViewers(false);
+    }
+  };
+
   const loadAnalytics = async (link: ShareLink) => {
     setIsLoadingAnalytics(true);
     setSelectedLinkForAnalytics(link);
-    
+
+    // Also load viewers if the link has require_email
+    loadViewers(link.id);
+
     try {
+      // Try to get real analytics from backend
       const response = await shareService.getShareAnalytics(link.id);
-      
+
       if (response.success && response.data) {
         setAnalyticsData(response.data);
       } else {
-        // If analytics endpoint not available, fall back to basic stats
-        console.warn('[DeckSharing] Analytics endpoint not available, falling back to basic stats');
-        
-        const statsResponse = await shareService.getShareStatistics(link.id);
-        if (statsResponse.success && statsResponse.data) {
-          // Convert basic stats to analytics format
-          const viewCount = statsResponse.data.access_count || 0;
-          const basicAnalytics: ShareAnalytics = {
-            totalViews: viewCount,
-            uniqueVisitors: viewCount > 0 ? Math.max(1, Math.floor(viewCount * 0.7)) : 0,
-            averageTimeSpent: viewCount > 0 ? 120 : 0, // Only show time if there are views
-            viewsByDate: [], // No detailed data available
-            viewsByHour: [],
-            deviceTypes: { 
-              desktop: viewCount > 0 ? Math.max(1, Math.floor(viewCount * 0.6)) : 0,
-              mobile: Math.floor(viewCount * 0.3),
-              tablet: Math.floor(viewCount * 0.1)
-            },
-            topLocations: [],
-            slideEngagement: [],
-            referrers: [],
-            recentViews: statsResponse.data.last_accessed_at && viewCount > 0 ? [{
-              timestamp: statsResponse.data.last_accessed_at,
-              location: 'Unknown',
-              device: 'Unknown',
-              duration: 120,
-              slidesViewed: 1
-            }] : []
-          };
-          setAnalyticsData(basicAnalytics);
-        } else {
-          throw new Error(response.error || 'Failed to load analytics');
-        }
+        // Fall back to basic data from link
+        const viewCount = link.access_count || 0;
+        const basicAnalytics: ShareAnalytics = {
+          totalViews: viewCount,
+          uniqueVisitors: viewCount,
+          averageTimeSpent: 0,
+          viewsByDate: [],
+          viewsByHour: [],
+          deviceTypes: {
+            desktop: viewCount,
+            mobile: 0,
+            tablet: 0
+          },
+          topLocations: [],
+          slideEngagement: [],
+          referrers: [],
+          recentViews: link.last_accessed_at && viewCount > 0 ? [{
+            timestamp: link.last_accessed_at,
+            location: '-',
+            device: '-',
+            duration: 0,
+            slidesViewed: 0
+          }] : []
+        };
+        setAnalyticsData(basicAnalytics);
       }
     } catch (error) {
       console.error('[DeckSharing] Error loading analytics:', error);
-      toast({
-        title: "Error loading analytics",
-        description: error instanceof Error ? error.message : "Failed to load analytics data",
-        variant: "destructive"
+      // Use basic fallback
+      const viewCount = link.access_count || 0;
+      setAnalyticsData({
+        totalViews: viewCount,
+        uniqueVisitors: viewCount,
+        averageTimeSpent: 0,
+        viewsByDate: [],
+        viewsByHour: [],
+        deviceTypes: { desktop: viewCount, mobile: 0, tablet: 0 },
+        topLocations: [],
+        slideEngagement: [],
+        referrers: [],
+        recentViews: []
       });
-      
-      // Clear analytics data on error
-      setAnalyticsData(null);
-      setSelectedLinkForAnalytics(null);
     } finally {
       setIsLoadingAnalytics(false);
     }
@@ -577,73 +600,81 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
           variant="secondary"
           size="xs"
           className="h-7 px-3"
+          data-tour="share-button"
         >
           <Share2 size={14} className="mr-1" />
           <span>Share</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[650px] max-h-[85vh] overflow-hidden p-0 bg-[#F5F5DC] dark:bg-zinc-900">
-        <DialogHeader className="px-6 py-4 bg-white dark:bg-zinc-950 border-b">
-          <DialogTitle 
-            className="text-lg text-[#383636] dark:text-gray-100"
-            style={{
-              fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
-              fontWeight: 700,
-              letterSpacing: '-0.02em'
-            }}
-          >
-            SHARE "{deckName.toUpperCase()}"
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent
+          className="p-0 border-0 bg-transparent shadow-2xl"
+          style={{ width: '480px', maxWidth: '95vw' }}
+        >
+        <div className="bg-white rounded-2xl overflow-hidden border border-zinc-200 shadow-xl" style={{ width: '480px', maxWidth: '100%' }}>
+          <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00]" />
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-zinc-100">
+            <DialogTitle
+              className="text-lg text-zinc-900"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 700,
+                letterSpacing: '-0.01em'
+              }}
+            >
+              Share Presentation
+            </DialogTitle>
+            <p className="text-sm text-zinc-500 mt-1">{deckName}</p>
+          </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 h-10 p-0.5 mx-6 mt-4 bg-[#FF4301]/10 dark:bg-[#FF4301]/20" style={{ width: 'calc(100% - 48px)' }}>
-            <TabsTrigger 
-              value="links" 
-              className="data-[state=active]:bg-[#FF4301] data-[state=active]:text-white text-sm font-medium"
-            >
-              <Link size={14} className="mr-1.5" />
-              Links
-            </TabsTrigger>
-            <TabsTrigger 
-              value="collaborators" 
-              className="data-[state=active]:bg-[#FF4301] data-[state=active]:text-white text-sm font-medium"
-            >
-              <Users size={14} className="mr-1.5" />
-              Team
-            </TabsTrigger>
-            <TabsTrigger 
-              value="analytics" 
-              className="data-[state=active]:bg-[#FF4301] data-[state=active]:text-white text-sm font-medium"
-            >
-              <BarChart3 size={14} className="mr-1.5" />
-              Stats
-            </TabsTrigger>
-          </TabsList>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+            <div className="px-6 pt-4">
+              <TabsList className="grid w-full grid-cols-3 h-9 p-0.5 bg-zinc-100 rounded-lg">
+                <TabsTrigger
+                  value="links"
+                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                >
+                  <Link size={12} className="mr-1.5" />
+                  Links
+                </TabsTrigger>
+                <TabsTrigger
+                  value="collaborators"
+                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                >
+                  <Users size={12} className="mr-1.5" />
+                  Team
+                </TabsTrigger>
+                <TabsTrigger
+                  value="analytics"
+                  className="rounded-md text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#FF6B00] data-[state=active]:to-[#FF8533] data-[state=active]:text-white data-[state=active]:shadow-sm text-zinc-600 hover:text-zinc-900"
+                >
+                  <BarChart3 size={12} className="mr-1.5" />
+                  Stats
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-          <div className="px-6 pb-6 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 140px)' }}>
-            <TabsContent value="links" className="space-y-3 mt-4">
-              {/* Create new share link card */}
-              <Card className="border-dashed border-[#FF4301]/30 bg-white/50 dark:bg-zinc-950/50">
-                <CardContent className="p-4 space-y-3">
+            <div className="px-6 pb-6 overflow-y-auto" style={{ height: '380px' }}>
+              <TabsContent value="links" className="space-y-3 mt-4 h-full">
+                {/* Create new share link card */}
+                <div className="p-4 rounded-xl bg-zinc-50 border border-dashed border-[#FF6B00]/30 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label htmlFor="share-type" className="text-xs font-medium mb-1.5 block">Access</Label>
+                      <Label htmlFor="share-type" className="text-xs font-medium mb-1.5 block text-zinc-600">Access</Label>
                       <Select value={shareType} onValueChange={(v) => setShareType(v as 'view' | 'edit')}>
-                        <SelectTrigger id="share-type" className="h-9 text-sm">
+                        <SelectTrigger id="share-type" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="view">
                             <div className="flex items-center">
-                              <Eye size={12} className="mr-1.5 text-muted-foreground" />
-                              <span className="text-sm">View Only</span>
+                              <Eye size={12} className="mr-1.5 text-zinc-400" />
+                              <span className="text-xs">View Only</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="edit">
                             <div className="flex items-center">
-                              <Edit size={12} className="mr-1.5 text-muted-foreground" />
-                              <span className="text-sm">Can Edit</span>
+                              <Edit size={12} className="mr-1.5 text-zinc-400" />
+                              <span className="text-xs">Can Edit</span>
                             </div>
                           </SelectItem>
                         </SelectContent>
@@ -651,9 +682,9 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                     </div>
 
                     <div>
-                      <Label htmlFor="expiration" className="text-xs font-medium mb-1.5 block">Expires</Label>
+                      <Label htmlFor="expiration" className="text-xs font-medium mb-1.5 block text-zinc-600">Expires</Label>
                       <Select value={expiresIn} onValueChange={setExpiresIn}>
-                        <SelectTrigger id="expiration" className="h-9 text-sm">
+                        <SelectTrigger id="expiration" className="h-8 text-xs bg-white border-zinc-200 text-zinc-900">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -666,86 +697,64 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                     </div>
                   </div>
 
-                  {/* Advanced options */}
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Password</Label>
-                      <Switch 
-                        checked={requirePassword} 
-                        onCheckedChange={setRequirePassword}
-                        className="h-4 w-8"
-                      />
+                  {/* Require Email Toggle */}
+                  <div className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <Mail size={12} className="text-zinc-400" />
+                      <span className="text-xs text-zinc-600">Collect viewer emails</span>
                     </div>
-                    
-                    {requirePassword && (
-                      <Input
-                        type="password"
-                        placeholder="Enter password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="h-8 text-sm"
-                      />
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Max uses</Label>
-                      <Input
-                        type="number"
-                        placeholder="∞"
-                        value={maxUses || ''}
-                        onChange={(e) => setMaxUses(e.target.value ? parseInt(e.target.value) : undefined)}
-                        className="w-20 h-8 text-sm text-center"
-                        min={1}
-                      />
-                    </div>
+                    <Switch
+                      checked={requireEmail}
+                      onCheckedChange={setRequireEmail}
+                      className="scale-75 data-[state=checked]:bg-[#FF6B00]"
+                    />
                   </div>
 
-                  <Button 
-                    onClick={handleCreateShareLink} 
+                  <Button
+                    onClick={handleCreateShareLink}
                     disabled={isLoading}
-                    className="w-full h-9 bg-[#FF4301] hover:bg-[#E63901] text-white"
+                    className="w-full h-9 bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white text-sm font-semibold shadow-lg shadow-orange-500/20"
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 size={12} className="mr-1.5 animate-spin" />
+                        <Loader2 size={14} className="mr-1.5 animate-spin" />
                         Creating...
                       </>
                     ) : (
                       <>
-                        <Link size={12} className="mr-1.5" />
+                        <Link size={14} className="mr-1.5" />
                         Create Link
                       </>
                     )}
                   </Button>
-                </CardContent>
-              </Card>
+                </div>
 
               {/* Existing share links */}
               {shareLinks.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  <Link size={24} className="mx-auto mb-2 opacity-20" />
+                <div className="text-center py-6 text-zinc-400">
+                  <Link size={24} className="mx-auto mb-2 opacity-30" />
                   <p className="text-xs">No links yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {shareLinks.map((link) => (
-                    <div 
-                      key={link.id} 
+                    <div
+                      key={link.id}
                       className={cn(
-                        "p-3 border rounded-lg transition-all bg-white dark:bg-zinc-950",
-                        editingLinkId === link.id ? "ring-2 ring-[#FF4301]" : "hover:border-[#FF4301]/30"
+                        "p-3 rounded-lg transition-all border",
+                        editingLinkId === link.id ? "border-[#FF6B00]/40 bg-orange-50" : "bg-white border-zinc-200 hover:border-zinc-300"
                       )}
                     >
                       {editingLinkId === link.id && editingLink ? (
                         // Edit mode
                         <div className="space-y-2">
                           <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium text-sm">Edit Link</h4>
+                            <h4 className="font-medium text-sm text-zinc-900">Edit Link</h4>
                             <div className="flex gap-1">
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
                                 onClick={() => {
                                   setEditingLinkId(null);
                                   setEditingLink(null);
@@ -755,7 +764,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                               </Button>
                               <Button
                                 size="sm"
-                                className="h-7 px-2 text-xs bg-[#FF4301] hover:bg-[#E63901]"
+                                className="h-7 px-2 text-xs bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white"
                                 onClick={handleSaveEditedLink}
                                 disabled={isLoading}
                               >
@@ -763,10 +772,10 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                               </Button>
                             </div>
                           </div>
-                          
+
                           <div className="space-y-2">
                             <div>
-                              <Label className="text-xs">Name</Label>
+                              <Label className="text-xs text-zinc-500">Name</Label>
                               <Input
                                 type="text"
                                 placeholder="e.g., Client Review v2"
@@ -775,38 +784,9 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                                   ...editingLink,
                                   name: e.target.value
                                 })}
-                                className="h-8 text-sm"
+                                className="h-7 text-xs bg-white border-zinc-200 text-zinc-900"
                               />
                             </div>
-                            
-                            <div>
-                              <Label className="text-xs">Expires</Label>
-                              <Input
-                                type="datetime-local"
-                                value={editingLink.expires_at || ''}
-                                onChange={(e) => setEditingLink({
-                                  ...editingLink,
-                                  expires_at: e.target.value
-                                })}
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                            
-                            {editingLink.password !== undefined && (
-                              <div>
-                                <Label className="text-xs">Password</Label>
-                                <Input
-                                  type="password"
-                                  placeholder="Change password"
-                                  value={editingLink.password || ''}
-                                  onChange={(e) => setEditingLink({
-                                    ...editingLink,
-                                    password: e.target.value
-                                  })}
-                                  className="h-8 text-sm"
-                                />
-                              </div>
-                            )}
                           </div>
                         </div>
                       ) : (
@@ -814,56 +794,49 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
-                              {(link as ShareLinkExtended).name && (
-                                <span className="font-medium text-sm truncate max-w-[200px]">
-                                  {(link as ShareLinkExtended).name}
-                                </span>
-                              )}
-                              <div className="flex items-center">
+                              <div className="flex items-center text-zinc-500">
                                 {link.share_type === 'view' ? (
-                                  <Eye size={12} className="text-muted-foreground" />
+                                  <Eye size={12} />
                                 ) : (
-                                  <Edit size={12} className="text-muted-foreground" />
+                                  <Edit size={12} />
                                 )}
-                                <span className="font-medium text-xs ml-1">
-                                  {link.share_type === 'view' ? 'View' : 'Edit'}
+                                <span className="font-medium text-xs ml-1 text-zinc-900">
+                                  {link.share_type === 'view' ? 'View only' : 'Can edit'}
                                 </span>
                               </div>
-                              
+
                               {link.password && (
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
-                                  <Lock size={8} className="mr-0.5" />
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#FF6B00]/10 text-[#FF6B00]">
+                                  <Lock size={8} className="inline mr-0.5" />
                                   Protected
-                                </Badge>
+                                </span>
                               )}
-                              
-                              {link.max_uses && (
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
-                                  {link.used_count || 0}/{link.max_uses}
-                                </Badge>
+
+                              {(link.metadata?.require_email || link.require_email) && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600">
+                                  <Mail size={8} className="inline mr-0.5" />
+                                  Email
+                                </span>
                               )}
                             </div>
-                            
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+
+                            <div className="text-[10px] text-zinc-400">
                               <span>{formatExpiration(link.expires_at)}</span>
                               {link.access_count !== undefined && (
-                                <>
-                                  <span>•</span>
-                                  <span>{link.access_count} views</span>
-                                </>
+                                <span> · {link.access_count} views</span>
                               )}
                             </div>
                           </div>
-                          
-                          <div className="flex items-center gap-0.5 ml-2">
+
+                          <div className="flex items-center gap-1 ml-2">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
                               onClick={() => handleCopyLink(link)}
                             >
                               {copiedId === link.id ? (
-                                <Check size={12} className="text-green-600" />
+                                <Check size={12} className="text-green-500" />
                               ) : (
                                 <Copy size={12} />
                               )}
@@ -871,7 +844,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
                               onClick={() => handleShowQRCode(link)}
                               disabled={isGeneratingQR}
                             >
@@ -884,15 +857,7 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleEditLink(link)}
-                            >
-                              <Settings size={12} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 hover:text-destructive"
+                              className="h-7 w-7 text-zinc-400 hover:text-red-500 hover:bg-red-50"
                               onClick={() => handleRevokeLink(link.id)}
                             >
                               <Trash2 size={12} />
@@ -906,100 +871,98 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
               )}
             </TabsContent>
 
-            <TabsContent value="collaborators" className="space-y-3 mt-4">
+            <TabsContent value="collaborators" className="space-y-3 mt-4 h-full">
               {/* Add collaborator card */}
-              <Card className="border-dashed border-[#FF4301]/30 bg-white/50 dark:bg-zinc-950/50">
-                <CardContent className="p-4">
-                  <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <Mail size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="email"
-                        placeholder="email@example.com"
-                        value={collaboratorEmail}
-                        onChange={(e) => setCollaboratorEmail(e.target.value)}
-                        className="pl-8 h-9 text-sm"
-                        ref={inviteInputRef}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && collaboratorEmail) {
-                            handleAddCollaborator();
-                          }
-                        }}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleAddCollaborator}
-                      disabled={isLoading || !collaboratorEmail || !isAdmin}
-                      className="h-9 px-3 bg-[#FF4301] hover:bg-[#E63901]"
-                    >
-                      {isLoading ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <>
-                          <UserPlus size={12} className="mr-1" />
-                          Invite
-                        </>
-                      )}
-                    </Button>
+              <div className="p-4 rounded-xl bg-zinc-50 border border-dashed border-[#FF6B00]/30">
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <Mail size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <Input
+                      type="email"
+                      placeholder="email@example.com"
+                      value={collaboratorEmail}
+                      onChange={(e) => setCollaboratorEmail(e.target.value)}
+                      className="pl-8 h-8 text-xs bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400"
+                      ref={inviteInputRef}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && collaboratorEmail) {
+                          handleAddCollaborator();
+                        }
+                      }}
+                    />
                   </div>
-                  
-                  {!isAdmin && (
-                    <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-                      <AlertCircle size={12} />
-                      <span>Only admins can invite team members</span>
-                    </div>
-                  )}
+                  <Button
+                    onClick={handleAddCollaborator}
+                    disabled={isLoading || !collaboratorEmail || !isAdmin}
+                    className="h-8 px-3 bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-xs font-semibold text-white"
+                  >
+                    {isLoading ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <>
+                        <UserPlus size={12} className="mr-1" />
+                        Invite
+                      </>
+                    )}
+                  </Button>
+                </div>
 
-                  {invitedEmails.has(collaboratorEmail) && collaboratorEmail && (
-                    <div className="flex items-center gap-1.5 mt-2 text-amber-600 text-xs">
-                      <AlertCircle size={12} />
-                      <span>Already invited</span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                {!isAdmin && (
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-zinc-400">
+                    <AlertCircle size={12} />
+                    <span>Only admins can invite team members</span>
+                  </div>
+                )}
+
+                {invitedEmails.has(collaboratorEmail) && collaboratorEmail && (
+                  <div className="flex items-center gap-1.5 mt-2 text-amber-600 text-xs">
+                    <AlertCircle size={12} />
+                    <span>Already invited</span>
+                  </div>
+                )}
+              </div>
 
               {/* Team members */}
               {collaborators.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  <Users size={24} className="mx-auto mb-2 opacity-20" />
+                <div className="text-center py-6 text-zinc-400">
+                  <Users size={24} className="mx-auto mb-2 opacity-30" />
                   <p className="text-xs">No team members</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {collaborators.map((collaborator) => (
-                    <div 
+                    <div
                       key={collaborator.id}
-                      className="flex items-center justify-between p-3 rounded-lg hover:bg-white/50 dark:hover:bg-zinc-950/50 transition-colors bg-white dark:bg-zinc-950"
+                      className="flex items-center justify-between p-3 rounded-lg bg-white border border-zinc-200 hover:border-zinc-300 transition-colors"
                     >
                       <div className="flex items-center gap-2.5">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="text-[10px] bg-[#FF4301]/10 text-[#FF4301]">
-                            {collaborator.email.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        
+                        <div className="w-8 h-8 rounded-lg bg-[#FF6B00]/10 flex items-center justify-center text-[10px] font-semibold text-[#FF6B00]">
+                          {collaborator.email.substring(0, 2).toUpperCase()}
+                        </div>
+
                         <div>
-                          <div className="font-medium text-sm">{collaborator.email}</div>
-                          <div className="text-[10px] text-muted-foreground">
+                          <div className="font-medium text-sm text-zinc-900">{collaborator.email}</div>
+                          <div className="text-[10px] text-zinc-400">
                             Added {formatDistanceToNow(new Date(collaborator.addedAt), { addSuffix: true })}
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-1">
-                        <Badge 
-                          variant={collaborator.status === 'active' ? 'default' : 'secondary'}
-                          className="text-[10px] px-1.5 py-0 h-4"
-                        >
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-[10px] px-2 py-0.5 rounded",
+                          collaborator.status === 'active'
+                            ? "bg-green-100 text-green-600"
+                            : "bg-zinc-100 text-zinc-500"
+                        )}>
                           {collaborator.status === 'active' ? 'Active' : 'Invited'}
-                        </Badge>
-                        
+                        </span>
+
                         {collaborator.status === 'invited' && collaborator.shareLink && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7"
+                            className="h-7 w-7 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
                             onClick={() => {
                               const fullUrl = `${window.location.origin}${collaborator.shareLink}`;
                               navigator.clipboard.writeText(fullUrl);
@@ -1013,11 +976,11 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
                             <ExternalLink size={12} />
                           </Button>
                         )}
-                        
+
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 hover:text-destructive"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-500 hover:bg-red-50"
                           onClick={() => handleRemoveCollaborator(collaborator.id)}
                           disabled={!isAdmin}
                           title="Remove"
@@ -1031,257 +994,200 @@ const DeckSharing: React.FC<DeckSharingProps> = ({ deckUuid, deckName }) => {
               )}
             </TabsContent>
 
-            <TabsContent value="analytics" className="space-y-3 mt-4">
+            <TabsContent value="analytics" className="space-y-2 mt-4 h-full">
               {isLoadingAnalytics ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#FF4301] mx-auto mb-4"></div>
-                    <p className="text-sm text-muted-foreground">Loading analytics...</p>
-                  </div>
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-[#FF6B00]" />
                 </div>
               ) : selectedLinkForAnalytics && analyticsData ? (
                 <>
-                  {/* Back button and header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedLinkForAnalytics(null);
-                        setAnalyticsData(null);
-                      }}
-                      className="h-8 text-xs"
-                    >
-                      <ChevronLeft size={14} className="mr-1" />
-                      Back to links
-                    </Button>
-                    <div className="text-sm font-medium">
-                      {(selectedLinkForAnalytics as ShareLinkExtended).name || 'Untitled Link'}
+                  {/* Back button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedLinkForAnalytics(null);
+                      setAnalyticsData(null);
+                      setViewers([]);
+                    }}
+                    className="h-7 text-xs px-2 mb-1"
+                  >
+                    <ChevronLeft size={12} className="mr-1" />
+                    Back
+                  </Button>
+
+                  {/* Condensed Stats Row */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-200 text-center">
+                      <p className="text-lg font-bold text-zinc-900">{analyticsData.totalViews}</p>
+                      <p className="text-[10px] text-zinc-500">Views</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-200 text-center">
+                      <p className="text-lg font-bold text-zinc-900">{analyticsData.uniqueVisitors}</p>
+                      <p className="text-[10px] text-zinc-500">Visitors</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-200 text-center">
+                      <p className="text-lg font-bold text-zinc-900">
+                        {analyticsData.averageTimeSpent > 0 ? formatDuration(analyticsData.averageTimeSpent) : '-'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500">Avg Time</p>
                     </div>
                   </div>
 
-                  {/* Overview Cards */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <Card className="bg-white dark:bg-zinc-950">
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Total Views</p>
-                            <p className="text-xl font-bold">{analyticsData.totalViews}</p>
-                          </div>
-                          <Eye className="h-8 w-8 text-[#FF4301]/20" />
+                  {/* Collected Emails Section */}
+                  {(selectedLinkForAnalytics.metadata?.require_email || (selectedLinkForAnalytics as ShareLinkExtended).require_email) && (
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <Mail size={12} className="text-blue-600" />
+                          <span className="text-xs font-medium text-blue-900">Collected Emails</span>
                         </div>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="bg-white dark:bg-zinc-950">
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Unique Visitors</p>
-                            <p className="text-xl font-bold">{analyticsData.uniqueVisitors}</p>
-                          </div>
-                          <Users className="h-8 w-8 text-[#FF4301]/20" />
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white font-medium">
+                          {viewers.length}
+                        </span>
+                      </div>
+                      {isLoadingViewers ? (
+                        <div className="flex justify-center py-2">
+                          <Loader2 size={14} className="animate-spin text-blue-600" />
                         </div>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="bg-white dark:bg-zinc-950">
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Avg. Time</p>
-                            <p className="text-xl font-bold">
-                              {analyticsData.averageTimeSpent > 0 
-                                ? formatDuration(analyticsData.averageTimeSpent) 
-                                : '-'}
-                            </p>
-                          </div>
-                          <Timer className="h-8 w-8 text-[#FF4301]/20" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Views Over Time Chart */}
-                  <Card className="bg-white dark:bg-zinc-950">
-                    <CardHeader className="p-3 pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <TrendingUp size={14} />
-                        Views Over Time
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-1">
-                      <div className="h-32 flex items-end gap-1">
-                        {(analyticsData?.viewsByDate || []).map((day, idx) => {
-                          const days = analyticsData?.viewsByDate || [];
-                          const maxViews = Math.max(1, ...days.map(d => (d?.views ?? 0)));
-                          const height = maxViews > 0 ? (day.views / maxViews) * 100 : 0;
-                          return (
-                            <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                              <div 
-                                className="w-full bg-[#FF4301]/80 rounded-t hover:bg-[#FF4301] transition-colors relative group"
-                                style={{ height: `${height}%` }}
-                              >
-                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {day.views}
-                                </span>
+                      ) : viewers.length === 0 ? (
+                        <p className="text-[10px] text-blue-600/70">No emails collected yet</p>
+                      ) : (
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {viewers.slice(0, 10).map((viewer) => (
+                            <div key={viewer.id} className="flex items-center justify-between text-[10px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="w-5 h-5 rounded bg-blue-600/20 flex items-center justify-center text-[8px] font-medium text-blue-700 shrink-0">
+                                  {viewer.email.substring(0, 2).toUpperCase()}
+                                </div>
+                                <span className="text-blue-900 truncate">{viewer.email}</span>
                               </div>
-                              <span className="text-[9px] text-muted-foreground">
-                                {new Date(day.date).toLocaleDateString('en', { day: 'numeric' })}
+                              <span className="text-blue-600/60 shrink-0 ml-2">
+                                {formatDistanceToNow(new Date(viewer.registered_at), { addSuffix: true })}
                               </span>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
+                          ))}
+                          {viewers.length > 10 && (
+                            <p className="text-[10px] text-blue-600/70 text-center pt-1">
+                              +{viewers.length - 10} more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Device & Location Stats */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Card className="bg-white dark:bg-zinc-950">
-                      <CardHeader className="p-3 pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Monitor size={14} />
-                          Devices
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-3 pt-1 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs">Desktop</span>
-                          <span className="text-xs font-medium">{analyticsData.deviceTypes?.desktop ?? 0}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs">Mobile</span>
-                          <span className="text-xs font-medium">{analyticsData.deviceTypes?.mobile ?? 0}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs">Tablet</span>
-                          <span className="text-xs font-medium">{analyticsData.deviceTypes?.tablet ?? 0}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="bg-white dark:bg-zinc-950">
-                      <CardHeader className="p-3 pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <MapPin size={14} />
-                          Top Locations
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-3 pt-1 space-y-2">
-                        {(analyticsData.topLocations || []).slice(0, 3).map((loc, idx) => (
-                          <div key={idx} className="flex items-center justify-between">
-                            <span className="text-xs truncate">{loc.city}</span>
-                            <span className="text-xs font-medium">{loc.views}</span>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
+                  {/* Condensed Device Stats */}
+                  <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Monitor size={12} className="text-zinc-500" />
+                      <span className="text-xs font-medium text-zinc-700">Devices</span>
+                    </div>
+                    <div className="flex gap-3 text-[10px]">
+                      <span className="text-zinc-600">Desktop <span className="font-medium text-zinc-900">{analyticsData.deviceTypes?.desktop ?? 0}</span></span>
+                      <span className="text-zinc-600">Mobile <span className="font-medium text-zinc-900">{analyticsData.deviceTypes?.mobile ?? 0}</span></span>
+                      <span className="text-zinc-600">Tablet <span className="font-medium text-zinc-900">{analyticsData.deviceTypes?.tablet ?? 0}</span></span>
+                    </div>
                   </div>
 
-                  {/* Slide Engagement */}
-                  <Card className="bg-white dark:bg-zinc-950">
-                    <CardHeader className="p-3 pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <FileText size={14} />
-                        Slide Engagement
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-1">
-                      <div className="space-y-2">
-                        {(analyticsData.slideEngagement || []).map((slide) => (
-                          <div key={slide.slideNumber} className="flex items-center gap-2">
-                            <span className="text-xs w-12">Slide {slide.slideNumber}</span>
-                            <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
-                              <div 
-                                className="h-full bg-[#FF4301]"
-                                style={{ width: `${(slide.views / (analyticsData.totalViews || 1)) * 100}%` }}
+                  {/* Slide Engagement - Condensed */}
+                  {(analyticsData.slideEngagement || []).length > 0 && (
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <FileText size={12} className="text-zinc-500" />
+                        <span className="text-xs font-medium text-zinc-700">Slide Time</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(analyticsData.slideEngagement || []).slice(0, 5).map((slide) => (
+                          <div key={slide.slideNumber} className="flex items-center gap-2 text-[10px]">
+                            <span className="text-zinc-500 w-8">#{slide.slideNumber}</span>
+                            <div className="flex-1 bg-zinc-200 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full bg-[#FF6B00]"
+                                style={{
+                                  width: `${Math.min(100, (slide.avgTime / Math.max(1, ...analyticsData.slideEngagement!.map(s => s.avgTime))) * 100)}%`
+                                }}
                               />
                             </div>
-                            <span className="text-xs text-muted-foreground w-12 text-right">
-                              {Math.round((slide.views / (analyticsData.totalViews || 1)) * 100)}%
+                            <span className="text-zinc-600 font-medium w-8 text-right">{slide.avgTime}s</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent Activity - Condensed */}
+                  {(analyticsData.recentViews || []).length > 0 && (
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Activity size={12} className="text-zinc-500" />
+                        <span className="text-xs font-medium text-zinc-700">Recent</span>
+                      </div>
+                      <div className="space-y-1">
+                        {(analyticsData.recentViews || []).slice(0, 3).map((view, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-[10px]">
+                            <div className="flex items-center gap-1">
+                              <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                              <span className="text-zinc-500">
+                                {formatDistanceToNow(new Date(view.timestamp), { addSuffix: true })}
+                              </span>
+                            </div>
+                            <span className="text-zinc-400">
+                              {view.duration > 0 ? `${formatDuration(view.duration)}` : '-'}
+                              {view.slidesViewed > 0 && ` · ${view.slidesViewed} slides`}
                             </span>
                           </div>
                         ))}
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Recent Activity */}
-                  <Card className="bg-white dark:bg-zinc-950">
-                    <CardHeader className="p-3 pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Activity size={14} />
-                        Recent Activity
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-1">
-                      <div className="space-y-2">
-                        {(analyticsData.recentViews || []).map((view, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 bg-green-500 rounded-full" />
-                              <span className="text-muted-foreground">
-                                {formatDistanceToNow(new Date(view.timestamp), { addSuffix: true })}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-muted-foreground">
-                              <span>{view.location}</span>
-                              <span>{view.slidesViewed} slides</span>
-                              <span>{formatDuration(view.duration)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  )}
                 </>
               ) : (
                 // Link selection for analytics
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">Select a share link to view analytics</p>
+                <div className="space-y-2">
                   {shareLinks.length === 0 ? (
-                    <Card className="bg-white/50 dark:bg-zinc-950/50">
-                      <CardContent className="py-8">
-                        <div className="text-center text-muted-foreground">
-                          <Link size={32} className="mx-auto mb-3 opacity-20" />
-                          <p className="text-sm font-medium mb-1">No Share Links</p>
-                          <p className="text-xs">Create a share link to track analytics</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="space-y-2">
-                      {shareLinks.map((link) => (
-                        <Card 
-                          key={link.id}
-                          className="bg-white dark:bg-zinc-950 cursor-pointer hover:border-[#FF4301]/50 transition-colors"
-                          onClick={() => loadAnalytics(link)}
-                        >
-                          <CardContent className="p-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {link.name || 'Untitled Link'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {link.share_type === 'view' ? 'View only' : 'Can edit'} • 
-                                  {link.access_count || 0} views
-                                </p>
-                              </div>
-                              <ChevronRight size={16} className="text-muted-foreground" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                    <div className="p-6 rounded-xl bg-zinc-50 border border-zinc-200 text-center">
+                      <BarChart3 size={24} className="mx-auto mb-2 text-zinc-300" />
+                      <p className="text-xs text-zinc-500">Create a share link to track stats</p>
                     </div>
+                  ) : (
+                    shareLinks.map((link) => (
+                      <div
+                        key={link.id}
+                        className="p-3 rounded-lg bg-white border border-zinc-200 cursor-pointer hover:border-[#FF6B00]/50 transition-colors"
+                        onClick={() => loadAnalytics(link)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="text-zinc-400">
+                              {link.share_type === 'view' ? <Eye size={12} /> : <Edit size={12} />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-zinc-900">
+                                  {link.share_type === 'view' ? 'View' : 'Edit'}
+                                </span>
+                                {(link.metadata?.require_email || link.require_email) && (
+                                  <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-600">
+                                    <Mail size={6} className="inline mr-0.5" />
+                                    Email
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-400">{link.access_count || 0} views</p>
+                            </div>
+                          </div>
+                          <ChevronRight size={14} className="text-zinc-300" />
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               )}
             </TabsContent>
-          </div>
-        </Tabs>
+            </div>
+          </Tabs>
+        </div>
       </DialogContent>
     </Dialog>
     

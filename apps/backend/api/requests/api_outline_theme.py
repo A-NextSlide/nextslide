@@ -436,13 +436,16 @@ async def apply_theme_changes(request: ApplyThemeChangesRequest) -> ApplyThemeCh
                     title = getattr(outline, 'title', '') or ''
 
                     # Check if this is a fun/playful topic (like Pikachu, Mario, etc.)
+                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                    import re
                     title_lower = title.lower()
-                    is_fun_topic = any(keyword in title_lower for keyword in [
+                    fun_keywords = [
                         'pikachu', 'pokemon', 'mario', 'luigi', 'disney', 'mickey',
                         'cartoon', 'game', 'toy', 'character', 'kids', 'children',
                         'fun', 'play', 'party', 'arcade', 'retro', 'gaming', 'birthday',
                         'silly', 'celebration', 'video'
-                    ])
+                    ]
+                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_keywords)
 
                     if is_fun_topic:
                         # Use playful fonts for fun topics

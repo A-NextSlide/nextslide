@@ -441,6 +441,7 @@ def _is_entertainment_topic(title: str, vibe_context: Optional[str] = None) -> b
         'financial', 'growth', 'market', 'q1', 'q2', 'q3', 'q4', 'ipo', 'valuation',
         'pitch deck', 'board meeting', 'stakeholder', 'corporate', 'enterprise',
         'roi', 'kpi', 'metrics', 'analytics', 'sales', 'marketing', 'b2b', 'saas',
+        'fundraising', 'series a', 'series b', 'series c', 'seed round', 'raise',
     ]
 
     for indicator in business_indicators:

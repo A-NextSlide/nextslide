@@ -389,9 +389,9 @@ class BillingService:
             period_start = balance_result.data[0]["period_start"]
             period_end = balance_result.data[0]["period_end"]
 
-            # Count by type
+            # Count by type - include metadata for actual slide counts
             transactions = client.table("credit_transactions") \
-                .select("transaction_type, amount") \
+                .select("transaction_type, amount, metadata") \
                 .eq("user_id", user_id) \
                 .gte("created_at", period_start) \
                 .execute()
@@ -401,11 +401,27 @@ class BillingService:
             edits_made = 0
             total_used = 0
 
+            # Get credit costs for calculating actual counts
+            slide_cost = DEFAULT_CREDIT_COSTS.get(CreditAction.SLIDE_GENERATION, 5)
+            regen_cost = DEFAULT_CREDIT_COSTS.get(CreditAction.SLIDE_REGENERATION, 3)
+
             for tx in transactions.data or []:
                 amount = abs(tx["amount"])
                 total_used += amount
-                if tx["transaction_type"] in ["slide_generation", "slide_regeneration"]:
-                    slides_generated += 1
+                metadata = tx.get("metadata") or {}
+
+                if tx["transaction_type"] == "slide_generation":
+                    # Try to get actual slide count from metadata, fallback to calculating from amount
+                    num_slides = metadata.get("num_slides")
+                    if num_slides:
+                        slides_generated += num_slides
+                    else:
+                        # Calculate from amount (amount / cost_per_slide)
+                        slides_generated += max(1, amount // slide_cost)
+                elif tx["transaction_type"] == "slide_regeneration":
+                    # Regenerations are typically single slides
+                    num_slides = metadata.get("num_slides", 1)
+                    slides_generated += num_slides
                 elif tx["transaction_type"] == "ai_chat":
                     chats_sent += 1
                 elif tx["transaction_type"] == "ai_edit":

@@ -15,7 +15,7 @@ import { useActiveSlide } from '@/context/ActiveSlideContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useEditorStore } from '@/stores/editorStore';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
-import { copyToClipboard, pasteFromClipboard } from '@/utils/clipboardUtils';
+import { copyToClipboard, pasteFromClipboard, extractTextFromComponent, copyTextToSystemClipboard } from '@/utils/clipboardUtils';
 import { useToast } from '@/hooks/use-toast';
 import { DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { useYjs } from '@/yjs/YjsProvider';
@@ -414,8 +414,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       }
     };
     
-    // Add event listeners
-    window.addEventListener('keydown', handleKeyDown);
+    // Add event listeners - use document with capture to catch events before iframes
+    document.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('editor:toggle-edit-mode', handleToggleEditMode);
     window.addEventListener('editor:force-edit-mode', handleForceEditMode);
     
@@ -450,7 +450,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     
     // Clean up event listeners
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('editor:toggle-edit-mode', handleToggleEditMode);
       window.removeEventListener('editor:force-edit-mode', handleForceEditMode);
       document.removeEventListener('dblclick', handleDoubleClick, true);
@@ -492,12 +492,25 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       if (isModifierKey && e.key === 'c') {
         e.preventDefault();
         if (selectedComponent) {
+          // Keep internal clipboard for paste within app
           copyToClipboard(selectedComponent);
-          toast({
-            title: "Component Copied",
-            description: `${selectedComponent.type} copied to clipboard`,
-            duration: 2000,
-          });
+
+          // Also copy text content to system clipboard
+          const textContent = extractTextFromComponent(selectedComponent);
+          if (textContent) {
+            copyTextToSystemClipboard(textContent);
+            toast({
+              title: "Content Copied",
+              description: "Text content copied to clipboard",
+              duration: 2000,
+            });
+          } else {
+            toast({
+              title: "Component Copied",
+              description: `${selectedComponent.type} copied (no text content)`,
+              duration: 2000,
+            });
+          }
         }
       }
       
@@ -707,10 +720,24 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
   }
 
+  // Handle click on viewport to refocus main document (pull focus out of iframes)
+  const handleViewportClick = React.useCallback((e: React.MouseEvent) => {
+    // Only refocus if clicking directly on the viewport background or slide container
+    // Don't interfere with interactive elements
+    const target = e.target as HTMLElement;
+    const isInteractive = target.closest('button, input, textarea, [contenteditable], select, a');
+    if (!isInteractive) {
+      // Pull focus back to main document so keyboard shortcuts work
+      (document.activeElement as HTMLElement)?.blur?.();
+    }
+  }, []);
+
   return (
     <div
       ref={viewportRef}
       className="flex-1 relative overflow-hidden flex items-center justify-center max-w-full w-full h-full bg-background"
+      onClick={handleViewportClick}
+      tabIndex={-1}
     >
       {/* Waiting Game Overlay */}
       {showWaitingGame && (
@@ -792,8 +819,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               {/* Spacer when not editing */}
               {!isEditing && <div className="flex-1" />}
 
-              {/* Edit/Done button on right */}
-              {currentSlide && isCurrentSlideCompleted && (
+              {/* Edit/Done button on right - always rendered for tour visibility */}
+              {currentSlide && (
                 <button
                   className="px-3 py-1.5 text-xs font-semibold rounded-md border border-[#FF4301]/40 bg-white/80 dark:bg-zinc-900/80 hover:bg-[#FF4301]/10 hover:border-[#FF4301] text-[#FF4301] shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm ml-auto"
                   style={{
@@ -805,10 +832,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent('editor:toggle-edit-mode'));
                   }}
-                  disabled={
-                    currentSlide && (currentSlide.status === 'pending' || currentSlide.status === 'generating' || currentSlide.status === 'streaming') &&
-                    (!currentSlide.components || currentSlide.components.length === 0)
-                  }
+                  disabled={!isCurrentSlideCompleted}
                 >
                   {isEditing ? 'Done' : 'Edit'}
                 </button>

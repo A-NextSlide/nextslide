@@ -1377,4 +1377,92 @@ async def debug_deck_test(request: Request):
             "required_fields": ["uuid", "name"]
         }
     except Exception as e:
-        return {"error": str(e)} 
+        return {"error": str(e)}
+
+
+# ============================================================================
+# USER ONBOARDING STATE ENDPOINTS
+# ============================================================================
+
+class UserOnboardingStateResponse(BaseModel):
+    welcome_shown: bool
+    presentations_created: int
+    show_ai_hints: bool  # True if presentations_created < 2
+
+class MarkWelcomeShownRequest(BaseModel):
+    pass  # Empty body, just needs auth
+
+@router.get("/user/onboarding-state", response_model=UserOnboardingStateResponse)
+async def get_user_onboarding_state(token: Optional[str] = Depends(get_auth_header)):
+    """Get user's onboarding state (welcome shown, presentation count)"""
+    try:
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token)
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user_id = user["id"]
+        supabase = auth_service.supabase
+
+        # Get user's onboarding state from users table
+        response = supabase.table("users").select(
+            "welcome_shown, presentations_created"
+        ).eq("id", user_id).execute()
+
+        if not response.data:
+            # User not found in users table, return defaults
+            return UserOnboardingStateResponse(
+                welcome_shown=False,
+                presentations_created=0,
+                show_ai_hints=True
+            )
+
+        user_data = response.data[0]
+        welcome_shown = user_data.get("welcome_shown", False) or False
+        presentations_created = user_data.get("presentations_created", 0) or 0
+
+        return UserOnboardingStateResponse(
+            welcome_shown=welcome_shown,
+            presentations_created=presentations_created,
+            show_ai_hints=presentations_created < 2
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user onboarding state error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get onboarding state")
+
+
+@router.post("/user/mark-welcome-shown")
+async def mark_welcome_shown(token: Optional[str] = Depends(get_auth_header)):
+    """Mark that the welcome message has been shown to the user"""
+    try:
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token)
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user_id = user["id"]
+        supabase = auth_service.supabase
+
+        # Update user's welcome_shown flag
+        response = supabase.table("users").update({
+            "welcome_shown": True
+        }).eq("id", user_id).execute()
+
+        return {"success": True, "message": "Welcome shown flag updated"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Mark welcome shown error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update welcome shown flag")

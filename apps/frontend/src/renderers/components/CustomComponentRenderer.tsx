@@ -1397,6 +1397,7 @@ export const CustomComponentRenderer: React.FC<{
   // State for element-level editing
   const [selectedElement, setSelectedElement] = useState<DetectedElement | null>(null);
   const [showImageToolbar, setShowImageToolbar] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const [showAiChatBubble, setShowAiChatBubble] = useState(false);
   const [aiChatMessage, setAiChatMessage] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
@@ -1834,6 +1835,22 @@ export const CustomComponentRenderer: React.FC<{
         if (event.data.type === 'image-clicked' || event.data.type === 'image-selected') {
           setSelectedElement(event.data.element);
           setShowImageToolbar(true);
+          // Capture cursor position from the event if available, otherwise use element center
+          if (event.data.cursorX !== undefined && event.data.cursorY !== undefined) {
+            const iframeRect = iframeRef.current?.getBoundingClientRect();
+            setCursorPosition({
+              x: (iframeRect?.left || 0) + event.data.cursorX,
+              y: (iframeRect?.top || 0) + event.data.cursorY
+            });
+          } else {
+            // Fallback: position at right edge of element
+            const iframeRect = iframeRef.current?.getBoundingClientRect();
+            const el = event.data.element;
+            setCursorPosition({
+              x: (iframeRect?.left || 0) + el.bounds.x + el.bounds.width,
+              y: (iframeRect?.top || 0) + el.bounds.y + el.bounds.height / 2
+            });
+          }
           // Also open image picker for quick replacement
           const imgAlt = event.data.element.alt || 'image';
           window.dispatchEvent(new CustomEvent('image:select-placeholder', {
@@ -2203,8 +2220,25 @@ export const CustomComponentRenderer: React.FC<{
   }, [component.id, component.slideId]);
 
   // Handle element selection from overlay
-  const handleElementSelect = useCallback((element: DetectedElement | null) => {
+  const handleElementSelect = useCallback((element: DetectedElement | null, cursorX?: number, cursorY?: number) => {
     setSelectedElement(element);
+
+    // Set cursor position for toolbar/panel positioning (used by image and container)
+    if (element && (element.type === 'image' || element.type === 'container')) {
+      if (cursorX !== undefined && cursorY !== undefined) {
+        setCursorPosition({ x: cursorX, y: cursorY });
+      } else {
+        // Fallback to element right edge
+        const iframeRect = iframeRef.current?.getBoundingClientRect();
+        setCursorPosition({
+          x: (iframeRect?.left || 0) + element.bounds.x + element.bounds.width,
+          y: (iframeRect?.top || 0) + element.bounds.y + element.bounds.height / 2
+        });
+      }
+    } else {
+      setCursorPosition(null);
+    }
+
     if (element?.type === 'image') {
       setShowImageToolbar(true);
     } else {
@@ -2460,11 +2494,13 @@ export const CustomComponentRenderer: React.FC<{
             <ImageElementToolbar
               element={selectedElement}
               scale={scale}
+              cursorPosition={cursorPosition}
               onSwap={(newUrl) => handleImageSwap(selectedElement, newUrl)}
               onAiEdit={(instruction) => handleElementAiEdit(selectedElement, instruction)}
               onClose={() => {
                 setSelectedElement(null);
                 setShowImageToolbar(false);
+                setCursorPosition(null);
                 iframeRef.current?.contentWindow?.postMessage({
                   target: 'ns-custom-component-edit',
                   type: 'deselect'
@@ -2667,28 +2703,36 @@ export const CustomComponentRenderer: React.FC<{
 
         {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
         {selectedElement && selectedElement.type === 'container' && (() => {
-          // Calculate position to stay within viewport - position at top-right of component
+          // Position at top-right of the selected element, shift left if needed to stay in slide
           const panelWidth = 300;
           const panelHeight = 280;
-          const padding = 16;
+          const padding = 12;
+
+          // Get element and iframe position in viewport coordinates
           const iframeRect = iframeRef.current?.getBoundingClientRect();
+          const elementRight = (iframeRect?.left || 0) + selectedElement.bounds.x + selectedElement.bounds.width;
+          const elementTop = (iframeRect?.top || 0) + selectedElement.bounds.y;
 
-          // Position at top-right of the component (iframe), not overlapping
-          let panelLeft = (iframeRect?.right || 0) + padding;
-          let panelTop = Math.max(80, (iframeRect?.top || 0) + padding);
+          // Use iframe right edge as the boundary (not viewport) to avoid overlapping sidebar
+          const maxRight = iframeRect?.right || window.innerWidth;
 
-          // If it would go off the right edge, position to the left of component
-          if (panelLeft + panelWidth > window.innerWidth - padding) {
-            panelLeft = (iframeRect?.left || 0) - panelWidth - padding;
+          // Position at top-right corner of element
+          let panelLeft = elementRight + padding;
+          let panelTop = elementTop;
+
+          // If it would go past the slide area, shift left just enough to fit
+          if (panelLeft + panelWidth > maxRight) {
+            panelLeft = maxRight - panelWidth - padding;
           }
 
-          // If still off screen, position inside viewport
-          if (panelLeft < padding) {
-            panelLeft = window.innerWidth - panelWidth - padding;
+          // Ensure left doesn't go past the left edge of the iframe
+          const minLeft = iframeRect?.left || padding;
+          if (panelLeft < minLeft) {
+            panelLeft = minLeft;
           }
 
           // Ensure top stays within viewport
-          panelTop = Math.max(80, Math.min(panelTop, window.innerHeight - panelHeight - padding));
+          panelTop = Math.max(padding, Math.min(panelTop, window.innerHeight - panelHeight - padding));
 
           return createPortal(
           <AnimatePresence>

@@ -3,14 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send, Sparkles, ArrowLeft, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
-import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment } from '@/services/outlineAgentService';
+import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment, generateSlideContent } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
-import { ThinkingStatusDisplay, ThemeChatBlock, OutlineChatBlock } from '@/components/chat';
-import type { ThemeBlockData, OutlineBlockData, OutlineSlide } from '@/components/chat';
+import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock } from '@/components/chat';
+import type { ThemeBlockData, OutlineBlockData, OutlineSlide, DropdownOutlineBlockData } from '@/components/chat';
 import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
 import { ThemeEditorData, OutlinePreviewData, ThemeColorPalette } from '@/types/chatBlocks';
 import { useFontLoader } from '@/hooks/useFontLoading';
 import { useThemeStore } from '@/stores/themeStore';
+import { billingApi } from '@/services/billingApi';
+import { CreditWarningDialog, CreditWarningMode } from '@/components/billing/CreditWarningDialog';
 
 // Helper to render markdown-like formatting
 const renderText = (text: string) => {
@@ -76,7 +78,7 @@ interface CollectedData {
   slideCount?: number;
   detailLevel?: 'quick' | 'standard' | 'detailed';
   presentationType?: 'simple' | 'detailed';
-  slideMode?: 'interactive' | 'presentation' | 'static';
+  slideMode?: 'interactive' | 'static';  // 'interactive' = NextGen, 'static' = Traditional PPT
   chatHistory?: { role: 'user' | 'assistant'; content: string }[];
   themeChanges?: any;
   uploadedFiles?: File[];
@@ -165,6 +167,17 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [isThemeLoading, setIsThemeLoading] = useState(false); // Track theme generation
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
   const [outlineBlockCollapsed, setOutlineBlockCollapsed] = useState(true); // Start collapsed
+
+  // Credit warning dialog state
+  const [showCreditWarning, setShowCreditWarning] = useState(false);
+  const [creditWarningData, setCreditWarningData] = useState<{
+    remaining: number;
+    required: number;
+    slideCount: number;
+    planName: string;
+    mode: CreditWarningMode;
+    pendingSlideMode?: 'interactive' | 'static';
+  } | null>(null);
 
   // Font loader and theme store
   const { loadThemeFonts, isLoading: isFontLoading } = useFontLoader();
@@ -360,6 +373,11 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
   // Initial welcome message or process initial message
   useEffect(() => {
+    console.log('[ConversationalOnboarding] 🎬 Component mounted');
+    console.log('[ConversationalOnboarding] - initialMessage:', initialMessage);
+    console.log('[ConversationalOnboarding] - slideCount:', slideCount);
+    console.log('[ConversationalOnboarding] - initialUploadedFiles:', initialUploadedFiles?.length || 0);
+
     if (initialMessage) {
       handleSendMessage(initialMessage);
     } else {
@@ -467,13 +485,21 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       let assistantMessage = '';
       let outlineData: OutlineData | null = null;
 
-      console.log('[ConversationalOnboarding] Calling streamOutlineAgentChat with', filesToSend.length, 'files');
       // Include file analysis context in the request if files were previously analyzed
       const contextWithFileAnalysis = {
         ...collectedData,
         // Include previous file analysis so agent knows about files even without re-analyzing
         ...(fileAnalysisContext && filesToSend.length === 0 ? { previousFileAnalysis: fileAnalysisContext } : {})
       };
+
+      // Debug logging to track what's being sent
+      console.log('[ConversationalOnboarding] 🚀 Calling streamOutlineAgentChat:');
+      console.log('[ConversationalOnboarding] - userMessage:', userMessage);
+      console.log('[ConversationalOnboarding] - chatHistory length:', chatHistory.length);
+      console.log('[ConversationalOnboarding] - chatHistory:', JSON.stringify(chatHistory.slice(-3))); // Last 3 messages
+      console.log('[ConversationalOnboarding] - context:', JSON.stringify(contextWithFileAnalysis));
+      console.log('[ConversationalOnboarding] - files:', filesToSend.length);
+
       const generator = streamOutlineAgentChat({
         message: userMessage || 'Please analyze these files for my presentation.',
         chat_history: chatHistory,
@@ -568,10 +594,12 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
         setStage('planning');
         setOutlineFlow(outlineData);
         // Clear persistent files now that outline is generated - they're included in outlineData.uploadedMedia
+        // BUT keep fileAnalysisContext - we need it for generating slide content on demand
         console.log('[ConversationalOnboarding] Outline generated, clearing', persistentFiles.length, 'persistent files and', analyzedFileNames.size, 'analyzed file names');
+        console.log('[ConversationalOnboarding] Keeping fileAnalysisContext for slide content generation:', fileAnalysisContext?.slice(0, 100));
         setPersistentFiles([]);
         setAnalyzedFileNames(new Set());
-        setFileAnalysisContext(null);
+        // Don't clear fileAnalysisContext - we need it for the dropdown outline content generation!
 
         // Build theme block - fetch brand colors if we have brandContext
         console.log('[ConversationalOnboarding] 🎨 Building theme from outlineData:', {
@@ -630,6 +658,15 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     const theme = (evt as any).theme || evt;
                     if (theme?.color_palette) {
                       console.log('[ConversationalOnboarding] ✅ Got brand colors:', theme.color_palette);
+                      console.log('[ConversationalOnboarding] 🖼️ Theme logo fields:', {
+                        brandInfo_logoUrl: theme.brandInfo?.logoUrl,
+                        color_palette_metadata_logo_url: theme.color_palette?.metadata?.logo_url,
+                        logo: theme.logo,
+                        logo_info: theme.logo_info,
+                        style_preferences_logoUrl: theme.style_preferences?.logoUrl,
+                        stylePreferences_logoUrl: theme.stylePreferences?.logoUrl,
+                        direct_logoUrl: (theme as any).logoUrl,
+                      });
                       // Update theme block with brand colors
                       setThemeBlock(prev => {
                         if (!prev) return prev;
@@ -649,7 +686,15 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                           },
                           branding: {
                             ...prev.branding,
-                            logoUrl: theme.logo?.url || theme.logo_info?.url || prev.branding?.logoUrl,
+                            // Logo can be in many places depending on source
+                            logoUrl: theme.brandInfo?.logoUrl ||
+                                     theme.color_palette?.metadata?.logo_url ||
+                                     theme.logo?.url ||
+                                     theme.logo_info?.url ||
+                                     theme.style_preferences?.logoUrl ||
+                                     theme.stylePreferences?.logoUrl ||
+                                     (theme as any).logoUrl ||
+                                     prev.branding?.logoUrl,
                           },
                         };
                       });
@@ -802,74 +847,145 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     }
   };
 
-  const handleButtonClick = (action: string) => {
-    // Handle slide mode selection - now supports 3 modes
-    if (action === 'interactive' || action === 'presentation' || action === 'static') {
-      const slideMode = action as 'interactive' | 'presentation' | 'static';
-      const modeLabel = slideMode === 'interactive'
-        ? 'Deeply Interactive Slides'
-        : slideMode === 'presentation'
-        ? 'Presentation Mode'
-        : 'Traditional Format';
+  // Proceed with generation after credit check passes
+  const proceedWithGeneration = (slideMode: 'interactive' | 'static') => {
+    const modeLabel = slideMode === 'interactive'
+      ? 'NextGen'
+      : 'Traditional';
 
-      addMessage('user', modeLabel);
-      setCollectedData(prev => ({ ...prev, slideMode }));
-      setStage('confirmed');
+    addMessage('user', modeLabel);
+    setCollectedData(prev => ({ ...prev, slideMode }));
+    setStage('confirmed');
 
-      // Apply theme to store BEFORE completing (so it's available for generation)
-      applyThemeToStore();
+    // Apply theme to store BEFORE completing (so it's available for generation)
+    applyThemeToStore();
 
-      const confirmMessage = slideMode === 'interactive'
-        ? "Creating your deeply interactive, next-generation presentation..."
-        : slideMode === 'presentation'
-        ? "Creating your clean, presentation-ready slides..."
-        : "Creating your beautifully designed traditional presentation...";
+    const confirmMessage = slideMode === 'interactive'
+      ? "Creating your next-generation interactive presentation..."
+      : "Creating your beautifully designed traditional presentation...";
 
-      addAgentMessage(confirmMessage);
+    addAgentMessage(confirmMessage);
 
-      setTimeout(() => {
-        console.log('[ConversationalOnboarding] Passing outline data to onComplete:');
-        console.log('[ConversationalOnboarding] - outlineFlow?.slides:', outlineFlow?.slides?.length, 'slides');
-        console.log('[ConversationalOnboarding] - outlineFlow?.topic:', outlineFlow?.topic);
-        console.log('[ConversationalOnboarding] - style sources: brandContext=', outlineFlow?.brandContext, 'vibeContext=', outlineFlow?.stylePreferences?.vibeContext, 'style=', outlineFlow?.style);
+    setTimeout(() => {
+      console.log('[ConversationalOnboarding] Passing outline data to onComplete:');
+      console.log('[ConversationalOnboarding] - outlineFlow?.slides:', outlineFlow?.slides?.length, 'slides');
+      console.log('[ConversationalOnboarding] - outlineFlow?.topic:', outlineFlow?.topic);
+      console.log('[ConversationalOnboarding] - style sources: brandContext=', outlineFlow?.brandContext, 'vibeContext=', outlineFlow?.stylePreferences?.vibeContext, 'style=', outlineFlow?.style);
 
-        // Build stylePreferences from theme block if available
-        const stylePreferencesFromTheme = themeBlock ? {
-          colors: {
-            type: 'custom' as const,
-            background: themeBlock.colors.primary_background,
-            text: themeBlock.colors.primary_text,
-            accent1: themeBlock.colors.accent_1,
-            accent2: themeBlock.colors.accent_2,
-          },
-          font: themeBlock.typography.headingFont,
-          bodyFont: themeBlock.typography.bodyFont,
-          logoUrl: themeBlock.branding?.logoUrl,
-          vibeContext: themeBlock.vibeContext,
-        } : null;
+      // Build stylePreferences from theme block if available
+      const stylePreferencesFromTheme = themeBlock ? {
+        colors: {
+          type: 'custom' as const,
+          background: themeBlock.colors.primary_background,
+          text: themeBlock.colors.primary_text,
+          accent1: themeBlock.colors.accent_1,
+          accent2: themeBlock.colors.accent_2,
+        },
+        font: themeBlock.typography.headingFont,
+        bodyFont: themeBlock.typography.bodyFont,
+        logoUrl: themeBlock.branding?.logoUrl,
+        vibeContext: themeBlock.vibeContext,
+      } : null;
 
-        onComplete({
-          ...collectedData,
-          topic: outlineFlow?.topic || collectedData.topic,
-          // Style for theme generation (e.g., brand name, domain, or style descriptor)
-          // Agent outputs this as brandContext, or it can be in stylePreferences.vibeContext
-          style: outlineFlow?.brandContext || outlineFlow?.stylePreferences?.vibeContext || outlineFlow?.style || collectedData.style,
-          // Pass the edited stylePreferences from theme block if available
-          stylePreferences: stylePreferencesFromTheme ? JSON.stringify(stylePreferencesFromTheme) : collectedData.stylePreferences,
-          slideCount: collectedData.slideCount || outlineFlow?.slide_count,
-          detailLevel: collectedData.detailLevel || 'quick',
-          presentationType: 'simple',
-          slideMode,
-          chatHistory: chatHistory,
-          themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
-          uploadedFiles: uploadedFiles.map(f => f.file),
-          uploadedMedia: outlineFlow?.uploadedMedia,
-          // Pass slide screenshots for visual design replication
-          slideScreenshots: outlineFlow?.slide_screenshots,
-          // CRITICAL: Pass the slides generated by the agent to avoid re-generation!
-          slides: outlineFlow?.slides,
+      onComplete({
+        ...collectedData,
+        topic: outlineFlow?.topic || collectedData.topic,
+        // Style for theme generation (e.g., brand name, domain, or style descriptor)
+        // Agent outputs this as brandContext, or it can be in stylePreferences.vibeContext
+        style: outlineFlow?.brandContext || outlineFlow?.stylePreferences?.vibeContext || outlineFlow?.style || collectedData.style,
+        // Pass the edited stylePreferences from theme block if available
+        stylePreferences: stylePreferencesFromTheme ? JSON.stringify(stylePreferencesFromTheme) : collectedData.stylePreferences,
+        slideCount: collectedData.slideCount || outlineFlow?.slide_count,
+        detailLevel: collectedData.detailLevel || 'quick',
+        presentationType: 'simple',
+        slideMode,
+        chatHistory: chatHistory,
+        themeChanges: collectedData.themeChanges || outlineFlow?.theme_changes,
+        uploadedFiles: uploadedFiles.map(f => f.file),
+        uploadedMedia: outlineFlow?.uploadedMedia,
+        // Pass slide screenshots for visual design replication
+        slideScreenshots: outlineFlow?.slide_screenshots,
+        // CRITICAL: Pass the slides generated by the agent to avoid re-generation!
+        slides: outlineFlow?.slides,
+      });
+    }, 1500);
+  };
+
+  const handleButtonClick = async (action: string) => {
+    // Handle slide mode selection - 2 modes: NextGen (interactive) and Traditional (static)
+    if (action === 'interactive' || action === 'static') {
+      const slideMode = action as 'interactive' | 'static';
+
+      // Set processing state immediately for UI feedback
+      setIsProcessing(true);
+
+      // Check credits BEFORE proceeding with generation
+      const numSlides = outlineFlow?.slides?.length || outlineBlock?.slides?.length || collectedData.slideCount || 5;
+      const creditsPerSlide = 5;
+      const requiredCredits = numSlides * creditsPerSlide;
+
+      try {
+        const balance = await billingApi.getBalance();
+        const remainingCredits = balance.remaining_credits;
+        const planName = balance.plan_name || 'free';
+        const isPaidPlan = ['starter', 'pro', 'enterprise'].includes(planName.toLowerCase());
+
+        console.log('[ConversationalOnboarding] Credit check:', {
+          remainingCredits,
+          requiredCredits,
+          numSlides,
+          planName,
+          isPaidPlan,
+          canUseOverage: balance.can_use_overage,
         });
-      }, 1500);
+
+        // Determine if we need to show a warning
+        if (remainingCredits < requiredCredits) {
+          let mode: CreditWarningMode;
+
+          if (remainingCredits === 0) {
+            mode = isPaidPlan ? 'paid_overage' : 'free_no_credits';
+          } else {
+            mode = isPaidPlan ? 'paid_overage' : 'free_low_credits';
+          }
+
+          // Persist outline data to localStorage so user can resume after upgrading
+          const outlineDataToSave = {
+            outlineFlow,
+            outlineBlock,
+            themeBlock,
+            collectedData,
+            chatHistory,
+            pendingSlideMode: slideMode,
+            savedAt: new Date().toISOString(),
+          };
+          localStorage.setItem('nextslide_pending_outline', JSON.stringify(outlineDataToSave));
+          console.log('[ConversationalOnboarding] Saved outline to localStorage for post-upgrade resume');
+
+          // Show credit warning dialog
+          setCreditWarningData({
+            remaining: remainingCredits,
+            required: requiredCredits,
+            slideCount: numSlides,
+            planName,
+            mode,
+            pendingSlideMode: slideMode,
+          });
+          setShowCreditWarning(true);
+          setIsProcessing(false); // Reset processing state when showing dialog
+          return; // Don't proceed until user confirms
+        }
+
+        // Credits are sufficient, proceed with generation
+        proceedWithGeneration(slideMode);
+
+      } catch (error) {
+        console.error('[ConversationalOnboarding] Failed to check credits:', error);
+        // If we can't check credits, proceed anyway (backend will handle it)
+        // Don't reset isProcessing since proceedWithGeneration will transition to generation
+        proceedWithGeneration(slideMode);
+      }
+
       return;
     }
 
@@ -1171,9 +1287,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                   />
                 )}
 
-                {/* Outline Block */}
+                {/* Outline Block - Dropdown with editable content */}
                 {outlineBlock && (
-                  <OutlineChatBlock
+                  <DropdownOutlineChatBlock
                     data={{
                       title: outlineBlock.title,
                       slides: outlineBlock.slides.map(s => ({
@@ -1182,6 +1298,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                         subtitle: s.subtitle,
                         keyPoints: s.keyPoints,
                         content: s.content,
+                        isContentLoaded: !!(s.content || (s.keyPoints && s.keyPoints.length > 0)),
                       })),
                     }}
                     onSlideEdit={(slideId, updates) => {
@@ -1227,135 +1344,245 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                         setOutlineFlow({ ...outlineFlow, slides: updatedSlides });
                       }
                     }}
+                    onSlideReorder={(fromIndex, toIndex) => {
+                      // Reorder outline block slides
+                      setOutlineBlock(prev => {
+                        if (!prev) return prev;
+                        const newSlides = [...prev.slides];
+                        const [movedSlide] = newSlides.splice(fromIndex, 1);
+                        newSlides.splice(toIndex, 0, movedSlide);
+                        // Re-assign IDs to match new order
+                        return {
+                          ...prev,
+                          slides: newSlides.map((s, i) => ({ ...s, id: `slide-${i}` }))
+                        };
+                      });
+                      // Reorder outline flow slides
+                      if (outlineFlow && outlineFlow.slides) {
+                        const newSlides = [...outlineFlow.slides];
+                        const [movedSlide] = newSlides.splice(fromIndex, 1);
+                        newSlides.splice(toIndex, 0, movedSlide);
+                        setOutlineFlow({ ...outlineFlow, slides: newSlides });
+                      }
+                    }}
+                    onLoadContent={async (slideId) => {
+                      // Find the slide
+                      const idx = parseInt(slideId.replace('slide-', ''));
+                      const slide = outlineBlock.slides[idx];
+                      if (!slide) {
+                        return { content: '', keyPoints: [] };
+                      }
+
+                      // If content already exists, return it
+                      if (slide.content || (slide.keyPoints && slide.keyPoints.length > 0)) {
+                        return { content: slide.content || '', keyPoints: slide.keyPoints || [] };
+                      }
+
+                      // Build file content context from:
+                      // 1. File analysis context (summary of analyzed files)
+                      // 2. Uploaded media names
+                      // 3. Chat history context about files
+                      let fileContentParts: string[] = [];
+
+                      // Add file analysis context if available
+                      if (fileAnalysisContext) {
+                        fileContentParts.push(`File Analysis:\n${fileAnalysisContext}`);
+                      }
+
+                      // Add uploaded media info
+                      if (outlineFlow?.uploadedMedia?.length > 0) {
+                        const mediaInfo = outlineFlow.uploadedMedia.map((m: any) =>
+                          `- ${m.name} (${m.type})`
+                        ).join('\n');
+                        fileContentParts.push(`Uploaded Files:\n${mediaInfo}`);
+                      }
+
+                      // Extract file-related context from chat history
+                      const fileRelatedMessages = chatHistory
+                        .filter(m => m.content.toLowerCase().includes('file') ||
+                                    m.content.toLowerCase().includes('upload') ||
+                                    m.content.toLowerCase().includes('document'))
+                        .slice(-2)
+                        .map(m => `${m.role}: ${m.content}`);
+                      if (fileRelatedMessages.length > 0) {
+                        fileContentParts.push(`User Instructions:\n${fileRelatedMessages.join('\n')}`);
+                      }
+
+                      const fileContent = fileContentParts.length > 0
+                        ? fileContentParts.join('\n\n')
+                        : undefined;
+
+                      // Call the API to generate content
+                      try {
+                        const result = await generateSlideContent({
+                          slide_title: slide.title,
+                          slide_index: idx,
+                          total_slides: outlineBlock.slides.length,
+                          presentation_topic: outlineFlow?.topic || outlineBlock.title,
+                          presentation_context: chatHistory.map(m => `${m.role}: ${m.content}`).slice(-3).join('\n'),
+                          existing_key_points: slide.keyPoints,
+                          file_content: fileContent,
+                        });
+
+                        return {
+                          content: result.content,
+                          keyPoints: result.key_points,
+                        };
+                      } catch (error) {
+                        console.error('Failed to generate slide content:', error);
+                        return { content: '', keyPoints: slide.keyPoints || [] };
+                      }
+                    }}
                     isEditable={!isProcessing}
                   />
                 )}
               </div>
             )}
 
-            {/* Slide Mode Selection - 3 Side-by-Side Slide Previews */}
+            {/* Slide Mode Selection - 2 Options: NextGen vs Traditional */}
             {message.role === 'assistant' && message.showSlideModeSelection && (
               <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="grid grid-cols-3 gap-3 w-full max-w-[720px]">
+                <div className="grid grid-cols-2 gap-4 w-full max-w-[560px]">
 
-                  {/* NextGen Slide - Interactive (Recommended) */}
+                  {/* NextGen - Interactive, Animated, Bold (Recommended) */}
                   <button
                     onClick={() => handleButtonClick('interactive')}
                     disabled={isProcessing}
-                    className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ring-2 ring-[#FF4301]/60 shadow-lg shadow-orange-500/10"
+                    className="group relative flex flex-col rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.03] hover:shadow-2xl hover:shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ring-2 ring-orange-500/50 shadow-xl"
                   >
-                    {/* Recommended badge - centered on top of slide */}
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
-                      <span className="text-[9px] font-semibold bg-gradient-to-r from-orange-500 to-orange-600 text-white px-2.5 py-1 rounded-full shadow-lg shadow-orange-500/30">
+                    {/* Recommended badge */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30">
+                      <span className="text-[10px] font-bold bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 text-white px-3 py-1 rounded-full shadow-lg animate-pulse">
                         ✨ Recommended
                       </span>
                     </div>
 
-                    {/* Mini slide preview - Interactive style */}
-                    <div className="aspect-[16/10] bg-gradient-to-br from-[#1a1a2e] to-[#16213e] p-3 relative overflow-hidden">
-                      {/* Animated gradient orb */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full blur-xl opacity-60 group-hover:scale-125 transition-transform duration-500" />
-                      {/* Content mockup */}
-                      <div className="relative z-10 h-full flex flex-col justify-between pt-4">
-                        <div className="w-3/4 h-2 bg-white/90 rounded-full" />
-                        <div className="flex gap-1.5 justify-center">
-                          <div className="w-8 h-6 bg-gradient-to-br from-purple-400 to-pink-400 rounded opacity-80 group-hover:translate-y-[-2px] transition-transform" />
-                          <div className="w-8 h-6 bg-gradient-to-br from-blue-400 to-cyan-400 rounded opacity-80 group-hover:translate-y-[-2px] transition-transform delay-75" />
-                          <div className="w-8 h-6 bg-gradient-to-br from-orange-400 to-red-400 rounded opacity-80 group-hover:translate-y-[-2px] transition-transform delay-150" />
-                        </div>
-                        <div className="flex gap-1">
-                          <div className="w-1/3 h-1 bg-white/40 rounded-full" />
-                          <div className="w-1/4 h-1 bg-white/40 rounded-full" />
-                        </div>
+                    {/* NextGen Preview - Futuristic, animated feel */}
+                    <div className="aspect-[16/10] bg-gradient-to-br from-[#0f0f23] via-[#1a1a3e] to-[#0d0d1f] p-4 relative overflow-hidden">
+                      {/* Animated background elements */}
+                      <div className="absolute inset-0 overflow-hidden">
+                        {/* Glowing orbs */}
+                        <div className="absolute -top-8 -left-8 w-32 h-32 bg-gradient-to-br from-orange-500/30 to-pink-500/20 rounded-full blur-2xl group-hover:scale-150 group-hover:opacity-80 transition-all duration-700" />
+                        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-gradient-to-br from-purple-500/25 to-blue-500/15 rounded-full blur-2xl group-hover:scale-125 transition-all duration-700 delay-100" />
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-gradient-to-r from-cyan-400/20 to-emerald-400/10 rounded-full blur-xl group-hover:scale-150 transition-all duration-500" />
+                        {/* Grid pattern */}
+                        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px] opacity-60" />
+                        {/* Floating particles */}
+                        <div className="absolute top-4 right-6 w-1 h-1 bg-orange-400 rounded-full animate-ping" />
+                        <div className="absolute top-8 left-8 w-0.5 h-0.5 bg-purple-400 rounded-full animate-pulse" />
+                        <div className="absolute bottom-6 left-12 w-1 h-1 bg-cyan-400 rounded-full animate-ping delay-300" />
+                        <div className="absolute bottom-10 right-10 w-0.5 h-0.5 bg-pink-400 rounded-full animate-pulse delay-150" />
                       </div>
-                      {/* Sparkle effect */}
-                      <div className="absolute top-3 right-3 w-1 h-1 bg-white rounded-full animate-pulse" />
-                      <div className="absolute bottom-4 left-4 w-0.5 h-0.5 bg-purple-300 rounded-full animate-pulse delay-300" />
-                    </div>
 
-                    {/* Label - full orange fill */}
-                    <div className="bg-gradient-to-r from-[#FF4301] to-[#FF6B35] px-3 py-2.5 text-white flex-shrink-0">
-                      <div className="font-bold text-sm">NextGen</div>
-                      <div className="text-[10px] text-white/80 leading-tight mt-0.5">Next-gen interactive design</div>
-                    </div>
-                  </button>
+                      {/* Content mockup - Bold, interactive elements */}
+                      <div className="relative z-10 h-full flex flex-col justify-between pt-5">
+                        {/* Title with gradient */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-3/5 h-3 bg-gradient-to-r from-white via-white/90 to-white/70 rounded-full" />
+                          <div className="w-4 h-4 rounded-lg bg-gradient-to-br from-orange-400 to-pink-500 group-hover:rotate-12 transition-transform" />
+                        </div>
 
-                  {/* NextGen Simple - Presentation Mode */}
-                  <button
-                    onClick={() => handleButtonClick('presentation')}
-                    disabled={isProcessing}
-                    className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 border border-zinc-200 dark:border-zinc-700"
-                  >
-                    {/* Mini slide preview - Clean bold style */}
-                    <div className="aspect-[16/10] bg-gradient-to-br from-slate-900 to-slate-800 p-3 relative overflow-hidden">
-                      {/* Content mockup - Big bold stats */}
-                      <div className="h-full flex flex-col justify-between">
-                        <div className="w-2/3 h-1.5 bg-white/80 rounded-full" />
-                        <div className="flex items-end justify-center gap-3">
-                          <div className="text-center">
-                            <div className="text-lg font-black text-white leading-none">84%</div>
-                            <div className="w-6 h-0.5 bg-blue-400 rounded-full mt-1 mx-auto" />
+                        {/* Interactive cards that animate */}
+                        <div className="flex gap-2 justify-center items-end">
+                          <div className="w-12 h-16 bg-gradient-to-br from-orange-500/80 to-orange-600/60 rounded-xl backdrop-blur-sm border border-orange-400/30 group-hover:translate-y-[-4px] group-hover:shadow-lg group-hover:shadow-orange-500/30 transition-all duration-300 flex flex-col items-center justify-center">
+                            <div className="text-[10px] font-black text-white">87%</div>
+                            <div className="w-6 h-0.5 bg-white/50 rounded-full mt-1" />
                           </div>
-                          <div className="text-center">
-                            <div className="text-xl font-black text-white leading-none">2.4M</div>
-                            <div className="w-8 h-0.5 bg-emerald-400 rounded-full mt-1 mx-auto" />
+                          <div className="w-14 h-20 bg-gradient-to-br from-purple-500/80 to-pink-500/60 rounded-xl backdrop-blur-sm border border-purple-400/30 group-hover:translate-y-[-6px] group-hover:shadow-lg group-hover:shadow-purple-500/30 transition-all duration-300 delay-75 flex flex-col items-center justify-center">
+                            <div className="text-xs font-black text-white">2.4M</div>
+                            <div className="w-8 h-0.5 bg-white/50 rounded-full mt-1" />
                           </div>
-                          <div className="text-center">
-                            <div className="text-lg font-black text-white leading-none">+57</div>
-                            <div className="w-5 h-0.5 bg-purple-400 rounded-full mt-1 mx-auto" />
+                          <div className="w-12 h-14 bg-gradient-to-br from-cyan-500/80 to-blue-500/60 rounded-xl backdrop-blur-sm border border-cyan-400/30 group-hover:translate-y-[-3px] group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition-all duration-300 delay-150 flex flex-col items-center justify-center">
+                            <div className="text-[10px] font-black text-white">+42</div>
+                            <div className="w-5 h-0.5 bg-white/50 rounded-full mt-1" />
                           </div>
                         </div>
-                        <div className="w-1/2 h-1 bg-white/30 rounded-full" />
+
+                        {/* Bottom accent */}
+                        <div className="flex gap-2 items-center">
+                          <div className="flex-1 h-1 bg-gradient-to-r from-orange-500/60 via-purple-500/40 to-transparent rounded-full" />
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-sm flex items-center justify-center">
+                            <div className="w-2 h-2 bg-white/60 rounded-full" />
+                          </div>
+                        </div>
                       </div>
                     </div>
 
                     {/* Label */}
-                    <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2.5 text-zinc-800 dark:text-zinc-200">
-                      <div className="font-bold text-sm">NextGen Simple</div>
-                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight mt-0.5">Bold data, clean design for presenting</div>
+                    <div className="bg-gradient-to-r from-orange-500 via-orange-500 to-pink-500 px-4 py-3 text-white">
+                      <div className="font-bold text-base tracking-tight">NextGen</div>
+                      <div className="text-[11px] text-white/80 leading-tight mt-0.5">Interactive • Animated • Bold</div>
                     </div>
                   </button>
 
-                  {/* Traditional PPT - Static/Export */}
+                  {/* Traditional - Clean, Professional, PPT-ready */}
                   <button
                     onClick={() => handleButtonClick('static')}
                     disabled={isProcessing}
-                    className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 border border-zinc-200 dark:border-zinc-800 opacity-75 hover:opacity-100"
+                    className="group relative flex flex-col rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                   >
-                    {/* Mini slide preview - Classic PPTX style */}
-                    <div className="aspect-[16/10] bg-zinc-100 dark:bg-zinc-900 p-3 relative overflow-hidden border-b border-zinc-200 dark:border-zinc-800">
-                      {/* Content mockup - Traditional bullets */}
-                      <div className="h-full flex flex-col gap-1.5">
-                        <div className="w-3/4 h-1.5 bg-zinc-400 dark:bg-zinc-600 rounded-sm" />
-                        <div className="flex-1 flex flex-col justify-center gap-1">
-                          <div className="flex items-center gap-1">
-                            <div className="w-1 h-1 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
-                            <div className="w-4/5 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-sm" />
+                    {/* Traditional Preview - Clean, professional PPT style */}
+                    <div className="aspect-[16/10] bg-gradient-to-br from-slate-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 p-4 relative overflow-hidden">
+                      {/* Subtle professional background */}
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl" />
+                      <div className="absolute bottom-0 left-0 w-20 h-20 bg-slate-400/5 rounded-full blur-xl" />
+
+                      {/* Content mockup - Professional presentation style */}
+                      <div className="relative z-10 h-full flex flex-col justify-between">
+                        {/* Title bar */}
+                        <div className="space-y-1">
+                          <div className="w-4/5 h-2.5 bg-zinc-800 dark:bg-zinc-200 rounded-sm" />
+                          <div className="w-1/2 h-1.5 bg-zinc-400 dark:bg-zinc-500 rounded-sm" />
+                        </div>
+
+                        {/* Two-column layout with chart and text */}
+                        <div className="flex gap-3 flex-1 mt-3">
+                          {/* Left: Mini chart */}
+                          <div className="w-1/2 bg-white dark:bg-zinc-800 rounded-lg p-2 shadow-sm border border-zinc-100 dark:border-zinc-700">
+                            <div className="flex items-end justify-around h-full gap-1 pb-1">
+                              <div className="w-3 bg-blue-500 rounded-t-sm" style={{height: '60%'}} />
+                              <div className="w-3 bg-blue-400 rounded-t-sm" style={{height: '80%'}} />
+                              <div className="w-3 bg-blue-500 rounded-t-sm" style={{height: '45%'}} />
+                              <div className="w-3 bg-blue-400 rounded-t-sm" style={{height: '90%'}} />
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-1 h-1 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
-                            <div className="w-3/5 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-sm" />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-1 h-1 bg-zinc-400 dark:bg-zinc-500 rounded-full" />
-                            <div className="w-2/3 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-sm" />
+
+                          {/* Right: Bullet points */}
+                          <div className="w-1/2 flex flex-col justify-center gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
+                              <div className="w-full h-1.5 bg-zinc-300 dark:bg-zinc-600 rounded-sm" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
+                              <div className="w-4/5 h-1.5 bg-zinc-300 dark:bg-zinc-600 rounded-sm" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
+                              <div className="w-3/5 h-1.5 bg-zinc-300 dark:bg-zinc-600 rounded-sm" />
+                            </div>
                           </div>
                         </div>
-                        <div className="w-1/4 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-sm self-end" />
+
+                        {/* Footer */}
+                        <div className="flex justify-between items-center mt-2">
+                          <div className="w-12 h-3 bg-zinc-200 dark:bg-zinc-700 rounded-sm" />
+                          <div className="text-[8px] text-zinc-400 dark:text-zinc-500 font-medium">3 / 12</div>
+                        </div>
                       </div>
                     </div>
 
                     {/* Label */}
-                    <div className="bg-zinc-50 dark:bg-zinc-900 px-3 py-2.5 text-zinc-500 dark:text-zinc-400">
-                      <div className="font-semibold text-sm">Traditional PPT</div>
-                      <div className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight mt-0.5">PPTX-ready, classic format</div>
+                    <div className="bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-800 dark:text-zinc-200 border-t border-zinc-200 dark:border-zinc-700">
+                      <div className="font-bold text-base">Traditional</div>
+                      <div className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight mt-0.5">Clean • Professional • PPTX-ready</div>
                     </div>
                   </button>
 
                 </div>
 
                 {/* Continue chatting link - small below */}
-                <div className="mt-3 text-center">
+                <div className="mt-4 text-center">
                   <button
                     onClick={() => {
                       setStage('chat');
@@ -1662,6 +1889,30 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Credit Warning Dialog */}
+      {creditWarningData && (
+        <CreditWarningDialog
+          open={showCreditWarning}
+          onClose={() => {
+            setShowCreditWarning(false);
+            setCreditWarningData(null);
+          }}
+          remainingCredits={creditWarningData.remaining}
+          requiredCredits={creditWarningData.required}
+          slideCount={creditWarningData.slideCount}
+          planName={creditWarningData.planName}
+          mode={creditWarningData.mode}
+          onProceed={() => {
+            // User confirmed to proceed (either with overage or partial generation)
+            if (creditWarningData.pendingSlideMode) {
+              proceedWithGeneration(creditWarningData.pendingSlideMode);
+            }
+            setShowCreditWarning(false);
+            setCreditWarningData(null);
+          }}
+        />
       )}
     </div>
   );

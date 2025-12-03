@@ -3,12 +3,18 @@
  *
  * Uses the same CSS variable technique as useComponentDrag for instant visual feedback.
  * Coordinates are translated between parent viewport and iframe space.
+ *
+ * IMPORTANT: Drag only starts after mouse moves beyond DRAG_THRESHOLD pixels.
+ * This prevents accidental drags when user just wants to click/select.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { VirtualElement, Bounds } from './types';
 import { CoordinateTranslator } from './coordinateTranslator';
 import { generateStyleMutation } from './styleMutator';
+
+// Minimum pixels mouse must move before drag starts
+const DRAG_THRESHOLD = 5;
 
 interface UseElementDragProps {
   element: VirtualElement;
@@ -39,6 +45,9 @@ export function useElementDrag({
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
+  // Track if we're in "potential drag" state (mousedown but not yet moved enough)
+  const [isPotentialDrag, setIsPotentialDrag] = useState(false);
+
   // Refs for drag state (avoid stale closures)
   const dragStartRef = useRef<{
     mouseX: number;
@@ -57,12 +66,8 @@ export function useElementDrag({
     e.preventDefault();
     e.stopPropagation();
 
-    // Prevent text selection during drag
-    document.body.style.userSelect = 'none';
-    document.body.style.webkitUserSelect = 'none';
-    document.body.classList.add('dragging-component');
-
-    // Store starting state
+    // Store starting state but DON'T start dragging yet
+    // Wait for mouse to move beyond threshold
     dragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
@@ -70,29 +75,46 @@ export function useElementDrag({
       iframeBounds: { ...element.iframeBounds },
     };
 
-    // Initialize CSS variables on overlay element
-    if (overlayRef.current) {
-      overlayRef.current.style.setProperty('--drag-x', '0px');
-      overlayRef.current.style.setProperty('--drag-y', '0px');
-    }
-
-    setIsDragging(true);
+    // Enter "potential drag" state - drag will start if mouse moves enough
+    setIsPotentialDrag(true);
     setDragOffset({ x: 0, y: 0 });
-  }, [element, overlayRef]);
+  }, [element]);
 
-  // Mouse move handler
+  // Mouse move handler for potential drag (checking threshold)
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isPotentialDrag) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragStartRef.current || !overlayRef.current) return;
+      if (!dragStartRef.current) return;
 
       const deltaX = e.clientX - dragStartRef.current.mouseX;
       const deltaY = e.clientY - dragStartRef.current.mouseY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      // If we haven't started dragging yet, check threshold
+      if (!isDragging) {
+        if (distance >= DRAG_THRESHOLD) {
+          // Start actual drag
+          document.body.style.userSelect = 'none';
+          document.body.style.webkitUserSelect = 'none';
+          document.body.classList.add('dragging-component');
+
+          // Initialize CSS variables on overlay element
+          if (overlayRef.current) {
+            overlayRef.current.style.setProperty('--drag-x', '0px');
+            overlayRef.current.style.setProperty('--drag-y', '0px');
+          }
+
+          setIsDragging(true);
+        }
+        return; // Don't process drag until threshold is met
+      }
 
       // Update CSS variables immediately for zero-lag visual feedback
-      overlayRef.current.style.setProperty('--drag-x', `${deltaX}px`);
-      overlayRef.current.style.setProperty('--drag-y', `${deltaY}px`);
+      if (overlayRef.current) {
+        overlayRef.current.style.setProperty('--drag-x', `${deltaX}px`);
+        overlayRef.current.style.setProperty('--drag-y', `${deltaY}px`);
+      }
 
       setDragOffset({ x: deltaX, y: deltaY });
 
@@ -121,6 +143,13 @@ export function useElementDrag({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
+      // If we never started dragging (didn't pass threshold), just cleanup
+      if (!isDragging) {
+        setIsPotentialDrag(false);
+        dragStartRef.current = null;
+        return;
+      }
+
       if (!dragStartRef.current) return;
 
       const deltaX = e.clientX - dragStartRef.current.mouseX;
@@ -154,6 +183,7 @@ export function useElementDrag({
       onDragEnd(finalIframeBounds, styles);
 
       setIsDragging(false);
+      setIsPotentialDrag(false);
       setDragOffset({ x: 0, y: 0 });
       dragStartRef.current = null;
     };
@@ -165,7 +195,7 @@ export function useElementDrag({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, coordinator, element, overlayRef, onPositionChange, onDragEnd]);
+  }, [isPotentialDrag, isDragging, coordinator, element, overlayRef, onPositionChange, onDragEnd]);
 
   return {
     isDragging,

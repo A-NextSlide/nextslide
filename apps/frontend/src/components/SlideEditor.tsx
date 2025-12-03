@@ -42,6 +42,7 @@ import { useActiveSlide } from '@/context/ActiveSlideContext';
 import QuickTipBubble from './common/QuickTipBubble';
 import GuidedTour from './common/GuidedTour';
 import DeckNotes from './deck/DeckNotes';
+import { authService } from '@/services/authService';
 import { debugSlideImages } from '@/utils/debugSlideImages';
 
 /**
@@ -58,6 +59,7 @@ const SlideEditorContent: React.FC = () => {
   const [hasSyncError, setHasSyncError] = useState(false);
   const [showQuickTip, setShowQuickTip] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [showAiHints, setShowAiHints] = useState(false);
   // Initialize with pending state for new decks
   const [deckStatus, setDeckStatus] = useState<DeckStatus | null>(() => {
     if (isNewDeck) {
@@ -118,6 +120,21 @@ const SlideEditorContent: React.FC = () => {
     window.addEventListener('tour:start', handleStart as EventListener);
     return () => window.removeEventListener('tour:start', handleStart as EventListener);
   }, [setIsEditing]);
+
+  // Fetch onboarding state to determine if AI hints should be shown (first 2 presentations)
+  useEffect(() => {
+    const checkOnboardingState = async () => {
+      try {
+        const onboardingState = await authService.getOnboardingState();
+        if (onboardingState) {
+          setShowAiHints(onboardingState.show_ai_hints);
+        }
+      } catch (error) {
+        console.error('[SlideEditor] Error checking onboarding state:', error);
+      }
+    };
+    checkOnboardingState();
+  }, []);
 
   // Ensure chat panel is visible for the chat step
   useEffect(() => {
@@ -2042,6 +2059,7 @@ const SlideEditorContent: React.FC = () => {
       <GuidedTour
         isOpen={showTour}
         onClose={() => setShowTour(false)}
+        showAiHints={showAiHints}
         onAction={(action) => {
           if (action === 'enterEditMode') {
             try { setIsEditing(true); } catch {}
@@ -2068,20 +2086,20 @@ const SlideEditorContent: React.FC = () => {
             targetSelector: '[data-tour="component-toolbar"]',
             title: 'Add components',
             description: 'Use the toolbar to add text, shapes, charts, icons, tables, and media onto the canvas.',
-            nextAction: 'openTheme'
-          },
-          {
-            id: 'theme',
-            targetSelector: '[data-tour="theme-button"]',
-            title: 'Theme and colors',
-            description: 'Open Theme to instantly restyle your deck: fonts, colors, and backgrounds.',
             nextAction: null
           },
           {
-            id: 'text-settings',
-            targetSelector: '[data-tour="properties-panel"]',
-            title: 'Text and component settings',
-            description: 'Here’s where Tiptap text properties appear when editing a text block.',
+            id: 'present',
+            targetSelector: '[data-tour="present-button"]',
+            title: 'Present your deck',
+            description: 'Enter fullscreen presentation mode. Use arrow keys or swipe to navigate between slides.',
+            nextAction: null
+          },
+          {
+            id: 'share',
+            targetSelector: '[data-tour="share-button"]',
+            title: 'Share with anyone',
+            description: 'Create share links, invite collaborators, and track who views your presentation.',
             nextAction: null
           },
           {

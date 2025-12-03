@@ -385,6 +385,50 @@ function isValidOutlineData(parsed: any): boolean {
  * Stream chat with the outline agent
  * The agent outputs JSON directly in its text response (no tool calling)
  */
+/**
+ * Request to generate slide content on demand
+ */
+export interface GenerateSlideContentRequest {
+  slide_title: string;
+  slide_index: number;
+  total_slides: number;
+  presentation_topic: string;
+  presentation_context?: string;
+  existing_key_points?: string[];
+  file_content?: string;
+}
+
+/**
+ * Response with generated slide content
+ */
+export interface GenerateSlideContentResponse {
+  content: string;
+  key_points: string[];
+}
+
+/**
+ * Generate content for a single slide on demand
+ */
+export async function generateSlideContent(
+  request: GenerateSlideContentRequest
+): Promise<GenerateSlideContentResponse> {
+  const url = `${API_CONFIG.AGENT_BASE_URL}/api/outline-agent/generate-slide-content`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function* streamOutlineAgentChat(
   request: OutlineAgentRequest
 ): AsyncGenerator<AgentEvent, void, unknown> {

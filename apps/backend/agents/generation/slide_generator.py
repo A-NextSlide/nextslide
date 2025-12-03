@@ -1648,7 +1648,7 @@ class SlideGeneratorV2(ISlideGenerator):
                 'is_full_slide': True,  # Signal this is a full-slide component
                 'background_color': bg_color,
                 'presentation_context': context.presentation_context,  # User's original request for design cues
-                'slide_mode': slide_mode  # 'interactive', 'presentation', or 'static'
+                'slide_mode': slide_mode  # 'interactive' (NextGen) or 'static' (Traditional PPT)
             },
             width=1920,
             height=1080,

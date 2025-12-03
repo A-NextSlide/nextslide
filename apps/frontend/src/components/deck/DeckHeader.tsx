@@ -449,6 +449,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
           className="h-7 px-3 bg-[#FF4301] hover:bg-[#E63901] text-white"
           onClick={usePresentationStore.getState().enterPresentation}
           title="Presentation mode (P)"
+          data-tour="present-button"
         >
           <Presentation size={14} className="mr-1" />
           Present

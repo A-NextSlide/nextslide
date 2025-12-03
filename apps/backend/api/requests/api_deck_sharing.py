@@ -24,6 +24,7 @@ class CreateShareLinkRequest(BaseModel):
     share_type: str = Field('view', description="Type of share: 'view' or 'edit'")
     expires_in_hours: Optional[int] = Field(None, description="Expiration time in hours (optional)")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    require_email: bool = Field(False, description="Require viewer email before viewing")
 
 
 class ShareLinkResponse(BaseModel):
@@ -37,6 +38,7 @@ class ShareLinkResponse(BaseModel):
     access_count: int = Field(0, description="Number of times the share link was used")
     last_accessed_at: Optional[datetime] = Field(None, description="When the share link was last used")
     is_active: bool = Field(True, description="Whether the share link is active")
+    require_email: bool = Field(False, description="Whether email is required to view")
 
 
 class AddCollaboratorRequest(BaseModel):
@@ -92,12 +94,18 @@ async def create_share_link(
         
         # Create share link
         sharing_service = get_sharing_service()
+
+        # Merge require_email into metadata
+        metadata = request.metadata or {}
+        if request.require_email:
+            metadata['require_email'] = True
+
         share_link = sharing_service.create_share_link(
             deck_uuid=deck_uuid,
             user_id=user_id,
             share_type=request.share_type,
             expires_in_hours=request.expires_in_hours,
-            metadata=request.metadata
+            metadata=metadata if metadata else None
         )
         
         # Construct full URL (frontend will use appropriate domain)
@@ -924,6 +932,178 @@ async def export_analytics(
     except Exception as e:
         logger.error(f"Error exporting analytics: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to export analytics")
+
+
+@router.get("/shares/{share_id}/analytics-real")
+async def get_real_analytics(
+    share_id: str,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """Get real analytics data from view events table."""
+    try:
+        # Get authenticated user
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token) if token else None
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        user_id = user["id"]
+
+        # Verify user owns this share link
+        from utils.supabase import get_supabase_client
+        supabase = get_supabase_client()
+
+        share_result = supabase.table('deck_shares').select(
+            'id, created_by, access_count, last_accessed_at'
+        ).eq('id', share_id).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        share_data = share_result.data[0]
+        if share_data['created_by'] != user_id:
+            raise HTTPException(status_code=403, detail="You don't have permission to view this data")
+
+        # Get view events for this share
+        events_result = supabase.table('share_view_events').select(
+            'id, session_id, started_at, ended_at, duration_seconds, slides_viewed, slide_views, device_type, browser, os, country, city'
+        ).eq('share_id', share_id).order('started_at', desc=True).limit(100).execute()
+
+        events = events_result.data or []
+
+        # Aggregate analytics
+        total_views = share_data.get('access_count', 0) or len(events)
+        unique_sessions = len(set(e.get('session_id', e['id']) for e in events)) if events else total_views
+
+        # Calculate average time
+        durations = [e['duration_seconds'] for e in events if e.get('duration_seconds')]
+        avg_time = int(sum(durations) / len(durations)) if durations else 0
+
+        # Device breakdown
+        device_counts = {'desktop': 0, 'mobile': 0, 'tablet': 0}
+        for e in events:
+            device = e.get('device_type', 'desktop')
+            if device in device_counts:
+                device_counts[device] += 1
+            else:
+                device_counts['desktop'] += 1
+
+        # If no events yet, use access_count for desktop
+        if not events and total_views > 0:
+            device_counts['desktop'] = total_views
+
+        # Slide engagement - aggregate from all events
+        slide_times = {}  # slideIndex -> total time
+        for e in events:
+            slide_views = e.get('slide_views', [])
+            if isinstance(slide_views, list):
+                for sv in slide_views:
+                    if isinstance(sv, dict):
+                        idx = sv.get('slideIndex', 0)
+                        time_ms = sv.get('timeSpentMs', 0)
+                        slide_times[idx] = slide_times.get(idx, 0) + time_ms
+
+        # Convert to list sorted by slide index
+        slide_engagement = []
+        if slide_times:
+            for idx in sorted(slide_times.keys()):
+                slide_engagement.append({
+                    'slideNumber': idx + 1,
+                    'views': len([e for e in events if any(
+                        sv.get('slideIndex') == idx for sv in (e.get('slide_views') or []) if isinstance(sv, dict)
+                    )]),
+                    'avgTime': int(slide_times[idx] / 1000)  # Convert to seconds
+                })
+
+        # Recent views
+        recent_views = []
+        for e in events[:5]:
+            recent_views.append({
+                'timestamp': e['started_at'],
+                'location': e.get('city') or e.get('country') or '-',
+                'device': e.get('device_type', '-'),
+                'duration': e.get('duration_seconds', 0),
+                'slidesViewed': e.get('slides_viewed', 0)
+            })
+
+        # If no events, add placeholder from last_accessed_at
+        if not recent_views and share_data.get('last_accessed_at') and total_views > 0:
+            recent_views.append({
+                'timestamp': share_data['last_accessed_at'],
+                'location': '-',
+                'device': '-',
+                'duration': 0,
+                'slidesViewed': 0
+            })
+
+        return {
+            'totalViews': total_views,
+            'uniqueVisitors': unique_sessions,
+            'averageTimeSpent': avg_time,
+            'viewsByDate': [],
+            'viewsByHour': [],
+            'deviceTypes': device_counts,
+            'topLocations': [],
+            'slideEngagement': slide_engagement,
+            'referrers': [],
+            'recentViews': recent_views
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting real analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get analytics")
+
+
+@router.get("/shares/{share_id}/viewers")
+async def get_share_viewers(
+    share_id: str,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """Get all registered viewers for a share link (emails collected)."""
+    try:
+        # Get authenticated user
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token) if token else None
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        user_id = user["id"]
+
+        # Verify user owns this share link
+        from utils.supabase import get_supabase_client
+        supabase = get_supabase_client()
+
+        share_result = supabase.table('deck_shares').select(
+            'id, created_by'
+        ).eq('id', share_id).execute()
+
+        if not share_result.data:
+            raise HTTPException(status_code=404, detail="Share link not found")
+
+        if share_result.data[0]['created_by'] != user_id:
+            raise HTTPException(status_code=403, detail="You don't have permission to view this data")
+
+        # Get all viewers for this share link
+        viewers_result = supabase.table('share_viewers').select(
+            'id, email, name, company, registered_at, client_ip'
+        ).eq('share_id', share_id).order('registered_at', desc=True).execute()
+
+        viewers = viewers_result.data if viewers_result.data else []
+
+        return {
+            'viewers': viewers,
+            'total': len(viewers)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting share viewers: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get viewers")
 
 
 @router.post("/shares/{share_id}/notifications")

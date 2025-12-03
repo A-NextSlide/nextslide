@@ -784,62 +784,10 @@ async def api_deck_compose_stream_endpoint(request: DeckComposeRequest, token: O
                 # Associate the deck with the user
                 auth_service.associate_deck_with_user(user_id, request.deck_id)
 
-                # Check and consume credits for slide generation
-                from services.billing_service import get_billing_service, CreditAction
-                billing = get_billing_service()
-                num_slides = len(request.outline.slides) if request.outline and request.outline.slides else 0
-
-                if num_slides > 0:
-                    # Check if user has enough credits for all slides
-                    # Each slide costs 5 credits
-                    total_cost = num_slides * billing.get_credit_cost(CreditAction.SLIDE_GENERATION)
-                    balance = await billing.get_user_balance(user_id)
-
-                    if balance:
-                        logger.info(f"User {user_id} balance: {balance.remaining_credits} credits, needs {total_cost} for {num_slides} slides")
-
-                        if balance.remaining_credits < total_cost:
-                            # Check if user can use overage (Pro/Enterprise plan)
-                            if balance.plan_id not in ('pro', 'enterprise'):
-                                # Return error for insufficient credits
-                                logger.warning(f"User {user_id} has insufficient credits: {balance.remaining_credits} < {total_cost}")
-                                async def insufficient_credits_stream():
-                                    yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'Not enough credits to generate slides', 'required': total_cost, 'remaining': balance.remaining_credits, 'plan': balance.plan_id})}\n\n"
-                                return StreamingResponse(
-                                    insufficient_credits_stream(),
-                                    media_type="text/event-stream",
-                                    headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-                                )
-
-                        # Consume credits for the entire deck upfront
-                        success, remaining, overage = await billing.consume_credits(
-                            user_id,
-                            CreditAction.SLIDE_GENERATION,
-                            metadata={"deck_id": request.deck_id, "num_slides": num_slides, "total_cost": total_cost},
-                            description=f"Generate {num_slides} slides for deck {request.deck_id}",
-                            quantity=num_slides  # Consume credits for all slides at once
-                        )
-
-                        if not success:
-                            logger.warning(f"Failed to consume credits for user {user_id}")
-                            async def failed_credits_stream():
-                                yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'Could not consume credits', 'remaining': remaining})}\n\n"
-                            return StreamingResponse(
-                                failed_credits_stream(),
-                                media_type="text/event-stream",
-                                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-                            )
-
-                        logger.info(f"Consumed {total_cost} credits for {num_slides} slides, remaining: {remaining}")
-                    else:
-                        logger.warning(f"Could not get balance for user {user_id}, blocking request")
-                        async def no_balance_stream():
-                            yield f"data: {json.dumps({'type': 'error', 'error': 'BILLING_ERROR', 'message': 'Could not verify credit balance'})}\n\n"
-                        return StreamingResponse(
-                            no_balance_stream(),
-                            media_type="text/event-stream",
-                            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-                        )
+                # NOTE: Credits are consumed in /deck/create-from-outline endpoint
+                # Do NOT consume credits here to avoid double-charging
+                # This endpoint may be called as a follow-up stream for progress tracking
+                logger.info(f"[compose-stream] Skipping credit consumption - handled by /deck/create-from-outline")
         except Exception as e:
             logger.warning(f"Could not associate deck with user: {e}")
 
@@ -1037,10 +985,22 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
                         outline['slides'] = outline.get('slides', [])[:slides_to_generate]
                         logger.info(f"[CREDITS] Truncated outline to {slides_to_generate} slides")
                     else:
-                        # User has 0 credits - empty slides (frontend will handle)
-                        outline['slides'] = []
-                        slides_to_generate = 0
-                        logger.info(f"[CREDITS] User has no credits. No slides will be generated.")
+                        # User has 0 credits - return error so frontend shows paywall
+                        logger.info(f"[CREDITS] User has no credits. Returning INSUFFICIENT_CREDITS error.")
+
+                        async def insufficient_credits_response():
+                            yield f"data: {json.dumps({'type': 'error', 'error': 'INSUFFICIENT_CREDITS', 'message': 'You have no credits remaining. Please upgrade to continue.', 'remaining': 0, 'required': num_slides * credit_per_slide, 'plan': 'free'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'end', 'message': 'Stream complete'})}\n\n"
+
+                        return StreamingResponse(
+                            insufficient_credits_response(),
+                            media_type="text/event-stream",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Connection": "keep-alive",
+                                "X-Accel-Buffering": "no"
+                            }
+                        )
 
             # Consume credits for the slides we're actually generating (not the upgrade slide)
             if slides_to_generate > 0:
@@ -1083,9 +1043,12 @@ async def api_deck_create_from_outline_endpoint(request: dict, token: Optional[s
         # Use sequential generation (max_parallel=1) for partial/paywall generations
         effective_max_parallel = 1 if force_sequential else request.get('max_parallel', MAX_PARALLEL_SLIDES)
 
+        # Accept both snake_case and camelCase for style preferences
+        style_prefs = request.get('stylePreferences') or request.get('style_preferences')
+
         create_request = CreateDeckFromOutlineRequest(
             outline=outline,
-            stylePreferences=request.get('stylePreferences'),
+            stylePreferences=style_prefs,
             max_parallel=effective_max_parallel,
             delay_between_slides=request.get('delay_between_slides', DELAY_BETWEEN_SLIDES),
             async_images=request.get('async_images', False)  # Default to auto-apply mode to show image recommendations

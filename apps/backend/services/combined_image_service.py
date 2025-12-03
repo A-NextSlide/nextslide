@@ -34,25 +34,38 @@ async def extract_image_search_terms_with_ai(
     try:
         client, model_name = get_client("claude-haiku-4-5")
 
-        prompt = f"""You are generating Google Image search queries for a presentation slide.
+        prompt = f"""You are generating SPECIFIC, CONCRETE image search queries for a presentation slide.
 
 PRESENTATION: {presentation_title}
 SLIDE: {slide_title}
 CONTENT: {slide_content[:600]}
 {f"CONTEXT: {presentation_context}" if presentation_context else ""}
 
-Generate 4-5 search queries like you'd type into Google Images. Think:
-- What PHOTO would best illustrate this slide?
-- Use specific nouns: "Tesla factory robots" not "manufacturing"
-- Include brand/company names when mentioned
-- 2-4 words per query, like real Google searches
-- NO generic words: business, success, teamwork, strategy, growth, professional
+Generate 4-5 search queries that describe EXACTLY what the image should show - real, photographable scenes or objects.
 
-GOOD: "SpaceX rocket launch", "Amazon warehouse robots", "iPhone 15 display"
-BAD: "innovation strategy", "digital transformation", "market growth"
+RULES:
+1. Describe the ACTUAL SCENE you want to see (person doing X, object in Y setting)
+2. Include specific details: "child eating ice cream cone at beach" NOT "happiness"
+3. Use concrete nouns and actions: "doctor examining patient with stethoscope" NOT "healthcare"
+4. When brands/products mentioned, include them: "Tesla Model 3 charging station"
+5. Think: "What would I actually photograph?" - must be a real, tangible scene
+6. 3-6 words per query describing the visual scene
+
+EXCELLENT EXAMPLES:
+- "SpaceX Falcon 9 rocket launching" (specific rocket, specific action)
+- "Amazon warehouse robot moving packages" (specific company, specific scene)
+- "iPhone 15 screen close-up on table" (specific product, specific setting)
+- "barista pouring latte art coffee" (specific person, specific action)
+- "programmer typing code on laptop" (specific person, specific action)
+- "wind turbines on green hillside" (specific objects, specific setting)
+
+BAD EXAMPLES (too abstract - never use these):
+- "innovation", "success", "growth", "strategy", "teamwork"
+- "digital transformation", "customer experience", "market expansion"
+- "synergy", "excellence", "professional development"
 
 Return ONLY a JSON array:
-["query 1", "query 2", "query 3", "query 4"]"""
+["specific scene 1", "specific scene 2", "specific scene 3", "specific scene 4"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(

@@ -547,11 +547,12 @@ class SimpleDeckComposer(IDeckComposer):
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
                             # CRITICAL: Check if fun topic with boring fonts!
+                            # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                            import re
                             title_lower = deck_outline.title.lower()
-                            is_fun_topic = any(kw in title_lower for kw in [
-                            'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
-                            'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
-                        ])
+                            fun_kws = ['pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro',
+                                       'game', 'nintendo', 'kids', 'children', 'party', 'cartoon']
+                            is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_kws)
                         
                         current_hero = outline_theme.get('typography', {}).get('hero_title', {}).get('family', '')
                         current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
@@ -639,11 +640,12 @@ class SimpleDeckComposer(IDeckComposer):
                 if existing_theme_data:
                     # CRITICAL: Check if this is a fun topic that needs playful fonts
                     # If so, SKIP cached theme and regenerate!
+                    # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                    import re
                     title_lower = deck_outline.title.lower()
-                    is_fun_topic = any(kw in title_lower for kw in [
-                        'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
-                        'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation'
-                    ])
+                    fun_kws = ['pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
+                               'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation']
+                    is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_kws)
 
                     current_hero = existing_theme_data.get('typography', {}).get('hero_title', {}).get('family', 'unknown')
                     current_body = existing_theme_data.get('typography', {}).get('body_text', {}).get('family', 'unknown')
@@ -761,17 +763,18 @@ class SimpleDeckComposer(IDeckComposer):
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
                             # CRITICAL: Check if fun topic with boring fonts!
+                            # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                            import re
                             title_lower = deck_outline.title.lower()
-                            is_fun_topic = any(kw in title_lower for kw in [
-                                'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro', 
-                                'game', 'nintendo', 'kids', 'children', 'party', 'cartoon'
-                            ])
-                            
+                            fun_kws = ['pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro',
+                                       'game', 'nintendo', 'kids', 'children', 'party', 'cartoon']
+                            is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_kws)
+
                             current_hero = outline_theme.get('typography', {}).get('hero_title', {}).get('family', '')
                             current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
                             boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
                             has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
-                            
+
                             if is_fun_topic and has_boring_fonts:
                                 logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
                                 logger.debug(f"  Title: '{deck_outline.title}'")
@@ -799,14 +802,17 @@ class SimpleDeckComposer(IDeckComposer):
                     if existing_theme_data:
                         # CRITICAL: Check if this is a fun topic that needs playful fonts
                         # If so, SKIP cached theme and regenerate!
+                        # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                        import re
                         title_lower = deck_outline.title.lower()
-                        is_fun_topic = any(kw in title_lower for kw in [
+                        fun_kws = [
                             'pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'video game',
                             'arcade', 'retro', 'game', 'nintendo', 'sega', 'playstation',
                             'zelda', 'sonic', 'fortnite', 'minecraft', 'roblox', 'lego',
                             'disney', 'marvel', 'dc', 'superhero', 'batman', 'spiderman',
                             'anime', 'manga', 'cartoon', 'movie', 'film', 'show', 'tv'
-                        ])
+                        ]
+                        is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_kws)
                         
                         current_hero = existing_theme_data.get('typography', {}).get('hero_title', {}).get('family', 'unknown')
                         current_body = existing_theme_data.get('typography', {}).get('body_text', {}).get('family', 'unknown')
@@ -894,19 +900,43 @@ class SimpleDeckComposer(IDeckComposer):
                         # Access brand data from stylePreferences (ColorConfigItem structure)
                         brand_colors = []
                         brand_fonts = None
+                        body_font = None
                         logo_url = None
                         vibe_context = None
-                    
+
                         # Get vibe context
                         vibe_context = getattr(style_prefs, 'vibeContext', None)
                         logger.info(f"[DECK COMPOSER] DEBUG: vibe_context: {vibe_context}")
-                    
-                        # Get font from stylePreferences
-                        brand_fonts = getattr(style_prefs, 'font', None)
-                        logger.info(f"[DECK COMPOSER] DEBUG: brand_fonts from stylePrefs: {brand_fonts}")
 
-                        # Get logo from stylePreferences
-                        logo_url = getattr(style_prefs, 'logoUrl', None)
+                        # CRITICAL: Check for pre-generated deck_theme from frontend (ConversationalOnboarding)
+                        # This contains the theme already generated during onboarding!
+                        deck_theme = getattr(style_prefs, 'deck_theme', None)
+                        if deck_theme and isinstance(deck_theme, dict):
+                            logger.info(f"[DECK COMPOSER] ✅ Found pre-generated deck_theme from frontend!")
+                            # Extract fonts from deck_theme.typography
+                            typography = deck_theme.get('typography', {})
+                            if typography:
+                                brand_fonts = typography.get('hero_title', {}).get('family')
+                                body_font = typography.get('body_text', {}).get('family')
+                                logger.info(f"[DECK COMPOSER] ✅ Extracted fonts from deck_theme - hero: {brand_fonts}, body: {body_font}")
+                            # Extract colors from deck_theme.color_palette
+                            color_palette = deck_theme.get('color_palette', {})
+                            if color_palette:
+                                logger.info(f"[DECK COMPOSER] ✅ Extracted color_palette from deck_theme: {list(color_palette.keys())}")
+                            # Extract logo from deck_theme
+                            logo_url = deck_theme.get('logo', {}).get('url') if isinstance(deck_theme.get('logo'), dict) else None
+
+                        # Fallback to direct font/bodyFont if no deck_theme
+                        if not brand_fonts:
+                            brand_fonts = getattr(style_prefs, 'font', None)
+                        if not body_font:
+                            body_font = getattr(style_prefs, 'bodyFont', None)
+                        logger.info(f"[DECK COMPOSER] DEBUG: brand_fonts from stylePrefs: {brand_fonts}")
+                        logger.info(f"[DECK COMPOSER] DEBUG: body_font from stylePrefs: {body_font}")
+
+                        # Get logo from stylePreferences (fallback)
+                        if not logo_url:
+                            logo_url = getattr(style_prefs, 'logoUrl', None)
                         logger.info(f"[DECK COMPOSER] DEBUG: logo_url from stylePrefs: {logo_url[:100] if logo_url else None}...")
 
                         # If no font/logo in stylePreferences, try to get from brand database
@@ -957,9 +987,51 @@ class SimpleDeckComposer(IDeckComposer):
                             if background and background.upper() == '#FFFFFF' and len(brand_colors) > 0:
                                 brand_colors.append(background)  # Include white as part of brand palette - THE FIX!
                             
-                    logger.info(f"[DECK COMPOSER] DEBUG: Extracted brand data - colors: {brand_colors}, fonts: {brand_fonts}, logo: {logo_url[:60] if logo_url else None}...")
-                
-                    if brand_colors:
+                    logger.info(f"[DECK COMPOSER] DEBUG: Extracted brand data - colors: {brand_colors}, fonts: {brand_fonts}, body: {body_font}, logo: {logo_url[:60] if logo_url else None}...")
+
+                    # CRITICAL: If we have deck_theme from frontend (ConversationalOnboarding), use it directly!
+                    # This includes the theme already generated during onboarding - no need to regenerate
+                    if deck_theme and isinstance(deck_theme, dict):
+                        logger.info(f"[DECK COMPOSER] ✅ USING PRE-GENERATED deck_theme FROM FRONTEND - SKIPPING REGENERATION!")
+                        color_palette = deck_theme.get('color_palette', {})
+
+                        # Extract colors from pre-generated theme
+                        final_brand_colors = color_palette.get('colors', [])
+                        if not final_brand_colors:
+                            # Build colors from individual palette fields
+                            bg = color_palette.get('primary_background', '#FFFFFF')
+                            text = color_palette.get('primary_text', '#1A1A1A')
+                            a1 = color_palette.get('accent_1', '#FF4301')
+                            a2 = color_palette.get('accent_2', '#3B82F6')
+                            final_brand_colors = [a1, a2, bg, text]
+
+                        theme_dict = {
+                            "theme_name": deck_theme.get('theme_name', 'Onboarding Theme'),
+                            "color_palette": {
+                                "primary_background": color_palette.get('primary_background', '#FFFFFF'),
+                                "primary_text": color_palette.get('primary_text', '#1A1A1A'),
+                                "accent_1": color_palette.get('accent_1', final_brand_colors[0] if final_brand_colors else '#FF4301'),
+                                "accent_2": color_palette.get('accent_2', final_brand_colors[1] if len(final_brand_colors) > 1 else '#3B82F6'),
+                                "colors": final_brand_colors,
+                            },
+                            "typography": {
+                                "hero_title": {"family": brand_fonts or 'Montserrat'},
+                                "body_text": {"family": body_font or 'Roboto'}
+                            },
+                            "brandInfo": {"logoUrl": logo_url} if logo_url else {},
+                            "visual_style": deck_theme.get('visual_style', {})
+                        }
+
+                        theme = ThemeSpec.from_dict(theme_dict)
+                        palette = {
+                            "colors": final_brand_colors,
+                            "fonts": [brand_fonts, body_font] if brand_fonts else [],
+                            "logo_url": logo_url
+                        }
+
+                        logger.info(f"[DECK COMPOSER] ✅ Theme from frontend: {theme.theme_name}, Fonts: {brand_fonts}/{body_font}")
+
+                    elif brand_colors:
                         logger.info(f"[DECK COMPOSER] ✅ CREATING THEME FROM BRAND DATA (preventing duplication)")
                         
                         # Enhance minimal brand colors if needed (< 4 colors)
@@ -987,23 +1059,26 @@ class SimpleDeckComposer(IDeckComposer):
                         
                         # Select appropriate fonts - override boring fonts for fun topics
                         hero_font = brand_fonts
-                        body_font = brand_fonts
+                        final_body_font = body_font or brand_fonts  # Use extracted body_font if available
                         
                         # Check if current font is boring (should be overridden for fun topics)
                         boring_fonts = ['inter', 'roboto', 'arial', 'helvetica', 'open sans', 'lato', 'source sans']
                         is_boring_font = not brand_fonts or (brand_fonts and brand_fonts.lower() in boring_fonts)
                         
                         # Check if this is a fun/playful topic
+                        # Use word boundary matching to avoid false positives like "fun" in "fundraising"
+                        import re
                         title_lower = (deck_outline.title or '').lower()
                         vibe_lower = (vibe_context or '').lower()
                         combined_context = f"{title_lower} {vibe_lower}"
-                        
-                        is_fun_topic = any(keyword in combined_context for keyword in [
+
+                        fun_keywords = [
                             'pikachu', 'pokemon', 'pokémon', 'game', 'games', 'gaming', 'kids', 'children',
                             'fun', 'play', 'cartoon', 'toy', 'party', 'birthday', 'arcade', 'retro',
                             'anime', 'manga', 'superhero', 'mario', 'zelda', 'minecraft', 'fortnite'
-                        ])
-                        
+                        ]
+                        is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', combined_context) for kw in fun_keywords)
+
                         if is_boring_font and is_fun_topic:
                             # CRITICAL: Override boring fonts with playful fonts for fun topics
                             import hashlib
@@ -1016,14 +1091,14 @@ class SimpleDeckComposer(IDeckComposer):
                                 ('Bangers', 'Rubik'),
                             ]
                             combo = playful_combos[seed_hash % len(playful_combos)]
-                            hero_font, body_font = combo
-                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic with boring font '{brand_fonts}' - overriding with playful fonts: {hero_font}/{body_font}")
+                            hero_font, final_body_font = combo
+                            logger.info(f"[DECK COMPOSER] 🎮 Fun topic with boring font '{brand_fonts}' - overriding with playful fonts: {hero_font}/{final_body_font}")
                         elif is_boring_font:
                             # Use professional fonts for business topics without fonts
                             hero_font = 'Montserrat'
-                            body_font = 'Roboto'
-                            logger.info(f"[DECK COMPOSER] 📊 Business topic - using professional fonts: {hero_font}/{body_font}")
-                        
+                            final_body_font = 'Roboto'
+                            logger.info(f"[DECK COMPOSER] 📊 Business topic - using professional fonts: {hero_font}/{final_body_font}")
+
                         # Create theme from brand data using EXACT format as working theme API
                         theme_dict = {
                             "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
@@ -1039,7 +1114,7 @@ class SimpleDeckComposer(IDeckComposer):
                             },
                             "typography": {
                                 "hero_title": {"family": hero_font},
-                                "body_text": {"family": body_font}
+                                "body_text": {"family": final_body_font}
                             },
                             "brandInfo": {
                                 "logoUrl": logo_url
@@ -1052,10 +1127,10 @@ class SimpleDeckComposer(IDeckComposer):
                         # Create palette matching working theme API format (use enhanced colors)
                         palette = {
                             "colors": final_brand_colors,  # Use enhanced colors
-                            "fonts": [brand_fonts] if brand_fonts else [],
+                            "fonts": [hero_font, final_body_font] if hero_font else [],
                             "logo_url": logo_url
                         }
-                        
+
                         logger.info(f"[DECK COMPOSER] ✅ Successfully reconstructed theme from stylePreferences!")
                         logger.info(f"[DECK COMPOSER] Theme: {theme.theme_name}")
                         logger.info(f"[DECK COMPOSER] Colors: {final_brand_colors}")
