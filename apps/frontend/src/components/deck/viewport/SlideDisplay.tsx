@@ -185,9 +185,20 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     // Initial measurement
     updateDimensions();
 
-    // Add resize listener
-    window.addEventListener('resize', updateDimensions);
-    return () => window.removeEventListener('resize', updateDimensions);
+    // Add resize listener with debounce for performance
+    let timeoutId: NodeJS.Timeout;
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateDimensions, 100);
+    };
+
+    window.addEventListener('resize', debouncedUpdate);
+    window.addEventListener('orientationchange', updateDimensions);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', debouncedUpdate);
+      window.removeEventListener('orientationchange', updateDimensions);
+    };
   }, []);
   
   // Handle background click (or empty space)
@@ -261,9 +272,35 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     }
   };
   
-  // Keep a stable width to prevent layout jumps; scale is handled by parent when entering edit mode
-  // Use consistent 950px width for all states to prevent sizing discrepancies
-  const slideWidth = 950;
+  // Calculate responsive slide width based on container dimensions
+  // This ensures slides scale appropriately on large screens (4K) and small screens (mobile)
+  const slideWidth = React.useMemo(() => {
+    // Use containerDimensions if available, otherwise use window dimensions
+    const containerWidth = containerDimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 950);
+    const containerHeight = containerDimensions.height || (typeof window !== 'undefined' ? window.innerHeight - 200 : 600);
+
+    // Calculate aspect ratio
+    const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
+
+    // Calculate maximum width that fits in the container (with padding)
+    const padding = 48; // 24px on each side
+    const availableWidth = containerWidth - padding;
+
+    // Calculate width constrained by height (maintain aspect ratio)
+    const heightConstrainedWidth = containerHeight * aspectRatio;
+
+    // Use the smaller of available width or height-constrained width
+    const optimalWidth = Math.min(availableWidth, heightConstrainedWidth);
+
+    // Clamp between min/max values
+    // Min: 600px for readability on small screens
+    // Max: 1400px for large screens (prevents slides from being too stretched)
+    const minWidth = 600;
+    const maxWidth = 1400;
+
+    return Math.max(minWidth, Math.min(maxWidth, optimalWidth, 950)); // Default to max 950 for backward compat
+  }, [containerDimensions.width, containerDimensions.height]);
+
   const slideHeight = slideWidth * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);
   
   // Early return if no slides

@@ -65,8 +65,23 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 }) => {
   const [selectedComponentId, setSelectedComponentId] = React.useState<string | null>(null);
   const [showWaitingGame, setShowWaitingGame] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Detect mobile view for responsive editor panel
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
+    };
+  }, []);
   
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -777,13 +792,14 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
             height: zoomLevel > 100 ? `${zoomLevel}%` : '100%',
           }}
         >
-          {/* Main content wrapper - shifts left and shrinks when editing */}
+          {/* Main content wrapper - shifts left and shrinks when editing (desktop only) */}
           <motion.div
             className="flex flex-col relative"
             initial={false}
             animate={{
-              scale: isEditing ? 0.92 : 1,
-              x: isEditing ? -140 : 0
+              scale: isEditing ? (isMobileView ? 0.85 : 0.92) : 1,
+              x: isEditing && !isMobileView ? -140 : 0, // Don't shift on mobile
+              y: isEditing && isMobileView ? -20 : 0    // Slight upward shift on mobile for bottom panel
             }}
             transition={{
               duration: 0.18,
@@ -892,27 +908,28 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       </div>
       
       {/* Editor panel - outside zoom and scroll containers */}
+      {/* On mobile: bottom sheet. On desktop: right sidebar */}
       <AnimatePresence>
             {isEditing && (
               <motion.div
-                className="fixed"
+                className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
                 style={{
-                  right: '0px',
-                  top: '0px',
                   zIndex: 50, // Higher z-index than slide
-                  width: '280px', 
-                  height: '74vh',
-                  maxHeight: '635px',
+                  width: isMobileView ? '100%' : '280px',
+                  height: isMobileView ? '50vh' : '74vh',
+                  maxHeight: isMobileView ? '50vh' : '635px',
                   display: 'flex',
                   flexDirection: 'column',
                   backgroundColor: 'var(--background)',
-                  borderLeft: '1px solid var(--border)',
-                  pointerEvents: 'auto' // Ensure clicks go through
+                  borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
+                  borderTop: isMobileView ? '1px solid var(--border)' : 'none',
+                  pointerEvents: 'auto', // Ensure clicks go through
+                  boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : 'none',
                 }}
                 data-tour="properties-panel"
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 50 }}
+                initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
+                exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
                 transition={{
                   duration: 0.27,
                   ease: "easeInOut"

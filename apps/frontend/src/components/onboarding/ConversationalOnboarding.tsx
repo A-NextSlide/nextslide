@@ -7,6 +7,7 @@ import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttac
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock } from '@/components/chat';
 import type { ThemeBlockData, OutlineBlockData, OutlineSlide, DropdownOutlineBlockData } from '@/components/chat';
+import { useOnboarding } from '@/context/OnboardingContext';
 import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
 import { ThemeEditorData, OutlinePreviewData, ThemeColorPalette } from '@/types/chatBlocks';
 import { useFontLoader } from '@/hooks/useFontLoading';
@@ -127,6 +128,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   onProcessingChange,
   initialUploadedFiles = []
 }) => {
+  // Onboarding context for tracking overage confirmation
+  const { shouldAskOverageConfirmation, markOverageConfirmed } = useOnboarding();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isAgentTyping, setIsAgentTyping] = useState(false);
@@ -1112,10 +1116,10 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full max-w-2xl mx-auto w-full">
+    <div className="flex flex-col h-full max-w-2xl mx-auto w-full px-4 sm:px-6 lg:px-0">
       {/* Header with back button */}
       {onCancel && (
-        <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="py-4 border-b border-zinc-200 dark:border-zinc-800">
           <Button
             variant="ghost"
             size="sm"
@@ -1442,7 +1446,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
             {/* Slide Mode Selection - 2 Options: NextGen vs Traditional */}
             {message.role === 'assistant' && message.showSlideModeSelection && (
               <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="grid grid-cols-2 gap-4 w-full max-w-[560px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full max-w-[560px]">
 
                   {/* NextGen - Interactive, Animated, Bold (Recommended) */}
                   <button
@@ -1458,7 +1462,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     </div>
 
                     {/* NextGen Preview - Futuristic, animated feel */}
-                    <div className="aspect-[16/10] bg-gradient-to-br from-[#0f0f23] via-[#1a1a3e] to-[#0d0d1f] p-4 relative overflow-hidden">
+                    <div className="aspect-[16/10] min-h-[180px] sm:min-h-0 bg-gradient-to-br from-[#0f0f23] via-[#1a1a3e] to-[#0d0d1f] p-4 relative overflow-hidden">
                       {/* Animated background elements */}
                       <div className="absolute inset-0 overflow-hidden">
                         {/* Glowing orbs */}
@@ -1522,7 +1526,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     className="group relative flex flex-col rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                   >
                     {/* Traditional Preview - Clean, professional PPT style */}
-                    <div className="aspect-[16/10] bg-gradient-to-br from-slate-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 p-4 relative overflow-hidden">
+                    <div className="aspect-[16/10] min-h-[180px] sm:min-h-0 bg-gradient-to-br from-slate-50 to-zinc-100 dark:from-zinc-800 dark:to-zinc-900 p-4 relative overflow-hidden">
                       {/* Subtle professional background */}
                       <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl" />
                       <div className="absolute bottom-0 left-0 w-20 h-20 bg-slate-400/5 rounded-full blur-xl" />
@@ -1904,6 +1908,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           slideCount={creditWarningData.slideCount}
           planName={creditWarningData.planName}
           mode={creditWarningData.mode}
+          overageAlreadyConfirmed={!shouldAskOverageConfirmation}
+          onOverageConfirmed={markOverageConfirmed}
           onProceed={() => {
             // User confirmed to proceed (either with overage or partial generation)
             if (creditWarningData.pendingSlideMode) {

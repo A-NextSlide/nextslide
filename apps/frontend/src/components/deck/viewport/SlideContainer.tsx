@@ -736,13 +736,14 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   // Determine if we're in a new deck state
 
   return (
-    <div className="relative flex flex-col items-center w-full" 
-         style={{ 
+    <div className="relative flex flex-col items-center w-full"
+         style={{
            margin: '0',
-           paddingBottom: '0', 
+           paddingBottom: '0',
            position: 'relative',
            transition: 'transform 0.3s ease-in-out',
-           maxWidth: '1200px', // Reduced from 1400px to prevent excessive width
+           // Responsive maxWidth: smaller on mobile, larger on big screens
+           maxWidth: 'min(95vw, 1600px)',
            width: '100%',
            marginLeft: 'auto',
            marginRight: 'auto',
@@ -805,11 +806,12 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       </AnimatePresence>
       
       {/* Slide display container */}
-      <div className="flex flex-col items-center w-full" style={{ 
-        transition: 'transform 0.3s ease-in-out', 
+      <div className="flex flex-col items-center w-full" style={{
+        transition: 'transform 0.3s ease-in-out',
         position: 'relative',
         width: '100%',
-        maxWidth: '1400px',
+        // Responsive maxWidth for different screen sizes
+        maxWidth: 'min(95vw, 1600px)',
         marginLeft: 'auto',
         marginRight: 'auto'
       }}>
