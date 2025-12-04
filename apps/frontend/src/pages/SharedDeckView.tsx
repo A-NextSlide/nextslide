@@ -406,9 +406,9 @@ const SharedDeckView: React.FC = () => {
     return undefined;
   };
 
-  // Function to render slides for presentation mode
-  // isThumbnail parameter allows for lighter rendering in thumbnail grid
-  const renderSlide = (slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
+  // Memoized renderSlide function to prevent re-creation on each render
+  // This is critical for mobile performance and preventing crashes
+  const renderSlide = React.useCallback((slide: SlideData, index: number, scale: number = 1, isThumbnail: boolean = false) => {
     const fallbackBackground = getSlideBackground(slide);
     const components = Array.isArray(slide.components) ? slide.components : [];
 
@@ -449,6 +449,8 @@ const SharedDeckView: React.FC = () => {
               height: `${DEFAULT_SLIDE_HEIGHT}px`,
               transform: `scale(${scale})`,
               transformOrigin: 'top left',
+              // Use will-change for better GPU compositing on mobile
+              willChange: 'transform',
               ...(fallbackBackground ? { background: fallbackBackground, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
             }}
           >
@@ -486,7 +488,7 @@ const SharedDeckView: React.FC = () => {
         </div>
       </SlideErrorBoundary>
     );
-  };
+  }, [canEdit]);
 
   if (isLoading) {
     return (
@@ -660,7 +662,15 @@ const SharedDeckView: React.FC = () => {
   // CRITICAL: EditorStateProvider and ActiveSlideProvider are at the top level
   // to prevent re-creation on each render which causes mobile crashes
   return (
-    <div className="w-screen overflow-hidden relative" style={{ height: '100dvh' }}>
+    <div
+      className="w-screen overflow-hidden relative touch-manipulation"
+      style={{
+        height: '100dvh',
+        // Prevent pull-to-refresh and overscroll on mobile
+        overscrollBehavior: 'none',
+        WebkitOverflowScrolling: 'touch',
+      }}
+    >
       {/* Presentation Mode */}
       <NavigationProvider
         initialSlideIndex={0}
@@ -685,7 +695,7 @@ const SharedDeckView: React.FC = () => {
               onClick={handleSwitchToEdit}
               size="sm"
               variant="secondary"
-              className="shadow-lg"
+              className="shadow-lg min-w-[44px] min-h-[44px] touch-manipulation"
             >
               <Edit size={14} className="mr-2" />
               Edit Deck

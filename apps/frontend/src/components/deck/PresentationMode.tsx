@@ -62,15 +62,53 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   const [slideScale, setSlideScale] = useState(0.8); // Start with a conservative scale
   const [isMobile, setIsMobile] = useState(false);
 
-  // Detect mobile device
+  // Detect mobile device - improved detection for tablets and touch devices
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768 || 'ontouchstart' in window);
+      if (typeof window === 'undefined') return;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isNarrow = width <= 1024; // Include tablets
+      const isLandscapeMobile = isTouch && height < 500; // Phone in landscape
+
+      setIsMobile(isTouch && (isNarrow || isLandscapeMobile));
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
+    };
   }, []);
+
+  // Safe orientation lock/unlock helpers that won't crash on unsupported devices
+  const safeOrientationLock = async (orientation: string) => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const screenApi = window.screen as any;
+      if (screenApi?.orientation && typeof screenApi.orientation.lock === 'function') {
+        await screenApi.orientation.lock(orientation);
+        return true;
+      }
+    } catch {
+      // Orientation lock not supported - expected on many devices
+    }
+    return false;
+  };
+
+  const safeOrientationUnlock = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const screenApi = window.screen as any;
+      if (screenApi?.orientation && typeof screenApi.orientation.unlock === 'function') {
+        screenApi.orientation.unlock();
+      }
+    } catch {
+      // Orientation unlock not supported - expected on many devices
+    }
+  };
 
   // Handle fullscreen/landscape toggle
   const toggleFullscreen = async () => {
@@ -85,12 +123,7 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           (document as any).webkitExitFullscreen();
         }
         // Unlock orientation
-        try {
-          const screen = window.screen as any;
-          if (screen.orientation?.unlock) {
-            screen.orientation.unlock();
-          }
-        } catch {}
+        safeOrientationUnlock();
       } else {
         // Enter fullscreen
         if (elem.requestFullscreen) {
@@ -99,22 +132,12 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
           (elem as any).webkitRequestFullscreen();
         }
         // Lock to landscape on mobile
-        try {
-          const screen = window.screen as any;
-          if (screen.orientation?.lock) {
-            await screen.orientation.lock('landscape');
-          }
-        } catch {}
+        await safeOrientationLock('landscape');
       }
     } catch (err) {
       // Fullscreen failed, try just landscape lock on mobile
       if (isMobile) {
-        try {
-          const screen = window.screen as any;
-          if (screen.orientation?.lock) {
-            await screen.orientation.lock('landscape');
-          }
-        } catch {}
+        await safeOrientationLock('landscape');
       }
     }
   };
@@ -158,21 +181,28 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
   // Calculate slide scale based on container size
   useEffect(() => {
     const calculateScale = () => {
-      if (!slideContainerRef.current || !isPresenting) return;
-      
+      if (!isPresenting) return;
+
       const container = slideContainerRef.current;
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      
-      // Skip if container has no dimensions yet
-      if (containerWidth === 0 || containerHeight === 0) return;
-      
-      // Calculate scale to fit the slide within the container
-      const scaleX = containerWidth / DEFAULT_SLIDE_WIDTH;
-      const scaleY = containerHeight / DEFAULT_SLIDE_HEIGHT;
-      const scale = Math.min(scaleX, scaleY);
-      
-      setSlideScale(scale);
+      if (!container) return;
+
+      // Use try-catch for extra safety during orientation changes
+      try {
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        // Skip if container has no dimensions yet
+        if (!containerWidth || !containerHeight || containerWidth === 0 || containerHeight === 0) return;
+
+        // Calculate scale to fit the slide within the container
+        const scaleX = containerWidth / DEFAULT_SLIDE_WIDTH;
+        const scaleY = containerHeight / DEFAULT_SLIDE_HEIGHT;
+        const scale = Math.min(scaleX, scaleY);
+
+        setSlideScale(scale);
+      } catch (error) {
+        console.warn('[PresentationMode] Scale calculation failed:', error);
+      }
     };
     
     // Use requestAnimationFrame to ensure DOM is ready
@@ -257,6 +287,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
     // Touch support for mobile
     const handleTouchStart = (e: TouchEvent) => {
+      // Guard against empty touches array
+      if (!e.touches || e.touches.length === 0) return;
+
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
 
@@ -268,6 +301,9 @@ const PresentationMode: React.FC<PresentationModeProps> = ({
 
     const handleTouchEnd = (e: TouchEvent) => {
       if (showThumbnails) return;
+
+      // Guard against empty touches array - prevents crash on certain gesture combinations
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
 
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;

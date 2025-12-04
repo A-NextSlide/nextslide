@@ -65,6 +65,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== MOBILE TOUCH OPTIMIZATION ===== */
+/* Prevent 300ms click delay on touch devices */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure minimum touch target size on mobile */
+@media (max-width: 768px) {
+  button:not(.no-min-touch),
+  a:not(.no-min-touch),
+  [role="button"]:not(.no-min-touch) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Prevent pull-to-refresh on presentation mode */
+.presentation-mode {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe area insets for notched phones */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Smooth orientation change transitions */
+@media screen and (orientation: portrait) {
+  .orientation-transition {
+    transition: width 0.3s, height 0.3s;
+  }
+}
+
+@media screen and (orientation: landscape) {
+  .orientation-transition {
+    transition: width 0.3s, height 0.3s;
+  }
+}
+
 /* Ensure dropdown menus appear above all other content */
 [data-radix-popper-content-wrapper] {
   z-index: 99999 !important;

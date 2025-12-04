@@ -48,6 +48,7 @@ const Landing: React.FC = () => {
 
   // Handle scroll events
   useEffect(() => {
+    // On mount - ensure scrolling works on landing page
     document.documentElement.style.position = '';
     document.documentElement.style.overflow = '';
     document.body.style.position = '';
@@ -58,10 +59,8 @@ const Landing: React.FC = () => {
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      document.documentElement.style.position = 'fixed';
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.overflow = 'hidden';
+      // DON'T set fixed positioning on cleanup - this breaks scrolling on other pages
+      // The app's shell manages its own scroll behavior
     };
   }, []);
 
@@ -298,19 +297,22 @@ const Landing: React.FC = () => {
             </Button>
           </div>
 
-          <button className="md:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+          <button
+            className="md:hidden p-2 min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+          >
             {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
 
         {isMenuOpen && (
-          <div className="md:hidden bg-[#FCFBF8] dark:bg-[#0a0a0a] border-b border-black/10 dark:border-white/10">
-            <div className="px-8 py-6 flex flex-col gap-4">
-              <a href="#showcase" onClick={() => setIsMenuOpen(false)}>Examples</a>
-              <a href="#compare" onClick={() => setIsMenuOpen(false)}>Compare</a>
-              <a href="#pricing" onClick={() => setIsMenuOpen(false)}>Pricing</a>
-              <Button variant="ghost" onClick={() => navigate('/login')}>Sign In</Button>
-              <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white" onClick={() => navigate('/signup')}>Get Started</Button>
+          <div className="md:hidden bg-[#FCFBF8] dark:bg-[#0a0a0a] border-b border-black/10 dark:border-white/10 max-h-[70vh] overflow-y-auto">
+            <div className="px-6 py-4 flex flex-col gap-3 safe-area-inset-bottom">
+              <a href="#showcase" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Examples</a>
+              <a href="#compare" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Compare</a>
+              <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Pricing</a>
+              <Button variant="ghost" onClick={() => navigate('/login')} className="justify-start min-h-[44px] touch-manipulation">Sign In</Button>
+              <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/signup')}>Get Started</Button>
             </div>
           </div>
         )}
@@ -339,13 +341,21 @@ const Landing: React.FC = () => {
               The only AI presentation tool with a full editor and custom components. Generate complete decks instantly, then customize everything.
             </p>
 
-            <div className="flex flex-wrap gap-4 justify-center mb-8">
-              <Button size="lg" onClick={() => navigate('/signup')} className="bg-[#FF4301] hover:bg-[#E63901] text-white px-10 py-6 text-base font-semibold">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-8 px-4 sm:px-0">
+              <Button
+                size="lg"
+                onClick={() => navigate('/signup')}
+                className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold w-full sm:w-auto min-h-[48px] touch-manipulation"
+              >
                 Create Full Deck Free
-                <ArrowRight className="ml-2 w-5 h-5" />
+                <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              <Button size="lg" variant="outline" className="px-10 py-6 text-base font-semibold border-2">
-                <Play className="mr-2 w-5 h-5" />
+              <Button
+                size="lg"
+                variant="outline"
+                className="px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold border-2 w-full sm:w-auto min-h-[48px] touch-manipulation"
+              >
+                <Play className="mr-2 w-4 h-4 sm:w-5 sm:h-5" />
                 Watch Demo
               </Button>
             </div>
