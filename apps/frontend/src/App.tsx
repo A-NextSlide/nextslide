@@ -532,22 +532,30 @@ function App() {
 
   // Clear stale deck IDs from session storage on app load
   useEffect(() => {
-    // Clear any stale deck IDs that might cause loading errors
-    const staleDeckId = sessionStorage.getItem('lastEditedDeckId');
-    if (staleDeckId) {
-      // Check if it's been more than 24 hours since last edit
-      const lastEditTimestamp = sessionStorage.getItem('lastEditedDeckTimestamp');
-      if (lastEditTimestamp) {
-        const timeSinceEdit = Date.now() - new Date(lastEditTimestamp).getTime();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        if (timeSinceEdit > twentyFourHours) {
-          console.log('Clearing stale deck ID from session storage:', staleDeckId);
-          sessionStorage.removeItem('lastEditedDeckId');
-          sessionStorage.removeItem('lastEditedDeckTimestamp');
-          sessionStorage.removeItem('pendingDeckId');
-          sessionStorage.removeItem('pendingDeckUrl');
+    try {
+      // Check if sessionStorage is available (may not be in private browsing)
+      if (typeof sessionStorage === 'undefined') return;
+
+      // Clear any stale deck IDs that might cause loading errors
+      const staleDeckId = sessionStorage.getItem('lastEditedDeckId');
+      if (staleDeckId) {
+        // Check if it's been more than 24 hours since last edit
+        const lastEditTimestamp = sessionStorage.getItem('lastEditedDeckTimestamp');
+        if (lastEditTimestamp) {
+          const timeSinceEdit = Date.now() - new Date(lastEditTimestamp).getTime();
+          const twentyFourHours = 24 * 60 * 60 * 1000;
+          if (timeSinceEdit > twentyFourHours) {
+            console.log('Clearing stale deck ID from session storage:', staleDeckId);
+            sessionStorage.removeItem('lastEditedDeckId');
+            sessionStorage.removeItem('lastEditedDeckTimestamp');
+            sessionStorage.removeItem('pendingDeckId');
+            sessionStorage.removeItem('pendingDeckUrl');
+          }
         }
       }
+    } catch (e) {
+      // sessionStorage not available (private browsing on some mobile browsers)
+      console.warn('[App] sessionStorage not accessible:', e);
     }
   }, []);
 

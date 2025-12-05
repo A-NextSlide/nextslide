@@ -15,15 +15,27 @@ class AuthService {
    */
   getAuthToken(): string | null {
     try {
+      // Check if localStorage is available (may not be in private browsing or some WebViews)
+      if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+        return null;
+      }
+
       // Get the session directly from Supabase's storage
       // Supabase stores the session with a project-specific key
-      const keys = Object.keys(localStorage);
-      
+      let keys: string[];
+      try {
+        keys = Object.keys(localStorage);
+      } catch (e) {
+        // localStorage access denied (private browsing on some mobile browsers)
+        console.warn('[AuthService] localStorage not accessible:', e);
+        return null;
+      }
+
       // Find the Supabase auth token key
-      const authKey = keys.find(key => 
+      const authKey = keys.find(key =>
         key.startsWith('sb-') && key.endsWith('-auth-token')
       );
-      
+
       if (authKey) {
         const sessionData = localStorage.getItem(authKey);
         if (sessionData) {
@@ -37,7 +49,7 @@ class AuthService {
           }
         }
       }
-      
+
       return null;
     } catch (e) {
       console.error('[AuthService] Failed to get auth token:', e);
@@ -128,11 +140,18 @@ class AuthService {
    * Don't call this on temporary errors or token refresh failures
    */
   clearAllAuthData(): void {
-    // Only clear legacy custom localStorage items if they exist
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('nextslide_user');
-    
+    try {
+      // Check if localStorage is available before accessing
+      if (typeof localStorage === 'undefined') return;
+
+      // Only clear legacy custom localStorage items if they exist
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('nextslide_user');
+    } catch (e) {
+      console.warn('[AuthService] Failed to clear auth data from localStorage:', e);
+    }
+
     // Important: We don't clear Supabase's session data here
     // Supabase manages its own session persistence
     // Only supabase.auth.signOut() should clear the Supabase session
@@ -155,11 +174,14 @@ class AuthService {
     }
 
     try {
-      // Remove Supabase session/persist keys for current project
-      const keys = Object.keys(localStorage);
-      for (const key of keys) {
-        if (key.startsWith('sb-') && (key.endsWith('-auth-token') || key.endsWith('-persist'))) {
-          try { localStorage.removeItem(key); } catch {}
+      // Check if localStorage is available before accessing
+      if (typeof localStorage !== 'undefined') {
+        // Remove Supabase session/persist keys for current project
+        const keys = Object.keys(localStorage);
+        for (const key of keys) {
+          if (key.startsWith('sb-') && (key.endsWith('-auth-token') || key.endsWith('-persist'))) {
+            try { localStorage.removeItem(key); } catch {}
+          }
         }
       }
     } catch (e) {
@@ -173,17 +195,22 @@ class AuthService {
 
     // Force navigation to login to obtain a clean session
     try {
-      window.location.href = redirectTo;
+      if (typeof window !== 'undefined') {
+        window.location.href = redirectTo;
+      }
     } catch {}
   }
 
   /**
-   * Get user's onboarding state (welcome shown, presentation count)
+   * Get user's onboarding state (all flags)
    */
   async getOnboardingState(): Promise<{
     welcome_shown: boolean;
     presentations_created: number;
     show_ai_hints: boolean;
+    tutorial_completed: boolean;
+    overage_confirmed: boolean;
+    feature_hints_dismissed: string[];
   } | null> {
     try {
       const token = await this.getAuthTokenAsync();
@@ -228,6 +255,56 @@ class AuthService {
       return response.ok;
     } catch (error) {
       console.error('[AuthService] Error marking welcome shown:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark an onboarding flag as completed
+   * @param flag One of: welcome_shown, tutorial_completed, overage_confirmed
+   */
+  async markOnboardingFlag(flag: 'welcome_shown' | 'tutorial_completed' | 'overage_confirmed'): Promise<boolean> {
+    try {
+      const token = await this.getAuthTokenAsync();
+      if (!token) return false;
+
+      const response = await fetch(this.getAuthUrl('/auth/user/mark-onboarding-flag'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ flag }),
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error(`[AuthService] Error marking ${flag}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Dismiss a feature hint so it won't be shown again
+   * @param hintId The ID of the feature hint to dismiss
+   */
+  async dismissFeatureHint(hintId: string): Promise<boolean> {
+    try {
+      const token = await this.getAuthTokenAsync();
+      if (!token) return false;
+
+      const response = await fetch(this.getAuthUrl('/auth/user/dismiss-feature-hint'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ hint_id: hintId }),
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error('[AuthService] Error dismissing feature hint:', error);
       return false;
     }
   }

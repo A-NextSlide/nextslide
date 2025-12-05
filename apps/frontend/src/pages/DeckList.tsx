@@ -63,7 +63,7 @@ import ConversationalOnboarding from '@/components/onboarding/ConversationalOnbo
 import ParticleAnimation from '@/components/visuals/ParticleAnimation';
 import { ArrowRight } from 'lucide-react';
 import { CreditWarningDialog } from '@/components/billing/CreditWarningDialog';
-import WelcomeModal from '@/components/common/WelcomeModal';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 // Rotating words animation for hero heading - vertical slot machine style
 const WORDS = ['PROPOSALS', 'STRATEGIES', 'REPORTS', 'DOCS', 'NOTES', 'IDEAS'];
@@ -623,7 +623,16 @@ const DeckList: React.FC = () => {
     const checkPendingOutline = async () => {
       if (!isAuthenticated) return;
 
-      const savedOutline = localStorage.getItem('nextslide_pending_outline');
+      // Check if localStorage is available (may not be in private browsing)
+      if (typeof localStorage === 'undefined') return;
+
+      let savedOutline: string | null = null;
+      try {
+        savedOutline = localStorage.getItem('nextslide_pending_outline');
+      } catch (e) {
+        console.warn('[DeckList] localStorage not accessible:', e);
+        return;
+      }
       if (!savedOutline) return;
 
       try {
@@ -634,7 +643,7 @@ const DeckList: React.FC = () => {
         const hoursSinceSave = (Date.now() - savedAt.getTime()) / (1000 * 60 * 60);
         if (hoursSinceSave > 24) {
           console.log('[DeckList] Pending outline is too old, removing');
-          localStorage.removeItem('nextslide_pending_outline');
+          try { localStorage.removeItem('nextslide_pending_outline'); } catch {}
           return;
         }
 
@@ -682,7 +691,7 @@ const DeckList: React.FC = () => {
         }
       } catch (error) {
         console.error('[DeckList] Failed to parse pending outline:', error);
-        localStorage.removeItem('nextslide_pending_outline');
+        try { localStorage.removeItem('nextslide_pending_outline'); } catch {}
       }
     };
 
@@ -709,47 +718,12 @@ const DeckList: React.FC = () => {
     slideCount: number;
   }>({ remaining: 0, required: 0, slideCount: 0 });
 
-  // Welcome modal and AI hints state
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [showAiHints, setShowAiHints] = useState(false);
-  const [userName, setUserName] = useState<string | undefined>();
-
-  // Check user onboarding state on mount
-  useEffect(() => {
-    const checkOnboardingState = async () => {
-      if (!isAuthenticated) return;
-
-      try {
-        // Get user name from Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
-        const userEmail = session?.user?.email;
-        const userMetadata = session?.user?.user_metadata;
-        const displayName = userMetadata?.full_name || userMetadata?.name || userEmail?.split('@')[0];
-        setUserName(displayName);
-
-        // Check onboarding state from backend
-        const onboardingState = await authService.getOnboardingState();
-        if (onboardingState) {
-          // Show welcome modal if not shown before
-          if (!onboardingState.welcome_shown) {
-            setShowWelcomeModal(true);
-          }
-          // Show AI hints for first 2 presentations
-          setShowAiHints(onboardingState.show_ai_hints);
-        }
-      } catch (error) {
-        console.error('[DeckList] Error checking onboarding state:', error);
-      }
-    };
-
-    checkOnboardingState();
-  }, [isAuthenticated]);
-
-  // Handle welcome modal close
-  const handleWelcomeClose = async () => {
-    setShowWelcomeModal(false);
-    await authService.markWelcomeShown();
-  };
+  // Onboarding state from context
+  const {
+    shouldShowAiHints,
+    shouldAskOverageConfirmation,
+    markOverageConfirmed,
+  } = useOnboarding();
 
   const [heroInput, setHeroInput] = useState('');
   const [isUserTyping, setIsUserTyping] = useState(false);
@@ -1045,6 +1019,11 @@ const DeckList: React.FC = () => {
           vibeContext: vibeContext,
           slideMode: data.slideMode || 'interactive',
           referenceImages: data.slideScreenshots,
+          // CRITICAL: Include colors, fonts, and logo so backend can use them
+          colors: parsedStylePrefs?.colors,
+          font: parsedStylePrefs?.font,
+          bodyFont: parsedStylePrefs?.bodyFont,
+          logoUrl: parsedStylePrefs?.logoUrl,
         },
         slides: outlineSlides,
         // CRITICAL: Embed theme in notes so backend finds it and uses it directly
@@ -1057,6 +1036,31 @@ const DeckList: React.FC = () => {
       // Store theme from parsed style prefs in store as well
       if (themePayload) {
         themeStore.setOutlineDeckTheme?.(newOutlineId, themePayload);
+
+        // CRITICAL: Also set workspace theme so ThemePanel shows correct colors
+        // This ensures the theme tab matches what was set in conversational onboarding
+        const workspaceTheme = {
+          name: 'Custom Theme',
+          page: { backgroundColor: parsedStylePrefs?.colors?.background || '#FFFFFF' },
+          typography: {
+            paragraph: {
+              fontFamily: parsedStylePrefs?.bodyFont || 'Inter',
+              color: parsedStylePrefs?.colors?.text || '#1A1A1A',
+              fontSize: 16,
+              fontWeight: 400,
+            },
+            heading: {
+              fontFamily: parsedStylePrefs?.font || 'Inter',
+              color: parsedStylePrefs?.colors?.text || '#1A1A1A',
+              fontWeight: 700,
+            }
+          },
+          accent1: parsedStylePrefs?.colors?.accent1 || '#FF4301',
+          accent2: parsedStylePrefs?.colors?.accent2 || '#3B82F6',
+        };
+        const themeId = themeStore.addCustomTheme(workspaceTheme as any);
+        themeStore.setWorkspaceTheme(themeId);
+        console.log('[DeckList] 🎨 Synced workspace theme from onboarding:', { themeId, workspaceTheme });
       }
 
       // DON'T set currentOutline - it would trigger the outline view to show!
@@ -1072,9 +1076,17 @@ const DeckList: React.FC = () => {
           slideMode: data.slideMode || 'interactive',
           referenceImages: data.slideScreenshots,
           deck_theme: themePayload || undefined,
+          // CRITICAL: Include colors, fonts, and logo from parsed style prefs
+          colors: parsedStylePrefs?.colors,
+          font: parsedStylePrefs?.font,
+          bodyFont: parsedStylePrefs?.bodyFont,
+          logoUrl: parsedStylePrefs?.logoUrl,
         };
 
         console.log('[DeckList] 🚀 Starting generation with outline:', newOutline.title);
+        console.log('[DeckList] 🎨 genStylePrefs colors:', genStylePrefs.colors);
+        console.log('[DeckList] 🎨 genStylePrefs fonts:', genStylePrefs.font, genStylePrefs.bodyFont);
+        console.log('[DeckList] 🎨 genStylePrefs logoUrl:', genStylePrefs.logoUrl);
 
         const result = await coordinator.generateFromOutline(
           newOutline,
@@ -1314,11 +1326,13 @@ const DeckList: React.FC = () => {
 
   // Clear outline state when component mounts or when navigating back
   useEffect(() => {
-    // Enable scrolling on this page
-    document.documentElement.style.position = '';
-    document.documentElement.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.overflow = '';
+    // Enable scrolling on this page (check document exists for SSR/mobile safety)
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.position = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.overflow = '';
+    }
 
     // Clear any persisted outline state when navigating back to deck list
     resetOutline(); // Use the reset function to ensure clean state
@@ -1327,16 +1341,21 @@ const DeckList: React.FC = () => {
     setIsOutlineProcessing(false);
 
     // Only reset deck store if we're coming back from an editor
-    const lastEditedDeckId = sessionStorage.getItem('lastEditedDeckId');
-    if (lastEditedDeckId) {
-
-      const deckStoreState = useDeckStore.getState();
-      if (deckStoreState.resetStore) {
-        deckStoreState.resetStore();
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        const lastEditedDeckId = sessionStorage.getItem('lastEditedDeckId');
+        if (lastEditedDeckId) {
+          const deckStoreState = useDeckStore.getState();
+          if (deckStoreState.resetStore) {
+            deckStoreState.resetStore();
+          }
+          // Clear the session storage to prevent repeated resets
+          sessionStorage.removeItem('lastEditedDeckId');
+          sessionStorage.removeItem('lastGeneratedDeckId');
+        }
       }
-      // Clear the session storage to prevent repeated resets
-      sessionStorage.removeItem('lastEditedDeckId');
-      sessionStorage.removeItem('lastGeneratedDeckId');
+    } catch (e) {
+      console.warn('[DeckList] sessionStorage not accessible:', e);
     }
 
     return () => {
@@ -1344,10 +1363,12 @@ const DeckList: React.FC = () => {
       // The abort should only happen on explicit error or user cancellation
 
       // Reset to fixed positioning when leaving the page (for editor)
-      document.documentElement.style.position = 'fixed';
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.overflow = 'hidden';
+      if (typeof document !== 'undefined') {
+        document.documentElement.style.position = 'fixed';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.position = 'fixed';
+        document.body.style.overflow = 'hidden';
+      }
     };
   }, []); // Empty dependency array - only run on mount
 
@@ -2704,13 +2725,8 @@ const DeckList: React.FC = () => {
                       requiredCredits={creditWarningData.required}
                       slideCount={creditWarningData.slideCount}
                       planName="free"
-                    />
-
-                    {/* Welcome Modal - shows once on first login */}
-                    <WelcomeModal
-                      isOpen={showWelcomeModal}
-                      onClose={handleWelcomeClose}
-                      userName={userName}
+                      overageAlreadyConfirmed={!shouldAskOverageConfirmation}
+                      onOverageConfirmed={markOverageConfirmed}
                     />
 
                     <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>

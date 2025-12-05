@@ -89,7 +89,12 @@ interface Transaction {
 
 class BillingApi {
   private getHeaders(): Record<string, string> {
-    const token = authService.getAuthToken();
+    let token: string | null = null;
+    try {
+      token = authService.getAuthToken();
+    } catch (e) {
+      console.warn('[BillingApi] Failed to get auth token:', e);
+    }
     return {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
