@@ -4,6 +4,17 @@ import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Lock, AlertCircle, Edit } from 'lucide-react';
+
+// Global error logging for debugging mobile Safari crashes
+console.log('[SharedDeckView] Module loading...', { timestamp: new Date().toISOString() });
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    console.error('[SharedDeckView] Global error:', event.message, event.filename, event.lineno, event.colno, event.error);
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[SharedDeckView] Unhandled rejection:', event.reason);
+  });
+}
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,9 +72,31 @@ class SlideErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
 }
 
 const SharedDeckView: React.FC = () => {
+  console.log('[SharedDeckView] Component mounting...', { timestamp: new Date().toISOString() });
+
   const { shareCode } = useParams<{ shareCode: string }>();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+  console.log('[SharedDeckView] Share code:', shareCode);
+
+  // Debug: Log navigation
+  let navigate: ReturnType<typeof useNavigate>;
+  try {
+    navigate = useNavigate();
+    console.log('[SharedDeckView] useNavigate hook succeeded');
+  } catch (e) {
+    console.error('[SharedDeckView] useNavigate hook failed:', e);
+    throw e;
+  }
+
+  // Debug: Log toast
+  let toast: ReturnType<typeof useToast>['toast'];
+  try {
+    const toastResult = useToast();
+    toast = toastResult.toast;
+    console.log('[SharedDeckView] useToast hook succeeded');
+  } catch (e) {
+    console.error('[SharedDeckView] useToast hook failed:', e);
+    throw e;
+  }
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +114,20 @@ const SharedDeckView: React.FC = () => {
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
   const [deckName, setDeckName] = useState('');
 
-  const isPresenting = usePresentationStore(state => state.isPresenting);
-  const enterPresentation = usePresentationStore(state => state.enterPresentation);
-  const setPendingPresentation = useReturnBannerStore(state => state.setPendingPresentation);
+  // Debug: Log store access
+  console.log('[SharedDeckView] Accessing presentation store...');
+  let isPresenting: boolean;
+  let enterPresentation: () => void;
+  let setPendingPresentation: (code: string, name: string) => void;
+  try {
+    isPresenting = usePresentationStore(state => state.isPresenting);
+    enterPresentation = usePresentationStore(state => state.enterPresentation);
+    setPendingPresentation = useReturnBannerStore(state => state.setPendingPresentation);
+    console.log('[SharedDeckView] Store hooks succeeded', { isPresenting });
+  } catch (e) {
+    console.error('[SharedDeckView] Store hooks failed:', e);
+    throw e;
+  }
 
   // Track if we've loaded the deck (to distinguish exit from initial load)
   const hasLoadedDeck = useRef(false);
@@ -174,40 +218,55 @@ const SharedDeckView: React.FC = () => {
   }, [shareCode]);
 
   const checkEmailRequirement = async () => {
-    if (!shareCode) return;
+    console.log('[SharedDeckView] checkEmailRequirement called', { shareCode });
+    if (!shareCode) {
+      console.log('[SharedDeckView] No shareCode, returning');
+      return;
+    }
 
     setIsLoading(true);
+    console.log('[SharedDeckView] Calling shareService.checkEmailRequired...');
     try {
       const response = await shareService.checkEmailRequired(shareCode);
+      console.log('[SharedDeckView] checkEmailRequired response:', JSON.stringify(response));
       if (response.success && response.data) {
+        console.log('[SharedDeckView] Setting deck name:', response.data.deck_name);
         setDeckName(response.data.deck_name);
         if (response.data.require_email) {
+          console.log('[SharedDeckView] Email is required, checking sessionStorage...');
           // Check if we already have a viewer_id in session storage
           let storedViewerId: string | null = null;
           try {
             if (typeof sessionStorage !== 'undefined') {
               storedViewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+              console.log('[SharedDeckView] Retrieved viewerId from sessionStorage:', storedViewerId);
             }
           } catch (e) {
+            console.warn('[SharedDeckView] sessionStorage error:', e);
             // sessionStorage not available
           }
           if (storedViewerId) {
+            console.log('[SharedDeckView] Already registered, loading deck...');
             // Already registered, load the deck
             loadSharedDeck();
           } else {
+            console.log('[SharedDeckView] Need to collect email first');
             // Need to collect email first
             setRequiresEmail(true);
             setIsLoading(false);
           }
         } else {
+          console.log('[SharedDeckView] No email required, loading deck directly...');
           // No email required, load directly
           loadSharedDeck();
         }
       } else {
+        console.log('[SharedDeckView] checkEmailRequired failed or no data, falling back to loadSharedDeck');
         // Fall back to loading deck directly (old links without metadata)
         loadSharedDeck();
       }
     } catch (err) {
+      console.error('[SharedDeckView] checkEmailRequirement error:', err);
       // Fall back to loading deck directly
       loadSharedDeck();
     }
@@ -250,74 +309,119 @@ const SharedDeckView: React.FC = () => {
   };
 
   const loadSharedDeck = async (withPassword?: string) => {
-    if (!shareCode) return;
-    
+    console.log('[SharedDeckView] loadSharedDeck called', { shareCode, withPassword: !!withPassword });
+    if (!shareCode) {
+      console.log('[SharedDeckView] No shareCode in loadSharedDeck, returning');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
+      console.log('[SharedDeckView] Calling shareService.getPublicDeck...');
       // Try to load the deck using the share code
       let response = await shareService.getPublicDeck(shareCode);
-      
+      console.log('[SharedDeckView] getPublicDeck response success:', response.success, 'error:', response.error);
+
       // Fallback to mock service if backend fails
       if (!response.success && response.error?.includes('401')) {
         console.log('[SharedDeckView] Backend failed, using mock service');
         response = await mockShareService.getPublicDeck(shareCode);
+        console.log('[SharedDeckView] Mock service response:', response.success);
       }
-      
+
       if (response.success && response.data) {
+        console.log('[SharedDeckView] Response successful, extracting data...');
         const { deck: deckData, is_editable, share_info } = response.data;
-        
+        console.log('[SharedDeckView] Deck data extracted', {
+          deckId: deckData?.id,
+          slidesCount: deckData?.slides?.length,
+          is_editable,
+          share_type: share_info?.share_type
+        });
+
         // Check if the deck requires a password
         if (response.error === 'Password required') {
+          console.log('[SharedDeckView] Password required');
           setRequiresPassword(true);
           setIsLoading(false);
           return;
         }
-        
+
         // Store whether user can edit (in case they want to switch to edit mode)
+        console.log('[SharedDeckView] Setting canEdit:', is_editable);
         setCanEdit(is_editable);
 
         // Set the deck data locally
+        console.log('[SharedDeckView] Setting deck state...');
         setDeck(deckData);
 
         // Also load into the deckStore so navigation works (without saving to backend)
-        const { updateDeckData } = useDeckStore.getState();
-        updateDeckData(deckData, { skipBackend: true });
+        console.log('[SharedDeckView] Updating deckStore...');
+        try {
+          const { updateDeckData } = useDeckStore.getState();
+          updateDeckData(deckData, { skipBackend: true });
+          console.log('[SharedDeckView] deckStore updated successfully');
+        } catch (e) {
+          console.error('[SharedDeckView] deckStore update failed:', e);
+        }
 
         // Mark that we've loaded the deck (for exit detection)
         hasLoadedDeck.current = true;
+        console.log('[SharedDeckView] hasLoadedDeck set to true');
 
         // Start view tracking session
+        console.log('[SharedDeckView] Starting view tracking session...');
         let viewerId: string | null = null;
         try {
           if (typeof sessionStorage !== 'undefined') {
             viewerId = sessionStorage.getItem(`viewer_${shareCode}`);
           }
         } catch (e) {
+          console.warn('[SharedDeckView] sessionStorage error in loadSharedDeck:', e);
           // sessionStorage not available
         }
         const deviceType = /Mobile|Android|iPhone/i.test(navigator.userAgent)
           ? (/iPad|Tablet/i.test(navigator.userAgent) ? 'tablet' : 'mobile')
           : 'desktop';
+        console.log('[SharedDeckView] Device type:', deviceType);
 
-        shareService.startViewSession(shareCode, sessionIdRef.current, viewerId || undefined, deviceType);
+        try {
+          shareService.startViewSession(shareCode, sessionIdRef.current, viewerId || undefined, deviceType);
+          console.log('[SharedDeckView] View session started');
+        } catch (e) {
+          console.warn('[SharedDeckView] startViewSession failed:', e);
+        }
         viewStartTimeRef.current = Date.now();
         currentSlideStartRef.current = Date.now();
 
         // Enter presentation mode automatically
-        enterPresentation();
-        
+        console.log('[SharedDeckView] Calling enterPresentation...');
+        try {
+          enterPresentation();
+          console.log('[SharedDeckView] enterPresentation succeeded');
+        } catch (e) {
+          console.error('[SharedDeckView] enterPresentation failed:', e);
+        }
+
         // Track access
-        toast({
-          title: "Deck loaded",
-          description: share_info?.share_type === 'view' 
-            ? "You are viewing this deck in presentation mode" 
-            : "You can view and edit this deck",
-        });
+        console.log('[SharedDeckView] Showing toast...');
+        try {
+          toast({
+            title: "Deck loaded",
+            description: share_info?.share_type === 'view'
+              ? "You are viewing this deck in presentation mode"
+              : "You can view and edit this deck",
+          });
+          console.log('[SharedDeckView] Toast shown');
+        } catch (e) {
+          console.warn('[SharedDeckView] Toast failed:', e);
+        }
       } else {
+        console.log('[SharedDeckView] Response failed or no data', { error: response.error });
         setError(response.error || 'Failed to load shared deck');
-        
+
         // Handle specific error cases
         if (response.error?.includes('expired')) {
           setError('This share link has expired');
@@ -331,6 +435,7 @@ const SharedDeckView: React.FC = () => {
       console.error('[SharedDeckView] Error loading deck:', err);
       setError('Failed to load the shared deck. Please try again.');
     } finally {
+      console.log('[SharedDeckView] loadSharedDeck complete, setting isLoading=false');
       setIsLoading(false);
     }
   };
@@ -510,7 +615,18 @@ const SharedDeckView: React.FC = () => {
     );
   }, [canEdit]);
 
+  // Debug: Log render state
+  console.log('[SharedDeckView] Rendering...', {
+    isLoading,
+    error,
+    requiresEmail,
+    requiresPassword,
+    hasDeck: !!deck,
+    deckSlidesCount: deck?.slides?.length
+  });
+
   if (isLoading) {
+    console.log('[SharedDeckView] Rendering loading state');
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -523,6 +639,7 @@ const SharedDeckView: React.FC = () => {
 
   // Email gate UI
   if (requiresEmail) {
+    console.log('[SharedDeckView] Rendering email gate UI');
     return (
       <div className="flex items-center justify-center min-h-screen p-4 bg-gradient-to-b from-zinc-900 to-zinc-950">
         <div className="w-full max-w-sm">
@@ -599,6 +716,7 @@ const SharedDeckView: React.FC = () => {
   }
 
   if (requiresPassword) {
+    console.log('[SharedDeckView] Rendering password gate UI');
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
         <Card className="w-full max-w-md">
@@ -654,6 +772,7 @@ const SharedDeckView: React.FC = () => {
   }
 
   if (error) {
+    console.log('[SharedDeckView] Rendering error state:', error);
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
         <Card className="w-full max-w-md">
@@ -675,12 +794,20 @@ const SharedDeckView: React.FC = () => {
   }
 
   if (!deck) {
+    console.log('[SharedDeckView] No deck data, returning null');
     return null;
   }
 
   // Render the presentation view
   // CRITICAL: EditorStateProvider and ActiveSlideProvider are at the top level
   // to prevent re-creation on each render which causes mobile crashes
+  console.log('[SharedDeckView] Rendering presentation view', {
+    slidesCount: deck?.slides?.length,
+    filteredSlidesCount: deck?.slides?.filter((s: any) => s && s.id && !s.id.startsWith('placeholder-'))?.length,
+    currentSlideIndex,
+    canEdit,
+    isPresenting
+  });
   return (
     <div
       className="w-screen overflow-hidden relative touch-manipulation"
