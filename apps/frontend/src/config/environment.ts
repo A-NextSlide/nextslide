@@ -23,9 +23,9 @@ const isProduction = environment === 'production';
 
 // Get values from Vite's environment variables with intelligent defaults
 const API_BASE_URL = import.meta.env.VITE_API_URL || (
-  isDevelopment 
+  isDevelopment
     ? '/api' // Use proxy in development
-    : 'https://nextslide-backend.onrender.com/api' // Production default
+    : 'https://api.nextslide.ai/api' // Production default
 );
 
 const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || (
@@ -36,9 +36,9 @@ const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || (
 
 // Derive other URLs from base URL if not explicitly set
 const CHAT_URL = import.meta.env.VITE_CHAT_API_URL || `${API_BASE_URL}/chat`;
-// Agent backend: in dev use localhost; in prod default to nextslide-backend unless explicitly overridden
+// Agent backend: in dev use localhost; in prod default to api.nextslide.ai unless explicitly overridden
 const AGENT_BASE_URL = import.meta.env.VITE_AGENT_API_URL || (
-  isDevelopment ? 'http://localhost:9090' : 'https://nextslide-backend.onrender.com'
+  isDevelopment ? 'http://localhost:9090' : 'https://api.nextslide.ai'
 );
 
 // OpenAI configuration
