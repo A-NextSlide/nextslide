@@ -18,9 +18,17 @@ export const usePresentationStore = create<PresentationState>((set, get) => ({
   controlsTimeout: null,
 
   enterPresentation: () => {
-    // Enter fullscreen
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
+    // Enter fullscreen (with try-catch for mobile Safari compatibility)
+    try {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {
+          // Fullscreen not allowed - continue without it (expected on mobile Safari)
+        });
+      } else if ((document.documentElement as any).webkitRequestFullscreen) {
+        (document.documentElement as any).webkitRequestFullscreen();
+      }
+    } catch {
+      // Fullscreen not supported or blocked - continue presentation mode anyway
     }
     set({ isPresenting: true, showControls: true });
     
