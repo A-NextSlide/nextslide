@@ -106,7 +106,17 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch balance');
-    return response.json();
+    // Safe JSON parsing for Safari compatibility
+    const text = await response.text();
+    if (!text || !text.trim()) throw new Error('Empty response');
+    return JSON.parse(text);
+  }
+
+  // Helper for safe JSON parsing (Safari compatibility)
+  private async safeJsonParse<T>(response: Response): Promise<T> {
+    const text = await response.text();
+    if (!text || !text.trim()) throw new Error('Empty response');
+    return JSON.parse(text);
   }
 
   async getUsageStats(): Promise<UsageStats> {
@@ -114,7 +124,7 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch usage stats');
-    return response.json();
+    return this.safeJsonParse(response);
   }
 
   async getSubscription(): Promise<Subscription> {
@@ -122,7 +132,7 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch subscription');
-    return response.json();
+    return this.safeJsonParse(response);
   }
 
   async getPricingPlans(): Promise<PricingPlan[]> {
@@ -130,7 +140,7 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch pricing plans');
-    return response.json();
+    return this.safeJsonParse(response);
   }
 
   async checkCredits(action: string): Promise<CreditCheck> {
@@ -138,7 +148,7 @@ class BillingApi {
       headers: this.getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to check credits');
-    return response.json();
+    return this.safeJsonParse(response);
   }
 
   async getTransactions(limit = 50): Promise<Transaction[]> {
