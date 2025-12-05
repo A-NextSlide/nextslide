@@ -802,9 +802,23 @@ export const CustomComponentRenderer: React.FC<{
   useEffect(() => {
     if (!isThumbnail && currentSlideIndex !== lastSlideIndexRef.current) {
       clearState();
+      // Also clear selected element to prevent stale UI state causing crashes on mobile
+      setSelectedElement(null);
+      setShowAiChatBubble(false);
+      setShowImageToolbar(false);
       lastSlideIndexRef.current = currentSlideIndex;
     }
   }, [currentSlideIndex, isThumbnail, clearState]);
+
+  // Cleanup on unmount - prevents crashes on mobile when component unmounts during slide transitions
+  useEffect(() => {
+    return () => {
+      // Clear any UI state that might cause portal crashes
+      setSelectedElement(null);
+      setShowAiChatBubble(false);
+      setShowImageToolbar(false);
+    };
+  }, []);
 
   // Compile render function synchronously to prevent initial flash
   const { compiledRender, compilationError } = useMemo(() => {
@@ -2503,7 +2517,8 @@ export const CustomComponentRenderer: React.FC<{
         })()}
 
         {/* IMAGE ELEMENT TOOLBAR - rendered as portal when image is selected */}
-        {selectedElement && selectedElement.type === 'image' && createPortal(
+        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'image' && typeof document !== 'undefined' && document.body && createPortal(
           <AnimatePresence>
             <ImageElementToolbar
               element={selectedElement}
@@ -2515,10 +2530,14 @@ export const CustomComponentRenderer: React.FC<{
                 setSelectedElement(null);
                 setShowImageToolbar(false);
                 setCursorPosition(null);
-                iframeRef.current?.contentWindow?.postMessage({
-                  target: 'ns-custom-component-edit',
-                  type: 'deselect'
-                }, '*');
+                try {
+                  iframeRef.current?.contentWindow?.postMessage({
+                    target: 'ns-custom-component-edit',
+                    type: 'deselect'
+                  }, '*');
+                } catch (e) {
+                  // Ignore postMessage errors during unmount
+                }
               }}
             />
           </AnimatePresence>,
@@ -2526,7 +2545,8 @@ export const CustomComponentRenderer: React.FC<{
         )}
 
         {/* TEXT ELEMENT - Small floating AI button (doesn't block editing) */}
-        {selectedElement && selectedElement.type === 'text' && createPortal(
+        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'text' && typeof document !== 'undefined' && document.body && createPortal(
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -2538,7 +2558,7 @@ export const CustomComponentRenderer: React.FC<{
               // Position at top-right of component (iframe), not overlapping
               top: Math.max(60, (iframeRef.current?.getBoundingClientRect().top || 0) + 8),
               left: Math.min(
-                window.innerWidth - 100, // Don't go off right edge
+                typeof window !== 'undefined' ? window.innerWidth - 100 : 300, // Don't go off right edge
                 (iframeRef.current?.getBoundingClientRect().right || 0) + 8
               ),
               zIndex: 9999,
@@ -2579,10 +2599,14 @@ export const CustomComponentRenderer: React.FC<{
                 setSelectedElement(null);
                 setShowAiChatBubble(false);
                 setAiChatMessage('');
-                iframeRef.current?.contentWindow?.postMessage({
-                  target: 'ns-custom-component-edit',
-                  type: 'deselect'
-                }, '*');
+                try {
+                  iframeRef.current?.contentWindow?.postMessage({
+                    target: 'ns-custom-component-edit',
+                    type: 'deselect'
+                  }, '*');
+                } catch (err) {
+                  // Ignore postMessage errors during unmount
+                }
               }}
               onMouseDown={(e) => e.stopPropagation()}
               style={{
@@ -2716,7 +2740,8 @@ export const CustomComponentRenderer: React.FC<{
         )}
 
         {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
-        {selectedElement && selectedElement.type === 'container' && (() => {
+        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && (() => {
           // Position at top-right of the selected element, shift left if needed to stay in slide
           const panelWidth = 300;
           const panelHeight = 280;
@@ -2728,7 +2753,10 @@ export const CustomComponentRenderer: React.FC<{
           const elementTop = (iframeRect?.top || 0) + selectedElement.bounds.y;
 
           // Use iframe right edge as the boundary (not viewport) to avoid overlapping sidebar
-          const maxRight = iframeRect?.right || window.innerWidth;
+          // Safety check for window access
+          const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+          const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+          const maxRight = iframeRect?.right || windowWidth;
 
           // Position at top-right corner of element
           let panelLeft = elementRight + padding;
@@ -2746,7 +2774,7 @@ export const CustomComponentRenderer: React.FC<{
           }
 
           // Ensure top stays within viewport
-          panelTop = Math.max(padding, Math.min(panelTop, window.innerHeight - panelHeight - padding));
+          panelTop = Math.max(padding, Math.min(panelTop, windowHeight - panelHeight - padding));
 
           return createPortal(
           <AnimatePresence>
@@ -2782,10 +2810,14 @@ export const CustomComponentRenderer: React.FC<{
                     setSelectedElement(null);
                     setShowAiChatBubble(false);
                     setAiChatMessage('');
-                    iframeRef.current?.contentWindow?.postMessage({
-                      target: 'ns-custom-component-edit',
-                      type: 'deselect'
-                    }, '*');
+                    try {
+                      iframeRef.current?.contentWindow?.postMessage({
+                        target: 'ns-custom-component-edit',
+                        type: 'deselect'
+                      }, '*');
+                    } catch (err) {
+                      // Ignore postMessage errors during unmount
+                    }
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                   style={{
