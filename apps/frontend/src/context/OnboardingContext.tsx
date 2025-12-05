@@ -76,21 +76,27 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
     setLoading(true);
     try {
+      console.log('[OnboardingContext] Fetching onboarding state...');
       const onboardingState = await authService.getOnboardingState();
+      console.log('[OnboardingContext] Got state:', onboardingState);
       if (onboardingState) {
         setState({
-          welcome_shown: onboardingState.welcome_shown,
-          presentations_created: onboardingState.presentations_created,
-          show_ai_hints: onboardingState.show_ai_hints,
+          welcome_shown: onboardingState.welcome_shown ?? false,
+          presentations_created: onboardingState.presentations_created ?? 0,
+          show_ai_hints: onboardingState.show_ai_hints ?? true,
           tutorial_completed: onboardingState.tutorial_completed ?? false,
           overage_confirmed: onboardingState.overage_confirmed ?? false,
-          feature_hints_dismissed: onboardingState.feature_hints_dismissed ?? [],
+          feature_hints_dismissed: Array.isArray(onboardingState.feature_hints_dismissed)
+            ? onboardingState.feature_hints_dismissed
+            : [],
         });
       } else {
+        console.log('[OnboardingContext] No state returned, using defaults');
         setState(defaultState);
       }
     } catch (error) {
       console.error('[OnboardingContext] Error fetching onboarding state:', error);
+      // Always set default state on error to prevent crashes
       setState(defaultState);
     } finally {
       setLoading(false);
