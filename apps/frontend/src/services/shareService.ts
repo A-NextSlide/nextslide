@@ -100,6 +100,19 @@ class ShareService {
     };
   }
 
+  // Safe JSON parsing for Safari compatibility
+  // Safari throws SyntaxError on response.json() for empty/invalid responses
+  private async safeJsonParse<T>(response: Response): Promise<T | null> {
+    try {
+      const text = await response.text();
+      if (!text || !text.trim()) return null;
+      return JSON.parse(text);
+    } catch (e) {
+      console.warn('[ShareService] Failed to parse JSON response:', e);
+      return null;
+    }
+  }
+
   async createShareLink(deckUuid: string, request: CreateShareLinkRequest): Promise<ApiResponse<ShareLinkResponse>> {
     try {
       const url = `${API_ENDPOINTS.BASE_URL}/decks/${deckUuid}/share`;
@@ -304,8 +317,8 @@ class ShareService {
         })
       });
 
-      const data = await response.json();
-      return { success: data.success, data };
+      const data = await this.safeJsonParse<any>(response);
+      return { success: data?.success ?? false, data: data || undefined };
     } catch (error) {
       return { success: false, error: 'Network error' };
     }
@@ -382,12 +395,12 @@ class ShareService {
     try {
       const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}`);
 
-      const data = await response.json();
-      
-      if (!response.ok) {
+      const data = await this.safeJsonParse<any>(response);
+
+      if (!response.ok || !data) {
         return {
           success: false,
-          error: data.error || 'Failed to access shared deck'
+          error: data?.error || data?.detail || 'Failed to access shared deck'
         };
       }
 
@@ -440,12 +453,12 @@ class ShareService {
   async checkEmailRequired(shortCode: string): Promise<ApiResponse<{ require_email: boolean; share_type: string; deck_name: string }>> {
     try {
       const response = await fetch(`${API_ENDPOINTS.BASE_URL}/public/deck/${shortCode}/check-email-required`);
-      const data = await response.json();
+      const data = await this.safeJsonParse<any>(response);
 
-      if (!response.ok) {
+      if (!response.ok || !data) {
         return {
           success: false,
-          error: data.error || data.detail || 'Failed to check share link'
+          error: data?.error || data?.detail || 'Failed to check share link'
         };
       }
 
@@ -469,12 +482,12 @@ class ShareService {
         body: JSON.stringify({ email, name, company })
       });
 
-      const data = await response.json();
+      const data = await this.safeJsonParse<any>(response);
 
-      if (!response.ok) {
+      if (!response.ok || !data) {
         return {
           success: false,
-          error: data.error || data.detail || 'Failed to register'
+          error: data?.error || data?.detail || 'Failed to register'
         };
       }
 
