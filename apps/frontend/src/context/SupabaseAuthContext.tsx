@@ -79,15 +79,26 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
             },
           });
           if (response.ok) {
-            const raw = await response.json();
-            result = {
-              isAdmin: Boolean(
-                raw?.isAdmin === true ||
-                raw?.is_admin === true ||
-                (raw?.role && (raw.role === 'admin' || raw.role === 'super_admin' || raw.role === 'superadmin'))
-              ),
-              role: raw?.role || (raw?.isAdmin ? 'admin' : 'user')
-            };
+            // Safely parse JSON - Safari can throw SyntaxError on invalid responses
+            let raw: any = null;
+            try {
+              const text = await response.text();
+              if (text && text.trim()) {
+                raw = JSON.parse(text);
+              }
+            } catch (parseErr) {
+              console.warn('[Auth] Failed to parse admin check response:', parseErr);
+            }
+            if (raw) {
+              result = {
+                isAdmin: Boolean(
+                  raw?.isAdmin === true ||
+                  raw?.is_admin === true ||
+                  (raw?.role && (raw.role === 'admin' || raw.role === 'super_admin' || raw.role === 'superadmin'))
+                ),
+                role: raw?.role || (raw?.isAdmin ? 'admin' : 'user')
+              };
+            }
           } else {
             console.warn('[Auth] Direct admin check failed with status:', response.status);
           }
@@ -95,14 +106,10 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
           console.warn('[Auth] Direct admin check error:', directErr);
         }
 
-        // Fallback: use adminApi abstraction
+        // Fallback: use adminApi abstraction (skip on mobile to avoid double errors)
         if (!result) {
-          try {
-            const adminApi = await loadAdminApi();
-            result = await adminApi.checkAdminAccess();
-          } catch (libErr) {
-            console.warn('[Auth] adminApi check failed as fallback:', libErr);
-          }
+          // Default to non-admin - don't crash the app trying to check admin status
+          result = { isAdmin: false, role: 'user' };
         }
 
         console.log('[Auth] Admin check result:', result);
