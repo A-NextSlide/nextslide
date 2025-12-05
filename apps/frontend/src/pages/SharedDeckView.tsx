@@ -5,14 +5,45 @@ import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Lock, AlertCircle, Edit } from 'lucide-react';
 
+// Remote logging helper - sends logs to backend for mobile debugging
+const remoteLog = async (level: 'log' | 'error' | 'warn', message: string, data?: any) => {
+  const logEntry = {
+    level,
+    message,
+    data: data ? JSON.stringify(data) : undefined,
+    timestamp: new Date().toISOString(),
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+    url: typeof window !== 'undefined' ? window.location.href : 'unknown'
+  };
+
+  // Always log to console
+  console[level](`[SharedDeckView] ${message}`, data || '');
+
+  // Send to backend (fire and forget)
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    fetch(`${apiUrl}/debug-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(logEntry)
+    }).catch(() => {}); // Ignore errors
+  } catch {}
+};
+
 // Global error logging for debugging mobile Safari crashes
-console.log('[SharedDeckView] Module loading...', { timestamp: new Date().toISOString() });
+remoteLog('log', 'Module loading...');
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
-    console.error('[SharedDeckView] Global error:', event.message, event.filename, event.lineno, event.colno, event.error);
+    remoteLog('error', 'Global error', {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      stack: event.error?.stack
+    });
   });
   window.addEventListener('unhandledrejection', (event) => {
-    console.error('[SharedDeckView] Unhandled rejection:', event.reason);
+    remoteLog('error', 'Unhandled rejection', { reason: String(event.reason), stack: event.reason?.stack });
   });
 }
 import { Button } from '@/components/ui/button';

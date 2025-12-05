@@ -295,6 +295,52 @@ def load_registry_on_startup():
 # Try to load registry on startup
 load_registry_on_startup()
 
+# In-memory storage for frontend debug logs (last 100 entries)
+_frontend_debug_logs: List[Dict[str, Any]] = []
+_MAX_DEBUG_LOGS = 100
+
+class FrontendLogEntry(BaseModel):
+    level: str = "log"
+    message: str
+    data: Optional[str] = None
+    timestamp: Optional[str] = None
+    userAgent: Optional[str] = None
+    url: Optional[str] = None
+
+@app.post("/api/debug-log")
+async def receive_debug_log(entry: FrontendLogEntry):
+    """Receive debug logs from frontend for mobile Safari debugging"""
+    global _frontend_debug_logs
+    log_entry = {
+        "level": entry.level,
+        "message": entry.message,
+        "data": entry.data,
+        "timestamp": entry.timestamp or datetime.now().isoformat(),
+        "userAgent": entry.userAgent,
+        "url": entry.url,
+        "received_at": datetime.now().isoformat()
+    }
+    _frontend_debug_logs.append(log_entry)
+    # Keep only last N entries
+    if len(_frontend_debug_logs) > _MAX_DEBUG_LOGS:
+        _frontend_debug_logs = _frontend_debug_logs[-_MAX_DEBUG_LOGS:]
+
+    # Also print to server logs for Render visibility
+    print(f"[FRONTEND-LOG] [{entry.level.upper()}] {entry.message} | {entry.data or ''}")
+    return {"status": "ok"}
+
+@app.get("/api/debug-logs")
+async def get_debug_logs():
+    """Get recent frontend debug logs - for viewing in browser"""
+    return {"logs": _frontend_debug_logs, "count": len(_frontend_debug_logs)}
+
+@app.delete("/api/debug-logs")
+async def clear_debug_logs():
+    """Clear all frontend debug logs"""
+    global _frontend_debug_logs
+    _frontend_debug_logs = []
+    return {"status": "cleared"}
+
 @app.get("/")
 def read_root():
     return {"message": "Slide Sorcery Chat API is running"}
