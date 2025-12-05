@@ -95,13 +95,19 @@ const Signup: React.FC = () => {
       );
       
       // Check for pending share code after successful signup
-      const pendingShareCode = sessionStorage.getItem('pending_share_code');
-      if (pendingShareCode) {
-        sessionStorage.removeItem('pending_share_code');
-        navigate(`/e/${pendingShareCode}`);
-        return;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          const pendingShareCode = sessionStorage.getItem('pending_share_code');
+          if (pendingShareCode) {
+            sessionStorage.removeItem('pending_share_code');
+            navigate(`/e/${pendingShareCode}`);
+            return;
+          }
+        }
+      } catch (e) {
+        // sessionStorage not available
       }
-      
+
       // Otherwise navigation is handled by the auth context
     } catch (error) {
       // Error handling is done by the auth context

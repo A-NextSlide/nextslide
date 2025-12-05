@@ -40,15 +40,21 @@ const Login: React.FC = () => {
 
     try {
       await signIn(email, password);
-      
+
       // Check for pending share code after successful login
-      const pendingShareCode = sessionStorage.getItem('pending_share_code');
-      if (pendingShareCode) {
-        sessionStorage.removeItem('pending_share_code');
-        navigate(`/e/${pendingShareCode}`);
-        return;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          const pendingShareCode = sessionStorage.getItem('pending_share_code');
+          if (pendingShareCode) {
+            sessionStorage.removeItem('pending_share_code');
+            navigate(`/e/${pendingShareCode}`);
+            return;
+          }
+        }
+      } catch (e) {
+        // sessionStorage not available
       }
-      
+
       // Otherwise use the from location or default navigation
       const from = location.state?.from || '/app';
       navigate(from);

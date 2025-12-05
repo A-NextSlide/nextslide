@@ -25,22 +25,34 @@ export function ProtectedRoute({ children, requireAuth = true }: ProtectedRouteP
   if (requireAuth && !isAuthenticated) {
     // Save the attempted location so we can redirect back after login
     const redirectPath = location.pathname + location.search + location.hash;
-    
+
     // Store the redirect path in sessionStorage for persistence
     if (redirectPath !== '/login' && redirectPath !== '/') {
-      sessionStorage.setItem('authRedirectPath', redirectPath);
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('authRedirectPath', redirectPath);
+        }
+      } catch (e) {
+        // sessionStorage not available (private browsing)
+      }
     }
-    
+
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // If authentication is not required but user is authenticated, redirect to app
   if (!requireAuth && isAuthenticated) {
     // Check if we have a saved redirect path
-    const redirectPath = sessionStorage.getItem('authRedirectPath');
-    if (redirectPath) {
-      sessionStorage.removeItem('authRedirectPath');
-      return <Navigate to={redirectPath} replace />;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        const redirectPath = sessionStorage.getItem('authRedirectPath');
+        if (redirectPath) {
+          sessionStorage.removeItem('authRedirectPath');
+          return <Navigate to={redirectPath} replace />;
+        }
+      }
+    } catch (e) {
+      // sessionStorage not available (private browsing)
     }
     return <Navigate to="/app" replace />;
   }

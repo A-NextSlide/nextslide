@@ -183,7 +183,14 @@ const SharedDeckView: React.FC = () => {
         setDeckName(response.data.deck_name);
         if (response.data.require_email) {
           // Check if we already have a viewer_id in session storage
-          const storedViewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+          let storedViewerId: string | null = null;
+          try {
+            if (typeof sessionStorage !== 'undefined') {
+              storedViewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+            }
+          } catch (e) {
+            // sessionStorage not available
+          }
           if (storedViewerId) {
             // Already registered, load the deck
             loadSharedDeck();
@@ -215,7 +222,13 @@ const SharedDeckView: React.FC = () => {
       const response = await shareService.registerViewer(shareCode, viewerEmail, viewerName || undefined);
       if (response.success && response.data) {
         // Store viewer_id in session storage so they don't have to re-enter
-        sessionStorage.setItem(`viewer_${shareCode}`, response.data.viewer_id);
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(`viewer_${shareCode}`, response.data.viewer_id);
+          }
+        } catch (e) {
+          // sessionStorage not available
+        }
         setRequiresEmail(false);
         loadSharedDeck();
       } else {
@@ -276,7 +289,14 @@ const SharedDeckView: React.FC = () => {
         hasLoadedDeck.current = true;
 
         // Start view tracking session
-        const viewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+        let viewerId: string | null = null;
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            viewerId = sessionStorage.getItem(`viewer_${shareCode}`);
+          }
+        } catch (e) {
+          // sessionStorage not available
+        }
         const deviceType = /Mobile|Android|iPhone/i.test(navigator.userAgent)
           ? (/iPad|Tablet/i.test(navigator.userAgent) ? 'tablet' : 'mobile')
           : 'desktop';
