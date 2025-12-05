@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy } from "react";
+import React, { useState, useEffect, lazy, Component, ErrorInfo, ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -51,7 +51,9 @@ import TemporaryPasswordGate from './components/TemporaryPasswordGate';
 import SmartGallery from './pages/SmartGallery';
 import Pricing from './pages/Pricing';
 import { CreditsProvider } from './context/CreditsContext';
+import { OnboardingProvider, useOnboarding } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
+import WelcomeModal from './components/common/WelcomeModal';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -60,6 +62,45 @@ import UpgradePrompt from './components/billing/UpgradePrompt';
 function UserRecordInitializer() {
   useEnsureUserRecord();
   return null;
+}
+
+// Component to show welcome modal on first visit (only once per session)
+function WelcomeModalController() {
+  const { shouldShowWelcome, markWelcomeShown } = useOnboarding();
+  const { user } = useAuth();
+  const [isOpen, setIsOpen] = useState(false);
+  const [userName, setUserName] = useState<string | undefined>();
+  // Track if we've already shown the modal this session to prevent re-showing
+  const hasShownThisSession = React.useRef(false);
+
+  // Show modal when conditions are met (only once per session)
+  useEffect(() => {
+    if (user && shouldShowWelcome && !hasShownThisSession.current) {
+      // Get user name
+      const displayName = user.user_metadata?.full_name ||
+                         user.user_metadata?.name ||
+                         user.email?.split('@')[0];
+      setUserName(displayName);
+      setIsOpen(true);
+      hasShownThisSession.current = true;
+    }
+  }, [user, shouldShowWelcome]);
+
+  const handleClose = async () => {
+    setIsOpen(false);
+    // Mark as shown in backend (fire and forget - state already updated optimistically)
+    markWelcomeShown();
+  };
+
+  if (!user) return null;
+
+  return (
+    <WelcomeModal
+      isOpen={isOpen}
+      onClose={handleClose}
+      userName={userName}
+    />
+  );
 }
 
 // Extend window interface for debug commands
@@ -72,6 +113,85 @@ declare global {
 // Initialize TypeBox registry
 import './registry';
 import { useDeckStore } from './stores/deckStore';
+
+// Global Error Boundary to catch and display mobile crashes
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+}
+
+class GlobalErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.setState({ errorInfo });
+    // Log to console for debugging
+    console.error('[GlobalErrorBoundary] Caught error:', error);
+    console.error('[GlobalErrorBoundary] Component stack:', errorInfo.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      const isMobile = typeof window !== 'undefined' &&
+        (window.innerWidth <= 768 || 'ontouchstart' in window);
+
+      return (
+        <div style={{
+          padding: '20px',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          maxWidth: '100vw',
+          overflowX: 'hidden',
+        }}>
+          <h1 style={{ color: '#dc2626', fontSize: '24px', marginBottom: '16px' }}>
+            Something went wrong
+          </h1>
+          <p style={{ marginBottom: '16px', color: '#666' }}>
+            {isMobile ? 'Mobile' : 'Desktop'} error detected. Please try refreshing the page.
+          </p>
+          <details style={{ marginBottom: '16px' }}>
+            <summary style={{ cursor: 'pointer', color: '#2563eb' }}>Error details</summary>
+            <pre style={{
+              background: '#f3f4f6',
+              padding: '12px',
+              borderRadius: '8px',
+              overflow: 'auto',
+              fontSize: '12px',
+              marginTop: '8px',
+            }}>
+              {this.state.error?.message}
+              {'\n\n'}
+              {this.state.error?.stack}
+            </pre>
+          </details>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#2563eb',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '16px',
+            }}
+          >
+            Refresh Page
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Lazy load the Renderer component only when needed
 const LazyRenderer = lazy(() => import('./pages/Renderer'));
@@ -437,28 +557,33 @@ function App() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <NextThemesProvider attribute="class" defaultTheme="light" enableSystem>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <SupabaseAuthProvider>
-              <CreditsProvider>
-                <UserRecordInitializer />
-                <AppContent />
-                <UpgradePrompt />
-                {DevPerformanceHUD ? (
-                  <React.Suspense fallback={null}>
-                    <DevPerformanceHUD />
-                  </React.Suspense>
-                ) : null}
-              </CreditsProvider>
-            </SupabaseAuthProvider>
-          </BrowserRouter>
-        </TooltipProvider>
-      </NextThemesProvider>
-    </QueryClientProvider>
+    <GlobalErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <NextThemesProvider attribute="class" defaultTheme="light" enableSystem>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <SupabaseAuthProvider>
+                <CreditsProvider>
+                  <OnboardingProvider>
+                    <UserRecordInitializer />
+                    <WelcomeModalController />
+                    <AppContent />
+                    <UpgradePrompt />
+                    {DevPerformanceHUD ? (
+                      <React.Suspense fallback={null}>
+                        <DevPerformanceHUD />
+                      </React.Suspense>
+                    ) : null}
+                  </OnboardingProvider>
+                </CreditsProvider>
+              </SupabaseAuthProvider>
+            </BrowserRouter>
+          </TooltipProvider>
+        </NextThemesProvider>
+      </QueryClientProvider>
+    </GlobalErrorBoundary>
   );
 };
 
