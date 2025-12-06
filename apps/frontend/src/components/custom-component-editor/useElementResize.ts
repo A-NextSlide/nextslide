@@ -3,6 +3,7 @@
  *
  * Handles 8-direction resize (4 corners + 4 edges) with proper
  * coordinate transformation between parent viewport and iframe space.
+ * Uses CSS variables for zero-lag visual feedback (same as drag).
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -14,6 +15,7 @@ interface UseElementResizeProps {
   element: VirtualElement;
   coordinator: CoordinateTranslator;
   iframeRef: React.RefObject<HTMLIFrameElement>;
+  overlayRef: React.RefObject<HTMLDivElement>;
   onSizeChange: (newBounds: Bounds, styles: Record<string, string>) => void;
   onResizeEnd: (newBounds: Bounds, styles: Record<string, string>) => void;
 }
@@ -21,6 +23,7 @@ interface UseElementResizeProps {
 interface UseElementResizeReturn {
   isResizing: boolean;
   resizeDirection: ResizeDirection | null;
+  resizeDelta: { width: number; height: number; x: number; y: number };
   handleResizeStart: (e: React.MouseEvent, direction: ResizeDirection) => void;
 }
 
@@ -34,17 +37,20 @@ export function useElementResize({
   element,
   coordinator,
   iframeRef,
+  overlayRef,
   onSizeChange,
   onResizeEnd,
 }: UseElementResizeProps): UseElementResizeReturn {
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState<ResizeDirection | null>(null);
+  const [resizeDelta, setResizeDelta] = useState({ width: 0, height: 0, x: 0, y: 0 });
 
   // Refs for resize state
   const resizeStartRef = useRef<{
     mouseX: number;
     mouseY: number;
     iframeBounds: Bounds;
+    parentBounds: Bounds;
     direction: ResizeDirection;
   } | null>(null);
 
@@ -52,25 +58,43 @@ export function useElementResize({
   const lastUpdateRef = useRef(0);
   const UPDATE_THROTTLE = 16; // ~60fps for smooth resize
 
+  // Get cursor for resize direction
+  const getCursorForDirection = (direction: ResizeDirection): string => {
+    const cursorMap: Record<ResizeDirection, string> = {
+      'n': 'ns-resize',
+      's': 'ns-resize',
+      'e': 'ew-resize',
+      'w': 'ew-resize',
+      'nw': 'nwse-resize',
+      'se': 'nwse-resize',
+      'ne': 'nesw-resize',
+      'sw': 'nesw-resize',
+    };
+    return cursorMap[direction] || 'default';
+  };
+
   const handleResizeStart = useCallback((e: React.MouseEvent, direction: ResizeDirection) => {
     if (!element.isResizable) return;
 
     e.preventDefault();
     e.stopPropagation();
 
-    // Prevent text selection during resize
+    // Prevent text selection and set cursor on body for smooth feedback
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
+    document.body.style.cursor = getCursorForDirection(direction);
 
     resizeStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
       iframeBounds: { ...element.iframeBounds },
+      parentBounds: { ...element.bounds },
       direction,
     };
 
     setIsResizing(true);
     setResizeDirection(direction);
+    setResizeDelta({ width: 0, height: 0, x: 0, y: 0 });
   }, [element]);
 
   // Calculate new bounds based on resize direction
@@ -138,34 +162,116 @@ export function useElementResize({
     };
   }, [coordinator]);
 
+  // Calculate delta for parent coordinate space (for CSS variables)
+  const calculateParentDelta = useCallback((
+    startBounds: Bounds,
+    deltaX: number,
+    deltaY: number,
+    direction: ResizeDirection
+  ): { width: number; height: number; x: number; y: number } => {
+    // No coordinate conversion needed - delta in screen space is delta in parent space
+    let dWidth = 0;
+    let dHeight = 0;
+    let dX = 0;
+    let dY = 0;
+
+    switch (direction) {
+      case 'nw':
+        dWidth = -deltaX;
+        dHeight = -deltaY;
+        dX = deltaX;
+        dY = deltaY;
+        break;
+      case 'ne':
+        dWidth = deltaX;
+        dHeight = -deltaY;
+        dY = deltaY;
+        break;
+      case 'se':
+        dWidth = deltaX;
+        dHeight = deltaY;
+        break;
+      case 'sw':
+        dWidth = -deltaX;
+        dHeight = deltaY;
+        dX = deltaX;
+        break;
+      case 'n':
+        dHeight = -deltaY;
+        dY = deltaY;
+        break;
+      case 'e':
+        dWidth = deltaX;
+        break;
+      case 's':
+        dHeight = deltaY;
+        break;
+      case 'w':
+        dWidth = -deltaX;
+        dX = deltaX;
+        break;
+    }
+
+    // Ensure minimum size
+    const minWidth = 20;
+    const minHeight = 20;
+    const newWidth = startBounds.width + dWidth;
+    const newHeight = startBounds.height + dHeight;
+
+    if (newWidth < minWidth) {
+      const diff = minWidth - newWidth;
+      dWidth += diff;
+      if (direction.includes('w')) dX -= diff;
+    }
+    if (newHeight < minHeight) {
+      const diff = minHeight - newHeight;
+      dHeight += diff;
+      if (direction.includes('n')) dY -= diff;
+    }
+
+    return { width: dWidth, height: dHeight, x: dX, y: dY };
+  }, []);
+
   // Mouse move handler
   useEffect(() => {
     if (!isResizing) return;
 
+    let rafId: number | null = null;
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!resizeStartRef.current) return;
 
-      const deltaX = e.clientX - resizeStartRef.current.mouseX;
-      const deltaY = e.clientY - resizeStartRef.current.mouseY;
+      // Cancel any pending RAF to avoid queueing
+      if (rafId) cancelAnimationFrame(rafId);
 
-      const newBounds = calculateNewBounds(
-        resizeStartRef.current.iframeBounds,
-        deltaX,
-        deltaY,
-        resizeStartRef.current.direction
-      );
+      rafId = requestAnimationFrame(() => {
+        if (!resizeStartRef.current) return;
 
-      // Throttle updates
-      const now = Date.now();
-      if (now - lastUpdateRef.current > UPDATE_THROTTLE) {
-        lastUpdateRef.current = now;
+        const deltaX = e.clientX - resizeStartRef.current.mouseX;
+        const deltaY = e.clientY - resizeStartRef.current.mouseY;
 
-        // Generate style mutation
+        // Calculate parent delta for overlay visual feedback
+        const parentDelta = calculateParentDelta(
+          resizeStartRef.current.parentBounds,
+          deltaX,
+          deltaY,
+          resizeStartRef.current.direction
+        );
+
+        setResizeDelta(parentDelta);
+
+        // Calculate iframe bounds for actual element update
+        const newBounds = calculateNewBounds(
+          resizeStartRef.current.iframeBounds,
+          deltaX,
+          deltaY,
+          resizeStartRef.current.direction
+        );
+
+        // Generate style mutation and send to iframe
         const styles = generateStyleMutation(element, newBounds);
-
-        // Send update
         onSizeChange(newBounds, styles);
-      }
+      });
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -187,12 +293,14 @@ export function useElementResize({
       // Cleanup
       document.body.style.userSelect = '';
       document.body.style.webkitUserSelect = '';
+      document.body.style.cursor = '';
 
       // Notify parent of final size
       onResizeEnd(finalBounds, styles);
 
       setIsResizing(false);
       setResizeDirection(null);
+      setResizeDelta({ width: 0, height: 0, x: 0, y: 0 });
       resizeStartRef.current = null;
     };
 
@@ -200,14 +308,16 @@ export function useElementResize({
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, calculateNewBounds, element, onSizeChange, onResizeEnd]);
+  }, [isResizing, calculateNewBounds, calculateParentDelta, element, onSizeChange, onResizeEnd]);
 
   return {
     isResizing,
     resizeDirection,
+    resizeDelta,
     handleResizeStart,
   };
 }

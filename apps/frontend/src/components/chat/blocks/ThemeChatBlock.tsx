@@ -59,8 +59,15 @@ const getFontGroups = (): Record<string, string[]> => {
   }
 };
 
+// Helper to normalize color values (handle arrays from backend)
+const normalizeColor = (color: string | string[] | undefined, fallback = '#000000'): string => {
+  if (!color) return fallback;
+  if (Array.isArray(color)) return color[0] || fallback;
+  return typeof color === 'string' ? color : fallback;
+};
+
 const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
-  data,
+  data: rawData,
   onColorChange,
   onFontChange,
   onLogoChange,
@@ -68,6 +75,16 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   isLoading = false,
   className,
 }) => {
+  // Normalize color data in case backend sends arrays
+  const data = {
+    ...rawData,
+    colors: {
+      background: normalizeColor(rawData.colors?.background, '#FFFFFF'),
+      text: normalizeColor(rawData.colors?.text, '#000000'),
+      accent: normalizeColor(rawData.colors?.accent, '#6366f1'),
+      accent2: rawData.colors?.accent2 ? normalizeColor(rawData.colors.accent2) : undefined,
+    },
+  };
   const [activeColor, setActiveColor] = useState<'background' | 'text' | 'accent' | null>(null);
   const [showHeadingFonts, setShowHeadingFonts] = useState(false);
   const [showBodyFonts, setShowBodyFonts] = useState(false);
@@ -130,8 +147,11 @@ const ThemeChatBlock: React.FC<ThemeChatBlockProps> = ({
   };
 
   // Determine text color for labels based on background brightness
-  const getLabelColor = (bgColor: string) => {
-    const hex = bgColor.replace('#', '');
+  const getLabelColor = (bgColor: string | string[]) => {
+    // Handle array colors (take first element)
+    const color = Array.isArray(bgColor) ? bgColor[0] : bgColor;
+    if (!color || typeof color !== 'string') return 'rgba(0,0,0,0.7)';
+    const hex = color.replace('#', '');
     const r = parseInt(hex.substr(0, 2), 16);
     const g = parseInt(hex.substr(2, 2), 16);
     const b = parseInt(hex.substr(4, 2), 16);

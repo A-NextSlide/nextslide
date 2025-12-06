@@ -398,82 +398,122 @@ const Landing: React.FC = () => {
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-start">
+            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-stretch">
               {/* Main slide viewer with left sidebar */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 flex flex-col">
                 {/* Top bar */}
-                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
+                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1.5">
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                     </div>
-                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[200px]">Example Presentation</span>
+                    <span className="text-[11px] text-white/40 font-mono truncate max-w-[300px]">
+                      {activeDeck?.name || 'Loading...'}
+                    </span>
                   </div>
-                  <span className="text-[11px] text-white/40">1/5</span>
+                  <span className="text-[11px] text-white/40">
+                    {activeDeck ? `${activeDeckSlideIndex + 1}/${activeDeck.slideCount}` : ''}
+                  </span>
                 </div>
 
                 {/* Content with slide sidebar */}
-                <div className="flex">
-                  {/* Slide thumbnails sidebar - larger */}
-                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
-                    {[...Array(5)].map((_, idx) => (
-                      <div
-                        key={idx}
-                        className={cn(
-                          "aspect-video rounded overflow-hidden relative bg-white/5",
-                          idx === 0 ? "ring-2 ring-[#FF4301]" : "opacity-50"
-                        )}
-                      />
-                    ))}
+                <div className="flex flex-1 min-h-0">
+                  {/* Slide thumbnails sidebar */}
+                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto custom-scrollbar">
+                    {isLoadingShowcase ? (
+                      [...Array(5)].map((_, idx) => (
+                        <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse" />
+                      ))
+                    ) : (
+                      activeDeck?.slides?.map((slide, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(idx); }}
+                          className={cn(
+                            "aspect-video rounded overflow-hidden relative cursor-pointer transition-all",
+                            idx === activeDeckSlideIndex ? "ring-2 ring-[#FF4301]" : "opacity-50 hover:opacity-75"
+                          )}
+                        >
+                          <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                            <MiniSlide slide={slide} />
+                          </Suspense>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-4">
-                    <div className="aspect-video relative rounded-lg overflow-hidden bg-black">
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
-                        <div className="text-white/40 text-2xl font-medium mb-2">Coming Soon</div>
-                        <p className="text-white/30 text-sm max-w-sm">
-                          We're curating our best example presentations.
-                        </p>
-                      </div>
+                  <div className="flex-1 p-4 flex items-center">
+                    <div className="aspect-video w-full relative rounded-lg overflow-hidden bg-black">
+                      {isLoadingShowcase ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                          <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
+                        </div>
+                      ) : activeSlide ? (
+                        <Suspense fallback={<div className="w-full h-full bg-zinc-900 animate-pulse" />}>
+                          <MiniSlide slide={activeSlide} />
+                        </Suspense>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                          <div className="text-white/40 text-xl font-medium mb-2">No slides available</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Deck gallery */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10">
-                <div className="px-3 py-2 border-b border-white/5">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col">
+                <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
-                  {[...Array(4)].map((_, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "rounded-lg overflow-hidden relative",
-                        index === 0
-                          ? "ring-2 ring-[#FF4301]"
-                          : "ring-1 ring-white/5"
-                      )}
-                    >
-                      <div className="aspect-[16/9] relative overflow-hidden bg-white/5">
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                        <div className="absolute bottom-0 left-0 right-0 p-2">
-                          <div className={cn(
-                            "h-3 rounded w-20 mb-1",
-                            index === 0 ? "bg-[#FF4301]/30" : "bg-white/20"
-                          )} />
-                          <div className="h-2 rounded w-12 bg-white/10" />
-                        </div>
-                        {index === 0 && (
-                          <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4301]" />
-                        )}
+                <div className="p-2 space-y-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
+                  {isLoadingShowcase ? (
+                    [...Array(4)].map((_, index) => (
+                      <div key={index} className="rounded-lg overflow-hidden relative ring-1 ring-white/5">
+                        <div className="aspect-[16/9] relative overflow-hidden bg-white/5 animate-pulse" />
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    showcaseDecks.map((deck, index) => (
+                      <div
+                        key={deck.uuid}
+                        onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); }}
+                        className={cn(
+                          "rounded-lg overflow-hidden relative cursor-pointer transition-all",
+                          index === activeShowcaseIndex
+                            ? "ring-2 ring-[#FF4301]"
+                            : "ring-1 ring-white/5 hover:ring-white/20"
+                        )}
+                      >
+                        <div className="aspect-[16/9] relative overflow-hidden">
+                          {deck.slides?.[0] && (
+                            <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                              <MiniSlide slide={deck.slides[0]} />
+                            </Suspense>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          <div className="absolute bottom-0 left-0 right-0 p-2">
+                            <div className={cn(
+                              "text-[10px] font-medium truncate",
+                              index === activeShowcaseIndex ? "text-[#FF4301]" : "text-white/80"
+                            )}>
+                              {deck.name}
+                            </div>
+                            <div className="text-[9px] text-white/40">
+                              {deck.slideCount} slides
+                            </div>
+                          </div>
+                          {index === activeShowcaseIndex && (
+                            <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4301]" />
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
                 {/* CTA */}
                 <div className="p-2 border-t border-white/5 flex-shrink-0">

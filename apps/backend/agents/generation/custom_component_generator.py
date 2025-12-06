@@ -926,6 +926,13 @@ DESIGN PRINCIPLES:
 - Professional color usage with accent highlights
 - Clean visual hierarchy
 
+Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
+- Background/decorative elements: z-index: 1-10
+- Images and media: z-index: 20-30
+- Content boxes/cards: z-index: 40-50
+- TITLES AND HEADINGS: z-index: 100+ (ALWAYS on top)
+- Overlays/modals: z-index: 200+
+
 CONTENT STYLE:
 - BIG stats and numbers displayed prominently ("87%", "$2.4M", "+42%")
 - Minimal text - let visuals tell the story
@@ -966,6 +973,13 @@ EVERY INTERACTIVE ELEMENT MUST:
 - DO something visible when clicked/hovered
 - Provide satisfying feedback (animations, state changes)
 - Be discoverable and intuitive
+
+Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
+- Background/decorative elements: z-index: 1-10
+- Images and media: z-index: 20-30
+- Content boxes/cards: z-index: 40-50
+- TITLES AND HEADINGS: z-index: 100+ (ALWAYS on top)
+- Interactive overlays/modals: z-index: 200+
 
 Match the design to content:
 - Quote? Beautiful typography, elegant entrance
@@ -1169,10 +1183,8 @@ Example of CORRECT usage:
         logo_section = ""
         if logo_url:
             logo_section = f"""
-BRAND LOGO (place in top-left or top-right corner):
-  ✓ logoUrl: {logo_url}
-  Usage: <img src="{logo_url}" alt="Logo" style="height: 40px; width: auto;">
-  Placement: Top corner, semi-transparent if over busy background
+BRAND LOGO (optional - use if there's space): {logo_url}
+If you include it, place in a corner without overlapping other content.
 """
 
         return f"""{full_slide_instructions}SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
@@ -1991,18 +2003,18 @@ THINK LIKE A DESIGNER:
         """Detect if this is a title/cover slide."""
         slide_index = slide_context.get('slide_index', 0)
         slide_type = slide_context.get('slide_type', '').lower()
-        title = slide_context.get('title', '').lower()
+        total_slides = slide_context.get('total_slides', 1)
 
-        # First slide is always title
+        # Explicit title/cover layout
+        if any(t in slide_type for t in ['title', 'cover']):
+            return True
+
+        # For single-slide decks, user wants content, not just a title
+        if total_slides == 1:
+            return False
+
+        # First slide of multi-slide decks is the title slide
         if slide_index == 0:
-            return True
-
-        # Check slide type
-        if any(t in slide_type for t in ['title', 'cover', 'intro', 'opening']):
-            return True
-
-        # Check title keywords
-        if any(t in title for t in ['welcome', 'introduction', 'overview']):
             return True
 
         return False
@@ -2050,6 +2062,14 @@ ATMOSPHERE:
 - Animated gradient backgrounds
 - Cinematic color grading
 
+Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
+- Background gradients/effects: z-index: 1-5
+- Particles/floating elements: z-index: 10-15
+- Decorative glows/blur effects: z-index: 20-30
+- TITLE TEXT: z-index: 100+ (ALWAYS on top, never obscured)
+- Subtitle/presenter: z-index: 90+
+- Logo: z-index: 80+
+
 OUTPUT: Complete HTML/CSS/JS starting with <!DOCTYPE html>
 Use CSS variables. Smooth animations (cubic-bezier). Fill 1920x1080."""
 
@@ -2086,9 +2106,7 @@ Use CSS variables. Smooth animations (cubic-bezier). Fill 1920x1080."""
         if logo_url:
             logo_section = f"""
 BRAND LOGO: {logo_url}
-  - Place in top-left or top-right corner
-  - Height: 40-60px, width: auto
-  - Example: <img src="{logo_url}" alt="Logo" style="position: absolute; top: 40px; left: 40px; height: 50px; width: auto;">
+Consider including it on the title slide in a corner, without overlapping the title.
 """
 
         return f"""TITLE SLIDE: "{title}"

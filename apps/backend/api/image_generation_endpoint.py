@@ -249,6 +249,8 @@ def _decode_base64(data_uri_or_b64: str) -> Optional[bytes]:
 @router.post("/edit", response_model=ImageGenerationResponse)
 async def edit_image(request: EditImageRequest):
     try:
+        logger.info(f"Edit image request: instructions='{request.instructions[:50]}...', imageUrl={request.imageUrl[:100] if request.imageUrl else 'None'}...")
+
         image_service = GeminiImageService() if IMAGE_PROVIDER == 'gemini' else OpenAIImageService()
         if IMAGE_PROVIDER != 'gemini' and not hasattr(image_service, 'edit_image'):
             raise HTTPException(status_code=400, detail="Image editing is currently supported only with Gemini provider")
@@ -256,27 +258,40 @@ async def edit_image(request: EditImageRequest):
         # Obtain image bytes from URL or base64
         image_bytes: Optional[bytes] = None
         if request.imageBase64:
+            logger.debug("Using base64 image data")
             image_bytes = _decode_base64(request.imageBase64)
         elif request.imageUrl:
             if request.imageUrl.startswith("data:"):
+                logger.debug("Decoding data URL")
                 image_bytes = _decode_base64(request.imageUrl)
             else:
+                logger.debug(f"Fetching image from URL: {request.imageUrl[:100]}...")
                 image_bytes = await _fetch_image_bytes(request.imageUrl)
+
         if not image_bytes:
+            logger.error("No valid image bytes obtained")
             raise HTTPException(status_code=400, detail="No valid image provided (URL or base64 required)")
 
+        logger.info(f"Got image bytes: {len(image_bytes)} bytes")
+
         size = _get_size_from_aspect_ratio(request.aspectRatio or "16:9")
+        logger.info(f"Calling image service edit_image with size={size}")
         result = await image_service.edit_image(
             instructions=request.instructions,
             image_bytes=image_bytes,
             transparent_background=bool(request.transparentBackground),
             size=size,
         )
+        logger.info(f"Edit result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+
         if not isinstance(result, dict) or ('url' not in result and 'b64_json' not in result):
-            raise HTTPException(status_code=500, detail=f"Edit failed: {result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'}")
+            error_msg = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            logger.error(f"Edit failed: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"Edit failed: {error_msg}")
 
         image_url = result.get('url')
         if not image_url and result.get('b64_json'):
+            logger.info(f"Uploading edited image to storage (b64 length: {len(result['b64_json'])})")
             try:
                 storage_service = ImageStorageService()
                 upload_result = await storage_service.upload_image_from_base64(
@@ -285,13 +300,16 @@ async def edit_image(request: EditImageRequest):
                     content_type="image/png"
                 )
                 image_url = upload_result.get('url') if upload_result else None
+                logger.info(f"Upload result: {image_url}")
             except Exception as e:
-                logger.error(f"Error uploading edited image: {e}")
+                logger.error(f"Error uploading edited image: {e}", exc_info=True)
                 image_url = f"data:image/png;base64,{result.get('b64_json','')}"
 
         if not image_url:
+            logger.error("Failed to produce edited image URL")
             raise HTTPException(status_code=500, detail="Failed to produce edited image URL")
 
+        logger.info(f"Returning edited image URL: {image_url[:100]}...")
         return ImageGenerationResponse(url=image_url, revised_prompt=result.get('revised_prompt'))
 
     except HTTPException:

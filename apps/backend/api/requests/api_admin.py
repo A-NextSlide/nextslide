@@ -310,6 +310,18 @@ async def list_users(
         service_key = os.getenv("SUPABASE_SERVICE_KEY")
         supabase_url = os.getenv("SUPABASE_URL")
 
+        # Map frontend field names to database column names
+        sort_field_map = {
+            "lastActive": "last_sign_in_at",
+            "lastActiveAt": "last_sign_in_at",
+            "createdAt": "created_at",
+            "email": "email",
+            "fullName": "full_name",
+            "full_name": "full_name",
+            "created_at": "created_at",
+        }
+        db_sort_by = sort_field_map.get(sort_by, sort_by)
+
         # Build query
         query = supabase.table("users").select("*", count="exact")
 
@@ -321,8 +333,8 @@ async def list_users(
         offset = (page - 1) * limit
         query = query.range(offset, offset + limit - 1)
 
-        # Apply sorting
-        query = query.order(sort_by, desc=(sort_order == "desc"))
+        # Apply sorting using mapped field name
+        query = query.order(db_sort_by, desc=(sort_order == "desc"))
 
         # Execute query
         response = query.execute()
@@ -1259,9 +1271,10 @@ async def get_user_decks(
         user_info = user_response.data if user_response.data else None
         
         # Build query - use explicit columns to avoid non-existent columns
-        # OPTIMIZED: Only fetch first slide and slide count instead of entire slides array
+        # Note: PostgreSQL array syntax (slides[0:1], cardinality) doesn't work through PostgREST
+        # We need to fetch the full slides array and process it in Python
         query = supabase.table("decks").select(
-            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides[0:1],cardinality(slides) as slide_count,visibility,data",
+            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,visibility,data",
             count="exact"
         ).eq("user_id", user_id)
         

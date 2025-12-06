@@ -46,16 +46,22 @@ export class DeckSyncService {
    * Retrieves all decks from the backend API with pagination support
    * @param limit Number of decks to fetch (default: 20)
    * @param offset Number of decks to skip (default: 0)
+   * @param filter Filter type: 'owned', 'shared', or 'all'
+   * @param search Optional search query to filter decks by name
    * @returns Object containing array of decks and pagination info
    */
-  async getAllDecks(limit: number = 20, offset: number = 0, filter: string = 'owned'): Promise<{
+  async getAllDecks(limit: number = 20, offset: number = 0, filter: string = 'owned', search?: string): Promise<{
     decks: CompleteDeckData[];
     count: number;
     has_more: boolean;
   }> {
     try {
       // Add include_first_slide parameter to request thumbnail data
-      const url = this.getApiUrl(`/auth/decks?filter=${filter}&limit=${limit}&offset=${offset}&include_first_slide=true`);
+      let url = this.getApiUrl(`/auth/decks?filter=${filter}&limit=${limit}&offset=${offset}&include_first_slide=true`);
+      // Add search parameter if provided
+      if (search && search.trim()) {
+        url += `&search=${encodeURIComponent(search.trim())}`;
+      }
 
       
       // Try to get token asynchronously first for better reliability

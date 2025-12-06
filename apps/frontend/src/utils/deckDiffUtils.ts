@@ -278,6 +278,11 @@ function applyComponentUpdates(slide: SlideData, slideDiff: SlideDiff): SlideDat
   }
 
   // Apply components to update
+  console.log('[DeckDiff] applyComponentUpdates called', {
+    slideId: slide.id,
+    componentsToUpdateCount: slideDiff.components_to_update?.length || 0,
+    componentsToUpdate: slideDiff.components_to_update?.map(c => ({ id: c.id, type: c.type, hasProps: !!c.props })) || []
+  });
   if (slideDiff.components_to_update && slideDiff.components_to_update.length > 0) {
     let updatedComponents = [...updatedSlide.components];
     // Track which target component IDs we have already mapped to during this update pass,

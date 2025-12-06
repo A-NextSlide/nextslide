@@ -155,6 +155,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     }
 
     setIsProcessingAi(true);
+    // Dispatch event to notify slide renderer that processing has started
+    window.dispatchEvent(new CustomEvent('image:processing', {
+      detail: { componentId, propName, isProcessing: true }
+    }));
     try {
       const resp = await fetch('/api/images/edit', {
         method: 'POST',
@@ -180,6 +184,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       toast({ title: 'Edit failed', description: e?.message || 'Unable to edit image.', variant: 'destructive' });
     } finally {
       setIsProcessingAi(false);
+      // Dispatch event to notify slide renderer that processing has stopped
+      window.dispatchEvent(new CustomEvent('image:processing', {
+        detail: { componentId, propName, isProcessing: false }
+      }));
     }
   };
 
@@ -221,6 +229,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
     }
 
     setIsProcessingAi(true);
+    // Dispatch event to notify slide renderer that processing has started
+    window.dispatchEvent(new CustomEvent('image:processing', {
+      detail: { componentId, propName, isProcessing: true }
+    }));
     try {
       const resp = await fetch('/api/images/fuse', {
         method: 'POST',
@@ -246,6 +258,10 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
       toast({ title: 'Fusion failed', description: e?.message, variant: 'destructive' });
     } finally {
       setIsProcessingAi(false);
+      // Dispatch event to notify slide renderer that processing has stopped
+      window.dispatchEvent(new CustomEvent('image:processing', {
+        detail: { componentId, propName, isProcessing: false }
+      }));
     }
   };
 

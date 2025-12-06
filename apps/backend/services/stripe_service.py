@@ -110,6 +110,101 @@ class StripeService:
 
         return customer.id
 
+    async def get_active_subscription(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user's active Stripe subscription if one exists."""
+        db = self._get_db()
+
+        # Get subscription info from database
+        result = db.table("subscriptions") \
+            .select("stripe_subscription_id, stripe_customer_id, plan_id, status") \
+            .eq("user_id", user_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return None
+
+        sub_id = result.data.get("stripe_subscription_id")
+        if not sub_id:
+            return None
+
+        # Verify subscription is active in Stripe
+        try:
+            stripe_sub = stripe.Subscription.retrieve(sub_id)
+            if stripe_sub.status in ["active", "trialing"]:
+                return {
+                    "subscription_id": sub_id,
+                    "customer_id": result.data.get("stripe_customer_id"),
+                    "current_plan": result.data.get("plan_id"),
+                    "status": stripe_sub.status,
+                    "current_price_id": stripe_sub["items"]["data"][0]["price"]["id"] if stripe_sub["items"]["data"] else None
+                }
+        except Exception as e:
+            logger.warning(f"Could not retrieve Stripe subscription {sub_id}: {e}")
+
+        return None
+
+    async def upgrade_subscription(
+        self,
+        user_id: str,
+        new_plan_id: str,
+        success_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upgrade an existing subscription to a new plan with proration.
+
+        Stripe automatically calculates the prorated amount - user only pays
+        the difference for the remaining billing period.
+        """
+        self._check_stripe_available()
+        prices = _get_price_ids()
+        new_price_id = prices.get(new_plan_id)
+        if not new_price_id:
+            raise ValueError(f"No Stripe price configured for plan: {new_plan_id}")
+
+        # Get current subscription
+        active_sub = await self.get_active_subscription(user_id)
+        if not active_sub:
+            raise ValueError("No active subscription to upgrade")
+
+        subscription_id = active_sub["subscription_id"]
+
+        # Get the subscription item ID (needed for modification)
+        stripe_sub = stripe.Subscription.retrieve(subscription_id)
+        if not stripe_sub["items"]["data"]:
+            raise ValueError("Subscription has no items")
+
+        subscription_item_id = stripe_sub["items"]["data"][0]["id"]
+
+        # Modify the subscription with proration
+        # proration_behavior="create_prorations" is the default and charges the difference
+        updated_sub = stripe.Subscription.modify(
+            subscription_id,
+            items=[{
+                "id": subscription_item_id,
+                "price": new_price_id
+            }],
+            proration_behavior="create_prorations",
+            metadata={
+                "user_id": user_id,
+                "plan_id": new_plan_id
+            }
+        )
+
+        # Update local database
+        await self._update_subscription_from_stripe(updated_sub)
+
+        frontend_url = _get_frontend_url()
+
+        logger.info(f"Upgraded subscription for user {user_id} to {new_plan_id} with proration")
+
+        return {
+            "upgraded": True,
+            "plan_id": new_plan_id,
+            "subscription_id": subscription_id,
+            "redirect_url": success_url or f"{frontend_url}/profile?billing=upgraded"
+        }
+
     async def create_checkout_session(
         self,
         user_id: str,
@@ -118,8 +213,38 @@ class StripeService:
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Create a Stripe Checkout session for subscription."""
+        """
+        Create a Stripe Checkout session for subscription.
+
+        If user has an active subscription, this will upgrade it with proration
+        instead of creating a new subscription (avoiding double charges).
+        """
         self._check_stripe_available()
+
+        # Check for existing active subscription
+        active_sub = await self.get_active_subscription(user_id)
+
+        if active_sub:
+            current_plan = active_sub.get("current_plan")
+
+            # If already on this plan, just redirect to billing
+            if current_plan == plan_id:
+                frontend_url = _get_frontend_url()
+                return {
+                    "session_id": None,
+                    "url": f"{frontend_url}/profile?tab=billing&already_subscribed=true",
+                    "already_subscribed": True
+                }
+
+            # Upgrade existing subscription with proration
+            result = await self.upgrade_subscription(user_id, plan_id, success_url)
+            return {
+                "session_id": None,
+                "url": result["redirect_url"],
+                "upgraded": True
+            }
+
+        # No existing subscription - create new checkout session
         prices = _get_price_ids()
         price_id = prices.get(plan_id)
         if not price_id:
@@ -266,7 +391,7 @@ class StripeService:
 
         # Reset credits to free tier
         db.table("credit_balances").update({
-            "monthly_credits": 10,
+            "monthly_credits": 200,
             "updated_at": now.isoformat()
         }).eq("user_id", user_id).execute()
 
@@ -319,9 +444,9 @@ class StripeService:
 
         # Update credit allocation based on plan
         plan_credits = {
-            "free": 10,
-            "starter": 200,
-            "pro": 500,
+            "free": 200,
+            "starter": 300,
+            "pro": 700,
             "enterprise": 10000  # Effectively unlimited
         }
 
@@ -518,9 +643,9 @@ class StripeService:
 
             # Plan credits mapping
             plan_credits = {
-                "free": 10,
-                "starter": 200,
-                "pro": 500,
+                "free": 200,
+                "starter": 300,
+                "pro": 700,
                 "enterprise": 10000
             }
 

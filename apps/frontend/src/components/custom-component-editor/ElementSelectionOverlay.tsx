@@ -19,6 +19,7 @@ interface ElementSelectionOverlayProps {
   isDragging: boolean;
   isResizing: boolean;
   dragOffset: { x: number; y: number };
+  resizeDelta?: { width: number; height: number; x: number; y: number };
   onDragStart: (e: React.MouseEvent) => void;
   onResizeStart: (e: React.MouseEvent, direction: ResizeDirection) => void;
   onDoubleClick?: () => void;
@@ -34,6 +35,7 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
   isDragging,
   isResizing,
   dragOffset,
+  resizeDelta,
   onDragStart,
   onResizeStart,
   onDoubleClick,
@@ -71,20 +73,32 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
     />
   );
 
+  // Calculate dynamic size/position for resize
+  const dynamicStyle: React.CSSProperties = {
+    left: bounds.x,
+    top: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    pointerEvents: 'none',
+    zIndex: 15000, // Above element hit areas (10000 for text)
+  };
+
+  // Apply transforms based on drag or resize state
+  if (isDragging) {
+    dynamicStyle.transform = 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))';
+  } else if (isResizing && resizeDelta) {
+    // For resize, we adjust position and size using CSS variables
+    dynamicStyle.left = bounds.x + resizeDelta.x;
+    dynamicStyle.top = bounds.y + resizeDelta.y;
+    dynamicStyle.width = bounds.width + resizeDelta.width;
+    dynamicStyle.height = bounds.height + resizeDelta.height;
+  }
+
   return (
     <div
       ref={overlayRef}
       className="fixed"
-      style={{
-        left: bounds.x,
-        top: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-        pointerEvents: 'none',
-        zIndex: 15000, // Above element hit areas (10000 for text)
-        // CSS variables for zero-lag drag - applied by useElementDrag
-        transform: isDragging ? 'translateX(var(--drag-x, 0px)) translateY(var(--drag-y, 0px))' : undefined,
-      }}
+      style={dynamicStyle}
       data-element-selection={element.id}
     >
       {/* Selection border - pink, same as slide level */}
@@ -102,7 +116,9 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
         <div
           className="absolute inset-0"
           style={{
-            cursor: isDragging ? 'grabbing' : (element.type === 'text' ? 'text' : 'move'),
+            // All elements use move cursor since single-click selects for drag
+            // Double-click on text enters edit mode
+            cursor: isDragging ? 'grabbing' : 'move',
             pointerEvents: 'auto',
           }}
           onMouseDown={(e) => {

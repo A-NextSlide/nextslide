@@ -128,6 +128,7 @@ export function CreditWarningDialog({
       <DialogContent
         className="sm:max-w-[420px] p-0 overflow-hidden bg-white dark:bg-zinc-900 border-2 border-[#FF4301]/30 shadow-2xl shadow-[#FF4301]/10"
         style={{ borderRadius: '20px' }}
+        hideCloseButton
       >
         {/* Close button */}
         <button

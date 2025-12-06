@@ -101,6 +101,27 @@ const Pricing: React.FC = () => {
     setLoading(planId);
     try {
       const session = await billingApi.createCheckout(planId);
+
+      if (session.upgraded) {
+        // Subscription was upgraded with proration - show success and redirect
+        toast({
+          title: 'Plan upgraded!',
+          description: 'Your plan has been upgraded. You\'ll only be charged the prorated difference.',
+        });
+        navigate('/profile?tab=billing&upgraded=true');
+        return;
+      }
+
+      if (session.already_subscribed) {
+        toast({
+          title: 'Already subscribed',
+          description: 'You\'re already on this plan.',
+        });
+        navigate('/profile?tab=billing');
+        return;
+      }
+
+      // New subscription - redirect to Stripe checkout
       window.location.href = session.url;
     } catch (err) {
       toast({

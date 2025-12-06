@@ -20,6 +20,7 @@ import { ElementHitArea } from './ElementHitArea';
 import { ElementSelectionOverlay } from './ElementSelectionOverlay';
 import { useElementDrag } from './useElementDrag';
 import { useElementResize } from './useElementResize';
+import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 
 // Legacy DetectedElement type for backwards compatibility
 export interface DetectedElement {
@@ -165,46 +166,71 @@ export function generateEditModeScript(componentId: string): string {
     };
   }
 
-  // Mark elements as editable
+  // Mark elements as editable - comprehensive detection
   let setupRan = false;
   function setupEditableElements() {
     if (setupRan) return;
     setupRan = true;
 
-    // Text elements
-    const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button';
-    document.querySelectorAll(textSelectors).forEach((el, index) => {
+    let textIndex = 0;
+    let containerIndex = 0;
+
+    // Text elements - more comprehensive detection
+    const textSelectors = 'h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button, figcaption, blockquote, cite, em, strong, b, i, u, sub, sup, small, mark, del, ins, q';
+    document.querySelectorAll(textSelectors).forEach((el) => {
       if (el.dataset.nsId) return;
-      const directText = Array.from(el.childNodes)
-        .filter(node => node.nodeType === Node.TEXT_NODE)
-        .map(node => node.textContent || '')
-        .join('')
-        .trim();
-      if (directText && directText.length > 1) {
-        el.dataset.nsId = 'text-' + index;
+      // Check for any text content (direct or nested)
+      const text = el.textContent?.trim() || '';
+      if (text.length > 0) {
+        // Skip if parent already has this text (avoid duplicates)
+        const parentText = el.parentElement?.textContent?.trim() || '';
+        const isOnlyTextChild = el.parentElement &&
+          el.parentElement.childElementCount === 1 &&
+          parentText === text;
+        if (isOnlyTextChild && el.parentElement.dataset.nsId) return;
+
+        el.dataset.nsId = 'text-' + textIndex++;
         el.classList.add('ns-editable-text');
       }
     });
 
-    // Image elements
-    document.querySelectorAll('img').forEach((img, index) => {
-      if (img.dataset.nsId) return;
-      if (img.width < 30 || img.height < 30) return;
-      img.dataset.nsId = 'img-' + index;
-      img.classList.add('ns-editable-image');
+    // Image elements - include SVGs and background images
+    document.querySelectorAll('img, svg, [style*="background-image"]').forEach((el, index) => {
+      if (el.dataset.nsId) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 20 || rect.height < 20) return;
+      el.dataset.nsId = 'img-' + index;
+      el.classList.add('ns-editable-image');
     });
 
-    // Container elements
-    const containerSelectors = 'section, article, header, footer, main, aside, nav, div[class], div[id], ul, ol, figure, blockquote, [class*="card"], [class*="section"], [class*="container"]';
-    let containerIndex = 0;
-    document.querySelectorAll(containerSelectors).forEach((el) => {
+    // Container/Box elements - much more comprehensive
+    // ANY div, section, or styled element that isn't already marked
+    document.querySelectorAll('div, section, article, header, footer, main, aside, nav, ul, ol, figure, form, fieldset, table, tbody, thead, tr').forEach((el) => {
       if (el.dataset.nsId) return;
       if (el.classList.contains('ns-editable-text')) return;
+      if (el.classList.contains('ns-editable-image')) return;
+
       const rect = el.getBoundingClientRect();
-      if (rect.width < 80 || rect.height < 40) return;
-      if (rect.width >= window.innerWidth * 0.95 && rect.height >= window.innerHeight * 0.95) return;
-      el.dataset.nsId = 'container-' + containerIndex++;
-      el.classList.add('ns-editable-container');
+      // Lower minimum size - 30x30 to catch more boxes
+      if (rect.width < 30 || rect.height < 30) return;
+      // Skip if it's basically the whole page
+      if (rect.width >= window.innerWidth * 0.98 && rect.height >= window.innerHeight * 0.98) return;
+
+      // Check if element has visual styling (background, border, etc.)
+      const style = getComputedStyle(el);
+      const hasVisualStyling =
+        style.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+        style.backgroundImage !== 'none' ||
+        style.borderWidth !== '0px' ||
+        style.boxShadow !== 'none' ||
+        style.borderRadius !== '0px' ||
+        el.className.length > 0;
+
+      // Mark it if it has styling OR is reasonably sized
+      if (hasVisualStyling || (rect.width >= 50 && rect.height >= 50)) {
+        el.dataset.nsId = 'container-' + containerIndex++;
+        el.classList.add('ns-editable-container');
+      }
     });
   }
 
@@ -444,7 +470,8 @@ const ElementInteractionLayer: React.FC<{
   onResizeChange: (bounds: Bounds, styles: Record<string, string>) => void;
   onResizeEnd: (bounds: Bounds, styles: Record<string, string>) => void;
   onDoubleClick: () => void;
-}> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick }) => {
+  onClickNested: (x: number, y: number) => void;
+}> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick, onClickNested }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const { isDragging, dragOffset, handleDragStart } = useElementDrag({
@@ -454,12 +481,14 @@ const ElementInteractionLayer: React.FC<{
     overlayRef,
     onPositionChange,
     onDragEnd,
+    onClickWithoutDrag: onClickNested,
   });
 
-  const { isResizing, resizeDirection, handleResizeStart } = useElementResize({
+  const { isResizing, resizeDirection, resizeDelta, handleResizeStart } = useElementResize({
     element,
     coordinator,
     iframeRef,
+    overlayRef,
     onSizeChange: onResizeChange,
     onResizeEnd,
   });
@@ -471,6 +500,7 @@ const ElementInteractionLayer: React.FC<{
       isDragging={isDragging}
       isResizing={isResizing}
       dragOffset={dragOffset}
+      resizeDelta={resizeDelta}
       onDragStart={handleDragStart}
       onResizeStart={handleResizeStart}
       onDoubleClick={onDoubleClick}
@@ -501,6 +531,14 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
+  // Global store for sharing with settings panel
+  const {
+    setActiveComponent,
+    setDetectedElements,
+    setSelectedElement: setStoreSelectedElement,
+    setIframeRef: setStoreIframeRef,
+  } = useCustomComponentEditStore();
+
   // Refs
   const internalIframeRef = useRef<HTMLIFrameElement>(null);
   const iframeRef = externalIframeRef || internalIframeRef;
@@ -522,6 +560,29 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       );
     }
   }, [iframeRef, containerWidth, containerHeight, scale]);
+
+  // Sync component ID and iframe ref to global store
+  useEffect(() => {
+    if (isEditing && isSelected) {
+      setActiveComponent(componentId);
+      setStoreIframeRef(iframeRef);
+    }
+  }, [componentId, isEditing, isSelected, iframeRef, setActiveComponent, setStoreIframeRef]);
+
+  // Clear store when component unmounts or is deselected
+  useEffect(() => {
+    return () => {
+      // Only clear if this component was the active one
+      setActiveComponent(null);
+      setDetectedElements([]);
+      setStoreSelectedElement(null);
+    };
+  }, [setActiveComponent, setDetectedElements, setStoreSelectedElement]);
+
+  // Sync selected element to global store
+  useEffect(() => {
+    setStoreSelectedElement(selectedElement);
+  }, [selectedElement, setStoreSelectedElement]);
 
   // Request elements from iframe when ready
   const requestElements = useCallback(() => {
@@ -562,8 +623,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             : el.iframeBounds,
         }));
 
-        console.log('[CustomComponentEdit] Virtual elements populated:', elements.length, elements.map(e => ({ id: e.id, type: e.type })));
         setVirtualElements(elements);
+        // Update global store for settings panel
+        setDetectedElements(elements);
       }
 
       // Legacy image-selected handler for ImageElementToolbar
@@ -601,7 +663,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [srcDoc, isReady, isEditing, isSelected, requestElements]);
 
-  // Handle element selection - for TEXT, start editing immediately (single click)
+  // Handle element selection - single click selects (for drag), double-click edits (for text)
   const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
     console.log('[CustomComponentEdit] handleSelectElement called:', elementId, 'cursor:', cursorX, cursorY);
     const element = virtualElements.find(e => e.id === elementId);
@@ -611,27 +673,8 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
     console.log('[CustomComponentEdit] Element found:', element.type, element.selector);
 
-    // For TEXT elements: start editing immediately on single click (like before)
-    if (element.type === 'text') {
-      console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-          target: 'ns-custom-component-edit',
-          type: 'start-text-edit',
-          selector: element.selector,
-        }, '*');
-        console.log('[CustomComponentEdit] Sent start-text-edit message');
-      } else {
-        console.log('[CustomComponentEdit] No iframe contentWindow!');
-      }
-      // No selection overlay for text - go straight to editing
-      setSelectedElementId(null);
-      setEditingTextId(element.id);
-      onElementSelect(null);
-      return;
-    }
-
-    // For IMAGE/CONTAINER: show selection overlay
+    // For ALL elements (including TEXT): show selection overlay on single click
+    // This allows dragging text elements. Double-click will enter edit mode.
     setSelectedElementId(elementId);
     setEditingTextId(null);
     onElementSelect(toDetectedElement(element), cursorX, cursorY);
@@ -645,14 +688,59 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef, virtualElements, onElementSelect]);
 
-  // Handle double-click - for non-text elements that might need special handling
+  // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement) => {
-    // Text already handles single-click editing, double-click does nothing extra
-    if (element.type === 'image') {
+    if (element.type === 'text') {
+      // Double-click on text: start inline editing
+      console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'start-text-edit',
+          selector: element.selector,
+        }, '*');
+        console.log('[CustomComponentEdit] Sent start-text-edit message');
+      }
+      // Hide selection overlay while editing text
+      setSelectedElementId(null);
+      setEditingTextId(element.id);
+      onElementSelect(null);
+    } else if (element.type === 'image') {
       // Could open image settings or similar
       onElementSelect(toDetectedElement(element));
     }
-  }, [onElementSelect]);
+  }, [iframeRef, onElementSelect]);
+
+  // Handle click on nested element (when clicking inside selected element's bounds)
+  const handleClickNested = useCallback((x: number, y: number) => {
+    if (!selectedElement) return;
+
+    // Find the smallest element at this position that's inside the selected element
+    const selectedArea = selectedElement.bounds.width * selectedElement.bounds.height;
+
+    let smallestElement: VirtualElement | null = null;
+    let smallestArea = selectedArea;
+
+    for (const el of virtualElements) {
+      if (el.id === selectedElement.id) continue;
+
+      // Check if click is inside this element's bounds
+      const b = el.bounds;
+      if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+        const area = b.width * b.height;
+        // Only select if it's smaller than current selection
+        if (area < smallestArea) {
+          smallestElement = el;
+          smallestArea = area;
+        }
+      }
+    }
+
+    if (smallestElement) {
+      // Select the nested element
+      handleSelectElement(smallestElement.id, x, y);
+    }
+  }, [selectedElement, virtualElements, handleSelectElement]);
 
   // Handle position change (during drag)
   const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -673,6 +761,16 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const handleDragEnd = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
     if (!selectedElement) return;
 
+    // First apply the final styles to ensure they're committed
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'apply-style-mutation',
+        selector: selectedElement.selector,
+        styles,
+      }, '*');
+    }
+
     // Update virtual element bounds
     setVirtualElements(prev => prev.map(e =>
       e.id === selectedElement.id
@@ -684,16 +782,18 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         : e
     ));
 
-    // Request HTML from iframe and persist changes
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({
-        target: 'ns-custom-component-edit',
-        type: 'get-html',
-      }, '*');
-    }
+    // Request HTML from iframe AFTER a short delay to ensure styles are applied
+    setTimeout(() => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'get-html',
+        }, '*');
+      }
+    }, 50);
 
     // Request fresh element data
-    setTimeout(requestElements, 100);
+    setTimeout(requestElements, 150);
   }, [selectedElement, requestElements, iframeRef]);
 
   // Handle resize change
@@ -715,6 +815,16 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const handleResizeEnd = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
     if (!selectedElement) return;
 
+    // First apply the final styles to ensure they're committed
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'apply-style-mutation',
+        selector: selectedElement.selector,
+        styles,
+      }, '*');
+    }
+
     // Update virtual element bounds
     setVirtualElements(prev => prev.map(e =>
       e.id === selectedElement.id
@@ -726,16 +836,18 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         : e
     ));
 
-    // Request HTML from iframe and persist changes
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({
-        target: 'ns-custom-component-edit',
-        type: 'get-html',
-      }, '*');
-    }
+    // Request HTML from iframe AFTER a short delay to ensure styles are applied
+    setTimeout(() => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage({
+          target: 'ns-custom-component-edit',
+          type: 'get-html',
+        }, '*');
+      }
+    }, 50);
 
     // Request fresh element data
-    setTimeout(requestElements, 100);
+    setTimeout(requestElements, 150);
   }, [selectedElement, requestElements, iframeRef]);
 
   // Handle text edit finish
@@ -783,8 +895,22 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   if (!isEditing || !isSelected) return null;
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 100 }}>
-      {/* Element hit areas for click detection */}
+    <div className="fixed inset-0" style={{ zIndex: 100, pointerEvents: 'none' }}>
+      {/* Background click area for deselection - only when something is selected */}
+      {selectedElementId && (
+        <div
+          className="absolute inset-0"
+          style={{ pointerEvents: 'auto', cursor: 'default' }}
+          onClick={(e) => {
+            // Only deselect if clicking directly on background (not bubbled from children)
+            if (e.target === e.currentTarget) {
+              handleDeselect();
+            }
+          }}
+        />
+      )}
+
+      {/* Element hit areas for click detection - hidden when something is selected so drag/resize works */}
       {virtualElements.map(element => (
         <ElementHitArea
           key={element.id}
@@ -793,6 +919,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
           onDoubleClick={() => handleDoubleClick(element)}
           disabled={!!editingTextId}
+          hideForSelection={!!selectedElementId}
         />
       ))}
 
@@ -807,17 +934,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onResizeChange={handleResizeChange}
           onResizeEnd={handleResizeEnd}
           onDoubleClick={() => handleDoubleClick(selectedElement)}
+          onClickNested={handleClickNested}
         />
       )}
-
-      {/* Note: Floating chat panel removed - parent component (CustomComponentRenderer)
-          handles the UI for text/image/container selection via its own state and components:
-          - Text: Small floating AI button with chat popup
-          - Image: ImageElementToolbar
-          - Container: ChatPanel style editor
-
-          Text editing is now handled inline via iframe contentEditable (start-text-edit message)
-      */}
     </div>,
     document.body
   );

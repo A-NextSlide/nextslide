@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, ChevronRight, Target, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
+import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
+import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,28 +62,32 @@ export interface ExtendedChatMessageProps extends ChatMessageProps {
   };
 }
 
-// Pool of suggestions; a random subset is shown on each load
-const ALL_SUGGESTIONS: string[] = [
-  'Use a retro 80s synthwave aesthetic',
-  'Make it look like a vintage movie poster',
-  'Add a psychedelic gradient background',
-  'Use a cyberpunk neon theme',
-  'Make the title glow with a neon effect',
-  'Add floating animation effects',
-  'Use a minimalist Japanese zen style',
-  'Add a pie chart showing pizza toppings preferences',
-  'Create a bar chart of coffee consumption by hour',
-  'Insert a line chart of mood throughout the week',
-  'Add a table comparing superheroes by power level',
-  'Use a dark moody cinematic theme',
-  'Add a galaxy space background',
-  'Make the background look like old paper',
-  'Add sparkle effects to the title',
-  'Insert a meme-worthy reaction image',
-  'Add dramatic spotlight effects',
-  'Make text pop with 3D shadows',
-  'Add a comic book style layout',
-  'Create a newspaper front page vibe',
+// Pool of suggestions; short label shown, detailed prompt inserted on click
+const ALL_SUGGESTIONS: { label: string; prompt: string }[] = [
+  // Style & Theme
+  { label: 'Apple keynote style', prompt: 'Redesign this deck with a clean Apple keynote aesthetic - lots of whitespace, bold sans-serif typography, and elegant product-focused imagery' },
+  { label: 'TED talk vibes', prompt: 'Transform this into a TED talk style presentation - big bold statements, minimal text per slide, and powerful visuals that support the narrative' },
+  { label: 'Dark mode + neon', prompt: 'Switch to a sleek dark mode theme with vibrant neon accent colors and glowing text effects' },
+  { label: 'Brutalist design', prompt: 'Apply a bold brutalist design style - raw typography, high contrast, unconventional layouts, and unapologetic visual impact' },
+  { label: '90s retro aesthetic', prompt: 'Give this a nostalgic 90s vibe with retro colors, pixelated elements, and vintage computer graphics style' },
+  { label: 'Magazine editorial', prompt: 'Style this like a high-end magazine spread with sophisticated typography, pull quotes, and editorial photography layouts' },
+  // Content & Data
+  { label: 'Add comparison table', prompt: 'Create a visually compelling comparison table that clearly shows the differences and helps the audience make a decision' },
+  { label: 'Timeline of events', prompt: 'Add an elegant timeline visualization showing the key milestones and progression over time' },
+  { label: 'Pros vs cons', prompt: 'Create a balanced pros and cons layout with clear visual distinction between advantages and disadvantages' },
+  { label: 'Process flowchart', prompt: 'Design a clear flowchart that walks through the process step by step with visual connectors' },
+  { label: 'Stats with big numbers', prompt: 'Add a statistics slide with large, bold numbers and supporting icons that make the data memorable' },
+  { label: 'Before & after', prompt: 'Create a compelling before and after comparison that dramatically shows the transformation or improvement' },
+  // Visual Effects
+  { label: 'Gradient backgrounds', prompt: 'Add beautiful gradient backgrounds that flow naturally and create visual depth without distracting from the content' },
+  { label: 'Make title pop', prompt: 'Make the title slide more dramatic and attention-grabbing - this is the first impression!' },
+  { label: 'Icons for bullets', prompt: 'Replace boring bullet points with meaningful icons that visually represent each point' },
+  { label: 'Full-bleed imagery', prompt: 'Create a stunning full-bleed image slide that creates an emotional impact and breaks up the content' },
+  // Creative
+  { label: 'Make it punchier', prompt: 'Rewrite this slide to be more concise and impactful - cut the fluff and make every word count' },
+  { label: 'Add a quote slide', prompt: 'Add a memorable quote slide with beautiful typography that reinforces the key message' },
+  { label: 'Surprise me ✨', prompt: 'Do something creative and unexpected with this slide - surprise me with a fresh approach I haven\'t thought of!' },
+  { label: 'More visual, less text', prompt: 'This slide has too much text. Transform it to be more visual with icons, images, or diagrams instead of walls of text' },
 ];
 
 // Outline mode specific suggestions for slide generation
@@ -195,6 +200,7 @@ export interface ChatPanelProps {
   isPending?: boolean;
   outline?: any;
   deckId?: string;
+  isExistingDeck?: boolean; // True if this is an existing/completed deck (not actively generating)
   newSystemMessage?: Omit<ExtendedChatMessageProps, 'id' | 'timestamp' | 'type' | 'feedback'> & { message: string };
   // Outline mode props
   outlineMode?: boolean;
@@ -221,6 +227,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   opacity = 1,
   newSystemMessage,
   outline,
+  isExistingDeck = false,
   outlineMode = false,
   useOutlineAgent = false,
   initialPromptFromURL,
@@ -237,7 +244,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   initialConversationalData
 }) => {
   const [input, setInput] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<{ label: string; prompt: string }[]>([]);
 
   // Initialize messages based on mode
   const getInitialMessages = (): ExtendedChatMessageProps[] => {
@@ -282,13 +289,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       return outlineMessages;
     }
 
-    // Default welcome message
+    // Default welcome message - different for existing vs new decks
+    const getWelcomeMessage = () => {
+      if (outlineMode) {
+        return "Hi! I'll help you create your presentation. What would you like to create? Tell me about your topic, audience, or goal.";
+      }
+      if (isExistingDeck) {
+        return "Ask me anything to edit your slides, or click directly on elements to modify them. You can also drag and drop files here to add them.";
+      }
+      return "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.";
+    };
+
     return [{
       id: 'welcome-message',
       type: 'ai',
-      message: outlineMode
-        ? "Hi! I'll help you create your presentation. What would you like to create? Tell me about your topic, audience, or goal."
-        : "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.",
+      message: getWelcomeMessage(),
       timestamp: new Date(),
       feedback: null
     }];
@@ -961,6 +976,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       isEditDiff
     });
 
+    console.log('[applyDeckDiff] Starting diff application', {
+      isEditDiff,
+      diffKeys: Object.keys(deckDiff || {}),
+      slidesToUpdate: (deckDiff as any)?.slides_to_update?.length || 0,
+      firstSlideComponentUpdates: (deckDiff as any)?.slides_to_update?.[0]?.components_to_update?.length || 0
+    });
+
     // HARD GUARD: If deck is already completed, do not process any generation diffs
     // BUT: Always allow edit diffs through (component updates from editing agent)
     try {
@@ -985,6 +1007,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
 
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+    console.log('[applyDeckDiff] Edit mode check', {
+      isEditing,
+      isEditDiff,
+      slidesToUpdate: (deckDiff as any).slides_to_update?.length,
+      hasComponentUpdates: (deckDiff as any).slides_to_update?.some((s: any) => s.components_to_update?.length > 0)
+    });
 
     if (isEditing) {
       // Skip applying diffs while actively interacting (drag/resize)
@@ -1035,6 +1063,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
           // Apply component updates
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
+            console.log('[ChatPanel] Applying component update', {
+              slideId,
+              componentId: compDiff.id,
+              type: compDiff.type,
+              hasRenderProp: !!compDiff.props?.render,
+              renderPreview: compDiff.props?.render?.substring(0, 100)
+            });
             editorStore.updateDraftComponent(
               slideId,
               compDiff.id,
@@ -1044,6 +1079,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               },
               true // skipHistory
             );
+            // Debug: verify update was applied
+            const updatedDraft = editorStore.getDraftComponents(slideId);
+            const updatedComp = updatedDraft?.find((c: any) => c.id === compDiff.id);
+            console.log('[ChatPanel] Component after update', {
+              componentId: compDiff.id,
+              found: !!updatedComp,
+              newRenderPreview: updatedComp?.props?.render?.substring(0, 100)
+            });
           });
 
           // Add new components
@@ -1827,12 +1870,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
               const deckRevision = (evt as any).data?.deckRevision;
               const ts = Date.now();
-              console.log('[Realtime][edit.applied] received', { editId: appliedEditId, deckRevision, ts });
-              console.log('[Realtime][edit.applied] full event data:', JSON.stringify((evt as any).data, null, 2));
-              console.log('[Realtime][edit.applied] has deck_diff?', !!(evt as any).data?.deck_diff);
-              if ((evt as any).data?.deck_diff) {
-                console.log('[Realtime][edit.applied] deck_diff details:', JSON.stringify((evt as any).data.deck_diff, null, 2));
-              }
+              const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+              console.log('[Realtime][edit.applied] 🔔 RECEIVED', {
+                editId: appliedEditId,
+                deckRevision,
+                ts,
+                isEditMode: isEditing,
+                hasDeckDiff: !!(evt as any).data?.deck_diff,
+                diffSlidesCount: (evt as any).data?.deck_diff?.slides_to_update?.length || 0,
+                normalizedSlidesCount: normalizedAppliedSlides.length
+              });
               setMessages(prev => [
                 ...prev,
                 { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true, showIcon: false } }
@@ -1966,12 +2013,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           optimizeSlidesByIdSequential(ids);
                         }
                       } catch { }
-                    } else if (!isEditing) {
-                      console.log('[Realtime][edit.applied] no cached diff; relying on Supabase realtime (guards cleared)');
-                      // NOTE: Don't force loadDeck() here - let Supabase realtime handle it
-                      // Guards are cleared, so realtime updates will come through naturally
                     } else {
-                      console.log('[Realtime][edit.applied] no cached diff; in edit mode, relying on Supabase realtime');
+                      // CRITICAL FIX: Force reload deck from database since no local diff is available
+                      // This ensures changes are visible regardless of edit mode or realtime status
+                      console.log('[Realtime][edit.applied] no cached diff; forcing deck reload from database');
+                      setTimeout(() => {
+                        const deckStore = useDeckStore.getState();
+                        if (deckStore.loadDeck) {
+                          deckStore.loadDeck();
+                          console.log('[Realtime][edit.applied] ✅ Forced deck reload triggered');
+                        }
+                      }, 500); // Small delay to ensure backend write completes
                     }
                   }
                 }
@@ -2660,7 +2712,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           const instructionMessage: ExtendedChatMessageProps = {
             id: `instruction-${Date.now()}`,
             type: 'ai',
-            message: 'You can type any command here to edit your presentation, or click directly on elements in the slides to modify them.',
+            message: 'Ask me anything to edit your slides, or click directly on elements to modify them.',
             timestamp: new Date(),
             feedback: null,
             metadata: { type: 'info', isSystemEvent: true }
@@ -4091,8 +4143,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // Pick a random set of suggestions on mount and when mode changes
   useEffect(() => {
-    const suggestionsPool = (outlineMode && useOutlineAgent) ? OUTLINE_SUGGESTIONS : ALL_SUGGESTIONS;
-    setSuggestions(sampleArray(suggestionsPool, 4));
+    if (outlineMode && useOutlineAgent) {
+      // Convert string[] to { label, prompt }[] for outline mode
+      const sampled = sampleArray(OUTLINE_SUGGESTIONS, 4);
+      setSuggestions(sampled.map(s => ({ label: s, prompt: s })));
+    } else {
+      setSuggestions(sampleArray(ALL_SUGGESTIONS, 4));
+    }
   }, [outlineMode, useOutlineAgent]);
 
   return (
@@ -4413,27 +4470,30 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 {/* Suggestions (top-left) with fade/collapse when typing */}
                 {!isLoading && messages.length <= 1 && (
                   <div
-                    className="mr-2 overflow-hidden"
+                    className="mr-2 overflow-visible"
                     style={{
                       transition: 'opacity 180ms ease, max-height 180ms ease, margin-bottom 180ms ease',
                       opacity: input.trim().length > 0 ? 0 : 1,
-                      maxHeight: input.trim().length > 0 ? 0 : 80,
-                      marginBottom: input.trim().length > 0 ? 0 : 4,
+                      maxHeight: input.trim().length > 0 ? 0 : 120,
+                      marginBottom: input.trim().length > 0 ? 0 : 8,
                       pointerEvents: input.trim().length > 0 ? 'none' : 'auto'
                     }}
                   >
-                    <div className="text-[11px] leading-none text-zinc-600 dark:text-zinc-400 opacity-70 mb-1">Try:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {suggestions.map((p) => (
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((s) => (
                         <button
-                          key={p}
+                          key={s.label}
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setInput(p); inputRef.current?.focus(); }}
-                          className="h-6 px-1.5 rounded-full text-[11px] leading-none border border-transparent hover:border-zinc-300/70 dark:hover:border-neutral-700 hover:bg-transparent text-zinc-700 dark:text-zinc-200 transition-colors max-w-[200px] truncate"
-                          aria-label={`Use suggestion: ${p}`}
-                          title={p}
+                          onClick={(e) => { e.stopPropagation(); setInput(s.prompt); inputRef.current?.focus(); }}
+                          className="py-1.5 px-3 rounded-full text-xs leading-none border transition-all duration-150 hover:bg-[#FF4301]/5"
+                          style={{
+                            borderColor: 'rgba(255, 67, 1, 0.3)',
+                            color: '#FF4301',
+                          }}
+                          aria-label={`Use suggestion: ${s.label}`}
+                          title={s.prompt}
                         >
-                          {p}
+                          {s.label}
                         </button>
                       ))}
                     </div>
@@ -4500,35 +4560,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (
-                      /* Slides mode: Edit/select toggle */
-                      !isSlideEditing && (
-                        <IconButton
-                          variant="ghost"
-                          size="xs"
-                          className={`hover:bg-transparent h-6 w-auto px-2 gap-1 flex items-center justify-center transition-opacity ${isSelecting ? 'opacity-40' : 'opacity-100'}`}
-                          style={{ color: isSelecting ? '#16a34a' : COLORS.SUGGESTION_PINK }}
-                          data-tour="chat-target"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Toggling Target: if turning off, clear all selections/highlights
-                            setIsSelecting(prev => {
-                              const next = !prev;
-                              if (next) {
-                                // Turning ON chat targeting: ensure slide editing is OFF
-                                try { setSlideEditing(false); } catch { }
-                              } else {
-                                // Turning OFF chat targeting: clear visuals
-                                clearSelections();
-                              }
-                              return next;
-                            });
-                          }}
-                          title={isSelecting ? 'Exit target mode' : 'Target elements'}
-                        >
-                          <Target size={14} />
-                          <span className="text-[11px] font-semibold">Target</span>
-                        </IconButton>
-                      )
+                      /* Slides mode: Voice recorder button */
+                      <VoiceRecorder
+                        onTranscript={(text) => {
+                          // Append transcribed text to input
+                          setInput(prev => {
+                            const newText = prev.trim() ? `${prev} ${text}` : text;
+                            return newText;
+                          });
+                          // Focus input after transcription
+                          setTimeout(() => inputRef.current?.focus(), 100);
+                        }}
+                        onError={(error) => {
+                          console.error('Voice recording error:', error);
+                        }}
+                        disabled={isLoading}
+                        size="sm"
+                        variant="default"
+                        className="hover:bg-transparent"
+                      />
                     )}
 
                     {/* Send Button - Matching outline pink, no visual disabled state */}

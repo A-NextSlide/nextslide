@@ -868,19 +868,16 @@ const SlideEditorContent: React.FC = () => {
               }
             });
             }
-            // If deck is already completed, immediately show the completion entry message
+            // If deck is already completed, just set the status (ChatPanel handles the welcome message)
             else if (initialStatus.state === 'completed' || (typeof initialStatus.progress === 'number' && initialStatus.progress >= 100)) {
-              const totalSlides = Array.isArray(deckData.slides) ? deckData.slides.length : (initialStatus.totalSlides || 0);
-              const isFontOptimized = (useDeckStore.getState().deckData as any)?.data?.fontOptimized === true;
-              
               // Ensure we show completed state and not generating state
               setDeckStatus({
                 ...initialStatus,
                 state: 'completed',
                 progress: 100,
-                message: 'Your presentation is ready!'
+                message: ''
               });
-              
+
               // Clean up URL if it still has ?new=true
               if (searchParams.get('new') === 'true') {
                 const newSearchParams = new URLSearchParams(searchParams);
@@ -888,18 +885,9 @@ const SlideEditorContent: React.FC = () => {
                 setSearchParams(newSearchParams, { replace: true });
                 console.log('[SlideEditor] Removed ?new=true parameter for completed deck');
               }
-              
-              setLastSystemMessageForChat({
-                message: 'Your presentation is ready!',
-                metadata: {
-                  type: 'generation_complete',
-                  stage: 'generation_complete',
-                  progress: 100,
-                  currentSlide: totalSlides,
-                  totalSlides: totalSlides,
-                  isStreamingUpdate: true
-                }
-              });
+
+              // Don't send "Your presentation is ready!" message for existing decks
+              // ChatPanel handles the appropriate welcome message based on isExistingDeck prop
             }
           } else if (isNewDeck && deckData) {
             // If deck exists but no status, just set a simple generating status
@@ -1086,7 +1074,7 @@ const SlideEditorContent: React.FC = () => {
                 if (lastMessageRef.current !== 'edit_tip_sent') {
                   lastMessageRef.current = 'edit_tip_sent';
                   setLastSystemMessageForChat({
-                    message: `You can type any command here to edit your presentation, or click directly on elements in the slides to modify them.`,
+                    message: `Ask me anything to edit your slides, or click directly on elements to modify them.`,
                     metadata: {
                       type: 'info',
                       isSystemEvent: true
@@ -2007,6 +1995,7 @@ const SlideEditorContent: React.FC = () => {
                 onCollapseChange={handleCollapseChange}
                 opacity={chatOpacity}
                 newSystemMessage={lastSystemMessageForChat}
+                isExistingDeck={!isNewDeck && deckStatus?.state === 'completed'}
               />
             </div>
           </ResizablePanel>

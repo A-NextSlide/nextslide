@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Code, Zap } from 'lucide-react';
+import { Code, Zap, Type, Image, ChevronDown, ChevronRight, Maximize2, Square } from 'lucide-react';
 import { parseCustomComponentCode, ParsedVariable, convertToPropsBasedCode } from '@/utils/customComponentParser';
 import AdvancedCodeEditor from '@/components/ui/AdvancedCodeEditor';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,6 +26,8 @@ import GroupedDropdown from '@/components/settings/GroupedDropdown';
 import ImageSlotEditor from '@/components/settings/ImageSlotEditor';
 import { FONT_CATEGORIES } from '@/registry/library/fonts';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
+import { VirtualElement } from '@/components/custom-component-editor/types';
 
 interface CustomComponentSettingsEditorProps {
   component: ComponentInstance;
@@ -95,6 +97,321 @@ const TextInput: React.FC<{
   );
 };
 
+// Dynamic text element editor with font, color, size controls
+const DynamicTextEditor: React.FC<{
+  element: VirtualElement;
+  onStyleUpdate: (selector: string, property: string, value: string) => void;
+  onTextUpdate: (elementId: string, newText: string) => void;
+  onSave: (message?: string) => void;
+}> = ({ element, onStyleUpdate, onTextUpdate, onSave }) => {
+  const [localText, setLocalText] = useState(element.textContent || '');
+  const [fontCategories, setFontCategories] = useState<Record<string, string[]>>({});
+  const [allFonts, setAllFonts] = useState<string[]>([]);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try { await FontLoadingService.syncDesignerFonts?.(); } catch {}
+      setFontCategories(FontLoadingService.getDedupedFontGroups?.() || FontLoadingService.getFontCategories());
+      setAllFonts(FontLoadingService.getAllFontNames());
+    })();
+  }, []);
+
+  useEffect(() => {
+    setLocalText(element.textContent || '');
+  }, [element.textContent]);
+
+  const fontSize = useMemo(() => {
+    if (!element.computedStyle?.fontSize) return 16;
+    const parsed = parseInt(element.computedStyle.fontSize, 10);
+    return isNaN(parsed) ? 16 : parsed;
+  }, [element.computedStyle?.fontSize]);
+
+  const maxFontSize = useMemo(() => {
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'h1') return 200;
+    if (tag === 'h2') return 150;
+    if (tag === 'h3' || tag === 'h4') return 100;
+    return 72;
+  }, [element.tagName]);
+
+  // Normalize font family for display
+  const currentFont = useMemo(() => {
+    const ff = element.computedStyle?.fontFamily;
+    if (!ff) return '';
+    return ff.split(',')[0].trim().replace(/['"]/g, '');
+  }, [element.computedStyle?.fontFamily]);
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Text</Label>
+        <Textarea
+          value={localText}
+          onChange={(e) => {
+            setLocalText(e.target.value);
+            onTextUpdate(element.id, e.target.value);
+          }}
+          onBlur={() => onSave('Updated text')}
+          className="w-full text-[11px] min-h-[60px] resize-none"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Font</Label>
+        <GroupedDropdown
+          value={currentFont}
+          options={allFonts}
+          groups={fontCategories}
+          onChange={(value) => {
+            onStyleUpdate(element.selector, 'fontFamily', value);
+            FontLoadingService.loadFont(value).catch(() => {});
+            onSave('Changed font');
+          }}
+          placeholder="Select font"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Size</Label>
+        <div className="flex items-center gap-2">
+          <Slider
+            min={8}
+            max={maxFontSize}
+            step={1}
+            value={[fontSize]}
+            onValueChange={(values) => onStyleUpdate(element.selector, 'fontSize', `${values[0]}px`)}
+            onPointerUp={() => onSave('Changed font size')}
+            className="flex-grow"
+          />
+          <span className="text-xs w-12 text-right">{fontSize}px</span>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Weight</Label>
+        <div className="flex gap-1 flex-wrap">
+          {['300', '400', '500', '600', '700', '800'].map((weight) => (
+            <Button
+              key={weight}
+              variant={element.computedStyle?.fontWeight === weight ? 'default' : 'outline'}
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => {
+                onStyleUpdate(element.selector, 'fontWeight', weight);
+                onSave('Changed font weight');
+              }}
+            >
+              {weight === '300' ? 'Light' :
+               weight === '400' ? 'Reg' :
+               weight === '500' ? 'Med' :
+               weight === '600' ? 'Semi' :
+               weight === '700' ? 'Bold' : 'Ex'}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Color</Label>
+        <div className="flex items-center gap-2">
+          <Popover open={colorPickerOpen} onOpenChange={(open) => {
+            setColorPickerOpen(open);
+            if (!open) onSave('Changed color');
+          }}>
+            <PopoverTrigger asChild>
+              <button
+                className="w-7 h-7 rounded-md border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
+                style={{ backgroundColor: element.computedStyle?.color || '#000000' }}
+              />
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2" align="start">
+              <HexColorPicker
+                color={element.computedStyle?.color || '#000000'}
+                onChange={(color) => onStyleUpdate(element.selector, 'color', color)}
+              />
+            </PopoverContent>
+          </Popover>
+          <Input
+            value={element.computedStyle?.color || ''}
+            onChange={(e) => onStyleUpdate(element.selector, 'color', e.target.value)}
+            onBlur={() => onSave('Changed color')}
+            className="flex-1 h-7 text-[11px] font-mono"
+            placeholder="#000000"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Dynamic image element editor
+const DynamicImageEditor: React.FC<{
+  element: VirtualElement;
+  componentId: string;
+  onImageUpdate: (elementId: string, newSrc: string) => void;
+  onStyleUpdate: (selector: string, property: string, value: string) => void;
+  onSave: (message?: string) => void;
+}> = ({ element, componentId, onImageUpdate, onStyleUpdate, onSave }) => {
+  const searchQuery = useMemo(() => {
+    if (element.alt && element.alt.length > 2 && !element.alt.toLowerCase().includes('placeholder')) {
+      return element.alt.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().toLowerCase();
+    }
+    return 'image';
+  }, [element.alt]);
+
+  return (
+    <ImageSlotEditor
+      propName={element.id}
+      label={element.alt || 'Image'}
+      value={element.src}
+      searchQuery={searchQuery}
+      objectFit={(element.computedStyle?.height && element.computedStyle?.width) ? 'cover' : 'contain'}
+      componentId={componentId}
+      onUpdate={(propName, imageUrl) => {
+        onImageUpdate(element.id, imageUrl);
+      }}
+      onSave={(propName, label) => {
+        onSave(`Updated ${label}`);
+      }}
+      onObjectFitChange={(fit) => {
+        onStyleUpdate(element.selector, 'objectFit', fit);
+        onSave('Changed image fit');
+      }}
+    />
+  );
+};
+
+// Dynamic container/box editor with background, border, padding controls
+const DynamicContainerEditor: React.FC<{
+  element: VirtualElement;
+  onStyleUpdate: (selector: string, property: string, value: string) => void;
+  onSave: (message?: string) => void;
+}> = ({ element, onStyleUpdate, onSave }) => {
+  const [bgColorOpen, setBgColorOpen] = useState(false);
+  const [borderColorOpen, setBorderColorOpen] = useState(false);
+
+  // Parse current values from computed style
+  const bgColor = element.computedStyle?.position ? undefined : '#ffffff'; // placeholder
+  const borderRadius = useMemo(() => {
+    // Try to extract from computed style or default
+    return 0;
+  }, []);
+
+  return (
+    <div className="space-y-3">
+      {/* Background Color */}
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Background</Label>
+        <div className="flex items-center gap-2">
+          <Popover open={bgColorOpen} onOpenChange={(open) => {
+            setBgColorOpen(open);
+            if (!open) onSave('Changed background');
+          }}>
+            <PopoverTrigger asChild>
+              <button
+                className="w-7 h-7 rounded-md border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
+                style={{ backgroundColor: '#f0f0f0' }}
+              />
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2" align="start">
+              <HexColorPicker
+                color="#f0f0f0"
+                onChange={(color) => onStyleUpdate(element.selector, 'backgroundColor', color)}
+              />
+            </PopoverContent>
+          </Popover>
+          <Input
+            placeholder="#ffffff"
+            onChange={(e) => onStyleUpdate(element.selector, 'backgroundColor', e.target.value)}
+            onBlur={() => onSave('Changed background')}
+            className="flex-1 h-7 text-[11px] font-mono"
+          />
+        </div>
+      </div>
+
+      {/* Border Radius */}
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Corner Radius</Label>
+        <div className="flex items-center gap-2">
+          <Slider
+            min={0}
+            max={50}
+            step={1}
+            value={[borderRadius]}
+            onValueChange={(values) => onStyleUpdate(element.selector, 'borderRadius', `${values[0]}px`)}
+            onPointerUp={() => onSave('Changed border radius')}
+            className="flex-grow"
+          />
+          <span className="text-xs w-10 text-right">{borderRadius}px</span>
+        </div>
+      </div>
+
+      {/* Padding */}
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Padding</Label>
+        <div className="flex items-center gap-2">
+          <Slider
+            min={0}
+            max={100}
+            step={4}
+            value={[16]}
+            onValueChange={(values) => onStyleUpdate(element.selector, 'padding', `${values[0]}px`)}
+            onPointerUp={() => onSave('Changed padding')}
+            className="flex-grow"
+          />
+          <span className="text-xs w-10 text-right">16px</span>
+        </div>
+      </div>
+
+      {/* Border */}
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Border</Label>
+        <div className="flex items-center gap-2">
+          <Popover open={borderColorOpen} onOpenChange={(open) => {
+            setBorderColorOpen(open);
+            if (!open) onSave('Changed border');
+          }}>
+            <PopoverTrigger asChild>
+              <button
+                className="w-7 h-7 rounded-md border-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
+                style={{ borderColor: '#e0e0e0' }}
+              />
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2" align="start">
+              <HexColorPicker
+                color="#e0e0e0"
+                onChange={(color) => onStyleUpdate(element.selector, 'borderColor', color)}
+              />
+            </PopoverContent>
+          </Popover>
+          <Select
+            defaultValue="none"
+            onValueChange={(value) => {
+              if (value === 'none') {
+                onStyleUpdate(element.selector, 'border', 'none');
+              } else {
+                onStyleUpdate(element.selector, 'border', `${value} solid #e0e0e0`);
+              }
+              onSave('Changed border');
+            }}
+          >
+            <SelectTrigger className="h-7 text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="1px">1px</SelectItem>
+              <SelectItem value="2px">2px</SelectItem>
+              <SelectItem value="3px">3px</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps> = ({
   component,
   onUpdate,
@@ -103,6 +420,26 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
 }) => {
   const [showCodeEditor, setShowCodeEditor] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState<Record<string, boolean>>({});
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    text: true,
+    images: true,
+    containers: false,
+  });
+
+  // Get detected elements from the custom component edit store
+  const { activeComponentId, detectedElements, selectedElement, updateElementStyle, updateElementText, updateElementImage } = useCustomComponentEditStore();
+
+  // Only use store data if it matches this component
+  const isActiveComponent = activeComponentId === component.id;
+  const activeDetectedElements = isActiveComponent ? detectedElements : [];
+  const activeSelectedElement = isActiveComponent ? selectedElement : null;
+
+  // Check if this is an HTML-based component (iframe)
+  const isHtmlComponent = useMemo(() => {
+    const render = (component.props.render as string) || '';
+    return render.trim().toLowerCase().startsWith('<!doctype') ||
+           render.trim().toLowerCase().startsWith('<html');
+  }, [component.props.render]);
   // Stabilize function props for use inside effects without re-triggering deps
   const handlePropChangeRef = useRef(handlePropChange);
   const saveComponentToHistoryRef = useRef(saveComponentToHistory);
@@ -557,6 +894,175 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Dynamic Element Editor for HTML components */}
+      {isHtmlComponent && isActiveComponent && activeDetectedElements.length > 0 && (
+        <div className="space-y-3 border-t pt-3">
+          {/* Selected Element Editor */}
+          {activeSelectedElement && (
+            <div className="space-y-2 p-2 bg-muted/30 rounded-lg border border-pink-200">
+              <div className="flex items-center gap-2 pb-1 border-b border-pink-200/50">
+                {activeSelectedElement.type === 'text' && <Type className="w-3 h-3 text-blue-500" />}
+                {activeSelectedElement.type === 'image' && <Image className="w-3 h-3 text-green-500" />}
+                {activeSelectedElement.type === 'container' && <Maximize2 className="w-3 h-3 text-purple-500" />}
+                <span className="text-[10px] font-medium text-pink-600">
+                  Selected: {activeSelectedElement.type === 'text'
+                    ? (activeSelectedElement.textContent?.slice(0, 25) + (activeSelectedElement.textContent && activeSelectedElement.textContent.length > 25 ? '...' : ''))
+                    : activeSelectedElement.alt || `${activeSelectedElement.tagName}`}
+                </span>
+              </div>
+
+              {activeSelectedElement.type === 'text' && (
+                <DynamicTextEditor
+                  element={activeSelectedElement}
+                  onStyleUpdate={updateElementStyle}
+                  onTextUpdate={updateElementText}
+                  onSave={saveComponentToHistory}
+                />
+              )}
+
+              {activeSelectedElement.type === 'image' && (
+                <DynamicImageEditor
+                  element={activeSelectedElement}
+                  componentId={component.id}
+                  onImageUpdate={updateElementImage}
+                  onStyleUpdate={updateElementStyle}
+                  onSave={saveComponentToHistory}
+                />
+              )}
+
+              {activeSelectedElement.type === 'container' && (
+                <DynamicContainerEditor
+                  element={activeSelectedElement}
+                  onStyleUpdate={updateElementStyle}
+                  onSave={saveComponentToHistory}
+                />
+              )}
+            </div>
+          )}
+
+          {/* All Detected Elements - collapsible sections */}
+          {!activeSelectedElement && (
+            <>
+              {/* Text Elements */}
+              {activeDetectedElements.filter(e => e.type === 'text').length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections(prev => ({ ...prev, text: !prev.text }))}
+                    className="flex items-center gap-2 w-full text-left py-1 hover:bg-muted/50 rounded px-1 -mx-1"
+                  >
+                    {expandedSections.text ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <Type className="w-3 h-3 text-blue-500" />
+                    <span className="text-xs font-medium">Text ({activeDetectedElements.filter(e => e.type === 'text').length})</span>
+                  </button>
+
+                  {expandedSections.text && (
+                    <div className="space-y-3 pl-4">
+                      {activeDetectedElements.filter(e => e.type === 'text').map((element, index) => (
+                        <div key={element.id} className="space-y-2 pb-2 border-b last:border-0">
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                            {element.tagName} - {element.textContent?.slice(0, 20)}...
+                          </div>
+                          <DynamicTextEditor
+                            element={element}
+                            onStyleUpdate={updateElementStyle}
+                            onTextUpdate={updateElementText}
+                            onSave={saveComponentToHistory}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Image Elements */}
+              {activeDetectedElements.filter(e => e.type === 'image').length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections(prev => ({ ...prev, images: !prev.images }))}
+                    className="flex items-center gap-2 w-full text-left py-1 hover:bg-muted/50 rounded px-1 -mx-1"
+                  >
+                    {expandedSections.images ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <Image className="w-3 h-3 text-green-500" />
+                    <span className="text-xs font-medium">Images ({activeDetectedElements.filter(e => e.type === 'image').length})</span>
+                  </button>
+
+                  {expandedSections.images && (
+                    <div className="space-y-3 pl-4">
+                      {activeDetectedElements.filter(e => e.type === 'image').map((element, index) => (
+                        <div key={element.id} className="space-y-2 pb-2 border-b last:border-0">
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                            {element.alt || `Image ${index + 1}`}
+                          </div>
+                          <DynamicImageEditor
+                            element={element}
+                            componentId={component.id}
+                            onImageUpdate={updateElementImage}
+                            onStyleUpdate={updateElementStyle}
+                            onSave={saveComponentToHistory}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Container/Box Elements */}
+              {activeDetectedElements.filter(e => e.type === 'container').length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections(prev => ({ ...prev, containers: !prev.containers }))}
+                    className="flex items-center gap-2 w-full text-left py-1 hover:bg-muted/50 rounded px-1 -mx-1"
+                  >
+                    {expandedSections.containers ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    <Square className="w-3 h-3 text-purple-500" />
+                    <span className="text-xs font-medium">Boxes ({activeDetectedElements.filter(e => e.type === 'container').length})</span>
+                  </button>
+
+                  {expandedSections.containers && (
+                    <div className="space-y-3 pl-4">
+                      {activeDetectedElements.filter(e => e.type === 'container').map((element, index) => (
+                        <div key={element.id} className="space-y-2 pb-2 border-b last:border-0">
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                            {element.tagName} {index + 1}
+                          </div>
+                          <DynamicContainerEditor
+                            element={element}
+                            onStyleUpdate={updateElementStyle}
+                            onSave={saveComponentToHistory}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Hint when no element selected */}
+          {!activeSelectedElement && (
+            <p className="text-[10px] text-muted-foreground text-center py-1">
+              Click an element on the slide to edit it
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Loading state for HTML components waiting for element detection */}
+      {isHtmlComponent && !isActiveComponent && (
+        <div className="space-y-2 border-t pt-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="w-3 h-3 border-2 border-pink-300 border-t-transparent rounded-full animate-spin" />
+            <span>Detecting editable elements...</span>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Click on the slide to edit text, images, and styles.
+          </p>
+        </div>
+      )}
 
       {/* HTML Slide Images - shown for HTML documents regardless of parsed variables */}
       {htmlPlaceholderImages.length > 0 && (

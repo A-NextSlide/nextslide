@@ -245,6 +245,20 @@ export const CustomComponentRenderer: React.FC<{
 }> = ({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const renderCode = component.props.render as string;
 
+  // Create a hash of the render code to detect content changes for iframe remounting
+  // This ensures the iframe refreshes when the HTML content changes after edits
+  const renderCodeHash = useMemo(() => {
+    if (!renderCode) return '0';
+    // Simple hash: use length + sum of char codes of first/middle/last chars
+    const len = renderCode.length;
+    const sample = (renderCode.charCodeAt(0) || 0) +
+                   (renderCode.charCodeAt(Math.floor(len / 2)) || 0) +
+                   (renderCode.charCodeAt(len - 1) || 0);
+    const hash = `${len}-${sample}`;
+    console.log('[CustomComponent] renderCodeHash computed:', { componentId: component.id, hash, len });
+    return hash;
+  }, [renderCode, component.id]);
+
   // Stable component props - memoize to prevent unnecessary re-renders
   const componentProps = useMemo(() => ({
     ...component.props,
@@ -1438,6 +1452,28 @@ export const CustomComponentRenderer: React.FC<{
     return () => observer.disconnect();
   }, []);
 
+  // Listen for image processing events from ImageSlotEditor and notify iframe
+  useEffect(() => {
+    const handleImageProcessing = (event: CustomEvent<{ componentId: string; propName: string; isProcessing: boolean }>) => {
+      const { componentId: targetComponentId, propName, isProcessing } = event.detail;
+      if (targetComponentId === component.id) {
+        // Send message to iframe to show/hide processing overlay on the specific image
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({
+            type: 'image-processing',
+            propName,
+            isProcessing
+          }, '*');
+        }
+      }
+    };
+
+    window.addEventListener('image:processing' as any, handleImageProcessing);
+    return () => {
+      window.removeEventListener('image:processing' as any, handleImageProcessing);
+    };
+  }, [component.id]);
+
   // Container dimensions for non-iframe rendering
   const containerWidth = typeof componentProps.width === 'number' ? componentProps.width : 400;
   const containerHeight = typeof componentProps.height === 'number' ? componentProps.height : 200;
@@ -1778,6 +1814,97 @@ export const CustomComponentRenderer: React.FC<{
         htmlLength: html.length
       });
       html = injectEditMode(html, component.id);
+    }
+
+    // Inject image processing overlay handler script
+    const processingOverlayScript = `
+<style>
+  .ns-image-processing-overlay {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    backdrop-filter: blur(2px) !important;
+    z-index: 9999 !important;
+    pointer-events: none !important;
+  }
+  .ns-image-processing-spinner {
+    width: 24px !important;
+    height: 24px !important;
+    border: 3px solid rgba(255, 255, 255, 0.3) !important;
+    border-top-color: #FF4301 !important;
+    border-radius: 50% !important;
+    animation: ns-spin 1s linear infinite !important;
+  }
+  .ns-image-processing-text {
+    margin-top: 8px !important;
+    color: white !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;
+  }
+  @keyframes ns-spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+<script>
+(function() {
+  window.addEventListener('message', function(event) {
+    if (event.data?.type === 'image-processing') {
+      var propName = event.data.propName;
+      var isProcessing = event.data.isProcessing;
+
+      // Find all images and check if their src contains the propName or their data-prop matches
+      var images = document.querySelectorAll('img');
+      images.forEach(function(img) {
+        var imgWrapper = img.parentElement;
+        // Check if this image's prop name matches (via data attribute or alt text)
+        var imgPropName = img.getAttribute('data-prop') || img.alt || '';
+        var matches = imgPropName.toLowerCase().includes(propName.toLowerCase()) ||
+                      propName.toLowerCase().includes(imgPropName.toLowerCase().replace(/\\s+/g, ''));
+
+        if (matches || images.length === 1) {
+          // Ensure wrapper has position relative for overlay positioning
+          if (imgWrapper && imgWrapper.tagName !== 'BODY') {
+            var wrapperStyle = window.getComputedStyle(imgWrapper);
+            if (wrapperStyle.position === 'static') {
+              imgWrapper.style.position = 'relative';
+            }
+
+            // Find or create overlay
+            var overlayId = 'ns-processing-overlay-' + (img.id || Math.random().toString(36).substr(2, 9));
+            var existingOverlay = document.getElementById(overlayId);
+
+            if (isProcessing && !existingOverlay) {
+              var overlay = document.createElement('div');
+              overlay.id = overlayId;
+              overlay.className = 'ns-image-processing-overlay';
+              overlay.innerHTML = '<div class="ns-image-processing-spinner"></div><span class="ns-image-processing-text">Processing...</span>';
+              imgWrapper.appendChild(overlay);
+            } else if (!isProcessing && existingOverlay) {
+              existingOverlay.remove();
+            }
+          }
+        }
+      });
+    }
+  });
+})();
+</script>`;
+
+    // Inject before </head> or at the start
+    if (html.includes('</head>')) {
+      html = html.replace('</head>', processingOverlayScript + '</head>');
+    } else if (html.includes('<body')) {
+      html = html.replace('<body', processingOverlayScript + '<body');
+    } else {
+      html = processingOverlayScript + html;
     }
 
     return html;
@@ -2316,7 +2443,7 @@ export const CustomComponentRenderer: React.FC<{
           {isIframeComponent && stableIframeSrcDoc && (
             <iframe
               ref={iframeRef}
-              key={`${component.id}-${propsKey.length}-${propsKey.slice(-20)}`}
+              key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
               srcDoc={stableIframeSrcDoc}
               style={{
                 position: 'absolute',

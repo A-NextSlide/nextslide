@@ -41,7 +41,8 @@ from agents.config import ENABLE_ANTHROPIC_PROMPT_CACHING, LOG_ANTHROPIC_CACHE_M
 MODELS = {
     # Claude
     "claude-opus-4-5": ("anthropic", "claude-opus-4-5-20251101"),
-    "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),
+    "claude-sonnet-4-5": ("anthropic", "claude-sonnet-4-5-20250929"),
+    "claude-sonnet-4": ("anthropic", "claude-sonnet-4-20250514"),  # Legacy
     "claude-haiku-4-5": ("anthropic", "claude-haiku-4-5-20251001"),
 
     # Gemini
@@ -49,6 +50,7 @@ MODELS = {
     "gemini-2.5-flash-lite": ("gemini", "gemini-2.5-flash-lite"),
     "gemini-2.5-pro": ("gemini", "gemini-2.5-pro"),
     "gemini-3-pro": ("gemini", "gemini-3-pro-preview"),
+    "gemini-3-pro-preview": ("gemini", "gemini-3-pro-preview"),
 
     # OpenAI
     "gpt-4o-mini": ("openai", "gpt-4o-mini"),
@@ -71,7 +73,8 @@ MODELS = {
 # ═══════════════════════════════════════════════════════════════════════════════
 MODEL_MAX_TOKENS = {
     "claude-opus-4-5-20251101": 32000,
-    "claude-sonnet-4-20250514": 64000,
+    "claude-sonnet-4-5-20250929": 64000,
+    "claude-sonnet-4-20250514": 64000,  # Legacy
     "claude-haiku-4-5-20251001": 64000,
     "gemini-2.5-flash": 8192,
     "gemini-2.5-flash-lite": 65536,

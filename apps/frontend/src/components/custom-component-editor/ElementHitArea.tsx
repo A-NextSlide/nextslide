@@ -4,10 +4,12 @@
  * This component creates a transparent overlay that captures mouse events
  * for element selection, without interfering with the iframe's visual rendering.
  *
- * Z-index hierarchy (higher = on top, clickable first):
- * - Text elements: 10000 (highest priority - always clickable)
- * - Image elements: 5000
- * - Container elements: 1000 (lowest - only select if nothing else is clicked)
+ * Z-index hierarchy (smaller elements always on top):
+ * - Smaller area = higher z-index
+ * - Type bonus: text > image > container
+ *
+ * When an element is selected, hit areas are hidden to allow drag/resize.
+ * The selection overlay handles clicking to select nested elements.
  */
 
 import React from 'react';
@@ -19,6 +21,8 @@ interface ElementHitAreaProps {
   onSelect: (cursorX: number, cursorY: number) => void;
   onDoubleClick: () => void;
   disabled?: boolean;
+  /** When true, hide all hit areas (something is selected, let selection overlay handle clicks) */
+  hideForSelection?: boolean;
 }
 
 export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
@@ -27,19 +31,24 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
   onSelect,
   onDoubleClick,
   disabled = false,
+  hideForSelection = false,
 }) => {
   if (disabled) return null;
+  // Don't render any hit areas when something is selected - selection overlay handles interaction
+  if (hideForSelection) return null;
+
+  const elementArea = element.bounds.width * element.bounds.height;
 
   // Calculate z-index based on element type and size
-  // Smaller elements should be on top (more specific), larger elements below
+  // Smaller elements must ALWAYS be on top so they're clickable
   const getZIndex = () => {
-    const area = element.bounds.width * element.bounds.height;
-    // Base z-index by type
-    const baseZ = element.type === 'text' ? 10000 : (element.type === 'image' ? 5000 : 1000);
-    // Subtract area factor so smaller elements are on top
-    // Clamp to ensure we don't go below the type's base tier
-    const minZ = element.type === 'text' ? 9000 : (element.type === 'image' ? 4000 : 500);
-    return Math.max(minZ, baseZ - Math.floor(area / 1000));
+    // Use inverse area as primary factor - smaller = higher z-index
+    const areaFactor = Math.max(1, 20000 - Math.floor(elementArea / 100));
+
+    // Type bonus (text always on top within same size tier)
+    const typeBonus = element.type === 'text' ? 5000 : (element.type === 'image' ? 3000 : 1000);
+
+    return 10000 + typeBonus + areaFactor;
   };
 
   // Set to true to show debug colors for hit areas
@@ -54,7 +63,8 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
         width: element.bounds.width,
         height: element.bounds.height,
         pointerEvents: 'auto',
-        cursor: element.type === 'text' ? 'text' : 'pointer',
+        // Use pointer cursor for all - click selects, double-click edits (for text)
+        cursor: 'pointer',
         zIndex: getZIndex(),
         // Debug colors: green=text, blue=image, red=container
         backgroundColor: DEBUG_HIT_AREAS
