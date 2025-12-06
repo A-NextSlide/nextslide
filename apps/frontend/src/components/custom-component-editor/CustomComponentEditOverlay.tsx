@@ -637,11 +637,22 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         }
       }
 
-      // Handle text editing finished - re-enable hit areas
+      // Handle text editing finished - save changes and re-enable hit areas
       if (data.type === 'text-changed') {
         setEditingTextId(null);
+
+        // Request HTML from iframe to persist the text change
+        setTimeout(() => {
+          if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+              target: 'ns-custom-component-edit',
+              type: 'get-html',
+            }, '*');
+          }
+        }, 50);
+
         // Request fresh element data after text edit
-        setTimeout(requestElements, 100);
+        setTimeout(requestElements, 150);
       }
 
       // Handle HTML response for persistence
