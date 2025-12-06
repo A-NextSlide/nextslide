@@ -973,7 +973,7 @@ const Landing: React.FC = () => {
                 <div className="text-sm text-black/50 dark:text-white/50">100 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
-                {['~2 presentations', 'All AI features', 'Export to PDF'].map((feature, i) => (
+                {['~12 slides generated', 'All AI features', 'Export to PDF'].map((feature, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-[#FF4301] flex-shrink-0 mt-0.5" />
                     <span className="text-black/70 dark:text-white/70">{feature}</span>
@@ -995,7 +995,7 @@ const Landing: React.FC = () => {
                 <div className="text-sm text-black/50 dark:text-white/50">200 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
-                {['~30-40 presentations', 'All AI features', 'Export to PPTX', 'Email support'].map((feature, i) => (
+                {['~180-240 slides generated', 'All AI features', 'Export to PPTX', 'Email support'].map((feature, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-[#FF4301] flex-shrink-0 mt-0.5" />
                     <span className="text-black/70 dark:text-white/70">{feature}</span>
@@ -1020,7 +1020,7 @@ const Landing: React.FC = () => {
                 <div className="text-sm opacity-90">500 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
-                {['~75-100 presentations', 'Priority AI', 'Custom branding', 'Pay-as-you-go overage'].map((feature, i) => (
+                {['~450-600 slides generated', 'Priority AI', 'Custom branding', 'Pay-as-you-go overage'].map((feature, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <span>{feature}</span>
