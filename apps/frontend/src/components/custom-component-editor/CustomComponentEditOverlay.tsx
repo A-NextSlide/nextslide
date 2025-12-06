@@ -667,17 +667,30 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
       // Handle text editing finished - save changes and re-enable hit areas
       if (data.type === 'text-changed') {
+        console.log('[CustomComponentEdit] Text changed, requesting HTML save:', data);
         setEditingTextId(null);
 
         // Request HTML from iframe to persist the text change
-        setTimeout(() => {
-          if (iframeRef.current?.contentWindow) {
-            iframeRef.current.contentWindow.postMessage({
+        // Use the event source window directly to ensure we reach the right iframe
+        const sourceWindow = event.source as Window;
+        if (sourceWindow) {
+          setTimeout(() => {
+            console.log('[CustomComponentEdit] Sending get-html request');
+            sourceWindow.postMessage({
               target: 'ns-custom-component-edit',
               type: 'get-html',
             }, '*');
-          }
-        }, 50);
+          }, 50);
+        } else if (iframeRef.current?.contentWindow) {
+          // Fallback to iframeRef
+          setTimeout(() => {
+            console.log('[CustomComponentEdit] Sending get-html request (fallback)');
+            iframeRef.current?.contentWindow?.postMessage({
+              target: 'ns-custom-component-edit',
+              type: 'get-html',
+            }, '*');
+          }, 50);
+        }
 
         // Request fresh element data after text edit
         setTimeout(requestElements, 150);
