@@ -53,7 +53,8 @@ import Pricing from './pages/Pricing';
 import { CreditsProvider } from './context/CreditsContext';
 import { OnboardingProvider, useOnboarding } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
-import WelcomeModal from './components/common/WelcomeModal';
+import BonusTokensModal from './components/common/BonusTokensModal';
+import { useCredits } from './context/CreditsContext';
 
 // Component to initialize font optimization
 // Removed FontOptimizationInitializer
@@ -64,10 +65,11 @@ function UserRecordInitializer() {
   return null;
 }
 
-// Component to show welcome modal on first visit (only once per session)
+// Component to show bonus tokens modal on first visit (only once per session)
 function WelcomeModalController() {
   const { shouldShowWelcome, markWelcomeShown } = useOnboarding();
   const { user } = useAuth();
+  const { refreshBalance } = useCredits();
   const [isOpen, setIsOpen] = useState(false);
   const [userName, setUserName] = useState<string | undefined>();
   // Track if we've already shown the modal this session to prevent re-showing
@@ -90,12 +92,14 @@ function WelcomeModalController() {
     setIsOpen(false);
     // Mark as shown in backend (fire and forget - state already updated optimistically)
     markWelcomeShown();
+    // Refresh the credit balance to show the new 500 tokens
+    refreshBalance();
   };
 
   if (!user) return null;
 
   return (
-    <WelcomeModal
+    <BonusTokensModal
       isOpen={isOpen}
       onClose={handleClose}
       userName={userName}

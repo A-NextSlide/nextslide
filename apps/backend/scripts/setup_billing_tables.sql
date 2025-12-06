@@ -192,7 +192,7 @@ RETURNS TRIGGER AS $$
 BEGIN
   -- Create credit balance with free tier credits
   INSERT INTO public.credit_balances (user_id, monthly_credits, purchased_credits, used_credits, period_start, period_end)
-  VALUES (NEW.id, 10, 0, 0, NOW(), NOW() + INTERVAL '1 month')
+  VALUES (NEW.id, 200, 0, 0, NOW(), NOW() + INTERVAL '1 month')
   ON CONFLICT (user_id) DO NOTHING;
 
   -- Create free subscription
