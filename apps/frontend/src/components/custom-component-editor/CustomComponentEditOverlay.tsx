@@ -688,28 +688,34 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef, virtualElements, onElementSelect]);
 
+  // Handle text edit - starts inline editing in the iframe
+  const handleStartTextEdit = useCallback((element: VirtualElement) => {
+    if (element.type !== 'text') return;
+
+    console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'start-text-edit',
+        selector: element.selector,
+      }, '*');
+      console.log('[CustomComponentEdit] Sent start-text-edit message');
+    }
+    // Hide selection overlay while editing text
+    setSelectedElementId(null);
+    setEditingTextId(element.id);
+    onElementSelect(null);
+  }, [iframeRef, onElementSelect]);
+
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement) => {
     if (element.type === 'text') {
-      // Double-click on text: start inline editing
-      console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-          target: 'ns-custom-component-edit',
-          type: 'start-text-edit',
-          selector: element.selector,
-        }, '*');
-        console.log('[CustomComponentEdit] Sent start-text-edit message');
-      }
-      // Hide selection overlay while editing text
-      setSelectedElementId(null);
-      setEditingTextId(element.id);
-      onElementSelect(null);
+      handleStartTextEdit(element);
     } else if (element.type === 'image') {
       // Could open image settings or similar
       onElementSelect(toDetectedElement(element));
     }
-  }, [iframeRef, onElementSelect]);
+  }, [handleStartTextEdit, onElementSelect]);
 
   // Handle click on nested element (when clicking inside selected element's bounds)
   const handleClickNested = useCallback((x: number, y: number) => {
