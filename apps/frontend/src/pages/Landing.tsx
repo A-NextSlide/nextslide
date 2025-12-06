@@ -9,12 +9,15 @@ import {
   ChevronLeft, ChevronRight, Bot, Layers, Settings, Crown, Star
 } from 'lucide-react';
 import { showcaseService, ShowcaseDeck } from '@/services/showcaseService';
+import { useAuth } from '@/context/SupabaseAuthContext';
 
 // Lazy load MiniSlide
 const MiniSlide = lazy(() => import('@/components/deck/MiniSlide'));
 
 const Landing: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isSignedIn = !!user;
   const [scrollY, setScrollY] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -290,11 +293,20 @@ const Landing: React.FC = () => {
             <a href="#showcase" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Examples</a>
             <a href="#compare" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Compare</a>
             <a href="#pricing" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Pricing</a>
-            <Button variant="ghost" onClick={() => navigate('/login')} className="text-sm">Sign In</Button>
-            <Button onClick={() => navigate('/signup')} className="bg-[#FF4301] hover:bg-[#E63901] text-white text-sm font-semibold">
-              Get Started
-              <ArrowRight className="ml-2 w-4 h-4" />
-            </Button>
+            {isSignedIn ? (
+              <Button onClick={() => navigate('/app')} className="bg-[#FF4301] hover:bg-[#E63901] text-white text-sm font-semibold">
+                Go to App
+                <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => navigate('/login')} className="text-sm">Sign In</Button>
+                <Button onClick={() => navigate('/signup')} className="bg-[#FF4301] hover:bg-[#E63901] text-white text-sm font-semibold">
+                  Get Started
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </>
+            )}
           </div>
 
           <button
@@ -311,8 +323,14 @@ const Landing: React.FC = () => {
               <a href="#showcase" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Examples</a>
               <a href="#compare" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Compare</a>
               <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Pricing</a>
-              <Button variant="ghost" onClick={() => navigate('/login')} className="justify-start min-h-[44px] touch-manipulation">Sign In</Button>
-              <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/signup')}>Get Started</Button>
+              {isSignedIn ? (
+                <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/app')}>Go to App</Button>
+              ) : (
+                <>
+                  <Button variant="ghost" onClick={() => navigate('/login')} className="justify-start min-h-[44px] touch-manipulation">Sign In</Button>
+                  <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/signup')}>Get Started</Button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -344,20 +362,22 @@ const Landing: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-8 px-4 sm:px-0">
               <Button
                 size="lg"
-                onClick={() => navigate('/signup')}
+                onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
                 className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold w-full sm:w-auto min-h-[48px] touch-manipulation"
               >
-                Create Full Deck Free
+                {isSignedIn ? 'Go to App' : 'Create Full Deck Free'}
                 <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold border-2 w-full sm:w-auto min-h-[48px] touch-manipulation"
-              >
-                <Play className="mr-2 w-4 h-4 sm:w-5 sm:h-5" />
-                Watch Demo
-              </Button>
+              {!isSignedIn && (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold border-2 w-full sm:w-auto min-h-[48px] touch-manipulation"
+                >
+                  <Play className="mr-2 w-4 h-4 sm:w-5 sm:h-5" />
+                  Watch Demo
+                </Button>
+              )}
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-black/50 dark:text-white/50">
               <div className="flex items-center gap-2">
@@ -1078,17 +1098,20 @@ const Landing: React.FC = () => {
               textTransform: 'uppercase'
             }}
           >
-            Try NextSlide free
+            {isSignedIn ? 'Ready to create?' : 'Try NextSlide free'}
           </h2>
           <p className="text-xl opacity-90 mb-10 max-w-2xl mx-auto">
-            No commitments. No credit card. Start creating professional presentations in 90 seconds.
+            {isSignedIn
+              ? 'Jump back into your presentations and keep creating.'
+              : 'No commitments. No credit card. Start creating professional presentations in 90 seconds.'
+            }
           </p>
           <Button
             size="lg"
             className="bg-white text-[#FF4301] hover:bg-zinc-100 px-12 py-7 text-lg font-bold shadow-xl"
-            onClick={() => navigate('/signup')}
+            onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
           >
-            Start Creating for Free
+            {isSignedIn ? 'Go to App' : 'Start Creating for Free'}
             <ArrowRight className="ml-3 w-6 h-6" />
           </Button>
         </div>
