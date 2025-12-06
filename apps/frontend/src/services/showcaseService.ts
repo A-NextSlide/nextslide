@@ -13,10 +13,13 @@ export interface ShowcaseDeck {
   thumbnail?: string;
 }
 
-// Hardcoded featured deck IDs - update these with real deck UUIDs from your database
-// These should be high-quality decks that represent your product well
+// Hardcoded featured deck IDs - curated showcase presentations
 const FEATURED_DECK_IDS = [
-  // Add your featured deck UUIDs here
+  '88a6a5c6-035e-4ab0-9415-7e735bcc7aec', // NextSlide.ai: The Future of Presentation Storytelling
+  '3990e7b6-7bf4-48a9-bd6c-e0de06bddb62', // Badminton Skills Test - Henry Wise Wood High School
+  '2cb6a421-5751-465d-bc48-a9e943a127f6', // Proving Trigonometric Identities: Math 30-1 Pure Mathematics
+  '78e58c26-8133-407e-ac21-dab87edce4c6', // Pinky and the Brain: Tonight's Plan to Take Over the World
+  'e52311b1-f957-4873-b9ec-1cf285e05a87', // Long Division Made Fun and Colorful
 ];
 
 class ShowcaseService {

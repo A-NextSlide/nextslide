@@ -23,6 +23,8 @@ interface UseElementDragProps {
   overlayRef: React.RefObject<HTMLDivElement>;
   onPositionChange: (newBounds: Bounds, styles: Record<string, string>) => void;
   onDragEnd: (newBounds: Bounds, styles: Record<string, string>) => void;
+  /** Called when mouseUp without dragging (click without move) */
+  onClickWithoutDrag?: (x: number, y: number) => void;
 }
 
 interface UseElementDragReturn {
@@ -41,6 +43,7 @@ export function useElementDrag({
   overlayRef,
   onPositionChange,
   onDragEnd,
+  onClickWithoutDrag,
 }: UseElementDragProps): UseElementDragReturn {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -143,10 +146,12 @@ export function useElementDrag({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      // If we never started dragging (didn't pass threshold), just cleanup
+      // If we never started dragging (didn't pass threshold), this was a click
       if (!isDragging) {
         setIsPotentialDrag(false);
         dragStartRef.current = null;
+        // Notify parent this was a click, not a drag
+        onClickWithoutDrag?.(e.clientX, e.clientY);
         return;
       }
 
@@ -195,7 +200,7 @@ export function useElementDrag({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPotentialDrag, isDragging, coordinator, element, overlayRef, onPositionChange, onDragEnd]);
+  }, [isPotentialDrag, isDragging, coordinator, element, overlayRef, onPositionChange, onDragEnd, onClickWithoutDrag]);
 
   return {
     isDragging,

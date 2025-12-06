@@ -4,10 +4,12 @@
  * This component creates a transparent overlay that captures mouse events
  * for element selection, without interfering with the iframe's visual rendering.
  *
- * Z-index hierarchy (higher = on top, clickable first):
- * - Text elements: 10000 (highest priority - always clickable)
- * - Image elements: 5000
- * - Container elements: 1000 (lowest - only select if nothing else is clicked)
+ * Z-index hierarchy (smaller elements always on top):
+ * - Smaller area = higher z-index
+ * - Type bonus: text > image > container
+ *
+ * When an element is selected, hit areas are hidden to allow drag/resize.
+ * The selection overlay handles clicking to select nested elements.
  */
 
 import React from 'react';
@@ -19,8 +21,8 @@ interface ElementHitAreaProps {
   onSelect: (cursorX: number, cursorY: number) => void;
   onDoubleClick: () => void;
   disabled?: boolean;
-  /** Area of the currently selected element, used to ensure smaller elements stay clickable */
-  selectedElementArea?: number;
+  /** When true, hide all hit areas (something is selected, let selection overlay handle clicks) */
+  hideForSelection?: boolean;
 }
 
 export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
@@ -29,29 +31,24 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
   onSelect,
   onDoubleClick,
   disabled = false,
-  selectedElementArea = 0,
+  hideForSelection = false,
 }) => {
   if (disabled) return null;
-  // Don't render hit area for the currently selected element (selection overlay handles it)
-  if (isSelected) return null;
+  // Don't render any hit areas when something is selected - selection overlay handles interaction
+  if (hideForSelection) return null;
 
   const elementArea = element.bounds.width * element.bounds.height;
 
   // Calculate z-index based on element type and size
-  // CRITICAL: Smaller elements must ALWAYS be on top so they're clickable
+  // Smaller elements must ALWAYS be on top so they're clickable
   const getZIndex = () => {
     // Use inverse area as primary factor - smaller = higher z-index
-    // Max viewport area is ~2M pixels, so divide by 100 to get manageable numbers
     const areaFactor = Math.max(1, 20000 - Math.floor(elementArea / 100));
 
     // Type bonus (text always on top within same size tier)
-    const typeBonus = element.type === 'text' ? 50000 : (element.type === 'image' ? 30000 : 10000);
+    const typeBonus = element.type === 'text' ? 5000 : (element.type === 'image' ? 3000 : 1000);
 
-    // BASE z-index that's ABOVE the selection overlay (which is at 15000)
-    // This ensures unselected smaller elements can still be clicked
-    const baseZ = 100000;
-
-    return baseZ + typeBonus + areaFactor;
+    return 10000 + typeBonus + areaFactor;
   };
 
   // Set to true to show debug colors for hit areas

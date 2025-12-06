@@ -500,7 +500,10 @@ export class GenerationProgressTracker extends EventEmitter {
       
       this.state.currentSlide = slide_index + 1;
       this.state.message = message || `Generating slide ${slide_index + 1}: ${title || ''}`;
-      
+
+      // Update progress to reflect slides in progress
+      this.updateOverallProgress();
+
       // Dispatch DOM event for other components to listen
       window.dispatchEvent(new CustomEvent('slide_started', {
         detail: {
@@ -511,7 +514,7 @@ export class GenerationProgressTracker extends EventEmitter {
       }));
     }
   }
-  
+
   private handleSlideProgress(event: any) {
     const { slide_index, progress, substep, message } = event.data || event;
     
@@ -554,7 +557,8 @@ export class GenerationProgressTracker extends EventEmitter {
       
       // Update progress based on completed slides
       const completedCount = this.state.slides.filter(s => s.status === 'completed').length;
-      const slideProgress = 55 + (completedCount / this.state.totalSlides) * 40;
+      const totalSlides = this.state.totalSlides || this.state.slides.length || 1;
+      const slideProgress = 55 + (completedCount / totalSlides) * 40;
       this.setTargetProgress(slideProgress);
       
       // Dispatch DOM event for other components to listen
@@ -662,14 +666,18 @@ export class GenerationProgressTracker extends EventEmitter {
   }
   
   private updateOverallProgress() {
-    if (this.state.slides.length === 0) return;
-    
+    const totalSlides = this.state.totalSlides || this.state.slides.length;
+    if (totalSlides === 0) return;
+
     const completedSlides = this.state.slides.filter(s => s.status === 'completed').length;
-    const slideProgress = (completedSlides / this.state.slides.length) * 40; // Slides are 40% of total
-    
+    const inProgressSlides = this.state.slides.filter(s => s.status === 'generating').length;
+    // Count completed slides fully, and in-progress slides as partial (50% each)
+    const effectiveCompleted = completedSlides + (inProgressSlides * 0.5);
+    const slideProgress = (effectiveCompleted / totalSlides) * 40; // Slides are 40% of total (55-95%)
+
     // Calculate minimum progress based on phase
     const phaseProgress = this.phases.slide_generation.progressRange[0];
-    
+
     this.setTargetProgress(Math.max(phaseProgress + slideProgress, this.targetProgress));
   }
   
@@ -682,11 +690,15 @@ export class GenerationProgressTracker extends EventEmitter {
   
   private setTargetProgress(progress: number) {
     // Calculate progress based on actual slide completion when in slide generation phase
-    if (this.state.phase === 'slide_generation' && this.state.totalSlides > 0) {
+    const totalSlides = this.state.totalSlides || this.state.slides.length;
+    if (this.state.phase === 'slide_generation' && totalSlides > 0) {
       const completedSlides = this.state.slides.filter(s => s.status === 'completed').length;
+      const inProgressSlides = this.state.slides.filter(s => s.status === 'generating').length;
       // 55-95% range for slide generation
-      const slideProgress = 55 + (completedSlides / this.state.totalSlides) * 40;
-      this.targetProgress = slideProgress;
+      // Count completed slides fully, and in-progress slides as partial (50% each)
+      const effectiveCompleted = completedSlides + (inProgressSlides * 0.5);
+      const slideProgress = 55 + (effectiveCompleted / totalSlides) * 40;
+      this.targetProgress = Math.min(95, slideProgress); // Cap at 95% until finalization
     } else {
       // Use the progress value directly
       this.targetProgress = Math.min(100, progress);

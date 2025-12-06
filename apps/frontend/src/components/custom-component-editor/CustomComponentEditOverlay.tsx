@@ -470,7 +470,8 @@ const ElementInteractionLayer: React.FC<{
   onResizeChange: (bounds: Bounds, styles: Record<string, string>) => void;
   onResizeEnd: (bounds: Bounds, styles: Record<string, string>) => void;
   onDoubleClick: () => void;
-}> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick }) => {
+  onClickNested: (x: number, y: number) => void;
+}> = ({ element, coordinator, iframeRef, onPositionChange, onDragEnd, onResizeChange, onResizeEnd, onDoubleClick, onClickNested }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const { isDragging, dragOffset, handleDragStart } = useElementDrag({
@@ -480,6 +481,7 @@ const ElementInteractionLayer: React.FC<{
     overlayRef,
     onPositionChange,
     onDragEnd,
+    onClickWithoutDrag: onClickNested,
   });
 
   const { isResizing, resizeDirection, resizeDelta, handleResizeStart } = useElementResize({
@@ -709,6 +711,37 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [iframeRef, onElementSelect]);
 
+  // Handle click on nested element (when clicking inside selected element's bounds)
+  const handleClickNested = useCallback((x: number, y: number) => {
+    if (!selectedElement) return;
+
+    // Find the smallest element at this position that's inside the selected element
+    const selectedArea = selectedElement.bounds.width * selectedElement.bounds.height;
+
+    let smallestElement: VirtualElement | null = null;
+    let smallestArea = selectedArea;
+
+    for (const el of virtualElements) {
+      if (el.id === selectedElement.id) continue;
+
+      // Check if click is inside this element's bounds
+      const b = el.bounds;
+      if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+        const area = b.width * b.height;
+        // Only select if it's smaller than current selection
+        if (area < smallestArea) {
+          smallestElement = el;
+          smallestArea = area;
+        }
+      }
+    }
+
+    if (smallestElement) {
+      // Select the nested element
+      handleSelectElement(smallestElement.id, x, y);
+    }
+  }, [selectedElement, virtualElements, handleSelectElement]);
+
   // Handle position change (during drag)
   const handlePositionChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
     if (!selectedElement) return;
@@ -862,8 +895,22 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   if (!isEditing || !isSelected) return null;
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 100 }}>
-      {/* Element hit areas for click detection - always rendered so smaller elements stay clickable */}
+    <div className="fixed inset-0" style={{ zIndex: 100, pointerEvents: 'none' }}>
+      {/* Background click area for deselection - only when something is selected */}
+      {selectedElementId && (
+        <div
+          className="absolute inset-0"
+          style={{ pointerEvents: 'auto', cursor: 'default' }}
+          onClick={(e) => {
+            // Only deselect if clicking directly on background (not bubbled from children)
+            if (e.target === e.currentTarget) {
+              handleDeselect();
+            }
+          }}
+        />
+      )}
+
+      {/* Element hit areas for click detection - hidden when something is selected so drag/resize works */}
       {virtualElements.map(element => (
         <ElementHitArea
           key={element.id}
@@ -872,7 +919,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
           onDoubleClick={() => handleDoubleClick(element)}
           disabled={!!editingTextId}
-          selectedElementArea={selectedElement ? selectedElement.bounds.width * selectedElement.bounds.height : 0}
+          hideForSelection={!!selectedElementId}
         />
       ))}
 
@@ -887,17 +934,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onResizeChange={handleResizeChange}
           onResizeEnd={handleResizeEnd}
           onDoubleClick={() => handleDoubleClick(selectedElement)}
+          onClickNested={handleClickNested}
         />
       )}
-
-      {/* Note: Floating chat panel removed - parent component (CustomComponentRenderer)
-          handles the UI for text/image/container selection via its own state and components:
-          - Text: Small floating AI button with chat popup
-          - Image: ImageElementToolbar
-          - Container: ChatPanel style editor
-
-          Text editing is now handled inline via iframe contentEditable (start-text-edit message)
-      */}
     </div>,
     document.body
   );
