@@ -411,10 +411,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50",
           sizeConfig[size],
           isRecording
-            ? "bg-orange-500 hover:bg-orange-500 text-white shadow-lg shadow-orange-500/30"
+            ? "!bg-orange-500 !text-white shadow-lg shadow-orange-500/30"
             : isProcessing
             ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
-            : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-100",
+            : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-100 active:bg-orange-500 active:text-white",
           (disabled || permissionDenied) && "opacity-50 cursor-not-allowed",
           className
         )}
