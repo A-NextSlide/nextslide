@@ -970,7 +970,7 @@ const Landing: React.FC = () => {
                 <div className="text-4xl font-bold text-black dark:text-white mb-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   $0
                 </div>
-                <div className="text-sm text-black/50 dark:text-white/50">10 credits/month</div>
+                <div className="text-sm text-black/50 dark:text-white/50">100 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
                 {['~2 presentations', 'All AI features', 'Export to PDF'].map((feature, i) => (
