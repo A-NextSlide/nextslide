@@ -147,8 +147,8 @@ const Landing: React.FC = () => {
     {
       icon: Zap,
       tag: "SPEED",
-      title: "30-second presentations",
-      description: "Describe what you're presenting. AI generates your entire deck—slides, layouts, visuals—in 30 seconds."
+      title: "90-second presentations",
+      description: "Describe what you're presenting. AI generates your entire deck—slides, layouts, visuals—in 90 seconds."
     },
     {
       icon: Palette,
@@ -335,7 +335,7 @@ const Landing: React.FC = () => {
             >
               Professional presentations
               <br />
-              in 30 seconds
+              in 90 seconds
             </h1>
             <p className="text-xl text-black/60 dark:text-white/60 mb-10 max-w-3xl mx-auto leading-relaxed">
               The only AI presentation tool with a full editor and custom components. Generate complete decks instantly, then customize everything.
@@ -1081,7 +1081,7 @@ const Landing: React.FC = () => {
             Try NextSlide free
           </h2>
           <p className="text-xl opacity-90 mb-10 max-w-2xl mx-auto">
-            No commitments. No credit card. Start creating professional presentations in 30 seconds.
+            No commitments. No credit card. Start creating professional presentations in 90 seconds.
           </p>
           <Button
             size="lg"
