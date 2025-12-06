@@ -285,9 +285,37 @@ export function generateEditModeScript(componentId: string): string {
       }
     }
 
-    // Get full HTML for persistence
+    // Get full HTML for persistence - strip out injected scripts
     if (e.data.type === 'get-html') {
-      const html = document.documentElement.outerHTML;
+      // Clone the document to avoid modifying the live DOM
+      var clone = document.documentElement.cloneNode(true);
+
+      // Remove all injected edit mode elements
+      var toRemove = clone.querySelectorAll('#ns-edit-mode-styles, script');
+      toRemove.forEach(function(el) {
+        // Only remove our injected scripts, not user scripts
+        if (el.id === 'ns-edit-mode-styles' ||
+            (el.textContent && el.textContent.includes('ns-custom-component-edit')) ||
+            (el.textContent && el.textContent.includes('NEXTSLIDE EDIT MODE'))) {
+          el.remove();
+        }
+      });
+
+      // Remove ns- classes from elements
+      clone.querySelectorAll('[class*="ns-"]').forEach(function(el) {
+        var classes = el.className.split(' ').filter(function(c) {
+          return !c.startsWith('ns-');
+        });
+        el.className = classes.join(' ');
+        if (!el.className) el.removeAttribute('class');
+      });
+
+      // Remove data-ns-id attributes
+      clone.querySelectorAll('[data-ns-id]').forEach(function(el) {
+        el.removeAttribute('data-ns-id');
+      });
+
+      var html = clone.outerHTML;
       sendToParent('html-response', { html: html });
     }
 
