@@ -388,11 +388,11 @@ const Landing: React.FC = () => {
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-start">
+            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-stretch">
               {/* Main slide viewer with left sidebar */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 flex flex-col">
                 {/* Top bar */}
-                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
+                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1.5">
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
@@ -405,9 +405,9 @@ const Landing: React.FC = () => {
                 </div>
 
                 {/* Content with slide sidebar */}
-                <div className="flex">
+                <div className="flex flex-1 min-h-0">
                   {/* Slide thumbnails sidebar - larger */}
-                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
+                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto custom-scrollbar">
                     {[...Array(5)].map((_, idx) => (
                       <div
                         key={idx}
@@ -420,8 +420,8 @@ const Landing: React.FC = () => {
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-4">
-                    <div className="aspect-video relative rounded-lg overflow-hidden bg-black">
+                  <div className="flex-1 p-4 flex items-center">
+                    <div className="aspect-video w-full relative rounded-lg overflow-hidden bg-black">
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                         <div className="text-white/40 text-2xl font-medium mb-2">Coming Soon</div>
                         <p className="text-white/30 text-sm max-w-sm">
@@ -434,11 +434,11 @@ const Landing: React.FC = () => {
               </div>
 
               {/* Deck gallery */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10">
-                <div className="px-3 py-2 border-b border-white/5">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col">
+                <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 space-y-2 overflow-y-auto max-h-[340px] custom-scrollbar">
+                <div className="p-2 space-y-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
                   {[...Array(4)].map((_, index) => (
                     <div
                       key={index}

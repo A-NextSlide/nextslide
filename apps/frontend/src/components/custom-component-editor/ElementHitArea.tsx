@@ -19,6 +19,8 @@ interface ElementHitAreaProps {
   onSelect: (cursorX: number, cursorY: number) => void;
   onDoubleClick: () => void;
   disabled?: boolean;
+  /** Area of the currently selected element, used to ensure smaller elements stay clickable */
+  selectedElementArea?: number;
 }
 
 export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
@@ -27,19 +29,29 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
   onSelect,
   onDoubleClick,
   disabled = false,
+  selectedElementArea = 0,
 }) => {
   if (disabled) return null;
+  // Don't render hit area for the currently selected element (selection overlay handles it)
+  if (isSelected) return null;
+
+  const elementArea = element.bounds.width * element.bounds.height;
 
   // Calculate z-index based on element type and size
-  // Smaller elements should be on top (more specific), larger elements below
+  // CRITICAL: Smaller elements must ALWAYS be on top so they're clickable
   const getZIndex = () => {
-    const area = element.bounds.width * element.bounds.height;
-    // Base z-index by type
-    const baseZ = element.type === 'text' ? 10000 : (element.type === 'image' ? 5000 : 1000);
-    // Subtract area factor so smaller elements are on top
-    // Clamp to ensure we don't go below the type's base tier
-    const minZ = element.type === 'text' ? 9000 : (element.type === 'image' ? 4000 : 500);
-    return Math.max(minZ, baseZ - Math.floor(area / 1000));
+    // Use inverse area as primary factor - smaller = higher z-index
+    // Max viewport area is ~2M pixels, so divide by 100 to get manageable numbers
+    const areaFactor = Math.max(1, 20000 - Math.floor(elementArea / 100));
+
+    // Type bonus (text always on top within same size tier)
+    const typeBonus = element.type === 'text' ? 50000 : (element.type === 'image' ? 30000 : 10000);
+
+    // BASE z-index that's ABOVE the selection overlay (which is at 15000)
+    // This ensures unselected smaller elements can still be clicked
+    const baseZ = 100000;
+
+    return baseZ + typeBonus + areaFactor;
   };
 
   // Set to true to show debug colors for hit areas
@@ -54,7 +66,8 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
         width: element.bounds.width,
         height: element.bounds.height,
         pointerEvents: 'auto',
-        cursor: element.type === 'text' ? 'text' : 'pointer',
+        // Use pointer cursor for all - click selects, double-click edits (for text)
+        cursor: 'pointer',
         zIndex: getZIndex(),
         // Debug colors: green=text, blue=image, red=container
         backgroundColor: DEBUG_HIT_AREAS

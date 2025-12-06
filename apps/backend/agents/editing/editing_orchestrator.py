@@ -115,26 +115,42 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
     Component ID: {cid}
     Slide ID: {current_slide_id}
 
-    **EDITING STRATEGY:**
-    - For TARGETED edits (color, text, font, size changes): Use `custom_component_str_replace`
-      - Find the exact string in the HTML below
-      - Replace it with the new value
-      - Call once per edit (one old_string → new_string replacement per call)
-      - Example: old_string="color: #333" new_string="color: #ff0000"
+    **SMART EDITING STRATEGY (Choose the right tool!):**
 
-    - For BROAD changes (new layout, complete redesign): Use `replace_component`
-      - Only if user wants a fundamentally different design
+    ┌─────────────────────────────────────────────────────────────────┐
+    │ SIMPLE EDITS → `custom_component_str_replace` (FAST, NO AI)    │
+    │ Use for: color changes, text updates, font sizes, padding      │
+    │ Example: "change the title color to red"                       │
+    │ How: Find exact string, replace with new value                 │
+    └─────────────────────────────────────────────────────────────────┘
 
-    **DO NOT use `edit_component` with made-up IDs - the entire slide is ONE component!**
+    ┌─────────────────────────────────────────────────────────────────┐
+    │ MEDIUM EDITS → `custom_component_rewrite` (AI-ASSISTED)        │
+    │ Use for: styling changes, adding elements, partial updates     │
+    │ Example: "add a gradient background", "make it more modern"    │
+    │ How: AI rewrites with your instructions                        │
+    └─────────────────────────────────────────────────────────────────┘
 
-    **IMPORTANT for str_replace:**
-    - Copy the EXACT string from the HTML below (including any special characters)
-    - Don't modify or truncate the old_string - it must match exactly
-    - If the HTML is truncated (ends with ...), the full text might continue
-    - Make one str_replace call per change (multiple calls if multiple changes needed)
+    ┌─────────────────────────────────────────────────────────────────┐
+    │ COMPLEX EDITS → `custom_component_rewrite` (PREMIUM AI)        │
+    │ Use for: complete redesigns, new layouts, new concepts         │
+    │ Example: "add an interactive timeline", "redesign as cards"    │
+    │ How: AI generates new design (uses Gemini 3 Pro for quality)   │
+    └─────────────────────────────────────────────────────────────────┘
+
+    **CRITICAL RULES:**
+    ✗ DO NOT use `edit_component` - CustomComponents are a single unit
+    ✗ DO NOT make up component IDs
+    ✓ Use str_replace for precise, small changes (faster, safer)
+    ✓ Use rewrite when structure needs to change
+
+    **FOR str_replace:**
+    - Copy the EXACT string from the HTML (including whitespace/special chars)
+    - If multiple occurrences exist, only the FIRST will be replaced (safe!)
+    - Make one call per change (chain multiple calls for multiple edits)
 
     <html_content>
-    {html_content[:15000]}{"... [TRUNCATED - full HTML is " + str(len(html_content)) + " chars]" if len(html_content) > 15000 else ""}
+    {html_content[:50000]}{"... [TRUNCATED - full HTML is " + str(len(html_content)) + " chars]" if len(html_content) > 50000 else ""}
     </html_content>
     </custom_component_context>
 """
@@ -365,6 +381,19 @@ def orchestrate(state: AgentState, event_cb=None):
                     pass
             # Continue with other tools instead of failing completely
             continue
+
+    # QUALITY GATE: Log validation summary
+    from agents.config import EDIT_VALIDATE_HTML
+    if EDIT_VALIDATE_HTML:
+        validation_summary = {
+            "tools_executed": len(tool_calls),
+            "tools_succeeded": len(edit_summaries),
+            "tools_failed": len(tool_calls) - len(edit_summaries),
+        }
+        logger.info(f"Edit orchestration complete: {validation_summary}")
+
+        if validation_summary["tools_failed"] > 0:
+            logger.warning(f"{validation_summary['tools_failed']} tool(s) failed during orchestration")
 
     return {
         "deck_diff": deck_diff,

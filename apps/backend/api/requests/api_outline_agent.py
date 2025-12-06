@@ -1,8 +1,9 @@
 """
 Outline Generation Agent - Conversational AI for creating presentation outlines.
 
-Uses Anthropic's Haiku 4.5 with tool calling to have natural conversations
-and generate outlines when ready. Model decides when to search via tool calling.
+Uses Claude with tool calling to have natural conversations and generate outlines
+when ready. Model is configured via OUTLINE_AGENT_MODEL in agents/config.py.
+Model decides when to search via tool calling.
 """
 import os
 import logging
@@ -1505,8 +1506,9 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         yield f"data: {json.dumps({'type': 'status', 'status': 'thinking', 'message': 'Processing your request...'})}\n\n"
         logger.info("[OutlineAgent] Sent initial thinking status")
 
-        # Get the raw Haiku 4.5 client
-        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+        # Get the outline agent client from config
+        from agents.config import OUTLINE_AGENT_MODEL
+        client, model = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
 
         scraped_context = ""
         scrape_result = None  # Will hold videos and scraped content if URL scraping happens
@@ -1714,13 +1716,12 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 yield ("text", "I found some information but couldn't process it fully. Let me summarize what I know.")
                 return
 
-            from agents.config import CLAUDE_HAIKU_ID
             # Add current date to system prompt so model knows the year
             current_date = datetime.now().strftime("%B %d, %Y")
             system_with_date = f"Today's date is {current_date}. Use this for any time-sensitive searches (e.g., 'latest funding round', 'recent news', '2025 data').\n\n{OUTLINE_AGENT_SYSTEM_PROMPT}"
 
             response = client.messages.create(
-                model=CLAUDE_HAIKU_ID,
+                model=model,
                 max_tokens=8192,  # Increased to handle large outlines with research
                 system=system_with_date,
                 messages=msgs,

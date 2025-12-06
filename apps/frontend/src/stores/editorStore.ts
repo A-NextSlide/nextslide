@@ -282,6 +282,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Find the component to update
     const componentIndex = currentComponents.findIndex(comp => comp.id === componentId);
     if (componentIndex === -1) {
+      console.warn('[EditorStore] updateDraftComponent: Component not found', { slideId, componentId, availableIds: currentComponents.map(c => c.id) });
       return; // Component not found
     }
 
@@ -335,7 +336,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().setLastOperation(`update-${componentId}-${Date.now()}`);
 
     // CRITICAL: Increment version to force React re-render
-    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
+    const newVersion = get().draftComponentsVersion + 1;
+    set(state => ({ draftComponentsVersion: newVersion }));
+    console.log('[EditorStore] draftComponentsVersion bumped to', newVersion, { slideId, componentId });
   },
 
   addDraftComponent: (slideId: string, component: ComponentInstance, skipHistory: boolean = false) => {

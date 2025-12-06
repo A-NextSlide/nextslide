@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send, Sparkles, ArrowLeft, FileText, Upload, X, Link as LinkIcon, Image as ImageIcon, Table, Presentation, File, Paperclip, Loader2 } from 'lucide-react';
+import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment, generateSlideContent } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock } from '@/components/chat';
@@ -1869,6 +1870,22 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                 >
                   <LinkIcon className="w-4 h-4" />
                 </Button>
+                <VoiceRecorder
+                  onTranscript={(text) => {
+                    setInput(prev => {
+                      const newText = prev.trim() ? `${prev} ${text}` : text;
+                      return newText;
+                    });
+                    setTimeout(() => inputRef.current?.focus(), 100);
+                  }}
+                  onError={(error) => {
+                    console.error('Voice recording error:', error);
+                  }}
+                  disabled={isProcessing || isAgentTyping}
+                  size="sm"
+                  variant="minimal"
+                  className="h-8 w-8 rounded-lg"
+                />
                 <Button
                   onClick={() => handleSendMessage()}
                   disabled={(!input.trim() && uploadedFiles.length === 0) || isAgentTyping || isProcessing}

@@ -116,7 +116,7 @@ Output valid JSON with this structure:
         slide_content = context.slide_outline.content
         slide_num = context.slide_index + 1
         total_slides = context.total_slides
-        layout = getattr(context.slide_outline, 'layout', 'title_and_content')
+        layout = getattr(context.slide_outline, 'layout', 'content')
         
         # Get theme colors
         theme = context.theme.to_dict() if hasattr(context.theme, 'to_dict') else context.theme

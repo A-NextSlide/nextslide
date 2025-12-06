@@ -460,35 +460,62 @@ class SupabaseAuthService:
             logger.error(f"Associate deck error: {str(e)}")
             raise
     
-    def get_user_decks(self, user_id: str, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_user_decks(self, user_id: str, limit: int = 20, offset: int = 0, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get all decks for a user (owned and shared) - OPTIMIZED VERSION
-        
+
         Args:
             user_id: The user's UUID
             limit: Maximum number of decks to return
             offset: Number of decks to skip (for pagination)
-        
+            search_query: Optional search string to filter decks by name (case-insensitive)
+
         Returns:
             List of deck records
         """
         try:
-            print(f"[get_user_decks] Getting decks for user: {user_id} (limit={limit}, offset={offset})")
-            
-            # Try to use optimized view first, fallback to regular table
-            # The optimized view only returns the first slide and includes slide_count
-            try:
-                # Attempt to use the optimized view
-                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,slide_count"
-                owned_response = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-                using_optimized_view = True
-                print(f"[get_user_decks] Using optimized view")
-            except Exception as e:
-                # Fallback to regular table on any view error/timeout – keep payload light (no slides)
-                print(f"[get_user_decks] Optimized view unavailable or timed out, using lightweight fallback on decks: {str(e)}")
-                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description"
-                owned_response = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-                using_optimized_view = False
+            print(f"[get_user_decks] Getting decks for user: {user_id} (limit={limit}, offset={offset}, search={search_query})")
+
+            # When searching, fetch more decks and filter in Python
+            # This avoids issues with Supabase/Cloudflare ilike queries
+            if search_query:
+                print(f"[get_user_decks] Fetching decks for search: '{search_query}'")
+                # Include slides for thumbnail generation
+                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides"
+                # Fetch a larger batch and filter locally
+                query = self.supabase.table("decks").select(select_columns).eq("user_id", user_id).order("created_at", desc=True).limit(200)
+                owned_response = query.execute()
+
+                # Filter locally by name (case-insensitive)
+                search_lower = search_query.lower()
+                filtered_data = [d for d in owned_response.data if search_lower in (d.get("name") or "").lower()]
+                print(f"[get_user_decks] Search found {len(filtered_data)} matches out of {len(owned_response.data)} decks")
+
+                # Apply pagination to filtered results
+                paginated_data = filtered_data[offset:offset + limit]
+
+                # Create a mock response object
+                class MockResponse:
+                    def __init__(self, data, count):
+                        self.data = data
+                        self.count = count
+
+                owned_response = MockResponse(paginated_data, len(filtered_data))
+            else:
+                # Try to use optimized view first, fallback to regular table
+                # The optimized view only returns the first slide and includes slide_count
+                try:
+                    # Attempt to use the optimized view
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,slide_count"
+                    query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id)
+                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    print(f"[get_user_decks] Using optimized view")
+                except Exception as e:
+                    # Fallback to regular table on any view error/timeout – include slides for thumbnails
+                    print(f"[get_user_decks] Optimized view unavailable or timed out, using fallback on decks: {str(e)}")
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides"
+                    query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id)
+                    owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
             
             total_count = owned_response.count if hasattr(owned_response, 'count') else 0
             print(f"[get_user_decks] Found {len(owned_response.data)} owned decks for user {user_id} (total: {total_count})")
@@ -532,43 +559,44 @@ class SupabaseAuthService:
             print(f"[get_user_decks] ERROR: {str(e)}")
             return {"decks": [], "total": 0, "has_more": False}
 
-    def get_user_decks_filtered(self, user_id: str, filter_type: str = "owned", limit: int = 20, offset: int = 0) -> Dict[str, Any]:
+    def get_user_decks_filtered(self, user_id: str, filter_type: str = "owned", limit: int = 20, offset: int = 0, search_query: Optional[str] = None) -> Dict[str, Any]:
         """
-        Get decks for a user with filtering
-        
+        Get decks for a user with filtering and optional search
+
         Args:
             user_id: The user's UUID
             filter_type: "owned", "shared", or "all"
             limit: Maximum number of decks to return
             offset: Number of decks to skip (for pagination)
-        
+            search_query: Optional search string to filter decks by name (case-insensitive)
+
         Returns:
             Dict with decks list and pagination info
         """
         try:
-            print(f"[get_user_decks_filtered] Getting {filter_type} decks for user: {user_id}")
-            
+            print(f"[get_user_decks_filtered] Getting {filter_type} decks for user: {user_id}, search: {search_query}")
+
             if filter_type == "owned":
                 # Return only owned decks (current behavior)
-                return self.get_user_decks(user_id, limit, offset)
-            
+                return self.get_user_decks(user_id, limit, offset, search_query=search_query)
+
             elif filter_type == "shared":
                 # Get decks shared with the user
-                return self.get_shared_decks(user_id, limit, offset)
-            
+                return self.get_shared_decks(user_id, limit, offset, search_query=search_query)
+
             elif filter_type == "all":
                 # Get both owned and shared decks
                 # For simplicity, we'll fetch both and combine them
-                owned_result = self.get_user_decks(user_id, limit, offset)
-                shared_result = self.get_shared_decks(user_id, limit, 0)
-                
+                owned_result = self.get_user_decks(user_id, limit, offset, search_query=search_query)
+                shared_result = self.get_shared_decks(user_id, limit, 0, search_query=search_query)
+
                 # Combine the results
                 all_decks = owned_result.get("decks", []) + shared_result.get("decks", [])
-                
+
                 # Apply pagination to combined results
                 paginated_decks = all_decks[offset:offset + limit]
                 total_count = owned_result.get("total", 0) + shared_result.get("total", 0)
-                
+
                 return {
                     "decks": paginated_decks,
                     "total": total_count,
@@ -583,20 +611,21 @@ class SupabaseAuthService:
 
 
 
-    def get_shared_decks(self, user_id: str, limit: int = 20, offset: int = 0) -> Dict[str, Any]:
+    def get_shared_decks(self, user_id: str, limit: int = 20, offset: int = 0, search_query: Optional[str] = None) -> Dict[str, Any]:
         """
         Get decks shared with the user
-        
+
         Args:
             user_id: The user's UUID
             limit: Maximum number of decks to return
             offset: Number of decks to skip (for pagination)
-        
+            search_query: Optional search string to filter decks by name (case-insensitive)
+
         Returns:
             Dict with shared decks list and pagination info
         """
         try:
-            print(f"[get_shared_decks] Getting shared decks for user: {user_id}")
+            print(f"[get_shared_decks] Getting shared decks for user: {user_id}, search: {search_query}")
             logger.info(f"[get_shared_decks] Getting shared decks for user: {user_id}")
             
             # Get user's email - first try from users table with a timeout
@@ -738,23 +767,32 @@ class SupabaseAuthService:
                     deck_data["slide_count"] = 0
                 
                 shared_decks.append(deck_data)
-            
+
+            # Apply search filter if provided (post-filter since search is on joined table)
+            if search_query:
+                search_lower = search_query.lower()
+                shared_decks = [d for d in shared_decks if search_lower in (d.get("name") or "").lower()]
+
             # Get total count
             total_query = self.supabase.table("deck_collaborators").select("id", count="exact")
-            
+
             if user_email:
                 total_query = total_query.or_(f"user_id.eq.{user_id},email.eq.{user_email}")
             else:
                 total_query = total_query.eq("user_id", user_id)
-            
+
             total_query = total_query.eq("status", "active")
             total_response = total_query.execute()
-            
-            total_count = total_response.count if hasattr(total_response, 'count') else len(shared_decks)
-            
+
+            # If searching, total count is the filtered count
+            if search_query:
+                total_count = len(shared_decks)
+            else:
+                total_count = total_response.count if hasattr(total_response, 'count') else len(shared_decks)
+
             print(f"[get_shared_decks] Returning {len(shared_decks)} shared decks (total: {total_count})")
             logger.info(f"[get_shared_decks] Returning {len(shared_decks)} shared decks (total: {total_count})")
-            
+
             return {
                 "decks": shared_decks,
                 "total": total_count,

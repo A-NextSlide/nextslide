@@ -10,19 +10,21 @@ load_dotenv()
 GEMINI_FLASH = "gemini-2.5-flash"           # Fast, cheap, good quality
 GEMINI_FLASH_LITE = "gemini-2.5-flash-lite" # Fastest, cheapest
 GEMINI_PRO = "gemini-2.5-pro"               # Higher quality
-GEMINI_3_PRO = "gemini-3-pro"               # Best quality (expensive)
+GEMINI_3_PRO = "gemini-3-pro-preview"       # Best quality (expensive) - NOTE: preview model
 GEMINI_IMAGE = "gemini-2.0-flash-exp"  # Image generation (native image output)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLAUDE MODELS (aliases for get_client())
 # ═══════════════════════════════════════════════════════════════════════════════
 CLAUDE_OPUS = "claude-opus-4-5"
-CLAUDE_SONNET = "claude-sonnet-4"
+CLAUDE_SONNET = "claude-sonnet-4-5"
+CLAUDE_SONNET_4 = "claude-sonnet-4"  # Legacy Sonnet 4
 CLAUDE_HAIKU = "claude-haiku-4-5"
 
 # Full model IDs for raw Anthropic API calls
 CLAUDE_OPUS_ID = "claude-opus-4-5-20251101"
-CLAUDE_SONNET_ID = "claude-sonnet-4-20250514"
+CLAUDE_SONNET_ID = "claude-sonnet-4-5-20250929"
+CLAUDE_SONNET_4_ID = "claude-sonnet-4-20250514"  # Legacy Sonnet 4
 CLAUDE_HAIKU_ID = "claude-haiku-4-5-20251001"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -52,6 +54,7 @@ VISUAL_ANALYZER_MODEL = CLAUDE_HAIKU
 OUTLINE_MODEL = PERPLEXITY_SONAR_PRO        # Research/detailed mode
 OUTLINE_PRESENTATION_MODEL = CLAUDE_HAIKU   # Presentation mode (narrative)
 OUTLINE_RESEARCH_MODEL = CLAUDE_HAIKU
+OUTLINE_AGENT_MODEL = CLAUDE_SONNET         # Conversational outline/editing agent
 
 # Deck Editing
 ORCHESTRATOR_MODEL = CLAUDE_OPUS            # Complex editing decisions
@@ -59,10 +62,19 @@ DECK_EDITOR_MODEL = CLAUDE_OPUS             # Component editing
 CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction
 SLIDE_STYLE_MODEL = CLAUDE_OPUS             # Styling
 
-# Custom Components
-CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO       # High quality HTML generation (fast)
-CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_FLASH  # Fast edits/rewrites
+# Custom Components - Smart Model Routing
+# COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality)
+# MEDIUM edits (partial rewrites, structural changes) → Claude Haiku 4.5 (fast, good)
+# SIMPLE edits (text/color changes) → str_replace (no AI needed)
+CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO              # Complex: new concepts, full redesigns
+CUSTOM_COMPONENT_EDIT_MODEL = CLAUDE_HAIKU         # Medium: partial rewrites (Haiku 4.5)
+CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_HAIKU       # Simple: suggest str_replace strings
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
+
+# Editing Quality Control
+EDIT_QUALITY_THRESHOLD = 3.0                       # Minimum quality score (1-5) to accept
+EDIT_MAX_RETRIES = 2                               # Max retries on quality/validation failure
+EDIT_VALIDATE_HTML = True                          # Validate HTML structure after edits
 
 # Vision/Import
 VISION_IMPORT_MODEL = GEMINI_FLASH_LITE     # PPTX slide recreation (fast, cheap)

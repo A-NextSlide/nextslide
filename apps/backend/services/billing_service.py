@@ -156,7 +156,7 @@ class BillingService:
             # Create balance
             client.table("credit_balances").upsert({
                 "user_id": user_id,
-                "monthly_credits": 10,  # Free tier credits
+                "monthly_credits": 200,  # Free tier credits
                 "purchased_credits": 0,
                 "used_credits": 0,
                 "period_start": now.isoformat(),

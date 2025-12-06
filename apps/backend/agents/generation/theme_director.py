@@ -1034,16 +1034,26 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                             labeled_accents = []
                             labeled_text = []
 
+                            # Helper to extract hex from color value (handles string or dict with 'hex' key)
+                            def extract_hex(color_val):
+                                if isinstance(color_val, str):
+                                    return color_val
+                                elif isinstance(color_val, dict) and 'hex' in color_val:
+                                    return color_val['hex']
+                                elif isinstance(color_val, list) and len(color_val) > 0:
+                                    return extract_hex(color_val[0])
+                                return None
+
                             if colors_data:
                                 # PRIORITY 1: Check for labeled colors format (from admin panel edits)
                                 # Format: { background: "#...", text: "#...", accent: "#...", accent2: "#..." }
                                 if colors_data.get('background') or colors_data.get('accent'):
                                     logger.info(f"[THEME DIRECTOR] ✅ Found LABELED colors format for {brand_domain}")
 
-                                    bg = colors_data.get('background')
-                                    text = colors_data.get('text')
-                                    accent = colors_data.get('accent')
-                                    accent2 = colors_data.get('accent2')
+                                    bg = extract_hex(colors_data.get('background'))
+                                    text = extract_hex(colors_data.get('text'))
+                                    accent = extract_hex(colors_data.get('accent'))
+                                    accent2 = extract_hex(colors_data.get('accent2'))
 
                                     if bg:
                                         labeled_backgrounds.append(bg)
@@ -1777,15 +1787,22 @@ IMPORTANT:
 - Hero and body MUST be DIFFERENT fonts
 - Only use fonts from the list above"""
 
-                    from agents.config import CLAUDE_HAIKU_ID
-                    response = await self.client.messages.create(
-                        model=CLAUDE_HAIKU_ID,
+                    # Use the unified AI client infrastructure
+                    client, actual_model = get_client("claude-haiku-4-5")
+                    if not client or not actual_model:
+                        raise ValueError("Failed to get client for claude-haiku-4-5")
+
+                    response = invoke(
+                        client=client,
+                        model=actual_model,
+                        messages=[{"role": "user", "content": prompt}],
                         max_tokens=100,
                         temperature=0.3,
-                        messages=[{"role": "user", "content": prompt}]
+                        theme_generation=True
                     )
 
-                    response_text = response.content[0].text.strip()
+                    response_text = response.get("content") if isinstance(response, dict) else response
+                    response_text = response_text.strip()
                     hero_font = None
                     body_font = None
 
@@ -1896,13 +1913,23 @@ IMPORTANT:
         print(f"🎨 [THEME BUILD] Accents: {accents}")
         print(f"🎨 [THEME BUILD] Text Colors: {color_result.get('text_colors')}")
 
+        # Helper to extract hex from color value (handles string or dict with 'hex' key)
+        def extract_hex(color_val):
+            if isinstance(color_val, str):
+                return color_val
+            elif isinstance(color_val, dict) and 'hex' in color_val:
+                return color_val['hex']
+            elif isinstance(color_val, list) and len(color_val) > 0:
+                return extract_hex(color_val[0])
+            return None
+
         # ✅ IF BRAND CACHE: USE COLORS EXACTLY AS-IS, NO SANITIZATION, NO FALLBACKS!
         if is_brand_cache and backgrounds and accents:
             print(f"🎨 [BRAND COLORS] ✅ USING EXACT BRAND COLORS - NO MODIFICATIONS!")
-            primary_bg = backgrounds[0]
-            secondary_bg = backgrounds[1] if len(backgrounds) > 1 else (accents[0] if accents else primary_bg)
-            accent_1 = accents[0]
-            accent_2 = accents[1] if len(accents) > 1 else accent_1
+            primary_bg = extract_hex(backgrounds[0]) or '#FFFFFF'
+            secondary_bg = extract_hex(backgrounds[1] if len(backgrounds) > 1 else (accents[0] if accents else backgrounds[0])) or primary_bg
+            accent_1 = extract_hex(accents[0]) or '#6366f1'
+            accent_2 = extract_hex(accents[1] if len(accents) > 1 else accents[0]) or accent_1
 
             # Use brand text colors if available, otherwise compute them
             brand_text_colors = color_result.get('text_colors')  # This is a list like ['#003D29']

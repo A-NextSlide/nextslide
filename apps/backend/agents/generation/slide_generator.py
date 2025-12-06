@@ -1592,7 +1592,7 @@ class SlideGeneratorV2(ISlideGenerator):
 
         # Check if this is a title slide
         layout = getattr(context.slide_outline, 'layout', 'content')
-        is_title_slide = context.slide_index == 0 or 'title' in layout.lower() or 'cover' in layout.lower()
+        is_title_slide = (context.slide_index == 0 and context.total_slides > 1) or 'title' in layout.lower() or 'cover' in layout.lower()
 
         if is_title_slide:
             print(f"[GEMINI 3 PRO] 🎬 TITLE SLIDE - generating stunning animated title!")
@@ -1602,6 +1602,95 @@ class SlideGeneratorV2(ISlideGenerator):
 
         theme_dict = context.theme.to_dict() if context.theme and hasattr(context.theme, 'to_dict') else (context.theme or {})
         content = context.slide_outline.content or context.slide_outline.title
+
+        # CRITICAL: Ensure brandInfo with logoUrl is present in theme_dict
+        # Check multiple sources for logo URL and inject into theme_dict
+        if not theme_dict.get('brandInfo', {}).get('logoUrl'):
+            logo_url = None
+            # Priority 1: Check deck_outline.stylePreferences.logoUrl
+            if hasattr(context, 'deck_outline') and context.deck_outline:
+                style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+                if style_prefs:
+                    logo_url = getattr(style_prefs, 'logoUrl', None)
+                    if not logo_url:
+                        # Check deck_theme.logo.url inside stylePreferences
+                        deck_theme = getattr(style_prefs, 'deck_theme', None)
+                        if deck_theme and isinstance(deck_theme, dict):
+                            logo_data = deck_theme.get('logo', {})
+                            if isinstance(logo_data, dict):
+                                logo_url = logo_data.get('url')
+            # Priority 2: Check color_palette.metadata.logo_url
+            if not logo_url:
+                logo_url = theme_dict.get('color_palette', {}).get('metadata', {}).get('logo_url')
+
+            # Inject logo into brandInfo if found
+            if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                if 'brandInfo' not in theme_dict:
+                    theme_dict['brandInfo'] = {}
+                theme_dict['brandInfo']['logoUrl'] = logo_url.strip()
+                print(f"[GEMINI 3 PRO] 🖼️ Injected logo into theme_dict: {logo_url[:60]}...")
+        else:
+            print(f"[GEMINI 3 PRO] 🖼️ Logo already in theme_dict.brandInfo: {theme_dict['brandInfo'].get('logoUrl', '')[:60]}...")
+
+        # CRITICAL: Ensure typography has fonts - check stylePreferences as fallback
+        typography = theme_dict.get('typography', {})
+        if not typography.get('hero_title', {}).get('family') and not typography.get('hero_font'):
+            if hasattr(context, 'deck_outline') and context.deck_outline:
+                style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+                if style_prefs:
+                    # Check for font in stylePreferences
+                    hero_font = getattr(style_prefs, 'font', None)
+                    body_font = getattr(style_prefs, 'bodyFont', None) or hero_font
+                    # Check deck_theme.typography
+                    deck_theme = getattr(style_prefs, 'deck_theme', None)
+                    if deck_theme and isinstance(deck_theme, dict):
+                        deck_typo = deck_theme.get('typography', {})
+                        if not hero_font:
+                            hero_font = deck_typo.get('hero_title', {}).get('family') or deck_typo.get('hero_font')
+                        if not body_font:
+                            body_font = deck_typo.get('body_text', {}).get('family') or deck_typo.get('body_font')
+
+                    if hero_font:
+                        if 'typography' not in theme_dict:
+                            theme_dict['typography'] = {}
+                        theme_dict['typography']['hero_title'] = {'family': hero_font}
+                        theme_dict['typography']['body_text'] = {'family': body_font or hero_font}
+                        print(f"[GEMINI 3 PRO] 🔤 Injected fonts into theme_dict: hero={hero_font}, body={body_font or hero_font}")
+
+        # CRITICAL: Ensure color_palette has colors - check stylePreferences as fallback
+        color_palette = theme_dict.get('color_palette', {})
+        if not color_palette.get('accent_1') and not color_palette.get('colors'):
+            if hasattr(context, 'deck_outline') and context.deck_outline:
+                style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+                if style_prefs:
+                    # Check colors in stylePreferences
+                    colors_config = getattr(style_prefs, 'colors', None)
+                    if colors_config:
+                        accent1 = getattr(colors_config, 'accent1', None)
+                        accent2 = getattr(colors_config, 'accent2', None)
+                        background = getattr(colors_config, 'background', None)
+                        text = getattr(colors_config, 'text', None)
+                        if accent1:
+                            if 'color_palette' not in theme_dict:
+                                theme_dict['color_palette'] = {}
+                            theme_dict['color_palette']['accent_1'] = accent1
+                            theme_dict['color_palette']['accent_2'] = accent2 or accent1
+                            theme_dict['color_palette']['primary_background'] = background or '#FFFFFF'
+                            theme_dict['color_palette']['primary_text'] = text or '#1A1A1A'
+                            print(f"[GEMINI 3 PRO] 🎨 Injected colors from stylePreferences.colors: accent1={accent1}, accent2={accent2}")
+                    # Check deck_theme.color_palette
+                    deck_theme = getattr(style_prefs, 'deck_theme', None)
+                    if deck_theme and isinstance(deck_theme, dict):
+                        deck_palette = deck_theme.get('color_palette', {})
+                        if deck_palette and not theme_dict.get('color_palette', {}).get('accent_1'):
+                            theme_dict['color_palette'] = deck_palette
+                            print(f"[GEMINI 3 PRO] 🎨 Injected color_palette from stylePreferences.deck_theme")
+
+        # Log theme_dict for debugging
+        print(f"[GEMINI 3 PRO] 🎨 Theme dict keys: {list(theme_dict.keys())}")
+        print(f"[GEMINI 3 PRO] 🎨 Typography: {theme_dict.get('typography', {})}")
+        print(f"[GEMINI 3 PRO] 🎨 BrandInfo: {theme_dict.get('brandInfo', {})}")
+        print(f"[GEMINI 3 PRO] 🎨 Color Palette: {theme_dict.get('color_palette', {})}")
 
         # Get background color from theme for the CustomComponent to use
         colors = theme_dict.get('color_palette', {})

@@ -64,8 +64,10 @@ interface CreditCheck {
 }
 
 interface CheckoutSession {
-  session_id: string;
+  session_id: string | null;
   url: string;
+  upgraded?: boolean;
+  already_subscribed?: boolean;
 }
 
 interface PortalSession {

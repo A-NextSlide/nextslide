@@ -161,6 +161,7 @@ from api.requests.api_admin import router as admin_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_file_analysis import router as file_analysis_router
 from api.requests.api_billing import router as billing_router
+from api.requests.api_speech_to_text import router as speech_to_text_router
 from fastapi import Depends
 
 # Middleware imports removed - files were deleted
@@ -262,6 +263,7 @@ app.include_router(google_router)
 app.include_router(theme_router)
 app.include_router(file_analysis_router, prefix="/api/files", tags=["File Analysis"])
 app.include_router(billing_router, prefix="/api", tags=["Billing"])
+app.include_router(speech_to_text_router)
 
 # Global registry storage
 REGISTRY = None

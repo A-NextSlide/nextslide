@@ -118,6 +118,41 @@ const Profile: React.FC = () => {
   // Handle checkout success - sync subscription from Stripe
   useEffect(() => {
     const billingSuccess = searchParams.get('billing');
+    const upgraded = searchParams.get('upgraded');
+
+    // Handle upgrade success (prorated upgrade, no Stripe checkout)
+    if (upgraded === 'true' && !authLoading && user) {
+      const refreshBillingData = async () => {
+        setBillingLoading(true);
+        try {
+          // Load fresh billing data after upgrade
+          const [balance, subscription, usage] = await Promise.all([
+            billingApi.getBalance(),
+            billingApi.getSubscription(),
+            billingApi.getUsageStats()
+          ]);
+          setBillingBalance(balance);
+          setBillingSubscription(subscription);
+          setBillingUsage(usage);
+
+          // Show success toast
+          toast({
+            title: 'Plan upgraded!',
+            description: `You're now on the ${subscription.plan_name} plan. The prorated difference will be charged to your card.`
+          });
+        } catch (err) {
+          console.error('Failed to load billing data after upgrade:', err);
+        } finally {
+          setBillingLoading(false);
+          // Clear the upgraded param from URL
+          setSearchParams({ tab: 'billing' });
+        }
+      };
+      refreshBillingData();
+      return;
+    }
+
+    // Handle new subscription checkout success
     if (billingSuccess === 'success' && !authLoading && user) {
       const syncAndRefresh = async () => {
         setBillingLoading(true);
@@ -155,8 +190,9 @@ const Profile: React.FC = () => {
   // Load billing data when auth is ready
   useEffect(() => {
     if (authLoading || !user) return;
-    // Skip if we're handling checkout success
+    // Skip if we're handling checkout success or upgrade
     if (searchParams.get('billing') === 'success') return;
+    if (searchParams.get('upgraded') === 'true') return;
 
     const loadBillingData = async () => {
       setBillingLoading(true);
@@ -658,14 +694,7 @@ const Profile: React.FC = () => {
                               />
                             </div>
 
-                            {/* Overage notice for Pro users */}
-                            {billingBalance.can_use_overage && billingBalance.overage_credits > 0 && (
-                              <p className="text-sm text-muted-foreground">
-                                {billingBalance.overage_credits} overage credits · ${(billingBalance.overage_cost_cents / 100).toFixed(2)} on next invoice
-                              </p>
-                            )}
-
-                            {/* Overage availability for Pro */}
+                            {/* Overage availability for Pro (when no overages yet) */}
                             {billingBalance.can_use_overage && billingBalance.overage_credits === 0 && (
                               <p className="text-sm text-muted-foreground">
                                 Pro plan: Additional credits available at $0.03 each
@@ -674,6 +703,49 @@ const Profile: React.FC = () => {
                           </div>
                         )}
                       </div>
+
+                      {/* Overage Charges Section - for Pro users with overages */}
+                      {billingBalance?.can_use_overage && billingBalance.overage_credits > 0 && (
+                        <div className="p-6 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-sm font-medium text-amber-900 dark:text-amber-100">Overage Charges</h3>
+                                <Badge variant="outline" className="text-xs font-normal border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                                  Pro
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                                You've used {billingBalance.overage_credits} credits beyond your monthly allowance
+                              </p>
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-semibold text-amber-900 dark:text-amber-100">
+                                  ${(billingBalance.overage_cost_cents / 100).toFixed(2)}
+                                </span>
+                                <span className="text-sm text-amber-600 dark:text-amber-400">
+                                  on next invoice
+                                </span>
+                              </div>
+                              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                {billingBalance.overage_credits} credits × $0.03 per credit
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleManageBilling}
+                              disabled={portalLoading}
+                              className="border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                            >
+                              {portalLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                'View invoice'
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Upgrade prompt for free users */}
                       {billingSubscription?.plan_id === 'free' && (

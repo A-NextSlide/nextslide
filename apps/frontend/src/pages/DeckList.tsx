@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CompleteDeckData } from '@/types/DeckTypes';
 import { Button } from '@/components/ui/button';
 import { Plus, User as UserIcon, Search as SearchIcon, GripVertical, X, Grid, Trash2, ChevronDown, FilePlus, Pencil, Upload, Link as LinkIcon, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
+import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { useToast } from '@/hooks/use-toast';
 import { useDeckStore } from '@/stores/deckStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -570,7 +571,8 @@ const DeckList: React.FC = () => {
   }, [isAuthenticated, isLoading, refreshAdminStatus]);
 
   // Search state for the main side navigation
-  const { searchQuery, setSearchQuery, filteredDecks } = useDeckFiltering(decks);
+  const { searchQuery, setSearchQuery, filteredDecks, isSearching, clearSearch } = useDeckFiltering(decks);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Slide generation hook for handling slide images
   const { handleGenerationProgress: onSlideImagesFound } = useSlideGeneration('');
@@ -587,23 +589,68 @@ const DeckList: React.FC = () => {
     resetPopupDecks
   } = usePopupDeckPagination();
 
-  // Separate search state for the popup
+  // Separate search state for the popup with server-side search
   const [popupSearchQuery, setPopupSearchQuery] = useState('');
-  const filteredPopupDecks = useMemo(() => {
-    if (!popupSearchQuery.trim()) return popupDecks;
+  const [popupSearchResults, setPopupSearchResults] = useState<CompleteDeckData[] | null>(null);
+  const [isPopupSearching, setIsPopupSearching] = useState(false);
+  const popupSearchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Perform server-side search for popup
+  const performPopupSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setPopupSearchResults(null);
+      setIsPopupSearching(false);
+      return;
+    }
+
+    setIsPopupSearching(true);
+    try {
+      const result = await deckSyncService.getAllDecks(50, 0, 'owned', query.trim());
+      setPopupSearchResults(result.decks);
+    } catch (err) {
+      console.error('[DeckList] Popup search error:', err);
+      setPopupSearchResults(null);
+    } finally {
+      setIsPopupSearching(false);
+    }
+  }, []);
+
+  // Handle popup search changes with debouncing
+  const handlePopupSearchChange = useCallback((value: string) => {
+    setPopupSearchQuery(value);
+
+    // Clear previous timer
+    if (popupSearchTimerRef.current) {
+      clearTimeout(popupSearchTimerRef.current);
+    }
+
+    // Clear results immediately if empty
+    if (!value.trim()) {
+      setPopupSearchResults(null);
+      setIsPopupSearching(false);
+      return;
+    }
+
+    // Debounce server search
+    popupSearchTimerRef.current = setTimeout(() => {
+      performPopupSearch(value);
+    }, 300);
+  }, [performPopupSearch]);
+
+  // Use search results if available, otherwise show loaded decks
+  const filteredPopupDecks = useMemo(() => {
+    if (popupSearchResults !== null) {
+      return popupSearchResults;
+    }
+    if (!popupSearchQuery.trim()) {
+      return popupDecks;
+    }
+    // Local filter for immediate feedback while debounce timer is active
     const query = popupSearchQuery.toLowerCase().trim();
     return popupDecks.filter(deck =>
       (deck.name || '').toLowerCase().includes(query)
     );
-  }, [popupDecks, popupSearchQuery]);
-
-  // Handle popup search changes
-  const handlePopupSearchChange = (value: string) => {
-    setPopupSearchQuery(value);
-    // Note: When searching, we filter the already loaded decks
-    // Infinite scroll is disabled during search (see hasMore prop in VirtualizedPopupDeckGrid)
-  };
+  }, [popupDecks, popupSearchQuery, popupSearchResults]);
 
   const navigate = useNavigate();
   const { toast, dismiss } = useToast();
@@ -780,6 +827,7 @@ const DeckList: React.FC = () => {
     pauseDuration: 2000
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const heroTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
   const [linkInput, setLinkInput] = useState('');
 
@@ -1737,16 +1785,24 @@ const DeckList: React.FC = () => {
 
   // Reset popup search and load data when opening/closing the dialog
   const handleDialogOpenChange = (open: boolean) => {
+    console.log('[DeckList] Dialog open change:', open, 'popupDecks:', popupDecks.length, 'isLoadingPopup:', isLoadingPopup, 'hasLoadedInitialPopup:', hasLoadedInitialPopup);
 
     if (open) {
       // Load popup decks when opening the dialog
-      // Always load if we don't have any decks and not currently loading
-      if (popupDecks.length === 0 && !isLoadingPopup) {
+      // Load if we haven't loaded initial data yet and not currently loading
+      if (!hasLoadedInitialPopup && !isLoadingPopup) {
+        console.log('[DeckList] Calling loadPopupDecks');
         loadPopupDecks();
+      } else {
+        console.log('[DeckList] NOT calling loadPopupDecks - hasLoadedInitialPopup:', hasLoadedInitialPopup, 'isLoadingPopup:', isLoadingPopup);
       }
     } else {
       // Reset search when closing
       setPopupSearchQuery('');
+      setPopupSearchResults(null);
+      if (popupSearchTimerRef.current) {
+        clearTimeout(popupSearchTimerRef.current);
+      }
     }
     setShowGallery(open);
   };
@@ -2277,14 +2333,14 @@ const DeckList: React.FC = () => {
                                 className="text-3xl md:text-4xl lg:text-5xl font-extrabold uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white max-w-4xl mx-auto leading-tight"
                                 style={{ fontFamily: 'HK Grotesk Wide, sans-serif' }}
                               >
-                                TURN{' '}<RotatingWords />{' '}INTO<br />BEAUTIFUL PRESENTATIONS
+                                TURN{' '}<RotatingWords />{' '}INTO<br />PERFECT PRESENTATIONS
                               </h1>
                               <div className="space-y-2">
                                 <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-300 max-w-2xl mx-auto">
-                                  Create stunning, structured decks in seconds — just describe what you need.
+                                  Any topic. Visualized. Perfected. In 90 seconds.
                                 </p>
                                 <p className="text-sm md:text-base text-zinc-500 dark:text-zinc-400">
-                                  Type topic, paste link, or upload file.
+                                  Type, talk, or drop a file — we handle the rest.
                                 </p>
                               </div>
                             </div>
@@ -2318,6 +2374,7 @@ const DeckList: React.FC = () => {
                                 {/* Input Field with Typewriter Placeholder */}
                                 <div className="flex-1 relative min-h-[48px]">
                                   <Textarea
+                                    ref={heroTextareaRef}
                                     className="w-full border-none shadow-none focus-visible:ring-0 min-h-[48px] max-h-[150px] bg-transparent placeholder:text-slate-300 dark:placeholder:text-zinc-500 px-4 py-3 font-sans dark:text-zinc-100 resize-none overflow-y-auto text-base leading-normal"
                                     value={heroInput}
                                     onChange={(e) => setHeroInput(e.target.value)}
@@ -2378,96 +2435,51 @@ const DeckList: React.FC = () => {
                                         <LinkIcon size={18} />
                                       </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-80 p-3 dark:bg-zinc-900 dark:border-zinc-700" side="top" align="center">
-                                      <div className="flex gap-2">
-                                        <Input
-                                          placeholder="Paste URL..."
-                                          value={linkInput}
-                                          onChange={(e) => setLinkInput(e.target.value)}
-                                          className="h-9 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
-                                          onKeyDown={(e) => e.key === 'Enter' && handleLinkAdd()}
-                                        />
-                                        <Button size="sm" onClick={handleLinkAdd} className="bg-blue-600 hover:bg-blue-700 text-white h-9 w-9 p-0">
-                                          <Plus size={16} />
-                                        </Button>
-                                      </div>
-                                    </PopoverContent>
-                                  </Popover>
-
-                                  {/* Slide Count Popover */}
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        className="h-8 border-none shadow-none bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-xs font-medium rounded-lg focus:ring-0 gap-2 px-3"
-                                      >
-                                        <span className="truncate">
-                                          {slideCount === undefined ? 'Auto' :
-                                            slideCount > 10 ? '10+ Slides' :
-                                              `${slideCount} Slides`}
-                                        </span>
-                                        <ChevronDown className="h-3 w-3 opacity-50" />
-                                      </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[280px] p-3 dark:bg-zinc-900 dark:border-zinc-700" align="end">
+                                    <PopoverContent className="w-80 p-4 dark:bg-zinc-900 dark:border-zinc-700" side="top" align="center">
                                       <div className="space-y-3">
-                                        <div className="font-medium text-xs text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Number of Slides</div>
-
-                                        {/* Auto Option */}
-                                        <button
-                                          onClick={() => {
-                                            setSlideCount(undefined);
-                                            setDetailLevel('quick');
-                                          }}
-                                          className={cn(
-                                            "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
-                                            slideCount === undefined
-                                              ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
-                                              : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
-                                          )}
-                                        >
-                                          Auto (Recommended)
-                                        </button>
-
-                                        {/* Number Grid */}
-                                        <div className="grid grid-cols-5 gap-2">
-                                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                                            <button
-                                              key={num}
-                                              onClick={() => {
-                                                setSlideCount(num);
-                                                setDetailLevel(num <= 3 ? 'quick' : 'standard');
-                                              }}
-                                              className={cn(
-                                                "py-2 rounded-lg text-xs font-medium transition-all border",
-                                                slideCount === num
-                                                  ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
-                                                  : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
-                                              )}
-                                            >
-                                              {num}
-                                            </button>
-                                          ))}
+                                        <div>
+                                          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Add a link</p>
+                                          <p className="text-xs text-zinc-500 dark:text-zinc-400">We'll extract content from articles, docs, or websites</p>
                                         </div>
-
-                                        {/* 10+ Option */}
-                                        <button
-                                          onClick={() => {
-                                            setSlideCount(12);
-                                            setDetailLevel('detailed');
-                                          }}
-                                          className={cn(
-                                            "w-full py-2 px-3 rounded-lg text-xs font-medium transition-all border",
-                                            slideCount === 12
-                                              ? "bg-orange-50 dark:bg-orange-950/50 border-orange-500 text-orange-700 dark:text-orange-400"
-                                              : "bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600"
-                                          )}
-                                        >
-                                          10+ Slides
-                                        </button>
+                                        <div className="flex gap-2">
+                                          <Input
+                                            placeholder="https://..."
+                                            value={linkInput}
+                                            onChange={(e) => setLinkInput(e.target.value)}
+                                            className="h-9 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
+                                            onKeyDown={(e) => e.key === 'Enter' && handleLinkAdd()}
+                                            autoFocus
+                                          />
+                                          <Button size="sm" onClick={handleLinkAdd} className="bg-orange-500 hover:bg-orange-600 text-white h-9 px-3">
+                                            Add
+                                          </Button>
+                                        </div>
                                       </div>
                                     </PopoverContent>
                                   </Popover>
+
+                                  {/* Voice Input Button */}
+                                  <VoiceRecorder
+                                    onTranscript={(text) => {
+                                      setHeroInput(prev => {
+                                        const newText = prev.trim() ? `${prev} ${text}` : text;
+                                        // Auto-resize and scroll textarea after state update
+                                        setTimeout(() => {
+                                          if (heroTextareaRef.current) {
+                                            heroTextareaRef.current.style.height = '48px';
+                                            heroTextareaRef.current.style.height = Math.min(heroTextareaRef.current.scrollHeight, 150) + 'px';
+                                            heroTextareaRef.current.scrollTop = heroTextareaRef.current.scrollHeight;
+                                          }
+                                        }, 0);
+                                        return newText;
+                                      });
+                                    }}
+                                    onError={(error) => {
+                                      console.error('Voice recording error:', error);
+                                    }}
+                                    size="sm"
+                                    variant="mic"
+                                  />
 
                                   {/* Submit Button */}
                                   <Button
@@ -2527,12 +2539,28 @@ const DeckList: React.FC = () => {
                         <div className="relative w-full">
                           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                           <Input
+                            ref={searchInputRef}
                             type="text"
-                            placeholder="Search..."
+                            placeholder="Search all decks..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-white/50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-800 pl-10 h-9 rounded-lg text-sm dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                            className="w-full bg-white/50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-800 pl-10 pr-8 h-9 rounded-lg text-sm dark:text-zinc-100 dark:placeholder:text-zinc-500"
                           />
+                          {/* Loading indicator or clear button */}
+                          {isSearching ? (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 animate-spin" />
+                          ) : searchQuery ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                clearSearch();
+                                searchInputRef.current?.focus();
+                              }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          ) : null}
                         </div>
 
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -2541,6 +2569,17 @@ const DeckList: React.FC = () => {
                             <TabsTrigger value="shared" className="rounded-md text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100">Shared</TabsTrigger>
                           </TabsList>
                         </Tabs>
+
+                        {/* View All button */}
+                        <div className="flex justify-end mt-2">
+                          <button
+                            onClick={() => handleDialogOpenChange(true)}
+                            className="group flex items-center gap-1 text-[10px] font-semibold tracking-wider text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
+                          >
+                            <span>VIEW ALL</span>
+                            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -2561,7 +2600,7 @@ const DeckList: React.FC = () => {
                               onEdit={handleEditDeck}
                               onShowDeleteDialog={handleShowDeleteDialog}
                               onLoadMore={loadMoreDecks}
-                              hasMore={hasMore}
+                              hasMore={searchQuery ? false : hasMore} // Disable load more when searching (server returns all results)
                               isLoadingMore={isLoadingMore}
                               isInitialLoad={true}
                             />
@@ -2588,104 +2627,164 @@ const DeckList: React.FC = () => {
                       </Tabs>
                     </div>
 
-                    {/* Dialogs */}
+                    {/* View All Presentations Dialog - Sleek & Sophisticated Design */}
                     <Dialog open={showGallery} onOpenChange={handleDialogOpenChange}>
-                      <DialogContent className="sm:max-w-[900px] h-[80vh] p-0 overflow-hidden flex flex-col">
-                        <DialogHeader className="p-6 flex-shrink-0">
-                          {/* @ts-ignore - DialogTitle children prop issue */}
-                          <DialogTitle className="text-xl">
-                            Import from Google Slides
-                          </DialogTitle>
-                        </DialogHeader>
-                        <div className="px-6 pb-6 flex-shrink-0">
-                          <div className="relative mt-4">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-neutral-400" />
-                            <Input
-                              type="text"
-                              placeholder="Search presentations..."
-                              value={popupSearchQuery}
-                              onChange={(e) => handlePopupSearchChange(e.target.value)}
-                              className="w-full bg-transparent border border-zinc-300 dark:border-zinc-600 hover:border-zinc-500 dark:hover:border-zinc-400 focus:border-zinc-700 dark:focus:border-zinc-300 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-10 rounded-md h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                            />
+                      <DialogContent className="sm:max-w-[1100px] h-[85vh] p-0 overflow-hidden flex flex-col bg-gradient-to-br from-white via-zinc-50/80 to-zinc-100/50 dark:from-zinc-900 dark:via-zinc-900/95 dark:to-black border-zinc-200/50 dark:border-zinc-800/50 shadow-2xl shadow-black/10 dark:shadow-black/50 backdrop-blur-xl">
+                        {/* Sleek header with gradient accent */}
+                        <div className="relative px-8 pt-8 pb-6 flex-shrink-0">
+                          {/* Subtle gradient line accent */}
+                          <div className="absolute top-0 left-8 right-8 h-[2px] bg-gradient-to-r from-transparent via-orange-500/60 to-transparent" />
+
+                          <DialogHeader className="space-y-1">
+                            {/* @ts-ignore - DialogTitle children prop issue */}
+                            <DialogTitle className="text-2xl tracking-tight text-zinc-900 dark:text-zinc-100">
+                              <span className="font-bold">All Presentations</span>
+                            </DialogTitle>
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                              Browse and manage your presentation library
+                            </p>
+                          </DialogHeader>
+
+                          {/* Elegant search bar */}
+                          <div className="relative mt-6">
+                            <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-orange-500/5 rounded-xl blur-xl" />
+                            <div className="relative flex items-center">
+                              <SearchIcon className="absolute left-4 h-4 w-4 text-zinc-400 dark:text-zinc-500" />
+                              <Input
+                                type="text"
+                                placeholder="Search all presentations..."
+                                value={popupSearchQuery}
+                                onChange={(e) => handlePopupSearchChange(e.target.value)}
+                                className="w-full bg-white/80 dark:bg-zinc-800/50 border-zinc-200/80 dark:border-zinc-700/50 hover:border-orange-300/50 dark:hover:border-orange-500/30 focus:border-orange-400 dark:focus:border-orange-500/50 text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 pl-11 pr-4 rounded-xl h-11 text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-orange-500/20 focus-visible:ring-offset-0 transition-all duration-200"
+                              />
+                              {isPopupSearching ? (
+                                <Loader2 className="absolute right-4 h-4 w-4 text-orange-500 animate-spin" />
+                              ) : popupSearchQuery ? (
+                                <button
+                                  onClick={() => {
+                                    setPopupSearchQuery('');
+                                    setPopupSearchResults(null);
+                                  }}
+                                  className="absolute right-4 p-0.5 rounded-full hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80 transition-colors"
+                                >
+                                  <X className="h-3.5 w-3.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" />
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
 
+                        {/* Tabs with modern styling */}
                         <Tabs defaultValue="by-me" className="flex flex-col flex-grow overflow-hidden">
-                          <div className="px-6 pt-0 flex-shrink-0">
-                            <TabsList className="bg-muted/50">
-                              <TabsTrigger value="by-me" className="text-sm">My Presentations</TabsTrigger>
-                              <TabsTrigger value="shared" className="text-sm">Shared</TabsTrigger>
+                          <div className="px-8 flex-shrink-0 border-b border-zinc-100 dark:border-zinc-800/50">
+                            <TabsList className="bg-transparent h-auto p-0 gap-6">
+                              <TabsTrigger
+                                value="by-me"
+                                className="relative bg-transparent px-0 py-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none rounded-none transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-orange-500 after:scale-x-0 after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100"
+                              >
+                                My Presentations
+                              </TabsTrigger>
+                              <TabsTrigger
+                                value="shared"
+                                className="relative bg-transparent px-0 py-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 data-[state=active]:text-zinc-900 dark:data-[state=active]:text-zinc-100 data-[state=active]:shadow-none rounded-none transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-orange-500 after:scale-x-0 after:transition-transform after:duration-200 data-[state=active]:after:scale-x-100"
+                              >
+                                Shared with Me
+                              </TabsTrigger>
                             </TabsList>
                           </div>
 
-                          <div className="p-6 pt-4 overflow-y-auto flex-grow">
-                            <TabsContent value="by-me" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
-                              {isLoadingPopup && popupDecks.length === 0 ? (
-                                <div className="w-full text-center py-10">
-                                  <div className="flex flex-col items-center justify-center">
-                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                                    <p className="text-sm text-muted-foreground mt-4">Loading presentations...</p>
+                          {/* Content area with refined styling */}
+                          <div className="flex-grow overflow-y-auto">
+                            <div className="p-8">
+                              <TabsContent value="by-me" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col">
+                                {(isLoadingPopup || isPopupSearching) && filteredPopupDecks.length === 0 ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="relative">
+                                      <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse" />
+                                      <Loader2 className="relative h-8 w-8 text-orange-500 animate-spin" />
+                                    </div>
+                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-6">
+                                      {isPopupSearching ? 'Searching...' : 'Loading your presentations...'}
+                                    </p>
                                   </div>
-                                </div>
-                              ) : filteredPopupDecks.length === 0 && popupSearchQuery.trim() ? (
-                                <div className="w-full text-center py-10">
-                                  <p className="text-lg text-muted-foreground">No presentations match "{popupSearchQuery}"</p>
-                                </div>
-                              ) : filteredPopupDecks.length === 0 && hasLoadedInitialPopup ? (
-                                <div className="w-full text-center py-10">
-                                  <p className="text-lg text-muted-foreground">No presentations found</p>
-                                </div>
-                              ) : filteredPopupDecks.length > 0 ? (
-                                <VirtualizedPopupDeckGrid
-                                  decks={filteredPopupDecks}
-                                  onEdit={(deck) => {
-                                    handleEditDeck(deck);
-                                    setShowGallery(false);
-                                  }}
-                                  onShowDeleteDialog={handleShowDeleteDialog}
-                                  onLoadMore={loadMorePopupDecks}
-                                  hasMore={hasMorePopup && !popupSearchQuery.trim()}
-                                  isLoadingMore={isLoadingMorePopup}
-                                />
-                              ) : null}
-                            </TabsContent>
-                            <TabsContent value="shared" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col h-auto">
-                              {isLoadingShared ? (
-                                <div className="w-full text-center py-10">
-                                  <div className="flex flex-col items-center justify-center">
-                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                                    <p className="text-sm text-muted-foreground mt-4">Loading shared presentations...</p>
+                                ) : filteredPopupDecks.length === 0 && popupSearchQuery.trim() && !isPopupSearching ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                                      <SearchIcon className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
+                                    </div>
+                                    <p className="text-lg text-zinc-600 dark:text-zinc-300">No results for "{popupSearchQuery}"</p>
+                                    <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Try a different search term</p>
                                   </div>
-                                </div>
-                              ) : sharedDecksError ? (
-                                <div className="w-full text-center py-10">
-                                  <div className="flex flex-col items-center justify-center">
-                                    <p className="text-lg text-destructive font-medium">Error loading shared presentations</p>
-                                    <p className="text-sm text-muted-foreground mt-2">{sharedDecksError}</p>
-                                    <Button onClick={loadSharedDecks} size="sm" className="mt-4" variant="outline">Try Again</Button>
+                                ) : filteredPopupDecks.length === 0 && !popupSearchQuery.trim() ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                                      <Grid className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
+                                    </div>
+                                    <p className="text-lg text-zinc-600 dark:text-zinc-300">No presentations yet</p>
+                                    <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Create your first presentation to get started</p>
                                   </div>
-                                </div>
-                              ) : sharedDecks.length === 0 ? (
-                                <div className="w-full text-center py-10">
-                                  <p className="text-lg text-muted-foreground">No shared presentations available</p>
-                                  <p className="text-sm text-muted-foreground mt-2">Presentations shared with you will appear here</p>
-                                </div>
-                              ) : (
-                                <VirtualizedPopupDeckGrid
-                                  decks={sharedDecks}
-                                  onEdit={(deck) => {
-                                    handleEditDeck(deck);
-                                    setShowGallery(false);
-                                  }}
-                                  onShowDeleteDialog={handleShowDeleteDialog}
-                                  onLoadMore={() => { }}
-                                  hasMore={false}
-                                  isLoadingMore={false}
-                                />
-                              )}
-                            </TabsContent>
+                                ) : (
+                                  <VirtualizedPopupDeckGrid
+                                    decks={filteredPopupDecks}
+                                    onEdit={(deck) => {
+                                      handleEditDeck(deck);
+                                      setShowGallery(false);
+                                    }}
+                                    onShowDeleteDialog={handleShowDeleteDialog}
+                                    onLoadMore={loadMorePopupDecks}
+                                    hasMore={hasMorePopup && !popupSearchQuery.trim()}
+                                    isLoadingMore={isLoadingMorePopup}
+                                  />
+                                )}
+                              </TabsContent>
+                              <TabsContent value="shared" className="mt-0 data-[state=active]:flex data-[state=active]:flex-col">
+                                {isLoadingShared ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="relative">
+                                      <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse" />
+                                      <Loader2 className="relative h-8 w-8 text-orange-500 animate-spin" />
+                                    </div>
+                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-6 font-light">Loading shared presentations...</p>
+                                  </div>
+                                ) : sharedDecksError ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-16 h-16 rounded-2xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center mb-4">
+                                      <X className="h-7 w-7 text-red-400 dark:text-red-500" />
+                                    </div>
+                                    <p className="text-lg font-light text-red-600 dark:text-red-400">Error loading presentations</p>
+                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 mb-4">{sharedDecksError}</p>
+                                    <Button onClick={loadSharedDecks} size="sm" variant="outline" className="rounded-lg">
+                                      Try Again
+                                    </Button>
+                                  </div>
+                                ) : sharedDecks.length === 0 ? (
+                                  <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                                      <UserIcon className="h-7 w-7 text-zinc-400 dark:text-zinc-500" />
+                                    </div>
+                                    <p className="text-lg font-light text-zinc-600 dark:text-zinc-300">No shared presentations</p>
+                                    <p className="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Presentations shared with you will appear here</p>
+                                  </div>
+                                ) : (
+                                  <VirtualizedPopupDeckGrid
+                                    decks={sharedDecks}
+                                    onEdit={(deck) => {
+                                      handleEditDeck(deck);
+                                      setShowGallery(false);
+                                    }}
+                                    onShowDeleteDialog={handleShowDeleteDialog}
+                                    onLoadMore={() => { }}
+                                    hasMore={false}
+                                    isLoadingMore={false}
+                                  />
+                                )}
+                              </TabsContent>
+                            </div>
                           </div>
                         </Tabs>
+
+                        {/* Subtle bottom gradient fade */}
+                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white/80 dark:from-zinc-900/80 to-transparent pointer-events-none" />
                       </DialogContent>
                     </Dialog>
 

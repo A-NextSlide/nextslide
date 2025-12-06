@@ -277,7 +277,14 @@ def custom_component_str_replace(
     Apply str_replace edits to a CustomComponent's HTML.
 
     This is much faster than full regeneration for targeted changes.
+    Uses INDEXED replacement to avoid replacing all occurrences.
     """
+    from agents.editing.validated_editor import (
+        get_validated_editor,
+        smart_find_and_replace,
+        validate_html
+    )
+
     # Find the component
     component_info = find_component_by_id(deck_data, args.component_id)
     if not component_info:
@@ -294,22 +301,53 @@ def custom_component_str_replace(
     if not current_html:
         raise ValueError(f"CustomComponent {args.component_id} has no render HTML")
 
-    # Apply the str_replace edit (simplified: single edit per call)
+    # Store original for potential rollback
+    original_html = current_html
     updated_html = current_html
 
     # Use smart matching to find the text
     found, actual_string, suggestion = find_text_in_html(updated_html, args.old_string)
 
     if found and actual_string:
-        # Count occurrences
+        # Count occurrences - use indexed replacement if multiple
         count = updated_html.count(actual_string)
-        if count > 1:
-            logger.warning(f"str_replace: '{actual_string[:50]}...' found {count} times, replacing all")
 
-        updated_html = updated_html.replace(actual_string, args.new_string)
-        logger.info(f"str_replace: Applied edit ({count} occurrences)")
+        if count > 1:
+            # INDEXED REPLACEMENT: Only replace first occurrence, not all
+            # This prevents breaking other instances of similar text
+            logger.warning(f"str_replace: '{actual_string[:50]}...' found {count} times - replacing FIRST occurrence only (indexed replacement)")
+
+            # Use smart_find_and_replace for context-aware replacement
+            updated_html, success, message = smart_find_and_replace(
+                updated_html,
+                actual_string,
+                args.new_string,
+                context_before="",  # Could be enhanced with LLM-provided context
+                context_after=""
+            )
+
+            if not success:
+                raise ValueError(message)
+
+            logger.info(f"str_replace: {message}")
+        else:
+            # Single occurrence - safe to replace directly
+            updated_html = updated_html.replace(actual_string, args.new_string)
+            logger.info(f"str_replace: Applied edit (1 occurrence)")
+
         if suggestion:
             logger.info(f"str_replace: {suggestion}")
+
+        # VALIDATION: Check HTML structure after edit
+        validation = validate_html(updated_html)
+        if validation.errors:
+            logger.error(f"str_replace validation failed: {validation.errors}")
+            # Rollback to original
+            raise ValueError(f"Edit would break HTML structure: {'; '.join(validation.errors)}")
+
+        if validation.warnings:
+            logger.warning(f"str_replace warnings: {validation.warnings}")
+
     else:
         # Provide helpful error with suggestions
         searched_preview = args.old_string[:100] + "..." if len(args.old_string) > 100 else args.old_string
@@ -552,18 +590,23 @@ def custom_component_rewrite(
     attachments: Optional[List] = None
 ) -> DeckDiff:
     """
-    Rewrite a CustomComponent's HTML using Gemini.
+    Rewrite a CustomComponent's HTML using smart model routing.
 
-    Uses the SAME rich prompts as the generator for full creative capability.
+    Uses different models based on edit complexity:
+    - COMPLEX (new concepts, redesigns): Gemini 3 Pro (best quality)
+    - MEDIUM (partial rewrites): Gemini Flash (fast, good)
+
+    Includes validation and quality checks.
     """
     from agents.ai.clients import get_client, invoke
-    from agents.config import CUSTOM_COMPONENT_MODEL
+    from agents.config import CUSTOM_COMPONENT_MODEL, CUSTOM_COMPONENT_EDIT_MODEL
     from agents.editing.attachment_analyzer import (
         analyze_attachments,
         build_multimodal_content,
         get_attachment_context_summary,
         FileType
     )
+    from agents.editing.validated_editor import classify_edit_complexity, EditComplexity
 
     # Find the component
     component_info = find_component_by_id(deck_data, args.component_id)
@@ -617,99 +660,131 @@ MODIFICATION REQUEST:
 {reference_note}
 Apply the requested changes. Output the complete modified HTML starting with <!DOCTYPE html>."""
 
-    # Use raw Gemini API to avoid instructor's caching issues (filename too long errors)
-    # instructor's Gemini integration uses prompt content in cache filenames
+    # SMART MODEL ROUTING: Choose model based on edit complexity
+    complexity = classify_edit_complexity(args.rewrite_request, current_html)
+    if complexity == EditComplexity.COMPLEX:
+        selected_model = CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro for complex edits
+        use_gemini = True
+        logger.info(f"Smart routing: COMPLEX edit detected, using {selected_model}")
+    else:
+        selected_model = CUSTOM_COMPONENT_EDIT_MODEL  # Claude Haiku 4.5 for medium edits
+        use_gemini = selected_model.startswith('gemini')
+        logger.info(f"Smart routing: MEDIUM edit detected, using {selected_model}")
+
     import os
     import json as json_module
 
     try:
-        from google import genai
-        from google.genai import types
+        if use_gemini:
+            # Use raw Gemini API to avoid instructor's caching issues (filename too long errors)
+            from google import genai
+            from google.genai import types
 
-        gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        if not gemini_key:
-            raise ValueError("GOOGLE_API_KEY not set")
+            gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            if not gemini_key:
+                raise ValueError("GOOGLE_API_KEY not set")
 
-        gemini_client = genai.Client(api_key=gemini_key)
+            gemini_client = genai.Client(api_key=gemini_key)
 
-        # Combine prompts for Gemini
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            # Combine prompts for Gemini
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-        # Add reference images if available
-        contents = []
-        if analyzed_attachments:
-            for att in analyzed_attachments:
-                if att.is_vision_content and att.base64_data:
-                    contents.append(types.Part.from_bytes(
-                        data=__import__('base64').b64decode(att.base64_data),
-                        mime_type=att.mime_type or 'image/png'
-                    ))
-        contents.append(full_prompt)
+            # Add reference images if available
+            contents = []
+            if analyzed_attachments:
+                for att in analyzed_attachments:
+                    if att.is_vision_content and att.base64_data:
+                        contents.append(types.Part.from_bytes(
+                            data=__import__('base64').b64decode(att.base64_data),
+                            mime_type=att.mime_type or 'image/png'
+                        ))
+            contents.append(full_prompt)
 
-        # Make raw API call
-        from agents.config import CUSTOM_COMPONENT_EDIT_MODEL
-        response_raw = gemini_client.models.generate_content(
-            model=CUSTOM_COMPONENT_EDIT_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "object",
-                    "properties": {
-                        "html": {"type": "string", "description": "The complete HTML document"},
-                        "description": {"type": "string", "description": "Brief description"}
-                    },
-                    "required": ["html", "description"]
-                }
+            # Make raw API call with smart-selected model
+            response_raw = gemini_client.models.generate_content(
+                model=selected_model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "object",
+                        "properties": {
+                            "html": {"type": "string", "description": "The complete HTML document"},
+                            "description": {"type": "string", "description": "Brief description"}
+                        },
+                        "required": ["html", "description"]
+                    }
+                )
             )
-        )
 
-        # Parse response - handle malformed JSON from Gemini
-        response_text = response_raw.text
-        try:
-            response_data = json_module.loads(response_text)
-        except json_module.JSONDecodeError as json_err:
-            # Gemini sometimes returns malformed JSON when HTML contains special chars
-            # Try to extract HTML directly from the response
-            logger.warning(f"JSON parse failed, attempting to extract HTML: {json_err}")
+            # Parse response - handle malformed JSON from Gemini
+            response_text = response_raw.text
+            try:
+                response_data = json_module.loads(response_text)
+            except json_module.JSONDecodeError as json_err:
+                # Gemini sometimes returns malformed JSON when HTML contains special chars
+                # Try to extract HTML directly from the response
+                logger.warning(f"JSON parse failed, attempting to extract HTML: {json_err}")
 
-            # Try to find HTML in the response (common patterns)
-            html_match = re.search(r'<!DOCTYPE html>.*?</html>', response_text, re.DOTALL | re.IGNORECASE)
-            if html_match:
-                response_data = {
-                    'html': html_match.group(0),
-                    'description': 'Rewritten component (extracted from response)'
-                }
-            else:
-                # Try to find just the html field value
-                html_field_match = re.search(r'"html"\s*:\s*"(.*?)"(?:\s*,|\s*})', response_text, re.DOTALL)
-                if html_field_match:
-                    # Unescape the JSON string
-                    html_escaped = html_field_match.group(1)
-                    html_unescaped = html_escaped.encode().decode('unicode_escape')
+                # Try to find HTML in the response (common patterns)
+                html_match = re.search(r'<!DOCTYPE html>.*?</html>', response_text, re.DOTALL | re.IGNORECASE)
+                if html_match:
                     response_data = {
-                        'html': html_unescaped,
+                        'html': html_match.group(0),
                         'description': 'Rewritten component (extracted from response)'
                     }
                 else:
-                    # Last resort: if response looks like HTML, use it directly
-                    if '<!doctype' in response_text.lower() or '<html' in response_text.lower():
+                    # Try to find just the html field value
+                    html_field_match = re.search(r'"html"\s*:\s*"(.*?)"(?:\s*,|\s*})', response_text, re.DOTALL)
+                    if html_field_match:
+                        # Unescape the JSON string
+                        html_escaped = html_field_match.group(1)
+                        html_unescaped = html_escaped.encode().decode('unicode_escape')
                         response_data = {
-                            'html': response_text.strip(),
-                            'description': 'Rewritten component (raw response)'
+                            'html': html_unescaped,
+                            'description': 'Rewritten component (extracted from response)'
                         }
                     else:
-                        raise ValueError(f"Could not parse Gemini response: {json_err}")
+                        # Last resort: if response looks like HTML, use it directly
+                        if '<!doctype' in response_text.lower() or '<html' in response_text.lower():
+                            response_data = {
+                                'html': response_text.strip(),
+                                'description': 'Rewritten component (raw response)'
+                            }
+                        else:
+                            raise ValueError(f"Could not parse Gemini response: {json_err}")
 
-        response = SimpleCustomComponentResponse(
-            html=response_data.get('html', ''),
-            description=response_data.get('description', 'Rewritten component')
-        )
+            response = SimpleCustomComponentResponse(
+                html=response_data.get('html', ''),
+                description=response_data.get('description', 'Rewritten component')
+            )
+        else:
+            # Use Claude (Haiku 4.5) for medium edits via instructor
+            logger.info(f"Using Claude model: {selected_model}")
+            client, model = get_client(selected_model)
 
-    except ImportError:
+            # Build multimodal content if attachments present
+            if analyzed_attachments:
+                user_content = build_multimodal_content(analyzed_attachments, user_prompt, max_images=3)
+            else:
+                user_content = user_prompt
+
+            response = invoke(
+                client=client,
+                model=model,
+                max_tokens=16384,
+                response_model=SimpleCustomComponentResponse,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                max_retries=2
+            )
+
+    except ImportError as e:
         # Fallback to instructor-wrapped client if google.genai not available
-        logger.warning("google.genai not available, falling back to instructor")
-        client, model = get_client(CUSTOM_COMPONENT_MODEL)
+        logger.warning(f"Import error ({e}), falling back to instructor with {selected_model}")
+        client, model = get_client(selected_model)
 
         # Build multimodal content if attachments present
         if analyzed_attachments:
@@ -740,6 +815,25 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
             html = '<!DOCTYPE html>' + html
         else:
             raise ValueError("Generated HTML doesn't start with <!DOCTYPE html>")
+
+    # VALIDATION: Check HTML structure before applying
+    from agents.editing.validated_editor import validate_html, compare_html_changes
+
+    validation = validate_html(html)
+    if validation.errors:
+        logger.error(f"Rewrite validation failed: {validation.errors}")
+        raise ValueError(f"Generated HTML has structural issues: {'; '.join(validation.errors)}")
+
+    if validation.warnings:
+        logger.warning(f"Rewrite validation warnings: {validation.warnings}")
+
+    # Compare changes to detect potential issues
+    comparison = compare_html_changes(current_html, html)
+    logger.info(f"Rewrite comparison: similarity={comparison['similarity_ratio']:.2%}, size_change={comparison['size_change']}")
+
+    # Warn if significant content was removed
+    if comparison['size_change'] < -1000:
+        logger.warning(f"Significant content removed during rewrite ({abs(comparison['size_change'])} chars)")
 
     # Get the proper component diff model from registry
     component_diff_model = registry.get_component_diff_model('CustomComponent')

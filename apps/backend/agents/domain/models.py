@@ -35,7 +35,9 @@ class ThemeSpec:
     slide_templates: Dict[str, Any] = field(default_factory=dict)
     design_rules: Dict[str, Any] = field(default_factory=dict)
     slide_themes: Dict[str, Any] = field(default_factory=dict)  # LayoutArchitect blueprints
-    
+    # Brand information including logo URL
+    brandInfo: Dict[str, Any] = field(default_factory=dict)
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ThemeSpec':
         """Create ThemeSpec from dictionary."""
@@ -51,9 +53,10 @@ class ThemeSpec:
             background_variations=data.get('background_variations', []),
             slide_templates=data.get('slide_templates', {}),
             design_rules=data.get('design_rules', {}),
-            slide_themes=data.get('slide_themes', {})
+            slide_themes=data.get('slide_themes', {}),
+            brandInfo=data.get('brandInfo', {})
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -68,7 +71,8 @@ class ThemeSpec:
             'background_variations': self.background_variations,
             'slide_templates': self.slide_templates,
             'design_rules': self.design_rules,
-            'slide_themes': self.slide_themes
+            'slide_themes': self.slide_themes,
+            'brandInfo': self.brandInfo
         }
 
 

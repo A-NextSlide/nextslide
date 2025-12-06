@@ -295,11 +295,12 @@ async def get_user_decks(
     token: Optional[str] = Depends(get_auth_header),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    filter: str = Query("owned", regex="^(owned|shared|all)$", description="Filter decks by ownership")
+    filter: str = Query("owned", regex="^(owned|shared|all)$", description="Filter decks by ownership"),
+    search: Optional[str] = Query(None, min_length=1, max_length=100, description="Search query to filter decks by name")
 ):
     """
     Get decks for the authenticated user with pagination and filtering
-    
+
     Query parameters:
     - filter: "owned" (default) | "shared" | "all"
         - owned: Only user's own decks
@@ -307,6 +308,7 @@ async def get_user_decks(
         - all: Both owned and shared decks
     - limit: Number of decks to return (max 100)
     - offset: Number of decks to skip for pagination
+    - search: Optional search query to filter decks by name (case-insensitive)
     """
     # Debug logging
     logger.debug(f"Getting user decks - Token present: {token is not None}, Token length: {len(token) if token else 0}")
@@ -335,21 +337,25 @@ async def get_user_decks(
         
         # Get auth service for deck operations (uses service key for RLS bypass)
         auth_service = get_auth_service()
+        logger.info(f"[get_user_decks] Search query: '{search}', filter: {filter}, limit: {limit}, offset: {offset}")
         result = auth_service.get_user_decks_filtered(
-            user["id"], 
+            user["id"],
             filter_type=filter,
-            limit=limit, 
-            offset=offset
+            limit=limit,
+            offset=offset,
+            search_query=search
         )
-        
+        logger.info(f"[get_user_decks] Found {len(result.get('decks', []))} decks")
+
         return {
-            "decks": result.get("decks", []), 
-            "count": len(result.get("decks", [])), 
+            "decks": result.get("decks", []),
+            "count": len(result.get("decks", [])),
             "total": result.get("total", 0),
             "has_more": result.get("has_more", False),
             "limit": limit,
             "offset": offset,
-            "filter": filter
+            "filter": filter,
+            "search": search
         }
     except HTTPException:
         # Re-raise HTTP exceptions as-is
