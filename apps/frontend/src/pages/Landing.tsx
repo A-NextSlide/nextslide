@@ -398,11 +398,11 @@ const Landing: React.FC = () => {
           </div>
 
           <div className="animate-on-scroll opacity-0">
-            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-stretch">
+            <div className="grid lg:grid-cols-[1fr_260px] gap-4 items-start">
               {/* Main slide viewer with left sidebar */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10 flex flex-col">
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/80 border border-white/10">
                 {/* Top bar */}
-                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5 flex-shrink-0">
+                <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-white/5">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1.5">
                       <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
@@ -418,35 +418,53 @@ const Landing: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Content with slide sidebar */}
-                <div className="flex flex-1 min-h-0">
-                  {/* Slide thumbnails sidebar */}
-                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 space-y-2 overflow-y-auto custom-scrollbar">
-                    {isLoadingShowcase ? (
-                      [...Array(5)].map((_, idx) => (
-                        <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse" />
-                      ))
-                    ) : (
-                      activeDeck?.slides?.map((slide, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => { handleUserInteraction(); setActiveDeckSlideIndex(idx); }}
-                          className={cn(
-                            "aspect-video rounded overflow-hidden relative cursor-pointer transition-all",
-                            idx === activeDeckSlideIndex ? "ring-2 ring-[#FF4301]" : "opacity-50 hover:opacity-75"
-                          )}
-                        >
-                          <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
-                            <MiniSlide slide={slide} />
-                          </Suspense>
-                        </div>
-                      ))
+                {/* Content with slide sidebar - fixed height container */}
+                <div className="flex h-[500px]">
+                  {/* Slide thumbnails sidebar - scrollable */}
+                  <div className="w-[150px] flex-shrink-0 border-r border-white/5 bg-black/30 p-2 overflow-y-auto custom-scrollbar relative group/sidebar">
+                    <div className="space-y-2">
+                      {isLoadingShowcase ? (
+                        [...Array(5)].map((_, idx) => (
+                          <div key={idx} className="aspect-video rounded overflow-hidden relative bg-white/5 animate-pulse" />
+                        ))
+                      ) : (
+                        activeDeck?.slides?.map((slide, idx) => (
+                          <div
+                            key={idx}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUserInteraction();
+                              setActiveDeckSlideIndex(idx);
+                            }}
+                            className={cn(
+                              "aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0",
+                              idx === activeDeckSlideIndex
+                                ? "ring-2 ring-[#FF4301]"
+                                : "opacity-50 hover:opacity-100 hover:ring-1 hover:ring-white/30"
+                            )}
+                          >
+                            <div className="absolute inset-0 z-10" /> {/* Click capture layer */}
+                            <Suspense fallback={<div className="w-full h-full bg-white/5" />}>
+                              <MiniSlide slide={slide} />
+                            </Suspense>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {/* Scroll indicator - fade gradient at bottom */}
+                    {!isLoadingShowcase && activeDeck && activeDeck.slideCount > 5 && (
+                      <div className="sticky bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/60 to-transparent pointer-events-none flex items-end justify-center pb-1">
+                        <ChevronDown className="w-4 h-4 text-white/50 animate-bounce" />
+                      </div>
                     )}
                   </div>
 
                   {/* Main slide */}
-                  <div className="flex-1 p-4 flex items-center">
-                    <div className="aspect-video w-full relative rounded-lg overflow-hidden bg-black">
+                  <div className="flex-1 p-4 flex items-center justify-center">
+                    <div
+                      className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
+                      onClick={handleUserInteraction}
+                    >
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                           <div className="text-white/40 text-xl font-medium mb-2">Loading...</div>
@@ -460,17 +478,55 @@ const Landing: React.FC = () => {
                           <div className="text-white/40 text-xl font-medium mb-2">No slides available</div>
                         </div>
                       )}
+
+                      {/* Navigation buttons - show on hover */}
+                      {!isLoadingShowcase && activeDeck && activeDeck.slideCount > 1 && (
+                        <div className="absolute inset-0 flex items-center justify-between px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUserInteraction();
+                              setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
+                            }}
+                            disabled={activeDeckSlideIndex === 0}
+                            className={cn(
+                              "pointer-events-auto w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white transition-all",
+                              activeDeckSlideIndex === 0
+                                ? "opacity-30 cursor-not-allowed"
+                                : "hover:bg-black/80 hover:scale-110"
+                            )}
+                          >
+                            <ChevronLeft size={24} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUserInteraction();
+                              setActiveDeckSlideIndex(prev => Math.min(activeDeck.slideCount - 1, prev + 1));
+                            }}
+                            disabled={activeDeckSlideIndex === activeDeck.slideCount - 1}
+                            className={cn(
+                              "pointer-events-auto w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white transition-all",
+                              activeDeckSlideIndex === activeDeck.slideCount - 1
+                                ? "opacity-30 cursor-not-allowed"
+                                : "hover:bg-black/80 hover:scale-110"
+                            )}
+                          >
+                            <ChevronRight size={24} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Deck gallery */}
-              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col">
+              {/* Deck gallery - match height with main viewer */}
+              <div className="rounded-2xl overflow-hidden bg-zinc-900/50 border border-white/10 flex flex-col h-[540px]">
                 <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Explore Examples</h4>
                 </div>
-                <div className="p-2 space-y-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
+                <div className="p-2 space-y-2 overflow-y-auto flex-1 custom-scrollbar">
                   {isLoadingShowcase ? (
                     [...Array(4)].map((_, index) => (
                       <div key={index} className="rounded-lg overflow-hidden relative ring-1 ring-white/5">

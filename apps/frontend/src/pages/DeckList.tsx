@@ -1847,7 +1847,7 @@ const DeckList: React.FC = () => {
 
       <header className="w-full bg-transparent flex items-center justify-between px-6 py-4 z-20 relative">
         <div className="w-32"></div> {/* Spacer for centering */}
-        <div className="absolute left-1/2 -translate-x-1/2">
+        <div className="absolute left-1/2 -translate-x-1/2 cursor-pointer" onClick={() => navigate('/')}>
           {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
           {/* @ts-ignore allow custom tag */}
           <BrandWordmark
