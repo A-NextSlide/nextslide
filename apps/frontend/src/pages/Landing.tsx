@@ -970,10 +970,10 @@ const Landing: React.FC = () => {
                 <div className="text-4xl font-bold text-black dark:text-white mb-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   $0
                 </div>
-                <div className="text-sm text-black/50 dark:text-white/50">100 credits/month</div>
+                <div className="text-sm text-black/50 dark:text-white/50">20 credits/month*</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
-                {['All AI features', 'Unlimited presentations'].map((feature, i) => (
+                {['Full editor access', 'All AI features', 'Free forever'].map((feature, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-[#FF4301] flex-shrink-0 mt-0.5" />
                     <span className="text-black/70 dark:text-white/70">{feature}</span>
