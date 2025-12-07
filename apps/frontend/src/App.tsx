@@ -66,30 +66,42 @@ function UserRecordInitializer() {
 }
 
 // Component to show welcome reward on first visit (only once per session)
+// Only shows for NEW users who haven't seen it and have the early user bonus
 function WelcomeRewardController() {
-  const { shouldShowWelcome, markWelcomeShown } = useOnboarding();
+  const { shouldShowWelcome, markWelcomeShown, state } = useOnboarding();
   const { user } = useAuth();
-  const { refreshBalance } = useCredits();
-  const { showReward, isShowing } = useReward();
-  // Track if we've already shown the modal this session to prevent re-showing
-  const hasShownThisSession = React.useRef(false);
+  const { refreshBalance, balance } = useCredits();
+  const { showReward } = useReward();
+  // Track if we've already triggered to prevent double-showing
   const hasTriggeredReward = React.useRef(false);
 
-  // Show reward when conditions are met (only once per session)
+  // Show reward when:
+  // 1. User is logged in
+  // 2. Onboarding state says welcome not shown
+  // 3. User has the early user bonus (purchased_credits >= 200)
+  // 4. Haven't triggered yet this session
   useEffect(() => {
-    if (user && shouldShowWelcome && !hasShownThisSession.current && !hasTriggeredReward.current) {
+    // Wait for both onboarding state AND balance to load
+    if (!user || !state || !balance) return;
+    if (hasTriggeredReward.current) return;
+
+    // Only show if welcome hasn't been shown AND user has the early bonus
+    // This prevents showing to existing users who never got the bonus
+    const hasEarlyBonus = balance.purchased_credits >= 200;
+    const isNewUser = shouldShowWelcome && hasEarlyBonus;
+
+    if (isNewUser) {
       hasTriggeredReward.current = true;
-      hasShownThisSession.current = true;
 
       // Show the welcome bonus reward
       showReward(REWARD_CONFIGS.welcomeBonus);
 
       // Mark as shown in backend
       markWelcomeShown();
-      // Refresh credit balance
-      refreshBalance();
+      // Refresh credit balance after a delay
+      setTimeout(() => refreshBalance(), 1000);
     }
-  }, [user, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
+  }, [user, state, balance, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
 
   return null;
 }
