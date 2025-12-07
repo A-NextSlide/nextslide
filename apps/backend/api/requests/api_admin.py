@@ -1156,6 +1156,18 @@ async def get_platform_overview(
                     metrics_data["decks"]["averagePerUser"] = round(
                         metrics_data["decks"]["total"] / metrics_data["users"]["total"], 1
                     )
+
+                # Get total slides count
+                try:
+                    total_slides = supabase.table("slides").select("id", count="exact").execute()
+                    metrics_data["decks"]["totalSlides"] = total_slides.count or 0
+
+                    if metrics_data["decks"]["total"] > 0:
+                        metrics_data["decks"]["averageSlidesPerDeck"] = round(
+                            metrics_data["decks"]["totalSlides"] / metrics_data["decks"]["total"], 1
+                        )
+                except:
+                    pass
         except Exception as e:
             logger.warning(f"Error getting deck metrics: {str(e)}")
         

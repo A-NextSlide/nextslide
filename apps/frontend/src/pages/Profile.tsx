@@ -675,7 +675,14 @@ const Profile: React.FC = () => {
                                 <p className="text-sm text-muted-foreground mb-1">Credits</p>
                                 <p className="text-2xl font-medium tabular-nums">
                                   {billingBalance.remaining_credits}
-                                  <span className="text-base text-muted-foreground font-normal"> / {billingBalance.monthly_credits}</span>
+                                  <span className="text-base text-muted-foreground font-normal">
+                                    {' '}/ {billingBalance.monthly_credits + billingBalance.purchased_credits}
+                                  </span>
+                                  {billingBalance.purchased_credits > 0 && (
+                                    <span className="ml-2 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
+                                      +{billingBalance.purchased_credits} bonus
+                                    </span>
+                                  )}
                                 </p>
                               </div>
                               {billingBalance.period_end && (
@@ -689,7 +696,7 @@ const Profile: React.FC = () => {
                               <div
                                 className="h-full bg-zinc-900 dark:bg-zinc-300 rounded-full transition-all duration-500"
                                 style={{
-                                  width: `${Math.min(100, (billingBalance.remaining_credits / billingBalance.monthly_credits) * 100)}%`
+                                  width: `${Math.min(100, (billingBalance.remaining_credits / (billingBalance.monthly_credits + billingBalance.purchased_credits)) * 100)}%`
                                 }}
                               />
                             </div>
