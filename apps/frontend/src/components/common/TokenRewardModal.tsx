@@ -49,46 +49,36 @@ const TokenRewardModal: React.FC<TokenRewardModalProps> = ({
   onClose,
   config
 }) => {
-  const [displayCount, setDisplayCount] = useState(0);
-  const [isCounting, setIsCounting] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
+  const [displayCount, setDisplayCount] = useState(config.amount);
 
   const Icon = iconMap[config.icon || 'gift'];
 
-  // Start counting animation when modal opens
+  // Set the count immediately when config changes
   useEffect(() => {
-    if (isOpen && !isCounting) {
-      setIsCounting(true);
-      setShowConfetti(true);
-
-      const duration = 1500;
-      const steps = 30;
-      const increment = config.amount / steps;
-      const stepTime = duration / steps;
-
-      let current = 0;
-      const interval = setInterval(() => {
-        current += increment;
-        if (current >= config.amount) {
-          setDisplayCount(config.amount);
-          clearInterval(interval);
-        } else {
-          setDisplayCount(Math.floor(current));
-        }
-      }, stepTime);
-
-      return () => clearInterval(interval);
-    }
-  }, [isOpen, config.amount, isCounting]);
-
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      // Small delay then animate count up
       setDisplayCount(0);
-      setIsCounting(false);
-      setShowConfetti(false);
+      const timeout = setTimeout(() => {
+        const duration = 1200;
+        const steps = 24;
+        const increment = config.amount / steps;
+        const stepTime = duration / steps;
+
+        let current = 0;
+        const interval = setInterval(() => {
+          current += increment;
+          if (current >= config.amount) {
+            setDisplayCount(config.amount);
+            clearInterval(interval);
+          } else {
+            setDisplayCount(Math.floor(current));
+          }
+        }, stepTime);
+      }, 300);
+
+      return () => clearTimeout(timeout);
     }
-  }, [isOpen]);
+  }, [isOpen, config.amount]);
 
   return (
     <AnimatePresence>
