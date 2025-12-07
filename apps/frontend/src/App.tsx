@@ -53,7 +53,7 @@ import Pricing from './pages/Pricing';
 import { CreditsProvider } from './context/CreditsContext';
 import { OnboardingProvider, useOnboarding } from './context/OnboardingContext';
 import UpgradePrompt from './components/billing/UpgradePrompt';
-import BonusTokensModal from './components/common/BonusTokensModal';
+import { RewardProvider, useReward, REWARD_CONFIGS } from './context/RewardContext';
 import { useCredits } from './context/CreditsContext';
 
 // Component to initialize font optimization
@@ -65,46 +65,33 @@ function UserRecordInitializer() {
   return null;
 }
 
-// Component to show bonus tokens modal on first visit (only once per session)
-function WelcomeModalController() {
+// Component to show welcome reward on first visit (only once per session)
+function WelcomeRewardController() {
   const { shouldShowWelcome, markWelcomeShown } = useOnboarding();
   const { user } = useAuth();
   const { refreshBalance } = useCredits();
-  const [isOpen, setIsOpen] = useState(false);
-  const [userName, setUserName] = useState<string | undefined>();
+  const { showReward, isShowing } = useReward();
   // Track if we've already shown the modal this session to prevent re-showing
   const hasShownThisSession = React.useRef(false);
+  const hasTriggeredReward = React.useRef(false);
 
-  // Show modal when conditions are met (only once per session)
+  // Show reward when conditions are met (only once per session)
   useEffect(() => {
-    if (user && shouldShowWelcome && !hasShownThisSession.current) {
-      // Get user name
-      const displayName = user.user_metadata?.full_name ||
-                         user.user_metadata?.name ||
-                         user.email?.split('@')[0];
-      setUserName(displayName);
-      setIsOpen(true);
+    if (user && shouldShowWelcome && !hasShownThisSession.current && !hasTriggeredReward.current) {
+      hasTriggeredReward.current = true;
       hasShownThisSession.current = true;
+
+      // Show the welcome bonus reward
+      showReward(REWARD_CONFIGS.welcomeBonus);
+
+      // Mark as shown in backend
+      markWelcomeShown();
+      // Refresh credit balance
+      refreshBalance();
     }
-  }, [user, shouldShowWelcome]);
+  }, [user, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
 
-  const handleClose = async () => {
-    setIsOpen(false);
-    // Mark as shown in backend (fire and forget - state already updated optimistically)
-    markWelcomeShown();
-    // Refresh the credit balance to show the new 500 tokens
-    refreshBalance();
-  };
-
-  if (!user) return null;
-
-  return (
-    <BonusTokensModal
-      isOpen={isOpen}
-      onClose={handleClose}
-      userName={userName}
-    />
-  );
+  return null;
 }
 
 // Extend window interface for debug commands
@@ -579,15 +566,17 @@ function App() {
               <SupabaseAuthProvider>
                 <CreditsProvider>
                   <OnboardingProvider>
-                    <UserRecordInitializer />
-                    <WelcomeModalController />
-                    <AppContent />
-                    <UpgradePrompt />
-                    {DevPerformanceHUD ? (
-                      <React.Suspense fallback={null}>
-                        <DevPerformanceHUD />
-                      </React.Suspense>
-                    ) : null}
+                    <RewardProvider>
+                      <UserRecordInitializer />
+                      <WelcomeRewardController />
+                      <AppContent />
+                      <UpgradePrompt />
+                      {DevPerformanceHUD ? (
+                        <React.Suspense fallback={null}>
+                          <DevPerformanceHUD />
+                        </React.Suspense>
+                      ) : null}
+                    </RewardProvider>
                   </OnboardingProvider>
                 </CreditsProvider>
               </SupabaseAuthProvider>
