@@ -38,7 +38,7 @@ const AdminDashboardV2: React.FC = () => {
   if (loading) {
     return (
       <AdminLayoutV2>
-        <div className="p-6 flex items-center justify-center h-[60vh]">
+        <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
         </div>
       </AdminLayoutV2>
@@ -47,7 +47,7 @@ const AdminDashboardV2: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">Dashboard</h1>

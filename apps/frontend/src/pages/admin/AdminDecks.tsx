@@ -348,17 +348,19 @@ const AdminDecks: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="w-full">
+      <div className="space-y-6">
         {/* Header */}
-        <div className="mb-8 w-full">
-          <h1 className="text-3xl font-bold" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>Decks</h1>
-          <p className="text-muted-foreground mt-2">
-            Browse and manage all platform decks
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold">Decks</h1>
+            <p className="text-sm text-[#666] dark:text-[#888]">
+              Browse and manage all platform decks
+            </p>
+          </div>
         </div>
 
         {/* Filters and View Toggle */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6 w-full">
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -405,8 +407,8 @@ const AdminDecks: React.FC = () => {
         </div>
 
         {/* Decks Display */}
-        <Card className="w-full">
-          <CardContent className="p-6 w-full">
+        <Card>
+          <CardContent className="p-4">
             {isLoading && !isTransitioning ? (
               viewMode === 'grid' ? (
                 <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

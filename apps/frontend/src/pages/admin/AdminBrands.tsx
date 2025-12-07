@@ -541,7 +541,7 @@ const AdminBrands: React.FC = () => {
 
         {/* Brands Grid */}
         <Card className="overflow-hidden">
-          <ScrollArea className="h-[calc(100vh-280px)]" onScrollCapture={handleScroll}>
+          <ScrollArea className="h-[calc(100vh-240px)]" onScrollCapture={handleScroll}>
             <div className="p-4">
               {brands.length === 0 && !loading ? (
                 <div className="flex flex-col items-center justify-center py-12">

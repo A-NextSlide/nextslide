@@ -50,7 +50,7 @@ const AdminServices: React.FC = () => {
   if (loading) {
     return (
       <AdminLayoutV2>
-        <div className="p-6 flex items-center justify-center h-[60vh]">
+        <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
         </div>
       </AdminLayoutV2>

@@ -295,7 +295,7 @@ const Landing: React.FC = () => {
             <a href="#pricing" className="text-sm font-medium text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors">Pricing</a>
             {isSignedIn ? (
               <Button onClick={() => navigate('/app')} className="bg-[#FF4301] hover:bg-[#E63901] text-white text-sm font-semibold">
-                Go to App
+                My Slides
                 <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
             ) : (
@@ -324,7 +324,7 @@ const Landing: React.FC = () => {
               <a href="#compare" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Compare</a>
               <a href="#pricing" onClick={() => setIsMenuOpen(false)} className="py-2 touch-manipulation">Pricing</a>
               {isSignedIn ? (
-                <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/app')}>Go to App</Button>
+                <Button className="bg-[#FF4301] hover:bg-[#E63901] text-white min-h-[44px] touch-manipulation" onClick={() => navigate('/app')}>My Slides</Button>
               ) : (
                 <>
                   <Button variant="ghost" onClick={() => navigate('/login')} className="justify-start min-h-[44px] touch-manipulation">Sign In</Button>
@@ -365,7 +365,7 @@ const Landing: React.FC = () => {
                 onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
                 className="bg-[#FF4301] hover:bg-[#E63901] text-white px-6 sm:px-10 py-5 sm:py-6 text-sm sm:text-base font-semibold w-full sm:w-auto min-h-[48px] touch-manipulation"
               >
-                {isSignedIn ? 'Go to App' : 'Create Full Deck Free'}
+                {isSignedIn ? 'My Slides' : 'Create Full Deck Free'}
                 <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5" />
               </Button>
               {!isSignedIn && (
@@ -1111,7 +1111,7 @@ const Landing: React.FC = () => {
             className="bg-white text-[#FF4301] hover:bg-zinc-100 px-12 py-7 text-lg font-bold shadow-xl"
             onClick={() => navigate(isSignedIn ? '/app' : '/signup')}
           >
-            {isSignedIn ? 'Go to App' : 'Start Creating for Free'}
+            {isSignedIn ? 'Go to Slides' : 'Start Creating for Free'}
             <ArrowRight className="ml-3 w-6 h-6" />
           </Button>
         </div>
