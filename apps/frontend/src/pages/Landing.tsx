@@ -243,20 +243,20 @@ const Landing: React.FC = () => {
 
   const faqs = [
     {
-      question: "How is this different from Gamma?",
-      answer: "Gamma generates slides but locks you into their templates. NextSlide gives you a full editor with custom components, agentic AI that helps you edit, and complete design freedom."
+      question: "What can I create with NextSlide?",
+      answer: "Anything you can imagine, in any style. Investor pitch decks with animated metrics, quarterly reviews with live data charts, wedding speeches with photo timelines, classroom lessons with interactive quizzes, product launches with 3D mockups, conference talks, research presentations, travel itineraries, recipe books, real estate showcases. Upload your documents and we analyze them. Share your brand and we research your colors, fonts, and style. Every presentation is custom-built for you."
     },
     {
-      question: "Can I export to PowerPoint?",
-      answer: "Yes. Every NextSlide presentation exports as a fully-editable PowerPoint file (.pptx). You can also export as PDF or share with a link."
+      question: "How does the AI editing work?",
+      answer: "Just chat with your slides. Want to change the color scheme? Add a chart? Restructure your content? Tell the AI what you want in plain English and watch it happen. You can also click and edit anything manually if you prefer hands-on control."
     },
     {
       question: "What are custom components?",
-      answer: "Custom components let you build any layout imaginable - interactive cards, animated diagrams, data visualizations, and more. It's like having a design engineer in your pocket."
+      answer: "These are flexible building blocks that go way beyond basic text and images. Think interactive cards, animated diagrams, data visualizations, timelines, comparison tables, and layouts you would normally need a designer to create. You get all of this automatically."
     },
     {
       question: "Do I need design skills?",
-      answer: "No. That's the entire point. NextSlide handles all design decisions—spacing, typography, color, hierarchy, layout. You focus on your message."
+      answer: "Not at all. NextSlide handles spacing, typography, colors, hierarchy, and layout so you can focus entirely on your message. Whether you are a seasoned presenter or making your first deck, everything just looks polished."
     }
   ];
 

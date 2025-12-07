@@ -1042,6 +1042,7 @@ const DeckList: React.FC = () => {
         thumbnail: '',
         notes: '',
         layout: 'default' as const,
+        deepResearch: false,
       }));
 
       // Build theme payload from parsed style prefs FIRST so we can include it in outline.notes
@@ -1065,13 +1066,9 @@ const DeckList: React.FC = () => {
         title: data.topic || 'New Presentation',
         stylePreferences: {
           vibeContext: vibeContext,
-          slideMode: data.slideMode || 'interactive',
-          referenceImages: data.slideScreenshots,
           // CRITICAL: Include colors, fonts, and logo so backend can use them
           colors: parsedStylePrefs?.colors,
           font: parsedStylePrefs?.font,
-          bodyFont: parsedStylePrefs?.bodyFont,
-          logoUrl: parsedStylePrefs?.logoUrl,
         },
         slides: outlineSlides,
         // CRITICAL: Embed theme in notes so backend finds it and uses it directly
@@ -1332,6 +1329,7 @@ const DeckList: React.FC = () => {
     referenceLinks?: string[];
     enableResearch?: boolean;
     slideMode?: 'interactive' | 'static';
+    referenceImages?: string[];
   }>({});
 
   // Auto-open Google import modal on successful OAuth redirect
@@ -2824,8 +2822,7 @@ const DeckList: React.FC = () => {
                       requiredCredits={creditWarningData.required}
                       slideCount={creditWarningData.slideCount}
                       planName="free"
-                      overageAlreadyConfirmed={!shouldAskOverageConfirmation}
-                      onOverageConfirmed={markOverageConfirmed}
+                      onProceed={markOverageConfirmed}
                     />
 
                     <AlertDialog open={deckToDelete !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
