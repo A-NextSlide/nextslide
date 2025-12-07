@@ -1,5 +1,6 @@
 from models.requests import ChatRequest, ChatResponse
 from models.registry import ComponentRegistry
+from agents.config import CHAT_MODEL
 from agents.editing.editing_orchestrator import edit_deck
 from utils.deck import find_current_slide
 from utils.threading import run_in_threadpool
@@ -59,7 +60,7 @@ async def process_api_chat(request: ChatRequest, registry: Optional[ComponentReg
         # Generate conversational acknowledgment first (fast response)
         from agents.ai.clients import get_client
         try:
-            client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+            client, model = get_client(CHAT_MODEL, wrap_with_instructor=False)
 
             # Build minimal chat history for context
             messages = []
@@ -94,9 +95,10 @@ If you need clarification, ask ONE specific question:
 
 Be friendly, not robotic!"""
 
-            from agents.config import CLAUDE_HAIKU_ID
+            from agents.config import CHAT_MODEL
+            from agents.ai.clients import get_model_id
             response = client.messages.create(
-                model=CLAUDE_HAIKU_ID,
+                model=get_model_id(CHAT_MODEL),
                 max_tokens=128,
                 system=system_prompt,
                 messages=messages,

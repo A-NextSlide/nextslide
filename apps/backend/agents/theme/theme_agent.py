@@ -192,6 +192,7 @@ class ThemeAgent:
         """
         try:
             from agents.ai.clients import get_client, invoke
+            from agents.config import THEME_MODEL
 
             analysis_prompt = f"""Analyze this presentation to determine the best theme approach.
 
@@ -222,9 +223,9 @@ IMPORTANT:
 - For fictional variants like "SonicVerse" - type should be "inspired_by" with inspiration="Sonic the Hedgehog"
 - Always identify the core INSPIRATION so we can generate appropriate colors"""
 
-            client, actual_model = get_client("claude-haiku-4-5")
+            client, actual_model = get_client(THEME_MODEL)
             if not client or not actual_model:
-                logger.error(f"[ThemeAgent] Failed to get client for claude-haiku-4-5")
+                logger.error(f"[ThemeAgent] Failed to get client for {THEME_MODEL}")
                 return None
             logger.info(f"[ThemeAgent] Using model: {actual_model}")
             response = invoke(
@@ -415,6 +416,7 @@ IMPORTANT:
         """
         try:
             from agents.ai.clients import get_client, invoke
+            from agents.config import THEME_MODEL
 
             # Build context for color generation
             color_context = f"""Generate a color palette for this presentation.
@@ -440,9 +442,9 @@ Return JSON with EXACTLY this format:
 
 Use the REAL colors you know for the inspiration. Return ONLY the JSON."""
 
-            client, actual_model = get_client("claude-haiku-4-5")
+            client, actual_model = get_client(THEME_MODEL)
             if not client or not actual_model:
-                logger.error(f"[ThemeAgent] Failed to get client for claude-haiku-4-5 in contextual theme")
+                logger.error(f"[ThemeAgent] Failed to get client for {THEME_MODEL} in contextual theme")
                 return None
             logger.info(f"[ThemeAgent] Generating contextual theme with model: {actual_model}")
             response = invoke(

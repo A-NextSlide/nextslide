@@ -194,6 +194,16 @@ def get_client(model_name: str, wrap_with_instructor: bool = True):
 
     return config["instructor_fn"](client, **config["instructor_kwargs"]), actual_model
 
+def get_model_id(model_name: str) -> str:
+    """
+    Get the full model ID from a model alias.
+    For raw API calls (like client.messages.create), use this to get the full model ID.
+    """
+    if model_name in MODELS:
+        _, actual = MODELS[model_name]
+        return actual
+    return model_name
+
 def get_max_tokens_for_model(model_name: str, default: int = None) -> int:
     """Get max token limit for a model."""
     if model_name in MODELS:

@@ -58,6 +58,7 @@ const AdminBrands: React.FC = () => {
   const [fontFiles, setFontFiles] = useState<File[]>([]);
   const [fontFamilyName, setFontFamilyName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // New brand fetch states
   const [showAddBrand, setShowAddBrand] = useState(false);
@@ -509,9 +510,9 @@ const AdminBrands: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Brand Cache Management</h1>
-            <p className="text-muted-foreground mt-2">
-              Manage cached brand data from Brandfetch API
+            <h1 className="text-lg font-semibold">Brands</h1>
+            <p className="text-sm text-[#666] dark:text-[#888]">
+              Manage cached brand data
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -897,7 +898,7 @@ const AdminBrands: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      {/* Logo URL Input */}
+                      {/* Logo URL/Upload Input */}
                       <div className="flex-1 space-y-3">
                         <div className="space-y-2">
                           <Label htmlFor="logo-url">Logo URL</Label>
@@ -912,17 +913,55 @@ const AdminBrands: React.FC = () => {
                             Enter a direct URL to the brand logo (SVG or PNG preferred)
                           </p>
                         </div>
-                        {editedBrandData.logo_url && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">or</span>
+                          <input
+                            type="file"
+                            accept="image/svg+xml,image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            id="logo-file-upload"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file && editingBrand) {
+                                setUploadingLogo(true);
+                                try {
+                                  const result = await adminApi.uploadBrandLogo(editingBrand.id, file);
+                                  setEditedBrandData(prev => ({ ...prev, logo_url: result.logo.url }));
+                                } catch (error) {
+                                  console.error('Failed to upload logo:', error);
+                                  alert('Failed to upload logo');
+                                } finally {
+                                  setUploadingLogo(false);
+                                }
+                              }
+                            }}
+                          />
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setEditedBrandData(prev => ({ ...prev, logo_url: '' }))}
-                            className="text-red-500 hover:text-red-700"
+                            onClick={() => document.getElementById('logo-file-upload')?.click()}
+                            disabled={uploadingLogo}
+                            className="gap-1.5"
                           >
-                            <X className="h-3 w-3 mr-1" />
-                            Remove Logo
+                            {uploadingLogo ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Upload className="h-3 w-3" />
+                            )}
+                            {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
                           </Button>
-                        )}
+                          {editedBrandData.logo_url && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditedBrandData(prev => ({ ...prev, logo_url: '' }))}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Remove
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

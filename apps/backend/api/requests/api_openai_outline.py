@@ -19,7 +19,7 @@ from datetime import datetime
 from services.outline_service import OutlineGenerator, OutlineOptions
 from models.requests import DeckOutline, SlideOutline, ExtractedDataItem, TaggedMediaItem
 from api.requests.api_deck_outline import process_deck_outline
-from agents.config import OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL
+from agents.config import OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL, FONT_SELECTION_MODEL
 from models.requests import StylePreferencesItem
 from models.narrative_flow import NarrativeFlow
 from services.narrative_flow_analyzer import NarrativeFlowAnalyzer
@@ -574,11 +574,11 @@ Be smart about context - distinguish common words from brand references:
 
 Return ONLY valid JSON: {{"brand": "Brand Name", "domain": "brand.com"}} or {{"brand": null, "domain": null}}"""
 
-        from agents.config import CLAUDE_HAIKU
-        client = get_client(CLAUDE_HAIKU)
+        from agents.config import BRAND_DETECTION_MODEL
+        client = get_client(BRAND_DETECTION_MODEL)
         response = invoke(
             client=client,
-            model=CLAUDE_HAIKU,
+            model=BRAND_DETECTION_MODEL,
             messages=[{"role": "user", "content": brand_prompt}],
             max_tokens=100,
             temperature=0
@@ -662,7 +662,7 @@ IMPORTANT:
 - Hero and body MUST be DIFFERENT fonts
 - Only use fonts from the list above"""
 
-        client, actual_model = get_client("claude-3-5-haiku-20241022")
+        client, actual_model = get_client(FONT_SELECTION_MODEL)
         response = invoke(
             client=client,
             model=actual_model,

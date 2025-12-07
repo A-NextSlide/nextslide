@@ -344,9 +344,10 @@ Examples:
 - "Stripe payment integration" → {{"brand": "Stripe", "domain": "stripe.com"}}
 - "McDonald's franchise model" → {{"brand": "McDonald's", "domain": "mcdonalds.com"}}"""
 
-            from agents.config import CLAUDE_HAIKU_ID
+            from agents.config import BRAND_DETECTION_MODEL
+            from agents.ai.clients import get_model_id
             response = client.messages.create(
-                model=CLAUDE_HAIKU_ID,
+                model=get_model_id(BRAND_DETECTION_MODEL),
                 max_tokens=100,
                 temperature=0,
                 system="You are a brand detection expert. Return valid JSON only. Be smart about distinguishing common words from actual brand references.",
@@ -458,11 +459,11 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
             detected_domain = None
             try:
                 import json as json_module
-                from agents.config import CLAUDE_HAIKU
-                client = get_client(CLAUDE_HAIKU)
+                from agents.config import BRAND_DETECTION_MODEL
+                client = get_client(BRAND_DETECTION_MODEL)
                 brand_response = invoke(
                     client=client,
-                    model=CLAUDE_HAIKU,
+                    model=BRAND_DETECTION_MODEL,
                     messages=[{"role": "user", "content": brand_detection_prompt}],
                     max_tokens=100,
                     temperature=0
@@ -1788,9 +1789,10 @@ IMPORTANT:
 - Only use fonts from the list above"""
 
                     # Use the unified AI client infrastructure
-                    client, actual_model = get_client("claude-haiku-4-5")
+                    from agents.config import FONT_SELECTION_MODEL
+                    client, actual_model = get_client(FONT_SELECTION_MODEL)
                     if not client or not actual_model:
-                        raise ValueError("Failed to get client for claude-haiku-4-5")
+                        raise ValueError(f"Failed to get client for {FONT_SELECTION_MODEL}")
 
                     response = invoke(
                         client=client,
@@ -2354,8 +2356,8 @@ Context: {prompt[:200] if prompt else 'general presentation'}
 Generate a creative, specific design style description (1-2 sentences):"""
 
         try:
-            from agents.config import CLAUDE_HAIKU
-            client, actual_model = get_client(CLAUDE_HAIKU)
+            from agents.config import THEME_MODEL
+            client, actual_model = get_client(THEME_MODEL)
             response = invoke(
                 client=client,
                 model=actual_model,
@@ -2553,11 +2555,11 @@ Available fonts by category:
 
 Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
 
-            from agents.config import CLAUDE_HAIKU_ID
-            # Use get_client instead of self.client which doesn't exist
-            client, model = get_client("claude-haiku", wrap_with_instructor=False)
+            from agents.config import FONT_SELECTION_MODEL
+            # Use get_client with correct model alias - model returned is the actual model ID
+            client, actual_model = get_client(FONT_SELECTION_MODEL, wrap_with_instructor=False)
             response = await client.messages.create(
-                model=CLAUDE_HAIKU_ID,
+                model=actual_model,
                 max_tokens=50,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt}]
@@ -2977,7 +2979,8 @@ Examples:
 {entity_name}:"""
             
             # Use fast model for color queries
-            client, actual_model = get_client("claude-3-7-sonnet-20250219")
+            from agents.config import THEME_MODEL
+            client, actual_model = get_client(THEME_MODEL)
             response = invoke(
                 client=client,
                 model=actual_model,
@@ -3028,7 +3031,8 @@ Respond with just: "HERO_FONT, BODY_FONT"
 Context: {context}
 Fonts:"""
             
-            client, actual_model = get_client("claude-3-7-sonnet-20250219")
+            from agents.config import FONT_SELECTION_MODEL
+            client, actual_model = get_client(FONT_SELECTION_MODEL)
             response = invoke(
                 client=client,
                 model=actual_model,

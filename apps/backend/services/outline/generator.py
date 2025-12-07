@@ -22,8 +22,7 @@ from agents.config import (
     OUTLINE_PLANNING_MODEL, OUTLINE_CONTENT_MODEL,
     OUTLINE_RESEARCH_MODEL,
     USE_PERPLEXITY_FOR_OUTLINE, PERPLEXITY_OUTLINE_MODEL,
-    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE,
-    CLAUDE_HAIKU
+    PRESENTATION_OUTLINE_MODEL, USE_HYBRID_RESEARCH_MODE
 )
 from agents.research import OutlineResearchAgent
 from agents import config as agents_config
@@ -2876,7 +2875,7 @@ CRITICAL INSTRUCTIONS FOR PRESENTATION STRUCTURING:
                 slide_count=options.slide_count,
                 visual_density=options.visual_density,
                 async_images=options.async_images,
-                model=CLAUDE_HAIKU  # Force Haiku
+                model=PRESENTATION_OUTLINE_MODEL  # Use presentation outline model
             )
             
             # Call the standard generation with Haiku (will use standard mode logic)

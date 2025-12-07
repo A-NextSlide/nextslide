@@ -340,17 +340,17 @@ def get_model_for_complexity(complexity: EditComplexity) -> str:
     Get the appropriate model for the edit complexity.
     """
     from agents.config import (
-        CUSTOM_COMPONENT_MODEL,      # Gemini 3 Pro for complex
-        CUSTOM_COMPONENT_EDIT_MODEL,  # Gemini Flash for medium
-        CLAUDE_HAIKU                  # Haiku for simple str_replace suggestions
+        CUSTOM_COMPONENT_MODEL,         # Gemini 3 Pro for complex
+        CUSTOM_COMPONENT_EDIT_MODEL,    # Haiku for medium
+        CUSTOM_COMPONENT_SIMPLE_MODEL   # Haiku for simple str_replace suggestions
     )
 
     if complexity == EditComplexity.COMPLEX:
         return CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro
     elif complexity == EditComplexity.MEDIUM:
-        return CUSTOM_COMPONENT_EDIT_MODEL  # Gemini Flash
+        return CUSTOM_COMPONENT_EDIT_MODEL  # Haiku
     else:
-        return CLAUDE_HAIKU  # Just for suggesting str_replace strings
+        return CUSTOM_COMPONENT_SIMPLE_MODEL  # Just for suggesting str_replace strings
 
 
 def extract_context_around_match(html: str, search_text: str, context_chars: int = 100) -> Dict[str, str]:

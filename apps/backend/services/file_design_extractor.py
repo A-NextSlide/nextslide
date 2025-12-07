@@ -589,9 +589,9 @@ Extract the actual content, data, and structure from these slides."""
 
         try:
             from agents.ai.clients import get_client, invoke
-            from agents.config import CLAUDE_HAIKU
+            from agents.config import FILE_ANALYSIS_MODEL_FAST
 
-            client, model = get_client(CLAUDE_HAIKU)
+            client, actual_model = get_client(FILE_ANALYSIS_MODEL_FAST)
 
             prompt = f"""Analyze this presentation text and extract the content structure.
 
@@ -610,7 +610,7 @@ Return a JSON object:
 
             response = invoke(
                 client=client,
-                model=CLAUDE_HAIKU,
+                model=actual_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=4000,
                 temperature=0.3

@@ -314,9 +314,9 @@ IMAGE TAG PATTERN:
 
 Return the modified HTML."""
 
-        from agents.config import CUSTOM_COMPONENT_EDIT_MODEL
+        from agents.config import GEMINI_FLASH
         response_raw = gemini_client.models.generate_content(
-            model=CUSTOM_COMPONENT_EDIT_MODEL,
+            model=GEMINI_FLASH,
             contents=[prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

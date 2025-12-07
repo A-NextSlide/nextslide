@@ -18,6 +18,7 @@ from models.requests import ChatMessage
 from agents.editing.tools.claude_tools import get_claude_tools, execute_tool
 from agents.editing.prompts.system_prompt import get_system_prompt
 from agents.config import ORCHESTRATOR_MODEL
+from agents.ai.clients import get_model_id
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import format_chat_history
 import os
@@ -54,7 +55,7 @@ class ConversationalAgent:
         self.client = anthropic.Anthropic(api_key=api_key)
 
         # Model configuration
-        self.model = self._get_model_name(ORCHESTRATOR_MODEL)
+        self.model = get_model_id(ORCHESTRATOR_MODEL)
         self.max_tokens = 4096
         self.max_iterations = 15  # Prevent infinite loops
 
@@ -62,15 +63,6 @@ class ConversationalAgent:
         self.messages = []
         self.deck_diff = DeckDiff(DeckDiffBase())
         self.tool_use_count = 0
-
-    def _get_model_name(self, config_model: str) -> str:
-        """Convert config model name to Claude model name"""
-        model_map = {
-            "opus": "claude-opus-4-20250514",
-            "sonnet": "claude-sonnet-4-20250514",
-            "haiku": "claude-3-5-haiku-20241022"
-        }
-        return model_map.get(config_model, "claude-sonnet-4-20250514")
 
     def _emit_event(self, event_type: str, data: Dict[str, Any]):
         """Emit an event to the event callback if available"""

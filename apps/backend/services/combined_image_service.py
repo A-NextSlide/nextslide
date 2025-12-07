@@ -30,9 +30,10 @@ async def extract_image_search_terms_with_ai(
     - What kinds of images would be relevant
     """
     from agents.ai.clients import get_client, invoke
+    from agents.config import IMAGE_SEARCH_MODEL
 
     try:
-        client, model_name = get_client("claude-haiku-4-5")
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
         prompt = f"""You are generating SPECIFIC, CONCRETE image search queries for a presentation slide.
 

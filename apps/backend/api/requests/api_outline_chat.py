@@ -289,7 +289,8 @@ Please apply the requested changes and return the updated outline with ALL slide
             # Perplexity often returns unstructured text for typed prompts. Fallback to Claude for tool planning.
             logger.warning(f"Typed tool plan generation failed on {model_name}: {typed_err}. Falling back to Claude.")
             try:
-                claude_client, claude_model = get_client("claude-3-7-sonnet")
+                from agents.config import OUTLINE_AGENT_MODEL
+                claude_client, claude_model = get_client(OUTLINE_AGENT_MODEL)
                 plan = invoke(
                     client=claude_client,
                     model=claude_model,

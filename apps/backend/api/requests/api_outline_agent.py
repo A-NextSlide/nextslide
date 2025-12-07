@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.ai.clients import get_client, invoke
+from agents.config import OUTLINE_AGENT_MODEL
 from services.supabase_auth_service import get_auth_service
 from api.requests.api_auth import get_auth_header
 from setup_logging_optimized import get_logger
@@ -143,7 +144,7 @@ async def analyze_files_for_presentation(files: List['FileAttachment']) -> Dict[
         import base64
         from io import BytesIO
 
-        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+        client, model = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
         analyses = []
         combined_context_parts = []
 
@@ -2128,7 +2129,7 @@ async def generate_slide_content(
     try:
         logger.info(f"[OutlineAgent] Generating content for slide: {request.slide_title}")
 
-        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+        client, model = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
 
         # Build the prompt
         prompt = f"""Generate detailed content for a presentation slide.

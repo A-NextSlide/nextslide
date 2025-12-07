@@ -325,16 +325,18 @@ async def list_users(
         # Build query
         query = supabase.table("users").select("*", count="exact")
 
-        # Apply search
+        # Apply search filter
         if search:
-            query = query.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
+            # Escape special characters in search term for safety
+            safe_search = search.replace("%", "\\%").replace("_", "\\_")
+            query = query.or_(f"email.ilike.%{safe_search}%,full_name.ilike.%{safe_search}%")
 
-        # Apply pagination
+        # Apply sorting BEFORE pagination (order matters in PostgREST)
+        query = query.order(db_sort_by, desc=(sort_order == "desc"))
+
+        # Apply pagination AFTER sorting
         offset = (page - 1) * limit
         query = query.range(offset, offset + limit - 1)
-
-        # Apply sorting using mapped field name
-        query = query.order(db_sort_by, desc=(sort_order == "desc"))
 
         # Execute query
         response = query.execute()
@@ -1970,6 +1972,123 @@ async def delete_brand_font(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/brands/{brand_id}/logo/upload")
+async def upload_brand_logo(
+    brand_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Upload a logo file for a brand
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Verify brand exists
+        brand_response = supabase.table("brandfetch_cache").select("*").eq("id", brand_id).execute()
+        if not brand_response.data:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+        brand = brand_response.data[0]
+        api_response = brand.get("api_response", {})
+        brand_domain = api_response.get("domain") or brand.get("normalized_identifier", "unknown")
+
+        # Read file bytes
+        file_bytes = await file.read()
+        content_type = file.content_type or "image/png"
+
+        # Determine file extension
+        ext = os.path.splitext(file.filename)[1].lower() if file.filename else ".png"
+        if not ext:
+            ext = ".svg" if "svg" in content_type else ".png"
+
+        # Generate storage path
+        clean_domain = brand_domain.lower().replace('.', '_')
+        file_path = f"logos/{clean_domain}/logo{ext}"
+
+        # Upload to storage
+        try:
+            upload_response = supabase.storage.from_("slide-media").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"content-type": content_type, "upsert": "true"}
+            )
+        except Exception as e:
+            if "Duplicate" in str(e):
+                # Remove and re-upload
+                supabase.storage.from_("slide-media").remove([file_path])
+                upload_response = supabase.storage.from_("slide-media").upload(
+                    path=file_path,
+                    file=file_bytes,
+                    file_options={"content-type": content_type}
+                )
+            else:
+                raise
+
+        # Get public URL
+        public_url = supabase.storage.from_("slide-media").get_public_url(file_path)
+
+        # Update brand api_response with logo
+        if not api_response.get("logos"):
+            api_response["logos"] = {"light": []}
+        if not api_response["logos"].get("light"):
+            api_response["logos"]["light"] = []
+
+        # Update or add logo format
+        if api_response["logos"]["light"]:
+            if not api_response["logos"]["light"][0].get("formats"):
+                api_response["logos"]["light"][0]["formats"] = []
+            # Add new format at the beginning (highest priority)
+            api_response["logos"]["light"][0]["formats"].insert(0, {
+                "url": public_url,
+                "format": ext.replace(".", ""),
+                "uploaded_at": datetime.utcnow().isoformat()
+            })
+        else:
+            api_response["logos"]["light"].append({
+                "type": "logo",
+                "formats": [{
+                    "url": public_url,
+                    "format": ext.replace(".", ""),
+                    "uploaded_at": datetime.utcnow().isoformat()
+                }]
+            })
+
+        # Update brand in database
+        supabase.table("brandfetch_cache").update({
+            "api_response": api_response
+        }).eq("id", brand_id).execute()
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="upload_brand_logo",
+            request=request,
+            details={
+                "brand_id": brand_id,
+                "file_path": file_path,
+                "file_size": len(file_bytes)
+            }
+        )
+
+        return {
+            "success": True,
+            "message": "Logo uploaded successfully",
+            "logo": {
+                "url": public_url,
+                "path": file_path,
+                "size": len(file_bytes)
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Upload brand logo error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class FetchBrandRequest(BaseModel):
     identifier: str  # Domain or brand name
 
@@ -2219,34 +2338,26 @@ async def get_services_health(
             error="API key not configured"
         ))
 
-    # 4. Brandfetch API
-    brandfetch_key = os.getenv("BRANDFETCH_BRAND_API_KEY")
-    if brandfetch_key:
-        # Check cache stats instead of hitting API
-        try:
-            cache_stats = supabase.table("brandfetch_cache").select("id", count="exact").execute()
-            services.append(ServiceStatus(
-                name="Brandfetch API",
-                status="operational",
-                last_checked=checked_at,
-                details={
-                    "cached_brands": cache_stats.count or 0,
-                    "type": "Brand Data"
-                }
-            ))
-        except:
-            services.append(ServiceStatus(
-                name="Brandfetch API",
-                status="operational",
-                last_checked=checked_at,
-                details={"type": "Brand Data"}
-            ))
-    else:
+    # 4. Brandfetch API - service has fallback default key, so always check cache health
+    try:
+        cache_stats = supabase.table("brandfetch_cache").select("id", count="exact").execute()
+        brandfetch_key = os.getenv("BRANDFETCH_BRAND_API_KEY")
         services.append(ServiceStatus(
             name="Brandfetch API",
-            status="unknown",
+            status="operational",
             last_checked=checked_at,
-            error="API key not configured"
+            details={
+                "cached_brands": cache_stats.count or 0,
+                "type": "Brand Data",
+                "custom_key": bool(brandfetch_key)
+            }
+        ))
+    except Exception as e:
+        services.append(ServiceStatus(
+            name="Brandfetch API",
+            status="degraded",
+            last_checked=checked_at,
+            error=f"Cache unavailable: {str(e)[:50]}"
         ))
 
     # 5. Unsplash API

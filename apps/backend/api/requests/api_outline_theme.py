@@ -49,10 +49,11 @@ Available fonts:
 
 Return ONLY the exact font name, nothing else."""
 
-        from agents.config import CLAUDE_HAIKU_ID
+        from agents.config import FONT_SELECTION_MODEL
+        from agents.ai.clients import get_model_id
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model=CLAUDE_HAIKU_ID,
+            model=get_model_id(FONT_SELECTION_MODEL),
             max_tokens=50,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}]

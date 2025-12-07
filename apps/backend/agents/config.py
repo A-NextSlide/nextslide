@@ -89,6 +89,14 @@ IMAGE_MODEL_OPENAI = OPENAI_IMAGE
 QUALITY_EVALUATOR_MODEL = CLAUDE_HAIKU
 VISUAL_VALIDATION_MODEL = CLAUDE_HAIKU
 
+# Fast/Cheap AI Tasks (file analysis, image search, entity extraction, chat)
+FAST_AI_MODEL = CLAUDE_HAIKU                  # Fast tasks where speed > quality
+CHAT_MODEL = CLAUDE_HAIKU                     # General chat responses
+FILE_ANALYSIS_MODEL_FAST = CLAUDE_HAIKU       # Quick file analysis
+IMAGE_SEARCH_MODEL = CLAUDE_HAIKU             # Image query generation
+BRAND_DETECTION_MODEL = CLAUDE_HAIKU          # Detect brand names in prompts for theme colors
+FONT_SELECTION_MODEL = CLAUDE_HAIKU           # AI font pairing
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # FEATURE FLAGS
 # ═══════════════════════════════════════════════════════════════════════════════

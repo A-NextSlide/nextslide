@@ -118,9 +118,14 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                     }
                     # Build colors list from labeled values
                     for key in ['accent', 'accent2', 'background', 'text']:
-                        if labeled_colors.get(key):
-                            colors.append(labeled_colors[key])
-                            color_categories[labeled_colors[key]] = key
+                        color_value = labeled_colors.get(key)
+                        # Handle case where color might be a list instead of string
+                        if color_value:
+                            if isinstance(color_value, list):
+                                color_value = color_value[0] if color_value else None
+                            if color_value and isinstance(color_value, str):
+                                colors.append(color_value)
+                                color_categories[color_value] = key
                 elif colors_data.get('hex_list'):
                     colors = colors_data['hex_list']
 
@@ -129,11 +134,15 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                 for c in colors_data:
                     if isinstance(c, dict) and c.get('hex'):
                         hex_color = c.get('hex')
-                        colors.append(hex_color)
-                        # Preserve category information
-                        category = c.get('category') or c.get('type')
-                        if category:
-                            color_categories[hex_color] = category
+                        # Handle case where hex might be a list instead of string
+                        if isinstance(hex_color, list):
+                            hex_color = hex_color[0] if hex_color else None
+                        if hex_color and isinstance(hex_color, str):
+                            colors.append(hex_color)
+                            # Preserve category information
+                            category = c.get('category') or c.get('type')
+                            if category:
+                                color_categories[hex_color] = category
             
             # Extract font list  
             fonts = []

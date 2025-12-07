@@ -17,7 +17,8 @@ from agents.ai.clients import get_client, invoke
 from agents.config import (
     CUSTOM_COMPONENT_MODEL,
     CUSTOM_COMPONENT_TEMPERATURE,
-    ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN
+    ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN,
+    IMAGE_SEARCH_MODEL
 )
 from agents.generation.exceptions import AIRateLimitError
 from setup_logging_optimized import get_logger
@@ -170,7 +171,7 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
     context_block = "\n".join(context_parts) if context_parts else "No additional context"
 
     try:
-        client, model_name = get_client("claude-haiku-4-5")
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
         prompt = f"""Extract the SPECIFIC names/entities mentioned in this slide for image search.
 

@@ -676,15 +676,18 @@ class AdminApi {
     file: File
   ): Promise<{ success: boolean; message: string; font: any }> {
     try {
+      const token = await this.getAuthToken();
+      if (!token) throw new Error('Not authenticated');
+
       const formData = new FormData();
       formData.append('font_name', fontName);
       formData.append('variant', variant);
       formData.append('file', file);
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/brands/${brandId}/fonts/upload`, {
+      const response = await fetch(`${this.baseUrl}/admin/brands/${brandId}/fonts/upload`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: formData,
       });
@@ -696,6 +699,37 @@ class AdminApi {
       return await response.json();
     } catch (error) {
       console.error('Error uploading brand font:', error);
+      throw error;
+    }
+  }
+
+  async uploadBrandLogo(
+    brandId: string,
+    file: File
+  ): Promise<{ success: boolean; message: string; logo: { url: string; path: string; size: number } }> {
+    try {
+      const token = await this.getAuthToken();
+      if (!token) throw new Error('Not authenticated');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${this.baseUrl}/admin/brands/${brandId}/logo/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Logo upload failed');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error uploading brand logo:', error);
       throw error;
     }
   }

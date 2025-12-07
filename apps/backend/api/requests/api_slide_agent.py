@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.ai.clients import get_client, invoke
+from agents.config import CHAT_MODEL
 from agents.editing.editing_orchestrator import edit_deck
 from services.supabase_auth_service import get_auth_service
 from api.requests.api_auth import get_auth_header
@@ -125,7 +126,7 @@ async def stream_slide_agent_response(
     """
     try:
         # Get the raw Claude client for streaming
-        client, model = get_client("claude-haiku-4-5", wrap_with_instructor=False)
+        client, model = get_client(CHAT_MODEL, wrap_with_instructor=False)
 
         # Build message history
         messages = []
@@ -146,9 +147,10 @@ async def stream_slide_agent_response(
 
         # First, stream a conversational response
         response_text = ""
-        from agents.config import CLAUDE_HAIKU_ID
+        from agents.config import CHAT_MODEL
+        from agents.ai.clients import get_model_id
         with client.messages.stream(
-            model=CLAUDE_HAIKU_ID,
+            model=get_model_id(CHAT_MODEL),
             max_tokens=2048,
             system=SLIDE_AGENT_SYSTEM_PROMPT,
             messages=messages,

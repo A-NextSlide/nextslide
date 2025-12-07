@@ -71,11 +71,12 @@ IMPORTANT:
 - DO NOT use random lime green (#D2FF38) or chartreuse unless specifically requested
 """
 
-        # Use Haiku 4.5 for fast, accurate, DETERMINISTIC color understanding
+        # Use theme model for fast, accurate, DETERMINISTIC color understanding
         # temperature=0 ensures consistent results for the same input
-        from agents.config import CLAUDE_HAIKU_ID
+        from agents.config import THEME_MODEL
+        from agents.ai.clients import get_model_id
         response = client.messages.create(
-            model=CLAUDE_HAIKU_ID,
+            model=get_model_id(THEME_MODEL),
             max_tokens=300,
             temperature=0,  # Deterministic output - same input = same colors
             messages=[

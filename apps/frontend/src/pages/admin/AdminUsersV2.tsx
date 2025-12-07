@@ -374,7 +374,7 @@ const AdminUsersV2: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="space-y-6 w-full p-6">
+      <div className="space-y-6">
         {/* Stats Cards */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <Card className="border-gray-200 dark:border-gray-800 hover:shadow-lg transition-shadow duration-300">

@@ -1848,9 +1848,11 @@ Available fonts by category:
 
 Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
 
+            from agents.config import FONT_SELECTION_MODEL
+            from agents.ai.clients import get_model_id
             response = await self._async_invoke(
                 self.client,
-                "claude-3-5-haiku-20241022",
+                get_model_id(FONT_SELECTION_MODEL),
                 [{"role": "user", "content": prompt}],
                 max_tokens=50,
                 temperature=0.3

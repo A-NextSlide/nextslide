@@ -121,8 +121,9 @@ class ParallelSlideOrchestrator:
                     # Issue tiny Anthropic call via clients.invoke with low max_tokens to write cache
                     from agents.ai.clients import get_client, invoke
                     # Use the same model as slide generation
+                    from agents.config import COMPOSER_MODEL
                     model_alias = getattr(self.slide_generator.ai_generator, 'model', None)
-                    client, model_name = get_client(model_alias or 'claude-3-7-sonnet')
+                    client, model_name = get_client(model_alias or COMPOSER_MODEL)
                     messages = [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt + "\n[PREWARM] Reply with OK"}

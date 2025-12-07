@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
 from io import BytesIO
 
+from agents.config import FILE_ANALYSIS_MODEL_FAST
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -105,10 +107,11 @@ def _is_presentation(mime_type: str, filename: str) -> bool:
 async def _analyze_image_with_claude(file_input: FileInput, context: str = "") -> FileAnalysisResult:
     """Analyze an image using Claude's vision capabilities"""
     from agents.ai.clients import get_client, invoke
+    from agents.config import OUTLINE_AGENT_MODEL
 
     try:
-        # Get Claude client
-        client, model_name = get_client("claude-3-5-sonnet", wrap_with_instructor=False)
+        # Get Claude client - needs vision capabilities
+        client, model_name = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
 
         # Prepare the image content
         mime_type = _get_mime_type(file_input.name, file_input.type)
@@ -211,7 +214,7 @@ async def _analyze_document_with_claude(file_input: FileInput, context: str = ""
     from agents.ai.clients import get_client, invoke
 
     try:
-        client, model_name = get_client("claude-3-5-haiku", wrap_with_instructor=False)
+        client, model_name = get_client(FILE_ANALYSIS_MODEL_FAST, wrap_with_instructor=False)
 
         # Extract text content
         text_content = ""
@@ -328,7 +331,7 @@ async def _analyze_spreadsheet_with_claude(file_input: FileInput, context: str =
     from agents.ai.clients import get_client
 
     try:
-        client, model_name = get_client("claude-3-5-haiku", wrap_with_instructor=False)
+        client, model_name = get_client(FILE_ANALYSIS_MODEL_FAST, wrap_with_instructor=False)
 
         data_preview = ""
         extracted_data = None
@@ -451,7 +454,7 @@ async def _analyze_presentation_with_claude(file_input: FileInput, context: str 
     from agents.ai.clients import get_client
 
     try:
-        client, model_name = get_client("claude-3-5-haiku", wrap_with_instructor=False)
+        client, model_name = get_client(FILE_ANALYSIS_MODEL_FAST, wrap_with_instructor=False)
 
         slides_info = ""
 
@@ -647,8 +650,9 @@ async def chat_with_files_endpoint(request: Dict[str, Any]):
             "text": user_message or "Please analyze these files."
         })
 
-        # Get Claude client
-        client, model_name = get_client("claude-3-5-sonnet", wrap_with_instructor=False)
+        # Get Claude client - needs vision capabilities
+        from agents.config import OUTLINE_AGENT_MODEL
+        client, model_name = get_client(OUTLINE_AGENT_MODEL, wrap_with_instructor=False)
 
         # Build messages with history
         messages = []

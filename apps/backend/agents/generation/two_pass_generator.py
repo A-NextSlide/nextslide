@@ -28,15 +28,15 @@ from dataclasses import dataclass
 from enum import Enum
 
 from agents.ai.clients import get_client, invoke
-from agents.config import COMPOSER_MODEL
+from agents.config import COMPOSER_MODEL, FAST_AI_MODEL
 from agents.domain.models import SlideGenerationContext, ThemeSpec
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
-# Model configuration
-STRUCTURE_MODEL = "claude-haiku-4-5"  # Fast model for structure analysis
-DESIGN_MODEL = "claude-haiku-4-5"     # Using same model but different prompts
+# Model configuration - use config variables
+STRUCTURE_MODEL = FAST_AI_MODEL  # Fast model for structure analysis
+DESIGN_MODEL = FAST_AI_MODEL     # Using same model but different prompts
 
 
 class LayoutType(Enum):
