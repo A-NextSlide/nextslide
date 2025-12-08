@@ -2,7 +2,7 @@
 Dedicated CustomComponent generator using Gemini 3 Pro for creative HTML/CSS/JS generation.
 
 This module generates visually stunning CustomComponents for slides using:
-- Gemini 3 Pro's creative capabilities
+- Gemini 3 Pro's creative capabilities (with Claude Opus 4.5 fallback on rate limits)
 - Full HTML document mode (iframe)
 - Tailwind CSS for styling
 - Context-aware design (theme, content, style)
@@ -16,6 +16,7 @@ from datetime import datetime
 from agents.ai.clients import get_client, invoke
 from agents.config import (
     CUSTOM_COMPONENT_MODEL,
+    CUSTOM_COMPONENT_FALLBACK_MODEL,
     CUSTOM_COMPONENT_TEMPERATURE,
     ENABLE_DEDICATED_CUSTOM_COMPONENT_GEN,
     IMAGE_SEARCH_MODEL
@@ -25,8 +26,8 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
-# Global semaphore to limit concurrent Gemini calls (prevents rate limiting)
-_GEMINI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent Gemini calls
+# Global semaphore to limit concurrent AI calls (prevents rate limiting)
+_AI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent AI calls
 
 
 async def prefetch_images_for_content(
@@ -484,13 +485,15 @@ def _extract_logo_from_theme(theme: Dict[str, Any]) -> Optional[str]:
 
 class CustomComponentGenerator:
     """
-    Generates creative CustomComponents using Gemini 3 Pro.
+    Generates creative CustomComponents using Gemini 3 Pro (with Opus 4.5 fallback).
 
     This generator creates visually impressive HTML/CSS/JS components that:
     - Match the presentation theme
     - Visualize content in engaging ways
     - Use modern web design patterns
     - Include animations and interactivity
+
+    Falls back to Claude Opus 4.5 if Gemini rate limits are hit.
     """
 
     def __init__(self, model: str = CUSTOM_COMPONENT_MODEL):
@@ -753,14 +756,15 @@ class CustomComponentGenerator:
 
             loop = asyncio.get_event_loop()
 
-            # Use semaphore to limit concurrent Gemini calls + retry with backoff
+            # Use semaphore to limit concurrent AI calls + retry with backoff
             max_retries = 3
             response = None
+            used_fallback = False
 
-            async with _GEMINI_SEMAPHORE:
+            async with _AI_SEMAPHORE:
                 for attempt in range(max_retries):
                     try:
-                        print(f"[CUSTOM_COMPONENT] 🔄 Attempt {attempt + 1}/{max_retries}")
+                        print(f"[CUSTOM_COMPONENT] 🔄 Attempt {attempt + 1}/{max_retries} with {model_name}")
                         response = await asyncio.wait_for(
                             loop.run_in_executor(
                                 None,
@@ -784,14 +788,41 @@ class CustomComponentGenerator:
                             print(f"[CUSTOM_COMPONENT] ⏳ Rate limited, waiting {wait_time}s before retry...")
                             await asyncio.sleep(wait_time)
                         else:
-                            logger.error(f"[CUSTOM_COMPONENT] Rate limit exceeded after {max_retries} attempts")
-                            raise
+                            # All retries exhausted - fallback to Claude Opus 4.5
+                            logger.warning(f"[CUSTOM_COMPONENT] Gemini rate limited after {max_retries} attempts, falling back to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                            print(f"[CUSTOM_COMPONENT] 🔄 Switching to fallback model: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+
+                            try:
+                                fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                                response = await asyncio.wait_for(
+                                    loop.run_in_executor(
+                                        None,
+                                        invoke,
+                                        fallback_client,
+                                        fallback_model,
+                                        messages,
+                                        None,  # No response model - raw text
+                                        16000,  # max_tokens
+                                        self.temperature
+                                    ),
+                                    timeout=self.generation_timeout
+                                )
+                                used_fallback = True
+                                logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded")
+                                print(f"[CUSTOM_COMPONENT] ✅ Fallback model succeeded!")
+                            except Exception as fallback_err:
+                                logger.error(f"[CUSTOM_COMPONENT] Fallback model also failed: {fallback_err}")
+                                print(f"[CUSTOM_COMPONENT] ❌ Fallback model also failed: {fallback_err}")
+                                raise rate_err  # Re-raise original error
                     except Exception as invoke_error:
                         logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
                         print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
                         import traceback
                         traceback.print_exc()
                         raise
+
+            if used_fallback:
+                print(f"[CUSTOM_COMPONENT] 📊 Used fallback model due to Gemini rate limits")
 
             logger.info(f"[CUSTOM_COMPONENT] Got response: {type(response)}, length: {len(str(response)) if response else 0}")
             print(f"[CUSTOM_COMPONENT] ✅ Got response: {type(response)}, length: {len(str(response)) if response else 0}")
@@ -2057,11 +2088,12 @@ TYPOGRAPHY CRAFT:
 - Gradient text or dramatic shadows for depth
 - Strategic use of font weights (light vs black contrast)
 
-ATMOSPHERE:
-- Radial glows, soft blurs, light leaks
-- Subtle particle systems or floating elements
-- Animated gradient backgrounds
-- Cinematic color grading
+ATMOSPHERE (vary each slide - never repeat the same style):
+- Geometric shapes, diagonal lines, or grid patterns
+- Noise/grain textures, duotone overlays
+- Gradient meshes, aurora effects, light streaks
+- Minimalist negative space, typography-only designs
+- Abstract shapes (NOT always corner blobs)
 
 Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
 - Background gradients/effects: z-index: 1-5
@@ -2122,10 +2154,9 @@ FONTS: {hero_font} / {body_font}
 Create a cinematic, editorial-quality title slide. Think movie poster, fashion magazine, Apple keynote.
 
 Be creative with:
-- Atmospheric effects (glows, gradients, blur, particles)
 - Dramatic typography (150px+, tight tracking, gradient or shadow)
 - Elegant animations (reveals, fades, subtle motion)
-- Visual depth (layers, transparency, lighting effects)
+- Unique backgrounds: geometric, textured, gradient mesh, minimal, or bold color blocks
 
 Keep it minimal - the title is everything. Maximum {4 if logo_url else 3} visual elements total."""
 

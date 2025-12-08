@@ -599,7 +599,7 @@ def custom_component_rewrite(
     Includes validation and quality checks.
     """
     from agents.ai.clients import get_client, invoke
-    from agents.config import CUSTOM_COMPONENT_MODEL, CUSTOM_COMPONENT_EDIT_MODEL
+    from agents.config import CUSTOM_COMPONENT_MODEL, CUSTOM_COMPONENT_EDIT_MODEL, CUSTOM_COMPONENT_FALLBACK_MODEL
     from agents.editing.attachment_analyzer import (
         analyze_attachments,
         build_multimodal_content,
@@ -663,8 +663,8 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
     # SMART MODEL ROUTING: Choose model based on edit complexity
     complexity = classify_edit_complexity(args.rewrite_request, current_html)
     if complexity == EditComplexity.COMPLEX:
-        selected_model = CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro for complex edits
-        use_gemini = True
+        selected_model = CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro for complex edits (fallback to Opus 4.5)
+        use_gemini = selected_model.startswith('gemini')
         logger.info(f"Smart routing: COMPLEX edit detected, using {selected_model}")
     else:
         selected_model = CUSTOM_COMPONENT_EDIT_MODEL  # Claude Haiku 4.5 for medium edits
@@ -700,25 +700,69 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
                         ))
             contents.append(full_prompt)
 
-            # Make raw API call with smart-selected model
-            response_raw = gemini_client.models.generate_content(
-                model=selected_model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "object",
-                        "properties": {
-                            "html": {"type": "string", "description": "The complete HTML document"},
-                            "description": {"type": "string", "description": "Brief description"}
-                        },
-                        "required": ["html", "description"]
+            # Make raw API call with smart-selected model (with fallback on rate limit)
+            gemini_rate_limited = False
+            try:
+                response_raw = gemini_client.models.generate_content(
+                    model=selected_model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "object",
+                            "properties": {
+                                "html": {"type": "string", "description": "The complete HTML document"},
+                                "description": {"type": "string", "description": "Brief description"}
+                            },
+                            "required": ["html", "description"]
+                        }
+                    )
+                )
+                response_text = response_raw.text
+            except Exception as gemini_err:
+                # Check for rate limit error (429)
+                error_str = str(gemini_err).lower()
+                if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'limit' in error_str:
+                    logger.warning(f"[CUSTOM_COMPONENT_EDIT] Gemini rate limited, falling back to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                    gemini_rate_limited = True
+                else:
+                    raise
+
+            # If Gemini rate limited, use fallback model (Claude Opus 4.5)
+            if gemini_rate_limited:
+                logger.info(f"[CUSTOM_COMPONENT_EDIT] Using fallback model: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+
+                # Build multimodal content if attachments present
+                if analyzed_attachments:
+                    user_content = build_multimodal_content(analyzed_attachments, user_prompt, max_images=3)
+                else:
+                    user_content = user_prompt
+
+                response = invoke(
+                    client=fallback_client,
+                    model=fallback_model,
+                    max_tokens=16384,
+                    response_model=SimpleCustomComponentResponse,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    temperature=0.7
+                )
+                # Skip the normal Gemini response parsing - we already have the response
+                return ToolResult(
+                    success=True,
+                    message=f"CustomComponent rewritten successfully using fallback model (Gemini rate limited)",
+                    data={
+                        "component_id": args.component_id,
+                        "new_html": response.html,
+                        "description": response.description,
+                        "used_fallback": True
                     }
                 )
-            )
 
             # Parse response - handle malformed JSON from Gemini
-            response_text = response_raw.text
             try:
                 response_data = json_module.loads(response_text)
             except json_module.JSONDecodeError as json_err:

@@ -63,10 +63,11 @@ CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction
 SLIDE_STYLE_MODEL = CLAUDE_OPUS             # Styling
 
 # Custom Components - Smart Model Routing
-# COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality)
+# COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality, fallback to Opus 4.5)
 # MEDIUM edits (partial rewrites, structural changes) → Claude Haiku 4.5 (fast, good)
 # SIMPLE edits (text/color changes) → str_replace (no AI needed)
 CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO              # Complex: new concepts, full redesigns
+CUSTOM_COMPONENT_FALLBACK_MODEL = CLAUDE_OPUS      # Fallback when Gemini rate limited
 CUSTOM_COMPONENT_EDIT_MODEL = CLAUDE_HAIKU         # Medium: partial rewrites (Haiku 4.5)
 CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_HAIKU       # Simple: suggest str_replace strings
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
