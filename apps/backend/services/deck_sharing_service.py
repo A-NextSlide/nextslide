@@ -222,11 +222,11 @@ class DeckSharingService:
     def get_share_stats(self, share_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Get usage statistics for a share link.
-        
+
         Args:
             share_id: The ID of the share link
             user_id: The ID of the user (must be creator)
-            
+
         Returns:
             Share statistics or None
         """
@@ -234,13 +234,53 @@ class DeckSharingService:
             result = self.supabase.table('deck_shares').select(
                 'short_code, share_type, created_at, expires_at, access_count, last_accessed_at'
             ).eq('id', share_id).eq('created_by', user_id).execute()
-            
+
             return result.data[0] if result.data else None
-            
+
         except Exception as e:
             logger.error(f"Error getting share stats: {str(e)}")
             return None
-    
+
+    def user_has_deck_access(self, deck_uuid: str, user_id: str) -> bool:
+        """
+        Check if a user has access to a deck (as owner or collaborator).
+
+        Args:
+            deck_uuid: The deck UUID
+            user_id: The user ID to check
+
+        Returns:
+            True if user has access, False otherwise
+        """
+        try:
+            # Check if user is the deck owner
+            deck_result = self.supabase.table('decks').select('user_id').eq('uuid', deck_uuid).execute()
+            if deck_result.data and len(deck_result.data) > 0:
+                if deck_result.data[0].get('user_id') == user_id:
+                    return True
+
+            # Check if user is a collaborator
+            collab_result = self.supabase.table('deck_collaborators').select('id').eq(
+                'deck_uuid', deck_uuid
+            ).eq('user_id', user_id).neq('status', 'revoked').execute()
+
+            if collab_result.data and len(collab_result.data) > 0:
+                return True
+
+            # Check user_decks junction table (for decks associated with user)
+            user_deck_result = self.supabase.table('user_decks').select('id').eq(
+                'deck_uuid', deck_uuid
+            ).eq('user_id', user_id).execute()
+
+            if user_deck_result.data and len(user_deck_result.data) > 0:
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking deck access: {str(e)}")
+            return False
+
     def add_collaborator(
         self,
         deck_uuid: str,

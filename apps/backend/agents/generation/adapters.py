@@ -1676,79 +1676,13 @@ class SimpleDeckComposer(IDeckComposer):
                 }
 
                 # Image recommendations removed: do not collect or prefetch images during generation
-                try:
-                    pass
-
-                    # EMIT slide_images_found events with images grouped by search term
-                    logger.debug(f"EMITTING slide_images_found events for {len(all_images)} slides")
-                    for slide_idx, slide in enumerate(deck_outline.slides):
-                        if slide.id in all_images:
-                            images_by_term = all_images[slide.id]  # Dict: {term: [images]}
-                            slide_terms = slide_search_queries.get(slide.id, [])
-                            
-                            logger.debug(f"  Preparing event for slide {slide_idx + 1}: {slide.title}")
-                            logger.debug(f"    slide.id: {slide.id}")
-                            logger.debug(f"    terms: {slide_terms}")
-                            logger.debug(f"    images by term: {list(images_by_term.keys())}")
-                            
-                            # Format images grouped by search term
-                            formatted_images_by_term = {}
-                            total_images = 0
-                            
-                            for term, term_images in images_by_term.items():
-                                formatted_term_images = []
-                                for img in term_images:
-                                    formatted_term_images.append({
-                                        'id': img.get('id', f"img-{slide.id}-{total_images}"),
-                                        'url': img.get('url', ''),
-                                        'thumbnail': img.get('thumbnail', img.get('url', '')),
-                                        'alt': img.get('alt', ''),
-                                        'photographer': img.get('photographer'),
-                                        'photographer_url': img.get('photographer_url'),
-                                        'width': img.get('width'),
-                                        'height': img.get('height'),
-                                        'source': img.get('source', 'serpapi'),
-                                        'topic': term,
-                                        'searchQuery': term
-                                    })
-                                    total_images += 1
-                                formatted_images_by_term[term] = formatted_term_images
-                            
-                            # Emit slide_images_found event with component-specific structure
-                            yield {
-                                "type": "slide_images_found",
-                                "data": {
-                                    "slide_id": slide.id,
-                                    "slide_index": slide_idx,
-                                    "slide_title": slide.title,
-                                    "images_by_search_term": formatted_images_by_term,
-                                    "search_terms": slide_terms,
-                                    "total_count": total_images
-                                }
-                            }
-                            logger.info(f"📤 Emitted slide_images_found for slide {slide_idx + 1}: {total_images} images across {len(slide_terms)} terms")
-                            logger.debug(f"Emitted slide_images_found event for slide {slide_idx + 1}: {total_images} images, {len(slide_terms)} terms")
-
-                    yield {
-                        "type": "image_search_complete",
-                        "message": "Images ready for auto-application",
-                        "progress": 25
-                    }
-
-                    # CRITICAL: Small delay to ensure all taggedMedia is properly set
-                    await asyncio.sleep(0.75)
-                    
-                    # Extra safety: verify all slides have tagged media; if not, wait a bit more
-                    slides_with_media = sum(1 for s in deck_outline.slides if hasattr(s, 'taggedMedia') and s.taggedMedia)
-                    if slides_with_media < len(deck_outline.slides):
-                        logger.warning(f"⚠️ Only {slides_with_media}/{len(deck_outline.slides)} slides have images after sync search; waiting a bit more...")
-                        await asyncio.sleep(0.75)
-                    logger.debug(f"Proceeding to slide generation with tagged images...")
-
-                except Exception as e:
-                    logger.error(f"Error in synchronous image search: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
+                # Backend image search disabled - frontend handles image search using metadata.searchQuery
+                logger.info("🔍 AUTO-APPLY MODE: Backend image search disabled, proceeding to slide generation")
+                yield {
+                    "type": "image_search_complete",
+                    "message": "Image search skipped - frontend will handle",
+                    "progress": 25
+                }
 
             elif async_images_mode and self.image_manager and not skip_image_search:
                 # PLACEHOLDER MODE: Start image collection phase if not already started

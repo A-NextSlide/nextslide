@@ -220,10 +220,28 @@ async def log_admin_action(
     """Log admin action to audit log"""
     try:
         supabase = get_supabase_client()
-        
+
+        # Validate target_user_id exists to avoid foreign key constraint violation
+        # This can happen when logging actions for deleted users
+        validated_target_user_id = None
+        if target_user_id:
+            try:
+                user_check = supabase.table("users").select("id").eq("id", target_user_id).execute()
+                if user_check.data and len(user_check.data) > 0:
+                    validated_target_user_id = target_user_id
+                else:
+                    # User doesn't exist, store ID in details instead
+                    details = details or {}
+                    details["deleted_target_user_id"] = target_user_id
+                    logger.warning(f"Target user {target_user_id} not found, storing in details instead")
+            except Exception as e:
+                logger.warning(f"Could not validate target_user_id: {e}")
+                details = details or {}
+                details["unvalidated_target_user_id"] = target_user_id
+
         log_entry = {
             "admin_user_id": admin_user_id,
-            "target_user_id": target_user_id,
+            "target_user_id": validated_target_user_id,
             "target_deck_id": target_deck_id,
             "action": action,
             "action_details": details or {},
@@ -231,9 +249,9 @@ async def log_admin_action(
             "user_agent": request.headers.get("user-agent"),
             "created_at": datetime.utcnow().isoformat()
         }
-        
+
         supabase.table("admin_audit_logs").insert(log_entry).execute()
-        
+
     except Exception as e:
         logger.error(f"Failed to log admin action: {str(e)}")
         # Don't fail the request if logging fails

@@ -85,9 +85,17 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     slide.components && slide.components.length > 0 && slide.status === 'completed'
   );
 
-  // Don't show generating state if slides already have content
-  const isGenerating = !hasSlideContent && (deckStatus?.state === 'generating' || deckStatus?.state === 'creating');
-  const isCompleted = hasSlideContent || deckStatus?.state === 'completed' || (deckStatus?.progress !== undefined && deckStatus.progress >= 100);
+  // Check if generation is still in progress - deckStatus takes priority over slide content
+  // This ensures SVG animation shows even if some slides are already generated
+  const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
+
+  // Only mark as completed when:
+  // 1. deckStatus explicitly says 'completed'
+  // 2. OR progress is at 100%
+  // 3. OR no status exists but slides have content (legacy/loaded decks)
+  const isCompleted = deckStatus?.state === 'completed' ||
+    (deckStatus?.progress !== undefined && deckStatus.progress >= 100) ||
+    (!deckStatus && hasSlideContent);
   const forceWhite = typeof window !== 'undefined' && (window as any).__tourForceWhiteBg;
   
   // Use multi-selection hook
@@ -325,7 +333,7 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
       );
     }
     // Check if deck is generating but we have no slides at all
-    if ((deckStatus?.state === 'generating' || deckStatus?.state === 'creating') && deckStatus.totalSlides > 0 && slides.length === 0) {
+    if (isGenerating && deckStatus && deckStatus.totalSlides > 0 && slides.length === 0) {
       // Only create placeholders if we truly have no slides
       const placeholderSlides = Array.from({ length: deckStatus.totalSlides }, (_, index) => ({
         id: `placeholder-${index}`,

@@ -137,9 +137,18 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         Dict containing the uploaded deck data including the UUID
     """
     logger = logging.getLogger(__name__)
-    
+
+    # Guard against None deck_data
+    if deck_data is None:
+        logger.error(f"Cannot upload deck {deck_uuid}: deck_data is None")
+        raise ValueError(f"deck_data cannot be None for deck {deck_uuid}")
+
+    if not isinstance(deck_data, dict):
+        logger.error(f"Cannot upload deck {deck_uuid}: deck_data is not a dict (type: {type(deck_data)})")
+        raise ValueError(f"deck_data must be a dict, got {type(deck_data)}")
+
     supabase = get_supabase_client()
-    
+
     try:
         logger.debug(f"Uploading deck {deck_uuid} - {len(deck_data.get('slides', []))} slides, status: {deck_data.get('status', {}).get('state', 'unknown')}, user: {user_id or 'anonymous'}")
         
