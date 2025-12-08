@@ -28,6 +28,7 @@ from utils.numbers import round_numbers
 from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_registry, summarize_chat_history
 from utils.deck import get_all_component_ids, get_all_slide_ids
+from agents.editing.tools.view_slide import get_viewed_slides_context
 import logging
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,18 @@ def orchestrate(state: AgentState, event_cb=None):
     _deck_for_size = state.get('deck_data', {})
     _canvas_size = getattr(_deck_for_size, 'size', None) if not isinstance(_deck_for_size, dict) else _deck_for_size.get('size')
 
+    system_message = f"""
+                You are a helpful assistant that helps with deck editing.
+                In order to make changes to the deck, you need to call tools to edit the deck.
+                The detailed break down of the edits will be important for sucessfully applying the edits to the deck.
+                The canvas size is {_canvas_size}
+
+                CROSS-SLIDE AWARENESS:
+                If the user asks you to reference, copy, or compare with another slide, use `view_slide` first
+                to see that slide's full details. This lets you make informed decisions about styling, layout,
+                or content based on other slides in the deck.
+                """
+
     response = invoke(
         client=client,
         model=model,
@@ -242,23 +255,140 @@ def orchestrate(state: AgentState, event_cb=None):
         messages=[
             {
                 "role": "system",
-                "content": f"""
-                You are a helpful assistant that helps with deck editing.
-                In order to make changes to the deck, you need to call tools to edit the deck.
-                The detailed break down of the edits will be important for sucessfully applying the edits to the deck.
-                The canvas size is {_canvas_size}
-                """
+                "content": system_message
             },
             {
-                "role": "user", 
+                "role": "user",
                 "content": prompt
             }
         ]
     )
 
+    # TWO-PHASE EXECUTION: Check for view_slide calls that need context enrichment
+    tool_calls = list(getattr(response, 'tool_calls', []) or [])
+    view_slide_calls = [tc for tc in tool_calls if getattr(tc.tool, 'tool_name', '') == 'view_slide']
+
+    if view_slide_calls:
+        logger.info(f"[ORCHESTRATOR] Two-phase execution: {len(view_slide_calls)} view_slide calls detected")
+
+        # Phase 1: Execute view_slide tools to gather context
+        temp_diff = DeckDiff(DeckDiffBase())
+        viewed_context_parts = []
+
+        for view_call in view_slide_calls:
+            try:
+                tool_fn = call_map.get('view_slide')
+                if tool_fn:
+                    if event_cb:
+                        event_cb("agent.tool.start", {"tool": "view_slide"})
+
+                    temp_diff = tool_fn(
+                        view_call.tool,
+                        state.get('registry'),
+                        state.get('deck_data'),
+                        temp_diff
+                    )
+
+                    if event_cb:
+                        event_cb("agent.tool.finish", {"tool": "view_slide", "summary": f"Viewed slide {view_call.tool.slide_id}"})
+            except Exception as e:
+                logger.warning(f"[ORCHESTRATOR] view_slide failed: {e}")
+
+        # Extract viewed slide context
+        viewed_context = get_viewed_slides_context(temp_diff)
+
+        if viewed_context:
+            logger.info(f"[ORCHESTRATOR] Enriching context with viewed slides")
+
+            # Phase 2: Re-invoke LLM with enriched context
+            enriched_prompt = f"""{prompt}
+
+{viewed_context}
+
+🚨 CRITICAL: You have now viewed the referenced slide(s) above. You have ALL the information you need.
+
+DO NOT call any more view tools (view_slide, custom_component_view, etc.) - you already have the details!
+
+NOW YOU MUST MAKE THE ACTUAL EDITS:
+- If copying CustomComponent style: Use `custom_component_rewrite` on the current slide with instructions to match the viewed slide's design
+- If copying colors/fonts: Use `style_slide` or `edit_component` with the specific values from the viewed slide
+- If recreating layout: Use `custom_component_rewrite` describing the layout you saw
+
+The user asked to make their slide look like the viewed slide - EXECUTE THAT NOW with editing tools.
+"""
+
+            response = invoke(
+                client=client,
+                model=model,
+                max_tokens=16384,
+                response_model=ToolsCalls,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_message
+                    },
+                    {
+                        "role": "user",
+                        "content": enriched_prompt
+                    }
+                ]
+            )
+
+            # Filter out ALL view tools from the new response (we already have the context)
+            view_tool_names = {'view_slide', 'custom_component_view'}
+            tool_calls = [tc for tc in list(getattr(response, 'tool_calls', []) or [])
+                         if getattr(tc.tool, 'tool_name', '') not in view_tool_names]
+
+            # Log if we filtered out view tools
+            filtered_count = len(list(getattr(response, 'tool_calls', []) or [])) - len(tool_calls)
+            if filtered_count > 0:
+                logger.info(f"[ORCHESTRATOR] Filtered out {filtered_count} view tool(s) from second phase")
+
+            # Safety net: if we filtered ALL tools (agent only called view tools), force a third try
+            if len(tool_calls) == 0 and filtered_count > 0:
+                logger.warning(f"[ORCHESTRATOR] Second phase only had view tools! Forcing third invocation...")
+
+                force_edit_prompt = f"""{enriched_prompt}
+
+⚠️ WARNING: You just called view tools again instead of making edits!
+
+The slide you viewed has this styling (from the HTML above):
+- Colors, fonts, layout patterns
+- CSS variables and classes
+
+You MUST now call one of these EDITING tools:
+1. `custom_component_rewrite` - to rewrite the current slide's CustomComponent with similar styling
+2. `style_slide` - to apply similar colors/fonts to the current slide
+3. `edit_component` - to update specific component properties
+
+DO NOT CALL ANY VIEW TOOLS. MAKE THE EDIT NOW.
+"""
+
+                response = invoke(
+                    client=client,
+                    model=model,
+                    max_tokens=16384,
+                    response_model=ToolsCalls,
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": force_edit_prompt}
+                    ]
+                )
+
+                # Filter view tools one more time
+                tool_calls = [tc for tc in list(getattr(response, 'tool_calls', []) or [])
+                             if getattr(tc.tool, 'tool_name', '') not in view_tool_names]
+                logger.info(f"[ORCHESTRATOR] Third phase returned {len(tool_calls)} editing tool(s)")
+        else:
+            # No context was gathered, remove view_slide calls and proceed
+            tool_calls = [tc for tc in tool_calls if getattr(tc.tool, 'tool_name', '') != 'view_slide']
+
     # Reorder tool calls for deterministic, high-quality results
     # Strategy: Run deck-wide font application LAST so per-slide stylers don't leave fonts inconsistent
-    tool_calls = list(getattr(response, 'tool_calls', []) or [])
+    # Note: tool_calls may have been filtered by two-phase execution above
+    if not view_slide_calls:
+        # Only re-extract if we didn't already process view_slide calls
+        tool_calls = list(getattr(response, 'tool_calls', []) or [])
     def _priority(tc) -> int:
         try:
             name = getattr(tc.tool, 'tool_name', '') or ''

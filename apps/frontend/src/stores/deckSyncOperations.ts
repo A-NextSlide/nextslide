@@ -381,7 +381,22 @@ export const createSyncOperations = (set: Function, get: Function) => {
               return;
             }
           }
-          
+
+          // CRITICAL FIX: Skip realtime updates that come too quickly after an agent edit
+          // The agent edit has already been applied locally; realtime might have stale data
+          const lastAgentEditTs = (window as any).__lastAgentEditTs || 0;
+          if (lastAgentEditTs) {
+            const timeSinceEdit = Date.now() - lastAgentEditTs;
+            if (timeSinceEdit < 3000) {
+              console.log('[Realtime][UPDATE] Ignored - too soon after agent edit (protecting edit)', {
+                timeSinceEdit,
+                lastAgentEditTs,
+                threshold: 3000
+              });
+              return;
+            }
+          }
+
           // Debounce the fetch to prevent rapid repeated calls
           if (realtimeFetchTimeout) {
             clearTimeout(realtimeFetchTimeout);
@@ -856,9 +871,12 @@ export const createSyncOperations = (set: Function, get: Function) => {
       }
 
       // Fix CustomComponent HTML rendering issues (ensure blank line after <html> tag)
+      // AND cleanup duplicate CustomComponents on each slide
       if (transformedDeck.slides && Array.isArray(transformedDeck.slides)) {
-        for (const slide of transformedDeck.slides) {
+        for (let i = 0; i < transformedDeck.slides.length; i++) {
+          const slide = transformedDeck.slides[i];
           if (slide.components && Array.isArray(slide.components)) {
+            // Fix HTML rendering
             for (const component of slide.components) {
               if (component.type === 'CustomComponent' && component.props?.render) {
                 const html = component.props.render as string;
@@ -867,6 +885,25 @@ export const createSyncOperations = (set: Function, get: Function) => {
                   component.props.render = html.replace(/(<html[^>]*>)\s*\n?\s*/gi, '$1\n\n');
                 }
               }
+            }
+
+            // AUTO-CLEANUP: Remove duplicate CustomComponents
+            const customComponents = slide.components.filter(c => c.type === 'CustomComponent');
+            if (customComponents.length > 1) {
+              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
+              // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+              const sorted = [...customComponents].sort((a, b) => {
+                const aLen = (a.props?.render as string)?.length || 0;
+                const bLen = (b.props?.render as string)?.length || 0;
+                return aLen - bLen;
+              });
+              const keepId = sorted[0].id;
+              const removeIds = new Set(sorted.slice(1).map(c => c.id));
+              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Keeping', keepId, 'removing', Array.from(removeIds));
+              transformedDeck.slides[i] = {
+                ...slide,
+                components: slide.components.filter(c => !removeIds.has(c.id))
+              };
             }
           }
         }

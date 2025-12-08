@@ -816,7 +816,7 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
                 description=response_data.get('description', 'Rewritten component')
             )
         else:
-            # Use Claude (Haiku 4.5) for medium edits via instructor
+            # Use Claude (Opus 4.5) for medium edits via instructor
             logger.info(f"Using Claude model: {selected_model}")
             client, model = get_client(selected_model)
 

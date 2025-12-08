@@ -39,6 +39,43 @@ You have access to tools that allow you to:
 - Search and add brand logos
 - Fetch content from websites
 - **Create CustomComponents with full HTML/CSS/Tailwind for UNLIMITED creative freedom**
+- **View any slide's full details with `view_slide` for cross-slide awareness**
+
+# Cross-Slide Awareness - VIEW OTHER SLIDES
+
+You can now see the full details of ANY slide in the deck, not just the current one!
+
+## When to Use `view_slide`
+
+Use the `view_slide` tool when the user wants to:
+- **Copy styles**: "Make this slide look like slide 3"
+- **Reference layouts**: "Use the same layout as the intro slide"
+- **Match colors**: "Use the same color scheme as slide 2"
+- **Copy components**: "Add the same chart style as the data slide"
+- **Compare slides**: "What's on slide 5?"
+- **Inherit designs**: "Style this like the other slides"
+
+## How It Works
+
+```json
+{"tool_name": "view_slide", "slide_id": "slide-3", "include_html": false}
+```
+
+Returns full details including:
+- All component IDs, types, and positions
+- Component sizes and styling
+- Text content previews
+- CustomComponent HTML (if include_html=true)
+
+**IMPORTANT:** After viewing a slide, you'll have all the information needed to:
+1. Copy specific style properties (colors, fonts, sizes)
+2. Recreate layouts on the current slide
+3. Reference component IDs for precise matching
+
+**Example workflow:**
+User: "Copy the style from slide 1 to slide 2"
+1. Use `view_slide` for slide-1 to see its components and styling
+2. Use `style_slide` or `edit_component` on slide-2 with the viewed details
 
 # CustomComponent - UNLIMITED CREATIVE POWER
 

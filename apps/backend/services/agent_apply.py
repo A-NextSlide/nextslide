@@ -668,6 +668,23 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         changed_slide_ids.add(sid)
         print(f"🟡 [APPLY_DIFF] Added slide {sid} to changed_slide_ids (now has {len(changed_slide_ids)} slides)")
 
+    # AUTO-CLEANUP: Remove duplicate CustomComponents from all slides
+    # This prevents issues where edits target one component but another duplicate is covering it
+    for slide in slides:
+        components = slide.get("components", [])
+        custom_components = [c for c in components if c.get("type") == "CustomComponent"]
+        if len(custom_components) > 1:
+            slide_id = slide.get("id", "unknown")
+            print(f"🧹 [APPLY_DIFF] AUTO-CLEANUP: Found {len(custom_components)} CustomComponents on slide {slide_id}")
+            # Sort by render HTML length (ascending) - keep the smallest/cleanest one
+            sorted_cc = sorted(custom_components, key=lambda c: len((c.get("props") or {}).get("render") or ""))
+            keep_id = sorted_cc[0].get("id")
+            remove_ids = {c.get("id") for c in sorted_cc[1:]}
+            print(f"🧹 [APPLY_DIFF] AUTO-CLEANUP: Keeping {keep_id}, removing {remove_ids}")
+            slide["components"] = [c for c in components if c.get("id") not in remove_ids]
+            if slide.get("id"):
+                changed_slide_ids.add(slide.get("id"))
+
     persistence = DeckPersistence()
 
     # If slides were added or removed, persist the entire deck once (ensures new slides are saved)

@@ -101,10 +101,25 @@ export const EditorStateProvider = ({
         // Ensure we have the freshest deck data before pausing subscriptions and creating drafts
         // IMPORTANT: If there are pending local changes (e.g. applied by AI chat with skipBackend),
         // do NOT reload from backend or we'll overwrite those local updates.
+        // CRITICAL FIX: Also skip reload if there was a recent AI agent edit - the backend may
+        // not have the latest data yet, and reloading would overwrite the AI changes.
         try {
           const currentId = deckStore.deckData?.uuid;
           const hasPendingLocalChanges = !!deckStore.versionHistory?.pendingChanges;
-          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges) {
+
+          // Check for recent AI agent edits (within last 5 seconds)
+          const lastAgentEditTs = typeof window !== 'undefined' ? (window as any).__lastAgentEditTs || 0 : 0;
+          const timeSinceAgentEdit = Date.now() - lastAgentEditTs;
+          const hasRecentAgentEdit = lastAgentEditTs > 0 && timeSinceAgentEdit < 5000;
+
+          if (hasRecentAgentEdit) {
+            console.log('[EditorStateContext] Skipping loadDeck - recent AI agent edit detected', {
+              timeSinceAgentEdit,
+              threshold: 5000
+            });
+          }
+
+          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges && !hasRecentAgentEdit) {
             await deckStore.loadDeck();
           }
         } catch {}

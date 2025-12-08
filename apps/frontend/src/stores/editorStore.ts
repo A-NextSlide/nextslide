@@ -302,10 +302,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     // Create the updated component, ensuring deep merge of props
+    const oldRender = componentProps?.render;
+    const newRender = updates.props?.render;
     const updatedComponent = {
       ...originalComponent,
       ...updates, // Apply top-level updates (like type, if ever needed)
-      props: { 
+      props: {
         ...componentProps,
         ...(updates.props || {})
         // Removed automatic animation flag - let components control their own animations
@@ -313,6 +315,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Remove the deep clone flag as we've now done it
       _needsDeepClone: undefined
     };
+    console.log('[EditorStore] 🔧 updateDraftComponent merge result', {
+      slideId,
+      componentId,
+      componentType: originalComponent.type,
+      hadRenderBefore: !!oldRender,
+      hasRenderInUpdate: !!newRender,
+      hasRenderAfter: !!updatedComponent.props?.render,
+      renderLengthBefore: oldRender?.length || 0,
+      renderLengthInUpdate: newRender?.length || 0,
+      renderLengthAfter: updatedComponent.props?.render?.length || 0,
+      renderChanged: oldRender !== updatedComponent.props?.render
+    });
 
     // PERFORMANCE: Create new array by mutating (faster for frequent updates like resize)
     // Still creates a new reference so Zustand detects the change, but faster than slice/spread

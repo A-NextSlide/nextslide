@@ -266,6 +266,31 @@ export const createCoreDeckOperations = (set, get) => {
     
     // Update deck data action with debouncing to minimize renders
     updateDeckData: (data: Partial<CompleteDeckData>, options: { skipBackend?: boolean, batchUpdate?: boolean, isRealtimeUpdate?: boolean } = {}) => {
+      // AUTO-CLEANUP: Remove duplicate CustomComponents from all slides BEFORE storing
+      if (data.slides && Array.isArray(data.slides)) {
+        data.slides = data.slides.map(slide => {
+          const components = slide.components || [];
+          const customComponents = components.filter(c => c.type === 'CustomComponent');
+          if (customComponents.length > 1) {
+            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
+            // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+            const sorted = [...customComponents].sort((a, b) => {
+              const aLen = (a.props?.render as string)?.length || 0;
+              const bLen = (b.props?.render as string)?.length || 0;
+              return aLen - bLen;
+            });
+            const keepId = sorted[0].id;
+            const removeIds = new Set(sorted.slice(1).map(c => c.id));
+            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Keeping', keepId, 'removing', Array.from(removeIds));
+            return {
+              ...slide,
+              components: components.filter(c => !removeIds.has(c.id))
+            };
+          }
+          return slide;
+        });
+      }
+
       const currentDeckData = get().deckData;
       const { skipBackend = false, batchUpdate = false, isRealtimeUpdate = false } = options;
       

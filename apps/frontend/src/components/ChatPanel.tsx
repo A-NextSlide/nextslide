@@ -2483,13 +2483,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             if (evt.type === 'deck.edit.applied') {
               setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
 
-              // CRITICAL FIX: Clear preview guards immediately to allow Supabase realtime updates
-              // Backend has already persisted changes, so we want realtime to sync them
-              try {
-                if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
-                if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-                console.log('[Realtime][edit.applied][secondary] Preview guards cleared to allow database sync');
-              } catch { }
+              // NOTE: Do NOT clear preview guards here - the primary handler keeps them active for 2 seconds
+              // to protect against stale Supabase realtime updates overwriting the edit
+              // The guards are cleared in the primary handler after a 2-second delay
+              console.log('[Realtime][edit.applied][secondary] Keeping preview guards active (managed by primary handler)');
 
               // Persist immediately in edit mode to avoid losing AI changes when toggling modes
               try {
@@ -2502,20 +2499,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 }
               } catch { }
 
-              // CRITICAL FIX: Reload deck from database after backend has persisted changes
-              // The backend has already saved the changes, but frontend draft/subscription system is broken
-              // Simple solution: just reload from DB after giving backend time to write
-              console.log('[deck.edit.applied] 🔄 Scheduling deck reload in 2 seconds...');
-              setTimeout(() => {
-                console.log('[deck.edit.applied] 🔄 RELOADING DECK FROM DATABASE NOW');
-                const deckStore = useDeckStore.getState();
-                if (deckStore.loadDeck) {
-                  deckStore.loadDeck();
-                  console.log('[deck.edit.applied] ✅ Deck reload triggered');
-                } else {
-                  console.error('[deck.edit.applied] ❌ loadDeck function not found!');
-                }
-              }, 2000); // 2 second delay to ensure backend write completes
+              // NOTE: Removed the 2-second deck reload - the primary handler already applies the diff
+              // and the Supabase realtime subscription will sync once guards expire
+              // Reloading could fetch stale data and overwrite the edit
 
               return;
             }

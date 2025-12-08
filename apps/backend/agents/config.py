@@ -59,17 +59,17 @@ OUTLINE_AGENT_MODEL = CLAUDE_SONNET         # Conversational outline/editing age
 # Deck Editing
 ORCHESTRATOR_MODEL = CLAUDE_OPUS            # Complex editing decisions
 DECK_EDITOR_MODEL = CLAUDE_OPUS             # Component editing
-CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction
+CONTEXT_BUILDER_MODEL = CLAUDE_OPUS         # Context extraction
 SLIDE_STYLE_MODEL = CLAUDE_OPUS             # Styling
 
 # Custom Components - Smart Model Routing
 # COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality, fallback to Opus 4.5)
-# MEDIUM edits (partial rewrites, structural changes) → Claude Haiku 4.5 (fast, good)
+# MEDIUM edits (partial rewrites, structural changes) → Claude Opus 4.5 (best quality)
 # SIMPLE edits (text/color changes) → str_replace (no AI needed)
 CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO              # Complex: new concepts, full redesigns
 CUSTOM_COMPONENT_FALLBACK_MODEL = CLAUDE_OPUS      # Fallback when Gemini rate limited
-CUSTOM_COMPONENT_EDIT_MODEL = CLAUDE_HAIKU         # Medium: partial rewrites (Haiku 4.5)
-CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_HAIKU       # Simple: suggest str_replace strings
+CUSTOM_COMPONENT_EDIT_MODEL = CLAUDE_OPUS          # Medium: partial rewrites (Opus 4.5)
+CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_OPUS        # Simple: suggest str_replace strings
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
 
 # Editing Quality Control

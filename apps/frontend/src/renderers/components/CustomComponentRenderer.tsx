@@ -245,19 +245,43 @@ export const CustomComponentRenderer: React.FC<{
 }> = ({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const renderCode = component.props.render as string;
 
-  // Create a hash of the render code to detect content changes for iframe remounting
+  // Create a robust hash of the render code to detect content changes for iframe remounting
   // This ensures the iframe refreshes when the HTML content changes after edits
   const renderCodeHash = useMemo(() => {
     if (!renderCode) return '0';
-    // Simple hash: use length + sum of char codes of first/middle/last chars
+    // Use djb2 hash algorithm - fast and reliable for detecting any content change
+    let hash = 5381;
     const len = renderCode.length;
-    const sample = (renderCode.charCodeAt(0) || 0) +
-                   (renderCode.charCodeAt(Math.floor(len / 2)) || 0) +
-                   (renderCode.charCodeAt(len - 1) || 0);
-    const hash = `${len}-${sample}`;
-    console.log('[CustomComponent] renderCodeHash computed:', { componentId: component.id, hash, len });
-    return hash;
+    // Sample every 100th character for performance on large documents, but always include key positions
+    const sampleInterval = Math.max(1, Math.floor(len / 100));
+    for (let i = 0; i < len; i += sampleInterval) {
+      hash = ((hash << 5) + hash) ^ renderCode.charCodeAt(i);
+    }
+    // Always include first, middle, and last chars for extra sensitivity
+    hash = ((hash << 5) + hash) ^ (renderCode.charCodeAt(0) || 0);
+    hash = ((hash << 5) + hash) ^ (renderCode.charCodeAt(Math.floor(len / 2)) || 0);
+    hash = ((hash << 5) + hash) ^ (renderCode.charCodeAt(len - 1) || 0);
+    // Convert to unsigned 32-bit and combine with length
+    const finalHash = `${len}-${(hash >>> 0).toString(36)}`;
+    console.log('[CustomComponent] renderCodeHash computed:', { componentId: component.id, hash: finalHash, len });
+    return finalHash;
   }, [renderCode, component.id]);
+
+  // DEBUG: Track renderCode changes to help identify iframe refresh issues
+  const prevRenderCodeLenRef = useRef<number>(0);
+  useEffect(() => {
+    const len = renderCode?.length || 0;
+    if (prevRenderCodeLenRef.current > 0 && prevRenderCodeLenRef.current !== len) {
+      console.log('[CustomComponent] 🔄 RENDER CODE CHANGED:', {
+        componentId: component.id,
+        prevLen: prevRenderCodeLenRef.current,
+        newLen: len,
+        hash: renderCodeHash,
+        sample: renderCode?.substring(0, 100)
+      });
+    }
+    prevRenderCodeLenRef.current = len;
+  }, [renderCode, component.id, renderCodeHash]);
 
   // Stable component props - memoize to prevent unnecessary re-renders
   const componentProps = useMemo(() => ({
@@ -1786,6 +1810,13 @@ export const CustomComponentRenderer: React.FC<{
   // Memoize srcDoc with injected props and click handlers
   const stableIframeSrcDoc = useMemo(() => {
     if (!iframeSrcDoc) return null;
+
+    // DEBUG: Log when stableIframeSrcDoc is recomputed
+    console.log('[CustomComponent] 🔄 stableIframeSrcDoc recomputing:', {
+      componentId: component.id,
+      iframeSrcDocLen: iframeSrcDoc?.length || 0,
+      propsKeyLen: propsKey?.length || 0
+    });
 
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs

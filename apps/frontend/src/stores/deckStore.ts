@@ -12,6 +12,7 @@ import { mergeComponents } from '../utils/slideUtils';
 import { autosaveService } from '../services/autosaveService';
 import { warnIfNotGenerating } from '../utils/errorHandler';
 import { deckSyncService } from '../lib/deckSyncService';
+import { cleanupDeckCustomComponents } from '../utils/deckDiffUtils';
 
 // Create the store
 export const useDeckStore = create<DeckState>((set, get, store) => {
@@ -263,6 +264,32 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
       return result;
     },
     
+    // Cleanup duplicate CustomComponents
+    cleanupDuplicateCustomComponents: () => {
+      const currentDeck = get().deckData;
+      if (!currentDeck || !currentDeck.slides) {
+        console.warn('[cleanupDuplicateCustomComponents] No deck data available');
+        return { totalRemoved: 0, removedBySlide: {} };
+      }
+
+      const { deck: cleanedDeck, totalRemoved, removedBySlide } = cleanupDeckCustomComponents(currentDeck);
+
+      if (totalRemoved > 0) {
+        console.log('[cleanupDuplicateCustomComponents] Cleaned up', totalRemoved, 'duplicate CustomComponents');
+
+        // Update the deck with cleaned data
+        const versionInfo = get().generateNewVersion();
+        get().updateDeckData({
+          ...cleanedDeck,
+          ...versionInfo
+        }, { skipSync: false });
+      } else {
+        console.log('[cleanupDuplicateCustomComponents] No duplicate CustomComponents found');
+      }
+
+      return { totalRemoved, removedBySlide };
+    },
+
     // Reset store state to clean values
     resetStore: () => {
       // Stop autosave

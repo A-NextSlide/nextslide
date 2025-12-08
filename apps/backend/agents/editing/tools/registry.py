@@ -73,6 +73,10 @@ from agents.editing.tools.firecrawl import (
     FirecrawlFetchArgs,
     firecrawl_fetch,
 )
+from agents.editing.tools.view_slide import (
+    ViewSlideArgs,
+    view_slide,
+)
 from utils.deck import get_all_component_ids, get_all_slide_ids
 
 
@@ -120,6 +124,7 @@ def get_tools_and_call_map(
         ApplyThemeFontsArgs,
         LogoSearchArgs,
         FirecrawlFetchArgs,
+        ViewSlideArgs,  # Cross-slide awareness - view any slide's details
     ]
 
     # Create a wrapper for style_slide that passes attachments
@@ -168,6 +173,7 @@ def get_tools_and_call_map(
         "add_logos": add_logos,
         "logo_search": add_logos,  # alias accepted from LLM
         "firecrawl_fetch": firecrawl_fetch,
+        "view_slide": view_slide,  # Cross-slide awareness
     }
 
     return tools, call_map

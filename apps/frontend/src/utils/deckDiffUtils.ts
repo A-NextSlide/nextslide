@@ -257,7 +257,20 @@ function applyComponentDiff(component: ComponentInstance, diff: ComponentDiff): 
 
   // Apply prop changes if provided
   if (diff.props && Object.keys(diff.props).length > 0) {
+    const oldRender = component.props?.render;
+    const newRender = diff.props?.render;
     updatedComponent.props = deepMerge(component.props, diff.props);
+    console.log('[DeckDiff] 🔧 applyComponentDiff result', {
+      componentId: component.id,
+      componentType: component.type,
+      hadRenderBefore: !!oldRender,
+      hasRenderInDiff: !!newRender,
+      hasRenderAfter: !!updatedComponent.props?.render,
+      renderLengthBefore: oldRender?.length || 0,
+      renderLengthInDiff: newRender?.length || 0,
+      renderLengthAfter: updatedComponent.props?.render?.length || 0,
+      renderChanged: oldRender !== updatedComponent.props?.render
+    });
   }
 
   return updatedComponent;
@@ -681,6 +694,21 @@ export function applyDeckDiffPure(deck: CompleteDeckData, diff: DeckDiff): Compl
       updatedDeck = applySlideUpdates(updatedDeck, cleanedDiff);
     }
 
+    // AUTO-CLEANUP: Remove duplicate CustomComponents from slides
+    // This prevents the common issue where AI edits target one component but another duplicate is covering it
+    updatedDeck.slides = updatedDeck.slides.map(slide => {
+      const customComponents = slide.components?.filter(c => c.type === 'CustomComponent') || [];
+      if (customComponents.length > 1) {
+        console.log('[DeckDiff] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
+        const { slide: cleanedSlide, removedIds } = cleanupDuplicateCustomComponents(slide);
+        if (removedIds.length > 0) {
+          console.log('[DeckDiff] 🧹 AUTO-CLEANUP: Removed duplicate CustomComponents:', removedIds);
+          return cleanedSlide;
+        }
+      }
+      return slide;
+    });
+
     // Update lastModified timestamp if changes were made
     updatedDeck.lastModified = new Date().toISOString();
 
@@ -792,5 +820,90 @@ export function createSlideAddDiff(slide: SlideData): DeckDiff {
 export function createSlideRemoveDiff(slideId: string): DeckDiff {
   return {
     slides_to_remove: [slideId]
+  };
+}
+
+/**
+ * Cleans up duplicate CustomComponents on a slide, keeping the smallest/cleanest one
+ * @param slide The slide to clean up
+ * @returns A new slide with duplicate CustomComponents removed
+ */
+export function cleanupDuplicateCustomComponents(slide: SlideData): { slide: SlideData; removedIds: string[] } {
+  if (!slide.components || slide.components.length === 0) {
+    return { slide, removedIds: [] };
+  }
+
+  // Find all CustomComponent instances
+  const customComponents = slide.components.filter(c => c.type === 'CustomComponent');
+
+  if (customComponents.length <= 1) {
+    return { slide, removedIds: [] };
+  }
+
+  console.log('[DeckDiff] Found multiple CustomComponents on slide', {
+    slideId: slide.id,
+    count: customComponents.length,
+    components: customComponents.map(c => ({
+      id: c.id,
+      renderLength: c.props?.render?.length || 0,
+      position: { x: c.props?.x, y: c.props?.y }
+    }))
+  });
+
+  // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+  const sorted = [...customComponents].sort((a, b) => {
+    const aLen = a.props?.render?.length || 0;
+    const bLen = b.props?.render?.length || 0;
+    return aLen - bLen;
+  });
+
+  // Keep only the first (smallest) one
+  const keepId = sorted[0].id;
+  const removeIds = sorted.slice(1).map(c => c.id);
+
+  console.log('[DeckDiff] Cleaning up duplicate CustomComponents', {
+    slideId: slide.id,
+    keepId,
+    keepRenderLength: sorted[0].props?.render?.length || 0,
+    removeIds,
+    removedRenderLengths: sorted.slice(1).map(c => c.props?.render?.length || 0)
+  });
+
+  // Filter out the duplicates
+  const cleanedComponents = slide.components.filter(c => !removeIds.includes(c.id));
+
+  return {
+    slide: { ...slide, components: cleanedComponents },
+    removedIds: removeIds
+  };
+}
+
+/**
+ * Cleans up duplicate CustomComponents across all slides in a deck
+ * @param deck The deck to clean up
+ * @returns A new deck with duplicate CustomComponents removed
+ */
+export function cleanupDeckCustomComponents(deck: CompleteDeckData): { deck: CompleteDeckData; totalRemoved: number; removedBySlide: Record<string, string[]> } {
+  let totalRemoved = 0;
+  const removedBySlide: Record<string, string[]> = {};
+
+  const cleanedSlides = deck.slides.map(slide => {
+    const { slide: cleanedSlide, removedIds } = cleanupDuplicateCustomComponents(slide);
+    if (removedIds.length > 0) {
+      totalRemoved += removedIds.length;
+      removedBySlide[slide.id] = removedIds;
+    }
+    return cleanedSlide;
+  });
+
+  console.log('[DeckDiff] Deck cleanup complete', {
+    totalRemoved,
+    removedBySlide
+  });
+
+  return {
+    deck: { ...deck, slides: cleanedSlides, lastModified: new Date().toISOString() },
+    totalRemoved,
+    removedBySlide
   };
 }

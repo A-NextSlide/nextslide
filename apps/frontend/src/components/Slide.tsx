@@ -11,6 +11,7 @@ import TextBoundingBoxOverlay from '@/components/TextBoundingBoxOverlay';
 import MultiSelectionBoundingBox from '@/components/MultiSelectionBoundingBox';
 import { useEditorStore } from '@/stores/editorStore';
 import GroupEditIndicator from '@/components/GroupEditIndicator';
+import { useDeckStore } from '@/stores/deckStore';
 
 interface SlideProps {
   slide: SlideData;
@@ -110,11 +111,29 @@ const SlideContent: React.FC<SlideProps> = ({
   let updateComponent = (componentId: string, updates: Partial<ComponentInstance>) => {
     // Context not available, using fallback
   };
-  
+
   // Check if we're inside an ActiveSlideProvider by trying to use the context
   // If not, just use the slide data directly without throwing errors
   const activeSlideContext = React.useContext(ActiveSlideContext);
-  
+
+  // REAL-TIME FIX: Subscribe directly to store for non-edit mode updates
+  // This ensures AI agent edits show immediately without needing edit mode
+  const storeSlideComponents = useDeckStore(state => {
+    if (isThumbnail || isEditing) return null; // Skip for thumbnails and edit mode
+    const storeSlide = state.deckData.slides?.find(s => s.id === slide.id);
+    return storeSlide?.components || null;
+  });
+
+  // Debug: Log when storeSlideComponents changes (indicating real-time update)
+  useEffect(() => {
+    if (storeSlideComponents && !isThumbnail && !isEditing) {
+      console.log('[Slide] 📡 REAL-TIME: Store components updated for slide', slide.id, {
+        componentCount: storeSlideComponents.length,
+        customComponents: storeSlideComponents.filter((c: any) => c.type === 'CustomComponent').length
+      });
+    }
+  }, [storeSlideComponents, slide.id, isThumbnail, isEditing]);
+
   if (activeSlideContext) {
     // Context is available, use it
     activeComponents = activeSlideContext.activeComponents;
@@ -213,11 +232,23 @@ const SlideContent: React.FC<SlideProps> = ({
   // Ensure componentsToRender is always an array
   // Memoize to prevent unnecessary re-renders when references change but content is the same
   const componentsToRender = useMemo(() => {
-    const components = isActive && isEditing 
-      ? activeComponents 
-      : (slideData.components || []);
+    // REAL-TIME FIX: Priority order:
+    // 1. Edit mode: use activeComponents (from draft store)
+    // 2. View mode with store subscription: use storeSlideComponents (real-time)
+    // 3. Fallback: use slideData.components (from props)
+    let components: ComponentInstance[] | null = null;
+
+    if (isActive && isEditing) {
+      components = activeComponents;
+    } else if (storeSlideComponents) {
+      // Real-time store subscription for non-edit mode
+      components = storeSlideComponents;
+    } else {
+      components = slideData.components || [];
+    }
+
     return Array.isArray(components) ? components : [];
-  }, [isActive, isEditing, activeComponents, slideData.components]);
+  }, [isActive, isEditing, activeComponents, slideData.components, storeSlideComponents]);
   
   // PERFORMANCE: Skip loading components if explicitly told to
   // This helps with edit mode performance when there are many slides in a deck

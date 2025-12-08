@@ -139,7 +139,10 @@ export interface DeckState extends CoreDeckState, SlidesState, SyncState, Versio
   
   // Create a new deck
   createNewDeck: (newDeckData: DeckData) => Promise<string | null>;
-  
+
   // Reset the store to clean state
   resetStore: () => void;
+
+  // Cleanup duplicate CustomComponents across all slides
+  cleanupDuplicateCustomComponents: () => { totalRemoved: number; removedBySlide: Record<string, string[]> };
 }
