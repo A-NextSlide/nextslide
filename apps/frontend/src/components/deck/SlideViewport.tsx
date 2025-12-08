@@ -29,6 +29,7 @@ import ZoomIndicator from './ZoomIndicator';
 import CommentPinsOverlay from './CommentPinsOverlay';
 import { shareService } from '@/services/shareService';
 import { useDeckStore } from '@/stores/deckStore';
+import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { CommentsPanel } from './CommentsPanel';
 
 // Lazy load the waiting game
@@ -638,7 +639,21 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   };
 
   const handleSaveAndExit = () => {
-    setIsEditing(false);
+    // Request HTML update from any active custom component iframe before exiting
+    // This ensures layer reorders and other DOM changes are persisted
+    const { iframeRef, activeComponentId } = useCustomComponentEditStore.getState();
+    if (iframeRef?.current?.contentWindow && activeComponentId) {
+      iframeRef.current.contentWindow.postMessage({
+        target: 'ns-custom-component-edit',
+        type: 'get-html',
+      }, '*');
+      // Small delay to allow HTML update to process before exiting
+      setTimeout(() => {
+        setIsEditing(false);
+      }, 100);
+    } else {
+      setIsEditing(false);
+    }
   };
 
   // Deselect components and exit text editing when changing slides
@@ -814,6 +829,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
             {/* Controls bar - ABOVE the slide, left-aligned */}
             <div
               className="h-10 mb-2 flex items-center w-full"
+              style={{ position: 'relative', zIndex: 50000 }}
             >
               {/* Toolbar on left - only in edit mode */}
               {isEditing && currentSlide && (
@@ -914,7 +930,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
               <motion.div
                 className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
                 style={{
-                  zIndex: 50, // Higher z-index than slide
+                  zIndex: 999999, // Must be ABSOLUTELY highest - above everything
                   width: isMobileView ? '100%' : '280px',
                   height: isMobileView ? '50vh' : '74vh',
                   maxHeight: isMobileView ? '50vh' : '635px',
@@ -924,9 +940,18 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                   borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
                   borderTop: isMobileView ? '1px solid var(--border)' : 'none',
                   pointerEvents: 'auto', // Ensure clicks go through
-                  boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : 'none',
+                  boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : '-4px 0 20px rgba(0,0,0,0.1)',
+                  isolation: 'isolate', // Creates a new stacking context
                 }}
+                // Stop ALL event propagation in both capture and bubble phases
+                onClickCapture={(e) => e.stopPropagation()}
+                onMouseDownCapture={(e) => e.stopPropagation()}
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 data-tour="properties-panel"
+                data-settings-panel="true"
                 initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
                 animate={{ opacity: 1, x: 0, y: 0 }}
                 exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}

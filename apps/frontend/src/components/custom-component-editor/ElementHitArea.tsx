@@ -77,12 +77,9 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
       onClick={(e) => {
         e.stopPropagation();
         e.preventDefault();
-        // For text elements, single click starts editing immediately
-        if (element.type === 'text') {
-          onDoubleClick();
-        } else {
-          onSelect(e.clientX, e.clientY);
-        }
+        // Single click ALWAYS selects - for all element types including text
+        // This allows dragging text elements. Double-click enters edit mode for text.
+        onSelect(e.clientX, e.clientY);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();

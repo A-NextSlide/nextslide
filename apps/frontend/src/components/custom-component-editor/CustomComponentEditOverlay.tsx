@@ -146,13 +146,19 @@ export function generateEditModeScript(componentId: string): string {
         height: style.height,
         transform: style.transform,
         margin: style.margin,
+        padding: style.padding,
         fontSize: style.fontSize,
         fontFamily: style.fontFamily,
         fontWeight: style.fontWeight,
         color: style.color,
         textAlign: style.textAlign,
         lineHeight: style.lineHeight,
-        letterSpacing: style.letterSpacing
+        letterSpacing: style.letterSpacing,
+        backgroundColor: style.backgroundColor,
+        borderRadius: style.borderRadius,
+        borderColor: style.borderColor,
+        borderWidth: style.borderWidth,
+        borderStyle: style.borderStyle
       },
       textContent: el.textContent?.trim().slice(0, 500),
       htmlContent: el.innerHTML,
@@ -303,11 +309,18 @@ export function generateEditModeScript(componentId: string): string {
 
       // Remove ns- classes from elements
       clone.querySelectorAll('[class*="ns-"]').forEach(function(el) {
-        var classes = el.className.split(' ').filter(function(c) {
+        // Handle SVG elements where className is SVGAnimatedString, not string
+        var classStr = typeof el.className === 'string' ? el.className : (el.className?.baseVal || '');
+        var classes = classStr.split(' ').filter(function(c) {
           return !c.startsWith('ns-');
         });
-        el.className = classes.join(' ');
-        if (!el.className) el.removeAttribute('class');
+        var newClass = classes.join(' ');
+        if (typeof el.className === 'string') {
+          el.className = newClass;
+        } else if (el.className?.baseVal !== undefined) {
+          el.className.baseVal = newClass;
+        }
+        if (!newClass) el.removeAttribute('class');
       });
 
       // Remove data-ns-id attributes
@@ -437,6 +450,101 @@ export function generateEditModeScript(componentId: string): string {
         el.classList.remove('ns-selected');
       });
     }
+
+    // Delete element
+    if (e.data.type === 'delete-element') {
+      const el = document.querySelector(e.data.selector);
+      if (el) {
+        el.remove();
+        sendToParent('element-deleted', { elementId: e.data.elementId });
+        // Request HTML update after deletion
+        setTimeout(function() {
+          sendToParent('get-html-request', {});
+        }, 50);
+      }
+    }
+
+    // Inject font into iframe
+    if (e.data.type === 'inject-font') {
+      var fontName = e.data.fontName;
+      var fontSource = e.data.fontSource || 'google';
+      var fontUrl = e.data.fontUrl;
+      var fontFamily = e.data.fontFamily || fontName;
+      var fontId = e.data.fontId;
+
+      if (!fontName) return;
+
+      // Clean font name
+      var cleanFont = fontName.replace(/['"]/g, '').trim();
+      if (!cleanFont) return;
+
+      // Check if font already exists
+      var existingStyle = document.querySelector('style[data-font="' + cleanFont + '"]');
+      var existingLink = document.querySelector('link[data-font="' + cleanFont + '"]');
+      if (existingStyle || existingLink) {
+        console.log('[iframe] Font already loaded:', cleanFont);
+        return;
+      }
+
+      console.log('[iframe] Injecting font:', { fontName: cleanFont, source: fontSource, url: fontUrl, id: fontId });
+
+      if (fontSource === 'system') {
+        // System fonts don't need loading
+        console.log('[iframe] System font, no injection needed:', cleanFont);
+        return;
+      }
+
+      if (fontSource === 'local' && fontUrl) {
+        // Local font - inject @font-face rule
+        var style = document.createElement('style');
+        style.setAttribute('data-font', cleanFont);
+        style.textContent = '@font-face { font-family: "' + fontFamily + '"; src: url("' + fontUrl + '"); font-display: swap; }';
+        document.head.appendChild(style);
+        console.log('[iframe] Local font injected:', cleanFont);
+        return;
+      }
+
+      if (fontSource === 'fontshare') {
+        // Fontshare font
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.setAttribute('data-font', cleanFont);
+        link.href = 'https://api.fontshare.com/v2/css?f[]=' + encodeURIComponent(cleanFont.toLowerCase().replace(/\s+/g, '-')) + '@300,400,500,600,700&display=swap';
+        document.head.appendChild(link);
+        console.log('[iframe] Fontshare font injected:', cleanFont);
+        return;
+      }
+
+      if (fontSource === 'cdn' && fontUrl) {
+        // CDN font
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.setAttribute('data-font', cleanFont);
+        link.href = fontUrl;
+        document.head.appendChild(link);
+        console.log('[iframe] CDN font injected:', cleanFont);
+        return;
+      }
+
+      if (fontSource === 'designer' && fontId) {
+        // Designer font - load via API endpoint
+        var style = document.createElement('style');
+        style.setAttribute('data-font', cleanFont);
+        var apiUrl = '/api/fonts/' + fontId + '/file?style=regular';
+        style.textContent = '@font-face { font-family: "' + fontFamily + '"; src: url("' + apiUrl + '"); font-display: swap; }';
+        document.head.appendChild(style);
+        console.log('[iframe] Designer font injected:', cleanFont, 'via', apiUrl);
+        return;
+      }
+
+      // Default: Google Fonts
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.setAttribute('data-font', cleanFont);
+      link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(cleanFont) + ':wght@300;400;500;600;700;800&display=swap';
+      document.head.appendChild(link);
+      console.log('[iframe] Google font injected:', cleanFont);
+    }
   });
 
   // Initialize
@@ -558,6 +666,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [iframeBounds, setIframeBounds] = useState<DOMRect | null>(null);
 
   // Global store for sharing with settings panel
   const {
@@ -571,6 +680,11 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const internalIframeRef = useRef<HTMLIFrameElement>(null);
   const iframeRef = externalIframeRef || internalIframeRef;
   const coordinatorRef = useRef<CoordinateTranslator | null>(null);
+
+  // Track if this is the first element extraction (for auto-selecting closest element)
+  const isFirstExtractionRef = useRef(true);
+  // Track the last known cursor position for auto-selection
+  const lastCursorPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   // Selected element
   const selectedElement = useMemo(
@@ -587,6 +701,43 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         containerHeight
       );
     }
+  }, [iframeRef, containerWidth, containerHeight, scale]);
+
+  // Track mouse position for auto-selecting closest element on first entry
+  useEffect(() => {
+    if (!isEditing || !isSelected) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      lastCursorPositionRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    // Use capture phase to track position even before elements are extracted
+    document.addEventListener('mousemove', handleMouseMove, true);
+    return () => document.removeEventListener('mousemove', handleMouseMove, true);
+  }, [isEditing, isSelected]);
+
+  // Reset first extraction flag when entering edit mode
+  useEffect(() => {
+    if (isEditing && isSelected) {
+      isFirstExtractionRef.current = true;
+    }
+  }, [isEditing, isSelected]);
+
+  // Track iframe bounds for targeted deselection layer
+  useEffect(() => {
+    const updateBounds = () => {
+      if (iframeRef.current) {
+        setIframeBounds(iframeRef.current.getBoundingClientRect());
+      }
+    };
+    updateBounds();
+    // Update bounds on resize/scroll
+    window.addEventListener('resize', updateBounds);
+    window.addEventListener('scroll', updateBounds, true);
+    return () => {
+      window.removeEventListener('resize', updateBounds);
+      window.removeEventListener('scroll', updateBounds, true);
+    };
   }, [iframeRef, containerWidth, containerHeight, scale]);
 
   // Sync component ID and iframe ref to global store
@@ -638,9 +789,20 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }
 
       if (data.type === 'elements-extracted' && data.elements) {
-        // Update coordinator
+        // Update iframe bounds for hit area positioning
         if (iframeRef.current) {
-          coordinatorRef.current?.update(iframeRef.current);
+          setIframeBounds(iframeRef.current.getBoundingClientRect());
+
+          // Ensure coordinator exists and is up-to-date
+          if (!coordinatorRef.current && containerWidth > 0) {
+            coordinatorRef.current = createCoordinateTranslator(
+              iframeRef.current,
+              containerWidth,
+              containerHeight
+            );
+          } else if (coordinatorRef.current) {
+            coordinatorRef.current.update(iframeRef.current);
+          }
         }
 
         // Convert iframe bounds to parent viewport bounds
@@ -651,9 +813,49 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             : el.iframeBounds,
         }));
 
+        console.log('[CustomComponentEdit] Elements extracted:', elements.length, 'elements, coordinator:', !!coordinatorRef.current);
         setVirtualElements(elements);
         // Update global store for settings panel
         setDetectedElements(elements);
+
+        // On first extraction, auto-select the element closest to the cursor position
+        if (isFirstExtractionRef.current && elements.length > 0 && lastCursorPositionRef.current) {
+          isFirstExtractionRef.current = false;
+
+          const cursorX = lastCursorPositionRef.current.x;
+          const cursorY = lastCursorPositionRef.current.y;
+
+          // Find the element whose center is closest to the cursor
+          let closestElement: VirtualElement | null = null;
+          let closestDistance = Infinity;
+
+          for (const el of elements) {
+            // Calculate center of element
+            const centerX = el.bounds.x + el.bounds.width / 2;
+            const centerY = el.bounds.y + el.bounds.height / 2;
+
+            // Calculate distance from cursor to center
+            const distance = Math.sqrt(
+              Math.pow(cursorX - centerX, 2) + Math.pow(cursorY - centerY, 2)
+            );
+
+            // Prefer smaller elements when distances are similar (within 50px)
+            // This helps select nested elements over their containers
+            const area = el.bounds.width * el.bounds.height;
+            const adjustedDistance = distance + Math.log(area + 1) * 5;
+
+            if (adjustedDistance < closestDistance) {
+              closestDistance = adjustedDistance;
+              closestElement = el;
+            }
+          }
+
+          if (closestElement) {
+            console.log('[CustomComponentEdit] Auto-selecting closest element:', closestElement.id, closestElement.type);
+            setSelectedElementId(closestElement.id);
+            onElementSelect(toDetectedElement(closestElement), cursorX, cursorY);
+          }
+        }
       }
 
       // Legacy image-selected handler for ImageElementToolbar
@@ -715,6 +917,59 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
     }
   }, [srcDoc, isReady, isEditing, isSelected, requestElements]);
 
+  // Handle Delete key for inner element deletion (capture phase to intercept before global handler)
+  useEffect(() => {
+    if (!isEditing || !isSelected) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Delete/Backspace when an inner element is selected
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
+        // Don't handle if we're in text editing mode or in an input
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
+        if (editingTextId) return;
+
+        // Stop propagation to prevent global delete handler from deleting the whole component
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log('[CustomComponentEdit] Delete key pressed, deleting inner element:', selectedElementId);
+
+        // Delete the selected inner element
+        const element = virtualElements.find(el => el.id === selectedElementId);
+        if (element && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({
+            target: 'ns-custom-component-edit',
+            type: 'delete-element',
+            selector: element.selector,
+            elementId: element.id,
+          }, '*');
+
+          // Remove from local state
+          setVirtualElements(prev => prev.filter(e => e.id !== selectedElementId));
+          setSelectedElementId(null);
+          onElementSelect(null);
+
+          // Request HTML update for persistence
+          setTimeout(() => {
+            if (iframeRef.current?.contentWindow) {
+              iframeRef.current.contentWindow.postMessage({
+                target: 'ns-custom-component-edit',
+                type: 'get-html',
+              }, '*');
+            }
+          }, 100);
+        }
+      }
+    };
+
+    // Use capture phase to intercept before other handlers
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isEditing, isSelected, selectedElementId, editingTextId, virtualElements, iframeRef, onElementSelect]);
+
   // Handle element selection - single click selects (for drag), double-click edits (for text)
   const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
     console.log('[CustomComponentEdit] handleSelectElement called:', elementId, 'cursor:', cursorX, cursorY);
@@ -761,6 +1016,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement) => {
+    console.log('[CustomComponentEdit] handleDoubleClick called:', element.type, element.selector);
     if (element.type === 'text') {
       handleStartTextEdit(element);
     } else if (element.type === 'image') {
@@ -829,7 +1085,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }, '*');
     }
 
-    // Update virtual element bounds
+    // Update virtual element bounds immediately - use our calculated bounds, don't re-extract
     setVirtualElements(prev => prev.map(e =>
       e.id === selectedElement.id
         ? {
@@ -850,9 +1106,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }
     }, 50);
 
-    // Request fresh element data
-    setTimeout(requestElements, 150);
-  }, [selectedElement, requestElements, iframeRef]);
+    // NOTE: We intentionally do NOT call requestElements here
+    // We already have the correct bounds from our calculation
+    // Re-extracting from iframe can cause position jumping due to CSS box model differences
+  }, [selectedElement, iframeRef]);
 
   // Handle resize change
   const handleResizeChange = useCallback((newBounds: Bounds, styles: Record<string, string>) => {
@@ -883,7 +1140,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }, '*');
     }
 
-    // Update virtual element bounds
+    // Update virtual element bounds immediately - use our calculated bounds, don't re-extract
     setVirtualElements(prev => prev.map(e =>
       e.id === selectedElement.id
         ? {
@@ -904,9 +1161,9 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
       }
     }, 50);
 
-    // Request fresh element data
-    setTimeout(requestElements, 150);
-  }, [selectedElement, requestElements, iframeRef]);
+    // NOTE: We intentionally do NOT call requestElements here
+    // We already have the correct bounds from our calculation
+  }, [selectedElement, iframeRef]);
 
   // Handle text edit finish
   const handleTextEditFinish = useCallback((newHtml: string, newText: string) => {
@@ -954,21 +1211,43 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   return createPortal(
     <div className="fixed inset-0" style={{ zIndex: 100, pointerEvents: 'none' }}>
-      {/* Background click area for deselection - only when something is selected */}
-      {selectedElementId && (
+      {/* Targeted deselection layer - ONLY covers the iframe area, not the entire viewport.
+          This allows clicking on empty space in the slide to deselect, while clicks on
+          the settings panel and other UI elements pass through normally.
+          IMPORTANT: Don't render during text editing - the iframe needs to receive pointer events
+          for contentEditable text input to work. */}
+      {iframeBounds && !editingTextId && (
         <div
-          className="absolute inset-0"
-          style={{ pointerEvents: 'auto', cursor: 'default' }}
+          style={{
+            position: 'fixed',
+            left: iframeBounds.left,
+            top: iframeBounds.top,
+            width: iframeBounds.width,
+            height: iframeBounds.height,
+            pointerEvents: 'auto',
+            cursor: 'default',
+            zIndex: 1, // Lower than hit areas (10000+) so elements are clickable
+          }}
           onClick={(e) => {
             // Only deselect if clicking directly on background (not bubbled from children)
             if (e.target === e.currentTarget) {
-              handleDeselect();
+              setSelectedElementId(null);
+              setEditingTextId(null);
+              onElementSelect(null);
+              if (iframeRef.current?.contentWindow) {
+                iframeRef.current.contentWindow.postMessage({
+                  target: 'ns-custom-component-edit',
+                  type: 'deselect',
+                }, '*');
+              }
             }
           }}
         />
       )}
 
-      {/* Element hit areas for click detection - hidden when something is selected so drag/resize works */}
+      {/* Element hit areas for click detection
+          - Always visible EXCEPT the currently selected element
+          - This allows clicking to select different elements while dragging the selected one */}
       {virtualElements.map(element => (
         <ElementHitArea
           key={element.id}
@@ -977,7 +1256,7 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
           onDoubleClick={() => handleDoubleClick(element)}
           disabled={!!editingTextId}
-          hideForSelection={!!selectedElementId}
+          hideForSelection={element.id === selectedElementId}
         />
       ))}
 

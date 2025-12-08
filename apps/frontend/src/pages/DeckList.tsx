@@ -813,6 +813,7 @@ const DeckList: React.FC = () => {
 
   // Hero section drag and drop state and handlers
   const [isHeroDraggingOver, setIsHeroDraggingOver] = useState(false);
+  const [isHeroVoiceRecording, setIsHeroVoiceRecording] = useState(false);
   const heroDragCounterRef = useRef(0);
 
   const handleHeroDragEnter = (e: React.DragEvent) => {
@@ -2390,6 +2391,20 @@ const DeckList: React.FC = () => {
                                   </div>
                                 )}
 
+                                {/* Voice Recording Overlay */}
+                                {isHeroVoiceRecording && (
+                                  <div className="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 flex items-center justify-center rounded-2xl z-20 pointer-events-none">
+                                    <div className="flex items-center gap-1 px-4 py-2 bg-orange-500/10 rounded-full">
+                                      <span className="text-lg font-medium text-orange-600 dark:text-orange-400">
+                                        Listening
+                                      </span>
+                                      <span className="text-lg font-medium text-orange-600 dark:text-orange-400 animate-pulse">
+                                        ...
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+
                                 {/* Input Field with Typewriter Placeholder */}
                                 <div className="flex-1 relative min-h-[48px]">
                                   <Textarea
@@ -2493,6 +2508,8 @@ const DeckList: React.FC = () => {
                                         return newText;
                                       });
                                     }}
+                                    onRecordingStart={() => setIsHeroVoiceRecording(true)}
+                                    onRecordingEnd={() => setIsHeroVoiceRecording(false)}
                                     onError={(error) => {
                                       console.error('Voice recording error:', error);
                                     }}

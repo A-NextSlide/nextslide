@@ -163,9 +163,9 @@ const PropControl: React.FC<{
                 <Palette className="w-4 h-4 text-muted-foreground" />
               </div>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-4" side="left">
+            <PopoverContent className="w-[220px] p-4" side="left">
               <div className="space-y-3">
-                <HexColorPicker color={currentValue || propDef.default} onChange={onChange} />
+                <HexColorPicker color={currentValue || propDef.default} onChange={onChange} style={{ width: '100%' }} />
                 <div className="flex items-center gap-2">
                   <Input
                     value={currentValue || propDef.default}

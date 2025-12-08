@@ -36,8 +36,8 @@ interface RecentMedia {
 // Wrap with forwardRef, using the correct element type (HTMLButtonElement)
 export const MediaHub = forwardRef<HTMLButtonElement, MediaHubProps>(({ trigger, onSelect, defaultSearchTerm, autoSearch }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
-    // Start on search tab if we have a search term to show
-    const [activeTab, setActiveTab] = useState<MediaSource>(defaultSearchTerm ? 'search' : 'generate');
+    // Start on search tab by default (AI suggestions shown below in search results anyway)
+    const [activeTab, setActiveTab] = useState<MediaSource>('search');
     // Token to trigger auto-search once per popover open
     const [searchToken, setSearchToken] = useState<number>(0);
     const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked

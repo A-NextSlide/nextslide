@@ -48,7 +48,7 @@ const AdminAnalytics: React.FC = () => {
   if (loading) {
     return (
       <AdminLayoutV2>
-        <div className="flex items-center justify-center h-[60vh]">
+        <div className="w-full flex items-center justify-center h-[60vh]">
           <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
         </div>
       </AdminLayoutV2>
@@ -77,7 +77,7 @@ const AdminAnalytics: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="space-y-6">
+      <div className="w-full space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

@@ -740,6 +740,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [filePreviewUrls, setFilePreviewUrls] = useState<Map<string, string>>(new Map());
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragCounterRef = useRef<number>(0);
   const isUploadingRef = useRef<boolean>(false);
@@ -4339,6 +4340,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 </div>
               )}
 
+              {/* Voice recording overlay */}
+              {isVoiceRecording && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/95 dark:bg-zinc-900/95 rounded-xl z-10">
+                  <div className="flex items-center gap-1 px-4 py-2 bg-orange-500/10 rounded-full">
+                    <span className="text-lg font-medium text-orange-600 dark:text-orange-400">
+                      Listening
+                    </span>
+                    <span className="text-lg font-medium text-orange-600 dark:text-orange-400 animate-pulse">
+                      ...
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Selection bubbles */}
               {selectedElements.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-3">
@@ -4571,6 +4586,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           // Focus input after transcription
                           setTimeout(() => inputRef.current?.focus(), 100);
                         }}
+                        onRecordingStart={() => setIsVoiceRecording(true)}
+                        onRecordingEnd={() => setIsVoiceRecording(false)}
                         onError={(error) => {
                           console.error('Voice recording error:', error);
                         }}

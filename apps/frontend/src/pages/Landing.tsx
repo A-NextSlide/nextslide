@@ -28,7 +28,9 @@ const Landing: React.FC = () => {
   const [activeShowcaseIndex, setActiveShowcaseIndex] = useState(0);
   const [activeDeckSlideIndex, setActiveDeckSlideIndex] = useState(0);
   const [userInteracted, setUserInteracted] = useState(false);
+  const [showcaseFocused, setShowcaseFocused] = useState(false);
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
+  const showcaseRef = useRef<HTMLDivElement>(null);
 
   // Sticky CTA text
   const [ctaText, setCtaText] = useState('Get Started Free');
@@ -106,6 +108,50 @@ const Landing: React.FC = () => {
       autoScrollRef.current = null;
     }
   };
+
+  // Keyboard navigation for showcase section
+  useEffect(() => {
+    if (!showcaseFocused || isLoadingShowcase || showcaseDecks.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const currentDeck = showcaseDecks[activeShowcaseIndex];
+      if (!currentDeck) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          handleUserInteraction();
+          setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleUserInteraction();
+          setActiveDeckSlideIndex(prev => Math.min(currentDeck.slideCount - 1, prev + 1));
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          handleUserInteraction();
+          setActiveShowcaseIndex(prev => {
+            const newIndex = Math.max(0, prev - 1);
+            if (newIndex !== prev) setActiveDeckSlideIndex(0);
+            return newIndex;
+          });
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleUserInteraction();
+          setActiveShowcaseIndex(prev => {
+            const newIndex = Math.min(showcaseDecks.length - 1, prev + 1);
+            if (newIndex !== prev) setActiveDeckSlideIndex(0);
+            return newIndex;
+          });
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showcaseFocused, isLoadingShowcase, showcaseDecks, activeShowcaseIndex]);
 
   // Scroll-based CTA text updates
   useEffect(() => {
@@ -399,7 +445,13 @@ const Landing: React.FC = () => {
 
       {/* Live Showcase */}
       <section id="showcase" className="py-16 px-8 bg-gradient-to-b from-zinc-900 to-black">
-        <div className="max-w-[1400px] mx-auto">
+        <div
+          ref={showcaseRef}
+          tabIndex={0}
+          className="max-w-[1400px] mx-auto outline-none"
+          onFocus={() => setShowcaseFocused(true)}
+          onBlur={() => setShowcaseFocused(false)}
+        >
           <div className="text-center mb-10 animate-on-scroll opacity-0">
             <h2
               className="text-white mb-3"
@@ -415,6 +467,22 @@ const Landing: React.FC = () => {
               See it in action
             </h2>
             <p className="text-xl text-white/60">Real presentations built with NextSlide</p>
+            {/* Keyboard navigation hint */}
+            <div className={cn(
+              "mt-3 text-xs text-white/40 transition-opacity duration-200 flex items-center justify-center gap-4",
+              showcaseFocused ? "opacity-100" : "opacity-0"
+            )}>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">←</kbd>
+                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">→</kbd>
+                <span className="ml-1">slides</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↑</kbd>
+                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↓</kbd>
+                <span className="ml-1">decks</span>
+              </span>
+            </div>
           </div>
 
           <div className="animate-on-scroll opacity-0">
@@ -455,6 +523,7 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(idx);
+                              showcaseRef.current?.focus();
                             }}
                             className={cn(
                               "aspect-video rounded overflow-hidden relative cursor-pointer transition-all flex-shrink-0",
@@ -483,7 +552,10 @@ const Landing: React.FC = () => {
                   <div className="flex-1 p-4 flex items-center justify-center">
                     <div
                       className="aspect-video w-full max-h-full relative rounded-lg overflow-hidden bg-black group"
-                      onClick={handleUserInteraction}
+                      onClick={() => {
+                        handleUserInteraction();
+                        showcaseRef.current?.focus();
+                      }}
                     >
                       {isLoadingShowcase ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
@@ -507,6 +579,7 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(prev => Math.max(0, prev - 1));
+                              showcaseRef.current?.focus();
                             }}
                             disabled={activeDeckSlideIndex === 0}
                             className={cn(
@@ -523,6 +596,7 @@ const Landing: React.FC = () => {
                               e.stopPropagation();
                               handleUserInteraction();
                               setActiveDeckSlideIndex(prev => Math.min(activeDeck.slideCount - 1, prev + 1));
+                              showcaseRef.current?.focus();
                             }}
                             disabled={activeDeckSlideIndex === activeDeck.slideCount - 1}
                             className={cn(
@@ -557,7 +631,7 @@ const Landing: React.FC = () => {
                     showcaseDecks.map((deck, index) => (
                       <div
                         key={deck.uuid}
-                        onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); }}
+                        onClick={() => { handleUserInteraction(); setActiveShowcaseIndex(index); setActiveDeckSlideIndex(0); showcaseRef.current?.focus(); }}
                         className={cn(
                           "rounded-lg overflow-hidden relative cursor-pointer transition-all",
                           index === activeShowcaseIndex

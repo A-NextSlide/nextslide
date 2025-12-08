@@ -2,9 +2,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
-import { Users, FileStack, Server, BarChart3, Loader2, RefreshCw, ArrowRight, CheckCircle, AlertTriangle, Palette, TrendingUp, Layers, UserPlus, Activity } from 'lucide-react';
+import { Users, FileStack, Server, BarChart3, RefreshCw, Palette, TrendingUp, Layers, UserPlus, Activity, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { adminApi, ServiceHealthResponse, AnalyticsOverview } from '@/services/adminApi';
+import { StatCard, DashboardHeader, QuickActionCard } from '@/components/admin/AdminComponents';
+import LoadingDisplay from '@/components/common/LoadingDisplay';
+import { motion } from 'framer-motion';
 
 const AdminDashboardV2: React.FC = () => {
   const [metrics, setMetrics] = useState<AnalyticsOverview | null>(null);
@@ -14,9 +17,11 @@ const AdminDashboardV2: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      // Add a small artificial delay to show off the nice loading state if it's too fast
       const [metricsData, healthData] = await Promise.all([
         adminApi.getAnalyticsOverview(),
         adminApi.getServicesHealth().catch(() => null),
+        new Promise(resolve => setTimeout(resolve, 800))
       ]);
       setMetrics(metricsData);
       setServiceHealth(healthData);
@@ -38,179 +43,165 @@ const AdminDashboardV2: React.FC = () => {
   if (loading) {
     return (
       <AdminLayoutV2>
-        <div className="flex items-center justify-center h-[60vh]">
-          <Loader2 className="h-5 w-5 animate-spin text-[#666]" />
-        </div>
+        <LoadingDisplay
+          message="LOADING DASHBOARD"
+          className="h-[calc(100vh-8rem)] bg-transparent dark:bg-transparent"
+        />
       </AdminLayoutV2>
     );
   }
 
   return (
     <AdminLayoutV2>
-      <div className="w-full space-y-6">
+      <div className="w-full max-w-[1600px] mx-auto space-y-8 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Dashboard</h1>
-          <Button variant="outline" size="sm" onClick={fetchData} className="h-8 text-xs">
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Refresh
+        <DashboardHeader
+          title="Admin Dashboard"
+          description="Overview of system performance, user growth, and content generation."
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            className="h-9 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Data
           </Button>
+        </DashboardHeader>
+
+        {/* System Health Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className={cn(
+            "w-full flex items-center justify-between p-6 rounded-2xl border backdrop-blur-sm",
+            hasIssues
+              ? "bg-amber-50/50 dark:bg-amber-950/10 border-amber-200/50 dark:border-amber-900/30"
+              : "bg-emerald-50/50 dark:bg-emerald-950/10 border-emerald-200/50 dark:border-emerald-900/30"
+          )}
+        >
+          <div className="flex items-center gap-4">
+            <div className={cn(
+              "p-3 rounded-full",
+              hasIssues ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30"
+            )}>
+              {hasIssues ? <AlertTriangle className="h-6 w-6" /> : <ShieldCheck className="h-6 w-6" />}
+            </div>
+            <div>
+              <h3 className={cn("font-semibold text-lg", hasIssues ? "text-amber-900 dark:text-amber-400" : "text-emerald-900 dark:text-emerald-400")}>
+                {hasIssues ? 'System Attention Needed' : 'All Systems Operational'}
+              </h3>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {operationalCount}/{totalServices} services running smoothly
+              </p>
+            </div>
+          </div>
+          <Link to="/admin/services">
+            <Button variant="ghost" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
+              View Status <Zap className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </motion.div>
+
+        {/* Key Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard
+            title="Total Users"
+            value={metrics?.users.total.toLocaleString() || 0}
+            subValue={`${metrics?.users.growthRate || 0}% growth this week`}
+            icon={Users}
+            trend="up"
+            trendValue={`+${metrics?.users.newThisWeek || 0}`}
+            delay={0.1}
+          />
+          <StatCard
+            title="Active Users (7d)"
+            value={metrics?.users.active7d || 0}
+            subValue={`${metrics?.users.active24h || 0} active today`}
+            icon={Activity}
+            trend="neutral"
+            trendValue="Stable"
+            delay={0.2}
+          />
+          <StatCard
+            title="Total Decks"
+            value={metrics?.decks.total.toLocaleString() || 0}
+            subValue={`${metrics?.decks.createdThisWeek || 0} created this week`}
+            icon={FileStack}
+            trend="up"
+            trendValue="Growing"
+            delay={0.3}
+          />
+          <StatCard
+            title="Total Slides"
+            value={metrics?.decks.totalSlides?.toLocaleString() || 0}
+            subValue={`~${metrics?.decks.averageSlidesPerDeck || 0} per deck`}
+            icon={Layers}
+            delay={0.4}
+          />
         </div>
 
-        {/* Status */}
-        <div className={cn(
-          "w-full flex items-center justify-between p-4 rounded-lg border",
-          hasIssues
-            ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
-            : "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
-        )}>
-          <div className="flex items-center gap-3">
-            {hasIssues ? (
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-            ) : (
-              <CheckCircle className="h-4 w-4 text-emerald-600" />
-            )}
-            <span className="text-sm font-medium">
-              {hasIssues ? 'Some services need attention' : 'All systems operational'}
-            </span>
-            <span className="text-xs text-[#666] dark:text-[#888]">
-              {operationalCount}/{totalServices} services
-            </span>
-          </div>
-          <Link to="/admin/services" className="text-xs text-blue-600 hover:underline">
-            View status
-          </Link>
+        {/* Secondary Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <StatCard
+            title="New Users Today"
+            value={metrics?.users.newToday || 0}
+            icon={UserPlus}
+            className="bg-zinc-50 dark:bg-zinc-900/30"
+            delay={0.5}
+          />
+          <StatCard
+            title="Avg Decks / User"
+            value={metrics?.decks.averagePerUser || 0}
+            icon={TrendingUp}
+            className="bg-zinc-50 dark:bg-zinc-900/30"
+            delay={0.6}
+          />
+          <StatCard
+            title="Service Health"
+            value={`${Math.round((operationalCount / totalServices) * 100)}%`}
+            subValue="Uptime"
+            icon={Server}
+            className="bg-zinc-50 dark:bg-zinc-900/30"
+            delay={0.7}
+          />
         </div>
 
-        {/* Key Metrics - Row 1 */}
-        <div className="w-full grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <Users className="h-4 w-4" />
-              <span className="text-xs">Total Users</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.users.total.toLocaleString() || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              {metrics?.users.growthRate || 0}% growth this week
-            </p>
+        {/* Quick Actions */}
+        <div>
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-white mb-4 px-1">Quick Access</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <QuickActionCard
+              title="Analytics"
+              description="Deep dive into user behavior and system usage stats."
+              icon={BarChart3}
+              to="/admin/analytics"
+              delay={0.8}
+            />
+            <QuickActionCard
+              title="User Management"
+              description="View, edit, and manage user accounts and permissions."
+              icon={Users}
+              to="/admin/users"
+              delay={0.9}
+            />
+            <QuickActionCard
+              title="Deck Explorer"
+              description="Browse all generated decks and their content."
+              icon={FileStack}
+              to="/admin/decks"
+              delay={1.0}
+            />
+            <QuickActionCard
+              title="Brand Styles"
+              description="Manage brand themes, colors, and assets."
+              icon={Palette}
+              to="/admin/brands"
+              delay={1.1}
+            />
           </div>
-
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <Activity className="h-4 w-4" />
-              <span className="text-xs">Active Users (7d)</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.users.active7d || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              {metrics?.users.active24h || 0} active today
-            </p>
-          </div>
-
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <FileStack className="h-4 w-4" />
-              <span className="text-xs">Total Decks</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.decks.total.toLocaleString() || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              {metrics?.decks.createdThisWeek || 0} created this week
-            </p>
-          </div>
-
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <Layers className="h-4 w-4" />
-              <span className="text-xs">Total Slides</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.decks.totalSlides?.toLocaleString() || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              ~{metrics?.decks.averageSlidesPerDeck || 0} per deck
-            </p>
-          </div>
-        </div>
-
-        {/* Key Metrics - Row 2 */}
-        <div className="w-full grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <UserPlus className="h-4 w-4" />
-              <span className="text-xs">New Users</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.users.newThisWeek || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              {metrics?.users.newToday || 0} today
-            </p>
-          </div>
-
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <TrendingUp className="h-4 w-4" />
-              <span className="text-xs">Decks/User</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{metrics?.decks.averagePerUser || 0}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">
-              average per user
-            </p>
-          </div>
-
-          <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <Server className="h-4 w-4" />
-              <span className="text-xs">Services</span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums">{operationalCount}/{totalServices}</p>
-            <p className="text-xs text-[#666] dark:text-[#888] mt-1">operational</p>
-          </div>
-
-          <Link to="/admin/analytics" className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-4 hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-2 text-[#666] dark:text-[#888] mb-2">
-              <BarChart3 className="h-4 w-4" />
-              <span className="text-xs">Analytics</span>
-            </div>
-            <p className="text-sm text-[#666] dark:text-[#888]">View details</p>
-            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-              Open <ArrowRight className="h-3 w-3" />
-            </p>
-          </Link>
-        </div>
-
-        {/* Quick Links */}
-        <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Link to="/admin/analytics" className="flex items-center justify-between p-4 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="h-4 w-4 text-[#666]" />
-              <span className="text-sm font-medium">Analytics</span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-[#999]" />
-          </Link>
-          <Link to="/admin/users" className="flex items-center justify-between p-4 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-3">
-              <Users className="h-4 w-4 text-[#666]" />
-              <span className="text-sm font-medium">Users</span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-[#999]" />
-          </Link>
-          <Link to="/admin/decks" className="flex items-center justify-between p-4 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-3">
-              <FileStack className="h-4 w-4 text-[#666]" />
-              <span className="text-sm font-medium">Decks</span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-[#999]" />
-          </Link>
-          <Link to="/admin/brands" className="flex items-center justify-between p-4 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-3">
-              <Palette className="h-4 w-4 text-[#666]" />
-              <span className="text-sm font-medium">Brands</span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-[#999]" />
-          </Link>
-          <Link to="/admin/services" className="flex items-center justify-between p-4 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg hover:border-[#ccc] dark:hover:border-[#555] transition-colors">
-            <div className="flex items-center gap-3">
-              <Server className="h-4 w-4 text-[#666]" />
-              <span className="text-sm font-medium">Services</span>
-            </div>
-            <ArrowRight className="h-4 w-4 text-[#999]" />
-          </Link>
         </div>
       </div>
     </AdminLayoutV2>

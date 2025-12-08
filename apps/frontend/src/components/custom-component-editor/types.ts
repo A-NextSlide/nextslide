@@ -65,6 +65,7 @@ export interface VirtualElement {
     height: string;
     transform: string;
     margin: string;
+    padding?: string;
     fontSize?: string;
     fontFamily?: string;
     fontWeight?: string;
@@ -72,6 +73,11 @@ export interface VirtualElement {
     textAlign?: string;
     lineHeight?: string;
     letterSpacing?: string;
+    backgroundColor?: string;
+    borderRadius?: string;
+    borderColor?: string;
+    borderWidth?: string;
+    borderStyle?: string;
   };
 
   /** Text content (for text elements) */

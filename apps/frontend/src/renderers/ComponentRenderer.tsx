@@ -583,6 +583,7 @@ export const ComponentRenderer: React.FC<Props> = ({
           isDraggable={effectiveDraggable}
           isTextEditing={isTextEditing}
           isMultiSelected={isInMultiSelection} // Pass multi-selection state
+          hideSelectionUI={isElementEditMode} // Hide outer selection for CustomComponent element editing
         >
           <div style={contentContainerStyle}>
             {renderSpecificComponent()}

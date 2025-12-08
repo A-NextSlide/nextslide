@@ -796,6 +796,13 @@ export const FontLoadingService = {
     }
 
     // Final stats available via getLoadingStats()
+  },
+
+  /**
+   * Get font definition by name (for passing to iframe injection)
+   */
+  getFontDefinition: (fontName: string): FontDefinition | null => {
+    return findFontDefinition(fontName);
   }
 };
 

@@ -80,7 +80,8 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
     width: bounds.width,
     height: bounds.height,
     pointerEvents: 'none',
-    zIndex: 15000, // Above element hit areas (10000 for text)
+    // Must be above ALL hit areas. Hit area z-index can be up to 35000 (10000 + 5000 typeBonus + 20000 areaFactor)
+    zIndex: 40000,
   };
 
   // Apply transforms based on drag or resize state
@@ -122,11 +123,13 @@ export const ElementSelectionOverlay: React.FC<ElementSelectionOverlayProps> = (
             pointerEvents: 'auto',
           }}
           onMouseDown={(e) => {
+            console.log('[ElementSelectionOverlay] Drag area mouseDown');
             e.stopPropagation();
             e.preventDefault();
             onDragStart(e);
           }}
           onDoubleClick={(e) => {
+            console.log('[ElementSelectionOverlay] Drag area doubleClick');
             e.stopPropagation();
             e.preventDefault();
             onDoubleClick?.();

@@ -162,75 +162,34 @@ export function useElementResize({
     };
   }, [coordinator]);
 
-  // Calculate delta for parent coordinate space (for CSS variables)
+  // Calculate delta for parent coordinate space (for overlay visual)
+  // IMPORTANT: This must produce visual deltas that match the scaled iframe element
   const calculateParentDelta = useCallback((
     startBounds: Bounds,
     deltaX: number,
     deltaY: number,
-    direction: ResizeDirection
+    direction: ResizeDirection,
+    iframeNewBounds: Bounds,
+    iframeStartBounds: Bounds
   ): { width: number; height: number; x: number; y: number } => {
-    // No coordinate conversion needed - delta in screen space is delta in parent space
-    let dWidth = 0;
-    let dHeight = 0;
-    let dX = 0;
-    let dY = 0;
+    // Calculate the visual change based on the iframe bounds change, scaled to parent space
+    // This ensures overlay matches the actual component visual exactly
+    const scale = coordinator.getScale();
 
-    switch (direction) {
-      case 'nw':
-        dWidth = -deltaX;
-        dHeight = -deltaY;
-        dX = deltaX;
-        dY = deltaY;
-        break;
-      case 'ne':
-        dWidth = deltaX;
-        dHeight = -deltaY;
-        dY = deltaY;
-        break;
-      case 'se':
-        dWidth = deltaX;
-        dHeight = deltaY;
-        break;
-      case 'sw':
-        dWidth = -deltaX;
-        dHeight = deltaY;
-        dX = deltaX;
-        break;
-      case 'n':
-        dHeight = -deltaY;
-        dY = deltaY;
-        break;
-      case 'e':
-        dWidth = deltaX;
-        break;
-      case 's':
-        dHeight = deltaY;
-        break;
-      case 'w':
-        dWidth = -deltaX;
-        dX = deltaX;
-        break;
-    }
+    // Calculate the delta in iframe space, then convert to parent space
+    const iframeDeltaWidth = iframeNewBounds.width - iframeStartBounds.width;
+    const iframeDeltaHeight = iframeNewBounds.height - iframeStartBounds.height;
+    const iframeDeltaX = iframeNewBounds.x - iframeStartBounds.x;
+    const iframeDeltaY = iframeNewBounds.y - iframeStartBounds.y;
 
-    // Ensure minimum size
-    const minWidth = 20;
-    const minHeight = 20;
-    const newWidth = startBounds.width + dWidth;
-    const newHeight = startBounds.height + dHeight;
-
-    if (newWidth < minWidth) {
-      const diff = minWidth - newWidth;
-      dWidth += diff;
-      if (direction.includes('w')) dX -= diff;
-    }
-    if (newHeight < minHeight) {
-      const diff = minHeight - newHeight;
-      dHeight += diff;
-      if (direction.includes('n')) dY -= diff;
-    }
+    // Convert to parent space (multiply by scale since iframe is rendered scaled)
+    const dWidth = iframeDeltaWidth * scale;
+    const dHeight = iframeDeltaHeight * scale;
+    const dX = iframeDeltaX * scale;
+    const dY = iframeDeltaY * scale;
 
     return { width: dWidth, height: dHeight, x: dX, y: dY };
-  }, []);
+  }, [coordinator]);
 
   // Mouse move handler
   useEffect(() => {
@@ -250,16 +209,6 @@ export function useElementResize({
         const deltaX = e.clientX - resizeStartRef.current.mouseX;
         const deltaY = e.clientY - resizeStartRef.current.mouseY;
 
-        // Calculate parent delta for overlay visual feedback
-        const parentDelta = calculateParentDelta(
-          resizeStartRef.current.parentBounds,
-          deltaX,
-          deltaY,
-          resizeStartRef.current.direction
-        );
-
-        setResizeDelta(parentDelta);
-
         // Calculate iframe bounds for actual element update
         const newBounds = calculateNewBounds(
           resizeStartRef.current.iframeBounds,
@@ -267,6 +216,19 @@ export function useElementResize({
           deltaY,
           resizeStartRef.current.direction
         );
+
+        // Calculate parent delta for overlay visual feedback
+        // Use the iframe bounds delta scaled to parent space for exact visual match
+        const parentDelta = calculateParentDelta(
+          resizeStartRef.current.parentBounds,
+          deltaX,
+          deltaY,
+          resizeStartRef.current.direction,
+          newBounds,
+          resizeStartRef.current.iframeBounds
+        );
+
+        setResizeDelta(parentDelta);
 
         // Generate style mutation and send to iframe
         const styles = generateStyleMutation(element, newBounds);

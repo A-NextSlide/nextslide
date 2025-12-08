@@ -21,6 +21,7 @@ interface SelectionBoundingBoxProps {
   isResizable?: boolean; // Added prop
   isRotatable?: boolean; // Added prop
   isMultiSelected?: boolean; // Added for multi-selection state
+  hideSelectionUI?: boolean; // Hide border and handles (for CustomComponent element editing)
 }
 
 /**
@@ -37,7 +38,8 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
   isDraggable = true, // Default to true
   isResizable = true, // Default to true
   isRotatable = true,  // Default to true
-  isMultiSelected = false // Default to false
+  isMultiSelected = false, // Default to false
+  hideSelectionUI = false, // Default to false - when true, hides border and handles
 }) => {
   // Reference to the container element for rotation and resize calculations
   const containerRef = useRef<HTMLDivElement>(null);
@@ -272,9 +274,9 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       {/* Original children content always rendered first */}
       {children}
       
-      {/* Selection UI */}
-      {/* Default selection border (hidden during text editing) */}
-      {isSelected && !isTextEditing && (
+      {/* Selection UI - hidden when hideSelectionUI is true (e.g., CustomComponent in element edit mode) */}
+      {/* Default selection border (hidden during text editing or when hideSelectionUI) */}
+      {isSelected && !isTextEditing && !hideSelectionUI && (
         <div
           className={`absolute inset-0 border rounded-[1px] ${isMultiSelected ? 'border-[#FF007B] border-dashed' : 'border-[#FF007B]'}`}
           style={{
@@ -322,8 +324,8 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
         />
       )} */}
       
-      {/* Rotation handle - only shown if rotatable and not multi-selected */}
-      {isSelected && isRotatable && !isMultiSelected && !isTextEditing && (
+      {/* Rotation handle - only shown if rotatable, not multi-selected, and not hiding selection UI */}
+      {isSelected && isRotatable && !isMultiSelected && !isTextEditing && !hideSelectionUI && (
         <>
           {/* First render the line extending up from the border */}
           <div 
@@ -353,8 +355,8 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
         </>
       )}
       
-      {/* Resize handles - only shown if resizable and not multi-selected */}
-      {isSelected && onResize && isResizable && !isMultiSelected && !isTextEditing && (
+      {/* Resize handles - only shown if resizable, not multi-selected, and not hiding selection UI */}
+      {isSelected && onResize && isResizable && !isMultiSelected && !isTextEditing && !hideSelectionUI && (
         <>
           {/* Corner handles (NW, NE, SE, SW) */}
           <div 

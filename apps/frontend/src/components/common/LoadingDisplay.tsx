@@ -1,12 +1,13 @@
 import React from 'react';
+import { cn } from '@/lib/utils';
 
 interface LoadingDisplayProps {
   message?: string;
 }
 
-const LoadingDisplay: React.FC<LoadingDisplayProps> = ({ message }) => {
+const LoadingDisplay: React.FC<LoadingDisplayProps & { className?: string }> = ({ message, className }) => {
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-white dark:bg-black relative overflow-hidden">
+    <div className={cn("flex flex-col items-center justify-center h-screen w-full bg-white dark:bg-black relative overflow-hidden", className)}>
       <div className="flex flex-col items-center gap-8">
         {/* Simple spinner */}
         <div className="w-10 h-10 border-4 border-zinc-200 dark:border-zinc-800 border-t-[#FF4301] rounded-full animate-spin" />

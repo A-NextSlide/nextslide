@@ -174,18 +174,23 @@ export function useElementDrag({
       // Generate final style mutation
       const styles = generateStyleMutation(element, finalIframeBounds);
 
-      // Cleanup
+      // Cleanup body styles
       document.body.style.userSelect = '';
       document.body.style.webkitUserSelect = '';
       document.body.classList.remove('dragging-component');
 
-      if (overlayRef.current) {
-        overlayRef.current.style.removeProperty('--drag-x');
-        overlayRef.current.style.removeProperty('--drag-y');
-      }
-
-      // Notify parent of final position
+      // IMPORTANT: Notify parent FIRST so bounds are updated before CSS variables are removed
+      // This prevents the "snap back" visual glitch where overlay briefly shows old position
       onDragEnd(finalIframeBounds, styles);
+
+      // Now remove CSS variables AFTER bounds update is applied
+      // Use requestAnimationFrame to ensure React has rendered the new bounds
+      requestAnimationFrame(() => {
+        if (overlayRef.current) {
+          overlayRef.current.style.removeProperty('--drag-x');
+          overlayRef.current.style.removeProperty('--drag-y');
+        }
+      });
 
       setIsDragging(false);
       setIsPotentialDrag(false);

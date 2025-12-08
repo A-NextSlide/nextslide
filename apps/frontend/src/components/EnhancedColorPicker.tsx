@@ -112,111 +112,101 @@ const EnhancedColorPicker: React.FC<EnhancedColorPickerProps> = ({
           <TabsTrigger value="rgb" className="text-xs h-6 py-0">RGB</TabsTrigger>
         </TabsList>
         
-        <div className="relative">
-          <TabsContent value="picker" className="space-y-3 absolute inset-0 data-[state=inactive]:hidden">
-            <HexAlphaColorPicker
-              color={color}
-              onChange={handleColorChange}
-              onMouseUp={onChangeComplete}
-              onTouchEnd={onChangeComplete}
+        <TabsContent value="picker" className="space-y-3 mt-0">
+          <HexAlphaColorPicker
+            color={color}
+            onChange={handleColorChange}
+            onMouseUp={onChangeComplete}
+            onTouchEnd={onChangeComplete}
+            className="!w-full !h-[200px]"
+          />
+        </TabsContent>
+
+        <TabsContent value="hex" className="space-y-3 mt-0">
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Hex Color</Label>
+            <Input
+              type="text"
+              value={hexValue}
+              onChange={(e) => handleHexChange(e.target.value)}
+              onBlur={onChangeComplete}
+              placeholder="#000000ff"
+              className="text-xs font-mono"
             />
-          </TabsContent>
-          
-          <TabsContent value="hex" className="space-y-3 absolute inset-0 data-[state=inactive]:hidden">
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Hex Color</Label>
-              <Input
-                type="text"
-                value={hexValue}
-                onChange={(e) => handleHexChange(e.target.value)}
-                onBlur={onChangeComplete}
-                placeholder="#000000ff"
-                className="text-xs font-mono"
-              />
-              <div 
-                className="w-full h-12 rounded border"
-                style={{ backgroundColor: color }}
-              />
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="rgb" className="space-y-3 absolute inset-0 data-[state=inactive]:hidden">
-            <div className="space-y-3">
-              <Label className="text-xs font-medium">RGB{showAlpha ? 'A' : ''} Values</Label>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Red</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="255"
-                    value={rgbaValue.r}
-                    onChange={(e) => handleRgbaChange('r', e.target.value)}
-                    onBlur={onChangeComplete}
-                    className="text-xs"
-                  />
-                </div>
-                
-                <div>
-                  <Label className="text-xs text-muted-foreground">Green</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="255"
-                    value={rgbaValue.g}
-                    onChange={(e) => handleRgbaChange('g', e.target.value)}
-                    onBlur={onChangeComplete}
-                    className="text-xs"
-                  />
-                </div>
-                
-                <div>
-                  <Label className="text-xs text-muted-foreground">Blue</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="255"
-                    value={rgbaValue.b}
-                    onChange={(e) => handleRgbaChange('b', e.target.value)}
-                    onBlur={onChangeComplete}
-                    className="text-xs"
-                  />
-                </div>
-                
-                {showAlpha && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Alpha</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={rgbaValue.a.toFixed(2)}
-                      onChange={(e) => handleRgbaChange('a', e.target.value)}
-                      onBlur={onChangeComplete}
-                      className="text-xs"
-                    />
-                  </div>
-                )}
-              </div>
-              
-              <div 
-                className="w-full h-12 rounded border"
-                style={{ backgroundColor: color }}
-              />
-            </div>
-          </TabsContent>
-          
-          {/* Invisible spacer to maintain consistent height */}
-          <div className="invisible">
-            <div className="space-y-2">
-              <div className="h-[160px]"></div>
-              <div className="h-4"></div>
-              <div className="h-8"></div>
-            </div>
+            <div
+              className="w-full h-12 rounded border"
+              style={{ backgroundColor: color }}
+            />
           </div>
-        </div>
+        </TabsContent>
+
+        <TabsContent value="rgb" className="space-y-3 mt-0">
+          <div className="space-y-3">
+            <Label className="text-xs font-medium">RGB{showAlpha ? 'A' : ''} Values</Label>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs text-muted-foreground">Red</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={rgbaValue.r}
+                  onChange={(e) => handleRgbaChange('r', e.target.value)}
+                  onBlur={onChangeComplete}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground">Green</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={rgbaValue.g}
+                  onChange={(e) => handleRgbaChange('g', e.target.value)}
+                  onBlur={onChangeComplete}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground">Blue</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={rgbaValue.b}
+                  onChange={(e) => handleRgbaChange('b', e.target.value)}
+                  onBlur={onChangeComplete}
+                  className="text-xs"
+                />
+              </div>
+
+              {showAlpha && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Alpha</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={rgbaValue.a.toFixed(2)}
+                    onChange={(e) => handleRgbaChange('a', e.target.value)}
+                    onBlur={onChangeComplete}
+                    className="text-xs"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div
+              className="w-full h-12 rounded border"
+              style={{ backgroundColor: color }}
+            />
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );

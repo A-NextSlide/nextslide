@@ -45,7 +45,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a]">
+    <div className="min-h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col">
       {/* Top Bar */}
       <header className="h-12 bg-white dark:bg-[#111] border-b border-[#eaeaea] dark:border-[#333] fixed top-0 left-0 right-0 z-40">
         <div className="h-full flex items-center justify-between px-4">
@@ -137,8 +137,8 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main className="pt-12 min-h-screen overflow-auto">
-        <div key={location.pathname} className="w-full px-6 py-6">
+      <main className="pt-12 flex-1 w-full">
+        <div className="w-full h-full px-6 py-6">
           {children}
         </div>
       </main>
