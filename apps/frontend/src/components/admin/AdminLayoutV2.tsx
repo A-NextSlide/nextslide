@@ -137,8 +137,8 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main className="pt-12 flex-1 w-full">
-        <div className="w-full h-full px-6 py-6">
+      <main className="pt-12 flex-1 w-full h-[calc(100vh-3rem)] overflow-auto">
+        <div className="w-full h-full px-4 py-4">
           {children}
         </div>
       </main>

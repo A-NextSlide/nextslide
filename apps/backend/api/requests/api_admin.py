@@ -1063,36 +1063,36 @@ async def get_platform_overview(
             total_users = supabase.table("users").select("id", count="exact").execute()
             metrics_data["users"]["total"] = total_users.count or 0
             
-            # Only try active user queries if last_sign_in_at exists
+            # Try active user queries - use last_sign_in_at if available, fallback to updated_at
             if metrics_data["users"]["total"] > 0:
                 try:
                     # Check if any user has last_sign_in_at
                     test_user = supabase.table("users").select("last_sign_in_at").not_.is_("last_sign_in_at", "null").limit(1).execute()
-                    
-                    if test_user.data:
-                        # last_sign_in_at exists, we can query it
-                        active_24h = supabase.table("users").select("id", count="exact").gte(
-                            "last_sign_in_at",
-                            (datetime.utcnow() - timedelta(hours=24)).isoformat()
-                        ).execute()
-                        metrics_data["users"]["active24h"] = active_24h.count or 0
-                        
-                        active_7d = supabase.table("users").select("id", count="exact").gte(
-                            "last_sign_in_at",
-                            (datetime.utcnow() - timedelta(days=7)).isoformat()
-                        ).execute()
-                        metrics_data["users"]["active7d"] = active_7d.count or 0
-                        
-                        active_30d = supabase.table("users").select("id", count="exact").gte(
-                            "last_sign_in_at",
-                            (datetime.utcnow() - timedelta(days=30)).isoformat()
-                        ).execute()
-                        metrics_data["users"]["active30d"] = active_30d.count or 0
-                        
-                        metrics_data["activity"]["loginsToday"] = metrics_data["users"]["active24h"]
-                except:
-                    # If last_sign_in_at queries fail, continue with defaults
-                    pass
+
+                    # Determine which field to use for activity tracking
+                    activity_field = "last_sign_in_at" if test_user.data else "updated_at"
+
+                    active_24h = supabase.table("users").select("id", count="exact").gte(
+                        activity_field,
+                        (datetime.utcnow() - timedelta(hours=24)).isoformat()
+                    ).execute()
+                    metrics_data["users"]["active24h"] = active_24h.count or 0
+
+                    active_7d = supabase.table("users").select("id", count="exact").gte(
+                        activity_field,
+                        (datetime.utcnow() - timedelta(days=7)).isoformat()
+                    ).execute()
+                    metrics_data["users"]["active7d"] = active_7d.count or 0
+
+                    active_30d = supabase.table("users").select("id", count="exact").gte(
+                        activity_field,
+                        (datetime.utcnow() - timedelta(days=30)).isoformat()
+                    ).execute()
+                    metrics_data["users"]["active30d"] = active_30d.count or 0
+
+                    metrics_data["activity"]["loginsToday"] = metrics_data["users"]["active24h"]
+                except Exception as active_err:
+                    logger.warning(f"Error getting active user counts: {str(active_err)}")
                 
                 # Try to get new user counts
                 try:
@@ -1157,17 +1157,24 @@ async def get_platform_overview(
                         metrics_data["decks"]["total"] / metrics_data["users"]["total"], 1
                     )
 
-                # Get total slides count
+                # Get total slides count (slides are stored as JSONB array in decks table)
                 try:
-                    total_slides = supabase.table("slides").select("id", count="exact").execute()
-                    metrics_data["decks"]["totalSlides"] = total_slides.count or 0
+                    # Try to use slide_count column if available, otherwise count from JSONB
+                    decks_with_slides = supabase.table("decks").select("slides").execute()
+                    total_slides_count = 0
+                    if decks_with_slides.data:
+                        for deck in decks_with_slides.data:
+                            slides = deck.get("slides")
+                            if slides and isinstance(slides, list):
+                                total_slides_count += len(slides)
+                    metrics_data["decks"]["totalSlides"] = total_slides_count
 
-                    if metrics_data["decks"]["total"] > 0:
+                    if metrics_data["decks"]["total"] > 0 and total_slides_count > 0:
                         metrics_data["decks"]["averageSlidesPerDeck"] = round(
-                            metrics_data["decks"]["totalSlides"] / metrics_data["decks"]["total"], 1
+                            total_slides_count / metrics_data["decks"]["total"], 1
                         )
-                except:
-                    pass
+                except Exception as slide_err:
+                    logger.warning(f"Error counting slides: {str(slide_err)}")
         except Exception as e:
             logger.warning(f"Error getting deck metrics: {str(e)}")
         

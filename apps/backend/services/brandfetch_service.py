@@ -340,12 +340,29 @@ class BrandfetchService:
             "all": [],
             "names": []  # Simple list for backward compatibility
         }
-        
+
+        def is_valid_font_name(name: str) -> bool:
+            """Check if font name is valid (not a CSS variable or other invalid value)."""
+            if not name or not isinstance(name, str):
+                return False
+            name_lower = name.lower().strip()
+            # Skip CSS variables like "var(--heading-font)"
+            if name_lower.startswith('var(') or name_lower.startswith('--'):
+                logger.info(f"[BRANDFETCH] Skipping CSS variable font: {name}")
+                return False
+            # Skip too short names
+            if len(name_lower) < 2:
+                return False
+            # Skip pure numbers
+            if name_lower.isdigit():
+                return False
+            return True
+
         for font_item in fonts_data:
             font_name = font_item.get("name", "")
             font_type = font_item.get("type", "primary")
-            
-            if font_name:
+
+            if font_name and is_valid_font_name(font_name):
                 font_entry = {
                     "name": font_name,
                     "type": font_type,

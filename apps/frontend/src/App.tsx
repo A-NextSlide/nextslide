@@ -66,11 +66,11 @@ function UserRecordInitializer() {
 }
 
 // Component to show welcome reward on first visit (only once per session)
-// Only shows for NEW users who haven't seen it and have the early user bonus
+// Shows to any user where welcome_shown=false in database
 function WelcomeRewardController() {
   const { shouldShowWelcome, markWelcomeShown, state } = useOnboarding();
   const { user } = useAuth();
-  const { refreshBalance, balance } = useCredits();
+  const { refreshBalance } = useCredits();
   const { showReward } = useReward();
   // Track if we've already triggered to prevent double-showing
   const hasTriggeredReward = React.useRef(false);
@@ -78,19 +78,15 @@ function WelcomeRewardController() {
   // Show reward when:
   // 1. User is logged in
   // 2. Onboarding state says welcome not shown
-  // 3. User has the early user bonus (purchased_credits >= 200)
-  // 4. Haven't triggered yet this session
+  // 3. Haven't triggered yet this session
   useEffect(() => {
-    // Wait for both onboarding state AND balance to load
-    if (!user || !state || !balance) return;
+    // Wait for onboarding state to load
+    if (!user || !state) return;
     if (hasTriggeredReward.current) return;
 
-    // Only show if welcome hasn't been shown AND user has the early bonus
-    // This prevents showing to existing users who never got the bonus
-    const hasEarlyBonus = balance.purchased_credits >= 200;
-    const isNewUser = shouldShowWelcome && hasEarlyBonus;
-
-    if (isNewUser) {
+    // Show to any user who hasn't seen the welcome yet
+    // The welcome_shown flag in the database is the source of truth
+    if (shouldShowWelcome) {
       hasTriggeredReward.current = true;
 
       // Show the welcome bonus reward
@@ -98,10 +94,10 @@ function WelcomeRewardController() {
 
       // Mark as shown in backend
       markWelcomeShown();
-      // Refresh credit balance after a delay
+      // Refresh credit balance after a delay (in case credits were just initialized)
       setTimeout(() => refreshBalance(), 1000);
     }
-  }, [user, state, balance, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
+  }, [user, state, shouldShowWelcome, showReward, markWelcomeShown, refreshBalance]);
 
   return null;
 }

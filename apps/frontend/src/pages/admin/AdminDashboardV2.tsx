@@ -53,7 +53,7 @@ const AdminDashboardV2: React.FC = () => {
 
   return (
     <AdminLayoutV2>
-      <div className="w-full max-w-[1600px] mx-auto space-y-8 p-6">
+      <div className="w-full max-w-[1600px] mx-auto space-y-4 h-full flex flex-col">
         {/* Header */}
         <DashboardHeader
           title="Admin Dashboard"
@@ -76,37 +76,37 @@ const AdminDashboardV2: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
           className={cn(
-            "w-full flex items-center justify-between p-6 rounded-2xl border backdrop-blur-sm",
+            "w-full flex items-center justify-between p-4 rounded-xl border backdrop-blur-sm shrink-0",
             hasIssues
               ? "bg-amber-50/50 dark:bg-amber-950/10 border-amber-200/50 dark:border-amber-900/30"
               : "bg-emerald-50/50 dark:bg-emerald-950/10 border-emerald-200/50 dark:border-emerald-900/30"
           )}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className={cn(
-              "p-3 rounded-full",
+              "p-2 rounded-full",
               hasIssues ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30"
             )}>
-              {hasIssues ? <AlertTriangle className="h-6 w-6" /> : <ShieldCheck className="h-6 w-6" />}
+              {hasIssues ? <AlertTriangle className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
             </div>
             <div>
-              <h3 className={cn("font-semibold text-lg", hasIssues ? "text-amber-900 dark:text-amber-400" : "text-emerald-900 dark:text-emerald-400")}>
+              <h3 className={cn("font-semibold", hasIssues ? "text-amber-900 dark:text-amber-400" : "text-emerald-900 dark:text-emerald-400")}>
                 {hasIssues ? 'System Attention Needed' : 'All Systems Operational'}
               </h3>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
                 {operationalCount}/{totalServices} services running smoothly
               </p>
             </div>
           </div>
           <Link to="/admin/services">
-            <Button variant="ghost" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
+            <Button variant="ghost" size="sm" className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
               View Status <Zap className="ml-2 h-4 w-4" />
             </Button>
           </Link>
         </motion.div>
 
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
           <StatCard
             title="Total Users"
             value={metrics?.users.total.toLocaleString() || 0}
@@ -144,7 +144,7 @@ const AdminDashboardV2: React.FC = () => {
         </div>
 
         {/* Secondary Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-3 gap-3 shrink-0">
           <StatCard
             title="New Users Today"
             value={metrics?.users.newToday || 0}
@@ -170,9 +170,9 @@ const AdminDashboardV2: React.FC = () => {
         </div>
 
         {/* Quick Actions */}
-        <div>
-          <h2 className="text-xl font-semibold text-zinc-900 dark:text-white mb-4 px-1">Quick Access</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="flex-1 min-h-0 flex flex-col">
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-3 px-1 shrink-0">Quick Access</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
             <QuickActionCard
               title="Analytics"
               description="Deep dive into user behavior and system usage stats."

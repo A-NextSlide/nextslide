@@ -33,7 +33,7 @@ import { useCustomComponentEditStore } from '@/stores/customComponentEditStore';
 import { CommentsPanel } from './CommentsPanel';
 
 // Lazy load the waiting game
-const SlideAreaGame = lazy(() => import('./SlideAreaGame'));
+import GenerationGameOverlay from '@/components/common/GenerationGameOverlay';
 
 interface SlideViewportProps {
   slides: SlideData[];
@@ -83,27 +83,27 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       window.removeEventListener('orientationchange', checkMobile);
     };
   }, []);
-  
+
   // Add ref for the scrollable container
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const zoomContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // Yjs context for collaboration is initialized below
-  
+
   // Get data and functions from ActiveSlideContext
   const { activeComponents, updateComponent, removeComponent, addComponent } = useActiveSlide();
-  
+
   // Get editing capability from editor hook
   const { isEditing: isEditingMode, setIsEditing } = useEditor();
-  
+
   const currentSlide = slides[currentSlideIndex];
   const deckUuid = useDeckStore(state => state.deckData?.uuid || '');
-  
+
   // Check if current slide exists and has any components
-  const isCurrentSlideCompleted = currentSlide && 
-    currentSlide.components && 
+  const isCurrentSlideCompleted = currentSlide &&
+    currentSlide.components &&
     currentSlide.components.length > 0;
-  
+
   // Memoize getCollaborators to prevent excessive re-renders
   const getCollaborators = React.useCallback(async () => {
     if (!deckUuid) return [];
@@ -113,35 +113,35 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       return [];
     } catch { return []; }
   }, [deckUuid]);
-  
+
   // Get the latest version of the selected component from context
   const selectedComponent = React.useMemo(() => {
     if (!selectedComponentId) return null;
-    
+
     // Get the most recent version of the component from context
     const found = activeComponents.find(comp => comp.id === selectedComponentId) || null;
     return found;
   }, [selectedComponentId, activeComponents]);
-  
+
   // Track active components and selection
   React.useEffect(() => {
     // No-op effect to track dependencies
   }, [activeComponents, selectedComponent]);
-  
+
   // Get isTextEditing state from the editor settings store
   const isTextEditing = useEditorSettingsStore(state => state.isTextEditing);
-  
+
   // Get zoom level from the editor settings store
   const zoomLevel = useEditorSettingsStore(state => state.zoomLevel);
   const setZoomLevel = useEditorSettingsStore(state => state.setZoomLevel);
-  
+
   // Track zoom origin for cursor-based zooming
   const [zoomOrigin, setZoomOrigin] = useState({ x: 0.5, y: 0.5 });
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
-  
+
   // Use group keyboard shortcuts
   useGroupKeyboardShortcuts();
-  
+
   // Enhanced zoom handling with cursor-based zoom
   React.useEffect(() => {
     const slideContainer = document.getElementById('slide-display-container');
@@ -183,58 +183,58 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       }
       // Check if we're over the slide area
       const rect = slideContainer.getBoundingClientRect();
-      const isOverSlide = e.clientX >= rect.left && e.clientX <= rect.right && 
-                         e.clientY >= rect.top && e.clientY <= rect.bottom;
-      
+      const isOverSlide = e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+
       if (!isOverSlide) return;
 
       // On Mac, pinch gestures come through as wheel events with ctrlKey=true
       // Regular two-finger scrolling has ctrlKey=false
       const isPinchGesture = e.ctrlKey;
-      
+
       if (isPinchGesture) {
         e.preventDefault();
-        
+
         // Calculate cursor position relative to the slide container
         const containerRect = scrollContainer.getBoundingClientRect();
         const cursorX = e.clientX - containerRect.left + scrollContainer.scrollLeft;
         const cursorY = e.clientY - containerRect.top + scrollContainer.scrollTop;
-        
+
         // Calculate the zoom origin as a percentage of container size
         const originX = cursorX / scrollContainer.scrollWidth;
         const originY = cursorY / scrollContainer.scrollHeight;
-        
+
         // Store zoom origin
         setZoomOrigin({ x: originX, y: originY });
-        
+
         // Calculate new zoom level
         const delta = e.deltaY;
         const zoomSpeed = 1; // Consistent speed for pinch
         const zoomFactor = delta > 0 ? 0.95 : 1.05; // Bigger increments for faster zoom
         const newZoom = Math.round(zoomLevel * zoomFactor);
-        
+
         // Clamp between 65% and 400% for more range
         const clampedZoom = Math.max(65, Math.min(400, newZoom));
-        
+
         if (clampedZoom !== zoomLevel) {
           // Calculate the cursor position before zoom
           const beforeZoomX = cursorX;
           const beforeZoomY = cursorY;
-          
+
           // Set new zoom level
           setZoomLevel(clampedZoom);
-          
+
           // Calculate where the cursor would be after zoom
           // We need to adjust scroll to keep cursor at same position
           requestAnimationFrame(() => {
             const scaleFactor = clampedZoom / zoomLevel;
             const newCursorX = beforeZoomX * scaleFactor;
             const newCursorY = beforeZoomY * scaleFactor;
-            
+
             // Calculate scroll adjustment to keep cursor in same position
             const scrollAdjustX = newCursorX - cursorX;
             const scrollAdjustY = newCursorY - cursorY;
-            
+
             // Apply scroll adjustment
             scrollContainer.scrollLeft += scrollAdjustX;
             scrollContainer.scrollTop += scrollAdjustY;
@@ -253,15 +253,15 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           touch2.clientY - touch1.clientY
         );
         initialZoom = zoomLevel;
-        
+
         // Calculate center point for zoom origin
         const centerX = (touch1.clientX + touch2.clientX) / 2;
         const centerY = (touch1.clientY + touch2.clientY) / 2;
-        
+
         const containerRect = scrollContainer.getBoundingClientRect();
         const originX = (centerX - containerRect.left + scrollContainer.scrollLeft) / scrollContainer.scrollWidth;
         const originY = (centerY - containerRect.top + scrollContainer.scrollTop) / scrollContainer.scrollHeight;
-        
+
         setZoomOrigin({ x: originX, y: originY });
       }
     };
@@ -269,20 +269,20 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        
+
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
         const distance = Math.hypot(
           touch2.clientX - touch1.clientX,
           touch2.clientY - touch1.clientY
         );
-        
+
         const scale = distance / initialDistance;
         const newZoom = Math.round(initialZoom * scale);
-        
+
         // Clamp between 65% and 400% for wider range
         const clampedZoom = Math.max(65, Math.min(400, newZoom));
-        
+
         if (clampedZoom !== zoomLevel) {
           setZoomLevel(clampedZoom);
         }
@@ -300,16 +300,16 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       slideContainer.removeEventListener('touchmove', handleTouchMove);
     };
   }, [zoomLevel, setZoomLevel]);
-  
+
   // Add keyboard shortcuts for zooming
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip shortcuts when in text editing mode or in input elements
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
       const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
-      
+
       if (isInput || isContentEditable || isTextEditing) return;
-      
+
       // Check for Ctrl/Cmd + Plus/Minus/0
       if (e.ctrlKey || e.metaKey) {
         if (e.key === '+' || e.key === '=') {
@@ -335,7 +335,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         }
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [zoomLevel, setZoomLevel, isTextEditing]);
@@ -354,51 +354,51 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       window.removeEventListener('comments:toggle-panel', toggle as EventListener);
     };
   }, []);
-  
+
   // Add keyboard shortcut 'e' to toggle edit mode
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip shortcuts when in text editing mode or in input elements
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
       const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
-      
+
       // If in a text input field OR text editing mode, don't process shortcuts
       if (isInput || isContentEditable || isTextEditing) return;
-      
+
       // Use 'e' key to toggle edit mode - only if current slide is completed
       if (e.key === 'e' && isCurrentSlideCompleted) {
         const newEditingState = !isEditingMode;
-        
+
         // CRITICAL: If exiting edit mode, save draft changes FIRST
         if (!newEditingState && isEditingMode) {
           const applyDraftChanges = useEditorStore.getState().applyDraftChanges;
           applyDraftChanges();
-          
+
           setTimeout(() => {
             setIsEditing(newEditingState);
           }, 0);
         } else {
           setIsEditing(newEditingState);
         }
-        
+
         // Also dispatch the force event for redundancy
         if (newEditingState) {
           window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
         }
       }
     };
-    
+
     // Handle toggle edit mode event
     const handleToggleEditMode = () => {
       if (isCurrentSlideCompleted) {
         const newEditingState = !isEditingMode;
-        
+
         // CRITICAL: If exiting edit mode, save draft changes FIRST before toggling
         // This prevents showing old component state during the transition
         if (!newEditingState && isEditingMode) {
           const applyDraftChanges = useEditorStore.getState().applyDraftChanges;
           applyDraftChanges();
-          
+
           // Small delay to ensure draft changes are applied before switching view mode
           setTimeout(() => {
             setIsEditing(newEditingState);
@@ -407,7 +407,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           // Entering edit mode - toggle immediately
           setIsEditing(newEditingState);
         }
-        
+
         // Log component font sizes when entering edit mode
         if (newEditingState && currentSlide) {
           currentSlide.components?.forEach(comp => {
@@ -415,55 +415,55 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
             }
           });
         }
-        
+
         // Also dispatch the force event for redundancy
         if (newEditingState) {
           window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
         }
       }
     };
-    
+
     // Handle force edit mode event - always enter edit mode when this is received
     const handleForceEditMode = () => {
       if (isCurrentSlideCompleted && !isEditingMode) {
         setIsEditing(true);
       }
     };
-    
+
     // Add event listeners - use document with capture to catch events before iframes
     document.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('editor:toggle-edit-mode', handleToggleEditMode);
     window.addEventListener('editor:force-edit-mode', handleForceEditMode);
-    
+
     // Set up double-click handler for entering edit mode
     const handleDoubleClick = (e: MouseEvent) => {
-      
+
       // Only activate if we're not already in edit mode AND current slide is completed
       if (!isEditingMode && isCurrentSlideCompleted) {
         // Don't activate for inputs or content editables
         const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
         const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
-        
+
         if (!isInput && !isContentEditable) {
           setIsEditing(true);
           window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
         }
       }
     };
-    
+
     // Handle custom slide double-click event
     const handleSlideDoubleClick = (e: CustomEvent) => {
-      
+
       if (!isEditingMode && isCurrentSlideCompleted) {
         setIsEditing(true);
         window.dispatchEvent(new CustomEvent('editor:force-edit-mode'));
       }
     };
-    
+
     // Add double-click listeners (use capture so we win over stopPropagation)
     document.addEventListener('dblclick', handleDoubleClick, true);
     window.addEventListener('slide:doubleclick', handleSlideDoubleClick as EventListener);
-    
+
     // Clean up event listeners
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
@@ -473,7 +473,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       window.removeEventListener('slide:doubleclick', handleSlideDoubleClick as EventListener);
     };
   }, [isEditingMode, isTextEditing, setIsEditing, isCurrentSlideCompleted]);
-  
+
   // Auto-select the first component when entering edit mode
   React.useEffect(() => {
     if (isEditing && currentSlide) {
@@ -497,7 +497,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       // Skip shortcuts when in text editing mode or in input elements
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '');
       const isContentEditable = (e.target as HTMLElement)?.hasAttribute('contenteditable');
-      
+
       // If in a text input field OR text editing mode, don't process shortcuts
       if (isInput || isContentEditable || isTextEditing) return;
 
@@ -529,7 +529,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           }
         }
       }
-      
+
       // Check for Ctrl/Cmd+V (Paste)
       if (isModifierKey && e.key === 'v') {
         e.preventDefault();
@@ -549,11 +549,11 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       // Check for Delete key to delete the selected component
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedComponent && currentSlide) {
         e.preventDefault();
-        
+
         // Check if this is a background component (can't delete these)
-        const isBackgroundComponent = selectedComponent.type === 'Background' || 
-                                     (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
-        
+        const isBackgroundComponent = selectedComponent.type === 'Background' ||
+          (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
+
         if (isBackgroundComponent) {
           toast({
             title: "Cannot Delete Background",
@@ -563,17 +563,17 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           });
           return;
         }
-        
+
         // Store the ID before we clear selection
         const componentId = selectedComponent.id;
-        
+
         // Clear selection first
         setSelectedComponentId(null);
-        
+
         // Remove the component using ActiveSlideContext
         // Pass false for skipHistory to ensure a single history entry is created
         removeComponent(componentId, false);
-        
+
         toast({
           title: "Component Deleted",
           description: `${selectedComponent.type} has been removed`,
@@ -590,12 +590,12 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [selectedComponent, isEditingMode, isTextEditing, currentSlide, addComponent, removeComponent, toast]);
-  
+
   // Get cursor update function from Yjs
   const { updateCursor, updateSelection } = useYjs();
-  
+
   // Cursor tracking is now handled by the cursor components
-  
+
   const handleComponentSelect = (component: ComponentInstance) => {
     // If we're currently in text editing mode and selecting a different component,
     // exit text editing to avoid sticky editor state carrying into the next selection
@@ -603,36 +603,36 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       const settingsStore = useEditorSettingsStore.getState();
       if (settingsStore.isTextEditing && component.id !== selectedComponentId) {
         // Attempt to blur the active editor (if any) before leaving edit mode
-        try { useEditorStore.getState().activeTiptapEditor?.commands?.blur?.(); } catch {}
+        try { useEditorStore.getState().activeTiptapEditor?.commands?.blur?.(); } catch { }
         settingsStore.setTextEditing(false);
       }
-    } catch {}
+    } catch { }
 
     // Component selected
     setSelectedComponentId(component.id);
-    
+
     // Also select in the multi-selection system
     const editorStore = useEditorStore.getState();
     editorStore.selectComponent(component.id);
-    
+
     // Broadcast selection to other users
     if (updateSelection && currentSlide) {
       updateSelection(currentSlide.id, [component.id]);
     }
   };
-  
+
   const handleComponentDeselect = () => {
     setSelectedComponentId(null);
-    
+
     // Clear selection for other users
     if (updateSelection && currentSlide) {
       updateSelection(currentSlide.id, []);
     }
   };
-  
+
   const handleComponentUpdate = (componentId: string, updates: Partial<ComponentInstance>) => {
     // Component update requested
-    
+
     // Use the ActiveSlideContext to update the component
     // Pass false for skipHistory to ensure a single history entry is created
     updateComponent(componentId, updates, false);
@@ -662,7 +662,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     setSelectedComponentId(null);
 
     // Clear global multi-selection
-    try { useEditorStore.getState().clearSelection(); } catch {}
+    try { useEditorStore.getState().clearSelection(); } catch { }
 
     // Exit text editing and blur active editor if present
     // Add a small delay to allow any pending text saves to complete
@@ -671,21 +671,21 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         const settings = useEditorSettingsStore.getState();
         if (settings.isTextEditing) {
           // First blur the editor (this will trigger save in TiptapTextBlockRenderer)
-          try { 
+          try {
             const editor = useEditorStore.getState().activeTiptapEditor;
             if (editor && !editor.isDestroyed) {
               editor.commands.blur();
             }
-          } catch {}
-          
+          } catch { }
+
           // Then clear the text editing state after a small delay
           setTimeout(() => {
             settings.setTextEditing(false);
           }, 50);
         }
-      } catch {}
+      } catch { }
     }, 10);
-    
+
     return () => clearTimeout(timeoutId);
   }, [currentSlideIndex]);
 
@@ -702,7 +702,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
 
     // Add event listener
     window.addEventListener('slide:navigate', handleSlideNavigate as EventListener);
-    
+
     // Cleanup
     return () => {
       window.removeEventListener('slide:navigate', handleSlideNavigate as EventListener);
@@ -716,7 +716,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
     const handleDeckComplete = () => {
       try {
         window.dispatchEvent(new CustomEvent('chat:selection-mode-changed', { detail: { selecting: false } }));
-      } catch {}
+      } catch { }
       // Close game when deck is complete
       setShowWaitingGame(false);
     };
@@ -770,20 +770,13 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
       tabIndex={-1}
     >
       {/* Waiting Game Overlay */}
-      {showWaitingGame && (
-        <Suspense fallback={
-          <div className="absolute inset-0 bg-slate-900 flex items-center justify-center z-50">
-            <span className="text-gray-400">Loading game...</span>
-          </div>
-        }>
-          <div className="absolute inset-0 z-50">
-            <SlideAreaGame onClose={() => {
-              setShowWaitingGame(false);
-              window.dispatchEvent(new CustomEvent('hide-waiting-game'));
-            }} />
-          </div>
-        </Suspense>
-      )}
+      <GenerationGameOverlay
+        deckState={deckStatus?.state}
+        startedAt={deckStatus?.startedAt}
+        isVisibleOverride={showWaitingGame}
+        currentSlideIndex={currentSlideIndex}
+        totalSlides={totalSlides}
+      />
 
       <ZoomIndicator />
 
@@ -922,146 +915,146 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           </motion.div>
         </div>
       </div>
-      
+
       {/* Editor panel - outside zoom and scroll containers */}
       {/* On mobile: bottom sheet. On desktop: right sidebar */}
       <AnimatePresence>
-            {isEditing && (
-              <motion.div
-                className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
-                style={{
-                  zIndex: 999999, // Must be ABSOLUTELY highest - above everything
-                  width: isMobileView ? '100%' : '280px',
-                  height: isMobileView ? '50vh' : '74vh',
-                  maxHeight: isMobileView ? '50vh' : '635px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  backgroundColor: 'var(--background)',
-                  borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
-                  borderTop: isMobileView ? '1px solid var(--border)' : 'none',
-                  pointerEvents: 'auto', // Ensure clicks go through
-                  boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : '-4px 0 20px rgba(0,0,0,0.1)',
-                  isolation: 'isolate', // Creates a new stacking context
-                }}
-                // Stop ALL event propagation in both capture and bubble phases
-                onClickCapture={(e) => e.stopPropagation()}
-                onMouseDownCapture={(e) => e.stopPropagation()}
-                onPointerDownCapture={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                data-tour="properties-panel"
-                data-settings-panel="true"
-                initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
-                animate={{ opacity: 1, x: 0, y: 0 }}
-                exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
-                transition={{
-                  duration: 0.27,
-                  ease: "easeInOut"
-                }}
-              >
-                {showCommentsPanel ? (
-                  <CommentsPanel
-                    deckId={deckUuid}
-                    slideId={currentSlide?.id}
-                    getCollaborators={getCollaborators}
-                    onClose={() => setShowCommentsPanel(false)}
-                  />
-                ) : (
-                  <>
-                    <div className="sticky top-0 flex justify-between items-center p-2 border-b border-border bg-background z-10">
-                      <h3 className="text-sm font-medium">Properties</h3>
-                      <button 
-                        className="p-1 rounded-sm hover:bg-accent"
-                        onClick={handleSaveAndExit}
-                        title="Save and exit"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M18 6L6 18" />
-                          <path d="M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="overflow-y-auto flex-1">
-                      {(() => {
-                        const { selectedComponentIds } = useEditorStore.getState();
-                        if (selectedComponentIds.size > 1) {
-                          const selectedComponents = activeComponents.filter(c => selectedComponentIds.has(c.id));
-                          const componentTypes = new Set(selectedComponents.map(c => c.type));
-                          const isSameType = componentTypes.size === 1;
-                          if (isSameType) {
-                            return (
-                              <MultiComponentSettingsEditor
-                                components={selectedComponents}
-                                onUpdate={(componentId, updates) => {
-                                  if (currentSlide) {
-                                    handleComponentUpdate(componentId, updates);
-                                  }
-                                }}
-                                onDelete={() => {
-                                  selectedComponents.forEach(comp => {
-                                    const isBackground = comp.type === 'Background' || 
-                                                       (comp.id && comp.id.toLowerCase().includes('background'));
-                                    if (!isBackground && currentSlide) {
-                                      removeComponent(comp.id, false);
-                                    }
-                                  });
-                                  useEditorStore.getState().clearSelection();
-                                }}
-                              />
-                            );
-                          }
-                          return (
-                            <div className="p-4 space-y-4">
-                              <div className="text-sm font-medium">{selectedComponentIds.size} components selected (mixed types)</div>
-                              <div className="space-y-2">
-                                <button
-                                  className="w-full px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                                  onClick={() => { if (currentSlide) { useEditorStore.getState().groupSelectedComponents(currentSlide.id); } }}
-                                >
-                                  Group Selection
-                                </button>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'left'); } }}>Align Left</button>
-                                  <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'right'); } }}>Align Right</button>
-                                </div>
-                                {selectedComponentIds.size >= 3 && (
-                                  <button className="w-full px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().distributeSelectedComponents(currentSlide.id, 'horizontal'); } }}>Distribute Horizontally</button>
-                                )}
-                              </div>
+        {isEditing && (
+          <motion.div
+            className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
+            style={{
+              zIndex: 999999, // Must be ABSOLUTELY highest - above everything
+              width: isMobileView ? '100%' : '280px',
+              height: isMobileView ? '50vh' : '74vh',
+              maxHeight: isMobileView ? '50vh' : '635px',
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: 'var(--background)',
+              borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
+              borderTop: isMobileView ? '1px solid var(--border)' : 'none',
+              pointerEvents: 'auto', // Ensure clicks go through
+              boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : '-4px 0 20px rgba(0,0,0,0.1)',
+              isolation: 'isolate', // Creates a new stacking context
+            }}
+            // Stop ALL event propagation in both capture and bubble phases
+            onClickCapture={(e) => e.stopPropagation()}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            data-tour="properties-panel"
+            data-settings-panel="true"
+            initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
+            animate={{ opacity: 1, x: 0, y: 0 }}
+            exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
+            transition={{
+              duration: 0.27,
+              ease: "easeInOut"
+            }}
+          >
+            {showCommentsPanel ? (
+              <CommentsPanel
+                deckId={deckUuid}
+                slideId={currentSlide?.id}
+                getCollaborators={getCollaborators}
+                onClose={() => setShowCommentsPanel(false)}
+              />
+            ) : (
+              <>
+                <div className="sticky top-0 flex justify-between items-center p-2 border-b border-border bg-background z-10">
+                  <h3 className="text-sm font-medium">Properties</h3>
+                  <button
+                    className="p-1 rounded-sm hover:bg-accent"
+                    onClick={handleSaveAndExit}
+                    title="Save and exit"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6L6 18" />
+                      <path d="M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="overflow-y-auto flex-1">
+                  {(() => {
+                    const { selectedComponentIds } = useEditorStore.getState();
+                    if (selectedComponentIds.size > 1) {
+                      const selectedComponents = activeComponents.filter(c => selectedComponentIds.has(c.id));
+                      const componentTypes = new Set(selectedComponents.map(c => c.type));
+                      const isSameType = componentTypes.size === 1;
+                      if (isSameType) {
+                        return (
+                          <MultiComponentSettingsEditor
+                            components={selectedComponents}
+                            onUpdate={(componentId, updates) => {
+                              if (currentSlide) {
+                                handleComponentUpdate(componentId, updates);
+                              }
+                            }}
+                            onDelete={() => {
+                              selectedComponents.forEach(comp => {
+                                const isBackground = comp.type === 'Background' ||
+                                  (comp.id && comp.id.toLowerCase().includes('background'));
+                                if (!isBackground && currentSlide) {
+                                  removeComponent(comp.id, false);
+                                }
+                              });
+                              useEditorStore.getState().clearSelection();
+                            }}
+                          />
+                        );
+                      }
+                      return (
+                        <div className="p-4 space-y-4">
+                          <div className="text-sm font-medium">{selectedComponentIds.size} components selected (mixed types)</div>
+                          <div className="space-y-2">
+                            <button
+                              className="w-full px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                              onClick={() => { if (currentSlide) { useEditorStore.getState().groupSelectedComponents(currentSlide.id); } }}
+                            >
+                              Group Selection
+                            </button>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'left'); } }}>Align Left</button>
+                              <button className="px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().alignSelectedComponents(currentSlide.id, 'right'); } }}>Align Right</button>
                             </div>
-                          );
-                        } else {
-                          return (
-                            <ComponentSettingsEditor
-                              component={selectedComponent}
-                              onUpdate={(updates) => {
-                                if (selectedComponent && currentSlide) {
-                                  handleComponentUpdate(selectedComponent.id, updates);
-                                }
-                              }}
-                              onDelete={() => {
-                                if (selectedComponent && currentSlide) {
-                                  const isBackgroundComponent = selectedComponent.type === 'Background' || (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
-                                  if (isBackgroundComponent) {
-                                    toast({ title: "Cannot Delete Background", description: "Background components cannot be removed", duration: 2000, variant: "destructive" });
-                                    return;
-                                  }
-                                  const componentId = selectedComponent.id;
-                                  setSelectedComponentId(null);
-                                  removeComponent(componentId, false);
-                                }
-                              }}
-                            />
-                          );
-                        }
-                      })()}
-                    </div>
-                  </>
-                )}
-              </motion.div>
+                            {selectedComponentIds.size >= 3 && (
+                              <button className="w-full px-3 py-2 text-sm bg-secondary rounded-md hover:bg-secondary/80" onClick={() => { if (currentSlide) { useEditorStore.getState().distributeSelectedComponents(currentSlide.id, 'horizontal'); } }}>Distribute Horizontally</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <ComponentSettingsEditor
+                          component={selectedComponent}
+                          onUpdate={(updates) => {
+                            if (selectedComponent && currentSlide) {
+                              handleComponentUpdate(selectedComponent.id, updates);
+                            }
+                          }}
+                          onDelete={() => {
+                            if (selectedComponent && currentSlide) {
+                              const isBackgroundComponent = selectedComponent.type === 'Background' || (selectedComponent.id && selectedComponent.id.toLowerCase().includes('background'));
+                              if (isBackgroundComponent) {
+                                toast({ title: "Cannot Delete Background", description: "Background components cannot be removed", duration: 2000, variant: "destructive" });
+                                return;
+                              }
+                              const componentId = selectedComponent.id;
+                              setSelectedComponentId(null);
+                              removeComponent(componentId, false);
+                            }
+                          }}
+                        />
+                      );
+                    }
+                  })()}
+                </div>
+              </>
             )}
-          </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

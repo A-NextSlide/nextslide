@@ -200,7 +200,7 @@ class ThemeDirector:
         color_result = await self._acquire_colors_fast(analysis, prompt, title, style_dict, opts.variety_seed)
         
         # Step 3: Select fonts based on brand/topic using intelligent metadata-based selection
-        font_result = await self._select_fonts(analysis, color_result, title, opts.variety_seed)
+        font_result = await self._select_fonts(analysis, color_result, title, opts.variety_seed, style_dict)
         
         # Step 4: Generate final theme
         deck_theme = await self._compose_theme(color_result, font_result, analysis, deck_outline)
@@ -1638,12 +1638,20 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
         analysis: Dict[str, Any],
         color_result: Dict[str, Any],
         title: str,
-        variety_seed: str
+        variety_seed: str,
+        style_dict: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Select fonts based on brand/topic/style using intelligent metadata-based selection."""
         from services.enhanced_font_service import EnhancedFontService
         from services.registry_fonts import RegistryFonts
-        
+
+        # PRIORITY 1: Check for user-specified fonts from stylePreferences (e.g., extracted from uploaded PDF)
+        user_hero_font = style_dict.get('font') if style_dict else None
+        user_body_font = style_dict.get('bodyFont') if style_dict else None
+
+        if user_hero_font:
+            logger.info(f"[FONT SELECTION] 🎯 Found user-specified font from stylePreferences: hero={user_hero_font}, body={user_body_font}")
+
         # Check if we have brand fonts from scraping
         scraped_fonts = []
         if color_result.get('metadata', {}).get('fonts'):
@@ -1744,6 +1752,26 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                     body_font = await self._ai_select_complementary_body_font(hero_font, title, vibe, available_fonts)
                     font_result['body'] = body_font
                     logger.info(f"[THEME] AI selected body font '{body_font}' to complement hero '{hero_font}'")
+
+        # PRIORITY 2: Use user-specified fonts from stylePreferences if brand fonts failed/unavailable
+        if not font_result and user_hero_font:
+            # Validate the user-specified font exists in our registry
+            all_available = RegistryFonts.get_all_fonts_list(None)
+            available_lower = {f.lower(): f for f in all_available}
+
+            validated_hero = available_lower.get(user_hero_font.lower())
+            validated_body = available_lower.get((user_body_font or user_hero_font).lower())
+
+            if validated_hero:
+                # Use the exact casing from our registry
+                font_result = {
+                    'hero': validated_hero,
+                    'body': validated_body or validated_hero,
+                    'source': 'user_stylePreferences'
+                }
+                logger.info(f"[FONT SELECTION] ✅ Using user-specified fonts from stylePreferences: hero={validated_hero}, body={validated_body or validated_hero}")
+            else:
+                logger.warning(f"[FONT SELECTION] ⚠️ User-specified font '{user_hero_font}' not available in registry")
 
         if not font_result:
             # Fun topics are already handled above with priority - this handles remaining cases
@@ -2478,6 +2506,28 @@ Generate a creative, specific design style description (1-2 sentences):"""
         if not scraped_fonts or not available_fonts:
             return {}
 
+        # Filter out CSS variables and invalid font names
+        # CSS variables like "var(--heading-font)" are not valid font names
+        def is_valid_font_name(name: str) -> bool:
+            if not name or not isinstance(name, str):
+                return False
+            name_lower = name.lower().strip()
+            # Skip CSS variables
+            if name_lower.startswith('var(') or name_lower.startswith('--'):
+                return False
+            # Skip too short names (likely invalid)
+            if len(name_lower) < 2:
+                return False
+            # Skip pure numbers
+            if name_lower.isdigit():
+                return False
+            return True
+
+        scraped_fonts = [f for f in scraped_fonts if is_valid_font_name(f)]
+        if not scraped_fonts:
+            logger.info("[FONT MATCH] No valid font names found after filtering CSS variables")
+            return {}
+
         norm = lambda s: ''.join(ch.lower() for ch in s if ch.isalnum())
         available_map = {norm(f): f for f in available_fonts}
         # Also keep a set of lowercase full names for quick lookup
@@ -2556,8 +2606,11 @@ Available fonts by category:
 Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer categories for best readability."""
 
             from agents.config import FONT_SELECTION_MODEL
-            # Use get_client with correct model alias - model returned is the actual model ID
-            client, actual_model = get_client(FONT_SELECTION_MODEL, wrap_with_instructor=False)
+            from agents.ai.clients import get_model_id
+            import anthropic
+            # Use async client directly - get_client returns sync client which breaks await
+            client = anthropic.AsyncAnthropic()
+            actual_model = get_model_id(FONT_SELECTION_MODEL)
             response = await client.messages.create(
                 model=actual_model,
                 max_tokens=50,

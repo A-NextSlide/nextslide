@@ -35,7 +35,9 @@ export function useEnsureUserRecord() {
               role: 'user', // Default role
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              metadata: {}
+              metadata: {},
+              welcome_shown: false, // Explicitly set for new users
+              presentations_created: 0
             });
 
           if (insertError) {

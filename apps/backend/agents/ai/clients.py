@@ -222,9 +222,14 @@ def invoke(
     response_model=None,
     max_tokens: int = 8192,
     temperature: float = 0.7,
+    max_retries: int = 3,
     **kwargs
 ):
-    """Invoke an LLM with messages and optional structured output."""
+    """Invoke an LLM with messages and optional structured output.
+
+    Args:
+        max_retries: Number of retries for structured output parsing failures (default: 3)
+    """
 
     from agents.generation.exceptions import AIGenerationError, AIOverloadedError, AIRateLimitError, AITimeoutError
 
@@ -257,7 +262,7 @@ def invoke(
                 return _invoke_freeform(client, model, filtered_messages, system_content, invoke_kwargs)
 
             # Structured output
-            return _invoke_structured(client, model, filtered_messages, system_content, response_model, invoke_kwargs)
+            return _invoke_structured(client, model, filtered_messages, system_content, response_model, invoke_kwargs, max_retries)
 
         except Exception as e:
             error_code = getattr(getattr(e, 'response', None), 'status_code', None) or getattr(e, 'status_code', None)
@@ -310,13 +315,17 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
 
     raise ValueError(f"Unknown client type: {type(raw_client)}")
 
-def _invoke_structured(client, model: str, messages: List[Dict], system: str, response_model, kwargs: dict):
-    """Invoke with structured output (Pydantic model)."""
+def _invoke_structured(client, model: str, messages: List[Dict], system: str, response_model, kwargs: dict, max_retries: int = 3):
+    """Invoke with structured output (Pydantic model).
+
+    Args:
+        max_retries: Number of retries for validation/parsing failures
+    """
 
     # Gemini
     if model.startswith("gemini"):
         gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
-        return client.create(model=model, messages=messages, response_model=response_model, **gk)
+        return client.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **gk)
 
     # Claude (with system)
     if hasattr(client, 'create') and not hasattr(client, 'chat'):
@@ -326,10 +335,10 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
                 ck['system'] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
             else:
                 ck['system'] = system
-        return client.create(model=model, messages=messages, response_model=response_model, **ck)
+        return client.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **ck)
 
     # OpenAI-style
-    return client.chat.completions.create(model=model, messages=messages, response_model=response_model, **kwargs)
+    return client.chat.completions.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **kwargs)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXPORTS
