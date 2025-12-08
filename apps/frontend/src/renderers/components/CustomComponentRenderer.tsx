@@ -6,7 +6,7 @@ import { usePresentationStore } from '@/stores/presentationStore';
 import { useActiveSlide } from '../../context/ActiveSlideContext';
 import { useEditorStore } from '@/stores/editorStore';
 import { getContrastTextColor, isLightColor, getColorDistance, ensureChartColorsContrastWithBackground, getThemeAppropriateChartColors } from '@/utils/colorUtils';
-import { CustomComponentEditOverlay, DetectedElement, ImageElementToolbar, injectEditMode } from '@/components/custom-component-editor';
+import { CustomComponentEditOverlay, DetectedElement, injectEditMode } from '@/components/custom-component-editor';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -2642,34 +2642,6 @@ export const CustomComponentRenderer: React.FC<{
             </div>
           );
         })()}
-
-        {/* IMAGE ELEMENT TOOLBAR - rendered as portal when image is selected */}
-        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
-        {selectedElement && selectedElement.type === 'image' && typeof document !== 'undefined' && document.body && createPortal(
-          <AnimatePresence>
-            <ImageElementToolbar
-              element={selectedElement}
-              scale={scale}
-              cursorPosition={cursorPosition}
-              onSwap={(newUrl) => handleImageSwap(selectedElement, newUrl)}
-              onAiEdit={(instruction) => handleElementAiEdit(selectedElement, instruction)}
-              onClose={() => {
-                setSelectedElement(null);
-                setShowImageToolbar(false);
-                setCursorPosition(null);
-                try {
-                  iframeRef.current?.contentWindow?.postMessage({
-                    target: 'ns-custom-component-edit',
-                    type: 'deselect'
-                  }, '*');
-                } catch (e) {
-                  // Ignore postMessage errors during unmount
-                }
-              }}
-            />
-          </AnimatePresence>,
-          document.body
-        )}
 
         {/* TEXT ELEMENT - Small floating AI button (doesn't block editing) */}
         {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}

@@ -7,6 +7,7 @@ import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import { streamOutlineAgentChat, ChatMessage, AgentEvent, OutlineData, FileAttachment, generateSlideContent } from '@/services/outlineAgentService';
 import { fileToBase64, getFileCategory, formatFileSize, createImagePreview, revokeImagePreview } from '@/services/fileAnalysisService';
 import { ThinkingStatusDisplay, ThemeChatBlock, DropdownOutlineChatBlock } from '@/components/chat';
+import ThinkingIndicator from '@/components/common/ThinkingIndicator';
 import type { ThemeBlockData, OutlineBlockData, OutlineSlide, DropdownOutlineBlockData } from '@/components/chat';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { ThinkingStep, StatusPhase, STATUS_PHASES } from '@/types/agentEvents';
@@ -1660,16 +1661,23 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                     .filter(Boolean)
                   }
                   {/* Typing indicator */}
-                  <div className="text-xs text-zinc-400 pl-5">
-                    thinking...
+                  <div className="pl-5">
+                    <ThinkingIndicator size="sm" />
                   </div>
                 </div>
               ) : (
                 <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {statusPhase === 'analyzing' ? 'Analyzing your files...' :
-                   statusPhase === 'researching' ? `Researching: ${statusMessage || 'gathering info'}` :
-                   statusPhase === 'scraping' ? 'Reading content...' :
-                   statusMessage || 'Thinking...'}
+                  {statusPhase === 'analyzing' ? (
+                    <ThinkingIndicator customText="Analyzing your files" size="sm" />
+                  ) : statusPhase === 'researching' ? (
+                    <ThinkingIndicator customText={`Researching: ${statusMessage || 'gathering info'}`} size="sm" />
+                  ) : statusPhase === 'scraping' ? (
+                    <ThinkingIndicator customText="Reading content" size="sm" />
+                  ) : statusMessage ? (
+                    <ThinkingIndicator customText={statusMessage} size="sm" />
+                  ) : (
+                    <ThinkingIndicator size="sm" />
+                  )}
                 </div>
               )}
             </div>

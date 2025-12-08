@@ -133,10 +133,23 @@ const EnhancedColorPicker: React.FC<EnhancedColorPickerProps> = ({
               placeholder="#000000ff"
               className="text-xs font-mono"
             />
+            {/* Color preview with transparency checkerboard */}
             <div
-              className="w-full h-12 rounded border"
-              style={{ backgroundColor: color }}
-            />
+              className="w-full h-12 rounded border relative overflow-hidden"
+              style={{
+                backgroundImage: `
+                  linear-gradient(45deg, #ccc 25%, transparent 25%),
+                  linear-gradient(-45deg, #ccc 25%, transparent 25%),
+                  linear-gradient(45deg, transparent 75%, #ccc 75%),
+                  linear-gradient(-45deg, transparent 75%, #ccc 75%)
+                `,
+                backgroundSize: '12px 12px',
+                backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0px',
+                backgroundColor: 'white',
+              }}
+            >
+              <div className="absolute inset-0" style={{ backgroundColor: color }} />
+            </div>
           </div>
         </TabsContent>
 
@@ -201,10 +214,23 @@ const EnhancedColorPicker: React.FC<EnhancedColorPickerProps> = ({
               )}
             </div>
 
+            {/* Color preview with transparency checkerboard */}
             <div
-              className="w-full h-12 rounded border"
-              style={{ backgroundColor: color }}
-            />
+              className="w-full h-12 rounded border relative overflow-hidden"
+              style={{
+                backgroundImage: `
+                  linear-gradient(45deg, #ccc 25%, transparent 25%),
+                  linear-gradient(-45deg, #ccc 25%, transparent 25%),
+                  linear-gradient(45deg, transparent 75%, #ccc 75%),
+                  linear-gradient(-45deg, transparent 75%, #ccc 75%)
+                `,
+                backgroundSize: '12px 12px',
+                backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0px',
+                backgroundColor: 'white',
+              }}
+            >
+              <div className="absolute inset-0" style={{ backgroundColor: color }} />
+            </div>
           </div>
         </TabsContent>
       </Tabs>

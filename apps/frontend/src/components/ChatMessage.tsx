@@ -10,6 +10,7 @@ import { EnhancedDeckProgress } from './deck/EnhancedDeckProgress';
 import { GenerationProgress } from './common/GenerationProgress';
 import { motion } from 'framer-motion';
 import TypewriterText from '@/components/common/TypewriterText';
+import ThinkingIndicator from '@/components/common/ThinkingIndicator';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
@@ -326,52 +327,38 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         <div className="flex flex-col">
           <div className="text-sm min-w-0">
             {isLoading ? (
-              <div className="flex items-center gap-2" style={{ minHeight: '20px' }}>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
-                <span className="text-xs text-muted-foreground">
-                  {/* Show actual message if provided, otherwise default to Thinking... */}
-                  {safeMessage && safeMessage.trim().length > 0 ? renderMarkdown(safeMessage) : 'Thinking...'}
-                </span>
+              <div style={{ minHeight: '20px' }}>
+                <ThinkingIndicator
+                  customText={safeMessage && safeMessage.trim().length > 0 ? safeMessage : undefined}
+                  size="sm"
+                />
               </div>
             ) : isStreamingMessage ? (
               <div className="space-y-1 min-w-0 w-full" style={{ minHeight: '20px' }}>
                 {/* Subtle, on-brand status display */}
                 {metadata?.thinkingPhase && !(metadata?.progress !== undefined && metadata?.type !== 'images_collected' && !isCompleted) && (
-                  <div className="flex items-start gap-2 min-w-0">
-                    {/* Minimal spinner - just a small pulsing dot */}
-                    <div className="flex-shrink-0 mt-1.5">
-                      <span
-                        className="block w-1.5 h-1.5 rounded-full animate-pulse"
-                        style={{ backgroundColor: '#FF4301' }}
-                      />
-                    </div>
-
-                    {/* Clean inline status text */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground/90 break-words leading-relaxed">
-                        <span
-                          className="font-medium"
-                          style={{ color: '#FF4301' }}
-                        >
-                          {metadata.thinkingPhase === 'researching' ? 'Searching the web' :
-                           metadata.thinkingPhase === 'scraping' ? 'Reading page' :
-                           metadata.thinkingPhase === 'processing' ? 'Processing results' :
-                           metadata.thinkingPhase === 'analyzing' ? 'Analyzing' :
-                           metadata.thinkingPhase === 'generating' ? 'Creating outline' :
-                           'Thinking'}
-                        </span>
-                        {' '}
-                        <span className="text-muted-foreground">
-                          {primaryMessage.replace(/^[🔍📄✓🧠💭🤔✨🎯📎⚠️]\s*/, '').replace(/^(Searching the web for|Reading website|Reading page|Processing results|Analyzing|Creating outline|Thinking|Got it! Now thinking|Found info! Processing|Couldn't find info online, winging it)\s*/i, '')}
-                        </span>
-                        {/* Subtle animated ellipsis */}
-                        <span className="inline-flex ml-0.5 text-muted-foreground">
-                          <span className="animate-pulse" style={{ animationDelay: '0ms' }}>.</span>
-                          <span className="animate-pulse" style={{ animationDelay: '200ms' }}>.</span>
-                          <span className="animate-pulse" style={{ animationDelay: '400ms' }}>.</span>
-                        </span>
-                      </p>
-                    </div>
+                  <div className="flex items-start gap-1.5 min-w-0">
+                    <ThinkingIndicator
+                      customText={
+                        metadata.thinkingPhase === 'researching' ? 'Searching the web' :
+                        metadata.thinkingPhase === 'scraping' ? 'Reading page' :
+                        metadata.thinkingPhase === 'processing' ? 'Processing results' :
+                        metadata.thinkingPhase === 'analyzing' ? 'Analyzing' :
+                        metadata.thinkingPhase === 'generating' ? 'Creating outline' :
+                        undefined
+                      }
+                      size="sm"
+                    />
+                    {/* Additional context from message */}
+                    {(() => {
+                      const cleanedMessage = primaryMessage
+                        .replace(/^[🔍📄✓🧠💭🤔✨🎯📎⚠️]\s*/, '')
+                        .replace(/^(Searching the web for|Reading website|Reading page|Processing results|Analyzing|Creating outline|Thinking|Got it! Now thinking|Found info! Processing|Couldn't find info online, winging it)\s*/i, '')
+                        .trim();
+                      return cleanedMessage ? (
+                        <span className="text-sm text-muted-foreground">{cleanedMessage}</span>
+                      ) : null;
+                    })()}
                   </div>
                 )}
 

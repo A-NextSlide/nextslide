@@ -56,8 +56,8 @@ export const ElementHitArea: React.FC<ElementHitAreaProps> = ({
 
   return (
     <div
-      className="fixed"
       style={{
+        position: 'absolute', // Positioned relative to clipping container
         left: element.bounds.x,
         top: element.bounds.y,
         width: element.bounds.width,

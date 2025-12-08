@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { BROWSER } from '@/utils/browser';
 import { runWhenIdle } from '@/utils/scheduler';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -916,43 +917,41 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
         </div>
       </div>
 
-      {/* Editor panel - outside zoom and scroll containers */}
+      {/* Editor panel - PORTALED to document.body to ensure it's above all other portals */}
       {/* On mobile: bottom sheet. On desktop: right sidebar */}
-      <AnimatePresence>
-        {isEditing && (
-          <motion.div
-            className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
-            style={{
-              zIndex: 999999, // Must be ABSOLUTELY highest - above everything
-              width: isMobileView ? '100%' : '280px',
-              height: isMobileView ? '50vh' : '74vh',
-              maxHeight: isMobileView ? '50vh' : '635px',
-              display: 'flex',
-              flexDirection: 'column',
-              backgroundColor: 'var(--background)',
-              borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
-              borderTop: isMobileView ? '1px solid var(--border)' : 'none',
-              pointerEvents: 'auto', // Ensure clicks go through
-              boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : '-4px 0 20px rgba(0,0,0,0.1)',
-              isolation: 'isolate', // Creates a new stacking context
-            }}
-            // Stop ALL event propagation in both capture and bubble phases
-            onClickCapture={(e) => e.stopPropagation()}
-            onMouseDownCapture={(e) => e.stopPropagation()}
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            data-tour="properties-panel"
-            data-settings-panel="true"
-            initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
-            animate={{ opacity: 1, x: 0, y: 0 }}
-            exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
-            transition={{
-              duration: 0.27,
-              ease: "easeInOut"
-            }}
-          >
+      {typeof document !== 'undefined' && document.body && createPortal(
+        <AnimatePresence>
+          {isEditing && (
+            <motion.div
+              className={`fixed ${isMobileView ? 'bottom-0 left-0 right-0 rounded-t-2xl' : 'top-0 right-0'}`}
+              style={{
+                zIndex: 50000, // Above selection overlay (40000) but below modals/popovers
+                width: isMobileView ? '100%' : '280px',
+                height: isMobileView ? '50vh' : '74vh',
+                maxHeight: isMobileView ? '50vh' : '635px',
+                display: 'flex',
+                flexDirection: 'column',
+                backgroundColor: 'var(--background)',
+                borderLeft: isMobileView ? 'none' : '1px solid var(--border)',
+                borderTop: isMobileView ? '1px solid var(--border)' : 'none',
+                pointerEvents: 'auto', // Ensure clicks go through
+                boxShadow: isMobileView ? '0 -4px 20px rgba(0,0,0,0.15)' : '-4px 0 20px rgba(0,0,0,0.1)',
+                isolation: 'isolate', // Creates a new stacking context
+              }}
+              // Only stop propagation at bubble phase to allow child interactions
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              data-tour="properties-panel"
+              data-settings-panel="true"
+              initial={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, ...(isMobileView ? { y: 100 } : { x: 50 }) }}
+              transition={{
+                duration: 0.27,
+                ease: "easeInOut"
+              }}
+            >
             {showCommentsPanel ? (
               <CommentsPanel
                 deckId={deckUuid}
@@ -1052,9 +1051,11 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
                 </div>
               </>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 };

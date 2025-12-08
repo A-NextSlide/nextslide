@@ -1247,18 +1247,43 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
       {/* Element hit areas for click detection
           - Always visible EXCEPT the currently selected element
-          - This allows clicking to select different elements while dragging the selected one */}
-      {virtualElements.map(element => (
-        <ElementHitArea
-          key={element.id}
-          element={element}
-          isSelected={element.id === selectedElementId}
-          onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
-          onDoubleClick={() => handleDoubleClick(element)}
-          disabled={!!editingTextId}
-          hideForSelection={element.id === selectedElementId}
-        />
-      ))}
+          - This allows clicking to select different elements while dragging the selected one
+          - IMPORTANT: Wrapped in clipping container to prevent hit areas from extending into sidebar
+          - z-index 30000 is BELOW selection overlay (40000) so drag/resize works */}
+      {iframeBounds && (
+        <div
+          style={{
+            position: 'fixed',
+            left: iframeBounds.left,
+            top: iframeBounds.top,
+            width: iframeBounds.width,
+            height: iframeBounds.height,
+            overflow: 'hidden',
+            pointerEvents: 'none', // Container doesn't receive events, children do
+            zIndex: 30000, // BELOW selection overlay (40000) so drag works
+          }}
+        >
+          {virtualElements.map(element => (
+            <ElementHitArea
+              key={element.id}
+              element={{
+                ...element,
+                // Adjust bounds to be relative to the clipping container
+                bounds: {
+                  ...element.bounds,
+                  x: element.bounds.x - iframeBounds.left,
+                  y: element.bounds.y - iframeBounds.top,
+                },
+              }}
+              isSelected={element.id === selectedElementId}
+              onSelect={(cursorX, cursorY) => handleSelectElement(element.id, cursorX, cursorY)}
+              onDoubleClick={() => handleDoubleClick(element)}
+              disabled={!!editingTextId}
+              hideForSelection={element.id === selectedElementId}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Selection overlay with handles */}
       {selectedElement && coordinatorRef.current && (

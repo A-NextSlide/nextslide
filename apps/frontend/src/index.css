@@ -121,6 +121,17 @@ textarea,
   z-index: 99999 !important;
 }
 
+/* Ensure dialogs (paywalls, modals) appear above ALL content including onboarding */
+/* Radix Dialog uses portals - ensure overlay and content have highest z-index */
+[data-radix-dialog-overlay] {
+  z-index: 9999998 !important;
+}
+
+[data-radix-dialog-content],
+[role="dialog"][data-state="open"] {
+  z-index: 9999999 !important;
+}
+
 /* Prevent layout shifts during font loading in dropdowns */
 [data-radix-scroll-area-viewport] {
   overflow-anchor: none; /* Disable scroll anchoring to prevent jumps */

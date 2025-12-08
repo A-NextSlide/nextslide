@@ -4,26 +4,64 @@
 .react-colorful {
   width: 100% !important; /* Take 100% of the parent container width */
   margin-bottom: 6px; /* Add some bottom spacing for consistency */
+  gap: 10px !important; /* Space between saturation, hue, and alpha */
+}
+
+/* Saturation area styling */
+.react-colorful__saturation {
+  border-radius: 6px !important;
+}
+
+/* Hue slider styling */
+.react-colorful__hue {
+  height: 14px !important;
+  border-radius: 7px !important;
 }
 
 /* Replace circular pointer with bar-shaped handle for the hue slider */
 .react-colorful__hue-pointer {
   width: 6px !important;
-  height: 25px !important;
-  border-radius: 1px !important;
+  height: 20px !important;
+  border-radius: 3px !important;
+  border: 2px solid white !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Alpha slider styling - tasteful transparency bar below hue */
+.react-colorful__alpha {
+  height: 14px !important;
+  border-radius: 7px !important;
+  /* Checkered background pattern for transparency indication */
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%) !important;
+  background-size: 8px 8px !important;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0px !important;
+  background-color: white !important;
+}
+
+/* The gradient overlay on the alpha slider */
+.react-colorful__alpha-gradient {
+  border-radius: 7px !important;
 }
 
 /* Replace circular pointer with bar-shaped handle for the alpha slider */
 .react-colorful__alpha-pointer {
   width: 6px !important;
-  height: 25px !important;
-  border-radius: 1px !important;
+  height: 20px !important;
+  border-radius: 3px !important;
+  border: 2px solid white !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Keep saturation pointer as circle but make it slightly larger */
 .react-colorful__saturation-pointer {
-  width: 20px !important;
-  height: 20px !important;
+  width: 18px !important;
+  height: 18px !important;
+  border: 2px solid white !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Add consistent spacing for the gradient picker */
