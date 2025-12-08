@@ -599,6 +599,7 @@ def custom_component_rewrite(
     Includes validation and quality checks.
     """
     from agents.ai.clients import get_client, invoke
+    from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
     from agents.config import CUSTOM_COMPONENT_MODEL, CUSTOM_COMPONENT_EDIT_MODEL, CUSTOM_COMPONENT_FALLBACK_MODEL
     from agents.editing.attachment_analyzer import (
         analyze_attachments,
@@ -662,10 +663,20 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
 
     # SMART MODEL ROUTING: Choose model based on edit complexity
     complexity = classify_edit_complexity(args.rewrite_request, current_html)
+
+    # Check if Gemini is in cooldown
+    gemini_in_cooldown = is_provider_in_cooldown("gemini")
+
     if complexity == EditComplexity.COMPLEX:
-        selected_model = CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro for complex edits (fallback to Opus 4.5)
-        use_gemini = selected_model.startswith('gemini')
-        logger.info(f"Smart routing: COMPLEX edit detected, using {selected_model}")
+        if gemini_in_cooldown:
+            # Gemini in cooldown, use fallback directly
+            selected_model = CUSTOM_COMPONENT_FALLBACK_MODEL
+            use_gemini = False
+            logger.info(f"Smart routing: COMPLEX edit, but Gemini in cooldown - using fallback: {selected_model}")
+        else:
+            selected_model = CUSTOM_COMPONENT_MODEL  # Gemini 3 Pro for complex edits
+            use_gemini = selected_model.startswith('gemini')
+            logger.info(f"Smart routing: COMPLEX edit detected, using {selected_model}")
     else:
         selected_model = CUSTOM_COMPONENT_EDIT_MODEL  # Claude Haiku 4.5 for medium edits
         use_gemini = selected_model.startswith('gemini')
@@ -723,6 +734,8 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
                 # Check for rate limit error (429)
                 error_str = str(gemini_err).lower()
                 if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'limit' in error_str:
+                    # Mark Gemini as rate limited for 5 minutes cooldown
+                    mark_provider_rate_limited("gemini")
                     logger.warning(f"[CUSTOM_COMPONENT_EDIT] Gemini rate limited, falling back to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
                     gemini_rate_limited = True
                 else:

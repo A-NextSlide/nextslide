@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
 from agents.ai.clients import get_client, invoke
+from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from agents.config import (
     CUSTOM_COMPONENT_MODEL,
     CUSTOM_COMPONENT_FALLBACK_MODEL,
@@ -22,6 +23,9 @@ from agents.config import (
     IMAGE_SEARCH_MODEL
 )
 from agents.generation.exceptions import AIRateLimitError
+
+# Provider name for rate limit tracking
+GEMINI_PROVIDER = "gemini"
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
@@ -750,79 +754,82 @@ class CustomComponentGenerator:
             ]
 
             # Generate using AI model (no structured output - we want raw HTML)
-            logger.info(f"[CUSTOM_COMPONENT] Calling {model_name} with temperature={self.temperature}")
-            print(f"[CUSTOM_COMPONENT] 🎨 Using model: {model_name}")
             print(f"[CUSTOM_COMPONENT] 📝 Prompt length: system={len(system_prompt)}, user={len(user_prompt)}")
 
             loop = asyncio.get_event_loop()
-
-            # Use semaphore to limit concurrent AI calls + retry with backoff
-            max_retries = 3
             response = None
             used_fallback = False
 
-            async with _AI_SEMAPHORE:
-                for attempt in range(max_retries):
-                    try:
-                        print(f"[CUSTOM_COMPONENT] 🔄 Attempt {attempt + 1}/{max_retries} with {model_name}")
-                        response = await asyncio.wait_for(
-                            loop.run_in_executor(
-                                None,
-                                invoke,
-                                client,
-                                model_name,
-                                messages,
-                                None,  # No response model - raw text
-                                16000,  # max_tokens
-                                self.temperature
-                            ),
-                            timeout=self.generation_timeout
-                        )
-                        # Success - break out of retry loop
-                        break
-                    except AIRateLimitError as rate_err:
-                        if attempt < max_retries - 1:
-                            # Exponential backoff: 5s, 15s, 45s
-                            wait_time = 5 * (3 ** attempt)
-                            logger.warning(f"[CUSTOM_COMPONENT] Rate limited, waiting {wait_time}s before retry...")
-                            print(f"[CUSTOM_COMPONENT] ⏳ Rate limited, waiting {wait_time}s before retry...")
-                            await asyncio.sleep(wait_time)
-                        else:
-                            # All retries exhausted - fallback to Claude Opus 4.5
-                            logger.warning(f"[CUSTOM_COMPONENT] Gemini rate limited after {max_retries} attempts, falling back to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
-                            print(f"[CUSTOM_COMPONENT] 🔄 Switching to fallback model: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+            # Check if Gemini is in cooldown - if so, skip directly to fallback
+            use_fallback_directly = is_provider_in_cooldown(GEMINI_PROVIDER)
 
-                            try:
-                                fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
-                                response = await asyncio.wait_for(
-                                    loop.run_in_executor(
-                                        None,
-                                        invoke,
-                                        fallback_client,
-                                        fallback_model,
-                                        messages,
-                                        None,  # No response model - raw text
-                                        16000,  # max_tokens
-                                        self.temperature
-                                    ),
-                                    timeout=self.generation_timeout
-                                )
-                                used_fallback = True
-                                logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded")
-                                print(f"[CUSTOM_COMPONENT] ✅ Fallback model succeeded!")
-                            except Exception as fallback_err:
-                                logger.error(f"[CUSTOM_COMPONENT] Fallback model also failed: {fallback_err}")
-                                print(f"[CUSTOM_COMPONENT] ❌ Fallback model also failed: {fallback_err}")
-                                raise rate_err  # Re-raise original error
-                    except Exception as invoke_error:
-                        logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
-                        print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
-                        import traceback
-                        traceback.print_exc()
+            if use_fallback_directly:
+                logger.info(f"[CUSTOM_COMPONENT] Gemini in cooldown, using fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                print(f"[CUSTOM_COMPONENT] ⏭️ Gemini in cooldown, using {CUSTOM_COMPONENT_FALLBACK_MODEL} directly")
+                active_client, active_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                used_fallback = True
+            else:
+                active_client, active_model = client, model_name
+
+            logger.info(f"[CUSTOM_COMPONENT] Calling {active_model} with temperature={self.temperature}")
+            print(f"[CUSTOM_COMPONENT] 🎨 Using model: {active_model}")
+
+            async with _AI_SEMAPHORE:
+                try:
+                    response = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            invoke,
+                            active_client,
+                            active_model,
+                            messages,
+                            None,  # No response model - raw text
+                            16000,  # max_tokens
+                            self.temperature
+                        ),
+                        timeout=self.generation_timeout
+                    )
+                except AIRateLimitError as rate_err:
+                    # If this was Gemini, mark cooldown and immediately try fallback
+                    if not used_fallback:
+                        mark_provider_rate_limited(GEMINI_PROVIDER)
+                        logger.warning(f"[CUSTOM_COMPONENT] Gemini rate limited, immediately switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                        print(f"[CUSTOM_COMPONENT] 🔄 Gemini rate limited! Switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+
+                        try:
+                            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                            response = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    None,
+                                    invoke,
+                                    fallback_client,
+                                    fallback_model,
+                                    messages,
+                                    None,  # No response model - raw text
+                                    16000,  # max_tokens
+                                    self.temperature
+                                ),
+                                timeout=self.generation_timeout
+                            )
+                            used_fallback = True
+                            logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded")
+                            print(f"[CUSTOM_COMPONENT] ✅ Fallback succeeded!")
+                        except Exception as fallback_err:
+                            logger.error(f"[CUSTOM_COMPONENT] Fallback also failed: {fallback_err}")
+                            print(f"[CUSTOM_COMPONENT] ❌ Fallback also failed: {fallback_err}")
+                            raise rate_err
+                    else:
+                        # Fallback model also rate limited - nothing we can do
                         raise
+                except Exception as invoke_error:
+                    logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
+                    print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
 
             if used_fallback:
-                print(f"[CUSTOM_COMPONENT] 📊 Used fallback model due to Gemini rate limits")
+                print(f"[CUSTOM_COMPONENT] 📊 Used fallback model (Opus 4.5) for this generation")
 
             logger.info(f"[CUSTOM_COMPONENT] Got response: {type(response)}, length: {len(str(response)) if response else 0}")
             print(f"[CUSTOM_COMPONENT] ✅ Got response: {type(response)}, length: {len(str(response)) if response else 0}")
