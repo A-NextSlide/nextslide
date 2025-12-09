@@ -6,7 +6,8 @@ from models.tools import ToolModel
 from models.registry import ComponentRegistry
 from models.deck import DeckBase, DeckDiff, DeckDiffBase
 from agents.ai.clients import get_client, invoke
-from agents.config import DECK_EDITOR_MODEL
+from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
+from agents.config import DECK_EDITOR_MODEL, CUSTOM_COMPONENT_FALLBACK_MODEL
 from agents.prompts.editing.editor_notes import get_editor_notes
 from utils.deck import get_all_slide_ids, find_component_by_id
 import json
@@ -151,7 +152,11 @@ Note that your goal is to only produce a background component, that will be appl
         )
     )
 
-    client, model = get_client(DECK_EDITOR_MODEL)
+    # Check if Gemini is in cooldown - use fallback if so
+    if is_provider_in_cooldown("gemini"):
+        client, model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+    else:
+        client, model = get_client(DECK_EDITOR_MODEL)
 
     # Use content blocks with cache_control for Claude's prompt caching
     # Cache breakpoints: 1) editor_notes, 2) theme_context (if present)
@@ -165,18 +170,36 @@ Note that your goal is to only produce a background component, that will be appl
         user_content.append({"type": "text", "text": theme_section, "cache_control": {"type": "ephemeral"}})
     user_content.append({"type": "text", "text": background_request_section})
 
+    messages = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content}
+    ]
+
     # Get the background design from the LLM
-    response = invoke(
-        client=client,
-        model=model,
-        max_tokens=2048,
-        response_model=BackgroundResponse,
-        messages=[
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content}
-        ],
-        max_retries=2,
-    )
+    try:
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=2048,
+            response_model=BackgroundResponse,
+            messages=messages,
+            max_retries=2,
+        )
+    except Exception as e:
+        error_str = str(e).lower()
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str:
+            mark_provider_rate_limited("gemini")
+            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+            response = invoke(
+                client=fallback_client,
+                model=fallback_model,
+                max_tokens=2048,
+                response_model=BackgroundResponse,
+                messages=messages,
+                max_retries=2,
+            )
+        else:
+            raise
 
     # Get all background components
     background_components = get_background_components(deck_data)

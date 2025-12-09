@@ -475,16 +475,24 @@ def should_use_str_replace(edit_request: str, html_content: str) -> bool:
 
 class CustomComponentRewriteArgs(ToolModel):
     """
-    Full rewrite of a CustomComponent's HTML using AI.
-    Use this for broad changes like redesigns, new layouts, or major overhauls.
-    For targeted edits (color, text, size), use custom_component_str_replace instead.
+    Intelligent rewrite of a CustomComponent's HTML using AI.
+
+    This tool is POWERFUL and FLEXIBLE. The AI can:
+    - See and analyze uploaded images/files
+    - Extract information from screenshots, charts, or documents
+    - Incorporate user-uploaded images into the design
+    - Match styles from reference images
+    - Recreate layouts shown in uploaded screenshots
+    - Replace content with uploaded images
+
+    Describe what you want in natural language - the AI will figure out how to do it.
     """
     tool_name: Literal["custom_component_rewrite"] = Field(
-        description="Completely rewrite a CustomComponent's HTML. Use for redesigns or major changes."
+        description="Intelligently rewrite a CustomComponent. Can analyze uploaded images, extract data, incorporate user files, match styles from references, and more. Describe your intent in natural language."
     )
     component_id: str = Field(description="The id of the CustomComponent to rewrite")
     slide_id: str = Field(description="The id of the slide containing the component")
-    rewrite_request: str = Field(description="What changes to make to the component")
+    rewrite_request: str = Field(description="Natural language description of what to do. Examples: 'Add the uploaded logo to the top-left corner', 'Analyze the uploaded chart and recreate it with animations', 'Replace the title text with the uploaded image', 'Match the style from the uploaded screenshot'")
 
 
 class SimpleCustomComponentResponse(BaseModel):
@@ -501,7 +509,8 @@ def _build_rewrite_system_prompt(
     height: int,
     colors: dict,
     typography: dict,
-    attachment_context: str = ""
+    attachment_context: str = "",
+    has_attachments: bool = False
 ) -> str:
     """
     Build a rich system prompt for CustomComponent rewriting.
@@ -526,9 +535,42 @@ def _build_rewrite_system_prompt(
         'Inter'
     )
 
-    return f"""You are a WORLD-CLASS CREATIVE TECHNOLOGIST modifying presentation components.
-{attachment_context}
+    # Build attachment reasoning section if attachments are present
+    attachment_reasoning = ""
+    if has_attachments:
+        attachment_reasoning = """
+═══════════════════════════════════════════════════════════════
+📎 USER ATTACHMENTS - REASON ABOUT THEIR INTENT
+═══════════════════════════════════════════════════════════════
 
+The user has uploaded files. ANALYZE them and REASON about what they want:
+
+**POSSIBLE INTENTS (analyze the request to determine):**
+
+1. **USE AS CONTENT** - "use this", "add this image", "put this logo here"
+   → Embed the uploaded image directly in the HTML using <img src='URL'>
+
+2. **ANALYZE & EXTRACT** - "analyze this chart", "extract data", "recreate this"
+   → Study the image, understand its content, and recreate/represent it in HTML
+
+3. **MATCH STYLE** - "make it look like this", "match this design"
+   → Extract colors, fonts, layout patterns from the reference and apply them
+
+4. **REPLACE CONTENT** - "use this instead of the title", "swap for this image"
+   → Remove existing element and put the uploaded image in its place
+
+**HOW TO USE UPLOADED IMAGES IN HTML:**
+- Direct embed: <img src='ATTACHMENT_URL' alt='description' class='...' />
+- As background: style='background-image: url(ATTACHMENT_URL)'
+- With proper sizing: object-fit: contain/cover, width/height constraints
+
+**IMPORTANT:** When the user's request mentions their uploaded file, you MUST
+incorporate it. Don't just describe what you would do - actually include the
+image URL in your HTML output.
+"""
+
+    return f"""You are a WORLD-CLASS CREATIVE TECHNOLOGIST modifying presentation components.
+{attachment_context}{attachment_reasoning}
 ═══════════════════════════════════════════════════════════════
 🎨 DESIGN SYSTEM (USE THESE EXACT COLORS!)
 ═══════════════════════════════════════════════════════════════
@@ -633,14 +675,23 @@ def custom_component_rewrite(
     # Analyze attachments
     analyzed_attachments = analyze_attachments(attachments or [])
     attachment_context = get_attachment_context_summary(analyzed_attachments)
+    has_attachments = len(analyzed_attachments) > 0
 
-    # Check for reference images
+    # Check for reference images and build attachment URL list for direct use
     has_reference = any(att.is_vision_content for att in analyzed_attachments)
-    reference_note = ""
-    if has_reference:
-        reference_note = """
-🎯 REFERENCE IMAGES PROVIDED - MATCH THIS STYLE!
-Analyze the uploaded images and replicate the design style, colors, and layout.
+    attachment_urls = []
+    for att in analyzed_attachments:
+        if att.original_url:
+            attachment_urls.append(f"- {att.name}: {att.original_url}")
+
+    # Build note about attachments with their URLs for direct embedding
+    attachment_note = ""
+    if has_attachments:
+        attachment_note = f"""
+📎 USER ATTACHMENTS (use these URLs directly in your HTML if needed):
+{chr(10).join(attachment_urls)}
+
+Reason about what the user wants to do with these files based on their request.
 """
 
     # Build rich system prompt with full creative capability
@@ -649,17 +700,19 @@ Analyze the uploaded images and replicate the design style, colors, and layout.
         height=height,
         colors=colors,
         typography=typography,
-        attachment_context=attachment_context
+        attachment_context=attachment_context,
+        has_attachments=has_attachments
     )
 
     # User prompt with FULL current HTML (raw Gemini API has no filename issues)
     user_prompt = f"""CURRENT HTML:
 {current_html}
-
+{attachment_note}
 MODIFICATION REQUEST:
 {args.rewrite_request}
-{reference_note}
-Apply the requested changes. Output the complete modified HTML starting with <!DOCTYPE html>."""
+
+Apply the requested changes. If the user uploaded files, incorporate them as appropriate based on their intent.
+Output the complete modified HTML starting with <!DOCTYPE html>."""
 
     # SMART MODEL ROUTING: Choose model based on edit complexity
     complexity = classify_edit_complexity(args.rewrite_request, current_html)
@@ -678,9 +731,15 @@ Apply the requested changes. Output the complete modified HTML starting with <!D
             use_gemini = selected_model.startswith('gemini')
             logger.info(f"Smart routing: COMPLEX edit detected, using {selected_model}")
     else:
-        selected_model = CUSTOM_COMPONENT_EDIT_MODEL  # Claude Haiku 4.5 for medium edits
-        use_gemini = selected_model.startswith('gemini')
-        logger.info(f"Smart routing: MEDIUM edit detected, using {selected_model}")
+        # MEDIUM edits use Gemini 2.5 Pro (or fallback if Gemini in cooldown)
+        if gemini_in_cooldown:
+            selected_model = CUSTOM_COMPONENT_FALLBACK_MODEL
+            use_gemini = False
+            logger.info(f"Smart routing: MEDIUM edit, but Gemini in cooldown - using fallback: {selected_model}")
+        else:
+            selected_model = CUSTOM_COMPONENT_EDIT_MODEL  # Gemini 2.5 Pro for medium edits
+            use_gemini = selected_model.startswith('gemini')
+            logger.info(f"Smart routing: MEDIUM edit detected, using {selected_model}")
 
     import os
     import json as json_module

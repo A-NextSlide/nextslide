@@ -9,12 +9,13 @@ from models.registry import ComponentRegistry
 from models.deck import DeckBase, DeckDiff
 # Note: editor_notes removed - using simplified inline prompts
 from agents.ai.clients import get_client, invoke
+from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from utils.deck import find_component_by_id, get_component_info
 from utils.images import image_exists
 from utils.summaries import get_slide_summary
 from agents.dynamic_context.image_search import get_image_search_context
 
-from agents.config import DECK_EDITOR_MODEL, IMAGE_PROVIDER, IMAGE_TRANSPARENT_DEFAULT_SUPPORTING
+from agents.config import DECK_EDITOR_MODEL, CUSTOM_COMPONENT_FALLBACK_MODEL, IMAGE_PROVIDER, IMAGE_TRANSPARENT_DEFAULT_SUPPORTING
 from services.gemini_image_service import GeminiImageService
 from services.openai_image_service import OpenAIImageService
 from services.image_storage_service import ImageStorageService
@@ -71,29 +72,56 @@ def _build_custom_component_prompt(component_args, slide_summary: dict, analyzed
     """
     Build a focused, example-based prompt for CustomComponent creation.
     Follows the pattern from custom_component_generator.py - simple instructions + working example.
+
+    Now supports flexible reasoning about attachments - the AI should understand what
+    the user wants to do with uploaded files based on context.
     """
     from agents.editing.attachment_analyzer import FileType
 
     # Check if user uploaded reference images
     has_reference_images = any(att.is_vision_content for att in analyzed_attachments)
     has_data_files = any(att.file_type == FileType.SPREADSHEET for att in analyzed_attachments)
+    has_any_attachments = len(analyzed_attachments) > 0
 
     # Get data context if spreadsheets were uploaded
     data_context = ""
     if has_data_files:
         for att in analyzed_attachments:
-            if att.file_type == FileType.SPREADSHEET and att.extracted_text:
-                data_context += f"\nDATA TO VISUALIZE:\n{att.extracted_text[:2000]}\n"
+            if att.file_type == FileType.SPREADSHEET and att.text_content:
+                data_context += f"\nDATA TO VISUALIZE:\n{att.text_content[:2000]}\n"
 
-    reference_note = ""
-    if has_reference_images:
-        reference_note = """
-🎯 REFERENCE IMAGES PROVIDED - MATCH THIS STYLE!
-Analyze the uploaded images and replicate:
-- Color palette and gradients
-- Typography style and hierarchy
-- Layout patterns and spacing
-- Visual effects (shadows, rounded corners, etc.)
+    # Build attachment section with URLs for direct use
+    attachment_section = ""
+    if has_any_attachments:
+        attachment_urls = []
+        for att in analyzed_attachments:
+            if att.original_url:
+                attachment_urls.append(f"- {att.name} ({att.file_type.value}): {att.original_url}")
+
+        attachment_section = f"""
+═══════════════════════════════════════════════════════════════
+📎 USER ATTACHMENTS - REASON ABOUT INTENT
+═══════════════════════════════════════════════════════════════
+
+The user has uploaded files:
+{chr(10).join(attachment_urls)}
+
+**ANALYZE THE REQUEST TO DETERMINE INTENT:**
+
+1. **USE AS CONTENT** - "use this logo", "add this image", "put this here"
+   → Embed directly: <img src='URL' class='...' />
+
+2. **ANALYZE & EXTRACT** - "analyze this", "extract data", "recreate this chart"
+   → Study the image content and create HTML that represents/recreates it
+
+3. **MATCH STYLE** - "make it look like this", "match this design"
+   → Extract visual patterns (colors, fonts, layout) and apply them
+
+4. **REPLACE CONTENT** - "use this instead of X", "swap the title for this"
+   → Put the image where the referenced element would be
+
+**IMPORTANT:** If the user mentions their uploaded file, incorporate it appropriately.
+Use the URLs above directly in <img src='...'> tags when embedding images.
 """
 
     return f"""CREATE THIS CUSTOMCOMPONENT:
@@ -101,7 +129,7 @@ Analyze the uploaded images and replicate:
 
 SLIDE CONTEXT:
 {slide_summary}
-{reference_note}{data_context}
+{attachment_section}{data_context}
 ═══════════════════════════════════════════════════════════════
 📋 CUSTOMCOMPONENT FORMAT (REQUIRED)
 ═══════════════════════════════════════════════════════════════
@@ -118,6 +146,7 @@ RULES:
 - Set background:transparent
 - Use Tailwind classes for styling
 - Content must fit in the specified dimensions (no scrolling)
+- If using uploaded images, use <img src='ATTACHMENT_URL' class='...' />
 
 ═══════════════════════════════════════════════════════════════
 📋 WORKING EXAMPLE
@@ -357,7 +386,24 @@ RELATED COMPONENTS (for context only):
         )
     )
 
-    client, model = get_client(DECK_EDITOR_MODEL)
+    # Check if Gemini is in cooldown - use fallback if so
+    if is_provider_in_cooldown("gemini"):
+        logger.info(f"[COMPONENT_EDIT] Gemini in cooldown, using fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+        client, model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+    else:
+        client, model = get_client(DECK_EDITOR_MODEL)
+
+    messages = [
+        {"role": "system", "content": system_prompt_base},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": component_section, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": edit_request_section}
+            ]
+        }
+    ]
 
     try:
         # Use content blocks with cache_control for Claude's prompt caching
@@ -366,23 +412,32 @@ RELATED COMPONENTS (for context only):
             model=model,
             max_tokens=16384,
             response_model=EditResponse,
-            messages=[
-                {"role": "system", "content": system_prompt_base},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}},
-                        {"type": "text", "text": component_section, "cache_control": {"type": "ephemeral"}},
-                        {"type": "text", "text": edit_request_section}
-                    ]
-                }
-            ],
+            messages=messages,
             max_retries=3,
         )
     except Exception as e:
-        logger.error(f"Component edit failed for component {edit_args.metadata.component_id}: {str(e)}")
-        logger.error(f"Component data length: {len(component_section)} chars")
-        raise
+        error_str = str(e).lower()
+        # Check for rate limit and try fallback
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str:
+            mark_provider_rate_limited("gemini")
+            logger.warning(f"[COMPONENT_EDIT] Gemini rate limited, retrying with fallback")
+            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+            try:
+                response = invoke(
+                    client=fallback_client,
+                    model=fallback_model,
+                    max_tokens=16384,
+                    response_model=EditResponse,
+                    messages=messages,
+                    max_retries=3,
+                )
+            except Exception as fallback_err:
+                logger.error(f"Component edit failed (fallback): {str(fallback_err)}")
+                raise
+        else:
+            logger.error(f"Component edit failed for component {edit_args.metadata.component_id}: {str(e)}")
+            logger.error(f"Component data length: {len(component_section)} chars")
+            raise
     # Guardrail: ensure the diff targets the intended component id to avoid ID mismatch crashes
     try:
         component_diff = response.component_diff
@@ -505,7 +560,12 @@ POSITIONING RULES:
         )
     )
 
-    client, model = get_client(DECK_EDITOR_MODEL)
+    # Check if Gemini is in cooldown - use fallback if so
+    if is_provider_in_cooldown("gemini"):
+        logger.info(f"[CREATE_COMPONENT] Gemini in cooldown, using fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+        client, model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+    else:
+        client, model = get_client(DECK_EDITOR_MODEL)
 
     # Build multimodal user content using the unified analyzer
     # This handles images (as vision), spreadsheets (as data context), documents (as text), etc.
@@ -518,42 +578,93 @@ POSITIONING RULES:
     if analyzed_attachments:
         logger.info(f"[CREATE_COMPONENT] Attachments: {image_count} images, {data_count} data files, {doc_count} documents")
 
+    messages = [
+        { "role": "system", "content": system_prompt },
+        { "role": "user", "content": user_content }
+    ]
+
     try:
         response = invoke(
             client=client,
             model=model,
             max_tokens=16384,  # Increased from 4096 to prevent JSON truncation on complex components
             response_model=CreateResponse,
-            messages=[
-                { "role": "system", "content": system_prompt },
-                { "role": "user", "content": user_content }
-            ],
+            messages=messages,
             max_retries=3,  # Increased from 2 to give more retry attempts
         )
     except Exception as e:
-        logger.error(f"Component creation failed for component {component_args.id}: {str(e)}")
-        logger.error(f"System prompt length: {len(system_prompt)} chars")
-        logger.error(f"User content blocks: {len(user_content)}")
-        raise
+        error_str = str(e).lower()
+        # Check for rate limit and try fallback
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str:
+            mark_provider_rate_limited("gemini")
+            logger.warning(f"[CREATE_COMPONENT] Gemini rate limited, retrying with fallback")
+            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+            try:
+                response = invoke(
+                    client=fallback_client,
+                    model=fallback_model,
+                    max_tokens=16384,
+                    response_model=CreateResponse,
+                    messages=messages,
+                    max_retries=3,
+                )
+            except Exception as fallback_err:
+                logger.error(f"Component creation failed (fallback): {str(fallback_err)}")
+                raise
+        else:
+            logger.error(f"Component creation failed for component {component_args.id}: {str(e)}")
+            logger.error(f"System prompt length: {len(system_prompt)} chars")
+            logger.error(f"User content blocks: {len(user_content)}")
+            raise
 
     # Set the ID on the component after getting the response
     response.component.id = component_args.id
-    
-    # If the created component is an Image, ensure a high-quality AI image is generated
-    # according to deck intent and style, and set the src accordingly.
+
+    # If the created component is an Image, handle image source appropriately
+    # PRIORITY: User-uploaded images > LLM-suggested URL > AI-generated image
     try:
         if getattr(response.component, 'type', '') == 'Image':
-            new_url = _generate_image_for_request(
-                base_prompt=component_args.component_request,
-                slide_summary=slide_summary
-            )
-            if new_url:
-                # Ensure props exists and set src
-                if not hasattr(response.component, 'props') or response.component.props is None:
-                    setattr(response.component, 'props', {})
-                response.component.props['src'] = new_url
-    except Exception:
+            # Check if user uploaded images that should be used
+            has_user_images = any(att.is_vision_content for att in analyzed_attachments)
+
+            if has_user_images:
+                # User uploaded an image - use it directly instead of generating
+                # Find the first image attachment
+                for att in analyzed_attachments:
+                    if att.is_vision_content and att.original_url:
+                        # Re-upload to our storage for persistence
+                        from services.image_storage_service import ImageStorageService
+                        try:
+                            storage = ImageStorageService()
+                            upload_coro = storage.upload_image_from_url(att.original_url)
+                            upload_result = asyncio.run(_run_coro(upload_coro))
+                            if isinstance(upload_result, dict) and upload_result.get('url'):
+                                if not hasattr(response.component, 'props') or response.component.props is None:
+                                    setattr(response.component, 'props', {})
+                                response.component.props['src'] = upload_result['url']
+                                logger.info(f"[CREATE_COMPONENT] Using user-uploaded image: {upload_result['url'][:60]}...")
+                                break
+                        except Exception as e:
+                            # Use original URL if re-upload fails
+                            if not hasattr(response.component, 'props') or response.component.props is None:
+                                setattr(response.component, 'props', {})
+                            response.component.props['src'] = att.original_url
+                            logger.info(f"[CREATE_COMPONENT] Using user-uploaded image (original URL): {att.original_url[:60]}...")
+                            break
+            else:
+                # No user images - generate a high-quality AI image
+                new_url = _generate_image_for_request(
+                    base_prompt=component_args.component_request,
+                    slide_summary=slide_summary
+                )
+                if new_url:
+                    # Ensure props exists and set src
+                    if not hasattr(response.component, 'props') or response.component.props is None:
+                        setattr(response.component, 'props', {})
+                    response.component.props['src'] = new_url
+    except Exception as e:
         # Non-fatal; keep LLM-produced component
+        logger.warning(f"[CREATE_COMPONENT] Image handling failed: {e}")
         pass
     deck_diff.add_component(component_args.slide_id, response.component)
     return deck_diff

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 from agents.prompts.editing.editor_notes import get_editor_notes
 from agents.ai.clients import get_client, invoke
+from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from agents.editing.tools.component import get_edit_component_model, edit_component
 from utils.deck import find_current_slide, get_all_component_ids, get_all_slide_ids
 from utils.summaries import get_slide_summary
@@ -28,7 +29,7 @@ from agents.prompts.editing.layout_guidelines import layout_guidelines as defaul
 from agents.prompts.editing.style_guidelines import style_guidelines as default_style_guidelines
 # NOTE: Avoid heavy template/embedding lookups for styling; keep prompt concise and fast
 
-from agents.config import SLIDE_STYLE_MODEL
+from agents.config import SLIDE_STYLE_MODEL, CUSTOM_COMPONENT_FALLBACK_MODEL
 from concurrent.futures import ThreadPoolExecutor
 from agents.rag.slide_context_retriever import SlideContextRetriever
 from models.requests import SlideOutline as OutlineSlide, DeckOutline as OutlineDeck
@@ -361,7 +362,11 @@ THEME GUIDANCE (use as defaults, but user can override):
 {compact_summary}
 </slide_summary_compact>"""
 
-    client, model = get_client(SLIDE_STYLE_MODEL)
+    # Check if Gemini is in cooldown - use fallback if so
+    if is_provider_in_cooldown("gemini"):
+        client, model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+    else:
+        client, model = get_client(SLIDE_STYLE_MODEL)
 
     EditComponentArgs = get_edit_component_model(deck_data=deck_data,
                                 component_types=registry.get_component_types(),
@@ -441,22 +446,39 @@ Apply these visual elements to style the slide components.
     user_content.append({"type": "text", "text": context_section, "cache_control": {"type": "ephemeral"}})
     user_content.append({"type": "text", "text": slide_summary_section})
 
-    response = invoke(
-        client=client,
-        model=model,
-        max_tokens=4000,
-        response_model=ToolsCalls,
-        messages=[
-            {
-                "role": "system",
-                "content": system_content
-            },
-            {
-                "role": "user",
-                "content": user_content
-            }
-        ]
-    )
+    messages = [
+        {
+            "role": "system",
+            "content": system_content
+        },
+        {
+            "role": "user",
+            "content": user_content
+        }
+    ]
+
+    try:
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=4000,
+            response_model=ToolsCalls,
+            messages=messages
+        )
+    except Exception as e:
+        error_str = str(e).lower()
+        if '429' in error_str or 'rate' in error_str or 'quota' in error_str:
+            mark_provider_rate_limited("gemini")
+            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+            response = invoke(
+                client=fallback_client,
+                model=fallback_model,
+                max_tokens=4000,
+                response_model=ToolsCalls,
+                messages=messages
+            )
+        else:
+            raise
 
     for tool_call in response.tool_calls:
         print(f"    DEBUG: Tool call: {tool_call}")

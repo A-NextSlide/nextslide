@@ -436,55 +436,130 @@ def _extract_fonts_from_typography(typography: Dict[str, Any]) -> Tuple[str, str
     return (hero_font, body_font)
 
 
-def _extract_logo_from_theme(theme: Dict[str, Any]) -> Optional[str]:
+def _get_luminance(hex_color: str) -> float:
+    """Calculate relative luminance of a hex color (0.0 = black, 1.0 = white)."""
+    try:
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) == 3:
+            hex_color = ''.join(c * 2 for c in hex_color)
+
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+
+        # Apply gamma correction
+        r = r / 12.92 if r <= 0.03928 else ((r + 0.055) / 1.055) ** 2.4
+        g = g / 12.92 if g <= 0.03928 else ((g + 0.055) / 1.055) ** 2.4
+        b = b / 12.92 if b <= 0.03928 else ((b + 0.055) / 1.055) ** 2.4
+
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    except Exception:
+        return 0.5  # Default to middle if parsing fails
+
+
+def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[str] = None) -> Optional[str]:
     """
-    Extract logo URL from theme dict.
+    Extract logo URL from theme dict, selecting light/dark variant based on background.
 
     Handles multiple possible structures:
-    - theme.brandInfo.logoUrl
-    - theme.color_palette.metadata.logo_url
+    - theme.brandInfo.logoUrl / logoUrlDark
+    - theme.color_palette.metadata.logo_url / logo_url_dark / logo_url_light
     - theme.logo.url
     - theme.logo (direct URL string)
 
-    Returns logo URL or None if not found.
+    Args:
+        theme: Theme dictionary
+        background_color: Optional hex color of the background (e.g. "#FFFFFF")
+                         Used to select light vs dark logo variant
+
+    Returns:
+        Best logo URL for the background, or None if not found.
     """
     if not theme:
         logger.debug("[LOGO] No theme dict provided")
         return None
 
-    logo_url = None
+    # IMPORTANT: Logo naming convention from Brandfetch:
+    # - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
+    # - "logo_for_dark_bg" = logo designed FOR dark backgrounds = typically LIGHT/WHITE colored
+    logo_for_light_bg = None  # Dark colored logo, use on light backgrounds
+    logo_for_dark_bg = None   # Light/white colored logo, use on dark backgrounds
 
-    # Try brandInfo.logoUrl (most common from frontend)
+    # Try brandInfo.logoUrl / logoUrlDark (from frontend)
+    # Note: logoUrl = logo FOR light backgrounds (dark colored)
+    #       logoUrlDark = logo FOR dark backgrounds (light colored) - confusing name!
     brand_info = theme.get('brandInfo', {})
     if isinstance(brand_info, dict):
-        logo_url = brand_info.get('logoUrl')
-        if logo_url:
-            logger.debug(f"[LOGO] Found in brandInfo.logoUrl: {logo_url[:60]}...")
-            return logo_url
+        logo_for_light_bg = brand_info.get('logoUrl') or brand_info.get('logoUrlLight')
+        logo_for_dark_bg = brand_info.get('logoUrlDark')
+        if logo_for_light_bg or logo_for_dark_bg:
+            logger.debug(f"[LOGO] Found in brandInfo - for_light_bg: {bool(logo_for_light_bg)}, for_dark_bg: {bool(logo_for_dark_bg)}")
 
-    # Try color_palette.metadata.logo_url
-    color_palette = theme.get('color_palette', {})
-    if isinstance(color_palette, dict):
-        metadata = color_palette.get('metadata', {})
-        if isinstance(metadata, dict):
-            logo_url = metadata.get('logo_url')
-            if logo_url:
-                logger.debug(f"[LOGO] Found in color_palette.metadata.logo_url: {logo_url[:60]}...")
-                return logo_url
+    # Try color_palette.metadata.logo_url_light / logo_url_dark
+    if not logo_for_light_bg and not logo_for_dark_bg:
+        color_palette = theme.get('color_palette', {})
+        if isinstance(color_palette, dict):
+            metadata = color_palette.get('metadata', {})
+            if isinstance(metadata, dict):
+                logo_for_light_bg = metadata.get('logo_url_light') or metadata.get('logo_url')
+                logo_for_dark_bg = metadata.get('logo_url_dark')
+                if logo_for_light_bg or logo_for_dark_bg:
+                    logger.debug(f"[LOGO] Found in color_palette.metadata - for_light_bg: {bool(logo_for_light_bg)}, for_dark_bg: {bool(logo_for_dark_bg)}")
 
-    # Try theme.logo.url or theme.logo (direct string)
-    logo = theme.get('logo')
-    if isinstance(logo, dict):
-        logo_url = logo.get('url')
-        if logo_url:
-            logger.debug(f"[LOGO] Found in logo.url: {logo_url[:60]}...")
-            return logo_url
-    elif isinstance(logo, str) and logo.startswith('http'):
-        logger.debug(f"[LOGO] Found direct logo URL: {logo[:60]}...")
-        return logo
+    # Try theme.logo.url or theme.logo (direct string) - assume it's for light backgrounds
+    if not logo_for_light_bg and not logo_for_dark_bg:
+        logo = theme.get('logo')
+        if isinstance(logo, dict):
+            logo_for_light_bg = logo.get('url')
+        elif isinstance(logo, str) and logo.startswith('http'):
+            logo_for_light_bg = logo
+        if logo_for_light_bg:
+            logger.debug(f"[LOGO] Found direct logo URL (assuming for light backgrounds)")
 
-    logger.debug("[LOGO] No logo URL found in theme")
-    return None
+    # If no logos found at all
+    if not logo_for_light_bg and not logo_for_dark_bg:
+        logger.debug("[LOGO] No logo URL found in theme")
+        return None
+
+    # If only one variant available, use it (with a warning if it might not contrast)
+    if logo_for_light_bg and not logo_for_dark_bg:
+        if background_color:
+            luminance = _get_luminance(background_color)
+            if luminance < 0.5:
+                logger.warning(f"[LOGO] Only logo for light bg available, but background is dark (luminance={luminance:.2f}). Logo may not be visible!")
+        logger.debug(f"[LOGO] Only 'for light bg' variant available: {logo_for_light_bg[:60]}...")
+        return logo_for_light_bg
+
+    if logo_for_dark_bg and not logo_for_light_bg:
+        if background_color:
+            luminance = _get_luminance(background_color)
+            if luminance > 0.5:
+                logger.warning(f"[LOGO] Only logo for dark bg available, but background is light (luminance={luminance:.2f}). Logo may not be visible!")
+        logger.debug(f"[LOGO] Only 'for dark bg' variant available: {logo_for_dark_bg[:60]}...")
+        return logo_for_dark_bg
+
+    # Both variants available - select based on background luminance
+    if background_color:
+        luminance = _get_luminance(background_color)
+        logger.info(f"[LOGO] Background {background_color} has luminance {luminance:.2f}")
+
+        if luminance > 0.5:
+            # Light background - use the logo designed FOR light backgrounds (dark colored logo)
+            selected = logo_for_light_bg
+            logger.info(f"[LOGO] Light background -> using logo FOR light bg (dark colored)")
+        else:
+            # Dark background - use the logo designed FOR dark backgrounds (light colored logo)
+            selected = logo_for_dark_bg
+            logger.info(f"[LOGO] Dark background -> using logo FOR dark bg (light colored)")
+
+        if selected:
+            logger.debug(f"[LOGO] Selected: {selected[:60]}...")
+            return selected
+
+    # Default: prefer logo for light backgrounds
+    selected = logo_for_light_bg or logo_for_dark_bg
+    logger.debug(f"[LOGO] No background specified, defaulting to: {selected[:60] if selected else 'None'}...")
+    return selected
 
 
 class CustomComponentGenerator:
@@ -642,11 +717,12 @@ class CustomComponentGenerator:
             # Get slide_mode from context: 'interactive' (NextGen) or 'static' (Traditional PPT)
             slide_mode = slide_context.get('slide_mode', 'interactive')
 
-            # Extract logo URL from theme
-            logo_url = _extract_logo_from_theme(theme)
+            # Extract logo URL from theme - pass background color for light/dark selection
+            background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
+            logo_url = _extract_logo_from_theme(theme, background_color=background_color)
             if logo_url:
                 logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...")
-                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}...")
+                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}... (bg: {background_color})")
             else:
                 logger.debug("[CUSTOM_COMPONENT] No logo URL in theme")
 
@@ -1226,6 +1302,9 @@ BRAND LOGO (optional - use if there's space): {logo_url}
 If you include it, place in a corner without overlapping other content.
 """
 
+        # Add tone guidance only if no explicit style hint was provided
+        tone_guidance = " Match the content tone." if not design_context_section else ""
+
         return f"""{full_slide_instructions}SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
 {design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
 CONTENT:
@@ -1233,7 +1312,7 @@ CONTENT:
 
 SIZE: {width}x{height}px
 
-Design something beautiful. You have complete creative freedom.
+Design something beautiful. You have complete creative freedom.{tone_guidance}
 OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
 
     def _extract_html(self, response: Any) -> Optional[str]:

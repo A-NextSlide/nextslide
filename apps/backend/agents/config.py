@@ -56,20 +56,20 @@ OUTLINE_PRESENTATION_MODEL = CLAUDE_HAIKU   # Presentation mode (narrative)
 OUTLINE_RESEARCH_MODEL = CLAUDE_HAIKU
 OUTLINE_AGENT_MODEL = CLAUDE_SONNET         # Conversational outline/editing agent
 
-# Deck Editing
-ORCHESTRATOR_MODEL = CLAUDE_OPUS            # Complex editing decisions
-DECK_EDITOR_MODEL = CLAUDE_OPUS             # Component editing
-CONTEXT_BUILDER_MODEL = CLAUDE_OPUS         # Context extraction
-SLIDE_STYLE_MODEL = CLAUDE_OPUS             # Styling
+# Deck Editing - All use Gemini 3 Pro (with Opus 4.5 fallback on rate limits)
+ORCHESTRATOR_MODEL = CLAUDE_OPUS            # Complex editing decisions (keeps tool-calling stable)
+DECK_EDITOR_MODEL = GEMINI_3_PRO            # Component editing
+CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction (fast, simple task)
+SLIDE_STYLE_MODEL = GEMINI_3_PRO            # Styling
 
 # Custom Components - Smart Model Routing
 # COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality, fallback to Opus 4.5)
-# MEDIUM edits (partial rewrites, structural changes) → Claude Opus 4.5 (best quality)
+# MEDIUM edits (partial rewrites, structural changes) → Gemini 2.5 Pro (fast, good quality)
 # SIMPLE edits (text/color changes) → str_replace (no AI needed)
 CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO              # Complex: new concepts, full redesigns
 CUSTOM_COMPONENT_FALLBACK_MODEL = CLAUDE_OPUS      # Fallback when Gemini rate limited
-CUSTOM_COMPONENT_EDIT_MODEL = CLAUDE_OPUS          # Medium: partial rewrites (Opus 4.5)
-CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_OPUS        # Simple: suggest str_replace strings
+CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_PRO           # Medium: partial rewrites (Gemini 2.5 Pro)
+CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_HAIKU       # Simple: suggest str_replace strings
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
 
 # Editing Quality Control
