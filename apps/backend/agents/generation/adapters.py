@@ -1004,8 +1004,13 @@ class SimpleDeckComposer(IDeckComposer):
                             color_palette = deck_theme.get('color_palette', {})
                             if color_palette:
                                 logger.info(f"[DECK COMPOSER] ✅ Extracted color_palette from deck_theme: {list(color_palette.keys())}")
-                            # Extract logo from deck_theme
+                            # Extract logo from deck_theme (multiple possible locations)
                             logo_url = deck_theme.get('logo', {}).get('url') if isinstance(deck_theme.get('logo'), dict) else None
+                            # Fallback: check color_palette.metadata.logo_url
+                            if not logo_url and color_palette:
+                                logo_url = color_palette.get('metadata', {}).get('logo_url')
+                                if logo_url:
+                                    logger.info(f"[DECK COMPOSER] ✅ Got logo from color_palette.metadata: {logo_url[:60] if logo_url else None}...")
 
                         # Fallback to direct font/bodyFont if no deck_theme
                         if not brand_fonts:

@@ -111,6 +111,17 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 if 'title' not in outline_dict: outline_dict['title'] = 'Untitled Presentation'
                 if 'stylePreferences' not in outline_dict and request.stylePreferences:
                     outline_dict['stylePreferences'] = request.stylePreferences
+                elif 'stylePreferences' in outline_dict and request.stylePreferences:
+                    # CRITICAL: Merge logoUrl from request if not in outline (logo may come from separate style_preferences)
+                    if request.stylePreferences.get('logoUrl') and not outline_dict['stylePreferences'].get('logoUrl'):
+                        outline_dict['stylePreferences']['logoUrl'] = request.stylePreferences['logoUrl']
+                        logger.info(f"[DECK_CREATE] 🖼️ Merged logoUrl from request into outline: {request.stylePreferences['logoUrl'][:60]}...")
+                    if request.stylePreferences.get('logoUrlDark') and not outline_dict['stylePreferences'].get('logoUrlDark'):
+                        outline_dict['stylePreferences']['logoUrlDark'] = request.stylePreferences['logoUrlDark']
+                    # Also merge deck_theme if present in request but not outline
+                    if request.stylePreferences.get('deck_theme') and not outline_dict['stylePreferences'].get('deck_theme'):
+                        outline_dict['stylePreferences']['deck_theme'] = request.stylePreferences['deck_theme']
+                        logger.info(f"[DECK_CREATE] 🎨 Merged deck_theme from request into outline")
 
                 # Filter out any legacy upgrade slides (no longer used, popup shown instead)
                 outline_dict['slides'] = [

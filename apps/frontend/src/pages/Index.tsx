@@ -88,12 +88,10 @@ const Index: React.FC = () => {
                 }
                 
                 // Now load the deck since we know it exists
+                // Remove redundant deck loading - initialize will handle it
                 // Clear the store first to prevent showing old deck data
-                const currentDeckUuid = useDeckStore.getState().deckData?.uuid;
-                if (isNewDeck || (currentDeckUuid && deckId !== currentDeckUuid)) {
-                  // Reset store to clear old deck data before loading new deck
-                  console.log(`[Index] Resetting store - loading deck ${deckId}, current store has ${currentDeckUuid}`);
-                  useDeckStore.getState().resetStore();
+                if (isNewDeck || deckId !== useDeckStore.getState().deckData.uuid) {
+                  // Don't reset store - just let initialize handle the deck loading
                 }
 
                 // Initialize the store with the deck ID - this will load the deck

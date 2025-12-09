@@ -483,6 +483,13 @@ def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[s
         logger.debug("[LOGO] No theme dict provided")
         return None, False
 
+    # Log theme structure for debugging logo extraction
+    logger.info(f"[LOGO] Checking theme for logo - keys: {list(theme.keys())}")
+    if theme.get('brandInfo'):
+        logger.info(f"[LOGO] brandInfo keys: {list(theme['brandInfo'].keys()) if isinstance(theme.get('brandInfo'), dict) else 'not a dict'}")
+    if theme.get('color_palette', {}).get('metadata'):
+        logger.info(f"[LOGO] color_palette.metadata keys: {list(theme['color_palette']['metadata'].keys())}")
+
     # IMPORTANT: Logo naming convention from Brandfetch:
     # - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
     # - "logo_for_dark_bg" = logo designed FOR dark backgrounds = typically LIGHT/WHITE colored
@@ -2267,10 +2274,8 @@ THINK LIKE A DESIGNER:
         # Logo instructions for title slides
         logo_info = ""
         if logo_url:
-            if logo_needs_invert:
-                logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height). IMPORTANT: Apply CSS filter: invert(1) to the logo img for proper contrast!"
-            else:
-                logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height)"
+            invert_note = " Apply CSS filter: invert(1) to the <img> for contrast!" if logo_needs_invert else ""
+            logo_info = f"\n🏢 LOGO (MANDATORY): Include the brand logo in the top-left corner (height: 50px, z-index: 100).{invert_note} THE LOGO IS NON-NEGOTIABLE!"
 
         # Mode-specific instructions
         if slide_mode == 'static':
@@ -2298,7 +2303,7 @@ DESIGN PHILOSOPHY:
 - Cinematic, editorial, high-fashion quality
 - Dramatic typography as the hero (120-200px titles)
 - Atmospheric backgrounds (gradients, glows, blur effects)
-- Maximum 4 elements: logo (if provided), title, optional subtitle, optional accent
+- REQUIRED elements: brand logo (TOP-LEFT, always), title, optional subtitle, optional accent
 
 TYPOGRAPHY CRAFT:
 - Tight letter-spacing (-0.02em to -0.05em)
@@ -2354,16 +2359,15 @@ Use CSS variables. Fill 1920x1080."""
         # Build logo section for title slides
         logo_section = ""
         if logo_url:
-            invert_instruction = ""
-            if logo_needs_invert:
-                invert_instruction = """
-🔄 REQUIRED: Apply CSS filter: invert(1) to the logo <img> for proper contrast!
-Example: <img src="..." style="filter: invert(1); height: 50px;" />"""
+            invert_style = ' style="filter: invert(1);"' if logo_needs_invert else ''
+            invert_note = " (with filter: invert(1) for contrast)" if logo_needs_invert else ""
 
             logo_section = f"""
-BRAND LOGO: {logo_url}
-Position: top-left or top-right corner (40-60px height){invert_instruction}
-CRITICAL: The logo MUST be visible on the slide!
+🏢 BRAND LOGO (REQUIRED - DO NOT SKIP):
+URL: {logo_url}
+HTML: <img src="{logo_url}" alt="Logo"{invert_style} style="height: 50px; position: absolute; top: 30px; left: 30px; z-index: 100;">
+Position: TOP-LEFT corner{invert_note}
+⚠️ THIS LOGO MUST APPEAR ON THE SLIDE - IT IS THE BRAND'S IDENTITY!
 """
 
         return f"""TITLE SLIDE: "{title}"

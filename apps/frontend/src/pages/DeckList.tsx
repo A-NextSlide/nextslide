@@ -1070,6 +1070,8 @@ const DeckList: React.FC = () => {
           // CRITICAL: Include colors, fonts, and logo so backend can use them
           colors: parsedStylePrefs?.colors,
           font: parsedStylePrefs?.font,
+          bodyFont: parsedStylePrefs?.bodyFont,
+          logoUrl: parsedStylePrefs?.logoUrl,  // CRITICAL: Include logo URL for brand slides
         },
         slides: outlineSlides,
         // CRITICAL: Embed theme in notes so backend finds it and uses it directly
