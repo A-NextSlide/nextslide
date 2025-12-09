@@ -149,7 +149,18 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
   // Track last save time to debounce saves
   const lastSaveTimeRef = useRef(0);
   const SAVE_DEBOUNCE_MS = 2000; // Save every 2 seconds max
-  
+
+  // CRITICAL FIX: Store options in a ref to prevent callback recreation on every render
+  // This fixes the production bug where loading state disappears due to stale closures
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  // Store deckStatus.startedAt in a ref to avoid stale closures in handleProgress
+  const startedAtRef = useRef<string | null>(null);
+  if (deckStatus?.startedAt && !startedAtRef.current) {
+    startedAtRef.current = deckStatus.startedAt;
+  }
+
   const stateManager = useMemo(() => new GenerationStateManager(), []);
   const { toast } = useToast();
 
@@ -244,15 +255,15 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         const palette = {
           primary_background: colors.background || colorValues[0] || '#FFFFFF',
           primary_text: colors.text || '#1F2937',
-          accent_1: colors.accent1 || colorValues[0] || '#FF4301',
-          accent_2: colors.accent2 || colorValues[1] || colors.accent1 || '#F59E0B',
+          accent_1: colors.accent1 || colorValues[0] || '#333333',  // Neutral fallback
+          accent_2: colors.accent2 || colorValues[1] || colors.accent1 || '#666666',  // Neutral fallback
           colors: colorValues.slice(0, 6),
           metadata: sp.logoUrl ? { logo_url: sp.logoUrl } : {}
         } as any;
 
        const typography = {
-         hero_title: { family: sp.font || 'Inter' },
-         body_text: { family: sp.font || 'Inter' }
+         hero_title: { family: sp.font || 'Roboto' },
+         body_text: { family: sp.bodyFont || sp.font || 'Roboto' }
        };
 
        const themePayload = {
@@ -995,15 +1006,21 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     }
     
     // Update deck status
+    // CRITICAL FIX: Use startedAtRef instead of deckStatus?.startedAt to avoid stale closures
+    // This was causing the loading state to disappear in production
+    const newStartedAt = startedAtRef.current || new Date().toISOString();
+    if (!startedAtRef.current) {
+      startedAtRef.current = newStartedAt;
+    }
     const newStatus: DeckStatus = {
       state: getStateFromEvent(event),
       progress: progress,
       message: message,
       currentSlide: currentSlide,
       totalSlides: totalSlides,
-      startedAt: deckStatus?.startedAt || new Date().toISOString()
+      startedAt: newStartedAt
     };
-    
+
     setDeckStatus(newStatus);
     
     // Create progress message based on backend event type
@@ -1638,13 +1655,14 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         (progress === 100 && (event.stage === 'finalization' || event.stage === 'generation_complete'))) {
       
       // Update status to completed
+      // CRITICAL FIX: Use startedAtRef instead of deckStatus?.startedAt to avoid stale closures
       setDeckStatus({
         state: 'completed',
         progress: 100,
         message: 'Your presentation is ready!',
         currentSlide: totalSlides,
         totalSlides: totalSlides,
-        startedAt: deckStatus?.startedAt || new Date().toISOString()
+        startedAt: startedAtRef.current || new Date().toISOString()
       });
       
       // Set a proper completion message if not already set above
@@ -2108,9 +2126,9 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       }
     }
 
-    // Call user's progress handler
-    options.onProgress?.(event);
-  }, [deckId, options]);
+    // Call user's progress handler via ref to avoid stale closures
+    optionsRef.current.onProgress?.(event);
+  }, [deckId]); // CRITICAL FIX: Removed 'options' from dependencies - using optionsRef instead
 
   const handleComplete = useCallback(() => {
     setIsGenerating(false);
@@ -2118,13 +2136,17 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
     processedSlidesRef.current.clear();
     // Clear the active generation ID
     (window as any).__activeGenerationId = null;
-    options.onComplete?.();
-  }, [options]);
+    // Reset startedAt ref for next generation
+    startedAtRef.current = null;
+    optionsRef.current.onComplete?.();
+  }, []); // CRITICAL FIX: Removed 'options' from dependencies - using optionsRef instead
 
   const handleError = useCallback((error: Error) => {
     setIsGenerating(false);
     // Clear processed slides on error
     processedSlidesRef.current.clear();
+    // Reset startedAt ref for next generation
+    startedAtRef.current = null;
     // Clear the active generation ID
     (window as any).__activeGenerationId = null;
     toast({
@@ -2133,8 +2155,8 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       variant: 'destructive',
       duration: 5000,
     });
-    options.onError?.(error);
-  }, [options, toast]);
+    optionsRef.current.onError?.(error);
+  }, [toast]); // CRITICAL FIX: Removed 'options' from dependencies - using optionsRef instead
 
   const startGeneration = useCallback(async (generationOptions: any = {}) => {
     // CRITICAL: Use deckId from generationOptions if provided (for outline mode UUID consistency)
