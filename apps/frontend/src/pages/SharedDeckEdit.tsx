@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { shareService } from '@/services/shareService';
 import { mockShareService } from '@/services/mockShareService';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Lock, AlertCircle } from 'lucide-react';
+import { useAuth } from '@/context/SupabaseAuthContext';
+import { Loader2, Lock, AlertCircle, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,49 +14,57 @@ const SharedDeckEdit: React.FC = () => {
   const { shareCode } = useParams<{ shareCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  
+  const [requiresAuth, setRequiresAuth] = useState(false);
+  const [deckName, setDeckName] = useState<string | null>(null);
+
   // Get deck store methods
   const updateDeckData = useDeckStore(state => state.updateDeckData);
   const initialize = useDeckStore(state => state.initialize);
 
   useEffect(() => {
-    if (shareCode) {
+    if (shareCode && !authLoading) {
       loadSharedDeck();
     }
-  }, [shareCode]);
+  }, [shareCode, authLoading, isAuthenticated]);
 
   const loadSharedDeck = async (withPassword?: string) => {
     if (!shareCode) return;
-    
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      // Try to load the deck using the share code
+      // Try to load the deck using the share code (public endpoint)
       let response = await shareService.getPublicDeck(shareCode);
-      
+
       // Fallback to mock service if backend fails
       if (!response.success && response.error?.includes('401')) {
         console.log('[SharedDeckEdit] Backend failed, using mock service');
         response = await mockShareService.getPublicDeck(shareCode);
       }
-      
+
       if (response.success && response.data) {
         const { deck: deckData, is_editable } = response.data;
-        
+
+        // Store deck name for the auth prompt UI
+        if (deckData?.name) {
+          setDeckName(deckData.name);
+        }
+
         // Check if the deck requires a password
         if (response.error === 'Password required') {
           setRequiresPassword(true);
           setIsLoading(false);
           return;
         }
-        
+
         // Check if user has edit permissions
         if (!is_editable) {
           setError('You only have view permissions for this deck. Redirecting to view mode...');
@@ -64,27 +73,42 @@ const SharedDeckEdit: React.FC = () => {
           }, 2000);
           return;
         }
-        
-        // Load the deck into the store
+
+        // If user is not authenticated, show auth prompt instead of navigating to protected route
+        if (!isAuthenticated) {
+          // Store share code for redirect after login
+          try {
+            if (typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem('pending_share_code', shareCode);
+            }
+          } catch (e) {
+            // sessionStorage not available
+          }
+          setRequiresAuth(true);
+          setIsLoading(false);
+          return;
+        }
+
+        // User is authenticated - load the deck into the store
         updateDeckData(deckData, { skipBackend: true });
-        
+
         // Initialize the store with the deck
         if (deckData.uuid) {
-          initialize({ 
+          initialize({
             deckId: deckData.uuid,
             syncEnabled: true,
             collaborationEnabled: true
           });
         }
-        
+
         // Navigate to the editor with the deck loaded
         navigate(`/deck/${deckData.uuid || deckData.id}`, {
-          state: { 
+          state: {
             sharedAccess: true,
             shareCode: shareCode
           }
         });
-        
+
         // Track access
         toast({
           title: "Deck loaded",
@@ -92,7 +116,7 @@ const SharedDeckEdit: React.FC = () => {
         });
       } else {
         setError(response.error || 'Failed to load shared deck');
-        
+
         // Handle specific error cases
         if (response.error?.includes('expired')) {
           setError('This share link has expired');
@@ -194,6 +218,53 @@ const SharedDeckEdit: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (requiresAuth) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 bg-white dark:bg-black">
+        <Card className="w-full max-w-md border-0 shadow-xl">
+          <CardHeader className="text-center pb-2">
+            <div className="w-14 h-14 bg-[#FF4301]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <LogIn size={28} className="text-[#FF4301]" />
+            </div>
+            <CardTitle className="text-2xl font-bold">Sign in to continue</CardTitle>
+            <CardDescription className="text-base mt-2">
+              You've been invited to collaborate on a presentation
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Deck preview card */}
+            {deckName && (
+              <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Presentation</p>
+                <p className="font-semibold text-lg">{deckName}</p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Button
+                onClick={() => navigate('/login')}
+                className="w-full h-12 bg-[#FF4301] hover:bg-[#E63901] text-white font-semibold"
+              >
+                Sign In
+              </Button>
+              <Button
+                onClick={() => navigate('/signup')}
+                variant="outline"
+                className="w-full h-12"
+              >
+                Create Account
+              </Button>
+            </div>
+
+            <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
+              After signing in, you'll be redirected back to this presentation.
+            </p>
           </CardContent>
         </Card>
       </div>
