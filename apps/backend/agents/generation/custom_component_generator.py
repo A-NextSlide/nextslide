@@ -2275,7 +2275,7 @@ THINK LIKE A DESIGNER:
         logo_info = ""
         if logo_url:
             invert_note = " Apply CSS filter: invert(1) to the <img> for contrast!" if logo_needs_invert else ""
-            logo_info = f"\n🏢 LOGO (MANDATORY): Include the brand logo in the top-left corner (height: 50px, z-index: 100).{invert_note} THE LOGO IS NON-NEGOTIABLE!"
+            logo_info = f"\n🏢 LOGO (MANDATORY): Include the brand logo in a corner or header area (height: 40-60px, z-index: 100).{invert_note} THE LOGO IS NON-NEGOTIABLE!"
 
         # Mode-specific instructions
         if slide_mode == 'static':
@@ -2303,7 +2303,7 @@ DESIGN PHILOSOPHY:
 - Cinematic, editorial, high-fashion quality
 - Dramatic typography as the hero (120-200px titles)
 - Atmospheric backgrounds (gradients, glows, blur effects)
-- REQUIRED elements: brand logo (TOP-LEFT, always), title, optional subtitle, optional accent
+- REQUIRED elements: brand logo (corner or header), title, optional subtitle, optional accent
 
 TYPOGRAPHY CRAFT:
 - Tight letter-spacing (-0.02em to -0.05em)
@@ -2365,8 +2365,8 @@ Use CSS variables. Fill 1920x1080."""
             logo_section = f"""
 🏢 BRAND LOGO (REQUIRED - DO NOT SKIP):
 URL: {logo_url}
-HTML: <img src="{logo_url}" alt="Logo"{invert_style} style="height: 50px; position: absolute; top: 30px; left: 30px; z-index: 100;">
-Position: TOP-LEFT corner{invert_note}
+HTML example: <img src="{logo_url}" alt="Logo"{invert_style} style="height: 50px; position: absolute; top: 30px; z-index: 100;">
+Position: Any corner or header area that fits the design{invert_note}
 ⚠️ THIS LOGO MUST APPEAR ON THE SLIDE - IT IS THE BRAND'S IDENTITY!
 """
 
