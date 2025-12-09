@@ -746,8 +746,21 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
             // Always store the theme to ensure swatches appear (do this FIRST before any logic)
             setOutlineDeckTheme(currentOutline.id, themePayload);
             
-            // CRITICAL: Also persist colors to outline.stylePreferences so they survive page refreshes
+            // CRITICAL: Also persist colors AND LOGO to outline.stylePreferences so they survive page refreshes
             try {
+              // Extract logo URL from theme (check multiple locations)
+              const themeLogoUrl =
+                themePayload?.color_palette?.metadata?.logo_url ||
+                themePayload?.color_palette?.metadata?.logo_url_light ||
+                themePayload?.brandInfo?.logoUrl ||
+                themePayload?.brandInfo?.logo_url ||
+                themePayload?.metadata?.logo_url ||
+                null;
+
+              if (themeLogoUrl) {
+                console.log('[OutlineDisplayView] 🖼️ Found logo URL in theme:', themeLogoUrl.slice(0, 60) + '...');
+              }
+
               setCurrentOutline(prev => {
                 if (!prev) return prev;
                 return {
@@ -760,11 +773,13 @@ const OutlineDisplayView: React.FC<OutlineDisplayViewProps> = ({
                       text: textColor,
                       accent1: accent1,
                       accent2: colors.accent_2 || accent1
-                    }
+                    },
+                    // CRITICAL: Persist logo URL from theme so it's sent to backend during deck creation
+                    ...(themeLogoUrl ? { logoUrl: themeLogoUrl } : {})
                   }
                 };
               });
-              console.log('[OutlineDisplayView] 🎨 Persisted theme colors to outline.stylePreferences');
+              console.log('[OutlineDisplayView] 🎨 Persisted theme colors' + (themeLogoUrl ? ' and logo' : '') + ' to outline.stylePreferences');
             } catch (err) {
               console.warn('[OutlineDisplayView] Failed to persist colors to outline:', err);
             }

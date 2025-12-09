@@ -1882,12 +1882,42 @@ class SimpleDeckComposer(IDeckComposer):
             yield progress.start_phase(GenerationPhase.SLIDE_GENERATION)
             logger.info(f"[DECK COMPOSER] Is default theme: {theme == default_theme}")
 
-            # DEBUG: Check if logo is in stylePreferences before creating DeckState
+            # DEBUG & FIX: Check if logo is in stylePreferences before creating DeckState
+            # If missing, try to inject from theme
             if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
                 sp_logo = getattr(deck_outline.stylePreferences, 'logoUrl', None)
                 sp_logo_dark = getattr(deck_outline.stylePreferences, 'logoUrlDark', None)
                 logger.info(f"🖼️ [PRE-DECKSTATE] deck_outline.stylePreferences.logoUrl = {sp_logo}")
                 logger.info(f"🖼️ [PRE-DECKSTATE] deck_outline.stylePreferences.logoUrlDark = {sp_logo_dark}")
+
+                # CRITICAL FIX: If no logo in stylePreferences but we have it in the theme, inject it
+                if not sp_logo and theme:
+                    theme_dict = theme.to_dict() if hasattr(theme, 'to_dict') else theme
+                    if isinstance(theme_dict, dict):
+                        # Check multiple locations for logo URL
+                        theme_logo = (
+                            theme_dict.get('brandInfo', {}).get('logoUrl') or
+                            theme_dict.get('brandInfo', {}).get('logo_url') or
+                            theme_dict.get('color_palette', {}).get('metadata', {}).get('logo_url') or
+                            theme_dict.get('color_palette', {}).get('metadata', {}).get('logo_url_light') or
+                            theme_dict.get('metadata', {}).get('logo_url') or
+                            None
+                        )
+                        theme_logo_dark = (
+                            theme_dict.get('brandInfo', {}).get('logoUrlDark') or
+                            theme_dict.get('brandInfo', {}).get('logo_url_dark') or
+                            theme_dict.get('color_palette', {}).get('metadata', {}).get('logo_url_dark') or
+                            theme_dict.get('metadata', {}).get('logo_url_dark') or
+                            None
+                        )
+                        if theme_logo:
+                            deck_outline.stylePreferences.logoUrl = theme_logo
+                            logger.info(f"🖼️ [LOGO FIX] Injected logo from theme into stylePreferences: {theme_logo[:60]}...")
+                            sp_logo = theme_logo
+                        if theme_logo_dark:
+                            deck_outline.stylePreferences.logoUrlDark = theme_logo_dark
+                            logger.info(f"🖼️ [LOGO FIX] Injected dark logo from theme into stylePreferences")
+                            sp_logo_dark = theme_logo_dark
             else:
                 logger.warning(f"⚠️ [PRE-DECKSTATE] deck_outline.stylePreferences is None or missing!")
 
@@ -1933,11 +1963,12 @@ class SimpleDeckComposer(IDeckComposer):
                     pending_count = sum(len(imgs) for imgs in self.image_manager.pending_images.values())
                     logger.info(f"After 2s wait: {pending_count} total pending images across all slides")
             
-            # Generate slides
+            # Generate slides - use config values for parallelism (Gemini Tier 3 = no limits)
             from agents.domain.models import CompositionOptions
+            from agents import config
             comp_options = CompositionOptions(
-                max_parallel_slides=options.get('max_parallel', 4),
-                delay_between_slides=options.get('delay_between_slides', 0.5),
+                max_parallel_slides=options.get('max_parallel', config.MAX_PARALLEL_SLIDES),
+                delay_between_slides=options.get('delay_between_slides', config.DELAY_BETWEEN_SLIDES),
                 async_images=async_images_mode,  # Use the extracted value
                 prefetch_images=options.get('prefetch_images', False)
             )

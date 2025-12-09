@@ -122,21 +122,21 @@ IMAGE_TRANSPARENT_DEFAULT_SUPPORTING = True
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE & LIMITS
 # ═══════════════════════════════════════════════════════════════════════════════
-MAX_WORKERS = int(os.getenv('MAX_WORKERS', '10'))
-MAX_PARALLEL_SLIDES = int(os.getenv('MAX_PARALLEL_SLIDES', '10'))
-DELAY_BETWEEN_SLIDES = float(os.getenv('DELAY_BETWEEN_SLIDES', '0.1'))
-AI_THREAD_TIMEOUT = int(os.getenv('AI_THREAD_TIMEOUT', '60'))
+MAX_WORKERS = int(os.getenv('MAX_WORKERS', '50'))
+MAX_PARALLEL_SLIDES = int(os.getenv('MAX_PARALLEL_SLIDES', '50'))
+DELAY_BETWEEN_SLIDES = float(os.getenv('DELAY_BETWEEN_SLIDES', '0.05'))
+AI_THREAD_TIMEOUT = int(os.getenv('AI_THREAD_TIMEOUT', '120'))
 
 STREAMING_UPDATE_INTERVAL = 5.0
 STREAMING_MIN_COMPONENTS_UPDATE = 2
 
-# Global limits
-MAX_GLOBAL_CONCURRENT_SLIDES = 50
-MAX_API_CONCURRENT_CALLS = 10
-MAX_SLIDES_PER_USER = 10
-MAX_DECKS_PER_USER = 4
-API_CALLS_PER_MINUTE = 60
-API_CALLS_PER_HOUR = 1000
+# Global limits - Gemini Tier 3 has 2000+ RPM, no daily limits
+MAX_GLOBAL_CONCURRENT_SLIDES = 200
+MAX_API_CONCURRENT_CALLS = 100
+MAX_SLIDES_PER_USER = 50  # Max slides per request (user cap)
+MAX_DECKS_PER_USER = 10
+API_CALLS_PER_MINUTE = 2000  # Gemini Tier 3 limit
+API_CALLS_PER_HOUR = 100000  # Effectively unlimited
 
 # Timeouts
 SLIDE_GENERATION_TIMEOUT = 300

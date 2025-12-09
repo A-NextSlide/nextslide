@@ -175,18 +175,18 @@ class SlideGenerationContext:
 @dataclass
 class CompositionOptions:
     """Options for deck composition."""
-    max_parallel_slides: int = 4
-    delay_between_slides: float = 0.5
+    max_parallel_slides: int = 50  # Generate all slides in parallel (Gemini Tier 3)
+    delay_between_slides: float = 0.05
     async_images: bool = False
     enable_visual_analysis: bool = False  # DISABLED
     prefetch_images: bool = False
-    
+
     @classmethod
     def from_kwargs(cls, **kwargs) -> 'CompositionOptions':
         """Create from keyword arguments."""
         return cls(
-            max_parallel_slides=kwargs.get('max_parallel', 4),
-            delay_between_slides=kwargs.get('delay_between_slides', 0.5),
+            max_parallel_slides=kwargs.get('max_parallel', 50),
+            delay_between_slides=kwargs.get('delay_between_slides', 0.05),
             async_images=kwargs.get('async_images', False),
             enable_visual_analysis=kwargs.get('enable_visual_analysis', False),  # DISABLED
             prefetch_images=kwargs.get('prefetch_images', False)

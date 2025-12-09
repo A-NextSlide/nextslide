@@ -12,6 +12,7 @@ from typing import Literal, Optional, Dict, Any, List
 from pydantic import Field
 import logging
 import json
+import re
 
 from models.tools import ToolModel
 from models.deck import DeckBase, DeckDiff
@@ -21,13 +22,49 @@ from utils.deck import get_all_slide_ids
 logger = logging.getLogger(__name__)
 
 
+def resolve_slide_id(slide_ref: str, all_slide_ids: List[str]) -> str:
+    """
+    Resolve a user-friendly slide reference to an actual slide ID.
+
+    Handles:
+    - Exact match: "slide-1765263040237-1" -> "slide-1765263040237-1"
+    - Numeric index: "4" or "slide 4" or "slide-4" -> 4th slide in all_slide_ids
+    - Case-insensitive matching
+
+    Returns the resolved slide ID, or the original reference if no match found.
+    """
+    if not all_slide_ids:
+        return slide_ref
+
+    # Check for exact match first
+    if slide_ref in all_slide_ids:
+        return slide_ref
+
+    # Try to extract a number from the reference
+    # Match patterns like "4", "slide 4", "slide-4", "slide4", "Slide 4"
+    match = re.search(r'(?:slide[- ]?)?(\d+)', slide_ref.lower().strip())
+
+    if match:
+        slide_num = int(match.group(1))
+        # Convert to 0-indexed (user says "slide 4" meaning 4th slide = index 3)
+        slide_index = slide_num - 1
+
+        if 0 <= slide_index < len(all_slide_ids):
+            resolved = all_slide_ids[slide_index]
+            logger.info(f"[VIEW_SLIDE] Resolved '{slide_ref}' -> '{resolved}' (slide {slide_num} = index {slide_index})")
+            return resolved
+
+    # No resolution found, return original
+    return slide_ref
+
+
 class ViewSlideArgs(ToolModel):
     """View the full details of any slide in the deck."""
     tool_name: Literal["view_slide"] = Field(
         description="View full details of any slide in the deck. Use this to inspect another slide's components, styles, and layout before copying or referencing them. Returns component IDs, types, positions, sizes, text content, and styles."
     )
     slide_id: str = Field(
-        description="The ID of the slide to view (e.g., 'slide-1', 'slide-2'). Use the slide IDs from the deck summary."
+        description="The slide to view. Can be a slide number (1, 2, 3...), a reference like 'slide 4' or 'slide-4', or the full slide ID from the deck summary."
     )
     include_html: bool = Field(
         default=False,
@@ -109,13 +146,17 @@ def view_slide(
     The viewed slide details are stored in deck_diff.viewed_slides for
     context enrichment in subsequent tool calls.
     """
-    slide_id = args.slide_id
     include_html = args.include_html
+
+    # Get all slide IDs first for resolution
+    all_slide_ids = get_all_slide_ids(deck_data)
+
+    # Resolve user-friendly reference to actual slide ID
+    slide_id = resolve_slide_id(args.slide_id, all_slide_ids)
 
     logger.info(f"[VIEW_SLIDE] Viewing slide: {slide_id}, include_html: {include_html}")
 
     # Validate slide exists
-    all_slide_ids = get_all_slide_ids(deck_data)
     if slide_id not in all_slide_ids:
         logger.warning(f"[VIEW_SLIDE] Slide {slide_id} not found. Available: {all_slide_ids}")
         result = ViewSlideResult(

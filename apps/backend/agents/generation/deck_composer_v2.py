@@ -194,9 +194,11 @@ class DeckComposerV2(IDeckComposer):
                 status={'state': 'generating', 'progress': 0, 'message': 'Generating slides...'}
             )
 
-            # Create composition options
+            # Create composition options - use config for parallelism (Gemini Tier 3 = no limits)
+            from agents import config
             options = CompositionOptions(
-                max_parallel_slides=4,
+                max_parallel_slides=config.MAX_PARALLEL_SLIDES,
+                delay_between_slides=config.DELAY_BETWEEN_SLIDES,
                 async_images=async_images
             )
 

@@ -63,10 +63,10 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
         Server-sent event formatted strings with progress updates
     """
     print(f"[TOP LEVEL] stream_deck_creation called")
-    
-    # Get settings from request
-    # Force parallelism to 8 as requested
-    max_parallel_val = 8
+
+    # Get settings from request - use config for max parallelism (Gemini Tier 3 = no limits)
+    from agents import config
+    max_parallel_val = config.MAX_PARALLEL_SLIDES
     delay_val = request.delay_between_slides
 
     logger.info(f"Starting deck creation (Schema: {SCHEMA_VERSION})")

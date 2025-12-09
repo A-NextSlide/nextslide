@@ -73,6 +73,14 @@ export const createCoreDeckOperations = (set, get) => {
       return;
     }
 
+    // Don't save while AI is generating slides - backend will reject with 409
+    const deckStatus = get().deckStatus;
+    const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+    if (isGenerating) {
+      logger.debug('[Store] Skipping save - AI is generating slides');
+      return;
+    }
+
     // Save to backend with the cleaned object
     deckSyncService.saveDeck(cleanForBackend)
       .then(() => {

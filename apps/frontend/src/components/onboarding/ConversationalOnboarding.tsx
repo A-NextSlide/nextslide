@@ -460,6 +460,10 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
       setIsAgentTyping(true);
       // Clear streaming text at the start of each message
       setStreamingText('');
+      // Set initial thinking state so indicator shows immediately
+      setStatusPhase('thinking');
+      setStatusMessage('Thinking...');
+      clearThinkingSteps();
 
       // Convert new files to base64 and add to persistent files
       let newFilesToAdd: FileAttachment[] = [];
@@ -1728,7 +1732,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               onClick={() => {
                 // Send a continuation message to trigger outline generation
                 // The agent will do research, generate theme, and create the outline
-                handleSendMessage("Continue - I'm ready to create the presentation");
+                handleSendMessage("Continue");
               }}
               className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors flex items-center gap-1"
             >

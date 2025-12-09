@@ -31,7 +31,9 @@ from setup_logging_optimized import get_logger
 logger = get_logger(__name__)
 
 # Global semaphore to limit concurrent AI calls (prevents rate limiting)
-_AI_SEMAPHORE = asyncio.Semaphore(3)  # Max 3 concurrent AI calls
+# Uses config value - Gemini Tier 3 has 2000+ RPM, so we can run many in parallel
+from agents.config import MAX_API_CONCURRENT_CALLS
+_AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
 
 
 async def prefetch_images_for_content(
@@ -457,7 +459,7 @@ def _get_luminance(hex_color: str) -> float:
         return 0.5  # Default to middle if parsing fails
 
 
-def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[str] = None) -> Optional[str]:
+def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[str] = None) -> tuple[Optional[str], bool]:
     """
     Extract logo URL from theme dict, selecting light/dark variant based on background.
 
@@ -473,11 +475,13 @@ def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[s
                          Used to select light vs dark logo variant
 
     Returns:
-        Best logo URL for the background, or None if not found.
+        Tuple of (logo_url, needs_inversion):
+        - logo_url: Best logo URL for the background, or None if not found
+        - needs_inversion: True if CSS filter:invert(1) should be applied for contrast
     """
     if not theme:
         logger.debug("[LOGO] No theme dict provided")
-        return None
+        return None, False
 
     # IMPORTANT: Logo naming convention from Brandfetch:
     # - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
@@ -519,47 +523,52 @@ def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[s
     # If no logos found at all
     if not logo_for_light_bg and not logo_for_dark_bg:
         logger.debug("[LOGO] No logo URL found in theme")
-        return None
+        return None, False
 
-    # If only one variant available, use it (with a warning if it might not contrast)
-    if logo_for_light_bg and not logo_for_dark_bg:
-        if background_color:
-            luminance = _get_luminance(background_color)
-            if luminance < 0.5:
-                logger.warning(f"[LOGO] Only logo for light bg available, but background is dark (luminance={luminance:.2f}). Logo may not be visible!")
-        logger.debug(f"[LOGO] Only 'for light bg' variant available: {logo_for_light_bg[:60]}...")
-        return logo_for_light_bg
-
-    if logo_for_dark_bg and not logo_for_light_bg:
-        if background_color:
-            luminance = _get_luminance(background_color)
-            if luminance > 0.5:
-                logger.warning(f"[LOGO] Only logo for dark bg available, but background is light (luminance={luminance:.2f}). Logo may not be visible!")
-        logger.debug(f"[LOGO] Only 'for dark bg' variant available: {logo_for_dark_bg[:60]}...")
-        return logo_for_dark_bg
-
-    # Both variants available - select based on background luminance
+    # Determine background luminance if provided
+    bg_is_light = True  # Default assumption
     if background_color:
         luminance = _get_luminance(background_color)
-        logger.info(f"[LOGO] Background {background_color} has luminance {luminance:.2f}")
+        bg_is_light = luminance > 0.5
+        logger.info(f"[LOGO] Background {background_color} has luminance {luminance:.2f} ({'light' if bg_is_light else 'dark'})")
 
-        if luminance > 0.5:
-            # Light background - use the logo designed FOR light backgrounds (dark colored logo)
-            selected = logo_for_light_bg
-            logger.info(f"[LOGO] Light background -> using logo FOR light bg (dark colored)")
-        else:
-            # Dark background - use the logo designed FOR dark backgrounds (light colored logo)
-            selected = logo_for_dark_bg
-            logger.info(f"[LOGO] Dark background -> using logo FOR dark bg (light colored)")
+    # If only one variant available, use it but INVERT if needed for contrast
+    if logo_for_light_bg and not logo_for_dark_bg:
+        # We have logo for light backgrounds (dark colored logo)
+        # If background is DARK, we need to INVERT to make it light/white
+        needs_invert = not bg_is_light if background_color else False
+        if needs_invert:
+            logger.info(f"[LOGO] Only dark logo available but bg is dark -> will INVERT")
+        logger.debug(f"[LOGO] Using 'for light bg' variant: {logo_for_light_bg[:60]}... (invert={needs_invert})")
+        return logo_for_light_bg, needs_invert
 
-        if selected:
-            logger.debug(f"[LOGO] Selected: {selected[:60]}...")
-            return selected
+    if logo_for_dark_bg and not logo_for_light_bg:
+        # We have logo for dark backgrounds (light/white colored logo)
+        # If background is LIGHT, we need to INVERT to make it dark
+        needs_invert = bg_is_light if background_color else False
+        if needs_invert:
+            logger.info(f"[LOGO] Only light logo available but bg is light -> will INVERT")
+        logger.debug(f"[LOGO] Using 'for dark bg' variant: {logo_for_dark_bg[:60]}... (invert={needs_invert})")
+        return logo_for_dark_bg, needs_invert
 
-    # Default: prefer logo for light backgrounds
+    # Both variants available - select based on background luminance (no inversion needed)
+    if bg_is_light:
+        # Light background - use the logo designed FOR light backgrounds (dark colored logo)
+        selected = logo_for_light_bg
+        logger.info(f"[LOGO] Light background -> using logo FOR light bg (dark colored)")
+    else:
+        # Dark background - use the logo designed FOR dark backgrounds (light colored logo)
+        selected = logo_for_dark_bg
+        logger.info(f"[LOGO] Dark background -> using logo FOR dark bg (light colored)")
+
+    if selected:
+        logger.debug(f"[LOGO] Selected: {selected[:60]}... (no inversion needed)")
+        return selected, False
+
+    # Fallback: prefer logo for light backgrounds
     selected = logo_for_light_bg or logo_for_dark_bg
-    logger.debug(f"[LOGO] No background specified, defaulting to: {selected[:60] if selected else 'None'}...")
-    return selected
+    logger.debug(f"[LOGO] Fallback to: {selected[:60] if selected else 'None'}...")
+    return selected, False
 
 
 class CustomComponentGenerator:
@@ -721,18 +730,19 @@ class CustomComponentGenerator:
 
             # Extract logo URL from theme - pass background color for light/dark selection
             background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
-            logo_url = _extract_logo_from_theme(theme, background_color=background_color)
+            logo_url, logo_needs_invert = _extract_logo_from_theme(theme, background_color=background_color)
             if logo_url:
-                logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...")
-                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}... (bg: {background_color})")
+                invert_msg = " [WILL INVERT]" if logo_needs_invert else ""
+                logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...{invert_msg}")
+                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}... (bg: {background_color}){invert_msg}")
             else:
                 logger.debug("[CUSTOM_COMPONENT] No logo URL in theme")
 
             # Build the system prompt (specialized for title slides)
             if is_title_slide:
-                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url, slide_mode)
+                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url, slide_mode, logo_needs_invert)
             else:
-                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url)
+                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url, logo_needs_invert)
 
             # Build the user prompt with full context
             if is_title_slide:
@@ -743,7 +753,8 @@ class CustomComponentGenerator:
                     typography=typography,
                     width=width,
                     height=height,
-                    logo_url=logo_url
+                    logo_url=logo_url,
+                    logo_needs_invert=logo_needs_invert
                 )
             else:
                 user_prompt = self._build_user_prompt(
@@ -758,7 +769,8 @@ class CustomComponentGenerator:
                     uploaded_media=uploaded_media,
                     prefetched_images=prefetched_images,
                     reference_images=reference_images,
-                    logo_url=logo_url
+                    logo_url=logo_url,
+                    logo_needs_invert=logo_needs_invert
                 )
 
             # Get client and generate
@@ -903,13 +915,16 @@ class CustomComponentGenerator:
                     logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
                     print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
 
-                    # Check if this is a server error (503, 500, etc.) - try fallback
+                    # Check if this is a timeout or server error - both should trigger fallback
                     error_str = str(invoke_error).lower()
+                    is_timeout = isinstance(invoke_error, (TimeoutError, asyncio.TimeoutError))
                     is_server_error = any(x in error_str for x in ['503', '500', '502', '504', 'unavailable', 'overloaded', 'server error'])
+                    should_fallback = (is_timeout or is_server_error) and not used_fallback
 
-                    if is_server_error and not used_fallback:
-                        logger.warning(f"[CUSTOM_COMPONENT] Server error detected, switching to fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
-                        print(f"[CUSTOM_COMPONENT] 🔄 Server error! Switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                    if should_fallback:
+                        error_type = "timeout" if is_timeout else "server error"
+                        logger.warning(f"[CUSTOM_COMPONENT] {error_type.title()} detected, switching to fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                        print(f"[CUSTOM_COMPONENT] 🔄 {error_type.title()}! Switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
 
                         try:
                             fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
@@ -927,7 +942,7 @@ class CustomComponentGenerator:
                                 timeout=self.generation_timeout
                             )
                             used_fallback = True
-                            logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded after server error")
+                            logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded after {error_type}")
                             print(f"[CUSTOM_COMPONENT] ✅ Fallback succeeded!")
                         except Exception as fallback_err:
                             logger.error(f"[CUSTOM_COMPONENT] Fallback also failed: {fallback_err}")
@@ -1029,10 +1044,14 @@ class CustomComponentGenerator:
             return component
 
         except asyncio.TimeoutError:
-            logger.error(f"[CUSTOM_COMPONENT] Generation timed out after {self.generation_timeout}s")
+            # This only triggers if BOTH primary AND fallback timed out
+            logger.error(f"[CUSTOM_COMPONENT] Generation timed out after {self.generation_timeout}s (including fallback attempt)")
+            print(f"[CUSTOM_COMPONENT] ❌ Both primary and fallback models timed out")
             return None
         except Exception as e:
-            logger.error(f"[CUSTOM_COMPONENT] Generation failed: {e}")
+            # This only triggers if BOTH primary AND fallback failed
+            logger.error(f"[CUSTOM_COMPONENT] Generation failed (including fallback): {e}")
+            print(f"[CUSTOM_COMPONENT] ❌ Both primary and fallback models failed: {e}")
             return None
 
     def _build_system_prompt(
@@ -1041,7 +1060,8 @@ class CustomComponentGenerator:
         typography: Dict[str, str],
         style_keywords: list,
         slide_mode: str = 'interactive',
-        logo_url: Optional[str] = None
+        logo_url: Optional[str] = None,
+        logo_needs_invert: bool = False
     ) -> str:
         """Build the system prompt for CustomComponent generation."""
 
@@ -1056,7 +1076,10 @@ class CustomComponentGenerator:
         # Logo instructions if available
         logo_info = ""
         if logo_url:
-            logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header when appropriate"
+            if logo_needs_invert:
+                logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header. IMPORTANT: Apply CSS filter: invert(1) to the logo img for proper contrast against the background!"
+            else:
+                logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header when appropriate"
 
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
@@ -1160,7 +1183,8 @@ OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
         uploaded_media: Optional[list] = None,
         prefetched_images: Optional[Dict[str, str]] = None,
         reference_images: Optional[List[str]] = None,
-        logo_url: Optional[str] = None
+        logo_url: Optional[str] = None,
+        logo_needs_invert: bool = False
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -1340,9 +1364,25 @@ Example of CORRECT usage:
         # Build logo section if logo URL is available
         logo_section = ""
         if logo_url:
+            # Check for potential white logo on white background issue
+            bg_luminance = _get_luminance(bg_color) if bg_color else 0.5
+            is_light_bg = bg_luminance > 0.5
+
+            # Detect if logo URL suggests it might be white/light colored
+            logo_is_potentially_white = (
+                'logo.svg' in logo_url.lower() or
+                'logo_light' in logo_url.lower() or
+                'for_dark' in logo_url.lower() or
+                '_white' in logo_url.lower()
+            )
+
+            contrast_warning = ""
+            if is_light_bg and logo_is_potentially_white:
+                contrast_warning = """ ⚠️ Note: If the logo appears invisible (white on white), apply: filter: invert(1) or add a dark background behind it."""
+
             logo_section = f"""
-BRAND LOGO (optional - use if there's space): {logo_url}
-If you include it, place in a corner without overlapping other content.
+BRAND LOGO (include if there's space): {logo_url}
+Position: corner placement, 40-60px height, no overlap with content.{contrast_warning}
 """
 
         # Add tone guidance only if no explicit style hint was provided
@@ -2186,7 +2226,8 @@ THINK LIKE A DESIGNER:
         typography: Dict[str, str],
         style_keywords: list,
         logo_url: Optional[str] = None,
-        slide_mode: str = 'interactive'
+        slide_mode: str = 'interactive',
+        logo_needs_invert: bool = False
     ) -> str:
         """Build specialized system prompt for stunning title slides."""
 
@@ -2199,7 +2240,10 @@ THINK LIKE A DESIGNER:
         # Logo instructions for title slides
         logo_info = ""
         if logo_url:
-            logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height)"
+            if logo_needs_invert:
+                logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height). IMPORTANT: Apply CSS filter: invert(1) to the logo img for proper contrast!"
+            else:
+                logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height)"
 
         # Mode-specific instructions
         if slide_mode == 'static':
@@ -2259,7 +2303,8 @@ Use CSS variables. Fill 1920x1080."""
         typography: Dict[str, str],
         width: int,
         height: int,
-        logo_url: Optional[str] = None
+        logo_url: Optional[str] = None,
+        logo_needs_invert: bool = False
     ) -> str:
         """Build user prompt specifically for title slides."""
 
@@ -2282,9 +2327,16 @@ Use CSS variables. Fill 1920x1080."""
         # Build logo section for title slides
         logo_section = ""
         if logo_url:
+            invert_instruction = ""
+            if logo_needs_invert:
+                invert_instruction = """
+🔄 REQUIRED: Apply CSS filter: invert(1) to the logo <img> for proper contrast!
+Example: <img src="..." style="filter: invert(1); height: 50px;" />"""
+
             logo_section = f"""
 BRAND LOGO: {logo_url}
-Consider including it on the title slide in a corner, without overlapping the title.
+Position: top-left or top-right corner (40-60px height){invert_instruction}
+CRITICAL: The logo MUST be visible on the slide!
 """
 
         return f"""TITLE SLIDE: "{title}"
