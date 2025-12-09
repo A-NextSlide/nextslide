@@ -2411,17 +2411,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // Ensure agent session exists before sending or registering uploads
   const ensureAgentSession = useCallback(async (): Promise<boolean> => {
-    // If we already have a session but the active slide changed, re-create the session
+    // IMPORTANT: Don't kill the session when switching slides!
+    // The session should stay alive to receive edit completion events.
+    // The diff contains the target slide_id, so edits apply to the correct slide.
+    // We only create a new session if none exists.
     try {
-      const expectedSlideId = slides[currentSlideIndex]?.id;
       if (agentClientRef.current && agentSessionId) {
-        if (sessionSlideIdRef.current !== expectedSlideId) {
-          try { agentClientRef.current.disconnect(); } catch { }
-          agentClientRef.current = null;
-          setAgentSessionId(null);
-        } else {
-          return true;
+        // Session exists and is connected - keep it alive
+        // Update the tracked slide ID for future messages
+        const expectedSlideId = slides[currentSlideIndex]?.id;
+        if (expectedSlideId) {
+          sessionSlideIdRef.current = expectedSlideId;
         }
+        return true;
       }
     } catch { }
     if (connectingRef.current) return connectingRef.current;

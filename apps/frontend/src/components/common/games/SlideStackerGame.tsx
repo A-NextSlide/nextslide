@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, Heart, Award, RefreshCw, Trophy, Layers, MousePointer2, Image as ImageIcon, Type, BarChart3, LayoutTemplate, Copyright } from 'lucide-react';
+import { X, Sparkles, Heart, Award, RefreshCw, Trophy, Layers, MousePointer2, Image as ImageIcon, Type, BarChart3, LayoutTemplate, Copyright, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SlideStackerGameProps {
@@ -8,11 +8,16 @@ interface SlideStackerGameProps {
 }
 
 // Game Constants
-const ROWS = 8; // Reduced rows for taller "components"
+const ROWS = 8;
 const COLS = 8;
-const INITIAL_SPEED = 250;
-const MIN_SPEED = 80;
-const SPEED_DECREMENT = 25;
+const SPEED_DECREMENT = 20;
+
+// Level Configuration
+const LEVELS = [
+  { level: 1, speed: 250, width: 4, name: "JUNIOR DESIGNER" },
+  { level: 2, speed: 180, width: 3, name: "SENIOR ARTIST" },
+  { level: 3, speed: 120, width: 3, name: "CREATIVE DIRECTOR" },
+];
 
 // Component Types with "Silly" Visuals
 const COMPONENT_TYPES = [
@@ -92,31 +97,44 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
   const [currentRow, setCurrentRow] = useState(0);
   const [currentCol, setCurrentCol] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [width, setWidth] = useState(4); // Start wider
-  const [speed, setSpeed] = useState(INITIAL_SPEED);
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'won' | 'lost'>('ready');
+  const [width, setWidth] = useState(4);
+  const [speed, setSpeed] = useState(250);
+  const [gameState, setGameState] = useState<'ready' | 'playing' | 'level_complete' | 'won' | 'lost'>('ready');
   const [score, setScore] = useState(0);
+  const [currentLevelIdx, setCurrentLevelIdx] = useState(0);
   const [feedback, setFeedback] = useState<{ text: string; x: number; y: number; color: string } | null>(null);
 
   const timerRef = useRef<number | null>(null);
 
-  // Reset Game
+  // Reset Game (Full Reset)
   const resetGame = () => {
+    setCurrentLevelIdx(0);
+    startLevel(0);
+    setScore(0);
+  };
+
+  // Start Specific Level
+  const startLevel = (levelIdx: number) => {
+    const levelConfig = LEVELS[levelIdx];
     setGrid(Array(ROWS).fill(null).map(() => Array(COLS).fill(null)));
     setCurrentRow(0);
     setCurrentCol(0);
     setDirection(1);
-    setWidth(4);
-    setSpeed(INITIAL_SPEED);
-    setScore(0);
+    setWidth(levelConfig.width);
+    setSpeed(levelConfig.speed);
     setFeedback(null);
-    setGameState('ready');
+    setGameState('playing');
   };
 
-  // Start Game
-  const startGame = () => {
-    resetGame();
-    setGameState('playing');
+  // Next Level
+  const nextLevel = () => {
+    const nextIdx = currentLevelIdx + 1;
+    if (nextIdx >= LEVELS.length) {
+      setGameState('won');
+    } else {
+      setCurrentLevelIdx(nextIdx);
+      startLevel(nextIdx);
+    }
   };
 
   // Game Loop
@@ -148,9 +166,8 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
 
     const newGrid = [...grid];
     let newWidth = width;
-    const currentComponent = COMPONENT_TYPES[Math.min(currentRow, COMPONENT_TYPES.length - 1)]; // Logic to pick component type based on row? 
-    // Actually let's cycle them or map them to rows. 
-    // Footer (0), Text (1,2), Image (3), Text (4), Chart (5), Text (6), Header (7)
+
+    // Component mapping logic
     const componentMap = [0, 1, 1, 2, 1, 3, 1, 4];
     const compType = COMPONENT_TYPES[componentMap[Math.min(currentRow, componentMap.length - 1)]];
 
@@ -166,8 +183,6 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
           if (firstOverlapCol === -1) firstOverlapCol = colIndex;
           overlapCount++;
           newGrid[currentRow][colIndex] = compType;
-        } else {
-          // Cut off part - maybe spawn particles here later?
         }
       }
 
@@ -179,7 +194,7 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
 
       // Perfect stack bonus
       if (overlapCount === width) {
-        setScore(s => s + 200);
+        setScore(s => s + 200 + (currentLevelIdx * 100));
         setFeedback({ text: FEEDBACK_PHRASES[Math.floor(Math.random() * FEEDBACK_PHRASES.length)], x: 50, y: 50, color: '#22c55e' });
       } else {
         setScore(s => s + (overlapCount * 50));
@@ -187,10 +202,6 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
       }
 
       newWidth = overlapCount;
-      // Update current col to match the overlap start for the next row visual continuity? 
-      // Actually standard stacker rules usually reset or keep momentum. 
-      // But visually, the next block should spawn relative to the new width? 
-      // Standard stacker: next block spawns at edge and moves across.
 
     } else {
       // First row always succeeds
@@ -205,11 +216,20 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
     setWidth(newWidth);
 
     if (currentRow === ROWS - 1) {
-      setGameState('won');
+      // Level Complete
+      if (currentLevelIdx < LEVELS.length - 1) {
+        setGameState('level_complete');
+        setScore(s => s + 1000);
+      } else {
+        setGameState('won');
+        setScore(s => s + 5000);
+      }
     } else {
       setCurrentRow(r => r + 1);
-      setSpeed(s => Math.max(MIN_SPEED, s - SPEED_DECREMENT));
-      // Randomize start direction and position slightly for fun
+      // Speed up slightly within the level too
+      setSpeed(s => Math.max(SPEED_DECREMENT, s - 10));
+
+      // Randomize start direction and position
       setDirection(Math.random() > 0.5 ? 1 : -1);
       setCurrentCol(Math.random() > 0.5 ? 0 : COLS - newWidth);
     }
@@ -218,6 +238,7 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
   // Determine current component type for the moving block
   const componentMap = [0, 1, 1, 2, 1, 3, 1, 4];
   const activeCompType = COMPONENT_TYPES[componentMap[Math.min(currentRow, componentMap.length - 1)]];
+  const currentLevelConfig = LEVELS[currentLevelIdx];
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full bg-slate-950 text-white select-none font-sans relative overflow-hidden" onClick={handleStack}>
@@ -234,8 +255,8 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
             SLIDE <span className="text-[#FF4301]">STACKER</span>
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            <div className="px-2 py-0.5 bg-white/10 rounded text-[10px] font-bold tracking-widest text-slate-300">
-              BUILD MODE
+            <div className="px-2 py-0.5 bg-white/10 rounded text-[10px] font-bold tracking-widest text-slate-300 uppercase">
+              {currentLevelConfig.name} • LVL {currentLevelIdx + 1}
             </div>
           </div>
         </div>
@@ -343,14 +364,38 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
               <div className="absolute inset-0 bg-[#FF4301] blur-2xl opacity-20 animate-pulse" />
               <LayoutTemplate className="w-20 h-20 text-[#FF4301] relative z-10" />
             </div>
+            <h2 className="text-2xl font-black text-slate-900 italic mb-2">LEVEL {currentLevelIdx + 1}</h2>
+            <p className="text-slate-500 font-bold tracking-widest mb-6">{currentLevelConfig.name}</p>
             <button
-              onClick={(e) => { e.stopPropagation(); startGame(); }}
+              onClick={(e) => { e.stopPropagation(); startLevel(0); }}
               className="px-8 py-4 bg-[#FF4301] hover:bg-[#ff5e26] text-white font-black italic text-xl rounded-xl shadow-[0_4px_0_#c23300] active:shadow-none active:translate-y-1 transition-all transform hover:scale-105 flex items-center gap-2"
             >
               <MousePointer2 className="w-5 h-5" />
-              BUILD SLIDE
+              START BUILDING
             </button>
-            <p className="mt-4 text-sm text-slate-500 font-medium">Click to place components</p>
+          </div>
+        )}
+
+        {/* Level Complete Overlay */}
+        {gameState === 'level_complete' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-md z-50 text-center p-6">
+            <div className="mb-4 relative">
+              <motion.div
+                initial={{ scale: 0 }} animate={{ scale: 1 }}
+                className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto ring-4 ring-green-400/50"
+              >
+                <Award className="w-10 h-10 text-white" />
+              </motion.div>
+            </div>
+            <h2 className="text-3xl font-black text-white italic mb-1">SLIDE COMPLETE!</h2>
+            <p className="text-slate-300 font-medium mb-8">Ready for the next challenge?</p>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); nextLevel(); }}
+              className="px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-black italic text-xl rounded-xl shadow-[0_4px_0_#15803d] active:shadow-none active:translate-y-1 transition-all flex items-center gap-2"
+            >
+              NEXT LEVEL <ArrowRight className="w-5 h-5" />
+            </button>
           </div>
         )}
 
@@ -367,8 +412,8 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
                   />
                   <Trophy className="w-20 h-20 text-yellow-400 relative z-10 drop-shadow-lg" />
                 </div>
-                <h2 className="text-4xl font-black text-white italic mb-1">SLIDE SHIPPED!</h2>
-                <p className="text-slate-300 font-medium mb-8">Perfectly aligned components.</p>
+                <h2 className="text-4xl font-black text-white italic mb-1">DECK SHIPPED!</h2>
+                <p className="text-slate-300 font-medium mb-8">You conquered all deadlines.</p>
               </>
             ) : (
               <>
@@ -383,11 +428,11 @@ const SlideStackerGame: React.FC<SlideStackerGameProps> = ({ onClose }) => {
 
             <div className="flex gap-3 w-full max-w-xs">
               <button
-                onClick={(e) => { e.stopPropagation(); startGame(); }}
+                onClick={(e) => { e.stopPropagation(); resetGame(); }}
                 className="flex-1 py-3 bg-white hover:bg-slate-100 text-slate-900 font-black rounded-xl shadow-[0_4px_0_#cbd5e1] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
-                AGAIN
+                PLAY AGAIN
               </button>
             </div>
           </div>

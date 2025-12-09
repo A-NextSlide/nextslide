@@ -955,6 +955,33 @@ class CustomComponentGenerator:
                         traceback.print_exc()
                         raise
 
+            # Check for None/empty response from Gemini - fallback if needed
+            if (response is None or (isinstance(response, str) and len(response.strip()) < 100)) and not used_fallback:
+                logger.warning(f"[CUSTOM_COMPONENT] Empty/None response from {active_model}, switching to fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                print(f"[CUSTOM_COMPONENT] 🔄 Empty response! Switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+
+                try:
+                    fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                    response = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            invoke,
+                            fallback_client,
+                            fallback_model,
+                            messages,
+                            None,  # No response model - raw text
+                            16000,  # max_tokens
+                            self.temperature
+                        ),
+                        timeout=self.generation_timeout
+                    )
+                    used_fallback = True
+                    logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded after empty response")
+                    print(f"[CUSTOM_COMPONENT] ✅ Fallback succeeded!")
+                except Exception as fallback_err:
+                    logger.error(f"[CUSTOM_COMPONENT] Fallback also failed: {fallback_err}")
+                    print(f"[CUSTOM_COMPONENT] ❌ Fallback also failed: {fallback_err}")
+
             if used_fallback:
                 print(f"[CUSTOM_COMPONENT] 📊 Used fallback model (Opus 4.5) for this generation")
 

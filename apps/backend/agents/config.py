@@ -132,7 +132,7 @@ STREAMING_MIN_COMPONENTS_UPDATE = 2
 
 # Global limits - Gemini Tier 3 has 2000+ RPM, no daily limits
 MAX_GLOBAL_CONCURRENT_SLIDES = 200
-MAX_API_CONCURRENT_CALLS = 100
+MAX_API_CONCURRENT_CALLS = 25  # Conservative - matches Python's default thread pool size
 MAX_SLIDES_PER_USER = 50  # Max slides per request (user cap)
 MAX_DECKS_PER_USER = 10
 API_CALLS_PER_MINUTE = 2000  # Gemini Tier 3 limit
