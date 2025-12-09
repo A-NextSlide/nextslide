@@ -1607,11 +1607,15 @@ class SlideGeneratorV2(ISlideGenerator):
         # Check multiple sources for logo URL and inject into theme_dict
         if not theme_dict.get('brandInfo', {}).get('logoUrl'):
             logo_url = None
+            logo_url_dark = None
+
             # Priority 1: Check deck_outline.stylePreferences.logoUrl
             if hasattr(context, 'deck_outline') and context.deck_outline:
                 style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
                 if style_prefs:
                     logo_url = getattr(style_prefs, 'logoUrl', None)
+                    logo_url_dark = getattr(style_prefs, 'logoUrlDark', None)
+                    print(f"[GEMINI 3 PRO] 🔍 stylePreferences.logoUrl = {logo_url}")
                     if not logo_url:
                         # Check deck_theme.logo.url inside stylePreferences
                         deck_theme = getattr(style_prefs, 'deck_theme', None)
@@ -1619,16 +1623,30 @@ class SlideGeneratorV2(ISlideGenerator):
                             logo_data = deck_theme.get('logo', {})
                             if isinstance(logo_data, dict):
                                 logo_url = logo_data.get('url')
+                                logo_url_dark = logo_data.get('url_dark')
+                            # Also check metadata
+                            metadata = deck_theme.get('metadata', {})
+                            if isinstance(metadata, dict) and not logo_url:
+                                logo_url = metadata.get('logo_url') or metadata.get('logo_url_light')
+                                logo_url_dark = metadata.get('logo_url_dark')
+
             # Priority 2: Check color_palette.metadata.logo_url
             if not logo_url:
-                logo_url = theme_dict.get('color_palette', {}).get('metadata', {}).get('logo_url')
+                metadata = theme_dict.get('color_palette', {}).get('metadata', {})
+                logo_url = metadata.get('logo_url') or metadata.get('logo_url_light')
+                logo_url_dark = metadata.get('logo_url_dark')
+                print(f"[GEMINI 3 PRO] 🔍 color_palette.metadata.logo_url = {logo_url}")
 
             # Inject logo into brandInfo if found
             if logo_url and isinstance(logo_url, str) and logo_url.strip():
                 if 'brandInfo' not in theme_dict:
                     theme_dict['brandInfo'] = {}
                 theme_dict['brandInfo']['logoUrl'] = logo_url.strip()
+                if logo_url_dark:
+                    theme_dict['brandInfo']['logoUrlDark'] = logo_url_dark.strip()
                 print(f"[GEMINI 3 PRO] 🖼️ Injected logo into theme_dict: {logo_url[:60]}...")
+            else:
+                print(f"[GEMINI 3 PRO] ⚠️ No logo found in any source!")
         else:
             print(f"[GEMINI 3 PRO] 🖼️ Logo already in theme_dict.brandInfo: {theme_dict['brandInfo'].get('logoUrl', '')[:60]}...")
 

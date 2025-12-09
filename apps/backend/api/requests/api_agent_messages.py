@@ -988,6 +988,9 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     try:
         if selections:
             sel_summaries = []
+            has_custom_component_target = False
+            custom_component_info = None
+
             for s in selections:
                 sid = s.get("slideId") or s.get("slide_id")
                 cid = s.get("elementId") or s.get("componentId")
@@ -995,10 +998,32 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                 if cid:
                     if typ:
                         sel_summaries.append(f"{cid} ({typ})@{sid}" if sid else f"{cid} ({typ})")
+                        # Check if a CustomComponent is specifically targeted
+                        if typ == "CustomComponent":
+                            has_custom_component_target = True
+                            custom_component_info = {"id": cid, "slide_id": sid}
                     else:
                         sel_summaries.append(f"{cid}@{sid}" if sid else f"{cid}")
+
             if sel_summaries:
                 llm_message += "\n\n[USER_SELECTIONS] " + ", ".join(sel_summaries)
+
+                # If a CustomComponent is explicitly targeted, add STRONG directive to edit it
+                if has_custom_component_target and custom_component_info:
+                    llm_message += f"""
+
+🎯 **MANDATORY: EDIT THE TARGETED CUSTOMCOMPONENT**
+
+The user has SPECIFICALLY SELECTED CustomComponent '{custom_component_info['id']}' on slide '{custom_component_info['slide_id']}'.
+
+YOU MUST:
+1. Use `custom_component_str_replace` or `custom_component_rewrite` to edit THIS SPECIFIC component
+2. Pass component_id="{custom_component_info['id']}" and slide_id="{custom_component_info['slide_id']}"
+3. DO NOT create new components - the user wants to EDIT the existing one
+4. DO NOT use create_new_component, insert_image, or other creation tools
+
+This is a TARGETED EDIT request. Apply the user's changes to the selected CustomComponent."""
+
                 # Stream a small delta so the frontend can show selection context immediately
                 await agent_stream_bus.publish(session_id, {
                     "type": "assistant.message.delta",

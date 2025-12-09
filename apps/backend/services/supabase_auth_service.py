@@ -204,25 +204,28 @@ class SupabaseAuthService:
             logger.error(f"Sign up error: {str(e)}")
             raise
     
+    # Tutorial deck UUID that gets copied for every new user
+    TUTORIAL_DECK_UUID = "a9e3b5ea-8b19-4f3d-8566-9b1a96a6746d"
+
     def ensure_user_profile(self, user_id: str, email: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Ensure user profile exists in the users table
-        
+
         Args:
             user_id: User's UUID
             email: User's email
             metadata: Optional user metadata
-            
+
         Returns:
             User profile data
         """
         try:
             # First check if profile exists
             existing = self.supabase.table("users").select("*").eq("id", user_id).execute()
-            
+
             if existing.data and len(existing.data) > 0:
                 return existing.data[0]
-            
+
             # Create profile if it doesn't exist
             profile_data = {
                 "id": user_id,
@@ -232,15 +235,19 @@ class SupabaseAuthService:
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }
-            
+
             response = self.supabase.table("users").insert(profile_data).execute()
-            
+
             if response.data:
                 logger.info(f"Created profile for user {email}")
+
+                # Copy tutorial deck for new user
+                self._copy_tutorial_deck_for_user(user_id)
+
                 return response.data[0]
-            
+
             return profile_data
-            
+
         except Exception as e:
             logger.error(f"Error ensuring user profile: {str(e)}")
             # Return a basic profile if database operation fails
@@ -249,6 +256,77 @@ class SupabaseAuthService:
                 "email": email,
                 "created_at": datetime.utcnow().isoformat()
             }
+
+    def _copy_tutorial_deck_for_user(self, user_id: str) -> Optional[str]:
+        """
+        Copy the tutorial deck for a new user. Each user gets their own editable copy.
+
+        Args:
+            user_id: The new user's UUID
+
+        Returns:
+            The UUID of the copied deck, or None if failed
+        """
+        try:
+            import uuid as uuid_module
+
+            # Get the tutorial deck from featured_decks (more reliable than decks table)
+            tutorial = self.supabase.table("featured_decks").select(
+                "name, slides, description"
+            ).eq("uuid", self.TUTORIAL_DECK_UUID).execute()
+
+            if not tutorial.data:
+                # Fallback to regular decks table
+                tutorial = self.supabase.table("decks").select(
+                    "name, slides, description, data, outline"
+                ).eq("uuid", self.TUTORIAL_DECK_UUID).execute()
+
+            if not tutorial.data:
+                logger.warning(f"Tutorial deck {self.TUTORIAL_DECK_UUID} not found, skipping copy for user {user_id}")
+                return None
+
+            source_deck = tutorial.data[0]
+            new_uuid = str(uuid_module.uuid4())
+            now = datetime.utcnow().isoformat()
+
+            # Create a copy of the deck for this user
+            new_deck = {
+                "uuid": new_uuid,
+                "user_id": user_id,
+                "name": source_deck.get("name", "How to Use NextSlide"),
+                "slides": source_deck.get("slides", []),
+                "description": source_deck.get("description") or "Learn how to create amazing presentations with NextSlide",
+                "data": source_deck.get("data", {}),
+                "outline": source_deck.get("outline"),
+                "created_at": now,
+                "last_modified": now,
+                "version": 1,
+                "status": "completed"
+            }
+
+            # Insert the deck
+            result = self.supabase.table("decks").insert(new_deck).execute()
+
+            if result.data:
+                logger.info(f"Created tutorial deck copy {new_uuid} for user {user_id}")
+
+                # Also create user_decks association
+                try:
+                    self.supabase.table("user_decks").insert({
+                        "user_id": user_id,
+                        "deck_uuid": new_uuid,
+                        "last_accessed": now
+                    }).execute()
+                except Exception as assoc_error:
+                    logger.warning(f"Could not create user_decks association: {assoc_error}")
+
+                return new_uuid
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error copying tutorial deck for user {user_id}: {str(e)}")
+            return None
 
     def sign_in(self, email: str, password: str) -> Dict[str, Any]:
         """

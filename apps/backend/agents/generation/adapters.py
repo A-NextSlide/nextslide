@@ -558,7 +558,24 @@ class SimpleDeckComposer(IDeckComposer):
                         current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
                         boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
                         has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
-                        
+
+                        # CRITICAL: Check for frontend default colors - these should trigger regeneration
+                        # when a brand topic is detected (e.g., "OpenAI", "First Round Capital")
+                        theme_colors = outline_theme.get('color_palette', {})
+                        theme_accent1 = theme_colors.get('accent_1', '').lower()
+                        theme_accent2 = theme_colors.get('accent_2', '').lower()
+                        theme_bg = theme_colors.get('primary_background', '').lower()
+
+                        # Known frontend fallback defaults that indicate no brand detection happened
+                        DEFAULT_ACCENTS = {'#ff4301', '#3b82f6', '#3b4cca', '#f59e0b'}
+                        DEFAULT_BACKGROUNDS = {'#ffffff', '#ffdc00'}
+
+                        has_default_colors = (
+                            theme_accent1 in DEFAULT_ACCENTS or
+                            theme_accent2 in DEFAULT_ACCENTS or
+                            (theme_bg in DEFAULT_BACKGROUNDS and theme_accent1 in DEFAULT_ACCENTS)
+                        )
+
                         if is_fun_topic and has_boring_fonts:
                             logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES! 🎮🎮🎮")
                             logger.debug(f"  Title: '{deck_outline.title}'")
@@ -566,6 +583,11 @@ class SimpleDeckComposer(IDeckComposer):
                             logger.debug(f"  CLEARING outline.notes.theme to force regeneration!\n")
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
                             outline_theme = None  # Clear it!
+                        elif has_default_colors:
+                            # Any topic with default colors should regenerate - let AI detect brands
+                            logger.info(f"[DECK COMPOSER] 🎨 DEFAULT COLORS detected - regenerating to detect brand")
+                            logger.info(f"[DECK COMPOSER]   Colors: accent1={theme_accent1}, accent2={theme_accent2}, bg={theme_bg}")
+                            outline_theme = None  # Clear it to force brand color lookup!
                         else:
                             # PRESERVE extracted design theme from user's uploaded files
                             logger.info(f"[DECK COMPOSER] ✅ KEEPING OUTLINE THEME from extracted design")
@@ -658,6 +680,21 @@ class SimpleDeckComposer(IDeckComposer):
                     # CRITICAL: Check for generic/default theme names - these should ALWAYS regenerate with Huemint
                     is_generic_theme = theme_name in ["Modern", "Modern Professional", "Default Theme", "Default", "Standard", "Generic", "Huemint Fallback"]
 
+                    # CRITICAL: Check for frontend default colors with brand topics
+                    db_colors = existing_theme_data.get('color_palette', {})
+                    db_accent1 = db_colors.get('accent_1', '').lower()
+                    db_accent2 = db_colors.get('accent_2', '').lower()
+                    db_bg = db_colors.get('primary_background', '').lower()
+
+                    DEFAULT_ACCENTS = {'#ff4301', '#3b82f6', '#3b4cca', '#f59e0b'}
+                    DEFAULT_BACKGROUNDS = {'#ffffff', '#ffdc00'}
+
+                    has_default_colors = (
+                        db_accent1 in DEFAULT_ACCENTS or
+                        db_accent2 in DEFAULT_ACCENTS or
+                        (db_bg in DEFAULT_BACKGROUNDS and db_accent1 in DEFAULT_ACCENTS)
+                    )
+
                     should_skip = False
                     skip_reason = ""
 
@@ -667,6 +704,10 @@ class SimpleDeckComposer(IDeckComposer):
                     elif is_fun_topic and has_boring_fonts:
                         should_skip = True
                         skip_reason = f"Fun topic with boring fonts ({current_hero}/{current_body})"
+                    elif has_default_colors:
+                        # Any topic with default colors should regenerate - let AI detect brands
+                        should_skip = True
+                        skip_reason = f"Default colors detected (accent1={db_accent1}, accent2={db_accent2}) - regenerating"
 
                     if should_skip:
                         logger.debug(f"THEME REGENERATION TRIGGERED (1st DB check)!")
@@ -775,12 +816,32 @@ class SimpleDeckComposer(IDeckComposer):
                             boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
                             has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
 
+                            # Check for default colors with brand topics (2nd check)
+                            theme_colors = outline_theme.get('color_palette', {})
+                            theme_accent1 = theme_colors.get('accent_1', '').lower()
+                            theme_accent2 = theme_colors.get('accent_2', '').lower()
+                            theme_bg = theme_colors.get('primary_background', '').lower()
+
+                            DEFAULT_ACCENTS = {'#ff4301', '#3b82f6', '#3b4cca', '#f59e0b'}
+                            DEFAULT_BACKGROUNDS = {'#ffffff', '#ffdc00'}
+
+                            has_default_colors = (
+                                theme_accent1 in DEFAULT_ACCENTS or
+                                theme_accent2 in DEFAULT_ACCENTS or
+                                (theme_bg in DEFAULT_BACKGROUNDS and theme_accent1 in DEFAULT_ACCENTS)
+                            )
+
                             if is_fun_topic and has_boring_fonts:
                                 logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
                                 logger.debug(f"  Title: '{deck_outline.title}'")
                                 logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
                                 logger.debug(f"  CLEARING outline theme to force regeneration!\n")
                                 logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
+                                outline_theme = None  # Clear it!
+                            elif has_default_colors:
+                                # Any topic with default colors should regenerate - let AI detect brands
+                                logger.info(f"[DECK COMPOSER] 🎨 DEFAULT COLORS detected (2nd check) - regenerating")
+                                logger.info(f"[DECK COMPOSER]   Colors: accent1={theme_accent1}, accent2={theme_accent2}")
                                 outline_theme = None  # Clear it!
                             else:
                                 # PRESERVE extracted design theme from user's uploaded files
@@ -822,21 +883,37 @@ class SimpleDeckComposer(IDeckComposer):
                         # #f59e0b is the amber default, #fe1e1c is a generic red default
                         current_colors = existing_theme_data.get('color_palette', {}).get('colors', [])
                         has_bad_default_colors = any(c.lower() in ['#f59e0b', '#fe1e1c'] for c in current_colors)
-                        
+
+                        # Check for frontend default colors with brand topics
+                        db_colors = existing_theme_data.get('color_palette', {})
+                        db_accent1 = db_colors.get('accent_1', '').lower()
+                        db_accent2 = db_colors.get('accent_2', '').lower()
+                        db_bg = db_colors.get('primary_background', '').lower()
+
+                        DEFAULT_ACCENTS = {'#ff4301', '#3b82f6', '#3b4cca', '#f59e0b'}
+                        DEFAULT_BACKGROUNDS = {'#ffffff', '#ffdc00'}
+
+                        has_default_colors = (
+                            db_accent1 in DEFAULT_ACCENTS or
+                            db_accent2 in DEFAULT_ACCENTS or
+                            (db_bg in DEFAULT_BACKGROUNDS and db_accent1 in DEFAULT_ACCENTS)
+                        )
+
                         # Check if cached theme has boring fonts
                         boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'arial', 'helvetica']
                         has_boring_fonts = current_hero.lower() in boring_fonts or current_body.lower() in boring_fonts
-                        
+
                         # Force regeneration conditions:
                         # 1. Fun topic with boring fonts
                         # 2. GENERIC THEME NAME (Modern, Default, etc.) - ALWAYS REGENERATE
                         # 3. ANY topic with known bad default colors
+                        # 4. Any topic with frontend default colors - let AI detect brands
                         should_regenerate = False
                         reason = ""
-                        
+
                         # Broader check for generic themes - if it's a known fallback/default, regenerate with Huemint
                         is_generic_theme = theme_name in ["Modern", "Modern Professional", "Default Theme", "Default", "Standard", "Generic", "Huemint Fallback"]
-                        
+
                         if is_fun_topic and has_boring_fonts:
                             should_regenerate = True
                             reason = "Fun topic with boring fonts"
@@ -846,6 +923,10 @@ class SimpleDeckComposer(IDeckComposer):
                         elif has_bad_default_colors:
                             should_regenerate = True
                             reason = "Detected persistent default colors"
+                        elif has_default_colors:
+                            # Any topic with default colors should regenerate - let AI detect brands
+                            should_regenerate = True
+                            reason = f"Default colors detected (accent1={db_accent1}, accent2={db_accent2}) - regenerating"
                         
                         if should_regenerate:
                             logger.debug(f"THEME REGENERATION TRIGGERED (DB Check)!")
@@ -1005,20 +1086,34 @@ class SimpleDeckComposer(IDeckComposer):
                             a2 = color_palette.get('accent_2', '#3B82F6')
                             final_brand_colors = [a1, a2, bg, text]
 
+                        # Build color_palette with metadata including logo
+                        logo_url_dark = deck_theme.get('metadata', {}).get('logo_url_dark')
+                        color_palette_dict = {
+                            "primary_background": color_palette.get('primary_background', '#FFFFFF'),
+                            "primary_text": color_palette.get('primary_text', '#1A1A1A'),
+                            "accent_1": color_palette.get('accent_1', final_brand_colors[0] if final_brand_colors else '#FF4301'),
+                            "accent_2": color_palette.get('accent_2', final_brand_colors[1] if len(final_brand_colors) > 1 else '#3B82F6'),
+                            "colors": final_brand_colors,
+                        }
+                        if logo_url:
+                            color_palette_dict["metadata"] = {"logo_url": logo_url, "logo_url_light": logo_url}
+                            if logo_url_dark:
+                                color_palette_dict["metadata"]["logo_url_dark"] = logo_url_dark
+
+                        brand_info = {}
+                        if logo_url:
+                            brand_info["logoUrl"] = logo_url
+                        if logo_url_dark:
+                            brand_info["logoUrlDark"] = logo_url_dark
+
                         theme_dict = {
                             "theme_name": deck_theme.get('theme_name', 'Onboarding Theme'),
-                            "color_palette": {
-                                "primary_background": color_palette.get('primary_background', '#FFFFFF'),
-                                "primary_text": color_palette.get('primary_text', '#1A1A1A'),
-                                "accent_1": color_palette.get('accent_1', final_brand_colors[0] if final_brand_colors else '#FF4301'),
-                                "accent_2": color_palette.get('accent_2', final_brand_colors[1] if len(final_brand_colors) > 1 else '#3B82F6'),
-                                "colors": final_brand_colors,
-                            },
+                            "color_palette": color_palette_dict,
                             "typography": {
                                 "hero_title": {"family": brand_fonts or 'Montserrat'},
                                 "body_text": {"family": body_font or 'Roboto'}
                             },
-                            "brandInfo": {"logoUrl": logo_url} if logo_url else {},
+                            "brandInfo": brand_info,
                             "visual_style": deck_theme.get('visual_style', {})
                         }
 
@@ -1145,9 +1240,15 @@ class SimpleDeckComposer(IDeckComposer):
                     logger.error(f"Traceback: {traceback.format_exc()}")
             else:
                 logger.info(f"[DECK COMPOSER] ✅ SKIPPING stylePreferences reconstruction - theme already preserved from outline!")
-                
+
                 # CRITICAL FIX: Even with existing theme, always check if user updated colors in stylePreferences
                 # This allows user color changes from the theme tab to override database theme colors
+                # BUT: Skip if colors are just frontend defaults (not actual user selections)
+
+                # Known frontend fallback defaults - these should NOT override brand themes
+                FRONTEND_DEFAULT_ACCENTS = {'#FF4301', '#ff4301', '#3B82F6', '#3b82f6', '#3B4CCA', '#3b4cca', '#F59E0B', '#f59e0b'}
+                FRONTEND_DEFAULT_BACKGROUNDS = {'#FFFFFF', '#ffffff', '#FFDC00', '#ffdc00'}
+
                 try:
                     style_prefs = getattr(deck_outline, 'stylePreferences', None)
                     if style_prefs:
@@ -1159,19 +1260,28 @@ class SimpleDeckComposer(IDeckComposer):
                             user_accent2 = getattr(colors_config, 'accent2', None)
                             user_accent3 = getattr(colors_config, 'accent3', None)
                             user_text = getattr(colors_config, 'text', None)
-                            
-                            # Build user colors list
-                            user_colors = []
-                            if user_accent1:
-                                user_colors.append(user_accent1)
-                            if user_accent2:
-                                user_colors.append(user_accent2)
-                            if user_accent3:
-                                user_colors.append(user_accent3)
-                            
-                            if user_colors or user_background or user_text:
-                                logger.info(f"[DECK COMPOSER] 🎨 USER COLOR OVERRIDE: Applying user's selected colors from theme tab")
-                                logger.info(f"[DECK COMPOSER] User colors: {user_colors}, background: {user_background}, text: {user_text}")
+
+                            # Check if colors are just frontend defaults (not real user selections)
+                            # If ALL colors match known defaults, skip the override
+                            all_accents = [c for c in [user_accent1, user_accent2, user_accent3] if c]
+                            is_default_accents = all(c in FRONTEND_DEFAULT_ACCENTS for c in all_accents) if all_accents else True
+                            is_default_background = (user_background in FRONTEND_DEFAULT_BACKGROUNDS) if user_background else True
+
+                            if is_default_accents and is_default_background:
+                                logger.info(f"[DECK COMPOSER] ⏭️ SKIPPING user color override - colors are frontend defaults (accent1={user_accent1}, accent2={user_accent2}, bg={user_background})")
+                            else:
+                                # Build user colors list - only for non-default colors
+                                user_colors = []
+                                if user_accent1:
+                                    user_colors.append(user_accent1)
+                                if user_accent2:
+                                    user_colors.append(user_accent2)
+                                if user_accent3:
+                                    user_colors.append(user_accent3)
+
+                                if user_colors or user_background or user_text:
+                                    logger.info(f"[DECK COMPOSER] 🎨 USER COLOR OVERRIDE: Applying user's selected colors from theme tab")
+                                    logger.info(f"[DECK COMPOSER] User colors: {user_colors}, background: {user_background}, text: {user_text}")
 
                                 # Helper to update color palette dict
                                 def _update_color_palette(cp: Dict[str, Any]):
@@ -1542,13 +1652,19 @@ class SimpleDeckComposer(IDeckComposer):
 
             try:
                 colors_len = 0
+                colors_list = []
                 if isinstance(safe_palette, dict):
                     cl = safe_palette.get('colors')
                     if isinstance(cl, list):
                         colors_len = len(cl)
-                logger.info(f"[DECK COMPOSER] Emitting theme_generated with palette.colors={colors_len}")
-            except Exception:
-                pass
+                        colors_list = cl[:5]  # Log first 5 colors
+                logger.info(f"[DECK COMPOSER] Emitting theme_generated with palette.colors={colors_len}: {colors_list}")
+                # Also log theme_dict color_palette for debugging
+                if isinstance(theme_dict, dict):
+                    cp = theme_dict.get('color_palette', {})
+                    logger.info(f"[DECK COMPOSER] theme_dict.color_palette: accent_1={cp.get('accent_1')}, accent_2={cp.get('accent_2')}, colors={cp.get('colors', [])[:5]}")
+            except Exception as e:
+                logger.warning(f"[DECK COMPOSER] Error logging palette: {e}")
 
             yield {
                 "type": "theme_generated",
@@ -1765,7 +1881,16 @@ class SimpleDeckComposer(IDeckComposer):
             logger.debug(f"PRE-GENERATION CHECK: {slides_with_tagged_media}/{len(deck_outline.slides)} slides have tagged media")
             yield progress.start_phase(GenerationPhase.SLIDE_GENERATION)
             logger.info(f"[DECK COMPOSER] Is default theme: {theme == default_theme}")
-            
+
+            # DEBUG: Check if logo is in stylePreferences before creating DeckState
+            if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                sp_logo = getattr(deck_outline.stylePreferences, 'logoUrl', None)
+                sp_logo_dark = getattr(deck_outline.stylePreferences, 'logoUrlDark', None)
+                logger.info(f"🖼️ [PRE-DECKSTATE] deck_outline.stylePreferences.logoUrl = {sp_logo}")
+                logger.info(f"🖼️ [PRE-DECKSTATE] deck_outline.stylePreferences.logoUrlDark = {sp_logo_dark}")
+            else:
+                logger.warning(f"⚠️ [PRE-DECKSTATE] deck_outline.stylePreferences is None or missing!")
+
             deck_state = DeckState(
                 deck_uuid=deck_uuid,
                 deck_outline=deck_outline,
@@ -2049,17 +2174,26 @@ class DeckComposerAdapter:
 
 
 def create_refactored_deck_composer(registry):
-    """Factory function to create the refactored deck composer."""
-    logger.info("🏗️ Creating refactored deck composer...")
-    
+    """Factory function to create the refactored deck composer.
+
+    Uses USE_COMPOSER_V2 environment variable to switch between:
+    - SimpleDeckComposer (legacy, 2000+ lines)
+    - DeckComposerV2 (refactored, ~300 lines)
+
+    Default is SimpleDeckComposer for stability. Set USE_COMPOSER_V2=true to use new version.
+    """
+    use_v2 = os.getenv('USE_COMPOSER_V2', 'false').lower() == 'true'
+
+    logger.info(f"🏗️ Creating deck composer (v2={use_v2})...")
+
     from agents.generation.theme_style_manager import ThemeStyleManager
     from agents.generation.image_manager import ImageManager
     from services.registry_fonts import RegistryFonts
-    
+
     # Get fonts
     available_fonts = RegistryFonts.get_available_fonts(registry)
     all_fonts_list = RegistryFonts.get_all_fonts_list(registry)
-    
+
     # Create adapters
     theme_manager = ThemeManagerAdapter(ThemeStyleManager(available_fonts))
     slide_generator = create_refactored_slide_generator(
@@ -2067,21 +2201,34 @@ def create_refactored_deck_composer(registry):
     )
     persistence = PersistenceAdapter(DeckPersistence())
     image_manager = ImageManager()
-    
+
     logger.info(f"🏗️ Components created: theme_manager={theme_manager is not None}, slide_generator={slide_generator is not None}, persistence={persistence is not None}, image_manager={image_manager is not None}")
-    
+
     # Create event bus
     from agents.application.event_bus import get_event_bus
     event_bus = get_event_bus()
-    
-    # Create the new deck composer
-    composer = SimpleDeckComposer(
-        slide_generator=slide_generator,
-        theme_manager=theme_manager,
-        persistence=persistence,
-        event_bus=event_bus,
-        image_manager=image_manager
-    )
-    
-    # Wrap in adapter for compatibility
-    return DeckComposerAdapter(composer) 
+
+    if use_v2:
+        # Use new refactored composer
+        from agents.generation.deck_composer_v2 import DeckComposerV2
+        logger.info("🚀 Using DeckComposerV2 (refactored)")
+        composer = DeckComposerV2(
+            slide_generator=slide_generator,
+            theme_manager=theme_manager,
+            persistence=persistence,
+            event_bus=event_bus,
+            image_manager=image_manager
+        )
+        return composer
+    else:
+        # Use legacy SimpleDeckComposer
+        logger.info("📦 Using SimpleDeckComposer (legacy)")
+        composer = SimpleDeckComposer(
+            slide_generator=slide_generator,
+            theme_manager=theme_manager,
+            persistence=persistence,
+            event_bus=event_bus,
+            image_manager=image_manager
+        )
+        # Wrap in adapter for compatibility
+        return DeckComposerAdapter(composer) 

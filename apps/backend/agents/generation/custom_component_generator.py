@@ -716,6 +716,8 @@ class CustomComponentGenerator:
 
             # Get slide_mode from context: 'interactive' (NextGen) or 'static' (Traditional PPT)
             slide_mode = slide_context.get('slide_mode', 'interactive')
+            logger.info(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({'Traditional PPT' if slide_mode == 'static' else 'NextGen Interactive'})")
+            print(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({'Traditional PPT' if slide_mode == 'static' else 'NextGen Interactive'})")
 
             # Extract logo URL from theme - pass background color for light/dark selection
             background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
@@ -728,7 +730,7 @@ class CustomComponentGenerator:
 
             # Build the system prompt (specialized for title slides)
             if is_title_slide:
-                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url)
+                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url, slide_mode)
             else:
                 system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url)
 
@@ -900,9 +902,43 @@ class CustomComponentGenerator:
                 except Exception as invoke_error:
                     logger.error(f"[CUSTOM_COMPONENT] Invoke failed: {invoke_error}")
                     print(f"[CUSTOM_COMPONENT] ❌ Invoke failed: {invoke_error}")
-                    import traceback
-                    traceback.print_exc()
-                    raise
+
+                    # Check if this is a server error (503, 500, etc.) - try fallback
+                    error_str = str(invoke_error).lower()
+                    is_server_error = any(x in error_str for x in ['503', '500', '502', '504', 'unavailable', 'overloaded', 'server error'])
+
+                    if is_server_error and not used_fallback:
+                        logger.warning(f"[CUSTOM_COMPONENT] Server error detected, switching to fallback: {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+                        print(f"[CUSTOM_COMPONENT] 🔄 Server error! Switching to {CUSTOM_COMPONENT_FALLBACK_MODEL}")
+
+                        try:
+                            fallback_client, fallback_model = get_client(CUSTOM_COMPONENT_FALLBACK_MODEL)
+                            response = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    None,
+                                    invoke,
+                                    fallback_client,
+                                    fallback_model,
+                                    messages,
+                                    None,  # No response model - raw text
+                                    16000,  # max_tokens
+                                    self.temperature
+                                ),
+                                timeout=self.generation_timeout
+                            )
+                            used_fallback = True
+                            logger.info(f"[CUSTOM_COMPONENT] Fallback to {CUSTOM_COMPONENT_FALLBACK_MODEL} succeeded after server error")
+                            print(f"[CUSTOM_COMPONENT] ✅ Fallback succeeded!")
+                        except Exception as fallback_err:
+                            logger.error(f"[CUSTOM_COMPONENT] Fallback also failed: {fallback_err}")
+                            print(f"[CUSTOM_COMPONENT] ❌ Fallback also failed: {fallback_err}")
+                            import traceback
+                            traceback.print_exc()
+                            raise invoke_error
+                    else:
+                        import traceback
+                        traceback.print_exc()
+                        raise
 
             if used_fallback:
                 print(f"[CUSTOM_COMPONENT] 📊 Used fallback model (Opus 4.5) for this generation")
@@ -1030,13 +1066,14 @@ IMAGES: Use the EXACT URLs provided in the user prompt. NEVER use unsplash.com, 
         if slide_mode == 'static':
             # Traditional PPT - beautiful, clean, professional (no interactivity)
             return f"""You create stunning presentation slides like Apple Keynote or premium PowerPoint templates.
+THIS IS TRADITIONAL MODE - ABSOLUTELY NO JAVASCRIPT OR ANIMATIONS ALLOWED.
 
 {theme_info}
 
 DESIGN PRINCIPLES:
 - Bold, impactful typography (titles 56-80px, big hero numbers)
 - Generous whitespace, elegant layouts
-- Beautiful charts and data visualizations (bar, pie, donut)
+- Beautiful charts and data visualizations (bar, pie, donut) - STATIC ONLY, drawn with pure HTML/CSS
 - High-quality iconography and imagery
 - Professional color usage with accent highlights
 - Clean visual hierarchy
@@ -1046,7 +1083,6 @@ Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
 - Images and media: z-index: 20-30
 - Content boxes/cards: z-index: 40-50
 - TITLES AND HEADINGS: z-index: 100+ (ALWAYS on top)
-- Overlays/modals: z-index: 200+
 
 CONTENT STYLE:
 - BIG stats and numbers displayed prominently ("87%", "$2.4M", "+42%")
@@ -1055,16 +1091,23 @@ CONTENT STYLE:
 - Icons paired with key points
 - Professional imagery and illustrations
 
-STRICTLY FORBIDDEN:
-- NO JavaScript, NO onclick handlers
-- NO hover effects, NO animations
-- NO interactive elements (quizzes, accordions, sliders)
-- NO CSS animations or transitions
+⛔ STRICTLY FORBIDDEN - VIOLATION WILL BREAK THE SLIDE:
+- NO <script> tags whatsoever
+- NO JavaScript code of any kind
+- NO onclick, onmouseover, onload, or ANY event handlers
+- NO CSS animations (@keyframes)
+- NO CSS transitions (transition: property)
+- NO hover effects (:hover pseudo-class)
+- NO interactive elements (quizzes, accordions, sliders, expandable sections)
+- NO animated counters or number animations
+- NO SVG animations or SMIL
+- NO requestAnimationFrame or setInterval references
 
 Think: Premium consulting deck, investor pitch, executive presentation.
 Every slide should be screenshot-worthy and PPTX-export ready.
 
-OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"""
+OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>
+⚠️ PURE HTML/CSS ONLY - ANY JAVASCRIPT WILL CAUSE ERRORS"""
 
         else:  # interactive (default) - NextGen with FULL CREATIVE POWER
             return f"""You are an elite creative technologist. Build INTERACTIVE experiences that make people say "WOW!"
@@ -2142,7 +2185,8 @@ THINK LIKE A DESIGNER:
         colors: Dict[str, str],
         typography: Dict[str, str],
         style_keywords: list,
-        logo_url: Optional[str] = None
+        logo_url: Optional[str] = None,
+        slide_mode: str = 'interactive'
     ) -> str:
         """Build specialized system prompt for stunning title slides."""
 
@@ -2157,7 +2201,24 @@ THINK LIKE A DESIGNER:
         if logo_url:
             logo_info = f"\nLOGO: Place brand logo in top-left or top-right corner (40-60px height)"
 
-        return f"""You are an award-winning motion graphics designer. Create BREATHTAKING title slides.
+        # Mode-specific instructions
+        if slide_mode == 'static':
+            mode_instruction = """⛔ STATIC MODE - NO JAVASCRIPT OR ANIMATIONS:
+- NO <script> tags, onclick, onmouseover, or event handlers
+- NO CSS animations, transitions, or @keyframes
+- NO hover effects or animated particles
+
+OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html> - PURE CSS ONLY."""
+        else:
+            mode_instruction = """✨ INTERACTIVE MODE - Add elegant animations:
+- Entrance animations (fade, slide, reveal, scale)
+- Floating particles and light streaks
+- Smooth CSS transitions
+
+OUTPUT: Complete HTML/CSS/JS starting with <!DOCTYPE html>
+Use smooth animations (cubic-bezier)."""
+
+        return f"""You are an award-winning designer. Create BREATHTAKING title slides.
 
 THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} (hero) / {body_font} (body){logo_info}
@@ -2165,8 +2226,7 @@ FONTS: {hero_font} (hero) / {body_font} (body){logo_info}
 DESIGN PHILOSOPHY:
 - Cinematic, editorial, high-fashion quality
 - Dramatic typography as the hero (120-200px titles)
-- Atmospheric backgrounds (gradients, glows, particles, blur effects)
-- Elegant entrance animations (fade, slide, reveal, scale)
+- Atmospheric backgrounds (gradients, glows, blur effects)
 - Maximum 4 elements: logo (if provided), title, optional subtitle, optional accent
 
 TYPOGRAPHY CRAFT:
@@ -2177,20 +2237,19 @@ TYPOGRAPHY CRAFT:
 ATMOSPHERE (vary each slide - never repeat the same style):
 - Geometric shapes, diagonal lines, or grid patterns
 - Noise/grain textures, duotone overlays
-- Gradient meshes, aurora effects, light streaks
+- Gradient meshes, aurora effects
 - Minimalist negative space, typography-only designs
 - Abstract shapes (NOT always corner blobs)
 
 Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
 - Background gradients/effects: z-index: 1-5
-- Particles/floating elements: z-index: 10-15
-- Decorative glows/blur effects: z-index: 20-30
+- Decorative elements: z-index: 10-30
 - TITLE TEXT: z-index: 100+ (ALWAYS on top, never obscured)
 - Subtitle/presenter: z-index: 90+
 - Logo: z-index: 80+
 
-OUTPUT: Complete HTML/CSS/JS starting with <!DOCTYPE html>
-Use CSS variables. Smooth animations (cubic-bezier). Fill 1920x1080."""
+{mode_instruction}
+Use CSS variables. Fill 1920x1080."""
 
     def _build_title_slide_user_prompt(
         self,

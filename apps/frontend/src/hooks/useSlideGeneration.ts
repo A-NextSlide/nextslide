@@ -435,6 +435,12 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       if (e.type === 'theme_generated' && !themeReadyShownRef.current) {
         themeReadyShownRef.current = true;
         try {
+          console.log('[useSlideGeneration] 🎨 THEME_GENERATED received:', {
+            paletteColors: e.palette?.colors,
+            themeAccent1: e.theme?.color_palette?.accent_1,
+            themeAccent2: e.theme?.color_palette?.accent_2,
+            themeColors: e.theme?.color_palette?.colors,
+          });
           const logos = extractLogoCandidates(e.theme || e);
           postThemePreviewUpdate({ theme: e.theme, palette: e.palette, typography: e.theme?.typography, ...(logos.url ? { logo: { url: logos.url, light_variant: logos.light_variant, dark_variant: logos.dark_variant, source: 'theme' } } : {}) });
         } catch {}

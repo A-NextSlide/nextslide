@@ -1009,7 +1009,7 @@ use web_search FIRST. Don't ask the user for data you can look up yourself.
 The user expects YOU to bring accurate information - that's what makes the tool helpful!
 
 **CRITICAL: COMPLETION TRIGGERS**
-If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), or indicates they are satisfied:
+If the user says "build it", "create it", "I'm done", "looks good", "generate outline", "show buttons", "show me buttons", "go for it", "no go for it" (meaning "no changes, go ahead"), "continue", "I'm ready", "ready to create", "let's go", "make it", or indicates they are satisfied:
 1. STOP asking questions.
 2. Infer any missing details (audience, tone, etc.) based on the conversation.
 3. IMMEDIATELY output the `generate_outline` JSON.

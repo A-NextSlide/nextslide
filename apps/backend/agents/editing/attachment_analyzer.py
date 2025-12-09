@@ -45,6 +45,9 @@ class AnalyzedAttachment:
     mime_type: str
     url: str
 
+    # Original URL from user upload (before any processing)
+    original_url: str = ""
+
     # For images - base64 encoded for Claude vision
     base64_data: Optional[str] = None
 
@@ -313,7 +316,8 @@ def analyze_attachment(attachment: Dict[str, Any], timeout: int = 15) -> Analyze
         name=name,
         file_type=file_type,
         mime_type=mime_type,
-        url=url
+        url=url,
+        original_url=url  # Keep original URL for direct use when needed
     )
 
     if not url:

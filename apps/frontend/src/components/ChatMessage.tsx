@@ -63,7 +63,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   const isEditAppliedRow = metadata?.type === 'edit_applied';
   const isCompactMetaRow = Boolean(
     metadata?.compactRow ||
-    isPlanRow ||
+    // Note: isPlanRow is NOT compact anymore - we show full planning text
     isToolRow ||
     // Only compact agent progress rows; deck generation streaming should keep full padding
     (metadata?.type === 'progress' && !metadata?.isStreamingUpdate) ||
@@ -429,35 +429,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               <div className="whitespace-pre-wrap break-words text-sm">
                 {/* Compact, styled agent rows */}
                 {metadata?.type === 'agent_plan' ? (
-                  <div className="flex items-start max-w-full text-[11px] gap-2 flex-wrap whitespace-normal break-words min-w-0" style={planStyle}>
+                  <div className="flex flex-col gap-1.5 max-w-full text-[11px] whitespace-normal break-words min-w-0" style={planStyle}>
                     <span className="inline-flex items-center gap-1 text-muted-foreground">
                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
                       <span>Planning</span>
                     </span>
-                    {/* Flip-swap between Analyze context and Select tools */}
-                    <motion.div layout className="flex items-center gap-2 flex-wrap min-w-0 break-words">
+                    {/* Show full planning text for each step */}
+                    <motion.div layout className="flex flex-col gap-1 min-w-0">
                       {(() => {
                         const rawSteps: string[] = (metadata?.steps || []) as string[];
-                        const idxAnalyze = rawSteps.findIndex(s => s.toLowerCase().includes('analy') && s.toLowerCase().includes('context'));
-                        const idxSelect = rawSteps.findIndex(s => s.toLowerCase().includes('select') && s.toLowerCase().includes('tool'));
-                        let steps = [...rawSteps];
-                        if (idxAnalyze !== -1 && idxSelect !== -1 && idxAnalyze < idxSelect) {
-                          // swap the two for nicer progression visual
-                          const tmp = steps[idxAnalyze];
-                          steps[idxAnalyze] = steps[idxSelect];
-                          steps[idxSelect] = tmp;
-                        }
-                        return steps.map((s, i) => (
-                          <motion.span
+                        return rawSteps.map((s, i) => (
+                          <motion.div
                             layout
                             key={`${s}-${i}`}
-                            initial={{ rotateX: 90, opacity: 0 }}
-                            animate={{ rotateX: 0, opacity: 1 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6, delay: i * 0.03 }}
-                            className="break-words whitespace-normal max-w-full"
+                            initial={{ opacity: 0, y: -5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6, delay: i * 0.05 }}
+                            className="break-words whitespace-normal text-[12px] text-foreground/80 pl-3 border-l-2 border-orange-500/30"
                           >
-                            {i > 0 ? '· ' : ''}{s}
-                          </motion.span>
+                            {s}
+                          </motion.div>
                         ));
                       })()}
                     </motion.div>

@@ -463,6 +463,17 @@ class ThemeStyleManager:
 
                 if brandfetch_theme and brandfetch_palette:
                     logger.info("[THEME SIMPLE] ✅ Using Brandfetch theme and palette")
+                    # CRITICAL: Transfer logo from deck_outline.stylePreferences to theme.brandInfo
+                    logo_url = None
+                    logo_url_dark = None
+                    if deck_outline and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                        logo_url = getattr(deck_outline.stylePreferences, 'logoUrl', None)
+                        logo_url_dark = getattr(deck_outline.stylePreferences, 'logoUrlDark', None)
+                    if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                        brandfetch_theme['brandInfo'] = {'logoUrl': logo_url.strip()}
+                        if logo_url_dark:
+                            brandfetch_theme['brandInfo']['logoUrlDark'] = logo_url_dark.strip()
+                        logger.info(f"[THEME SIMPLE] ✅ Set brandInfo.logoUrl in Brandfetch theme: {logo_url[:60]}...")
                     return {
                         'theme': brandfetch_theme,
                         'style_spec': { 'palette': brandfetch_palette },
@@ -1569,8 +1580,37 @@ Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
             # Add logo URL from palette metadata if available
             if db_palette and db_palette.get('metadata', {}).get('logo_url'):
                 theme['logo_url'] = db_palette['metadata']['logo_url']
-                logger.info(f"[THEME COMPLETE] 🖼️ Logo URL: {theme['logo_url']}")
-            
+                logger.info(f"[THEME COMPLETE] 🖼️ Logo URL from palette: {theme['logo_url']}")
+
+            # CRITICAL: Transfer logo from deck_outline.stylePreferences to theme.brandInfo
+            # This logo was set by ThemeDirector/ThemeAgent after Brandfetch lookup
+            logo_url = None
+            logo_url_dark = None
+            if deck_outline and hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                logo_url = getattr(deck_outline.stylePreferences, 'logoUrl', None)
+                logo_url_dark = getattr(deck_outline.stylePreferences, 'logoUrlDark', None)
+                if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                    logger.info(f"[THEME COMPLETE] 🖼️ Logo URL from stylePreferences: {logo_url}")
+
+            # Also check palette metadata for logo
+            if not logo_url and db_palette and db_palette.get('metadata', {}).get('logo_url'):
+                logo_url = db_palette['metadata']['logo_url']
+                logo_url_dark = db_palette['metadata'].get('logo_url_dark')
+
+            # Set brandInfo in theme if we have a logo
+            if logo_url and isinstance(logo_url, str) and logo_url.strip():
+                theme['brandInfo'] = {'logoUrl': logo_url.strip()}
+                if logo_url_dark:
+                    theme['brandInfo']['logoUrlDark'] = logo_url_dark.strip()
+                # Also store in color_palette.metadata for redundancy
+                if 'color_palette' in theme:
+                    if 'metadata' not in theme['color_palette']:
+                        theme['color_palette']['metadata'] = {}
+                    theme['color_palette']['metadata']['logo_url'] = logo_url.strip()
+                    if logo_url_dark:
+                        theme['color_palette']['metadata']['logo_url_dark'] = logo_url_dark.strip()
+                logger.info(f"[THEME COMPLETE] ✅ Set brandInfo.logoUrl in theme: {logo_url[:60]}...")
+
             return {
                 'theme': theme,
                 'style_spec': style_spec,
@@ -1978,7 +2018,8 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
                     'animation_level': 'subtle',
                     'overall_sophistication': 'professional',
                     'chart_theme_mode': 'light'
-                }
+                },
+                'brandInfo': {}  # Empty by default - will be populated if logo is available
             },
             'style_spec': {
                 'design_approach': 'PROFESSIONAL',

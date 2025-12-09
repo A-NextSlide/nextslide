@@ -143,6 +143,10 @@ def get_tools_and_call_map(
     def custom_component_rewrite_with_attachments(args, reg, deck, diff):
         return custom_component_rewrite(args, reg, deck, diff, attachments=attachments)
 
+    # Create a wrapper for custom_component_add_media that passes attachments
+    def custom_component_add_media_with_attachments(args, reg, deck, diff):
+        return custom_component_add_media(args, reg, deck, diff, attachments=attachments)
+
     call_map = {
         "edit_component": edit_component,
         "create_new_component": create_new_component_with_attachments,
@@ -154,7 +158,7 @@ def get_tools_and_call_map(
         "custom_component_str_replace": custom_component_str_replace,
         "custom_component_view": custom_component_view,
         "custom_component_rewrite": custom_component_rewrite_with_attachments,
-        "custom_component_add_media": custom_component_add_media,
+        "custom_component_add_media": custom_component_add_media_with_attachments,
         "custom_component_add_logo": custom_component_add_logo,
         "style_slide": style_slide_with_attachments,
         "update_background": update_background,

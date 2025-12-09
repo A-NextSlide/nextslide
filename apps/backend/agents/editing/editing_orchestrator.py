@@ -71,26 +71,58 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
             url = att.get('url') or att.get('publicUrl') or ''
             att_list.append(f"- {name} ({mime}): {url}")
         attachments_section = f"""
-    <user_uploaded_files>
-    The user has uploaded the following files as design references.
+    <user_attachments>
+    The user has uploaded files with their request:
     {chr(10).join(att_list)}
 
-    **HOW TO USE REFERENCE IMAGES:**
+    **REASON ABOUT THE USER'S INTENT:**
 
-    1. **For STYLING existing content** (colors, fonts, effects):
-       - Use `style_slide` - it can see and analyze these images
-       - This ONLY styles existing components, cannot change layout
+    First, understand WHAT the user wants to do with the attachment:
 
-    2. **For RECREATING a slide from reference** (new layout/structure):
-       - Use `remove_all_content` first to clear the slide
-       - Then use `create_new_component` with type='CustomComponent'
-       - Describe the design from the reference image in component_request
-       - The component generator can see reference images and replicate the design
+    1. **USE AS CONTENT** - "use this logo", "add this image", "put this photo here"
+       → The file itself should appear in the slide
 
-    Choose based on whether user wants to:
-    - "Style like this" → style_slide (keeps existing components)
-    - "Make it look like this" / "Recreate this" → remove_all_content + create_new_component
-    </user_uploaded_files>
+    2. **ANALYZE & EXTRACT** - "analyze this", "extract data from this", "create a chart from this"
+       → Extract information from the file and create components based on it
+
+    3. **USE AS REFERENCE** - "make it look like this", "match this style", "copy this design"
+       → Use the file as a visual reference for styling/recreating
+
+    4. **REPLACE CONTENT** - "use this instead of the title", "swap the image for this"
+       → Replace existing content with the uploaded file
+
+    **TOOLS THAT CAN SEE/USE ATTACHMENTS:**
+
+    These tools receive the uploaded files and can reason about them:
+    - `custom_component_rewrite` - Can see images, analyze them, and incorporate them into HTML
+    - `custom_component_add_media` - Can inject uploaded images into CustomComponent HTML
+      - Use type="uploaded" to use the user's file directly
+      - Use type="analyze" to have AI analyze the image and decide how to use it
+    - `create_new_component` - Can see reference images for styling/content
+    - `style_slide` - Can analyze images for color/style extraction
+    - `insert_image` - Direct insertion using the attachment URL
+
+    **EXAMPLES OF FLEXIBLE REASONING:**
+
+    User: "Analyze this chart image and recreate it as an interactive component"
+    → Use `custom_component_rewrite` with request to analyze the image and create a similar chart
+
+    User: "Use this as my logo in the top left"
+    → Use `custom_component_add_media` with type="uploaded", placement="top-left"
+
+    User: "Extract the data from this spreadsheet and make a bar chart"
+    → Use `create_new_component` type="Chart" - the data will be extracted automatically
+
+    User: "Replace the title with this image"
+    → First identify the title component, then use `custom_component_rewrite` to replace text with image
+
+    User: "Make this slide look like the uploaded screenshot"
+    → Use `custom_component_rewrite` with instructions to match the visual style
+
+    **KEY PRINCIPLE:** The AI tools can SEE the attachments. Describe what you want done with
+    them in natural language in the tool's request/instructions field. The downstream AI will
+    analyze the attachment and execute your intent intelligently.
+    </user_attachments>
 """
 
     # Check if current slide has a CustomComponent and build context
@@ -111,44 +143,48 @@ def get_orchestrator_prompt(state: AgentState, descriptions: str):
             html_content = cprops.get('render', '')
             custom_component_section = f"""
     <custom_component_context>
-    🚨 THIS SLIDE CONTAINS A CustomComponent - USE SPECIAL EDITING APPROACH!
+    🚨 THIS SLIDE HAS A CustomComponent - YOU MUST EDIT IT, NOT CREATE NEW COMPONENTS!
 
     Component ID: {cid}
     Slide ID: {current_slide_id}
 
-    **SMART EDITING STRATEGY (Choose the right tool!):**
+    ⚠️ **MANDATORY: ALWAYS EDIT THIS EXISTING COMPONENT**
+    When the user asks to change ANYTHING on this slide, you MUST edit this CustomComponent.
+    DO NOT use create_new_component, insert_image, or other creation tools.
+    The CustomComponent contains ALL the slide's content - edit it directly.
+
+    **EDITING TOOLS (Use these, NOT creation tools!):**
 
     ┌─────────────────────────────────────────────────────────────────┐
-    │ SIMPLE EDITS → `custom_component_str_replace` (FAST, NO AI)    │
-    │ Use for: color changes, text updates, font sizes, padding      │
-    │ Example: "change the title color to red"                       │
-    │ How: Find exact string, replace with new value                 │
+    │ `custom_component_str_replace` - FASTEST, use for most edits   │
+    │ • Color changes: "change title color to red"                   │
+    │ • Text updates: "change the heading text"                      │
+    │ • Size changes: "make the font bigger"                         │
+    │ • Add/replace images: str_replace the img src                  │
     └─────────────────────────────────────────────────────────────────┘
 
     ┌─────────────────────────────────────────────────────────────────┐
-    │ MEDIUM EDITS → `custom_component_rewrite` (AI-ASSISTED)        │
-    │ Use for: styling changes, adding elements, partial updates     │
-    │ Example: "add a gradient background", "make it more modern"    │
-    │ How: AI rewrites with your instructions                        │
+    │ `custom_component_rewrite` - For structural changes            │
+    │ • Adding new elements: "add a logo to the top left"            │
+    │ • Layout changes: "reorganize as a grid"                       │
+    │ • Style overhauls: "make it more modern"                       │
+    │ • Using uploaded images: can see and incorporate them          │
     └─────────────────────────────────────────────────────────────────┘
 
     ┌─────────────────────────────────────────────────────────────────┐
-    │ COMPLEX EDITS → `custom_component_rewrite` (PREMIUM AI)        │
-    │ Use for: complete redesigns, new layouts, new concepts         │
-    │ Example: "add an interactive timeline", "redesign as cards"    │
-    │ How: AI generates new design (uses Gemini 3 Pro for quality)   │
+    │ `custom_component_add_media` - For adding images/logos         │
+    │ • "add my uploaded logo" → type="uploaded"                     │
+    │ • "add the Apple logo" → type="logo"                           │
+    │ • "add a stock photo of..." → type="stock"                     │
     └─────────────────────────────────────────────────────────────────┘
 
     **CRITICAL RULES:**
-    ✗ DO NOT use `edit_component` - CustomComponents are a single unit
-    ✗ DO NOT make up component IDs
-    ✓ Use str_replace for precise, small changes (faster, safer)
-    ✓ Use rewrite when structure needs to change
-
-    **FOR str_replace:**
-    - Copy the EXACT string from the HTML (including whitespace/special chars)
-    - If multiple occurrences exist, only the FIRST will be replaced (safe!)
-    - Make one call per change (chain multiple calls for multiple edits)
+    ✗ NEVER use `create_new_component` when this CustomComponent exists
+    ✗ NEVER use `insert_image` - use custom_component_add_media instead
+    ✗ NEVER use `edit_component` - CustomComponents are a single unit
+    ✓ ALWAYS use component_id="{cid}" and slide_id="{current_slide_id}"
+    ✓ Use str_replace for precise changes (faster, safer)
+    ✓ Use rewrite for adding elements or structural changes
 
     <html_content>
     {html_content[:50000]}{"... [TRUNCATED - full HTML is " + str(len(html_content)) + " chars]" if len(html_content) > 50000 else ""}
@@ -411,15 +447,10 @@ DO NOT CALL ANY VIEW TOOLS. MAKE THE EDIT NOW.
                     except Exception:
                         return default
 
-            def _shorten(text: str, limit: int = 80) -> str:
-                if not isinstance(text, str):
-                    return ""
-                return text if len(text) <= limit else text[:limit - 1] + "…"
-
             friendly_plan = []
             for tc in tool_calls:
-                # Prefer the model-provided edit_request_summary when present
-                summary = _shorten(_get_attr(tc, 'edit_request_summary', '') or '')
+                # Use the full model-provided edit_request_summary when present (no truncation)
+                summary = (_get_attr(tc, 'edit_request_summary', '') or '').strip()
                 if summary:
                     friendly_plan.append({"title": summary})
                     continue

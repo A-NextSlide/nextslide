@@ -783,8 +783,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const id = `plan-${now}`;
       planMsgIdRef.current = id;
       planCreatedAtRef.current = now;
-      // Start with the first step and progressively accumulate
-      setMessages(prev => [...prev, { id, type: 'system', message: 'Planning', timestamp: new Date(), feedback: null, metadata: { type: 'agent_plan', compactRow: true, steps: [steps[0]] } }]);
+      // Start with the first step and progressively accumulate - full display (no compactRow)
+      setMessages(prev => [...prev, { id, type: 'system', message: 'Planning', timestamp: new Date(), feedback: null, metadata: { type: 'agent_plan', steps: [steps[0]] } }]);
     } else {
       const id = planMsgIdRef.current!;
       // Preserve any already shown steps; if none, seed with the first incoming step
@@ -792,7 +792,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (m.id !== id) return m;
         const existingSteps = Array.isArray(m.metadata?.steps) ? m.metadata.steps as string[] : [];
         const nextSteps = existingSteps.length > 0 ? existingSteps : [steps[0]];
-        return { ...m, message: 'Planning', metadata: { ...m.metadata, type: 'agent_plan', compactRow: true, steps: nextSteps } };
+        return { ...m, message: 'Planning', metadata: { ...m.metadata, type: 'agent_plan', steps: nextSteps } };
       }));
     }
     for (let i = 1; i < steps.length; i++) {
@@ -1418,9 +1418,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, []);
 
   // Handle chat:prefill_with_component events (from CustomComponentEditOverlay AI edit)
+  // Supports autoSend option to immediately send the message
+  const pendingAutoSendRef = useRef<{ prompt: string; componentId: string; slideId: string | null; label: string; elementType: string } | null>(null);
+
   useEffect(() => {
     const handlePrefillWithComponent = (event: CustomEvent) => {
-      const { componentId, slideId, label, prompt, elementType } = event.detail || {};
+      const { componentId, slideId, label, prompt, elementType, autoSend } = event.detail || {};
 
       if (!componentId) return;
 
@@ -1444,10 +1447,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         setInput(prompt);
       }
 
-      // Focus the input after a short delay to ensure state is updated
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
+      // If autoSend is requested, store the pending send info
+      // We need to wait for state to update before sending
+      if (autoSend && prompt) {
+        pendingAutoSendRef.current = {
+          prompt,
+          componentId,
+          slideId: slideId || null,
+          label: label || 'Custom Component',
+          elementType: elementType || 'CustomComponent'
+        };
+      } else {
+        // Focus the input after a short delay to ensure state is updated
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      }
     };
 
     window.addEventListener('chat:prefill_with_component', handlePrefillWithComponent as EventListener);
@@ -1456,6 +1471,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       window.removeEventListener('chat:prefill_with_component', handlePrefillWithComponent as EventListener);
     };
   }, []);
+
+  // Effect to handle auto-send after state updates
+  useEffect(() => {
+    if (pendingAutoSendRef.current && input && selectedElements.length > 0) {
+      const pending = pendingAutoSendRef.current;
+      // Verify the component was added to selections
+      const hasSelection = selectedElements.some(s => s.elementId === pending.componentId);
+      if (hasSelection && input === pending.prompt) {
+        pendingAutoSendRef.current = null;
+        // Trigger send after a brief delay to ensure all state is synced
+        setTimeout(() => {
+          sendMessage();
+        }, 100);
+      }
+    }
+  }, [input, selectedElements]);
 
   // Show initial prompt message when outline with stylePreferences loads
   useEffect(() => {
@@ -1535,6 +1566,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     const onThemePreview = (e: CustomEvent) => {
       const d = e.detail || {};
+      console.log('[ChatPanel] 🎨 theme_preview_update received:', {
+        paletteColors: d.palette?.colors,
+        paletteBg: d.palette?.primary_background,
+        themePaletteColors: d.theme?.color_palette?.colors,
+        themePaletteAccent1: d.theme?.color_palette?.accent_1,
+      });
       setThemePreview(prev => {
         const next = { ...(prev || {}), ...d } as any;
         // Derive logo if not explicitly provided

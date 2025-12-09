@@ -164,26 +164,42 @@ async def acquire_stock_image(query: str) -> Optional[str]:
 
 class CustomComponentAddMediaArgs(ToolModel):
     """
-    Add images to a CustomComponent by injecting <img> tags into its HTML.
+    Add images to a CustomComponent by injecting them into its HTML.
 
-    This tool:
-    1. Acquires images (logos, AI-generated, or stock photos)
-    2. Uses AI to intelligently inject them into the CustomComponent HTML
-    3. Positions them appropriately based on the existing layout
+    This tool is FLEXIBLE - it can:
+    1. Use user-uploaded images directly (type="uploaded")
+    2. Analyze uploaded images and incorporate them intelligently (type="analyze")
+    3. Search for logos (type="logo")
+    4. Generate AI images (type="generated")
+    5. Find stock photos (type="stock")
 
-    Use this instead of add_logos/insert_image when the slide is a CustomComponent.
+    The AI injection understands context and will position/style images appropriately.
     """
     tool_name: Literal["custom_component_add_media"] = Field(
-        description="Add images (logos, generated, stock) to a CustomComponent by injecting into its HTML"
+        description="Flexibly add images to a CustomComponent. Can use uploaded files, analyze images, search logos, generate AI images, or find stock photos."
     )
     component_id: str = Field(description="The ID of the CustomComponent to modify")
     slide_id: str = Field(description="The ID of the slide containing the component")
     media_requests: List[Dict[str, str]] = Field(
         description="""List of media items to add. Each item should have:
-        - type: "logo", "generated", or "stock"
-        - query: Brand name for logos, prompt for generated, search query for stock
-        - placement: Optional hint like "top-right", "hero-section", "footer", "alongside-title"
-        Example: [{"type": "logo", "query": "Apple"}, {"type": "generated", "query": "futuristic city skyline", "placement": "hero-section"}]"""
+        - type: One of:
+          * "uploaded" - Use user's uploaded file directly as an image
+          * "analyze" - Analyze the uploaded file and decide how to incorporate it (extract data, match style, etc.)
+          * "logo" - Search for a brand logo
+          * "generated" - Generate an AI image from a prompt
+          * "stock" - Search for a stock photo
+        - query: Context for the media:
+          * For uploaded/analyze: filename or what to do with it (e.g., "user's logo", "analyze and recreate as chart")
+          * For logo: brand name (e.g., "Apple", "Nike")
+          * For generated: image description (e.g., "futuristic city skyline")
+          * For stock: search terms (e.g., "team collaboration")
+        - placement: Where to put it (e.g., "top-left", "hero-section", "replace-title", "background", "alongside-content")
+        - intent: Optional - describe what you want to achieve (e.g., "replace the title text with this logo", "add as a decorative element")
+
+        Examples:
+        - [{"type": "uploaded", "query": "logo.png", "placement": "top-left", "intent": "use as brand logo"}]
+        - [{"type": "analyze", "query": "chart screenshot", "intent": "recreate this chart with our data"}]
+        - [{"type": "logo", "query": "Stripe", "placement": "footer"}]"""
     )
 
 
@@ -191,23 +207,32 @@ def custom_component_add_media(
     args: CustomComponentAddMediaArgs,
     registry: ComponentRegistry,
     deck_data: DeckBase,
-    deck_diff: DeckDiff
+    deck_diff: DeckDiff,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> DeckDiff:
     """
     Add media to a CustomComponent by acquiring images and injecting into HTML.
+
+    Supports user-uploaded attachments via type="uploaded" in media_requests.
+    When attachments are provided, they take priority over searching/generating.
     """
-    return asyncio.run(_add_media_async(args, registry, deck_data, deck_diff))
+    return asyncio.run(_add_media_async(args, registry, deck_data, deck_diff, attachments))
 
 
 async def _add_media_async(
     args: CustomComponentAddMediaArgs,
     registry: ComponentRegistry,
     deck_data: DeckBase,
-    deck_diff: DeckDiff
+    deck_diff: DeckDiff,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> DeckDiff:
     """
     Async implementation of media addition.
+
+    Supports user-uploaded attachments via type="uploaded".
     """
+    from services.image_storage_service import ImageStorageService
+
     # Find the component
     component_info = find_component_by_id(deck_data, args.component_id)
     if not component_info:
@@ -226,6 +251,19 @@ async def _add_media_async(
     if not current_html:
         raise ValueError(f"CustomComponent {args.component_id} has no HTML content")
 
+    # Build a map of user-uploaded attachments for quick lookup
+    attachment_map: Dict[str, str] = {}
+    if attachments:
+        for i, att in enumerate(attachments):
+            url = att.get('url') or att.get('publicUrl')
+            name = att.get('name') or att.get('fileName') or f'attachment_{i}'
+            if url:
+                attachment_map[name.lower()] = url
+                # Also map by index for easy access
+                attachment_map[f'attachment_{i}'] = url
+                attachment_map[str(i)] = url
+        logger.info(f"[CUSTOM_COMPONENT_MEDIA] Available user attachments: {list(attachment_map.keys())}")
+
     # Acquire all requested images in parallel
     acquired_media = []
 
@@ -233,9 +271,50 @@ async def _add_media_async(
         media_type = request.get('type', 'stock')
         query = request.get('query', '')
         placement = request.get('placement', '')
+        intent = request.get('intent', '')  # What the user wants to achieve
 
         url = None
-        if media_type == 'logo':
+        analysis_context = None  # For "analyze" type - contains extracted info
+
+        if media_type in ('uploaded', 'analyze'):
+            # Use user-uploaded attachment
+            # Try to match by query (filename) or use first available
+            query_lower = query.lower() if query else ''
+
+            # Try exact match first
+            if query_lower in attachment_map:
+                url = attachment_map[query_lower]
+            else:
+                # Try partial match
+                for name, att_url in attachment_map.items():
+                    if query_lower in name or name in query_lower:
+                        url = att_url
+                        break
+
+            # If still no match, use first attachment
+            if not url and attachments:
+                first_att = attachments[0]
+                url = first_att.get('url') or first_att.get('publicUrl')
+
+            if url:
+                # Re-upload to our storage to ensure persistence and consistent URL format
+                try:
+                    async with ImageStorageService() as storage:
+                        upload_result = await storage.upload_image_from_url(url)
+                        if 'error' not in upload_result and upload_result.get('url'):
+                            url = upload_result['url']
+                            logger.info(f"✅ User attachment uploaded: {url[:60]}...")
+                except Exception as e:
+                    logger.warning(f"Failed to re-upload user attachment, using original URL: {e}")
+                    # Keep original URL if re-upload fails
+
+                # For "analyze" type, we pass extra context to the AI injection
+                if media_type == 'analyze':
+                    analysis_context = f"ANALYZE this image and {intent or query}. Extract relevant information and incorporate appropriately."
+            else:
+                logger.warning(f"No user attachment found matching '{query}'")
+
+        elif media_type == 'logo':
             url = await acquire_logo(query)
         elif media_type == 'generated':
             url = await acquire_generated_image(query)
@@ -246,7 +325,9 @@ async def _add_media_async(
             'type': media_type,
             'query': query,
             'placement': placement,
+            'intent': intent,
             'url': url,
+            'analysis_context': analysis_context,
             'success': url is not None
         }
 
@@ -266,11 +347,20 @@ async def _add_media_async(
 
     logger.info(f"✅ Acquired {len(acquired_media)} media items")
 
-    # Build media context for AI injection
-    media_context = "\n".join([
-        f"- {m['type'].upper()}: {m['query']} → {m['url']} (placement hint: {m['placement'] or 'auto'})"
-        for m in acquired_media
-    ])
+    # Build rich media context for AI injection - include intent and analysis instructions
+    media_lines = []
+    for m in acquired_media:
+        line = f"- {m['type'].upper()}: {m['url']}"
+        if m.get('placement'):
+            line += f" | Placement: {m['placement']}"
+        if m.get('intent'):
+            line += f" | Intent: {m['intent']}"
+        if m.get('analysis_context'):
+            line += f" | {m['analysis_context']}"
+        if m.get('query'):
+            line += f" | Query: {m['query']}"
+        media_lines.append(line)
+    media_context = "\n".join(media_lines)
 
     # Use Gemini to inject images into HTML
     try:
@@ -289,30 +379,46 @@ async def _add_media_async(
         theme = deck_dict.get('theme', {}) or {}
         colors = theme.get('color_palette', {}) or {}
 
-        prompt = f"""Modify this CustomComponent HTML to add the following images.
+        prompt = f"""Modify this CustomComponent HTML to incorporate the following media.
 
 CURRENT HTML:
 {current_html}
 
-IMAGES TO ADD:
+MEDIA TO INCORPORATE:
 {media_context}
 
-REQUIREMENTS:
-1. Add <img> tags for each image URL provided
-2. Position them according to the placement hints (or intelligently if no hint)
-3. Style the images appropriately:
-   - For logos: reasonable size (80-150px), object-fit: contain
-   - For hero images: larger, can be background or prominent
-   - For stock photos: integrate naturally into the layout
-4. Maintain the existing layout and content
-5. Use Tailwind classes for styling (rounded-lg, shadow-lg, etc.)
-6. Keep background transparent
-7. Output a complete HTML document starting with <!DOCTYPE html>
+**UNDERSTAND THE INTENT:**
+Read each media item's intent/query carefully. The user may want to:
+- Simply ADD an image at a location
+- REPLACE existing content (like a title) with an image
+- Use the image as a BACKGROUND or decorative element
+- ANALYZE the image and extract information to display
+
+**FLEXIBLE PLACEMENT OPTIONS:**
+- "top-left", "top-right", "bottom-left", "bottom-right" → Position in that corner
+- "hero-section", "header", "footer" → Add to that semantic area
+- "replace-title", "replace-content" → Remove text and put image in its place
+- "background" → Make it a background image
+- "alongside-content" → Place next to existing content
+- "auto" → Use your judgment based on the design
+
+**STYLING GUIDELINES:**
+- For logos: reasonable size (80-150px width), object-fit: contain, appropriate padding
+- For photos: integrate naturally, use rounded corners and shadows as appropriate
+- For replacements: match the size/position of what's being replaced
+- Match the existing design aesthetic
+
+**REQUIREMENTS:**
+1. Execute the user's intent for each media item
+2. Maintain the overall layout coherence
+3. Use Tailwind classes for styling
+4. Keep background transparent (unless background image requested)
+5. Output a complete HTML document starting with <!DOCTYPE html>
 
 IMAGE TAG PATTERN:
-<img src='IMAGE_URL' alt='description' class='w-32 h-32 object-contain' />
+<img src='IMAGE_URL' alt='description' class='...' />
 
-Return the modified HTML."""
+Return the modified HTML that fulfills the user's intent."""
 
         from agents.config import GEMINI_FLASH
         response_raw = gemini_client.models.generate_content(

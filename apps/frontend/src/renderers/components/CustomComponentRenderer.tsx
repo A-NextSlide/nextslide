@@ -2381,7 +2381,8 @@ export const CustomComponentRenderer: React.FC<{
       prompt = instruction;
     }
 
-    // Dispatch event to prefill chat panel with the component and prompt
+    // Dispatch event to chat panel with the component and prompt
+    // autoSend: true means it will automatically send the message (not just prefill)
     window.dispatchEvent(new CustomEvent('chat:prefill_with_component', {
       detail: {
         componentId: component.id,
@@ -2389,6 +2390,7 @@ export const CustomComponentRenderer: React.FC<{
         label,
         prompt,
         elementType: 'CustomComponent',
+        autoSend: true, // Auto-send when user triggers from mini chat
         // Include element details for better targeting
         elementDetails: {
           type: element.type,

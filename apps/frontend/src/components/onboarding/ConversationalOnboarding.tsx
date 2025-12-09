@@ -1726,28 +1726,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           <div className="flex justify-center mt-4 animate-in fade-in">
             <button
               onClick={() => {
-                // Check if user requested detailed mode in their messages
-                const userRequestedDetailed = chatHistory.some(msg =>
-                  msg.role === 'user' &&
-                  (msg.content.toLowerCase().includes('detailed') ||
-                   msg.content.toLowerCase().includes('in-depth') ||
-                   msg.content.toLowerCase().includes('comprehensive'))
-                );
-                const detailLevel = userRequestedDetailed ? 'detailed' : 'quick';
-
-                // Store detail level and show slide mode selection
-                setCollectedData(prev => ({ ...prev, presentationType: 'simple', detailLevel }));
-                setStage('slide_mode_selection');
-
-                // Add message with slide mode selection buttons
-                addMessage(
-                  'assistant',
-                  "Choose your presentation style:",
-                  undefined,
-                  undefined,
-                  undefined,
-                  true // showSlideModeSelection
-                );
+                // Send a continuation message to trigger outline generation
+                // The agent will do research, generate theme, and create the outline
+                handleSendMessage("Continue - I'm ready to create the presentation");
               }}
               className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors flex items-center gap-1"
             >

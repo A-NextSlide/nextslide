@@ -2414,46 +2414,61 @@ Generate a creative, specific design style description (1-2 sentences):"""
         deck_outline: Any
     ) -> None:
         """Upload scraped brand assets (logos) to storage."""
-        logo_url = color_result.get('metadata', {}).get('logo_url')
+        metadata = color_result.get('metadata', {})
+        logo_url = metadata.get('logo_url')
+        logo_url_dark = metadata.get('logo_url_dark')  # Dark variant for light backgrounds
+
         if not logo_url:
             return
-        
+
         await self._emit_tool_call(
             "ImageStorageService.upload_from_url",
             {"url": logo_url, "type": "brand_logo"}
         )
-            
+
         try:
             # This would use actual image storage service
             stored_url = logo_url  # In reality, this would be CDN URL
-            
+            stored_url_dark = logo_url_dark  # Keep dark variant URL
+
             await self._emit_tool_result(
                 "ImageStorageService.upload_from_url",
                 [f"Uploaded logo to: {stored_url}"]
             )
 
             # Emit assets uploaded event
+            logos_list = [{"url": stored_url, "type": "brand_logo"}]
+            if stored_url_dark:
+                logos_list.append({"url": stored_url_dark, "type": "brand_logo_dark"})
             await self._emit_event("assets_uploaded", {
-                "logos": [{"url": stored_url, "type": "brand_logo"}]
+                "logos": logos_list
             })
 
             # Store in deck data if possible
             if hasattr(deck_outline, 'data'):
                 if not hasattr(deck_outline.data, 'assets'):
                     deck_outline.data.assets = {}
-                deck_outline.data.assets['logos'] = [
-                    {"url": stored_url, "type": "brand_logo"}
-                ]
-            
+                deck_outline.data.assets['logos'] = logos_list
+
             # CRITICAL: Set logo in stylePreferences for slide generation
+            # Set BOTH light and dark variants so proper contrast can be chosen
             if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
                 deck_outline.stylePreferences.logoUrl = stored_url
-                logger.info(f"🖼️ Logo URL set in stylePreferences: {stored_url}")
+                if stored_url_dark:
+                    # Set dark variant if available (logoUrlDark should exist on StylePreferencesItem)
+                    if hasattr(deck_outline.stylePreferences, 'logoUrlDark'):
+                        deck_outline.stylePreferences.logoUrlDark = stored_url_dark
+                        logger.info(f"🖼️ Logo URLs set - Light: {stored_url[:50]}..., Dark: {stored_url_dark[:50]}...")
+                    else:
+                        logger.info(f"🖼️ Logo URL set in stylePreferences: {stored_url}")
+                        logger.warning(f"⚠️ stylePreferences has no logoUrlDark field - dark variant not stored")
+                else:
+                    logger.info(f"🖼️ Logo URL set in stylePreferences (no dark variant): {stored_url}")
             elif hasattr(deck_outline, 'stylePreferences'):
                 # stylePreferences exists but is None, create it using the correct model
                 from models.requests import StylePreferencesItem
-                deck_outline.stylePreferences = StylePreferencesItem(logoUrl=stored_url)
-                logger.info(f"🖼️ Created stylePreferences with logo URL: {stored_url}")
+                deck_outline.stylePreferences = StylePreferencesItem(logoUrl=stored_url, logoUrlDark=stored_url_dark)
+                logger.info(f"🖼️ Created stylePreferences with logo URLs")
             else:
                 logger.warning("⚠️ Cannot set logo - stylePreferences not available")
         except Exception as e:
