@@ -42,11 +42,12 @@ import {
   chatWithFiles,
   FileInput
 } from '@/services/fileAnalysisService';
-import {
-  IntegrationCommandPalette,
-  useIntegrationCommand,
-} from '@/components/integrations';
-import { IntegrationsDialog } from '@/components/integrations';
+// TODO: Re-enable when integrations are fully set up
+// import {
+//   IntegrationCommandPalette,
+//   useIntegrationCommand,
+// } from '@/components/integrations';
+// import { IntegrationsDialog } from '@/components/integrations';
 // Future: import { useChatAttachments } from './chat/hooks';
 // Future: import type { Attachment, PendingAttachment, RegisteredAttachment } from './chat/types';
 
@@ -251,10 +252,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<{ label: string; prompt: string }[]>([]);
 
-  // Integration command palette state
-  const [showIntegrationPalette, setShowIntegrationPalette] = useState(false);
-  const [showIntegrationsDialog, setShowIntegrationsDialog] = useState(false);
-  const [selectedIntegration, setSelectedIntegration] = useState<{ id: string; action: string } | null>(null);
+  // Integration command palette state - disabled until integrations are set up
+  // const [showIntegrationPalette, setShowIntegrationPalette] = useState(false);
+  // const [showIntegrationsDialog, setShowIntegrationsDialog] = useState(false);
+  // const [selectedIntegration, setSelectedIntegration] = useState<{ id: string; action: string } | null>(null);
 
   // Initialize messages based on mode
   const getInitialMessages = (): ExtendedChatMessageProps[] => {
@@ -3439,19 +3440,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         selectionsPreview: previewSelections,
         attachmentNames: previewAttachments,
         attachments: fullAttachments,
+        // TODO: Re-enable when integrations are set up
         // Include selected integration if user explicitly chose one via "/"
-        integration: selectedIntegration ? {
-          id: selectedIntegration.id,
-          action: selectedIntegration.action,
-          explicit: true // Mark that user explicitly selected this
-        } : undefined
+        // integration: selectedIntegration ? {
+        //   id: selectedIntegration.id,
+        //   action: selectedIntegration.action,
+        //   explicit: true // Mark that user explicitly selected this
+        // } : undefined
       }
     };
 
+    // TODO: Re-enable when integrations are set up
     // Clear integration selection after sending
-    if (selectedIntegration) {
-      setSelectedIntegration(null);
-    }
+    // if (selectedIntegration) {
+    //   setSelectedIntegration(null);
+    // }
 
     // Handle outline mode with conversational agent
     console.log('[ChatPanel] 🔍 MODE CHECK:', {
@@ -4328,25 +4331,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // TODO: Re-enable when integrations are set up
     // Show integration palette when "/" is typed at start or after space
-    if (e.key === '/') {
-      const target = e.target as HTMLTextAreaElement;
-      const pos = target.selectionStart || 0;
-      const text = target.value;
-
-      // Show palette if "/" is at start or after whitespace
-      if (pos === 0 || /\s/.test(text[pos - 1] || '')) {
-        e.preventDefault();
-        setShowIntegrationPalette(true);
-        return;
-      }
-    }
-
-    // Close palette on Escape
-    if (e.key === 'Escape' && showIntegrationPalette) {
-      setShowIntegrationPalette(false);
-      return;
-    }
+    // if (e.key === '/') {
+    //   const target = e.target as HTMLTextAreaElement;
+    //   const pos = target.selectionStart || 0;
+    //   const text = target.value;
+    //
+    //   // Show palette if "/" is at start or after whitespace
+    //   if (pos === 0 || /\s/.test(text[pos - 1] || '')) {
+    //     e.preventDefault();
+    //     setShowIntegrationPalette(true);
+    //     return;
+    //   }
+    // }
+    //
+    // // Close palette on Escape
+    // if (e.key === 'Escape' && showIntegrationPalette) {
+    //   setShowIntegrationPalette(false);
+    //   return;
+    // }
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -4688,7 +4692,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               )}
               {/* Input Area */}
               <div className="relative">
-                {/* Integration badge when selected */}
+                {/* Integration badge when selected - disabled until integrations are set up
                 {selectedIntegration && (
                   <div className="flex items-center gap-1 mb-1">
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 border border-orange-500/20">
@@ -4702,6 +4706,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     </button>
                   </div>
                 )}
+                */}
                 <div className="flex items-center mt-4 min-w-0">
                   <div className="w-px mr-2 h-8" style={{ backgroundColor: COLORS.SUGGESTION_PINK }}></div>
                   <Textarea
@@ -4709,17 +4714,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={selectedIntegration
-                      ? `Search with ${selectedIntegration.id}...`
-                      : (outlineMode && useOutlineAgent)
-                        ? "Refine your slides... (type / for integrations)"
-                        : "Design, edit, or enhance your deck... (type / for integrations)"}
+                    placeholder={(outlineMode && useOutlineAgent)
+                        ? "Refine your slides..."
+                        : "Design, edit, or enhance your deck..."}
                     className="bg-transparent border-none flex-grow text-foreground text-sm placeholder:text-muted-foreground placeholder:text-sm focus-visible:ring-0 focus-visible:ring-offset-0 pl-0 resize-none overflow-hidden"
                     data-tour="chat-input"
                   />
                 </div>
 
-                {/* Integration Command Palette */}
+                {/* Integration Command Palette - disabled until integrations are set up
                 <IntegrationCommandPalette
                   open={showIntegrationPalette}
                   onOpenChange={setShowIntegrationPalette}
@@ -4734,12 +4737,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }}
                   position="above"
                 />
+                */}
 
-                {/* Integrations Dialog */}
+                {/* Integrations Dialog - disabled until integrations are set up
                 <IntegrationsDialog
                   open={showIntegrationsDialog}
                   onOpenChange={setShowIntegrationsDialog}
                 />
+                */}
               </div>
 
               {/* Bottom Row: Suggestions and Buttons */}
