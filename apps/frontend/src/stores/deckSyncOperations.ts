@@ -348,54 +348,8 @@ export const createSyncOperations = (set: Function, get: Function) => {
             willProcess: true
           });
 
-          // Skip if we're in the middle of an update operation UNLESS this is a newer backend update
-          if (updateInProgress && !isSignificantlyNewer) {
-            console.log('[Realtime][UPDATE] ❌ Skipped - update in progress and not significantly newer');
-            return;
-          }
-
-          // Skip if subscription is paused UNLESS this is a significantly newer backend update
-          if (get().subscriptionManager.paused && !isSignificantlyNewer) {
-            console.log('[Realtime][UPDATE] ❌ Skipped - subscription paused and not significantly newer');
-            return;
-          }
-
-          // If we got here and subscription was paused, log that we're bypassing it
-          if (get().subscriptionManager.paused && isSignificantlyNewer) {
-            console.log('[Realtime][UPDATE] ✅ Processing despite paused subscription - backend update detected');
-          }
-          // Additional timestamp validation (redundant check, but kept for safety)
-          if (currentLastModified && newLastModified && !isSignificantlyNewer) {
-            const newMs = Date.parse(newLastModified);
-            const curMs = Date.parse(currentLastModified);
-            if (!Number.isNaN(newMs) && !Number.isNaN(curMs) && newMs <= curMs) {
-              console.log('[Realtime][UPDATE] Ignored older/same update', { newLastModified, currentLastModified });
-              return; // Skip if local data is newer/same
-            }
-          }
-          const pendingTs = (window as any).__pendingPreviewTs || 0;
-          if (pendingTs && newLastModified) {
-            const newMs = Date.parse(newLastModified);
-            if (!Number.isNaN(newMs) && newMs < pendingTs) {
-              console.log('[Realtime][UPDATE] Ignored due to newer pending preview', { newLastModified, pendingTs });
-              return;
-            }
-          }
-
-          // CRITICAL FIX: Skip realtime updates that come too quickly after an agent edit
-          // The agent edit has already been applied locally; realtime might have stale data
-          const lastAgentEditTs = (window as any).__lastAgentEditTs || 0;
-          if (lastAgentEditTs) {
-            const timeSinceEdit = Date.now() - lastAgentEditTs;
-            if (timeSinceEdit < 3000) {
-              console.log('[Realtime][UPDATE] Ignored - too soon after agent edit (protecting edit)', {
-                timeSinceEdit,
-                lastAgentEditTs,
-                threshold: 3000
-              });
-              return;
-            }
-          }
+          // Always process updates - database is source of truth
+          // Removed complex timestamp validation - just accept the update
 
           // Debounce the fetch to prevent rapid repeated calls
           if (realtimeFetchTimeout) {
@@ -408,6 +362,19 @@ export const createSyncOperations = (set: Function, get: Function) => {
             const incomingDataField = (payload.new as any)?.data;
             if (Array.isArray(incomingSlides)) {
               const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+              // CRITICAL: Check for any active slide operations BEFORE edit mode check
+              // This prevents realtime from overwriting local changes during duplicate/delete/reorder
+              try {
+                const activeSlideOperation = (typeof window !== 'undefined') && (
+                  (window as any).__isDraggingSlide === true ||
+                  (window as any).__isSlideOperationInProgress === true
+                );
+                if (activeSlideOperation) {
+                  console.log('[Realtime][UPDATE] Skipped due to active slide operation (drag/duplicate/delete)');
+                  return;
+                }
+              } catch {}
+
               if (isEditing) {
                 // If user is actively interacting (dragging/resizing), skip incoming merges to avoid snapping back
                 try {
@@ -421,7 +388,8 @@ export const createSyncOperations = (set: Function, get: Function) => {
                     return;
                   }
                 } catch {}
-                // Update editor drafts only to avoid slide remounts/flashing in edit mode
+                // SIMPLIFIED: Update editor drafts from database (source of truth)
+                // Always accept CustomComponent updates from backend (AI edits)
                 try {
                   const { useEditorStore } = await import('../stores/editorStore');
                   const editorStore = (useEditorStore as any).getState();
@@ -432,75 +400,51 @@ export const createSyncOperations = (set: Function, get: Function) => {
                     const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
                     const draftById = new Map(draftComponents.map((c: any) => [c.id, c]));
                     const incomingById = new Map(incomingComponents.map((c: any) => [c.id, c]));
-                    // If local slide has unsaved changes, do not overwrite its draft
-                    try {
-                      const hasLocalChanges = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
-                      if (hasLocalChanges) {
-                        return; // skip this slide; keep user's local edits
-                      }
-                    } catch {}
-                    // Update/add
+
+                    // Update/add components - ALWAYS accept CustomComponent updates
                     incomingComponents.forEach((ic) => {
                       const current = draftById.get(ic.id);
                       if (!current) {
                         editorStore.addDraftComponent(slideId, ic, true);
                         return;
                       }
+
+                      // For CustomComponents, always accept backend updates (AI edits)
+                      const isCustomComponent = ic.type === 'CustomComponent';
                       const typeChanged = current.type !== ic.type;
                       const propsChanged = JSON.stringify(current.props || {}) !== JSON.stringify(ic.props || {});
-                      if (typeChanged || propsChanged) {
+
+                      if (isCustomComponent || typeChanged || propsChanged) {
+                        console.log(`[Realtime] Updating ${ic.type} ${ic.id} in drafts`);
                         editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
                       }
                     });
-                    // Remove
+
+                    // Remove components that no longer exist
                     draftComponents.forEach((dc: any) => {
                       if (!incomingById.has(dc.id)) {
                         editorStore.removeDraftComponent(slideId, dc.id, true);
                       }
                     });
-                    // Mark slide as unchanged after server-driven merge to allow further realtime
+
+                    // Mark slide as unchanged after server-driven merge
                     try { editorStore.markSlideAsUnchanged(slideId); } catch {}
                   });
 
-                  // Also reflect updates into deckData for non-active slides so thumbnails update in edit mode
+                  // SIMPLIFIED: Always update deckData from database (source of truth)
                   try {
                     const state = get();
-                    const currentSlides: any[] = Array.isArray(state.deckData?.slides) ? [...state.deckData.slides] : [];
-                    const incomingByIdAll = new Map(incomingSlides.map((s: any) => [s?.id, s]));
-                    const activeIndex = typeof state.currentSlideIndex === 'number' ? state.currentSlideIndex : -1;
-                    let changed = false;
-                    for (let i = 0; i < currentSlides.length; i++) {
-                      if (i === activeIndex) continue; // leave active slide to drafts
-                      const cur = currentSlides[i];
-                      if (!cur || !cur.id) continue;
-                      const inc = incomingByIdAll.get(cur.id);
-                      if (!inc) continue;
-                      let hasLocal = false;
-                      try { hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(cur.id); } catch {}
-                      if (hasLocal) continue;
-                      const curComps = Array.isArray(cur.components) ? cur.components : [];
-                      const incComps = Array.isArray(inc.components) ? inc.components : [];
-                      if (JSON.stringify(curComps) !== JSON.stringify(incComps)) {
-                        currentSlides[i] = inc;
-                        changed = true;
-                      }
-                    }
-                    const deckLevelUpdates: any = { ...state.deckData };
-                    let hasDeckLevelChange = false;
-                    if (changed) {
-                      deckLevelUpdates.slides = currentSlides;
-                      hasDeckLevelChange = true;
-                    }
-                    // Merge deck-level data (e.g., theme) without touching drafts
-                    if (incomingDataField && JSON.stringify(state.deckData?.data || {}) !== JSON.stringify(incomingDataField)) {
+                    const deckLevelUpdates: any = {
+                      ...state.deckData,
+                      slides: incomingSlides  // Always use incoming slides
+                    };
+                    if (incomingDataField) {
                       deckLevelUpdates.data = incomingDataField;
-                      hasDeckLevelChange = true;
                     }
-                    if (hasDeckLevelChange) {
-                      if (newLastModified) deckLevelUpdates.lastModified = newLastModified;
-                      if ((payload.new as any)?.version) deckLevelUpdates.version = (payload.new as any).version;
-                      set({ deckData: deckLevelUpdates });
-                    }
+                    if (newLastModified) deckLevelUpdates.lastModified = newLastModified;
+                    if ((payload.new as any)?.version) deckLevelUpdates.version = (payload.new as any).version;
+                    console.log('[Realtime][UPDATE] Updated deckData from database');
+                    set({ deckData: deckLevelUpdates });
                   } catch {}
                 } catch {}
               } else {
@@ -558,67 +502,36 @@ export const createSyncOperations = (set: Function, get: Function) => {
                 console.log(`[Realtime][REFETCH] Sorted ${updatedDeck.slides.length} slides by order field`);
               }
 
+              // SIMPLIFIED: Always update from database (source of truth)
+              // Same logic for both edit mode and view mode
+              console.log('[Realtime][REFETCH] Updating from database');
+
+              // Update editor drafts if in edit mode
               if (isEditing) {
-                // In edit mode: merge fetched slides into editor drafts to avoid flicker
                 try {
                   const { useEditorStore } = await import('../stores/editorStore');
                   const editorStore = (useEditorStore as any).getState();
-                  const incomingSlides: any[] = Array.isArray((updatedDeck as any)?.slides) ? (updatedDeck as any).slides : [];
+                  const incomingSlides: any[] = Array.isArray(updatedDeck?.slides) ? updatedDeck.slides : [];
+
                   incomingSlides.forEach((incomingSlide: any) => {
                     const slideId = incomingSlide?.id;
                     if (!slideId) return;
                     const incomingComponents: any[] = Array.isArray(incomingSlide.components) ? incomingSlide.components : [];
-                    const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
-                    const draftById = new Map(draftComponents.map((c: any) => [c.id, c]));
-                    const incomingById = new Map(incomingComponents.map((c: any) => [c.id, c]));
-                    // Respect local unsaved changes
-                    try {
-                      const hasLocalChanges = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
-                      if (hasLocalChanges) {
-                        return; // keep user's local edits
-                      }
-                    } catch {}
-                    // Update/add components
+
                     incomingComponents.forEach((ic) => {
-                      const current = draftById.get(ic.id);
-                      if (!current) {
-                        editorStore.addDraftComponent(slideId, ic, true);
-                        return;
-                      }
-                      const typeChanged = current.type !== ic.type;
-                      const propsChanged = JSON.stringify(current.props || {}) !== JSON.stringify(ic.props || {});
-                      if (typeChanged || propsChanged) {
-                        editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
-                      }
+                      editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
                     });
-                    // Remove components that no longer exist
-                    draftComponents.forEach((dc: any) => {
-                      if (!incomingById.has(dc.id)) {
-                        editorStore.removeDraftComponent(slideId, dc.id, true);
-                      }
-                    });
+                    editorStore.markSlideAsUnchanged(slideId);
                   });
                 } catch {}
-
-                // Also apply deck-level fields (e.g., theme in data) and bump lastModified locally
-                try {
-                  const state = get();
-                  const deckLevelUpdates: any = { ...state.deckData };
-                  const incomingDataField = (updatedDeck as any)?.data;
-                  if (incomingDataField && JSON.stringify(state.deckData?.data || {}) !== JSON.stringify(incomingDataField)) {
-                    deckLevelUpdates.data = incomingDataField;
-                  }
-                  deckLevelUpdates.lastModified = (updatedDeck as any).lastModified || new Date().toISOString();
-                  if ((updatedDeck as any)?.version) deckLevelUpdates.version = (updatedDeck as any).version;
-                  set({ deckData: deckLevelUpdates });
-                } catch {}
-              } else {
-                // Non-edit mode: merge deck directly into store with guards
-                try {
-                  console.log('[Realtime][REFETCH] Merging fetched deck for confirmation');
-                  get().updateDeckData(updatedDeck, { isRealtimeUpdate: true, skipBackend: true });
-                } catch {}
               }
+
+              // Always update deckData
+              set({
+                deckData: updatedDeck,
+                lastModified: updatedDeck.lastModified || new Date().toISOString(),
+                version: updatedDeck.version
+              });
 
               // Preload fonts from the updated deck
               import('../utils/fontUtils').then(({ extractDeckFonts }) => {
@@ -860,6 +773,18 @@ export const createSyncOperations = (set: Function, get: Function) => {
         hasStatus: !!deck.status,
         status: deck.status
       });
+
+      // Debug: Log CustomComponent render lengths from API response
+      if (Array.isArray(deck.slides)) {
+        deck.slides.forEach((slide: any, i: number) => {
+          slide.components?.forEach((comp: any) => {
+            if (comp.type === 'CustomComponent') {
+              const renderLen = comp.props?.render?.length || 0;
+              console.log(`📖 [FRONTEND loadDeck] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars from API`);
+            }
+          });
+        });
+      }
       
       // The deck from the API should already be formatted correctly
       const transformedDeck = normalizeDeckData(deck);
@@ -891,15 +816,16 @@ export const createSyncOperations = (set: Function, get: Function) => {
             const customComponents = slide.components.filter(c => c.type === 'CustomComponent');
             if (customComponents.length > 1) {
               console.log('[loadDeck] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
-              // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+              // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
+              // This prevents losing content when a minimal duplicate gets created
               const sorted = [...customComponents].sort((a, b) => {
                 const aLen = (a.props?.render as string)?.length || 0;
                 const bLen = (b.props?.render as string)?.length || 0;
-                return aLen - bLen;
+                return bLen - aLen;  // Descending: largest first
               });
               const keepId = sorted[0].id;
               const removeIds = new Set(sorted.slice(1).map(c => c.id));
-              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Keeping', keepId, 'removing', Array.from(removeIds));
+              console.log('[loadDeck] 🧹 AUTO-CLEANUP: Keeping', keepId, '(largest), removing', Array.from(removeIds));
               transformedDeck.slides[i] = {
                 ...slide,
                 components: slide.components.filter(c => !removeIds.has(c.id))
@@ -909,17 +835,29 @@ export const createSyncOperations = (set: Function, get: Function) => {
         }
       }
 
+      // Debug: Log CustomComponent render lengths AFTER normalization and cleanup
+      if (Array.isArray(transformedDeck.slides)) {
+        transformedDeck.slides.forEach((slide: any, i: number) => {
+          slide.components?.forEach((comp: any) => {
+            if (comp.type === 'CustomComponent') {
+              const renderLen = comp.props?.render?.length || 0;
+              console.log(`🔄 [FRONTEND AFTER CLEANUP] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars going to store`);
+            }
+          });
+        });
+      }
+
       // Set current deck ID globally for position sync filtering
       if (typeof window !== 'undefined') {
         (window as any).__currentDeckId = deckId;
-        
+
         // Clear any lingering WebSocket position sync state
         if ((window as any).__remoteComponentLayouts) {
           (window as any).__remoteComponentLayouts.clear();
         }
       }
-      
-      set({ 
+
+      set({
         deckData: transformedDeck,
         isSyncing: false,
         error: null,

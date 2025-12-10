@@ -315,18 +315,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Remove the deep clone flag as we've now done it
       _needsDeepClone: undefined
     };
-    console.log('[EditorStore] 🔧 updateDraftComponent merge result', {
-      slideId,
-      componentId,
-      componentType: originalComponent.type,
-      hadRenderBefore: !!oldRender,
-      hasRenderInUpdate: !!newRender,
-      hasRenderAfter: !!updatedComponent.props?.render,
-      renderLengthBefore: oldRender?.length || 0,
-      renderLengthInUpdate: newRender?.length || 0,
-      renderLengthAfter: updatedComponent.props?.render?.length || 0,
-      renderChanged: oldRender !== updatedComponent.props?.render
-    });
+    // Debug logging disabled for performance
+    // Only log significant CustomComponent changes
+    if (originalComponent.type === 'CustomComponent' && oldRender !== updatedComponent.props?.render) {
+      console.log(`[EditorStore] CustomComponent ${componentId} render updated: ${oldRender?.length || 0} → ${updatedComponent.props?.render?.length || 0} chars`);
+    }
 
     // PERFORMANCE: Create new array by mutating (faster for frequent updates like resize)
     // Still creates a new reference so Zustand detects the change, but faster than slice/spread
@@ -349,10 +342,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Set last operation to trigger UI updates
     get().setLastOperation(`update-${componentId}-${Date.now()}`);
 
-    // CRITICAL: Increment version to force React re-render
-    const newVersion = get().draftComponentsVersion + 1;
-    set(state => ({ draftComponentsVersion: newVersion }));
-    console.log('[EditorStore] draftComponentsVersion bumped to', newVersion, { slideId, componentId });
+    // Increment version to force React re-render
+    set(state => ({ draftComponentsVersion: state.draftComponentsVersion + 1 }));
   },
 
   addDraftComponent: (slideId: string, component: ComponentInstance, skipHistory: boolean = false) => {

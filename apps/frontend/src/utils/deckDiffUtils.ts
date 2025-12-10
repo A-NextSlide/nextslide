@@ -850,14 +850,15 @@ export function cleanupDuplicateCustomComponents(slide: SlideData): { slide: Sli
     }))
   });
 
-  // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+  // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
+  // This prevents losing content when a minimal duplicate gets created
   const sorted = [...customComponents].sort((a, b) => {
     const aLen = a.props?.render?.length || 0;
     const bLen = b.props?.render?.length || 0;
-    return aLen - bLen;
+    return bLen - aLen;  // Descending: largest first
   });
 
-  // Keep only the first (smallest) one
+  // Keep only the first (LARGEST) one
   const keepId = sorted[0].id;
   const removeIds = sorted.slice(1).map(c => c.id);
 

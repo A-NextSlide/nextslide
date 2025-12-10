@@ -11,6 +11,7 @@ from models.registry import ComponentRegistry
 from models.deck import DeckBase, DeckDiff, DeckDiffBase
 from utils.deck import get_all_component_ids, get_all_slide_ids, find_component_by_id, find_current_slide
 from utils.summaries import get_slide_summary
+from agents.integrations.tools import get_apollo_tools
 
 
 def get_claude_tools(
@@ -388,6 +389,11 @@ def get_claude_tools(
         },
     ]
 
+    # Add Apollo integration tools (always available - business intelligence)
+    apollo_tools = get_apollo_tools()
+    for apollo_tool in apollo_tools:
+        tools.append(apollo_tool["definition"])
+
     # Filter out None enums
     for tool in tools:
         if "input_schema" in tool and "properties" in tool["input_schema"]:
@@ -461,6 +467,13 @@ def execute_tool(
 
         elif tool_name == "fetch_website_content":
             return _fetch_website_content(tool_input)
+
+        # Apollo integration tools
+        elif tool_name == "apollo_company_lookup":
+            return _apollo_company_lookup(tool_input)
+
+        elif tool_name == "apollo_person_lookup":
+            return _apollo_person_lookup(tool_input)
 
         else:
             return {
@@ -902,5 +915,105 @@ def _fetch_website_content(
     except Exception as e:
         return {
             "message": f"Failed to fetch content from {url}: {str(e)}",
+            "success": False
+        }
+
+
+def _apollo_company_lookup(tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Look up company information via Apollo.
+
+    This tool provides business intelligence about companies including:
+    - Company name, industry, employee count
+    - LinkedIn URL, website
+    - Description and location
+    """
+    from agents.integrations.tools import ApolloCompanyTool
+
+    tool = ApolloCompanyTool()
+    result = tool.execute(
+        domain=tool_input.get("domain"),
+        company_name=tool_input.get("company_name")
+    )
+
+    if result.success:
+        company = result.data.get("company") or result.data.get("companies", [{}])[0]
+        # Format a nice summary for the agent
+        summary_parts = []
+        if company.get("name"):
+            summary_parts.append(f"**{company['name']}**")
+        if company.get("industry"):
+            summary_parts.append(f"Industry: {company['industry']}")
+        if company.get("employee_count"):
+            summary_parts.append(f"Employees: {company['employee_count']:,}")
+        if company.get("description"):
+            summary_parts.append(f"Description: {company['description'][:300]}...")
+        if company.get("linkedin_url"):
+            summary_parts.append(f"LinkedIn: {company['linkedin_url']}")
+        if company.get("website_url"):
+            summary_parts.append(f"Website: {company['website_url']}")
+        if company.get("location"):
+            loc = company["location"]
+            loc_str = ", ".join(filter(None, [loc.get("city"), loc.get("state"), loc.get("country")]))
+            if loc_str:
+                summary_parts.append(f"Location: {loc_str}")
+
+        return {
+            "message": "\n".join(summary_parts),
+            "data": result.data,
+            "success": True
+        }
+    else:
+        return {
+            "message": f"Could not find company information: {result.error}",
+            "success": False
+        }
+
+
+def _apollo_person_lookup(tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Look up person/professional information via Apollo.
+
+    Note: Requires paid Apollo plan for full access.
+    """
+    from agents.integrations.tools import ApolloPersonTool
+
+    tool = ApolloPersonTool()
+    result = tool.execute(
+        email=tool_input.get("email"),
+        linkedin_url=tool_input.get("linkedin_url"),
+        name=tool_input.get("name"),
+        company_domain=tool_input.get("company_domain"),
+        title=tool_input.get("title")
+    )
+
+    if result.success:
+        person = result.data.get("person") or result.data.get("people", [{}])[0]
+        # Format summary
+        summary_parts = []
+        if person.get("name"):
+            summary_parts.append(f"**{person['name']}**")
+        if person.get("title"):
+            summary_parts.append(f"Title: {person['title']}")
+        if person.get("company"):
+            summary_parts.append(f"Company: {person['company']}")
+        if person.get("email"):
+            summary_parts.append(f"Email: {person['email']}")
+        if person.get("linkedin_url"):
+            summary_parts.append(f"LinkedIn: {person['linkedin_url']}")
+        if person.get("location"):
+            loc = person["location"]
+            loc_str = ", ".join(filter(None, [loc.get("city"), loc.get("state"), loc.get("country")]))
+            if loc_str:
+                summary_parts.append(f"Location: {loc_str}")
+
+        return {
+            "message": "\n".join(summary_parts),
+            "data": result.data,
+            "success": True
+        }
+    else:
+        return {
+            "message": f"Could not find person information: {result.error}",
             "success": False
         }

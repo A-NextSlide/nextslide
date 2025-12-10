@@ -20,6 +20,7 @@ import Signup from "./pages/Signup";
 import ResetPassword from "./pages/ResetPassword";
 import Profile from "./pages/Profile";
 import TeamSettings from "./pages/TeamSettings";
+import TeamInvite from "./pages/TeamInvite";
 import EmailVerification from "./pages/EmailVerification";
 import AuthCallback from "./pages/AuthCallback";
 // AgentOutlineView removed - using existing outline page
@@ -416,6 +417,11 @@ const AppContent = () => {
                     <TeamSettings />
                   </ProtectedRoute>
                 }
+              />
+              {/* Team invitation acceptance */}
+              <Route
+                path="/team/invite/:token"
+                element={<TeamInvite />}
               />
               {/* Shared deck routes */}
               <Route

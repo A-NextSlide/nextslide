@@ -48,6 +48,13 @@ export class AutosaveService {
 
       if (!deckData?.uuid) return;
 
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        // Don't autosave for unauthenticated users
+        return;
+      }
+
       // Create a hash of the current state to detect changes
       const currentData = {
         ...deckData,
@@ -57,21 +64,13 @@ export class AutosaveService {
 
       // Skip if nothing has changed
       if (currentHash === this.lastSaveHash) {
-              return;
+        return;
       }
 
-  
-
-      // Get user info for the save
-      const { data: { user } } = await supabase.auth.getUser();
-
-      // TEMPORARILY DISABLED: Version creation causing infinite recursion in RLS policies
-      // TODO: Re-enable once RLS policies are fixed
-      const versionId = null;
-      /*
+      // Create the autosave version
       const versionId = await versionHistoryService.createVersion(
         deckData.uuid,
-        `Autosave ${new Date().toLocaleTimeString()}`,
+        `Auto-save ${new Date().toLocaleTimeString()}`,
         {
           description: 'Automatic save',
           isAutoSave: true,
@@ -79,10 +78,14 @@ export class AutosaveService {
           notes: `Autosaved at ${new Date().toLocaleString()}`
         }
       );
-      */
 
-      // Update tracking info
-      this.lastSaveHash = currentHash;
+      if (versionId) {
+        // Update tracking info
+        this.lastSaveHash = currentHash;
+
+        // Clean up old autosaves to prevent database bloat
+        await this.cleanupOldAutosaves(deckData.uuid);
+      }
 
     } catch (error) {
       console.error('[Autosave] Error during autosave:', error);

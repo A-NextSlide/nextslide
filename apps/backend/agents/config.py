@@ -62,15 +62,20 @@ DECK_EDITOR_MODEL = GEMINI_3_PRO            # Component editing
 CONTEXT_BUILDER_MODEL = CLAUDE_HAIKU        # Context extraction (fast, simple task)
 SLIDE_STYLE_MODEL = GEMINI_3_PRO            # Styling
 
-# Custom Components - Smart Model Routing
-# COMPLEX edits (new concepts, redesigns, new sections) → Gemini 3 Pro (best quality, fallback to Opus 4.5)
-# MEDIUM edits (partial rewrites, structural changes) → Gemini 2.5 Pro (fast, good quality)
-# SIMPLE edits (text/color changes) → str_replace (no AI needed)
-CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO              # Complex: new concepts, full redesigns
-CUSTOM_COMPONENT_FALLBACK_MODEL = CLAUDE_OPUS      # Fallback when Gemini rate limited
-CUSTOM_COMPONENT_EDIT_MODEL = GEMINI_PRO           # Medium: partial rewrites (Gemini 2.5 Pro)
-CUSTOM_COMPONENT_SIMPLE_MODEL = CLAUDE_HAIKU       # Simple: suggest str_replace strings
+# Custom Components - Haiku Composer Architecture
+# Haiku analyzes request and decides: SIMPLE (diff-based) or CREATIVE (full rewrite)
+# SIMPLE edits: Haiku generates diff changes, applied programmatically (fast, cheap)
+# CREATIVE edits: Gemini 3 Pro does full rewrite (fallback to Opus on rate limit)
+CUSTOM_COMPONENT_COMPOSER = CLAUDE_HAIKU           # Composer: decides SIMPLE vs CREATIVE, generates diffs
+CUSTOM_COMPONENT_CREATIVE = GEMINI_3_PRO           # Creative: full rewrites, redesigns
+CUSTOM_COMPONENT_FALLBACK = CLAUDE_OPUS            # Fallback: when Gemini rate limited
 CUSTOM_COMPONENT_TEMPERATURE = 0.8
+
+# Backwards compatibility aliases (deprecated, use new names above)
+CUSTOM_COMPONENT_MODEL = CUSTOM_COMPONENT_CREATIVE
+CUSTOM_COMPONENT_FALLBACK_MODEL = CUSTOM_COMPONENT_FALLBACK
+CUSTOM_COMPONENT_EDIT_MODEL = CUSTOM_COMPONENT_CREATIVE
+CUSTOM_COMPONENT_SIMPLE_MODEL = CUSTOM_COMPONENT_COMPOSER
 
 # Editing Quality Control
 EDIT_QUALITY_THRESHOLD = 3.0                       # Minimum quality score (1-5) to accept
@@ -174,4 +179,4 @@ OPENAI_IMAGE_MODEL = OPENAI_IMAGE
 OPENAI_EMBEDDINGS_MODEL = OPENAI_EMBEDDINGS
 
 # Startup log
-print(f"[CONFIG] Custom components: {CUSTOM_COMPONENT_MODEL} | Editing: {ORCHESTRATOR_MODEL} | Vision: {VISION_IMPORT_MODEL}")
+print(f"[CONFIG] Custom components: {CUSTOM_COMPONENT_CREATIVE} (composer: {CUSTOM_COMPONENT_COMPOSER}) | CC Editing: {CUSTOM_COMPONENT_EDIT_MODEL} | Orchestrator: {ORCHESTRATOR_MODEL} | Vision: {VISION_IMPORT_MODEL}")

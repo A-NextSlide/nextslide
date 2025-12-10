@@ -5,7 +5,6 @@ import { useVersionHistory } from '../context/VersionHistoryContext';
 import { Button } from './ui/button';
 import { DeckVersion } from '../types/VersionTypes';
 import { X, RefreshCw, ChevronLeft, ChevronRight, Save, Clock } from 'lucide-react';
-import { SlideData } from '../types/SlideTypes';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
@@ -13,8 +12,6 @@ import { IconButton } from './ui/IconButton';
 import Slide from './Slide';
 import { useToast } from '@/hooks/use-toast';
 import VersionHistoryTree from './VersionHistoryTree';
-import { autosaveService } from '@/services/autosaveService';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -27,7 +24,6 @@ const VersionHistoryPanel: React.FC = () => {
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState<boolean>(false);
   const [versionToRestore, setVersionToRestore] = useState<string | null>(null);
-  const [autosaveStatus, setAutosaveStatus] = useState(autosaveService.getAutosaveStatus());
   const [activeTab, setActiveTab] = useState<'all' | 'manual' | 'autosave'>('all');
   
   const getVersionHistory = useDeckStore(state => state.getVersionHistory);
@@ -41,13 +37,6 @@ const VersionHistoryPanel: React.FC = () => {
   // Load versions on mount
   useEffect(() => {
     loadVersions();
-    
-    // Update autosave status periodically
-    const interval = setInterval(() => {
-      setAutosaveStatus(autosaveService.getAutosaveStatus());
-    }, 1000);
-    
-    return () => clearInterval(interval);
   }, []);
   
 
@@ -317,86 +306,98 @@ const VersionHistoryPanel: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background border-l">
-      <div className="p-4 border-b">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold">Version History</h2>
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              className="h-8 text-xs"
-              onClick={loadVersions} 
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-8 h-8" 
-              onClick={() => setHistoryPanelOpen(false)}
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-        
-        {/* Save version button and autosave status */}
-        <div className="space-y-2">
-          <Button 
-            variant="default" 
-            size="sm"
-            className="w-full"
-            onClick={openSaveVersionDialog}
-            disabled={isSaving}
+    <div className="h-full flex flex-col bg-background">
+      {/* Header - compact */}
+      <div className="px-3 py-2 border-b flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Version History</h2>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={loadVersions}
           >
-            <Save className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Save Version'}
+            <RefreshCw className="w-3.5 h-3.5" />
           </Button>
-          
-          {/* Autosave status indicator */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-            <div className="flex items-center gap-1.5">
-              <Clock className={cn(
-                "w-3 h-3",
-                autosaveStatus.isRunning && "text-green-500"
-              )} />
-              <span>Autosave: {autosaveStatus.isRunning ? 'On' : 'Off'}</span>
-            </div>
-            {autosaveStatus.isCurrentlySaving && (
-              <span className="text-blue-500">Saving...</span>
-            )}
-          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setHistoryPanelOpen(false)}
+          >
+            <X className="w-3.5 h-3.5" />
+          </Button>
         </div>
       </div>
-      
-      {/* Tabs for filtering versions */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-3 h-9 px-4">
-          <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
-          <TabsTrigger value="manual" className="text-xs">Manual</TabsTrigger>
-          <TabsTrigger value="autosave" className="text-xs">Autosaves</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value={activeTab} className="flex-1 overflow-hidden mt-0">
-          <div className="h-full overflow-y-auto p-4">
-            {isLoading ? (
-              <div className="flex justify-center my-8">
-                <p className="text-sm text-muted-foreground">Loading versions...</p>
-              </div>
-            ) : (
-              <VersionHistoryTree
-                versions={filteredVersions}
-                selectedVersionId={selectedVersion?.id}
-                onVersionSelect={handleVersionSelect}
-                onVersionRestore={openRestoreDialog}
-                onVersionRename={handleVersionRename}
-                onVersionBookmark={handleToggleBookmark}
-              />
-            )}
+
+      {/* Save version button and autosave status - compact */}
+      <div className="px-3 py-2 border-b space-y-1.5">
+        <Button
+          variant="default"
+          size="sm"
+          className="w-full h-8 text-xs"
+          onClick={openSaveVersionDialog}
+          disabled={isSaving}
+        >
+          <Save className="w-3.5 h-3.5 mr-1.5" />
+          {isSaving ? 'Saving...' : 'Save Version'}
+        </Button>
+
+      </div>
+
+      {/* Filter tabs and version list */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="px-3 py-1.5 border-b">
+          <div className="grid grid-cols-3 gap-0.5 p-0.5 bg-muted rounded-md">
+            {(['all', 'manual', 'autosave'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "px-2 py-1 text-[11px] font-medium rounded-sm transition-colors",
+                  activeTab === tab
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab === 'all' ? 'All' : tab === 'manual' ? 'Manual' : 'Autosaves'}
+              </button>
+            ))}
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
+          {isLoading ? (
+            <div className="flex justify-center py-6">
+              <p className="text-xs text-muted-foreground">Loading versions...</p>
+            </div>
+          ) : filteredVersions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <p className="text-xs text-muted-foreground">
+                {activeTab === 'autosave'
+                  ? 'No autosaves yet'
+                  : activeTab === 'manual'
+                    ? 'No manual saves yet'
+                    : 'No versions yet'}
+              </p>
+              {activeTab === 'autosave' && (
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  Autosaves are created automatically
+                </p>
+              )}
+            </div>
+          ) : (
+            <VersionHistoryTree
+              versions={filteredVersions}
+              selectedVersionId={selectedVersion?.id}
+              onVersionSelect={handleVersionSelect}
+              onVersionRestore={openRestoreDialog}
+              onVersionRename={handleVersionRename}
+              onVersionBookmark={handleToggleBookmark}
+            />
+          )}
+        </div>
+      </div>
       
       {/* Slide Preview Dialog */}
       {selectedVersion && (

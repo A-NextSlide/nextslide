@@ -165,32 +165,39 @@ export const createBlankSlide = (
  * Adds a new slide to the deck, applying the current theme.
  */
 export const addSlide = (
-    slides: SlideData[], 
-    slide?: Omit<Partial<SlideData>, 'id'>, 
+    slides: SlideData[],
+    slide?: Omit<Partial<SlideData>, 'id'>,
     currentTheme?: Theme
 ): SlideData[] => {
     const newSlide = createBlankSlide(slide, undefined, currentTheme);
-    return [...slides, newSlide];
+    const updatedSlides = [...slides, newSlide];
+    // Normalize order values to match array positions
+    return updatedSlides.map((s, index) => ({ ...s, order: index }));
 };
 
 /**
  * Adds a new slide after the specified slide, applying the current theme.
  */
 export const addSlideAfter = (
-    slides: SlideData[], 
-    afterSlideId: string, 
+    slides: SlideData[],
+    afterSlideId: string,
     slide?: Partial<SlideData>,
     currentTheme?: Theme
 ): SlideData[] => {
     const slideIndex = slides.findIndex(s => s.id === afterSlideId);
     const newSlide = createBlankSlide({ id: uuidv4(), ...slide }, undefined, currentTheme);
-    
-    if (slideIndex === -1) return [...slides, newSlide];
+
+    if (slideIndex === -1) {
+        // Append to end and normalize
+        const updatedSlides = [...slides, newSlide];
+        return updatedSlides.map((s, index) => ({ ...s, order: index }));
+    }
 
     const updatedSlides = [...slides];
     updatedSlides.splice(slideIndex + 1, 0, newSlide);
-  
-    return updatedSlides;
+
+    // Normalize order values to match array positions
+    return updatedSlides.map((s, index) => ({ ...s, order: index }));
 };
 
 /**
@@ -244,7 +251,12 @@ export const updateSlide = (slides: SlideData[], id: string, data: Partial<Slide
  * Removes a slide from the deck
  */
 export const removeSlide = (slides: SlideData[], id: string): SlideData[] => {
-  return slides.filter(slide => slide.id !== id);
+  const filteredSlides = slides.filter(slide => slide.id !== id);
+  // Normalize order values to match array positions
+  return filteredSlides.map((slide, index) => ({
+    ...slide,
+    order: index
+  }));
 };
 
 /**
@@ -283,14 +295,21 @@ export const duplicateSlide = (slides: SlideData[], id: string): SlideData[] => 
     id: newSlideId,
     title: `${originalSlide.title} (Copy)`,
     // Create new IDs for components to avoid conflicts
-    components: componentsWithNewIds
+    components: componentsWithNewIds,
+    // Set order to be after the original (will be normalized below)
+    order: slideIndex + 1
   };
-  
+
   // Insert the duplicated slide after the original
   const updatedSlides = [...slides];
   updatedSlides.splice(slideIndex + 1, 0, duplicatedSlide);
-  
-  return updatedSlides;
+
+  // CRITICAL: Normalize all order values to match array positions
+  // This prevents order collisions that break slide sorting
+  return updatedSlides.map((slide, index) => ({
+    ...slide,
+    order: index
+  }));
 };
 
 /**

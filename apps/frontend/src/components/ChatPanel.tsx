@@ -310,7 +310,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   const [messages, setMessages] = useState<ExtendedChatMessageProps[]>(getInitialMessages());
-  const [isLoading, setIsLoading] = useState(false);
+  // Track pending messages by ID for parallel processing (replaces single isLoading boolean)
+  // Using ref + forceUpdate pattern to avoid closure issues with state batching
+  const pendingMessageIdsRef = useRef<Set<string>>(new Set());
+  const [, forceUpdate] = useState(0);
+  const isLoading = pendingMessageIdsRef.current.size > 0; // Backwards compatibility for UI elements
+
+  // Helper functions for pending message tracking (closure-safe)
+  const addPendingMessage = useCallback((msgId: string) => {
+    pendingMessageIdsRef.current.add(msgId);
+    forceUpdate(n => n + 1);
+  }, []);
+
+  const removePendingMessage = useCallback((msgId: string) => {
+    pendingMessageIdsRef.current.delete(msgId);
+    forceUpdate(n => n + 1);
+  }, []);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -813,23 +828,42 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       if (!label) return 'selection';
 
       const deckData = (useDeckStore as any).getState().deckData;
-      const slidesArr = Array.isArray(deckData?.slides) ? deckData.slides : [];
+      const rawSlides = Array.isArray(deckData?.slides) ? deckData.slides : [];
+      // CRITICAL: Sort slides by order field to match visual display order
+      const slidesArr = [...rawSlides].sort((a: any, b: any) => (a?.order ?? 0) - (b?.order ?? 0));
 
-      const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig;
-      const matches = label.match(uuidRegex) || [];
+      // Helper to format slide label
+      const formatSlide = (slideIndex: number) => {
+        const s = slidesArr[slideIndex];
+        const slideNumber = slideIndex + 1;
+        const hasTitle = typeof s?.title === 'string' && s.title.trim().length > 0;
+        return hasTitle ? `Slide ${slideNumber} — ${s.title.trim()}` : `Slide ${slideNumber}`;
+      };
 
-      // First: if any UUID corresponds to a slide, prefer that and show Slide N — Title
-      for (const id of matches) {
-        const slideIndex = slidesArr.findIndex((s: any) => s?.id === id);
+      // First: Check for slide-N pattern IDs (e.g., "slide-18")
+      // Use word boundary to avoid "slide-1" matching "slide-18"
+      const slideIdMatch = label.match(/\bslide-(\d+)\b/i);
+      if (slideIdMatch) {
+        const slideId = slideIdMatch[0].toLowerCase();
+        const slideIndex = slidesArr.findIndex((s: any) => s?.id?.toLowerCase() === slideId);
         if (slideIndex >= 0) {
-          const s = slidesArr[slideIndex];
-          const slideNumber = slideIndex + 1;
-          const hasTitle = typeof s?.title === 'string' && s.title.trim().length > 0;
-          return hasTitle ? `Slide ${slideNumber} — ${s.title.trim()}` : `Slide ${slideNumber}`;
+          return formatSlide(slideIndex);
         }
       }
 
-      // Second: try to resolve component UUID to a friendly type on a slide
+      // Second: Check for UUID patterns
+      const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig;
+      const matches = label.match(uuidRegex) || [];
+
+      // If any UUID corresponds to a slide, prefer that and show Slide N — Title
+      for (const id of matches) {
+        const slideIndex = slidesArr.findIndex((s: any) => s?.id === id);
+        if (slideIndex >= 0) {
+          return formatSlide(slideIndex);
+        }
+      }
+
+      // Third: try to resolve component UUID to a friendly type on a slide
       for (const id of matches) {
         let found: any = null;
         let slideIndex = -1;
@@ -852,21 +886,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             Video: 'Video',
           };
           const typeName = typeMap[found.type] || found.type || 'Element';
-          const s = slidesArr[slideIndex];
-          const slideNumber = slideIndex + 1;
-          const hasTitle = typeof s?.title === 'string' && s.title.trim().length > 0;
-          const slideLabel = hasTitle ? `Slide ${slideNumber} — ${s.title.trim()}` : `Slide ${slideNumber}`;
-          return `${typeName} on ${slideLabel}`;
+          return `${typeName} on ${formatSlide(slideIndex)}`;
         }
       }
 
-      // Third: if label mentions any known slide id (not matched as regex for some reason)
+      // Fourth: Check for exact slide ID match (with word boundaries to avoid substring issues)
       for (let i = 0; i < slidesArr.length; i++) {
         const s = slidesArr[i];
-        if (s?.id && label.includes(s.id)) {
-          const slideNumber = i + 1;
-          const hasTitle = typeof s?.title === 'string' && s.title.trim().length > 0;
-          return hasTitle ? `Slide ${slideNumber} — ${s.title.trim()}` : `Slide ${slideNumber}`;
+        if (s?.id) {
+          // Use word boundary regex to avoid "slide-1" matching "slide-18"
+          const idRegex = new RegExp(`\\b${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+          if (idRegex.test(label)) {
+            return formatSlide(i);
+          }
         }
       }
 
@@ -1063,6 +1095,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           }
 
           // Apply component updates
+          let needsDraftResync = false;
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
             console.log('[ChatPanel] Applying component update', {
               slideId,
@@ -1071,6 +1104,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               hasRenderProp: !!compDiff.props?.render,
               renderPreview: compDiff.props?.render?.substring(0, 100)
             });
+
+            // Check if component exists in draft BEFORE updating
+            const draftBefore = editorStore.getDraftComponents(slideId);
+            const existsInDraft = draftBefore?.some((c: any) => c.id === compDiff.id);
+
+            if (!existsInDraft) {
+              console.warn('[ChatPanel] Component not found in draft, will resync after main deck update', {
+                slideId,
+                componentId: compDiff.id,
+                draftIds: draftBefore?.map((c: any) => c.id) || []
+              });
+              needsDraftResync = true;
+            }
+
             editorStore.updateDraftComponent(
               slideId,
               compDiff.id,
@@ -1089,6 +1136,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               newRenderPreview: updatedComp?.props?.render?.substring(0, 100)
             });
           });
+
+          // If component wasn't found in draft, flag for resync
+          if (needsDraftResync) {
+            console.log('[ChatPanel] Marking slide for draft resync:', slideId);
+            (slideDiff as any)._needsDraftResync = true;
+          }
 
           // Add new components
           (slideDiff.components_to_add || []).forEach((comp: any) => {
@@ -1121,6 +1174,36 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
           // Always skip backend since backend auto-apply already persisted
           updateDeckData(updated, { skipBackend: true });
+
+          // CRITICAL FIX: Resync drafts from main deck for slides where component wasn't found
+          // This ensures that when a component ID doesn't exist in the draft, we refresh
+          // the draft from the now-updated main deck so the UI reflects the changes
+          const slidesToResync = ((deckDiff as any).slides_to_update || [])
+            .filter((s: any) => s._needsDraftResync)
+            .map((s: any) => s.slide_id);
+
+          if (slidesToResync.length > 0) {
+            console.log('[ChatPanel] Resyncing drafts from main deck for slides:', slidesToResync);
+            // Use a small delay to ensure the main deck update has propagated
+            setTimeout(() => {
+              // Get fresh references to stores inside the callback
+              const freshEditorStore = useEditorStore.getState();
+              slidesToResync.forEach((slideId: string) => {
+                const freshDeckData = (useDeckStore as any).getState().deckData;
+                const slideFromDeck = freshDeckData.slides?.find((s: any) => s.id === slideId);
+                if (slideFromDeck?.components) {
+                  console.log('[ChatPanel] Reinitializing draft from main deck', {
+                    slideId,
+                    componentCount: slideFromDeck.components.length,
+                    componentIds: slideFromDeck.components.map((c: any) => c.id)
+                  });
+                  // Clear existing draft and reinitialize from main deck
+                  freshEditorStore.clearDraftComponents(slideId);
+                  freshEditorStore.initializeDraftComponents(slideId);
+                }
+              });
+            }, 50);
+          }
         }
         return;
       } catch (e) {
@@ -1247,7 +1330,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   try {
     // Use Zustand store directly
     const deckData = useDeckStore(state => state.deckData);
-    slides = deckData.slides;
+    // CRITICAL: Sort slides by order field to match visual display order
+    // Without this, slides[currentSlideIndex] returns wrong slide after reordering
+    slides = [...(deckData.slides || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const navigationContext = useNavigation();
     currentSlideIndex = navigationContext.currentSlideIndex;
@@ -1845,6 +1930,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 const now = Date.now();
                 (window as any).__pendingPreviewTs = now;
                 if (editId) (window as any).__pendingPreviewEditId = editId;
+                // CRITICAL: Mark that an AI edit is in progress to prevent loadDeck() from
+                // overwriting local changes when user enters edit mode during an active edit
+                (window as any).__agentEditInProgress = true;
 
                 // If backend provided compact slides, prefer component-level updates during edit mode
                 const normalizedPreviewSlides = normalizeSlidesPayload(previewSlidesPayload);
@@ -1975,6 +2063,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   try {
                     const agentEditTimestamp = Date.now();
                     (window as any).__lastAgentEditTs = agentEditTimestamp;
+                    // Clear the in-progress flag - edit is now complete
+                    (window as any).__agentEditInProgress = false;
+
+                    // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
+                    // This ensures drafts are properly initialized from the final deck state
+                    if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
+                      console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync');
+                      const freshEditorStore = useEditorStore.getState();
+                      const freshDeckData = useDeckStore.getState().deckData;
+                      const navContext = (window as any).__navigationContext;
+                      const currentSlideIdx = navContext?.currentSlideIndex || 0;
+                      const currentSlide = freshDeckData.slides?.[currentSlideIdx];
+                      if (currentSlide?.id) {
+                        // Clear and reinitialize drafts from the now-complete deck
+                        freshEditorStore.clearDraftComponents(currentSlide.id);
+                        freshEditorStore.initializeDraftComponents(currentSlide.id);
+                        console.log('[Realtime][edit.applied] Draft resync complete for slide', currentSlide.id);
+                      }
+                      delete (window as any).__enteredEditModeDuringAgentEdit;
+                    }
 
                     // Clear guards after 2 seconds to allow Supabase realtime to sync
                     setTimeout(() => {
@@ -2019,6 +2127,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     try {
                       const agentEditTimestamp = Date.now();
                       (window as any).__lastAgentEditTs = agentEditTimestamp;
+                      // Clear the in-progress flag - edit is now complete
+                      (window as any).__agentEditInProgress = false;
+
+                      // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
+                      if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
+                        console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync (message path)');
+                        const freshEditorStore = useEditorStore.getState();
+                        const freshDeckData = useDeckStore.getState().deckData;
+                        const navContext = (window as any).__navigationContext;
+                        const currentSlideIdx = navContext?.currentSlideIndex || 0;
+                        const currentSlide = freshDeckData.slides?.[currentSlideIdx];
+                        if (currentSlide?.id) {
+                          freshEditorStore.clearDraftComponents(currentSlide.id);
+                          freshEditorStore.initializeDraftComponents(currentSlide.id);
+                          console.log('[Realtime][edit.applied] Draft resync complete for slide (message path)', currentSlide.id);
+                        }
+                        delete (window as any).__enteredEditModeDuringAgentEdit;
+                      }
 
                       // Clear guards after delay
                       setTimeout(() => {
@@ -2037,6 +2163,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     try {
                       if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
                       if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
+                      // Clear the in-progress flag - edit is now complete (even without diff)
+                      (window as any).__agentEditInProgress = false;
+
+                      // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
+                      if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
+                        console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync (no diff path)');
+                        const freshEditorStore = useEditorStore.getState();
+                        const freshDeckData = useDeckStore.getState().deckData;
+                        const navContext = (window as any).__navigationContext;
+                        const currentSlideIdx = navContext?.currentSlideIndex || 0;
+                        const currentSlide = freshDeckData.slides?.[currentSlideIdx];
+                        if (currentSlide?.id) {
+                          freshEditorStore.clearDraftComponents(currentSlide.id);
+                          freshEditorStore.initializeDraftComponents(currentSlide.id);
+                          console.log('[Realtime][edit.applied] Draft resync complete for slide (no diff path)', currentSlide.id);
+                        }
+                        delete (window as any).__enteredEditModeDuringAgentEdit;
+                      }
+
                       console.log('[Realtime][edit.applied] Preview guards cleared (no diff fallback path)');
                     } catch { }
 
@@ -2509,7 +2654,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               const diff = (evt as any).data?.diff;
               try {
                 // Mark that a preview has been applied so realtime DB updates older than this are ignored
-                try { (window as any).__pendingPreviewTs = Date.now(); } catch { }
+                try {
+                  (window as any).__pendingPreviewTs = Date.now();
+                  // CRITICAL: Mark that an AI edit is in progress
+                  (window as any).__agentEditInProgress = true;
+                } catch { }
                 if (diff) {
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
                   // Trigger font optimization for slides touched by style tool
@@ -3877,9 +4026,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (outlineMode && onOutlineGenerate) {
       console.log('[ChatPanel] ⚠️ Outline generation mode (non-agent) - ATTACHMENTS NOT SUPPORTED HERE!');
 
+      const outlineMsgId = `user-${Date.now()}`;
+
       // Add user message immediately
       setMessages(prev => [...prev, {
-        id: `user-${Date.now()}`,
+        id: outlineMsgId,
         type: 'user',
         message: input,
         timestamp: new Date(),
@@ -3887,12 +4038,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       }]);
 
       setInput('');
-      setIsLoading(true);
+      // Track this message as pending (allows parallel messages)
+      addPendingMessage(outlineMsgId);
 
       try {
         // Call outline generation - parent will handle adding messages
         await onOutlineGenerate(input, {});
-        setIsLoading(false);
+        removePendingMessage(outlineMsgId);
       } catch (error) {
         console.error('Error generating outline:', error);
         setMessages(prev => [...prev, {
@@ -3902,16 +4054,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           timestamp: new Date(),
           feedback: null
         }]);
-        setIsLoading(false);
+        removePendingMessage(outlineMsgId);
       }
       return;
     }
+
+    // Define message ID before try block so it's available in finally
+    const userMsgId = `user-${Date.now()}`;
 
     try {
       console.log('[ChatPanel] 🎨 Slide edit mode - sending message with', fullAttachments.length, 'attachments');
 
       // STEP 1: Add user message to UI IMMEDIATELY (just like outline mode)
-      const userMsgId = `user-${Date.now()}`;
       setMessages(prev => [...prev, {
         id: userMsgId,
         type: 'user',
@@ -3927,7 +4081,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // Clear input immediately
       setInput('');
-      setIsLoading(true);
+      // Track this message as pending (allows parallel messages)
+      addPendingMessage(userMsgId);
 
       // Get current slide ID if available
       const currentSlide = slides[currentSlideIndex];
@@ -4082,7 +4237,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
           }
         ]);
-        setIsLoading(false);
+        removePendingMessage(userMsgId);
         return;
       }
 
@@ -4146,7 +4301,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       ]);
 
     } finally {
-      setIsLoading(false);
+      // Remove this message from pending (allows parallel messages to complete independently)
+      removePendingMessage(userMsgId);
     }
   };
 
@@ -4623,12 +4779,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       />
                     )}
 
-                    {/* Send Button - Matching outline pink, no visual disabled state */}
+                    {/* Send Button - Matching outline pink, allows parallel messages */}
                     <IconButton
                       variant="ghost"
                       size="sm"
                       onClick={(e) => { e.stopPropagation(); sendMessage(); }}
-                      disabled={!input.trim() || isLoading}
+                      disabled={!input.trim()}
                       className="h-8 w-8 transition-all flex items-center justify-center rounded-full text-white hover:opacity-80"
                       style={{
                         backgroundColor: COLORS.SUGGESTION_PINK

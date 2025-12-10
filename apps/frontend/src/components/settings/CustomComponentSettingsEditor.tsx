@@ -326,7 +326,8 @@ const DynamicImageEditor: React.FC<{
   onImageUpdate: (elementId: string, newSrc: string) => void;
   onStyleUpdate: (selector: string, property: string, value: string) => void;
   onSave: (message?: string) => void;
-}> = ({ element, componentId, onImageUpdate, onStyleUpdate, onSave }) => {
+  onRequestHtmlUpdate?: () => void;
+}> = ({ element, componentId, onImageUpdate, onStyleUpdate, onSave, onRequestHtmlUpdate }) => {
   const searchQuery = useMemo(() => {
     if (element.alt && element.alt.length > 2 && !element.alt.toLowerCase().includes('placeholder')) {
       return element.alt.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().toLowerCase();
@@ -344,12 +345,15 @@ const DynamicImageEditor: React.FC<{
       componentId={componentId}
       onUpdate={(propName, imageUrl) => {
         onImageUpdate(element.id, imageUrl);
+        // Request HTML update to persist the image change
+        onRequestHtmlUpdate?.();
       }}
       onSave={(propName, label) => {
         onSave(`Updated ${label}`);
       }}
       onObjectFitChange={(fit) => {
         onStyleUpdate(element.selector, 'objectFit', fit);
+        onRequestHtmlUpdate?.();
         onSave('Changed image fit');
       }}
     />
@@ -1096,6 +1100,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                   onImageUpdate={updateElementImage}
                   onStyleUpdate={updateElementStyle}
                   onSave={saveComponentToHistory}
+                  onRequestHtmlUpdate={requestHtmlUpdate}
                 />
               )}
 
@@ -1137,6 +1142,7 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
                           onImageUpdate={updateElementImage}
                           onStyleUpdate={updateElementStyle}
                           onSave={saveComponentToHistory}
+                          onRequestHtmlUpdate={requestHtmlUpdate}
                         />
                       </div>
                     ))}

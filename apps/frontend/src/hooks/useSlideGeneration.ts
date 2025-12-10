@@ -255,15 +255,15 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
         const palette = {
           primary_background: colors.background || colorValues[0] || '#FFFFFF',
           primary_text: colors.text || '#1F2937',
-          accent_1: colors.accent1 || colorValues[0] || '#333333',  // Neutral fallback
-          accent_2: colors.accent2 || colorValues[1] || colors.accent1 || '#666666',  // Neutral fallback
+          accent_1: colors.accent1 || colorValues[0] || '#FF4301',
+          accent_2: colors.accent2 || colorValues[1] || colors.accent1 || '#F59E0B',
           colors: colorValues.slice(0, 6),
           metadata: sp.logoUrl ? { logo_url: sp.logoUrl } : {}
         } as any;
 
        const typography = {
-         hero_title: { family: sp.font || 'Roboto' },
-         body_text: { family: sp.bodyFont || sp.font || 'Roboto' }
+         hero_title: { family: sp.font || 'Inter' },
+         body_text: { family: sp.font || 'Inter' }
        };
 
        const themePayload = {

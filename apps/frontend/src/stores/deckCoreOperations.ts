@@ -274,6 +274,18 @@ export const createCoreDeckOperations = (set, get) => {
     
     // Update deck data action with debouncing to minimize renders
     updateDeckData: (data: Partial<CompleteDeckData>, options: { skipBackend?: boolean, batchUpdate?: boolean, isRealtimeUpdate?: boolean } = {}) => {
+      // Debug: Log CustomComponent changes
+      if (data.slides && Array.isArray(data.slides)) {
+        data.slides.forEach((slide: any, i: number) => {
+          slide.components?.forEach((comp: any) => {
+            if (comp.type === 'CustomComponent') {
+              const renderLen = comp.props?.render?.length || 0;
+              console.log(`📥 [updateDeckData] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars incoming (skipBackend: ${options.skipBackend || false}, isRealtime: ${options.isRealtimeUpdate || false})`);
+            }
+          });
+        });
+      }
+
       // AUTO-CLEANUP: Remove duplicate CustomComponents from all slides BEFORE storing
       if (data.slides && Array.isArray(data.slides)) {
         data.slides = data.slides.map(slide => {
@@ -281,15 +293,16 @@ export const createCoreDeckOperations = (set, get) => {
           const customComponents = components.filter(c => c.type === 'CustomComponent');
           if (customComponents.length > 1) {
             console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
-            // Sort by render HTML length (ascending) - keep the smallest/cleanest one
+            // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
+            // This prevents losing content when a minimal duplicate gets created
             const sorted = [...customComponents].sort((a, b) => {
               const aLen = (a.props?.render as string)?.length || 0;
               const bLen = (b.props?.render as string)?.length || 0;
-              return aLen - bLen;
+              return bLen - aLen;  // Descending: largest first
             });
             const keepId = sorted[0].id;
             const removeIds = new Set(sorted.slice(1).map(c => c.id));
-            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Keeping', keepId, 'removing', Array.from(removeIds));
+            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Keeping', keepId, '(largest), removing', Array.from(removeIds));
             return {
               ...slide,
               components: components.filter(c => !removeIds.has(c.id))

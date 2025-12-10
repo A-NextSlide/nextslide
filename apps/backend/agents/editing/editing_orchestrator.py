@@ -271,34 +271,64 @@ def orchestrate(state: AgentState, event_cb=None):
     _deck_for_size = state.get('deck_data', {})
     _canvas_size = getattr(_deck_for_size, 'size', None) if not isinstance(_deck_for_size, dict) else _deck_for_size.get('size')
 
-    system_message = f"""
-                You are a helpful assistant that helps with deck editing.
-                In order to make changes to the deck, you need to call tools to edit the deck.
-                The detailed break down of the edits will be important for sucessfully applying the edits to the deck.
-                The canvas size is {_canvas_size}
+    system_message = f"""You are a deck editing assistant. You MUST use tool calls to make changes.
 
-                CROSS-SLIDE AWARENESS:
-                If the user asks you to reference, copy, or compare with another slide, use `view_slide` first
-                to see that slide's full details. This lets you make informed decisions about styling, layout,
-                or content based on other slides in the deck.
-                """
+IMPORTANT: You can ONLY respond with tool calls. Do NOT output raw HTML, code, or text.
+Every edit must be made through a tool call.
 
-    response = invoke(
-        client=client,
-        model=model,
-        max_tokens=16384,
-        response_model=ToolsCalls,
-        messages=[
-            {
-                "role": "system",
-                "content": system_message
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+Canvas size: {_canvas_size}
+
+CROSS-SLIDE AWARENESS:
+If the user asks to reference, copy, or compare with another slide, use `view_slide` first
+to see that slide's full details before making edits."""
+
+    try:
+        response = invoke(
+            client=client,
+            model=model,
+            max_tokens=16384,
+            response_model=ToolsCalls,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_message
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+    except Exception as e:
+        error_str = str(e)
+        # If the model returned raw HTML instead of tool calls, retry with stricter prompt
+        if 'Invalid JSON' in error_str or 'html' in error_str.lower():
+            logger.warning(f"[ORCHESTRATOR] Model returned non-JSON output, retrying with stricter prompt: {error_str[:100]}")
+            strict_prompt = f"""⚠️ OUTPUT FORMAT ERROR - YOU MUST USE TOOL CALLS ONLY
+
+The previous request failed because you output raw text/HTML instead of tool calls.
+
+RULES:
+1. You MUST respond ONLY with tool_calls (structured JSON)
+2. Do NOT write any HTML, code, or explanations
+3. Every change goes through a tool call
+
+ORIGINAL REQUEST:
+{prompt}
+
+Respond with tool_calls ONLY."""
+            response = invoke(
+                client=client,
+                model=model,
+                max_tokens=16384,
+                response_model=ToolsCalls,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": strict_prompt}
+                ]
+            )
+        else:
+            raise
 
     # TWO-PHASE EXECUTION: Check for view_slide calls that need context enrichment
     tool_calls = list(getattr(response, 'tool_calls', []) or [])

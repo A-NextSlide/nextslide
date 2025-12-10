@@ -23,8 +23,14 @@ export class VersionHistoryService {
       bookmarked = false,
       notes = null
     } = options;
-    
+
     try {
+      // Get current user - required for RLS policies
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User must be authenticated to create versions');
+      }
+
       // Get the current highest version number
       const { data: versions, error: countError } = await supabase
         .from('deck_versions')
@@ -32,21 +38,22 @@ export class VersionHistoryService {
         .eq('deck_id', deckId)
         .order('version_number', { ascending: false })
         .limit(1);
-      
+
       if (countError) {
         console.error('Error getting highest version number:', countError);
         throw countError;
       }
-      
+
       const nextVersionNumber = versions && versions.length > 0 ? versions[0].version_number + 1 : 1;
       const versionId = uuidv4();
-      
-      // Create the version record
+
+      // Create the version record with user_id for RLS
       const { data, error } = await supabase
         .from('deck_versions')
         .insert({
           id: versionId,
           deck_id: deckId,
+          user_id: user.id,  // Required for RLS policies
           version_name: versionName,
           version_number: nextVersionNumber,
           data: deckData,
@@ -61,12 +68,12 @@ export class VersionHistoryService {
             notes
           }
         });
-      
+
       if (error) {
         console.error('Error creating version:', error);
         throw error;
       }
-      
+
       return versionId;
     } catch (error) {
       console.error('Failed to create version:', error);

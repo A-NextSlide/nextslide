@@ -15,7 +15,7 @@ import csv
 import logging
 import requests
 from io import BytesIO, StringIO
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
 from PIL import Image
@@ -58,6 +58,9 @@ class AnalyzedAttachment:
 
     # For documents - extracted text
     text_content: Optional[str] = None
+
+    # For PDFs - extracted images (list of (base64_data, mime_type) tuples)
+    extracted_images: List[Tuple[str, str]] = field(default_factory=list)
 
     # Human-readable summary for prompt context
     summary: str = ""
@@ -254,22 +257,164 @@ def _parse_excel(content: bytes) -> tuple[List[str], List[List[str]]]:
         return [], []
 
 
-def _extract_pdf_text(content: bytes) -> str:
-    """Extract text from PDF"""
+def _extract_pdf_text(content: bytes, max_pages: int = 50, max_chars: int = 100000) -> str:
+    """Extract text from PDF
+
+    Args:
+        content: PDF file bytes
+        max_pages: Maximum number of pages to extract (default 50)
+        max_chars: Maximum characters to return (default 100k)
+    """
     try:
         import fitz  # PyMuPDF
         doc = fitz.open(stream=content, filetype="pdf")
         text = ""
-        for page in doc[:10]:  # First 10 pages
+        for page in doc[:max_pages]:
             text += page.get_text()
+            if len(text) >= max_chars:
+                break
         doc.close()
-        return text[:10000]  # Limit to 10k chars
+        logger.info(f"[AttachmentAnalyzer] PDF extraction: {len(doc)} pages, extracted {len(text)} chars")
+        return text[:max_chars]
     except ImportError:
         logger.warning("PyMuPDF not available for PDF extraction")
         return ""
     except Exception as e:
         logger.warning(f"Error extracting PDF text: {e}")
         return ""
+
+
+def _extract_pdf_images(
+    content: bytes,
+    max_pages: int = 10,
+    max_images: int = 5,
+    min_image_size: int = 10000  # Skip tiny images (icons, etc.)
+) -> List[Tuple[bytes, str]]:
+    """Extract images from PDF pages.
+
+    Args:
+        content: PDF file bytes
+        max_pages: Maximum pages to scan for images
+        max_images: Maximum number of images to extract
+        min_image_size: Minimum image size in bytes (skip smaller)
+
+    Returns:
+        List of (image_bytes, mime_type) tuples
+    """
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=content, filetype="pdf")
+        images = []
+
+        for page_num, page in enumerate(doc[:max_pages]):
+            if len(images) >= max_images:
+                break
+
+            # Get images from page
+            image_list = page.get_images(full=True)
+
+            for img_index, img_info in enumerate(image_list):
+                if len(images) >= max_images:
+                    break
+
+                try:
+                    xref = img_info[0]
+                    base_image = doc.extract_image(xref)
+
+                    if not base_image:
+                        continue
+
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+
+                    # Skip small images (likely icons, logos, decorations)
+                    if len(image_bytes) < min_image_size:
+                        continue
+
+                    # Map extension to mime type
+                    mime_map = {
+                        "png": "image/png",
+                        "jpeg": "image/jpeg",
+                        "jpg": "image/jpeg",
+                        "jp2": "image/jp2",
+                        "jxr": "image/jxr",
+                    }
+                    mime_type = mime_map.get(image_ext.lower(), f"image/{image_ext}")
+
+                    images.append((image_bytes, mime_type))
+                    logger.info(f"[AttachmentAnalyzer] Extracted image from PDF page {page_num + 1}: {len(image_bytes)} bytes, {image_ext}")
+
+                except Exception as e:
+                    logger.debug(f"[AttachmentAnalyzer] Could not extract image {img_index} from page {page_num}: {e}")
+                    continue
+
+        doc.close()
+        logger.info(f"[AttachmentAnalyzer] Extracted {len(images)} images from PDF")
+        return images
+
+    except ImportError:
+        logger.warning("PyMuPDF not available for PDF image extraction")
+        return []
+    except Exception as e:
+        logger.warning(f"Error extracting PDF images: {e}")
+        return []
+
+
+async def _smart_extract_relevant_sections(
+    full_text: str,
+    user_request: str,
+    max_output_chars: int = 15000
+) -> str:
+    """
+    Use Haiku to identify and extract only the relevant sections from a document.
+
+    This is much more token-efficient than sending the entire document.
+    ~15k chars ≈ 4k tokens, which is very reasonable.
+    """
+    from agents.ai_clients import get_client
+    from agents.config import CLAUDE_HAIKU
+
+    # If text is already short, just return it
+    if len(full_text) <= max_output_chars:
+        return full_text
+
+    try:
+        client = get_client(CLAUDE_HAIKU)
+
+        # Split into chunks for analysis (Haiku can handle ~100k tokens)
+        # We'll send the full text and ask it to extract relevant parts
+        prompt = f"""You are a document analyst. Extract ONLY the sections from this document that are relevant to the user's request.
+
+USER REQUEST: {user_request}
+
+DOCUMENT TEXT:
+{full_text[:80000]}
+
+INSTRUCTIONS:
+1. Identify sections relevant to the user's request
+2. Extract those sections verbatim (don't summarize)
+3. Include key data, numbers, and facts
+4. Skip irrelevant sections (boilerplate, disclaimers, etc.)
+5. Keep total output under {max_output_chars} characters
+6. If the document has financial data, prioritize: key metrics, highlights, YoY comparisons
+
+OUTPUT FORMAT:
+Return only the extracted relevant text, with section headers if present."""
+
+        response = await client.messages.create(
+            model=CLAUDE_HAIKU,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        extracted = response.content[0].text if response.content else ""
+        logger.info(f"[AttachmentAnalyzer] Smart extraction: {len(full_text)} chars -> {len(extracted)} chars")
+        return extracted[:max_output_chars]
+
+    except Exception as e:
+        logger.warning(f"[AttachmentAnalyzer] Smart extraction failed, using truncation: {e}")
+        # Fallback: return first portion of text
+        return full_text[:max_output_chars]
 
 
 def _extract_pptx_content(content: bytes) -> str:
@@ -383,6 +528,16 @@ def analyze_attachment(attachment: Dict[str, Any], timeout: int = 15) -> Analyze
     elif file_type == FileType.DOCUMENT:
         if name.lower().endswith('.pdf') or mime_type == 'application/pdf':
             text = _extract_pdf_text(content)
+
+            # Also extract images from PDF (charts, graphs, tables as images)
+            pdf_images = _extract_pdf_images(content, max_pages=20, max_images=10)
+            if pdf_images:
+                for img_bytes, img_mime in pdf_images:
+                    # Resize image for vision
+                    resized_bytes, resized_mime = _resize_image_for_vision(img_bytes)
+                    img_base64 = base64.b64encode(resized_bytes).decode('utf-8')
+                    result.extracted_images.append((img_base64, resized_mime))
+                logger.info(f"[AttachmentAnalyzer] Added {len(result.extracted_images)} images from PDF for vision analysis")
         else:
             # Plain text
             text = content.decode('utf-8', errors='ignore')[:10000]
@@ -392,7 +547,8 @@ def analyze_attachment(attachment: Dict[str, Any], timeout: int = 15) -> Analyze
         # Generate summary (first 200 chars or first paragraph)
         if text:
             first_para = text.split('\n\n')[0][:300]
-            result.summary = f"[Document: {name}] {len(text)} chars. Preview: {first_para}..."
+            img_note = f" + {len(result.extracted_images)} images" if result.extracted_images else ""
+            result.summary = f"[Document: {name}] {len(text)} chars{img_note}. Preview: {first_para}..."
         else:
             result.summary = f"[Document: {name}] Could not extract text"
 
@@ -437,11 +593,56 @@ def analyze_attachments(attachments: List[Dict[str, Any]]) -> List[AnalyzedAttac
     return results
 
 
+async def analyze_attachments_smart(
+    attachments: List[Dict[str, Any]],
+    user_request: str,
+    max_doc_chars: int = 15000
+) -> List[AnalyzedAttachment]:
+    """
+    Analyze attachments with smart extraction for documents.
+
+    For PDFs and long documents, uses Haiku to extract only relevant sections
+    based on the user's request. This significantly reduces token usage.
+
+    Args:
+        attachments: List of attachment dicts
+        user_request: The user's request (used to identify relevant sections)
+        max_doc_chars: Max chars for document content after smart extraction
+
+    Returns:
+        List of AnalyzedAttachment objects with optimized content
+    """
+    if not attachments:
+        return []
+
+    results = []
+    for att in attachments:
+        result = analyze_attachment(att)
+
+        # Apply smart extraction for large documents
+        if (result.file_type == FileType.DOCUMENT and
+            result.text_content and
+            len(result.text_content) > max_doc_chars):
+
+            logger.info(f"[AttachmentAnalyzer] Applying smart extraction for {result.name} ({len(result.text_content)} chars)")
+            extracted = await _smart_extract_relevant_sections(
+                result.text_content,
+                user_request,
+                max_doc_chars
+            )
+            result.text_content = extracted
+            result.summary = f"[Document: {result.name}] Smart-extracted {len(extracted)} chars relevant to request"
+
+        results.append(result)
+
+    return results
+
+
 def build_multimodal_content(
     analyzed: List[AnalyzedAttachment],
     base_prompt: str,
-    max_images: int = 3,
-    max_total_image_chars: int = 1_500_000  # ~1.5MB total base64 to stay under token limits
+    max_images: int = 10,
+    max_total_image_chars: int = 3_000_000  # ~3MB total base64 to allow more images
 ) -> List[Dict[str, Any]]:
     """
     Build multimodal content blocks for Claude API.
@@ -501,13 +702,40 @@ The user has uploaded files. CAREFULLY ANALYZE these and incorporate them into y
             total_image_chars += len(att.base64_data)
             logger.info(f"[AttachmentAnalyzer] Added image {att.name} ({len(att.base64_data)} chars, total: {total_image_chars})")
 
-    # Second pass: collect text context from non-image files
+    # Second pass: collect text context and extracted images from non-image files
     for att in analyzed:
         if not att.is_vision_content:
             if att.file_type == FileType.SPREADSHEET and att.text_content:
                 context_parts.append(f"\n<data_file name='{att.name}'>\n{att.text_content}\nSuggested visualization: {att.chart_suggestion}\n</data_file>")
             elif att.file_type in [FileType.DOCUMENT, FileType.PRESENTATION] and att.text_content:
-                context_parts.append(f"\n<document name='{att.name}'>\n{att.text_content[:5000]}\n</document>")
+                # Document content - if smart extraction was used, this is already optimized
+                # Otherwise limit to 30k chars (~7.5k tokens)
+                context_parts.append(f"\n<document name='{att.name}'>\n{att.text_content[:30000]}\n</document>")
+
+            # Add extracted images from PDFs (charts, graphs, etc.)
+            if att.extracted_images and image_count < max_images:
+                for idx, (img_base64, img_mime) in enumerate(att.extracted_images):
+                    if image_count >= max_images:
+                        break
+                    if total_image_chars + len(img_base64) > max_total_image_chars:
+                        logger.warning(f"[AttachmentAnalyzer] Skipping PDF image - would exceed size limit")
+                        break
+
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img_mime,
+                            "data": img_base64
+                        }
+                    })
+                    content.append({
+                        "type": "text",
+                        "text": f"[Chart/Image from {att.name} - image {idx + 1}]"
+                    })
+                    image_count += 1
+                    total_image_chars += len(img_base64)
+                    logger.info(f"[AttachmentAnalyzer] Added PDF image {idx + 1} from {att.name} ({len(img_base64)} chars)")
 
     # Add context section if we have non-image files
     if context_parts:

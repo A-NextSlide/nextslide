@@ -240,6 +240,53 @@ async def remove_member(team_id: str, member_user_id: str, token: Optional[str] 
     return {"message": "Member removed", "user_id": member_user_id}
 
 
+@router.get("/{team_id}/invitations")
+async def list_team_invitations(team_id: str, token: Optional[str] = Depends(get_auth_header)):
+    """List pending invitations for a team"""
+    user = _require_user(token)
+    _assert_team_role(team_id, user["id"], ["owner", "admin"])  # admin or owner
+    supabase = _get_supabase()
+
+    # Get pending (non-accepted) invitations for this team
+    res = supabase.table("invitations").select(
+        "id, email, role, token, team_id, invited_by_user_id, expires_at, accepted_at, created_at"
+    ).eq("team_id", team_id).eq("type", "team").is_("accepted_at", "null").execute()
+
+    invitations: List[Dict[str, Any]] = []
+    for row in res.data or []:
+        invitations.append({
+            "id": row.get("id"),
+            "email": row.get("email"),
+            "role": row.get("role") or "member",
+            "token": row.get("token"),
+            "team_id": row.get("team_id"),
+            "invited_by_user_id": row.get("invited_by_user_id"),
+            "expires_at": row.get("expires_at"),
+            "created_at": row.get("created_at"),
+        })
+    return invitations
+
+
+@router.delete("/{team_id}/invitations/{invitation_id}")
+async def cancel_team_invitation(team_id: str, invitation_id: str, token: Optional[str] = Depends(get_auth_header)):
+    """Cancel/delete a pending invitation"""
+    user = _require_user(token)
+    _assert_team_role(team_id, user["id"], ["owner", "admin"])  # admin or owner
+    supabase = _get_supabase()
+
+    # Verify invitation belongs to this team and is not yet accepted
+    inv = supabase.table("invitations").select("id, team_id, accepted_at").eq("id", invitation_id).single().execute()
+    if not inv.data:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if inv.data.get("team_id") != team_id:
+        raise HTTPException(status_code=403, detail="Invitation does not belong to this team")
+    if inv.data.get("accepted_at"):
+        raise HTTPException(status_code=400, detail="Cannot cancel an already accepted invitation")
+
+    supabase.table("invitations").delete().eq("id", invitation_id).execute()
+    return {"message": "Invitation canceled", "id": invitation_id}
+
+
 @router.post("/{team_id}/invitations")
 async def create_team_invitation(team_id: str, request: InviteRequest, token: Optional[str] = Depends(get_auth_header)):
     user = _require_user(token)

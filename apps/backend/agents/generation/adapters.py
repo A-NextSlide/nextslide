@@ -1025,22 +1025,36 @@ class SimpleDeckComposer(IDeckComposer):
                             logo_url = getattr(style_prefs, 'logoUrl', None)
                         logger.info(f"[DECK COMPOSER] DEBUG: logo_url from stylePrefs: {logo_url[:100] if logo_url else None}...")
 
+                        # Initialize brand color variables (will be populated from database if available)
+                        brand_bg_color = None
+                        brand_text_color = None
+                        brand_accents = []
+
                         # If no font/logo in stylePreferences, try to get from brand database
-                        if not brand_fonts or not logo_url:
-                            brand_identifier = vibe_context or getattr(style_prefs, 'initialIdea', None)
-                            if brand_identifier:
-                                try:
-                                    from agents.tools.theme.brand_colors_db import get_brand_colors
-                                    db_brand_data = get_brand_colors(brand_identifier)
-                                    if db_brand_data:
-                                        if not brand_fonts and db_brand_data.get('fonts'):
-                                            brand_fonts = db_brand_data['fonts'][0] if db_brand_data['fonts'] else None
-                                            logger.info(f"[DECK COMPOSER] ✅ Got brand font from database: {brand_fonts}")
-                                        if not logo_url and db_brand_data.get('logo_url'):
-                                            logo_url = db_brand_data['logo_url']
-                                            logger.info(f"[DECK COMPOSER] ✅ Got logo from database: {logo_url[:60] if logo_url else None}...")
-                                except Exception as e:
-                                    logger.debug(f"[DECK COMPOSER] Could not get brand data from DB: {e}")
+                        brand_identifier = vibe_context or getattr(style_prefs, 'initialIdea', None)
+                        if brand_identifier:
+                            try:
+                                from agents.tools.theme.brand_colors_db import get_brand_colors
+                                db_brand_data = get_brand_colors(brand_identifier)
+                                if db_brand_data:
+                                    if not brand_fonts and db_brand_data.get('fonts'):
+                                        brand_fonts = db_brand_data['fonts'][0] if db_brand_data['fonts'] else None
+                                        logger.info(f"[DECK COMPOSER] ✅ Got brand font from database: {brand_fonts}")
+                                    if not logo_url and db_brand_data.get('logo_url'):
+                                        logo_url = db_brand_data['logo_url']
+                                        logger.info(f"[DECK COMPOSER] ✅ Got logo from database: {logo_url[:60] if logo_url else None}...")
+                                    # CRITICAL: Extract labeled brand colors (background, text, accents)
+                                    if db_brand_data.get('backgrounds'):
+                                        brand_bg_color = db_brand_data['backgrounds'][0]
+                                        logger.info(f"[DECK COMPOSER] ✅ Got brand background from database: {brand_bg_color}")
+                                    if db_brand_data.get('text_colors'):
+                                        brand_text_color = db_brand_data['text_colors'][0]
+                                        logger.info(f"[DECK COMPOSER] ✅ Got brand text color from database: {brand_text_color}")
+                                    if db_brand_data.get('accents'):
+                                        brand_accents = db_brand_data['accents']
+                                        logger.info(f"[DECK COMPOSER] ✅ Got brand accents from database: {brand_accents}")
+                            except Exception as e:
+                                logger.debug(f"[DECK COMPOSER] Could not get brand data from DB: {e}")
                     
                         # Get colors from ColorConfigItem
                         colors_config = getattr(style_prefs, 'colors', None)
@@ -1193,20 +1207,40 @@ class SimpleDeckComposer(IDeckComposer):
                             combo = playful_combos[seed_hash % len(playful_combos)]
                             hero_font, final_body_font = combo
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic with boring font '{brand_fonts}' - overriding with playful fonts: {hero_font}/{final_body_font}")
-                        elif is_boring_font:
-                            # Use professional fonts for business topics without fonts
+                        # NOTE: Removed business topic font override - we now respect brand fonts even if "boring"
+                        # Inter, Roboto, etc. are valid brand fonts and should be used as-is
+                        elif not brand_fonts:
+                            # Only use default fonts if NO brand font exists at all
                             hero_font = 'Montserrat'
                             final_body_font = 'Roboto'
-                            logger.info(f"[DECK COMPOSER] 📊 Business topic - using professional fonts: {hero_font}/{final_body_font}")
+                            logger.info(f"[DECK COMPOSER] 📊 No brand fonts found - using defaults: {hero_font}/{final_body_font}")
+                        else:
+                            logger.info(f"[DECK COMPOSER] ✅ Using brand fonts: {hero_font}/{final_body_font}")
+
+                        # CRITICAL: Use actual brand colors from database (if available)
+                        # Don't hardcode white/#FFFFFF and gray/#1F2937 - use the real brand background/text!
+                        final_bg_color = brand_bg_color or "#FFFFFF"  # Only fallback to white if no brand bg
+                        final_text_color = brand_text_color or "#1F2937"  # Only fallback to gray if no brand text
+
+                        # If we have brand accents from database, prefer those over ColorConfigItem accents
+                        if brand_accents and len(brand_accents) >= 1:
+                            final_accent_1 = brand_accents[0]
+                            final_accent_2 = brand_accents[1] if len(brand_accents) > 1 else brand_accents[0]
+                            logger.info(f"[DECK COMPOSER] ✅ Using brand accents from DB: {final_accent_1}, {final_accent_2}")
+                        else:
+                            final_accent_1 = final_brand_colors[0] if len(final_brand_colors) > 0 else "#FF4301"
+                            final_accent_2 = final_brand_colors[1] if len(final_brand_colors) > 1 else final_accent_1
+
+                        logger.info(f"[DECK COMPOSER] 🎨 Final colors - bg: {final_bg_color}, text: {final_text_color}, accent1: {final_accent_1}, accent2: {final_accent_2}")
 
                         # Create theme from brand data using EXACT format as working theme API
                         theme_dict = {
                             "theme_name": f"{vibe_context.replace('.com', '').replace('www.', '').title()} Brand Theme" if vibe_context else "Brand Theme",
                             "color_palette": {
-                                "primary_background": "#FFFFFF",
-                                "primary_text": "#1F2937",
-                                "accent_1": final_brand_colors[0] if len(final_brand_colors) > 0 else "#FF4301",
-                                "accent_2": final_brand_colors[1] if len(final_brand_colors) > 1 else (final_brand_colors[0] if len(final_brand_colors) > 0 else "#F59E0B"),
+                                "primary_background": final_bg_color,
+                                "primary_text": final_text_color,
+                                "accent_1": final_accent_1,
+                                "accent_2": final_accent_2,
                                 "colors": final_brand_colors[:6],  # Use enhanced colors
                                 "metadata": {
                                     "logo_url": logo_url

@@ -296,13 +296,12 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
       console.log("Operation throttled - please wait before deleting a slide");
       return;
     }
-    
+
     // Update operation timestamp
     setLastOperationTime(now);
-    
+
     // Don't allow deleting the last slide
     if (totalSlides <= 1) {
-      // Cannot delete the last slide
       toast({
         title: "Cannot Delete Slide",
         description: "A presentation must have at least one slide.",
@@ -311,16 +310,32 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
       });
       return;
     }
-    
+
+    // Set flag to block realtime updates during operation
+    if (typeof window !== 'undefined') {
+      (window as any).__isSlideOperationInProgress = true;
+    }
+
     try {
       // Use the removeSlide function from deckStore
       await removeSlide(slideId);
-      
+
+      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
+      // If we deleted a slide before the current one, the current slide's index shifts down
+      if (slideIndex < currentSlideIndex) {
+        onThumbnailClick(currentSlideIndex - 1);
+      } else if (slideIndex === currentSlideIndex) {
+        // If we deleted the current slide, go to the previous one (or first if we were on first)
+        const newIndex = Math.max(0, slideIndex - 1);
+        onThumbnailClick(newIndex);
+      }
+      // If deleted slide was after current, no adjustment needed
+
       // Notify parent component about the deletion if needed
       if (onSlideDelete) {
         onSlideDelete(slideId);
       }
-      
+
       // Show success toast
       toast({
         title: "Slide Deleted",
@@ -328,13 +343,19 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
         duration: 3000
       });
     } catch (error) {
-      // Handle slide deletion error
       toast({
         title: "Error Deleting Slide",
         description: "An error occurred while trying to delete the slide.",
         variant: "destructive",
         duration: 3000
       });
+    } finally {
+      // Clear flag after operation completes (with delay to allow backend sync)
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          (window as any).__isSlideOperationInProgress = false;
+        }
+      }, 2000);
     }
   };
 
@@ -345,14 +366,29 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
       console.log("Operation throttled - please wait before duplicating a slide");
       return;
     }
-    
+
     // Update operation timestamp
     setLastOperationTime(now);
-    
+
+    // Set flag to block realtime updates during operation
+    if (typeof window !== 'undefined') {
+      (window as any).__isSlideOperationInProgress = true;
+    }
+
     try {
       // Use the duplicateSlide function from deckStore
       await duplicateSlide(slideId);
-      
+
+      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
+      // The duplicate is inserted AFTER the original, so if we duplicated a slide
+      // at or before the current position, all slides after shift up by 1
+      if (slideIndex < currentSlideIndex) {
+        // Duplicated slide inserted before current slide's position, shift up
+        onThumbnailClick(currentSlideIndex + 1);
+      }
+      // If duplicated slide is at or after current position, no adjustment needed
+      // because the new slide is inserted after, not affecting current's index
+
       // Show success toast (shorter duration)
       toast({
         title: "Slide Duplicated",
@@ -360,13 +396,19 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
         duration: 1500
       });
     } catch (error) {
-      // Handle duplication error
       toast({
         title: "Error Duplicating Slide",
         description: "An error occurred while trying to duplicate the slide.",
         variant: "destructive",
         duration: 3000
       });
+    } finally {
+      // Clear flag after operation completes (with delay to allow backend sync)
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          (window as any).__isSlideOperationInProgress = false;
+        }
+      }, 2000);
     }
   };
 
@@ -377,15 +419,25 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
       console.log("Operation throttled - please wait before adding another slide");
       return;
     }
-    
+
     // Update operation timestamp
     setLastOperationTime(now);
-    
+
+    // Set flag to block realtime updates during operation
+    if (typeof window !== 'undefined') {
+      (window as any).__isSlideOperationInProgress = true;
+    }
+
     try {
       // Use the addSlideAfter function to add a slide after the clicked one
-      // The function will fill in all required fields with defaults including title
       await addSlideAfter(slideId);
-      
+
+      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
+      // New slide is inserted AFTER slideIndex, so if that's before current position, shift up
+      if (slideIndex < currentSlideIndex) {
+        onThumbnailClick(currentSlideIndex + 1);
+      }
+
       // Show success toast (shorter duration)
       toast({
         title: "Slide Added",
@@ -393,13 +445,19 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
         duration: 1500
       });
     } catch (error) {
-      // Handle error adding slide
       toast({
         title: "Error Adding Slide",
         description: "An error occurred while trying to add a new slide.",
         variant: "destructive",
         duration: 1500
       });
+    } finally {
+      // Clear flag after operation completes (with delay to allow backend sync)
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          (window as any).__isSlideOperationInProgress = false;
+        }
+      }, 2000);
     }
   };
 

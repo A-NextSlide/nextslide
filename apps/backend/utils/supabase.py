@@ -182,6 +182,12 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
                 comp_count = len(slide.get('components', []))
                 comp_types = [c.get('type') for c in slide.get('components', [])]
                 print(f"🟢 [UPLOAD_DECK] Slide {i}: {comp_count} components - {comp_types}")
+            # Log ALL CustomComponents across ALL slides
+            for i, slide in enumerate(deck_data.get("slides", [])):
+                for comp in slide.get('components', []):
+                    if comp.get('type') == 'CustomComponent':
+                        render_len = len(comp.get('props', {}).get('render', ''))
+                        print(f"🟢 [UPLOAD_DECK] Slide {i} CustomComponent {comp.get('id')}: {render_len} chars being uploaded")
         if deck_data.get("size") is not None:
             deck_record["size"] = deck_data.get("size")
         if deck_data.get("status") is not None:
@@ -255,7 +261,32 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
         if not response.data:
             logger.error(f"❌ Failed to upload deck {deck_uuid}")
             raise Exception("Failed to upload deck to Supabase")
-        
+
+        # Log what the upsert returned
+        print(f"🟢 [UPLOAD_DECK] Upsert completed successfully")
+        if response.data and response.data[0].get('slides'):
+            resp_slides = response.data[0].get('slides', [])
+            for i, slide in enumerate(resp_slides):
+                for comp in slide.get('components', []):
+                    if comp.get('type') == 'CustomComponent':
+                        render_len = len(comp.get('props', {}).get('render', ''))
+                        print(f"🟢 [UPLOAD_DECK] Upsert RETURNED: Slide {i} CustomComponent {comp.get('id')}: {render_len} chars")
+
+        # Verify what was actually saved by reading it back
+        print(f"🔍 [UPLOAD_DECK] Verifying what was saved to database...")
+        verify_response = perform_supabase_operation_with_retry(
+            lambda: supabase.table("decks").select("slides").eq("uuid", deck_uuid).single().execute(),
+            description=f"verify deck {deck_uuid}",
+            max_attempts=2,
+            timeout_seconds=8.0
+        )
+        if verify_response.data and verify_response.data.get("slides"):
+            for i, slide in enumerate(verify_response.data.get("slides", [])):
+                for comp in slide.get('components', []):
+                    if comp.get('type') == 'CustomComponent':
+                        render_len = len(comp.get('props', {}).get('render', ''))
+                        print(f"🔍 [UPLOAD_DECK] VERIFIED: Slide {i} CustomComponent {comp.get('id')}: {render_len} chars in DB")
+
         logger.debug(f"Successfully uploaded deck {deck_uuid} for user {user_id or 'anonymous'}")
         return response.data[0]
     except Exception as e:

@@ -756,6 +756,8 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
         {isPickerOpen && currentSlide && (() => {
           // Get component info if picking for specific component
           let componentInfo = null;
+          const suggestedPrompt = deckData?.outline?.slides?.[currentSlideIndex]?.suggestedImagePrompt;
+
           if (currentComponentId) {
             const component = currentSlide.components?.find((c: any) => c.id === currentComponentId);
 
@@ -769,11 +771,24 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
                 searchQuery: searchTerm,
                 isCustomComponentProp: true,
               };
-            } else if (component && component.type === 'Image' && component.props.metadata) {
+            } else if (component && component.type === 'Image') {
+              // Try to get a search term from various sources (priority order):
+              // 1. metadata.searchQuery (explicit search term)
+              // 2. metadata.topic (topic from generation)
+              // 3. alt text (often describes what the image should be)
+              // 4. suggestedImagePrompt from outline
+              // 5. slide title as last resort
+              const searchTerm =
+                component.props.metadata?.searchQuery ||
+                component.props.metadata?.topic ||
+                (component.props.alt && component.props.alt !== 'Image' ? component.props.alt : null) ||
+                suggestedPrompt ||
+                currentSlide.title;
+
               componentInfo = {
                 componentId: currentComponentId,
-                topic: component.props.metadata.topic,
-                searchQuery: component.props.metadata.searchQuery,
+                topic: searchTerm,
+                searchQuery: searchTerm,
                 alt: component.props.alt
               };
             }

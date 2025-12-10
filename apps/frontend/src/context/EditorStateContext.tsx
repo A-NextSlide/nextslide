@@ -103,6 +103,8 @@ export const EditorStateProvider = ({
         // do NOT reload from backend or we'll overwrite those local updates.
         // CRITICAL FIX: Also skip reload if there was a recent AI agent edit - the backend may
         // not have the latest data yet, and reloading would overwrite the AI changes.
+        // CRITICAL FIX 2: Also skip reload if an AI edit is currently IN PROGRESS - the user
+        // entered edit mode during an active AI edit operation.
         try {
           const currentId = deckStore.deckData?.uuid;
           const hasPendingLocalChanges = !!deckStore.versionHistory?.pendingChanges;
@@ -112,6 +114,9 @@ export const EditorStateProvider = ({
           const timeSinceAgentEdit = Date.now() - lastAgentEditTs;
           const hasRecentAgentEdit = lastAgentEditTs > 0 && timeSinceAgentEdit < 5000;
 
+          // Check for AI edit currently in progress (started but not yet completed)
+          const agentEditInProgress = typeof window !== 'undefined' && (window as any).__agentEditInProgress === true;
+
           if (hasRecentAgentEdit) {
             console.log('[EditorStateContext] Skipping loadDeck - recent AI agent edit detected', {
               timeSinceAgentEdit,
@@ -119,26 +124,40 @@ export const EditorStateProvider = ({
             });
           }
 
-          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges && !hasRecentAgentEdit) {
+          if (agentEditInProgress) {
+            console.log('[EditorStateContext] Skipping loadDeck - AI agent edit in progress');
+            // Mark that we entered edit mode during an AI edit - forces draft resync when edit completes
+            (window as any).__enteredEditModeDuringAgentEdit = true;
+          }
+
+          if (currentId && typeof deckStore.loadDeck === 'function' && !hasPendingLocalChanges && !hasRecentAgentEdit && !agentEditInProgress) {
             await deckStore.loadDeck();
           }
         } catch {}
 
         // Do not pause realtime subscriptions in edit mode.
         // Realtime updates will merge into editor drafts with guards to avoid clobbering local edits.
-        
+
         // Clear any lingering WebSocket position sync state before entering edit mode
         if (typeof window !== 'undefined' && (window as any).__remoteComponentLayouts) {
           (window as any).__remoteComponentLayouts.clear();
         }
-        
+
         // Initialize draft components synchronously
         const navigationContext = (window as any).__navigationContext;
         const currentSlideIndex = navigationContext?.currentSlideIndex || 0;
         const currentSlideId = deckData.slides[currentSlideIndex]?.id;
-        
+
         if (currentSlideId) {
           await initializeDraftComponents(currentSlideId);
+        }
+
+        // Clear the flag after initialization
+        if (typeof window !== 'undefined' && (window as any).__enteredEditModeDuringAgentEdit) {
+          // Keep flag for a short time to allow AI edit to see it
+          setTimeout(() => {
+            delete (window as any).__enteredEditModeDuringAgentEdit;
+          }, 5000);
         }
         
         // Clear transition immediately

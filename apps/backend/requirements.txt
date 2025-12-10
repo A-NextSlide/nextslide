@@ -57,3 +57,4 @@ resend==2.11.0  # For professional email sending
 
 jsbeautifier>=1.15.0
 cssbeautifier>=1.15.0
+PyMuPDF==1.26.6

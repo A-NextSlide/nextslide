@@ -245,6 +245,9 @@ export const CustomComponentRenderer: React.FC<{
 }> = ({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const renderCode = component.props.render as string;
 
+  // Debug logging - only when DEBUG_CUSTOM_COMPONENT is enabled
+  DEBUG_CUSTOM_COMPONENT && console.log(`🎯 [CustomComponentRenderer] Component ${component.id} rendering with ${renderCode?.length || 0} chars`);
+
   // Create a robust hash of the render code to detect content changes for iframe remounting
   // This ensures the iframe refreshes when the HTML content changes after edits
   const renderCodeHash = useMemo(() => {
@@ -263,15 +266,15 @@ export const CustomComponentRenderer: React.FC<{
     hash = ((hash << 5) + hash) ^ (renderCode.charCodeAt(len - 1) || 0);
     // Convert to unsigned 32-bit and combine with length
     const finalHash = `${len}-${(hash >>> 0).toString(36)}`;
-    console.log('[CustomComponent] renderCodeHash computed:', { componentId: component.id, hash: finalHash, len });
+    DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] renderCodeHash computed:', { componentId: component.id, hash: finalHash, len });
     return finalHash;
   }, [renderCode, component.id]);
 
-  // DEBUG: Track renderCode changes to help identify iframe refresh issues
+  // Track renderCode changes - only log when DEBUG enabled
   const prevRenderCodeLenRef = useRef<number>(0);
   useEffect(() => {
     const len = renderCode?.length || 0;
-    if (prevRenderCodeLenRef.current > 0 && prevRenderCodeLenRef.current !== len) {
+    if (DEBUG_CUSTOM_COMPONENT && prevRenderCodeLenRef.current > 0 && prevRenderCodeLenRef.current !== len) {
       console.log('[CustomComponent] 🔄 RENDER CODE CHANGED:', {
         componentId: component.id,
         prevLen: prevRenderCodeLenRef.current,
@@ -2478,6 +2481,16 @@ export const CustomComponentRenderer: React.FC<{
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
               srcDoc={stableIframeSrcDoc}
+              onLoad={() => {
+                console.log('[CustomComponent] ✅ IFRAME LOADED:', {
+                  componentId: component.id,
+                  hash: renderCodeHash,
+                  srcDocLen: stableIframeSrcDoc?.length || 0,
+                  key: `${component.id}-${renderCodeHash}`,
+                  // Show first 500 chars of body content to debug blank slides
+                  bodyPreview: stableIframeSrcDoc?.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1]?.slice(0, 500) || 'NO BODY FOUND'
+                });
+              }}
               style={{
                 position: 'absolute',
                 top: 0,

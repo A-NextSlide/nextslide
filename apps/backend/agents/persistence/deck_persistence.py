@@ -309,6 +309,11 @@ class DeckPersistence:
                 print(f"🔵 [PERSISTENCE] Slide {slide_index} has {len(deck['slides'][slide_index].get('components', []))} components before upload")
                 component_types = [c.get('type') for c in deck['slides'][slide_index].get('components', [])]
                 print(f"🔵 [PERSISTENCE] Component types: {component_types}")
+                # Log CustomComponent render length being sent
+                for comp in deck['slides'][slide_index].get('components', []):
+                    if comp.get('type') == 'CustomComponent':
+                        render_len = len(comp.get('props', {}).get('render', ''))
+                        print(f"🔵 [PERSISTENCE] CustomComponent {comp.get('id')}: {render_len} chars being sent to upload_deck")
 
                 # Run upload_deck in executor
                 with ThreadPoolExecutor(max_workers=1) as executor:
@@ -326,6 +331,11 @@ class DeckPersistence:
                     logger.debug(f"[PERSISTENCE] Verification: Slide {slide_index} in DB now has {verify_components} components")
                     print(f"🔍 [PERSISTENCE] VERIFICATION:")
                     print(f"  - Slide {slide_index} in database has {verify_components} components")
+                    # Log CustomComponent render lengths
+                    for comp in verify_deck['slides'][slide_index].get('components', []):
+                        if comp.get('type') == 'CustomComponent':
+                            render_len = len(comp.get('props', {}).get('render', ''))
+                            print(f"  - CustomComponent {comp.get('id')}: {render_len} chars in DB")
                     if verify_components == 0:
                         print(f"  ❌ WARNING: Components were not saved to database!")
                         print(f"  - Expected: {len(slide_data.get('components', []))} components")

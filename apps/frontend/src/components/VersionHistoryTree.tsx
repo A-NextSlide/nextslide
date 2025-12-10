@@ -84,145 +84,79 @@ const VersionHistoryTree: React.FC<VersionHistoryTreeProps> = ({
 
     return (
       <div key={version.id} className="relative">
-        {/* Branch lines */}
-        <div className="absolute left-0 top-0 bottom-0 w-6">
-          {/* Vertical line from parent */}
-          {parentPath.length > 0 && (
-            <div 
-              className={cn(
-                "absolute left-3 top-0 w-0.5 bg-border",
-                isLast ? "h-6" : "h-full"
-              )} 
-            />
-          )}
-          
-          {/* Horizontal line to commit */}
-          {parentPath.length > 0 && (
-            <div className="absolute left-3 top-6 w-3 h-0.5 bg-border" />
-          )}
-          
-          {/* Continue parent lines */}
-          {parentPath.map((continues, index) => {
-            if (!continues || index === parentPath.length - 1) return null;
-            const leftOffset = 3 + (index * 24);
-            return (
-              <div
-                key={index}
-                className="absolute top-0 bottom-0 w-0.5 bg-border"
-                style={{ left: `${leftOffset}px` }}
-              />
-            );
-          })}
-        </div>
-
-        {/* Version item */}
-        <div 
+        {/* Version item - compact design */}
+        <div
           className={cn(
-            "group relative flex items-start gap-3 py-2 px-3 rounded-lg cursor-pointer transition-all ml-6",
-            "hover:bg-accent/50",
-            isSelected && "bg-accent",
-            isAutoSave && "opacity-60"
+            "group relative flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer transition-all",
+            "hover:bg-accent/50 border border-transparent",
+            isSelected && "bg-accent border-accent-foreground/10",
+            isAutoSave && "opacity-70"
           )}
-          style={{ marginLeft: `${node.depth * 24 + 24}px` }}
+          style={{ marginLeft: `${node.depth * 12}px` }}
           onClick={() => onVersionSelect(version)}
         >
-          {/* Commit icon */}
+          {/* Icon indicator */}
           <div className={cn(
-            "mt-1 rounded-full p-1.5 transition-colors",
-            isBookmarked ? "bg-primary text-primary-foreground" : "bg-muted",
-            isAutoSave && "bg-muted/50"
+            "flex-shrink-0 rounded p-1 transition-colors",
+            isBookmarked ? "bg-primary/10 text-primary" : "bg-muted/50 text-muted-foreground",
+            isAutoSave && "bg-muted/30"
           )}>
             {isAutoSave ? (
               <RefreshCw className="w-3 h-3" />
             ) : isBookmarked ? (
-              <Bookmark className="w-3 h-3" />
+              <Bookmark className="w-3 h-3 fill-current" />
             ) : (
               <Layers className="w-3 h-3" />
             )}
           </div>
 
-          {/* Version details */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h4 className={cn(
-                "font-medium text-sm truncate",
-                isAutoSave && "text-muted-foreground"
-              )}>
-                {version.version_name}
-              </h4>
-              {isAutoSave && (
-                <span className="text-xs text-muted-foreground">(autosave)</span>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-3 mt-0.5">
-              <span className="text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(version.created_at), { addSuffix: true })}
-              </span>
-              {version.metadata?.description && (
-                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                  {version.metadata.description}
-                </span>
-              )}
-            </div>
-
-            {/* Action buttons - visible on hover */}
-            <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onVersionRestore(version.id);
-                      }}
-                    >
-                      Restore
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Restore this version</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onVersionBookmark(version);
-                      }}
-                    >
-                      <Bookmark className={cn(
-                        "w-3 h-3",
-                        isBookmarked && "fill-current"
-                      )} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{isBookmarked ? 'Remove bookmark' : 'Bookmark version'}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+          {/* Version details - single line layout */}
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <h4 className={cn(
+              "font-medium text-xs truncate max-w-[120px]",
+              isAutoSave && "text-muted-foreground"
+            )}>
+              {version.version_name}
+            </h4>
+            <span className="text-[10px] text-muted-foreground truncate">
+              {formatDistanceToNow(new Date(version.created_at), { addSuffix: true })}
+            </span>
           </div>
 
-          {/* Version number badge */}
-          <div className="text-xs text-muted-foreground font-mono">
+          {/* Action buttons - visible on hover, inline */}
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-5 px-1.5 text-[10px]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onVersionRestore(version.id);
+                    }}
+                  >
+                    Restore
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  <p>Restore this version</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Version number badge - subtle */}
+          <span className="text-[10px] text-muted-foreground/60 font-mono flex-shrink-0">
             v{version.version_number}
-          </div>
+          </span>
         </div>
 
         {/* Render children */}
-        {node.children.map((child, index) => 
+        {node.children.map((child, index) =>
           renderVersionNode(
-            child, 
+            child,
             index === node.children.length - 1,
             [...parentPath, !isLast]
           )
@@ -234,14 +168,14 @@ const VersionHistoryTree: React.FC<VersionHistoryTreeProps> = ({
   return (
     <div className={cn("relative", className)}>
       {versionTree.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          <Layers className="w-8 h-8 mx-auto mb-2 opacity-20" />
-          <p className="text-sm">No version history yet</p>
-          <p className="text-xs mt-1">Save your first version to start tracking changes</p>
+        <div className="text-center py-6 text-muted-foreground">
+          <Layers className="w-6 h-6 mx-auto mb-1.5 opacity-20" />
+          <p className="text-xs">No version history yet</p>
+          <p className="text-[10px] mt-0.5 opacity-70">Save your first version to start tracking changes</p>
         </div>
       ) : (
-        <div className="space-y-1">
-          {versionTree.map((node, index) => 
+        <div className="space-y-0.5">
+          {versionTree.map((node, index) =>
             renderVersionNode(node, index === versionTree.length - 1)
           )}
         </div>

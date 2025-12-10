@@ -1047,16 +1047,18 @@ const DeckList: React.FC = () => {
       }));
 
       // Build theme payload from parsed style prefs FIRST so we can include it in outline.notes
+      // NOTE: Colors should ALWAYS be provided from ConversationalOnboarding (which fetches from backend)
+      // These neutral fallbacks are only for edge cases - they should never appear in real usage
       const themePayload = parsedStylePrefs ? {
         color_palette: {
           primary_background: parsedStylePrefs.colors?.background || '#FFFFFF',
           primary_text: parsedStylePrefs.colors?.text || '#1A1A1A',
-          accent_1: parsedStylePrefs.colors?.accent1 || '#FF4301',
-          accent_2: parsedStylePrefs.colors?.accent2 || '#3B82F6',
+          accent_1: parsedStylePrefs.colors?.accent1 || '#333333',  // Neutral dark fallback (not orange!)
+          accent_2: parsedStylePrefs.colors?.accent2 || '#666666',  // Neutral gray fallback
         },
         typography: {
-          hero_title: { family: parsedStylePrefs.font || 'Inter' },
-          body_text: { family: parsedStylePrefs.bodyFont || 'Inter' },
+          hero_title: { family: parsedStylePrefs.font || 'Roboto' },  // Roboto as safe fallback
+          body_text: { family: parsedStylePrefs.bodyFont || 'Roboto' },
         },
         logo: parsedStylePrefs.logoUrl ? { url: parsedStylePrefs.logoUrl } : undefined,
       } : null;
@@ -1092,19 +1094,19 @@ const DeckList: React.FC = () => {
           page: { backgroundColor: parsedStylePrefs?.colors?.background || '#FFFFFF' },
           typography: {
             paragraph: {
-              fontFamily: parsedStylePrefs?.bodyFont || 'Inter',
+              fontFamily: parsedStylePrefs?.bodyFont || 'Roboto',  // Roboto as safe fallback
               color: parsedStylePrefs?.colors?.text || '#1A1A1A',
               fontSize: 16,
               fontWeight: 400,
             },
             heading: {
-              fontFamily: parsedStylePrefs?.font || 'Inter',
+              fontFamily: parsedStylePrefs?.font || 'Roboto',  // Roboto as safe fallback
               color: parsedStylePrefs?.colors?.text || '#1A1A1A',
               fontWeight: 700,
             }
           },
-          accent1: parsedStylePrefs?.colors?.accent1 || '#FF4301',
-          accent2: parsedStylePrefs?.colors?.accent2 || '#3B82F6',
+          accent1: parsedStylePrefs?.colors?.accent1 || '#333333',  // Neutral fallback
+          accent2: parsedStylePrefs?.colors?.accent2 || '#666666',  // Neutral fallback
         };
         const themeId = themeStore.addCustomTheme(workspaceTheme as any);
         themeStore.setWorkspaceTheme(themeId);
@@ -1587,11 +1589,11 @@ const DeckList: React.FC = () => {
               ...outlineDeckTheme.typography,
               hero_title: {
                 ...(outlineDeckTheme.typography?.hero_title || {}),
-                family: wsTheme.typography?.heading?.fontFamily || outlineDeckTheme.typography?.hero_title?.family || 'Inter'
+                family: wsTheme.typography?.heading?.fontFamily || outlineDeckTheme.typography?.hero_title?.family || 'Roboto'
               },
               body_text: {
                 ...(outlineDeckTheme.typography?.body_text || {}),
-                family: wsTheme.typography?.paragraph?.fontFamily || outlineDeckTheme.typography?.body_text?.family || 'Inter'
+                family: wsTheme.typography?.paragraph?.fontFamily || outlineDeckTheme.typography?.body_text?.family || 'Roboto'
               }
             }
           };
@@ -1631,10 +1633,10 @@ const DeckList: React.FC = () => {
       } else if (wsTheme) {
         // Fallback: map from workspace theme (this should rarely happen now)
         const bg = wsTheme.page?.backgroundColor || '#ffffff';
-        const accent1 = wsTheme.accent1 || '#FF4301';
+        const accent1 = wsTheme.accent1 || '#333333';  // Neutral fallback
         const accent2 = wsTheme.accent2 || accent1;
-        const headingFamily = wsTheme.typography?.heading?.fontFamily || 'Inter';
-        const paragraphFamily = wsTheme.typography?.paragraph?.fontFamily || 'Inter';
+        const headingFamily = wsTheme.typography?.heading?.fontFamily || 'Roboto';  // Roboto fallback
+        const paragraphFamily = wsTheme.typography?.paragraph?.fontFamily || 'Roboto';
         const textColor = wsTheme.typography?.paragraph?.color || '#1f2937';
 
         finalTheme = {
@@ -2118,8 +2120,8 @@ const DeckList: React.FC = () => {
                                   color_palette: {
                                     primary_background: apiColors?.background || '#ffffff',
                                     primary_text: apiColors?.text || '#1f2937',
-                                    accent_1: apiColors?.accent1 || '#FF4301',
-                                    accent_2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301',
+                                    accent_1: apiColors?.accent1 || '#333333',  // Neutral fallback
+                                    accent_2: apiColors?.accent2 || apiColors?.accent1 || '#666666',  // Neutral fallback
                                     backgrounds: [apiColors?.background || '#ffffff'],
                                     accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
                                     text_colors: { primary: apiColors?.text || '#1f2937' }
@@ -2128,8 +2130,8 @@ const DeckList: React.FC = () => {
                                 
                                 ts.setOutlineDeckTheme?.(outlineId, themePayload);
                                 
-                                // CRITICAL: Use apiFont directly - don't fall back to Inter for fun topics
-                                const fontToApply = apiFont || 'Inter';
+                                // CRITICAL: Use apiFont directly - Roboto as safe fallback
+                                const fontToApply = apiFont || 'Roboto';
                                 console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME:', fontToApply);
                                 
                                 const builtTheme = {
@@ -2139,10 +2141,10 @@ const DeckList: React.FC = () => {
                                     paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
                                     heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
                                   },
-                                  accent1: apiColors?.accent1 || '#FF4301',
-                                  accent2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301'
+                                  accent1: apiColors?.accent1 || '#333333',  // Neutral fallback
+                                  accent2: apiColors?.accent2 || apiColors?.accent1 || '#666666'  // Neutral fallback
                                 };
-                                
+
                                 const addedId = ts.addCustomTheme(builtTheme as any);
                                 ts.setWorkspaceTheme(addedId);
                                 ts.setOutlineTheme(outlineId, { ...builtTheme, id: addedId, isCustom: true } as any);
@@ -2221,8 +2223,8 @@ const DeckList: React.FC = () => {
                               type: 'custom' as const,
                               background: cp.primary_background || '#ffffff',
                               text: cp.primary_text || '#1f2937',
-                              accent1: cp.accent_1 || '#FF4301',
-                              accent2: cp.accent_2 || cp.accent_1 || '#FF4301',
+                              accent1: cp.accent_1 || '#333333',  // Neutral fallback
+                              accent2: cp.accent_2 || cp.accent_1 || '#666666',  // Neutral fallback
                               accent3: cp.accents?.[2]
                             } : undefined;
 
@@ -2263,8 +2265,8 @@ const DeckList: React.FC = () => {
                                 color_palette: {
                                   primary_background: apiColors?.background || '#ffffff',
                                   primary_text: apiColors?.text || '#1f2937',
-                                  accent_1: apiColors?.accent1 || '#FF4301',
-                                  accent_2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301',
+                                  accent_1: apiColors?.accent1 || '#333333',  // Neutral fallback
+                                  accent_2: apiColors?.accent2 || apiColors?.accent1 || '#666666',  // Neutral fallback
                                   backgrounds: [apiColors?.background || '#ffffff'],
                                   accents: [apiColors?.accent1, apiColors?.accent2].filter(Boolean),
                                   text_colors: { primary: apiColors?.text || '#1f2937' }
@@ -2274,8 +2276,8 @@ const DeckList: React.FC = () => {
                               // Store in outline deck theme
                               ts.setOutlineDeckTheme?.(newOutline.id, themePayload);
                               
-                              // Use apiFont - don't default to Inter for fun topics!
-                              const fontToApply = apiFont || 'Inter';
+                              // Use apiFont - Roboto as safe fallback
+                              const fontToApply = apiFont || 'Roboto';
                               console.log('[DeckList] 🎨 APPLYING FONT TO WORKSPACE THEME (batch):', fontToApply);
                               
                               // Create workspace theme to match
@@ -2286,8 +2288,8 @@ const DeckList: React.FC = () => {
                                   paragraph: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' },
                                   heading: { fontFamily: fontToApply, color: apiColors?.text || '#1f2937' }
                                 },
-                                accent1: apiColors?.accent1 || '#FF4301',
-                                accent2: apiColors?.accent2 || apiColors?.accent1 || '#FF4301'
+                                accent1: apiColors?.accent1 || '#333333',  // Neutral fallback
+                                accent2: apiColors?.accent2 || apiColors?.accent1 || '#666666'  // Neutral fallback
                               };
                               
                               const addedId = ts.addCustomTheme(builtTheme as any);

@@ -574,6 +574,13 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
             raise HTTPException(status_code=404, detail="Deck not found")
 
         logger.info(f"✅ Deck {deck_uuid} found! User: {deck.get('user_id')}, Slides: {len(deck.get('slides', []))}")
+
+        # Debug: Log CustomComponent render lengths for persistence tracking
+        for i, slide in enumerate(deck.get('slides', [])):
+            for comp in slide.get('components', []):
+                if comp.get('type') == 'CustomComponent':
+                    render_len = len(comp.get('props', {}).get('render', ''))
+                    print(f"📖 [GET_DECK] Slide {i} CustomComponent {comp.get('id')}: {render_len} chars from DB")
         
         # Check access permissions
         deck_user_id = deck.get('user_id')

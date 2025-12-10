@@ -129,20 +129,27 @@ export class DeckSyncService {
       }
 
       const endpoint = full ? `/auth/decks/${deckId}/full` : `/auth/decks/${deckId}`;
-      const url = this.getApiUrl(endpoint);
+      // Add cache-busting parameter to prevent browser caching
+      const cacheBuster = `_t=${Date.now()}`;
+      const baseUrl = this.getApiUrl(endpoint);
+      const url = baseUrl.includes('?') ? `${baseUrl}&${cacheBuster}` : `${baseUrl}?${cacheBuster}`;
+      console.log(`🌐 [deckSyncService] Fetching deck: ${url}`);
 
-      
+
       const token = await authService.getAuthTokenAsync();
       if (!token) {
         console.error('[deckSyncService] No auth token available');
         return null;
       }
-      
+
       const doFetch = (bearer: string) => fetch(url, {
         headers: {
           'Authorization': `Bearer ${bearer}`,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        cache: 'no-store'
       });
       let response = await doFetch(token);
       if (response.status === 401) {
@@ -166,9 +173,22 @@ export class DeckSyncService {
       }
       
       const data = await response.json();
-      
+
       // Handle response structure - backend returns { deck: ..., access_type: ... }
       const deckData = data.deck || data;
+
+      // Debug: Log CustomComponent render lengths from raw API response
+      if (Array.isArray(deckData?.slides)) {
+        deckData.slides.forEach((slide: any, i: number) => {
+          slide.components?.forEach((comp: any) => {
+            if (comp.type === 'CustomComponent') {
+              const renderLen = comp.props?.render?.length || 0;
+              console.log(`📡 [deckSyncService RAW] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars from fetch response`);
+            }
+          });
+        });
+      }
+
       return this.formatBackendDeck(deckData);
     } catch (err) {
       console.error(`[deckSyncService] Failed to fetch deck ${deckId}:`, err);
