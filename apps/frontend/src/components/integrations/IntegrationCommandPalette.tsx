@@ -63,6 +63,23 @@ interface IntegrationCommandPaletteProps {
 
 // Define actions for each integration type
 const INTEGRATION_ACTIONS: Record<string, Omit<IntegrationAction, 'integrationId'>[]> = {
+  // Apollo (always available - uses our API key)
+  apollo: [
+    {
+      id: 'apollo_company',
+      label: 'Company lookup',
+      description: 'Get company info, industry, size, LinkedIn',
+      icon: Building2,
+      action: 'apollo_company_lookup',
+    },
+    {
+      id: 'apollo_person',
+      label: 'Person lookup',
+      description: 'Find professional profile (paid plan)',
+      icon: User,
+      action: 'apollo_person_lookup',
+    },
+  ],
   linkedin: [
     {
       id: 'linkedin_person',
@@ -174,6 +191,7 @@ const INTEGRATION_ACTIONS: Record<string, Omit<IntegrationAction, 'integrationId
 
 // Icon mapping for integrations
 const INTEGRATION_ICONS: Record<string, React.ElementType> = {
+  apollo: Database,
   linkedin: User,
   salesforce: Cloud,
   hubspot: Cloud,

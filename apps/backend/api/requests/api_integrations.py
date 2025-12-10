@@ -137,20 +137,11 @@ async def get_user_integrations(
     Returns both available and connected integrations.
     """
     user_id = auth["user_id"]
-    nango = get_nango_service()
-
-    if not nango.is_configured():
-        # Return empty but valid response if Nango not configured
-        return IntegrationListResponse(
-            integrations=[],
-            categories=[{"id": c.value, "name": c.value.replace("_", " ").title()} for c in IntegrationCategory]
-        )
-
-    # Get user's connections from local cache first
-    supabase = get_supabase_client()
     local_connections = {}
 
+    # Try to get user's connections from local cache
     try:
+        supabase = get_supabase_client()
         result = supabase.table("user_integrations") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -160,10 +151,28 @@ async def get_user_integrations(
         for conn in result.data or []:
             local_connections[conn["provider"]] = conn
     except Exception as e:
+        # Table might not exist or other error - continue without connections
         logger.warning(f"Failed to fetch local connections: {e}")
 
     # Build integration list with connection status
     integrations = []
+
+    # Add Apollo as a special "always available" integration (uses our API key)
+    from services.apollo_service import get_apollo_service
+    apollo = get_apollo_service()
+    if apollo.is_configured():
+        integrations.append(IntegrationInfo(
+            id="apollo",
+            name="Apollo.io",
+            category="crm",
+            icon="apollo",
+            description="Business intelligence - company and contact enrichment. Always available.",
+            capabilities=["Company lookup", "Person lookup", "Business intelligence"],
+            connected=True,  # Always connected since we use our API key
+            status="active"
+        ))
+
+    # Add Nango-based OAuth integrations
     for integration_id, config in SUPPORTED_INTEGRATIONS.items():
         local_conn = local_connections.get(config.id)
 
