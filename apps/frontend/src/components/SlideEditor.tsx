@@ -44,6 +44,7 @@ import GuidedTour from './common/GuidedTour';
 import DeckNotes from './deck/DeckNotes';
 import { authService } from '@/services/authService';
 import { debugSlideImages } from '@/utils/debugSlideImages';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 /**
  * SlideEditor content component that assumes all context providers are in place
@@ -59,7 +60,9 @@ const SlideEditorContent: React.FC = () => {
   const [hasSyncError, setHasSyncError] = useState(false);
   const [showQuickTip, setShowQuickTip] = useState(false);
   const [showTour, setShowTour] = useState(false);
-  const [showAiHints, setShowAiHints] = useState(false);
+
+  // Get onboarding state for tutorial and AI hints
+  const { shouldShowTutorial, shouldShowAiHints, incrementTutorialViews, state: onboardingState } = useOnboarding();
   // Initialize with pending state for new decks
   const [deckStatus, setDeckStatus] = useState<DeckStatus | null>(() => {
     if (isNewDeck) {
@@ -92,21 +95,31 @@ const SlideEditorContent: React.FC = () => {
     }
   }, []);
 
-  // Guided tour trigger: open after ~5s if generating/creating and not yet shown for this deck
+  // Guided tour trigger: open after ~5s if generating/creating and user hasn't seen it 2 times yet
+  // Track whether we've already triggered the tour in this session to prevent double-triggering
+  const tourTriggeredRef = useRef(false);
+
   useEffect(() => {
-    const deckIdForTour = (typeof window !== 'undefined') ? (useDeckStore.getState().deckData?.uuid) : undefined;
-    if (!deckIdForTour) return;
-    const tourKey = `guidedTourShown:${deckIdForTour}`;
-    const already = typeof window !== 'undefined' && localStorage.getItem(tourKey) === '1';
-    const shouldShow = (deckStatus?.state === 'generating' || deckStatus?.state === 'creating');
-    if (shouldShow && !already) {
+    // Don't trigger if onboarding state isn't loaded yet
+    if (onboardingState === null) return;
+    // Don't trigger if user has already seen the tour 2 times
+    if (!shouldShowTutorial) return;
+    // Don't trigger if we've already triggered in this session
+    if (tourTriggeredRef.current) return;
+
+    const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+    if (isGenerating) {
       const t = setTimeout(() => {
-        setShowTour(true);
-        try { localStorage.setItem(tourKey, '1'); } catch {}
+        if (!tourTriggeredRef.current) {
+          tourTriggeredRef.current = true;
+          setShowTour(true);
+          // Increment the view count when tour is shown
+          incrementTutorialViews();
+        }
       }, 5000);
       return () => clearTimeout(t);
     }
-  }, [deckStatus?.state]);
+  }, [deckStatus?.state, shouldShowTutorial, onboardingState, incrementTutorialViews]);
 
   // Editor controls (moved up so effects below can reference setIsEditing safely)
   const { isEditing, setIsEditing, undo, redo, canUndo, canRedo } = useEditor();
@@ -121,20 +134,7 @@ const SlideEditorContent: React.FC = () => {
     return () => window.removeEventListener('tour:start', handleStart as EventListener);
   }, [setIsEditing]);
 
-  // Fetch onboarding state to determine if AI hints should be shown (first 2 presentations)
-  useEffect(() => {
-    const checkOnboardingState = async () => {
-      try {
-        const onboardingState = await authService.getOnboardingState();
-        if (onboardingState) {
-          setShowAiHints(onboardingState.show_ai_hints);
-        }
-      } catch (error) {
-        console.error('[SlideEditor] Error checking onboarding state:', error);
-      }
-    };
-    checkOnboardingState();
-  }, []);
+  // AI hints are now provided by the onboarding context (shouldShowAiHints)
 
   // Ensure chat panel is visible for the chat step
   useEffect(() => {
@@ -2048,7 +2048,7 @@ const SlideEditorContent: React.FC = () => {
       <GuidedTour
         isOpen={showTour}
         onClose={() => setShowTour(false)}
-        showAiHints={showAiHints}
+        showAiHints={shouldShowAiHints}
         onAction={(action) => {
           if (action === 'enterEditMode') {
             try { setIsEditing(true); } catch {}

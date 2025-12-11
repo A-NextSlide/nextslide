@@ -1401,13 +1401,14 @@ class UserOnboardingStateResponse(BaseModel):
     welcome_shown: bool
     presentations_created: int
     show_ai_hints: bool  # True if presentations_created < 2
+    tutorial_views_count: int  # Number of times tutorial has been shown (show if < 2)
 
 class MarkWelcomeShownRequest(BaseModel):
     pass  # Empty body, just needs auth
 
 @router.get("/user/onboarding-state", response_model=UserOnboardingStateResponse)
 async def get_user_onboarding_state(token: Optional[str] = Depends(get_auth_header)):
-    """Get user's onboarding state (welcome shown, presentation count)"""
+    """Get user's onboarding state (welcome shown, presentation count, tutorial views)"""
     try:
         if not token:
             raise HTTPException(status_code=401, detail="Authentication required")
@@ -1423,7 +1424,7 @@ async def get_user_onboarding_state(token: Optional[str] = Depends(get_auth_head
 
         # Get user's onboarding state from users table
         response = supabase.table("users").select(
-            "welcome_shown, presentations_created"
+            "welcome_shown, presentations_created, tutorial_views_count"
         ).eq("id", user_id).execute()
 
         if not response.data:
@@ -1431,17 +1432,20 @@ async def get_user_onboarding_state(token: Optional[str] = Depends(get_auth_head
             return UserOnboardingStateResponse(
                 welcome_shown=False,
                 presentations_created=0,
-                show_ai_hints=True
+                show_ai_hints=True,
+                tutorial_views_count=0
             )
 
         user_data = response.data[0]
         welcome_shown = user_data.get("welcome_shown", False) or False
         presentations_created = user_data.get("presentations_created", 0) or 0
+        tutorial_views_count = user_data.get("tutorial_views_count", 0) or 0
 
         return UserOnboardingStateResponse(
             welcome_shown=welcome_shown,
             presentations_created=presentations_created,
-            show_ai_hints=presentations_created < 2
+            show_ai_hints=presentations_created < 2,
+            tutorial_views_count=tutorial_views_count
         )
 
     except HTTPException:
@@ -1479,3 +1483,41 @@ async def mark_welcome_shown(token: Optional[str] = Depends(get_auth_header)):
     except Exception as e:
         logger.error(f"Mark welcome shown error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update welcome shown flag")
+
+
+@router.post("/user/increment-tutorial-views")
+async def increment_tutorial_views(token: Optional[str] = Depends(get_auth_header)):
+    """Increment the tutorial views count for the user (called when tutorial is shown)"""
+    try:
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        auth_service = get_auth_service()
+        user = auth_service.get_user_with_token(token)
+
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user_id = user["id"]
+        supabase = auth_service.supabase
+
+        # Get current count first
+        response = supabase.table("users").select("tutorial_views_count").eq("id", user_id).execute()
+
+        current_count = 0
+        if response.data:
+            current_count = response.data[0].get("tutorial_views_count", 0) or 0
+
+        # Increment the count
+        new_count = current_count + 1
+        supabase.table("users").update({
+            "tutorial_views_count": new_count
+        }).eq("id", user_id).execute()
+
+        return {"success": True, "tutorial_views_count": new_count}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Increment tutorial views error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to increment tutorial views")

@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
-import { 
+import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
@@ -9,298 +9,189 @@ import {
 import { Trash2, Copy, Plus, GripVertical } from 'lucide-react';
 import { useDeckStore } from '@/stores/deckStore';
 import { useToast } from '@/hooks/use-toast';
-import { ComponentInstance } from '@/types/components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { DeckStatus } from '@/types/DeckTypes';
 import { cn } from '@/lib/utils';
 import MiniSlide from './MiniSlide';
-import SlideGeneratingUI from '../common/SlideGeneratingUI';
 
-// NEW ThumbnailItem component
+// ThumbnailItem component
 interface ThumbnailItemProps {
   slide: SlideData;
   index: number;
-  currentSlideIndex: number;
-  isTransitioning: boolean; // Keep or remove if not needed by motion?
-  draggedIndex: number | null;
-  handleThumbnailClick: (index: number) => void;
-  handleDeleteSlide: (slideId: string, slideIndex: number) => Promise<void>;
-  handleDuplicateSlide: (slideId: string, slideIndex: number) => Promise<void>;
-  handleNewSlide: (slideId: string, slideIndex: number) => Promise<void>;
-  handleDragStart: (index: number) => void;
-  handleDragOver: (e: React.DragEvent, index: number) => void;
-  handleDragLeave: (e: React.DragEvent) => void;
-  handleDrop: (e: React.DragEvent, destinationIndex: number) => Promise<void>;
-  handleDragEnd: () => void;
-  deckStatus?: DeckStatus; // Add deckStatus prop
-  isNewDeck?: boolean;
+  isSelected: boolean;
+  onSelect: (index: number) => void;
+  onDelete: (slideId: string, slideIndex: number) => void;
+  onDuplicate: (slideId: string, slideIndex: number) => void;
+  onAddAfter: (slideId: string, slideIndex: number) => void;
+  onDragStart: (index: number) => void;
+  onDragOver: (e: React.DragEvent, index: number) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, destinationIndex: number) => void;
+  onDragEnd: () => void;
 }
 
 const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   slide,
   index,
-  currentSlideIndex,
-  draggedIndex,
-  handleThumbnailClick,
-  handleDeleteSlide,
-  handleDuplicateSlide,
-  handleNewSlide,
-  handleDragStart,
-  handleDragOver,
-  handleDragLeave,
-  handleDrop,
-  handleDragEnd,
-  deckStatus,
-  isNewDeck
+  isSelected,
+  onSelect,
+  onDelete,
+  onDuplicate,
+  onAddAfter,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }) => {
-  const itemRef = useRef<HTMLDivElement>(null);
-
-  // Don't compute background during generation - it causes blue thumbnails
-  const fallbackBackground = useMemo(() => {
-    // Only show background if slide has real content (not just background component)
-    const hasRealContent = slide?.components?.some(
-      (comp: any) => comp.type !== 'Background' && !comp.id?.toLowerCase().includes('background')
+  // Check if slide has real content (not just background)
+  const hasRealContent = useMemo(() => {
+    return slide?.components?.some(
+      (c) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
     );
-    
-    if (!hasRealContent) {
-      return undefined; // No background during generation
-    }
-    
-    try {
-      const bg = slide?.components?.find(
-        (comp: any) => comp.type === 'Background' || (comp.id && comp.id.toLowerCase().includes('background'))
-      );
-      if (!bg) return undefined;
-      const props: any = bg.props || {};
-      
-      // Check for gradient object first (support stops or colors alias)
-      if (props.gradient && typeof props.gradient === 'object') {
-        const gradient: any = props.gradient;
-        const rawStops = Array.isArray(gradient.stops) ? gradient.stops : (Array.isArray(gradient.colors) ? gradient.colors : []);
-        if (rawStops.length > 0) {
-          const stops = rawStops
-            .filter((s: any) => s && s.color)
-            .map((s: any, idx: number) => {
-              let position = s.position;
-              // Default positions if missing
-              if (position === undefined || position === null || isNaN(position)) {
-                position = (idx / Math.max(1, rawStops.length - 1)) * 100;
-              }
-              // Convert 0-1 range to percentage if needed
-              if (position <= 1 && rawStops.every((stop: any) => (stop.position ?? 0) <= 1)) {
-                position = position * 100;
-              }
-              return `${s.color} ${position}%`;
-            })
-            .join(', ');
-        
-          if (!stops) return undefined;
-        
-          if (gradient.type === 'radial') {
-            return `radial-gradient(circle, ${stops})`;
-          }
-          const angle = gradient.angle !== undefined ? gradient.angle : 135;
-          return `linear-gradient(${angle}deg, ${stops})`;
-        }
-      }
-      
-      // Check for string gradient/background
-      if (typeof props.gradient === 'string' && props.gradient) return props.gradient;
-      if (typeof props.background === 'string' && props.background) return props.background;
-      if (props.style?.background) return props.style.background;
-      
-      // Fall back to solid color
-      const directColor = props.backgroundColor || props.color || props.page?.backgroundColor;
-      if (typeof directColor === 'string' && directColor) return directColor;
-    } catch {}
-    return undefined;
-  }, [slide]);
+  }, [slide?.components]);
 
-  // Fixed context menu implementation using the imported components
-  // Use index as key for stability during generation when IDs might change
-  const stableKey = `thumbnail-${index}`;
-  
   return (
     <ContextMenu>
-        <ContextMenuTrigger>
+      <ContextMenuTrigger>
+        <div
+          className={cn(
+            "slide-thumbnail w-40 h-24 rounded flex-shrink-0 cursor-pointer transition-all relative",
+            isSelected
+              ? 'border-2 border-primary shadow-sm'
+              : 'border border-border hover:border-primary/50'
+          )}
+          draggable={true}
+          onDragStart={() => onDragStart(index)}
+          onDragOver={(e) => onDragOver(e, index)}
+          onDragLeave={onDragLeave}
+          onDrop={(e) => onDrop(e, index)}
+          onDragEnd={onDragEnd}
+        >
+          {/* Drag handle icon */}
           <div
-            ref={itemRef}
-            className={`
-              slide-thumbnail w-40 h-24 rounded flex-shrink-0 cursor-pointer transition-all relative
-              ${index === currentSlideIndex
-                ? 'border-2 border-primary shadow-sm'
-                : 'border border-border hover:border-primary/50'}
-            `}
-            draggable={true}
-            onDragStart={() => handleDragStart(index)}
-            onDragOver={(e) => handleDragOver(e, index)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, index)}
-            onDragEnd={handleDragEnd}
+            className="absolute top-1 right-1 z-40 opacity-30 hover:opacity-100 transition-opacity cursor-grab"
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle icon */}
-            <div 
-              className="absolute top-1 right-1 z-40 opacity-30 hover:opacity-100 transition-opacity cursor-grab" 
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-            >
-              <GripVertical className="h-4 w-4 text-foreground" />
-            </div>
-
-            {/* Slide number - simple dark grey text */}
-            <div className="absolute -top-5 w-full text-center text-[10px] text-gray-500 z-40">
-              {index + 1}
-            </div>
-            
-            {/* Clickable overlay that covers entire thumbnail */}
-            <div 
-              className="absolute inset-0 z-30 cursor-pointer" 
-              onClick={() => handleThumbnailClick(index)} 
-              style={{ background: 'transparent' }}
-            ></div>
-            
-            {/* Main thumbnail content */}
-            <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-sm"
-                 style={fallbackBackground ? { background: fallbackBackground } : {}}>
-              {/* Stable thumbnail rendering */}
-              {(() => {
-                // Check if slide has real content (not just background)
-                const hasRealContent = slide.components?.some(
-                  (c: any) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
-                );
-                
-                if (hasRealContent) {
-                  return (
-                    <MiniSlide 
-                      slide={slide}
-                      width={160}
-                      height={90}
-                      responsive={false}
-                    />
-                  );
-                }
-                
-                // Show placeholder for slides without real content
-                return (
-                  <div className="w-full h-full rounded-sm overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400">
-                        Slide {index + 1}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
+            <GripVertical className="h-4 w-4 text-foreground" />
           </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={() => handleNewSlide(slide.id, index)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Slide
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => handleDuplicateSlide(slide.id, index)}>
-            <Copy className="mr-2 h-4 w-4" />
-            Duplicate Slide
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => handleDeleteSlide(slide.id, index)} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete Slide
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+
+          {/* Slide number */}
+          <div className="absolute -top-5 w-full text-center text-[10px] text-gray-500 z-40">
+            {index + 1}
+          </div>
+
+          {/* Clickable overlay */}
+          <div
+            className="absolute inset-0 z-30 cursor-pointer"
+            onClick={() => onSelect(index)}
+          />
+
+          {/* Main thumbnail content */}
+          <div className="w-full h-full flex items-center justify-center overflow-hidden rounded-sm">
+            {hasRealContent ? (
+              <MiniSlide
+                slide={slide}
+                width={160}
+                height={90}
+                responsive={false}
+              />
+            ) : (
+              <div className="w-full h-full rounded-sm overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 flex items-center justify-center">
+                <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400">
+                  Slide {index + 1}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onAddAfter(slide.id, index)}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Slide
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onDuplicate(slide.id, index)}>
+          <Copy className="mr-2 h-4 w-4" />
+          Duplicate Slide
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onDelete(slide.id, index)} className="text-destructive">
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete Slide
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
-// END NEW ThumbnailItem component
 
 interface ThumbnailNavigatorProps {
   slides: SlideData[];
   currentSlideIndex: number;
   onThumbnailClick: (index: number) => void;
-  isTransitioning: boolean;
+  isTransitioning?: boolean;
   onSlideDelete?: (slideId: string) => void;
   deckStatus?: DeckStatus;
   isNewDeck?: boolean;
 }
 
+// Throttle constant for slide operations
+const OPERATION_THROTTLE_MS = 800;
+
 const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   slides,
   currentSlideIndex,
   onThumbnailClick,
-  isTransitioning,
   onSlideDelete,
-  deckStatus,
-  isNewDeck
 }) => {
-  // Get slide operations from the deckStore
+  // Store operations
   const removeSlide = useDeckStore(state => state.removeSlide);
   const duplicateSlide = useDeckStore(state => state.duplicateSlide);
   const addSlideAfter = useDeckStore(state => state.addSlideAfter);
   const addSlide = useDeckStore(state => state.addSlide);
   const reorderSlides = useDeckStore(state => state.reorderSlides);
-  
-  // Use stable slide references to prevent unnecessary re-renders
-  const displaySlides = React.useMemo(() => {
-    // Sort slides by their order field to ensure correct display
-    const sortedSlides = [...(slides || [])].sort((a, b) => a.order - b.order);
 
-    // Debug logging to track render order
-    if (sortedSlides.length > 0) {
-      const positions = [3, 4, 5, 6].map(pos =>
-        sortedSlides[pos] ? `[${pos}] ${sortedSlides[pos].title.substring(0, 15)}` : `[${pos}] empty`
-      );
-      console.log('📊 Rendered order positions 3-6:', positions.join(' | '));
-    }
-
-    return sortedSlides;
-  }, [slides]);
-  
-  const totalSlides = displaySlides.length;
   const { toast } = useToast();
-  
-  // State for drag and drop
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastOperationRef = useRef<number>(0);
+
+  // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropZoneIndex, setDropZoneIndex] = useState<number | null>(null);
-  const [isReordering, setIsReordering] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  
-  // Track if we should show the stacked animation (only on first mount during generation)
-  const [hasAnimatedIn, setHasAnimatedIn] = useState(false);
-  const isInitializing = deckStatus?.state === 'creating' && !hasAnimatedIn;
-  
-  // Trigger animation when transitioning from creating to generating
-  React.useEffect(() => {
-    if (deckStatus?.state === 'generating' && !hasAnimatedIn) {
-      setHasAnimatedIn(true);
-    }
-  }, [deckStatus?.state, hasAnimatedIn]);
-  
-  // Throttling for slide operations
-  const [lastOperationTime, setLastOperationTime] = useState<number>(0);
-  const OPERATION_THROTTLE_MS = 800; // 800ms throttle for slide operations - increased for more reliability
 
-  const handleThumbnailClick = (index: number) => {
-    // Ensure the thumbnail click handler is called
-    if (typeof onThumbnailClick === 'function') {
-      onThumbnailClick(index);
-    }
-  };
-  
-  const handleDeleteSlide = async (slideId: string, slideIndex: number) => {
+  // Sort slides by order
+  const displaySlides = useMemo(() => {
+    return [...(slides || [])].sort((a, b) => a.order - b.order);
+  }, [slides]);
+
+  const totalSlides = displaySlides.length;
+
+  // Check if operation is throttled
+  const isThrottled = useCallback(() => {
     const now = Date.now();
-    // Prevent rapid sequential operations
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS) {
-      console.log("Operation throttled - please wait before deleting a slide");
-      return;
+    if (now - lastOperationRef.current < OPERATION_THROTTLE_MS) {
+      return true;
     }
+    lastOperationRef.current = now;
+    return false;
+  }, []);
 
-    // Update operation timestamp
-    setLastOperationTime(now);
+  // Set operation flag on window
+  const setOperationFlag = useCallback((value: boolean) => {
+    if (typeof window !== 'undefined') {
+      (window as any).__isSlideOperationInProgress = value;
+      if (!value) {
+        // Clear after delay when setting to false
+        setTimeout(() => {
+          (window as any).__isSlideOperationInProgress = false;
+        }, 2000);
+      }
+    }
+  }, []);
 
-    // Don't allow deleting the last slide
+  // Handle delete slide
+  const handleDelete = useCallback((slideId: string, slideIndex: number) => {
+    if (isThrottled()) return;
+
     if (totalSlides <= 1) {
       toast({
         title: "Cannot Delete Slide",
@@ -311,293 +202,157 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
       return;
     }
 
-    // Set flag to block realtime updates during operation
-    if (typeof window !== 'undefined') {
-      (window as any).__isSlideOperationInProgress = true;
-    }
+    setOperationFlag(true);
 
-    try {
-      // Use the removeSlide function from deckStore
-      await removeSlide(slideId);
-
-      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
-      // If we deleted a slide before the current one, the current slide's index shifts down
-      if (slideIndex < currentSlideIndex) {
-        onThumbnailClick(currentSlideIndex - 1);
-      } else if (slideIndex === currentSlideIndex) {
-        // If we deleted the current slide, go to the previous one (or first if we were on first)
-        const newIndex = Math.max(0, slideIndex - 1);
-        onThumbnailClick(newIndex);
-      }
-      // If deleted slide was after current, no adjustment needed
-
-      // Notify parent component about the deletion if needed
-      if (onSlideDelete) {
-        onSlideDelete(slideId);
-      }
-
-      // Show success toast
-      toast({
-        title: "Slide Deleted",
-        description: `Slide ${slideIndex + 1} has been removed.`,
-        duration: 3000
-      });
-    } catch (error) {
-      toast({
-        title: "Error Deleting Slide",
-        description: "An error occurred while trying to delete the slide.",
-        variant: "destructive",
-        duration: 3000
-      });
-    } finally {
-      // Clear flag after operation completes (with delay to allow backend sync)
-      setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          (window as any).__isSlideOperationInProgress = false;
+    removeSlide(slideId)
+      .then(() => {
+        // Adjust current slide index
+        if (slideIndex < currentSlideIndex) {
+          onThumbnailClick(currentSlideIndex - 1);
+        } else if (slideIndex === currentSlideIndex) {
+          onThumbnailClick(Math.max(0, slideIndex - 1));
         }
-      }, 2000);
-    }
-  };
 
-  const handleDuplicateSlide = async (slideId: string, slideIndex: number) => {
-    const now = Date.now();
-    // Prevent rapid sequential operations
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS) {
-      console.log("Operation throttled - please wait before duplicating a slide");
-      return;
-    }
-
-    // Update operation timestamp
-    setLastOperationTime(now);
-
-    // Set flag to block realtime updates during operation
-    if (typeof window !== 'undefined') {
-      (window as any).__isSlideOperationInProgress = true;
-    }
-
-    try {
-      // Use the duplicateSlide function from deckStore
-      await duplicateSlide(slideId);
-
-      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
-      // The duplicate is inserted AFTER the original, so if we duplicated a slide
-      // at or before the current position, all slides after shift up by 1
-      if (slideIndex < currentSlideIndex) {
-        // Duplicated slide inserted before current slide's position, shift up
-        onThumbnailClick(currentSlideIndex + 1);
-      }
-      // If duplicated slide is at or after current position, no adjustment needed
-      // because the new slide is inserted after, not affecting current's index
-
-      // Show success toast (shorter duration)
-      toast({
-        title: "Slide Duplicated",
-        description: `Slide ${slideIndex + 1} has been duplicated.`,
-        duration: 1500
-      });
-    } catch (error) {
-      toast({
-        title: "Error Duplicating Slide",
-        description: "An error occurred while trying to duplicate the slide.",
-        variant: "destructive",
-        duration: 3000
-      });
-    } finally {
-      // Clear flag after operation completes (with delay to allow backend sync)
-      setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          (window as any).__isSlideOperationInProgress = false;
+        if (onSlideDelete) {
+          onSlideDelete(slideId);
         }
-      }, 2000);
-    }
-  };
 
-  const handleNewSlide = async (slideId: string, slideIndex: number) => {
-    const now = Date.now();
-    // Prevent rapid sequential operations
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS) {
-      console.log("Operation throttled - please wait before adding another slide");
-      return;
-    }
+        toast({
+          title: "Slide Deleted",
+          description: `Slide ${slideIndex + 1} has been removed.`,
+          duration: 2000
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "Error Deleting Slide",
+          description: "An error occurred while deleting the slide.",
+          variant: "destructive",
+          duration: 3000
+        });
+      })
+      .finally(() => setOperationFlag(false));
+  }, [isThrottled, totalSlides, removeSlide, currentSlideIndex, onThumbnailClick, onSlideDelete, toast, setOperationFlag]);
 
-    // Update operation timestamp
-    setLastOperationTime(now);
+  // Handle duplicate slide
+  const handleDuplicate = useCallback((slideId: string, slideIndex: number) => {
+    if (isThrottled()) return;
 
-    // Set flag to block realtime updates during operation
-    if (typeof window !== 'undefined') {
-      (window as any).__isSlideOperationInProgress = true;
-    }
+    setOperationFlag(true);
 
-    try {
-      // Use the addSlideAfter function to add a slide after the clicked one
-      await addSlideAfter(slideId);
-
-      // CRITICAL: Adjust currentSlideIndex to keep viewing the same slide
-      // New slide is inserted AFTER slideIndex, so if that's before current position, shift up
-      if (slideIndex < currentSlideIndex) {
-        onThumbnailClick(currentSlideIndex + 1);
-      }
-
-      // Show success toast (shorter duration)
-      toast({
-        title: "Slide Added",
-        description: `A new slide has been added after slide ${slideIndex + 1}.`,
-        duration: 1500
-      });
-    } catch (error) {
-      toast({
-        title: "Error Adding Slide",
-        description: "An error occurred while trying to add a new slide.",
-        variant: "destructive",
-        duration: 1500
-      });
-    } finally {
-      // Clear flag after operation completes (with delay to allow backend sync)
-      setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          (window as any).__isSlideOperationInProgress = false;
+    duplicateSlide(slideId)
+      .then(() => {
+        if (slideIndex < currentSlideIndex) {
+          onThumbnailClick(currentSlideIndex + 1);
         }
-      }, 2000);
-    }
-  };
 
-  // Note: lastOperationTime and OPERATION_THROTTLE_MS are declared above
-  
-  const handleAddSlide = () => {
-    const now = Date.now();
-    // Prevent rapid sequential operations
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS) {
-      console.log("Operation throttled - please wait before adding another slide");
-      return;
-    }
-    
-    // Update operation timestamp
-    setLastOperationTime(now);
-    
-    // Call the addSlide function from deckStore
-    // The addSlide utility will handle creating the appropriate background and components based on theme
-    // We need to provide all required fields for the Omit<SlideData, 'id'> type
+        toast({
+          title: "Slide Duplicated",
+          description: `Slide ${slideIndex + 1} has been duplicated.`,
+          duration: 1500
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "Error Duplicating Slide",
+          description: "An error occurred while duplicating the slide.",
+          variant: "destructive",
+          duration: 3000
+        });
+      })
+      .finally(() => setOperationFlag(false));
+  }, [isThrottled, duplicateSlide, currentSlideIndex, onThumbnailClick, toast, setOperationFlag]);
+
+  // Handle add slide after
+  const handleAddAfter = useCallback((slideId: string, slideIndex: number) => {
+    if (isThrottled()) return;
+
+    setOperationFlag(true);
+
+    addSlideAfter(slideId)
+      .then(() => {
+        if (slideIndex < currentSlideIndex) {
+          onThumbnailClick(currentSlideIndex + 1);
+        }
+
+        toast({
+          title: "Slide Added",
+          description: `A new slide has been added after slide ${slideIndex + 1}.`,
+          duration: 1500
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "Error Adding Slide",
+          description: "An error occurred while adding the slide.",
+          variant: "destructive",
+          duration: 1500
+        });
+      })
+      .finally(() => setOperationFlag(false));
+  }, [isThrottled, addSlideAfter, currentSlideIndex, onThumbnailClick, toast, setOperationFlag]);
+
+  // Handle add slide at end
+  const handleAddSlide = useCallback(() => {
+    if (isThrottled()) return;
+
     const deckData = useDeckStore.getState().deckData;
     addSlide({
       title: 'New Slide',
       deckId: deckData.uuid,
       order: deckData.slides.length,
-      // Do not pass components to allow default template components to be created
       status: 'completed'
     });
-    
-    // Show success toast (shorter duration)
+
     toast({
       title: "New Slide Added",
       description: "A new slide has been added to your deck.",
       duration: 1500
     });
-  };
-  
-  // Drag and drop handlers with insert/reorder pattern
-  const handleDragStart = (index: number) => {
+  }, [isThrottled, addSlide, toast]);
+
+  // Drag handlers
+  const handleDragStart = useCallback((index: number) => {
     setDraggedIndex(index);
-    // Set a global flag to block realtime updates during drag
     (window as any).__isDraggingSlide = true;
-    console.log('🎯 Started dragging slide', index + 1);
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
     e.preventDefault();
-    e.stopPropagation();
+    if (draggedIndex === null) return;
 
-    if (draggedIndex === null) {
-      return;
-    }
-
-    // Get mouse position relative to the thumbnail
-    const element = e.currentTarget as HTMLElement;
-    const rect = element.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const threshold = rect.width / 2;
-
-    // Simple logic: left half = before this index, right half = after this index
-    let dropZone: number;
-    if (mouseX < threshold) {
-      // Left half - insert before this slide
-      dropZone = index;
-    } else {
-      // Right half - insert after this slide
-      dropZone = index + 1;
-    }
-
-    // Allow the drop zone to be set even if it's the same position
-    // The handleDrop function will check if actual reordering is needed
+    const dropZone = mouseX < rect.width / 2 ? index : index + 1;
     setDropZoneIndex(dropZone);
-  };
+  }, [draggedIndex]);
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-  };
+  }, []);
 
-  const handleDrop = async (e: React.DragEvent, destinationIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
 
-    const now = Date.now();
-    // Prevent rapid sequential operations OR if already reordering
-    if (now - lastOperationTime < OPERATION_THROTTLE_MS || isReordering) {
-      console.log("Operation throttled - please wait before reordering slides");
+    if (draggedIndex === null || dropZoneIndex === null || isThrottled()) {
       setDraggedIndex(null);
       setDropZoneIndex(null);
       return;
     }
 
-    if (draggedIndex !== null && dropZoneIndex !== null) {
-      // Log the current state
-      const draggedSlide = displaySlides[draggedIndex];
-      console.log(`🎯 DROP: Dragged slide ${draggedIndex + 1} "${draggedSlide?.title?.substring(0, 20)}" to dropZone ${dropZoneIndex}`);
+    let actualDestination = dropZoneIndex;
+    if (dropZoneIndex > draggedIndex) {
+      actualDestination = dropZoneIndex - 1;
+    }
 
-      // Calculate the actual destination index after removal
-      // When we remove the dragged slide, indices shift
-      let actualDestination = dropZoneIndex;
-      if (dropZoneIndex > draggedIndex) {
-        // If dropping after the dragged position, adjust for the removed element
-        actualDestination = dropZoneIndex - 1;
-      }
+    if (draggedIndex === actualDestination) {
+      setDraggedIndex(null);
+      setDropZoneIndex(null);
+      return;
+    }
 
-      console.log(`📐 Calculated actualDestination: ${actualDestination} (dropZone was ${dropZoneIndex}, draggedIndex was ${draggedIndex})`);
-
-      // Don't do anything if it's the same position
-      if (draggedIndex === actualDestination) {
-        console.log('⚠️ Same position - skipping');
-        setDraggedIndex(null);
-        setDropZoneIndex(null);
-        return;
-      }
-
-      // Update operation timestamp and set reordering flag
-      setLastOperationTime(now);
-      setIsReordering(true);
-
-      try {
-        console.log(`🔄 EXECUTING: Move slide from index ${draggedIndex} to index ${actualDestination}`);
-
-        // Highlight the destination briefly to show where it's going
-        setHighlightedIndex(actualDestination);
-
-        // Reorder slides using the function from deckStore
-        await reorderSlides(draggedIndex, actualDestination);
-
-        // Wait for animation to complete (spring animation ~500ms)
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Clear highlight
-        setHighlightedIndex(null);
-
-        // Show toast notification
-        toast({
-          title: "Slide Moved",
-          description: `Slide ${draggedIndex + 1} moved to position ${actualDestination + 1}.`,
-          duration: 2000
-        });
-
+    reorderSlides(draggedIndex, actualDestination)
+      .then(() => {
         // Update current slide index if necessary
         if (currentSlideIndex === draggedIndex) {
           onThumbnailClick(actualDestination);
@@ -606,113 +361,78 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
         } else if (draggedIndex > currentSlideIndex && actualDestination <= currentSlideIndex) {
           onThumbnailClick(currentSlideIndex + 1);
         }
-      } catch (error) {
-        console.error('Error reordering slides:', error);
+
         toast({
-          title: "Error Reordering Slides",
-          description: "An error occurred while reordering slides.",
+          title: "Slide Moved",
+          description: `Slide moved to position ${actualDestination + 1}.`,
+          duration: 2000
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "Error Moving Slide",
+          description: "An error occurred while moving the slide.",
           variant: "destructive",
           duration: 3000
         });
-      } finally {
-        // Reset reordering flag after operation completes
-        setIsReordering(false);
-      }
-    }
+      });
 
-    // Reset drag state
     setDraggedIndex(null);
     setDropZoneIndex(null);
-  };
+  }, [draggedIndex, dropZoneIndex, isThrottled, reorderSlides, currentSlideIndex, onThumbnailClick, toast]);
 
-  const handleDragEnd = () => {
-    // Reset drag state
+  const handleDragEnd = useCallback(() => {
     setDraggedIndex(null);
     setDropZoneIndex(null);
-
-    // Clear the global drag flag after a longer delay to ensure backend sync completes
-    // This prevents realtime updates from overwriting the reorder
     setTimeout(() => {
       (window as any).__isDraggingSlide = false;
-      console.log('🎯 Finished dragging - realtime updates re-enabled');
-    }, 3000); // Increased from 500ms to 3000ms to allow backend sync
-  };
+    }, 2000);
+  }, []);
 
-  // Reference to the thumbnail container for scrolling
-  const thumbnailContainerRef = React.useRef<HTMLDivElement>(null);
-  
-  // Simple scroll function without using scrollIntoView to prevent unwanted page scrolling
-  const scrollThumbnailIntoView = React.useCallback(() => {
-    if (!thumbnailContainerRef.current) return;
-    
-    const container = thumbnailContainerRef.current;
-    const thumbnails = container.querySelectorAll('.slide-thumbnail');
-    
+  // Scroll current thumbnail into view
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+
+    const thumbnails = containerRef.current.querySelectorAll('.slide-thumbnail');
     if (thumbnails.length <= currentSlideIndex) return;
-    
+
     const thumbnail = thumbnails[currentSlideIndex] as HTMLElement;
     if (!thumbnail) return;
-    
-    // Calculate the scroll position - position thumbnail in center
-    const thumbnailRect = thumbnail.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    
-    const thumbnailCenter = thumbnail.offsetLeft + thumbnailRect.width / 2;
-    const containerCenter = containerRect.width / 2;
-    const scrollPosition = thumbnailCenter - containerCenter;
-    
-    // Scroll the container directly to avoid page scrolling side effects
-    container.scrollLeft = Math.max(0, scrollPosition);
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const thumbnailCenter = thumbnail.offsetLeft + thumbnail.offsetWidth / 2;
+    const scrollPosition = thumbnailCenter - containerRect.width / 2;
+
+    containerRef.current.scrollLeft = Math.max(0, scrollPosition);
   }, [currentSlideIndex]);
-  
-  // Only trigger scroll when currentSlideIndex changes
-  React.useEffect(() => {
-    requestAnimationFrame(scrollThumbnailIntoView);
-  }, [currentSlideIndex, scrollThumbnailIntoView]);
 
   return (
-    <div 
-      ref={thumbnailContainerRef}
-      className="p-4 pt-5 pb-5 flex flex-nowrap items-center gap-3 overflow-x-auto overflow-y-hidden scrollbar-hide max-w-full" 
-      style={{ 
-        minHeight: '130px', 
-        marginTop: 'auto', 
+    <div
+      ref={containerRef}
+      className="p-4 pt-5 pb-5 flex flex-nowrap items-center gap-3 overflow-x-auto overflow-y-hidden scrollbar-hide max-w-full"
+      style={{
+        minHeight: '130px',
+        marginTop: 'auto',
         zIndex: 10,
-        scrollbarWidth: 'none', // Firefox
-        msOverflowStyle: 'none', // IE/Edge
-        overscrollBehavior: 'contain' // Prevent scroll chaining
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        overscrollBehavior: 'contain'
       }}
       onWheel={(e) => {
-        // Use scrollLeft instead of preventDefault to avoid passive listener warnings
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && thumbnailContainerRef.current) {
-          thumbnailContainerRef.current.scrollLeft += e.deltaY;
-          // Note: we don't call preventDefault as it can trigger warnings with passive listeners
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && containerRef.current) {
+          containerRef.current.scrollLeft += e.deltaY;
         }
       }}
     >
-      {/* Thumbnail grid with responsive layout */}
-      <div className={cn(
-        "pb-2",
-        "scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
-      )}>
+      <div className="pb-2">
         <motion.div
           className="flex gap-2 px-2"
           layout
-          transition={{
-            layout: {
-              type: "spring",
-              stiffness: 350,
-              damping: 30
-            }
-          }}
+          transition={{ layout: { type: "spring", stiffness: 350, damping: 30 } }}
         >
           {displaySlides.map((slide, index) => {
-            // Calculate stacked position for initialization
-            const stackOffset = isInitializing ? index * 4 : 0;
-            const initialX = isInitializing ? -stackOffset : 0;
             const showDropZoneBefore = dropZoneIndex === index && draggedIndex !== null;
             const isDragged = draggedIndex === index;
-            const isHighlighted = highlightedIndex === index;
 
             return (
               <React.Fragment key={slide.id}>
@@ -733,58 +453,29 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                 <motion.div
                   layoutId={slide.id}
                   layout="position"
-                  initial={isInitializing ? {
-                    x: initialX,
-                    scale: 0.95,
-                    opacity: 0.8
-                  } : false}
                   animate={{
-                    scale: isDragged ? 0.95 : isHighlighted ? 1.05 : 1,
+                    scale: isDragged ? 0.95 : 1,
                     opacity: isDragged ? 0.5 : 1
                   }}
                   transition={{
-                    layout: {
-                      type: "spring",
-                      stiffness: 350,
-                      damping: 30,
-                      mass: 0.8
-                    },
-                    scale: {
-                      type: "spring",
-                      stiffness: 400,
-                      damping: 20
-                    },
-                    opacity: {
-                      duration: 0.2
-                    },
-                    default: {
-                      type: "spring",
-                      stiffness: 200,
-                      damping: 20,
-                      delay: isInitializing ? index * 0.1 : 0
-                    }
-                  }}
-                  style={{
-                    filter: isHighlighted ? 'brightness(1.2)' : 'none'
+                    layout: { type: "spring", stiffness: 350, damping: 30 },
+                    scale: { type: "spring", stiffness: 400, damping: 20 },
+                    opacity: { duration: 0.2 }
                   }}
                 >
                   <ThumbnailItem
                     slide={slide}
                     index={index}
-                    currentSlideIndex={currentSlideIndex}
-                    isTransitioning={isTransitioning}
-                    draggedIndex={draggedIndex}
-                    handleThumbnailClick={handleThumbnailClick}
-                    handleDeleteSlide={handleDeleteSlide}
-                    handleDuplicateSlide={handleDuplicateSlide}
-                    handleNewSlide={handleNewSlide}
-                    handleDragStart={handleDragStart}
-                    handleDragOver={handleDragOver}
-                    handleDragLeave={handleDragLeave}
-                    handleDrop={handleDrop}
-                    handleDragEnd={handleDragEnd}
-                    deckStatus={deckStatus}
-                    isNewDeck={isNewDeck}
+                    isSelected={index === currentSlideIndex}
+                    onSelect={onThumbnailClick}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                    onAddAfter={handleAddAfter}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onDragEnd={handleDragEnd}
                   />
                 </motion.div>
 
@@ -806,28 +497,10 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
               </React.Fragment>
             );
           })}
-          
-          {/* Show "generating more slides" indicator when deck is still generating but only 1 slide is shown */}
-          {/* Temporarily disabled to simplify logic
-          {deckStatus && 
-           deckStatus.state === 'generating' && 
-           deckStatus.totalSlides > slides.length && (
-            <div className="relative flex-shrink-0 w-20 h-12">
-              <div className="w-full h-full bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 rounded-sm border-2 border-dashed border-blue-300 dark:border-blue-600 flex flex-col items-center justify-center">
-                <div className="animate-pulse">
-                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-1"></div>
-                </div>
-                <p className="text-xs text-muted-foreground text-center px-1">
-                  +{deckStatus.totalSlides - slides.length} more
-                </p>
-              </div>
-            </div>
-          )}
-          */}
         </motion.div>
       </div>
-      
-      {/* Add Slide button at the end of thumbnails */}
+
+      {/* Add Slide button */}
       <motion.div
         className="h-12 w-12 rounded-full flex-shrink-0 cursor-pointer transition-all relative border border-dashed border-border hover:border-primary/50 group"
         onClick={handleAddSlide}

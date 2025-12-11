@@ -209,6 +209,7 @@ class AuthService {
     presentations_created: number;
     show_ai_hints: boolean;
     tutorial_completed: boolean;
+    tutorial_views_count: number;
     overage_confirmed: boolean;
     feature_hints_dismissed: string[];
   } | null> {
@@ -306,6 +307,34 @@ class AuthService {
     } catch (error) {
       console.error('[AuthService] Error dismissing feature hint:', error);
       return false;
+    }
+  }
+
+  /**
+   * Increment the tutorial views count (called when tutorial is shown)
+   * Returns the new count
+   */
+  async incrementTutorialViews(): Promise<number> {
+    try {
+      const token = await this.getAuthTokenAsync();
+      if (!token) return 0;
+
+      const response = await fetch(this.getAuthUrl('/auth/user/increment-tutorial-views'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.tutorial_views_count || 0;
+      }
+      return 0;
+    } catch (error) {
+      console.error('[AuthService] Error incrementing tutorial views:', error);
+      return 0;
     }
   }
 }

@@ -21,6 +21,7 @@ export interface OnboardingState {
   presentations_created: number;
   show_ai_hints: boolean;
   tutorial_completed: boolean;
+  tutorial_views_count: number;
   overage_confirmed: boolean;
   feature_hints_dismissed: string[];
 }
@@ -36,6 +37,8 @@ interface OnboardingContextType {
   markWelcomeShown: () => Promise<void>;
   /** Mark tutorial as completed */
   markTutorialCompleted: () => Promise<void>;
+  /** Increment tutorial views count (called when tutorial is shown) */
+  incrementTutorialViews: () => Promise<void>;
   /** Mark overage confirmation as acknowledged (won't ask again) */
   markOverageConfirmed: () => Promise<void>;
   /** Dismiss a feature hint by ID */
@@ -44,7 +47,7 @@ interface OnboardingContextType {
   isHintDismissed: (hintId: string) => boolean;
   /** Should show welcome modal */
   shouldShowWelcome: boolean;
-  /** Should show tutorial */
+  /** Should show tutorial (shown first 2 times per user) */
   shouldShowTutorial: boolean;
   /** Should show AI hints (first 2 presentations) */
   shouldShowAiHints: boolean;
@@ -57,6 +60,7 @@ const defaultState: OnboardingState = {
   presentations_created: 0,
   show_ai_hints: true,
   tutorial_completed: false,
+  tutorial_views_count: 0,
   overage_confirmed: false,
   feature_hints_dismissed: [],
 };
@@ -85,6 +89,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           presentations_created: onboardingState.presentations_created ?? 0,
           show_ai_hints: onboardingState.show_ai_hints ?? true,
           tutorial_completed: onboardingState.tutorial_completed ?? false,
+          tutorial_views_count: onboardingState.tutorial_views_count ?? 0,
           overage_confirmed: onboardingState.overage_confirmed ?? false,
           feature_hints_dismissed: Array.isArray(onboardingState.feature_hints_dismissed)
             ? onboardingState.feature_hints_dismissed
@@ -128,6 +133,15 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const incrementTutorialViews = useCallback(async () => {
+    try {
+      const newCount = await authService.incrementTutorialViews();
+      setState(prev => prev ? { ...prev, tutorial_views_count: newCount } : prev);
+    } catch (error) {
+      console.error('[OnboardingContext] Error incrementing tutorial views:', error);
+    }
+  }, []);
+
   const markOverageConfirmed = useCallback(async () => {
     try {
       await authService.markOnboardingFlag('overage_confirmed');
@@ -157,7 +171,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   // IMPORTANT: Only return true AFTER state is loaded (not null) and the flag is false
   // This prevents showing modals before we've confirmed the user hasn't seen them
   const shouldShowWelcome = state !== null && !state.welcome_shown;
-  const shouldShowTutorial = state !== null && !state.tutorial_completed;
+  // Show tutorial if user has seen it fewer than 2 times
+  const shouldShowTutorial = state !== null && state.tutorial_views_count < 2;
   const shouldShowAiHints = state?.show_ai_hints ?? false;
   const shouldAskOverageConfirmation = state !== null && !state.overage_confirmed;
 
@@ -169,6 +184,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         refreshState,
         markWelcomeShown,
         markTutorialCompleted,
+        incrementTutorialViews,
         markOverageConfirmed,
         dismissFeatureHint,
         isHintDismissed,

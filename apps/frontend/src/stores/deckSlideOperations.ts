@@ -163,52 +163,53 @@ export const createSlideOperations = (set: StoreApi<DeckState>['setState'], get:
   
   // Remove a slide
   removeSlide: async (id: string) => {
+    // Get current state and verify slide exists BEFORE scheduling
+    const { deckData } = get();
+    if (!deckData.slides.some(slide => slide.id === id)) {
+      console.warn(`[removeSlide] Slide ${id} not found - already removed or doesn't exist`);
+      return;
+    }
 
-    
     // Create atomic operation
     const updateOperation = async () => {
       try {
-        // Get current state
-        const { deckData } = get();
-        const startingSlideCount = deckData.slides.length;
-        
-        // Verify slide exists
-        if (!deckData.slides.some(slide => slide.id === id)) {
-          console.warn(`[removeSlide] Slide ${id} not found for removal - operation cancelled`);
+        // Get fresh state at execution time
+        const { deckData: currentDeckData } = get();
+
+        // Double-check slide still exists (may have been removed by another operation)
+        if (!currentDeckData.slides.some(slide => slide.id === id)) {
+          console.log(`[removeSlide] Slide ${id} already removed - skipping`);
           return;
         }
-        
 
-        
         // Create updated slides array
-        const updatedSlides = await removeSlideUtil(deckData.slides, id);
-        
-        // Verify slide was actually removed
-        if (updatedSlides.length !== startingSlideCount - 1) {
-          console.error(`[removeSlide] Slide count mismatch: Expected ${startingSlideCount - 1}, got ${updatedSlides.length}`);
-          throw new Error('Failed to remove slide - slide count mismatch');
+        const updatedSlides = removeSlideUtil(currentDeckData.slides, id);
+
+        // Verify the slide was actually removed by checking it's no longer in the array
+        if (updatedSlides.some(slide => slide.id === id)) {
+          console.error(`[removeSlide] Failed to remove slide ${id} - still present in array`);
+          throw new Error('Failed to remove slide - slide still present');
         }
-        
+
         // Generate a new version
         const versionInfo = get().generateNewVersion();
-        
+
         // Create updated deck data
         const updatedDeck = {
-          ...deckData,
+          ...currentDeckData,
           slides: updatedSlides,
           ...versionInfo
         };
-        
+
         // Update state and save to backend
         get().updateDeckData(updatedDeck);
-        
 
       } catch (error) {
         console.error(`[removeSlide] Error:`, error);
         throw error;
       }
     };
-    
+
     // Schedule the operation
     get().scheduleUpdate(updateOperation);
   },

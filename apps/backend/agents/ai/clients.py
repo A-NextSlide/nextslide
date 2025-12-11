@@ -103,7 +103,8 @@ def _get_provider_config(provider: str) -> dict:
         "gemini": {
             "client_class": Gemini,
             "instructor_fn": getattr(instructor, "from_genai", lambda c, **kw: c),
-            "instructor_kwargs": {"mode": getattr(instructor.Mode, "GENAI_TOOLS", None)} if hasattr(instructor, "Mode") else {},
+            # Use GENAI_STRUCTURED_OUTPUTS instead of GENAI_TOOLS to avoid file caching issues
+            "instructor_kwargs": {"mode": getattr(instructor.Mode, "GENAI_STRUCTURED_OUTPUTS", None)} if hasattr(instructor, "Mode") else {},
             "api_key_env": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
         },
         "openai": {
