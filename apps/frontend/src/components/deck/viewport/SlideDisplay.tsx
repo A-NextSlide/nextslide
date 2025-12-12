@@ -45,7 +45,6 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   isNewDeck
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const { theme } = useTheme();
 
   // Track generation progress from the tracker
@@ -181,13 +180,15 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     return undefined as string | undefined;
   }, [isEditing, activeComponents, currentSlide?.components]);
 
-  // Update container dimensions on resize
+  // Update window dimensions on resize (use window, not container, to avoid feedback loop)
+  const [windowDimensions, setWindowDimensions] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800
+  });
+
   useEffect(() => {
     const updateDimensions = () => {
-      if (containerRef.current) {
-        const { width, height } = containerRef.current.getBoundingClientRect();
-        setContainerDimensions({ width, height });
-      }
+      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
     };
 
     // Initial measurement
@@ -280,23 +281,25 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     }
   };
   
-  // Calculate responsive slide width based on container dimensions
-  // This ensures slides scale appropriately on large screens (4K) and small screens (mobile)
+  // Calculate responsive slide width based on window dimensions
+  // Uses window size directly to avoid feedback loops with container sizing
   const slideWidth = React.useMemo(() => {
-    // Use containerDimensions if available, otherwise use window dimensions
-    const containerWidth = containerDimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 1100);
-    const containerHeight = containerDimensions.height || (typeof window !== 'undefined' ? window.innerHeight - 200 : 700);
-    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const screenWidth = windowDimensions.width;
+    const screenHeight = windowDimensions.height;
 
     // Calculate aspect ratio
     const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
 
-    // Calculate maximum width that fits in the container (with padding)
-    const padding = 48; // 24px on each side
-    const availableWidth = containerWidth - padding;
+    // Reserve space for UI elements (header, toolbar, padding)
+    const verticalPadding = 200; // Space for header, controls, margins
+    const horizontalPadding = 100; // Side margins
+
+    // Available space
+    const availableWidth = screenWidth - horizontalPadding;
+    const availableHeight = screenHeight - verticalPadding;
 
     // Calculate width constrained by height (maintain aspect ratio)
-    const heightConstrainedWidth = containerHeight * aspectRatio;
+    const heightConstrainedWidth = availableHeight * aspectRatio;
 
     // Use the smaller of available width or height-constrained width
     const optimalWidth = Math.min(availableWidth, heightConstrainedWidth);
@@ -316,7 +319,7 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
                    : 1300;
 
     return Math.max(minWidth, Math.min(maxWidth, optimalWidth));
-  }, [containerDimensions.width, containerDimensions.height]);
+  }, [windowDimensions.width, windowDimensions.height]);
 
   const slideHeight = slideWidth * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);
   
