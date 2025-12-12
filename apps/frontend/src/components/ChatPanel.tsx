@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Sparkles, XCircle, Plus, Image as ImageIcon, ArrowUp, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
+import { Sparkles, XCircle, Plus, Image as ImageIcon, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
@@ -10,28 +10,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SlideData } from '@/types/SlideTypes';
 import { useDeckStore } from '../stores/deckStore';
-import { useThemeStore } from '../stores/themeStore';
 import { useNavigation } from '@/context/NavigationContext';
 import { useOutlineAgent as useOutlineAgentHook } from '@/hooks/useOutlineAgent';
-// ThemeToggle import removed
 import { IconButton } from './ui/IconButton';
-import { API_CONFIG } from '../config/environment';
 import { DeckDiff, ChatMessage as ChatMessageType } from '@/utils/apiUtils';
 import { saveFeedback } from '@/utils/feedbackService';
 import { COLORS } from '@/utils/colors';
 import { getOverlappingComponentIds, getComponentBounds } from '@/utils/overlapDetection';
 import AgentChatClient from '@/services/agentChat';
 import { applyDeckDiffPure } from '@/utils/deckDiffUtils';
-import { createComponent } from '@/utils/componentUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useEditor } from '@/hooks/useEditor';
 import { useEditorStore } from '@/stores/editorStore';
 import { v4 as uuidv4 } from 'uuid';
-// Removed font optimization service
 import { BROWSER } from '@/utils/browser';
 import { streamOutlineAgentChat } from '@/services/outlineApi';
 import {
@@ -43,188 +37,19 @@ import {
   chatWithFiles,
   FileInput
 } from '@/services/fileAnalysisService';
-// TODO: Re-enable when integrations are fully set up
-// import {
-//   IntegrationCommandPalette,
-//   useIntegrationCommand,
-// } from '@/components/integrations';
-// import { IntegrationsDialog } from '@/components/integrations';
-// Future: import { useChatAttachments } from './chat/hooks';
-// Future: import type { Attachment, PendingAttachment, RegisteredAttachment } from './chat/types';
+// Shared chat utilities and types
+import {
+  ExtendedChatMessageProps,
+  ChatPanelProps,
+  ALL_SUGGESTIONS,
+  OUTLINE_SUGGESTIONS,
+  sampleArray,
+  convertMessagesToApiFormat,
+  getWelcomeMessage,
+} from './chat';
 
-
-
-
-// API URL from environment configuration
-const API_URL = API_CONFIG.CHAT_URL;
-
-// Extended ChatMessageProps with an id field for feedback tracking
-export interface ExtendedChatMessageProps extends ChatMessageProps {
-  id: string;
-  feedback?: FeedbackType;
-  metadata?: {
-    deckStateBefore?: any;
-    deckStateAfter?: any;
-    [key: string]: any;
-  };
-}
-
-// Pool of suggestions; short label shown, detailed prompt inserted on click
-const ALL_SUGGESTIONS: { label: string; prompt: string }[] = [
-  // Style & Theme
-  { label: 'Apple keynote style', prompt: 'Redesign this deck with a clean Apple keynote aesthetic - lots of whitespace, bold sans-serif typography, and elegant product-focused imagery' },
-  { label: 'TED talk vibes', prompt: 'Transform this into a TED talk style presentation - big bold statements, minimal text per slide, and powerful visuals that support the narrative' },
-  { label: 'Dark mode + neon', prompt: 'Switch to a sleek dark mode theme with vibrant neon accent colors and glowing text effects' },
-  { label: 'Brutalist design', prompt: 'Apply a bold brutalist design style - raw typography, high contrast, unconventional layouts, and unapologetic visual impact' },
-  { label: '90s retro aesthetic', prompt: 'Give this a nostalgic 90s vibe with retro colors, pixelated elements, and vintage computer graphics style' },
-  { label: 'Magazine editorial', prompt: 'Style this like a high-end magazine spread with sophisticated typography, pull quotes, and editorial photography layouts' },
-  // Content & Data
-  { label: 'Add comparison table', prompt: 'Create a visually compelling comparison table that clearly shows the differences and helps the audience make a decision' },
-  { label: 'Timeline of events', prompt: 'Add an elegant timeline visualization showing the key milestones and progression over time' },
-  { label: 'Pros vs cons', prompt: 'Create a balanced pros and cons layout with clear visual distinction between advantages and disadvantages' },
-  { label: 'Process flowchart', prompt: 'Design a clear flowchart that walks through the process step by step with visual connectors' },
-  { label: 'Stats with big numbers', prompt: 'Add a statistics slide with large, bold numbers and supporting icons that make the data memorable' },
-  { label: 'Before & after', prompt: 'Create a compelling before and after comparison that dramatically shows the transformation or improvement' },
-  // Visual Effects
-  { label: 'Gradient backgrounds', prompt: 'Add beautiful gradient backgrounds that flow naturally and create visual depth without distracting from the content' },
-  { label: 'Make title pop', prompt: 'Make the title slide more dramatic and attention-grabbing - this is the first impression!' },
-  { label: 'Icons for bullets', prompt: 'Replace boring bullet points with meaningful icons that visually represent each point' },
-  { label: 'Full-bleed imagery', prompt: 'Create a stunning full-bleed image slide that creates an emotional impact and breaks up the content' },
-  // Creative
-  { label: 'Make it punchier', prompt: 'Rewrite this slide to be more concise and impactful - cut the fluff and make every word count' },
-  { label: 'Add a quote slide', prompt: 'Add a memorable quote slide with beautiful typography that reinforces the key message' },
-  { label: 'Surprise me ✨', prompt: 'Do something creative and unexpected with this slide - surprise me with a fresh approach I haven\'t thought of!' },
-  { label: 'More visual, less text', prompt: 'This slide has too much text. Transform it to be more visual with icons, images, or diagrams instead of walls of text' },
-];
-
-// Outline mode specific suggestions for slide generation
-const OUTLINE_SUGGESTIONS: string[] = [
-  'Add more detail to slide 3',
-  'Expand the introduction with key statistics',
-  'Create a conclusion slide summarizing main points',
-  'Add a slide about implementation challenges',
-  'Include more examples in the benefits section',
-  'Add a timeline slide showing the roadmap',
-  'Create a comparison table for alternatives',
-  'Add speaker notes to all slides',
-  'Rewrite slide 2 to be more concise',
-  'Add a slide about next steps',
-  'Include case studies or real-world examples',
-  'Expand on the technical architecture',
-  'Add a Q&A slide at the end',
-  'Create an agenda slide after the title',
-  'Add more context to the problem statement',
-  'Use a professional minimalist theme',
-  'Change to a dark modern theme',
-  'Apply a vibrant tech startup style',
-  'Use a corporate blue theme',
-  'Switch to a creative gradient theme',
-  'Apply a clean academic style',
-  'Use a bold high-contrast theme',
-  'Change to a warm earthy color palette',
-];
-
-function sampleArray<T>(items: T[], count: number): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, Math.max(0, Math.min(count, copy.length)));
-}
-
-/**
- * Utility function to convert UI messages to API chat history format
- */
-const convertMessagesToApiFormat = (messages: (ChatMessageProps | ExtendedChatMessageProps)[]): ChatMessageType[] => {
-  return messages.map(msg => {
-    // Handle timestamp - could be Date object, string, or undefined
-    let timestampStr: string;
-    if (!msg.timestamp) {
-      timestampStr = new Date().toISOString();
-    } else if (msg.timestamp instanceof Date) {
-      timestampStr = msg.timestamp.toISOString();
-    } else {
-      // Already a string
-      timestampStr = msg.timestamp as unknown as string;
-    }
-
-    return {
-      content: msg.message,
-      role: msg.type === 'user' ? 'user' : 'assistant',
-      timestamp: timestampStr,
-      // Convert feedback type: positive -> up, negative -> down
-      ...(('feedback' in msg && msg.feedback) && {
-        feedback: msg.feedback === 'positive' ? 'up' : msg.feedback === 'negative' ? 'down' : undefined
-      })
-    };
-  });
-};
-
-/**
- * Utility function to send a chat message to the API
- */
-const sendChatToApi = async (
-  message: string,
-  slideId: string | null,
-  currentSlideIndex: number,
-  deckData: any,
-  messages: ChatMessageProps[],
-  selections?: any[],
-  attachments?: { name: string; type: string; size: number }[]
-) => {
-  // Convert UI messages to API format
-  const chatHistory = convertMessagesToApiFormat(messages);
-
-  const payload: Record<string, any> = {
-    message,
-    slide_id: slideId,
-    current_slide_index: currentSlideIndex,
-    deck_data: deckData,
-    chat_history: chatHistory
-  };
-  if (selections && selections.length > 0) payload.selections = selections;
-  if (attachments && attachments.length > 0) payload.attachments = attachments;
-
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    throw new Error(`API responded with status: ${response.status}`);
-  }
-
-  return await response.json();
-};
-
-export interface ChatPanelProps {
-  onCollapseChange?: (collapsed: boolean) => void;
-  opacity?: number;
-  isPending?: boolean;
-  outline?: any;
-  deckId?: string;
-  isExistingDeck?: boolean; // True if this is an existing/completed deck (not actively generating)
-  newSystemMessage?: Omit<ExtendedChatMessageProps, 'id' | 'timestamp' | 'type' | 'feedback'> & { message: string };
-  // Outline mode props
-  outlineMode?: boolean;
-  useOutlineAgent?: boolean; // Use conversational agent instead of direct generation
-  initialPromptFromURL?: { prompt: string; autoImages: boolean; autoSlides: boolean; presentationMode: boolean } | null;
-  onInitialPromptProcessed?: () => void;
-  onOutlineAgentToolCall?: (params: any) => void; // Called when agent wants to generate
-  onOutlineAgentEdit?: (params: any) => void; // Called when agent wants to edit
-  onOutlineUpdate?: (outline: any) => void; // Called when agent provides updated outline directly
-  onOutlineGenerate?: (prompt: string, preferences: any) => Promise<void>;
-  onOutlineRefine?: (message: string) => Promise<void>;
-  outlineMessages?: ExtendedChatMessageProps[]; // Messages from outline generation
-  outlineIsGenerating?: boolean; // Is outline currently generating
-  outlineCurrentSlideIndex?: number; // Current slide index in outline mode
-  onOutlineChatGeneratingChange?: (isGenerating: boolean) => void; // Called when outline generation state changes
-  initialConversationalData?: any; // Data passed from conversational onboarding
-}
+// Re-export types for consumers of this file
+export type { ExtendedChatMessageProps, ChatPanelProps };
 
 /**
  * ChatPanel component that provides the AI-driven interface
@@ -302,21 +127,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       return outlineMessages;
     }
 
-    // Default welcome message - different for existing vs new decks
-    const getWelcomeMessage = () => {
-      if (outlineMode) {
-        return "Hi! I'll help you create your presentation. What would you like to create? Tell me about your topic, audience, or goal.";
-      }
-      if (isExistingDeck) {
-        return "Ask me anything to edit your slides, or click directly on elements to modify them. You can also drag and drop files here to add them.";
-      }
-      return "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.";
-    };
-
+    // Default welcome message - uses shared utility
     return [{
       id: 'welcome-message',
       type: 'ai',
-      message: getWelcomeMessage(),
+      message: getWelcomeMessage(outlineMode, isExistingDeck),
       timestamp: new Date(),
       feedback: null
     }];
@@ -789,8 +604,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const toolDedupRef = useRef<Map<string, number>>(new Map());
   const TOOL_DEDUP_WINDOW_MS = 2500;
   const styleToolStateRef = useRef<{ active: boolean; name: string; lastStartTs: number; lastFinishTs: number }>({ active: false, name: '', lastStartTs: 0, lastFinishTs: 0 });
-  const recentOptimizedSlidesRef = useRef<Map<string, number>>(new Map());
-  // Removed under-input plan indicator; plan is rendered as a compact chat row
 
   // Access slide editor edit mode to coordinate mutual exclusivity
   const { isEditing: isSlideEditing, setIsEditing: setSlideEditing } = useEditor();
@@ -971,28 +784,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     return (
       t.includes('style') && (t.includes('slide') || t.includes('deck') || t.includes('theme'))
     ) || t === 'style_slide' || t === 'style_slides' || t === 'apply_style' || t === 'apply_theme';
-  }, []);
-
-  const getSlideIdsFromDiff = useCallback((diff: any): string[] => {
-    if (!diff || typeof diff !== 'object') return [];
-    const ids = new Set<string>();
-    try {
-      const upd = Array.isArray(diff.slides_to_update) ? diff.slides_to_update : [];
-      upd.forEach((s: any) => { if (s && typeof s.slide_id === 'string') ids.add(s.slide_id); });
-      const add = Array.isArray(diff.slides_to_add) ? diff.slides_to_add : [];
-      add.forEach((s: any) => { if (s && typeof s.id === 'string') ids.add(s.id); });
-    } catch { }
-    return Array.from(ids);
-  }, []);
-
-  const optimizeSlidesByIdSequential = useCallback(async (slideIds: string[]) => {
-    // Font optimization removed
-    return;
-  }, []);
-
-  const maybeOptimizeFontsForDiff = useCallback(async (diff?: any) => {
-    // Font optimization removed
-    return;
   }, []);
 
   const normalizeSlidesPayload = useCallback((payloadSlides: any[]): any[] => {
@@ -1915,9 +1706,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     versionBefore: (before as any)?.version,
                   });
                   applyDeckDiffRespectingEditMode(edit.diff, true);  // Pass true - this is an edit proposal
-                  // Trigger font optimization for slides touched by style tool
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                  maybeOptimizeFontsForDiff(edit.diff);
                   setTimeout(() => {
                     const after = useDeckStore.getState().deckData;
                     console.log('[AgentChat] Preview diff applied', {
@@ -1966,15 +1754,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     applyDeckDiffRespectingEditMode(deckLevelOnlyDiff, true);  // Pass true - this is an edit
                   }
                   // If style tool is active or just finished, optimize fonts for those slides now
-                  try {
-                    const state = styleToolStateRef.current;
-                    const recentlyFinished = Date.now() - (state.lastFinishTs || 0) <= 15000;
-                    if (state.active || recentlyFinished) {
-                      const ids = normalizedPreviewSlides.map((ps: any) => ps?.id).filter((v: any) => typeof v === 'string');
-                      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                      optimizeSlidesByIdSequential(ids);
-                    }
-                  } catch { }
                   return;
                 }
 
@@ -1982,10 +1761,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 if (diff) {
                   console.log('[Realtime][preview.diff] Applying diff', { editId, hasSlides: !!(diff.slides_to_update?.length) });
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
-                  // Trigger font optimization for slides touched by style tool
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                  maybeOptimizeFontsForDiff(diff);
-                  // No version bump; drafts updated component-wise during edit mode
                 } else {
                   console.warn('[Realtime][preview.diff] No diff or slides in payload', { editId });
                 }
@@ -2045,9 +1820,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   console.log('[Realtime][edit.applied] applying diff', { editId, diffKeys: Object.keys(diff), slidesToUpdate: diff.slides_to_update?.length });
                   const before = useDeckStore.getState().deckData;
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
-                  // Trigger font optimization for slides touched by style tool
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                  maybeOptimizeFontsForDiff(diff);
                   setTimeout(() => {
                     const after = useDeckStore.getState().deckData;
                     console.log('[AgentChat] Stored diff applied', {
@@ -2123,8 +1895,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   if (diff) {
                     console.log('[Realtime][edit.applied] applying message-based diff', { messageId: appliedMessageId });
                     applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
-                    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                    maybeOptimizeFontsForDiff(diff);
 
                     // CRITICAL FIX: Mark slides as unchanged since backend has already persisted them
                     try {
@@ -2203,13 +1973,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     if (normalizedAppliedSlides.length > 0) {
                       console.log('[Realtime][edit.applied] applying slide payload fallback', { count: normalizedAppliedSlides.length });
                       applyPreviewSlidesRespectingEditMode(normalizedAppliedSlides, true);  // Pass true - this is an agent edit
-                      try {
-                        const ids = normalizedAppliedSlides.map((sl: any) => sl?.id).filter((v: any) => typeof v === 'string');
-                        if (ids.length > 0) {
-                          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                          optimizeSlidesByIdSequential(ids);
-                        }
-                      } catch { }
                     } else {
                       // CRITICAL FIX: Force reload deck from database since no local diff is available
                       // This ensures changes are visible regardless of edit mode or realtime status
@@ -2727,9 +2490,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 } catch { }
                 if (diff) {
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
-                  // Trigger font optimization for slides touched by style tool
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                  maybeOptimizeFontsForDiff(diff);
                 }
               } catch { }
               return;

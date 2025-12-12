@@ -3,19 +3,21 @@ Agent-based ThemeDirector that orchestrates deck-wide theme and per-slide themes
 via tool-calling. Streams structured agent events to the EventBus.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 import re
-import asyncio
 import uuid
-import random
-from setup_logging_optimized import get_logger
+import colorsys
 import difflib
+from setup_logging_optimized import get_logger
 
 from agents.application import get_event_bus, AGENT_EVENT, TOOL_CALL_EVENT, TOOL_RESULT_EVENT, ARTIFACT_EVENT
+from utils.color_utils import (
+    estimate_brightness, get_relative_luminance, is_near_white, is_near_black,
+    adjust_brightness, get_colorfulness, hex_to_rgb, rgb_to_hex
+)
 from agents.domain.models import ThemeDocument
 from agents.ai.clients import get_client, invoke
-from agents.config import COMPOSER_MODEL
 
 logger = get_logger(__name__)
 
@@ -837,29 +839,7 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
     
     def _calculate_luminance(self, hex_color: str) -> float:
         """Calculate relative luminance of a hex color (0 = black, 1 = white)."""
-        try:
-            # Remove # if present
-            hex_color = hex_color.lstrip('#')
-            
-            # Convert to RGB
-            r = int(hex_color[0:2], 16) / 255.0
-            g = int(hex_color[2:4], 16) / 255.0  
-            b = int(hex_color[4:6], 16) / 255.0
-            
-            # Apply gamma correction
-            def linearize(c):
-                return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-            
-            r_lin = linearize(r)
-            g_lin = linearize(g)
-            b_lin = linearize(b)
-            
-            # Calculate luminance using ITU-R BT.709 coefficients
-            return 0.2126 * r_lin + 0.7152 * g_lin + 0.0722 * b_lin
-            
-        except (ValueError, IndexError):
-            # Return middle luminance for invalid colors
-            return 0.5
+        return get_relative_luminance(hex_color)
     
     def _detect_formality_from_style(self, visual_style: Dict[str, Any]) -> str:
         """
@@ -2978,98 +2958,36 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
             return sanitized
         return data
     
-    # Color utility methods
+    # Color utility methods - thin wrappers around shared utils/color_utils.py
     def _estimate_brightness(self, hex_color: str) -> float:
-        try:
-            h = hex_color.lstrip('#')
-            r = int(h[0:2], 16) / 255.0
-            g = int(h[2:4], 16) / 255.0
-            b = int(h[4:6], 16) / 255.0
-            return 0.299 * r + 0.587 * g + 0.114 * b
-        except Exception:
-            return 0.5
-    
+        return estimate_brightness(hex_color)
+
     def _calculate_saturation(self, hex_color: str) -> float:
-        try:
-            h = hex_color.lstrip('#')
-            r = int(h[0:2], 16) / 255.0
-            g = int(h[2:4], 16) / 255.0
-            b = int(h[4:6], 16) / 255.0
-            mx, mn = max(r, g, b), min(r, g, b)
-            return 0.0 if mx == 0 else (mx - mn) / mx
-        except Exception:
-            return 0.0
+        return get_colorfulness(hex_color)
 
     def _is_near_white(self, color: str) -> bool:
-        try:
-            c = str(color).strip().lower()
-            if c in ['#fff', '#ffffff', '#ffffffff']:
-                return True
-            return self._estimate_brightness(c) > 0.95
-        except Exception:
-            return False
-    
+        return is_near_white(color)
+
     def _is_near_black(self, color: str) -> bool:
-        try:
-            # Threshold increased to 0.15 to include dark colors like #1a1a1a (brightness ~0.10)
-            return self._estimate_brightness(color) < 0.15
-        except Exception:
-            return False
-    
+        return is_near_black(color)
+
     def _darken_color(self, hex_color: str, factor: float) -> str:
-        try:
-            h = hex_color.lstrip('#')
-            r = int(h[0:2], 16)
-            g = int(h[2:4], 16)
-            b = int(h[4:6], 16)
-            
-            r = int(r * (1 - factor))
-            g = int(g * (1 - factor))
-            b = int(b * (1 - factor))
-            
-            return f"#{r:02X}{g:02X}{b:02X}"
-        except Exception:
-            return hex_color
-    
+        return adjust_brightness(hex_color, -factor)
+
     def _lighten_color(self, hex_color: str, factor: float) -> str:
-        try:
-            h = hex_color.lstrip('#')
-            r = int(h[0:2], 16)
-            g = int(h[2:4], 16)
-            b = int(h[4:6], 16)
-            
-            r = int(r + (255 - r) * factor)
-            g = int(g + (255 - g) * factor)
-            b = int(b + (255 - b) * factor)
-            
-            return f"#{r:02X}{g:02X}{b:02X}"
-        except Exception:
-            return hex_color
-    
+        return adjust_brightness(hex_color, factor)
+
     def _shift_hue(self, hex_color: str, degrees: float) -> str:
         """Shift hue of a color by degrees."""
         try:
-            import colorsys
-            h = hex_color.lstrip('#')
-            r = int(h[0:2], 16) / 255.0
-            g = int(h[2:4], 16) / 255.0
-            b = int(h[4:6], 16) / 255.0
-            
-            # Convert to HSV
+            r, g, b = hex_to_rgb(hex_color)
+            r, g, b = r / 255.0, g / 255.0, b / 255.0
             hsv = colorsys.rgb_to_hsv(r, g, b)
-            # Shift hue
             new_hue = (hsv[0] + degrees / 360.0) % 1.0
-            # Convert back
             rgb = colorsys.hsv_to_rgb(new_hue, hsv[1], hsv[2])
-            
-            r = int(rgb[0] * 255)
-            g = int(rgb[1] * 255)
-            b = int(rgb[2] * 255)
-            
-            return f"#{r:02X}{g:02X}{b:02X}"
+            return rgb_to_hex(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
         except Exception:
-            # Fallback: lighten instead
-            return self._lighten_color(hex_color, 0.2)
+            return adjust_brightness(hex_color, 0.2)
 
     # Event emission helpers
     async def _emit_agent(self, agent: str, phase: str, summary: str) -> None:

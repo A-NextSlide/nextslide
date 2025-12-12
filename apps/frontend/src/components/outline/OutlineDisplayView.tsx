@@ -25,7 +25,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import GroupedDropdown from '@/components/settings/GroupedDropdown';
 import { ALL_FONT_NAMES, FONT_CATEGORIES } from '@/registry/library/fonts';
 import { FontLoadingService } from '@/services/FontLoadingService';
-import { X as XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import {

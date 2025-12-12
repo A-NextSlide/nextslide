@@ -26,6 +26,7 @@ from agents.generation.progress_manager import DeckGenerationProgress, Generatio
 from models.requests import SlideOutline, DeckOutline
 from setup_logging_optimized import get_logger
 from agents.generation.concurrency_manager import concurrency_manager
+from utils.color_utils import estimate_brightness, get_colorfulness
 
 logger = get_logger(__name__)
 
@@ -1751,29 +1752,23 @@ class SimpleDeckComposer(IDeckComposer):
                         # Map accents from DB palette colors as well for consistency
                         pal_colors = palette.get('colors') if isinstance(palette, dict) else None
                         if isinstance(pal_colors, list) and pal_colors:
-                            def _rgb_tuple(hex_str: str):
-                                s = str(hex_str).lstrip('#')
-                                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
-                            def _colorfulness(hex_str: str) -> float:
-                                r, g, b = _rgb_tuple(hex_str)
-                                return max(abs(r-g), abs(g-b), abs(b-r)) / 255.0
                             def _is_extreme_brightness(hex_str: str) -> bool:
                                 try:
-                                    val = _est_b(hex_str)
+                                    val = estimate_brightness(hex_str)
                                     return val < 0.12 or val > 0.92
                                 except Exception:
                                     return False
                             scored = [
                                 (
-                                    _colorfulness(c),
-                                    -abs(_est_b(c) - 0.5),
+                                    get_colorfulness(c),
+                                    -abs(estimate_brightness(c) - 0.5),
                                     c
                                 ) for c in pal_colors if isinstance(c, str) and not _is_extreme_brightness(c)
                             ]
                             if not scored:
                                 scored = [(
-                                    _colorfulness(c),
-                                    -abs(_est_b(c) - 0.5),
+                                    get_colorfulness(c),
+                                    -abs(estimate_brightness(c) - 0.5),
                                     c
                                 ) for c in pal_colors if isinstance(c, str)]
                             scored.sort(reverse=True)

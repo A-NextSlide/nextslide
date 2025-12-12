@@ -70,6 +70,14 @@ export interface UploadedMedia {
   size?: number;
 }
 
+export interface ScrapedVideo {
+  url: string;
+  title?: string;
+  thumbnail?: string;
+  source_type?: string;
+  embed_url?: string;
+}
+
 export interface OutlineData {
   action: 'generate_outline' | 'update_outline' | 'update_slides' | 'update_theme' | 'generate_theme';
   slide_count?: number;
@@ -85,6 +93,8 @@ export interface OutlineData {
   }>;
   theme_changes?: ThemeChanges;
   uploadedMedia?: UploadedMedia[];  // Files uploaded through chat that should be used in slides
+  // Videos scraped from website URLs for embedding in the deck (snake_case matches backend payload)
+  scraped_videos?: ScrapedVideo[];
   // Style/theme preferences from the agent
   stylePreferences?: {
     colors?: {

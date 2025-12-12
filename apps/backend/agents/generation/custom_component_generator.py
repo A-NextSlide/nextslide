@@ -23,6 +23,8 @@ from agents.config import (
     IMAGE_SEARCH_MODEL
 )
 from agents.generation.exceptions import AIRateLimitError
+from utils.color_utils import get_relative_luminance
+from utils.logo_extractor import get_logo_with_inversion
 
 # Provider name for rate limit tracking
 GEMINI_PROVIDER = "gemini"
@@ -658,146 +660,6 @@ def _extract_fonts_from_typography(typography: Dict[str, Any]) -> Tuple[str, str
     return (hero_font, body_font)
 
 
-def _get_luminance(hex_color: str) -> float:
-    """Calculate relative luminance of a hex color (0.0 = black, 1.0 = white)."""
-    try:
-        hex_color = hex_color.lstrip('#')
-        if len(hex_color) == 3:
-            hex_color = ''.join(c * 2 for c in hex_color)
-
-        r = int(hex_color[0:2], 16) / 255.0
-        g = int(hex_color[2:4], 16) / 255.0
-        b = int(hex_color[4:6], 16) / 255.0
-
-        # Apply gamma correction
-        r = r / 12.92 if r <= 0.03928 else ((r + 0.055) / 1.055) ** 2.4
-        g = g / 12.92 if g <= 0.03928 else ((g + 0.055) / 1.055) ** 2.4
-        b = b / 12.92 if b <= 0.03928 else ((b + 0.055) / 1.055) ** 2.4
-
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
-    except Exception:
-        return 0.5  # Default to middle if parsing fails
-
-
-def _extract_logo_from_theme(theme: Dict[str, Any], background_color: Optional[str] = None) -> tuple[Optional[str], bool]:
-    """
-    Extract logo URL from theme dict, selecting light/dark variant based on background.
-
-    Handles multiple possible structures:
-    - theme.brandInfo.logoUrl / logoUrlDark
-    - theme.color_palette.metadata.logo_url / logo_url_dark / logo_url_light
-    - theme.logo.url
-    - theme.logo (direct URL string)
-
-    Args:
-        theme: Theme dictionary
-        background_color: Optional hex color of the background (e.g. "#FFFFFF")
-                         Used to select light vs dark logo variant
-
-    Returns:
-        Tuple of (logo_url, needs_inversion):
-        - logo_url: Best logo URL for the background, or None if not found
-        - needs_inversion: True if CSS filter:invert(1) should be applied for contrast
-    """
-    if not theme:
-        logger.debug("[LOGO] No theme dict provided")
-        return None, False
-
-    # Log theme structure for debugging logo extraction
-    logger.info(f"[LOGO] Checking theme for logo - keys: {list(theme.keys())}")
-    if theme.get('brandInfo'):
-        logger.info(f"[LOGO] brandInfo keys: {list(theme['brandInfo'].keys()) if isinstance(theme.get('brandInfo'), dict) else 'not a dict'}")
-    if theme.get('color_palette', {}).get('metadata'):
-        logger.info(f"[LOGO] color_palette.metadata keys: {list(theme['color_palette']['metadata'].keys())}")
-
-    # IMPORTANT: Logo naming convention from Brandfetch:
-    # - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
-    # - "logo_for_dark_bg" = logo designed FOR dark backgrounds = typically LIGHT/WHITE colored
-    logo_for_light_bg = None  # Dark colored logo, use on light backgrounds
-    logo_for_dark_bg = None   # Light/white colored logo, use on dark backgrounds
-
-    # Try brandInfo.logoUrl / logoUrlDark (from frontend)
-    # Note: logoUrl = logo FOR light backgrounds (dark colored)
-    #       logoUrlDark = logo FOR dark backgrounds (light colored) - confusing name!
-    brand_info = theme.get('brandInfo', {})
-    if isinstance(brand_info, dict):
-        logo_for_light_bg = brand_info.get('logoUrl') or brand_info.get('logoUrlLight')
-        logo_for_dark_bg = brand_info.get('logoUrlDark')
-        if logo_for_light_bg or logo_for_dark_bg:
-            logger.debug(f"[LOGO] Found in brandInfo - for_light_bg: {bool(logo_for_light_bg)}, for_dark_bg: {bool(logo_for_dark_bg)}")
-
-    # Try color_palette.metadata.logo_url_light / logo_url_dark
-    if not logo_for_light_bg and not logo_for_dark_bg:
-        color_palette = theme.get('color_palette', {})
-        if isinstance(color_palette, dict):
-            metadata = color_palette.get('metadata', {})
-            if isinstance(metadata, dict):
-                logo_for_light_bg = metadata.get('logo_url_light') or metadata.get('logo_url')
-                logo_for_dark_bg = metadata.get('logo_url_dark')
-                if logo_for_light_bg or logo_for_dark_bg:
-                    logger.debug(f"[LOGO] Found in color_palette.metadata - for_light_bg: {bool(logo_for_light_bg)}, for_dark_bg: {bool(logo_for_dark_bg)}")
-
-    # Try theme.logo.url or theme.logo (direct string) - assume it's for light backgrounds
-    if not logo_for_light_bg and not logo_for_dark_bg:
-        logo = theme.get('logo')
-        if isinstance(logo, dict):
-            logo_for_light_bg = logo.get('url')
-        elif isinstance(logo, str) and logo.startswith('http'):
-            logo_for_light_bg = logo
-        if logo_for_light_bg:
-            logger.debug(f"[LOGO] Found direct logo URL (assuming for light backgrounds)")
-
-    # If no logos found at all
-    if not logo_for_light_bg and not logo_for_dark_bg:
-        logger.debug("[LOGO] No logo URL found in theme")
-        return None, False
-
-    # Determine background luminance if provided
-    bg_is_light = True  # Default assumption
-    if background_color:
-        luminance = _get_luminance(background_color)
-        bg_is_light = luminance > 0.5
-        logger.info(f"[LOGO] Background {background_color} has luminance {luminance:.2f} ({'light' if bg_is_light else 'dark'})")
-
-    # If only one variant available, use it but INVERT if needed for contrast
-    if logo_for_light_bg and not logo_for_dark_bg:
-        # We have logo for light backgrounds (dark colored logo)
-        # If background is DARK, we need to INVERT to make it light/white
-        needs_invert = not bg_is_light if background_color else False
-        if needs_invert:
-            logger.info(f"[LOGO] Only dark logo available but bg is dark -> will INVERT")
-        logger.debug(f"[LOGO] Using 'for light bg' variant: {logo_for_light_bg[:60]}... (invert={needs_invert})")
-        return logo_for_light_bg, needs_invert
-
-    if logo_for_dark_bg and not logo_for_light_bg:
-        # We have logo for dark backgrounds (light/white colored logo)
-        # If background is LIGHT, we need to INVERT to make it dark
-        needs_invert = bg_is_light if background_color else False
-        if needs_invert:
-            logger.info(f"[LOGO] Only light logo available but bg is light -> will INVERT")
-        logger.debug(f"[LOGO] Using 'for dark bg' variant: {logo_for_dark_bg[:60]}... (invert={needs_invert})")
-        return logo_for_dark_bg, needs_invert
-
-    # Both variants available - select based on background luminance (no inversion needed)
-    if bg_is_light:
-        # Light background - use the logo designed FOR light backgrounds (dark colored logo)
-        selected = logo_for_light_bg
-        logger.info(f"[LOGO] Light background -> using logo FOR light bg (dark colored)")
-    else:
-        # Dark background - use the logo designed FOR dark backgrounds (light colored logo)
-        selected = logo_for_dark_bg
-        logger.info(f"[LOGO] Dark background -> using logo FOR dark bg (light colored)")
-
-    if selected:
-        logger.debug(f"[LOGO] Selected: {selected[:60]}... (no inversion needed)")
-        return selected, False
-
-    # Fallback: prefer logo for light backgrounds
-    selected = logo_for_light_bg or logo_for_dark_bg
-    logger.debug(f"[LOGO] Fallback to: {selected[:60] if selected else 'None'}...")
-    return selected, False
-
-
 class CustomComponentGenerator:
     """
     Generates creative CustomComponents using Gemini 3 Pro (with Opus 4.5 fallback).
@@ -966,7 +828,7 @@ class CustomComponentGenerator:
 
             # Extract logo URL from theme - pass background color for light/dark selection
             background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
-            logo_url, logo_needs_invert = _extract_logo_from_theme(theme, background_color=background_color)
+            logo_url, logo_needs_invert = get_logo_with_inversion(theme, background_color=background_color)
             if logo_url:
                 invert_msg = " [WILL INVERT]" if logo_needs_invert else ""
                 logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...{invert_msg}")
@@ -1748,7 +1610,7 @@ RULES:
         logo_section = ""
         if logo_url:
             # Check for potential white logo on white background issue
-            bg_luminance = _get_luminance(bg_color) if bg_color else 0.5
+            bg_luminance = get_relative_luminance(bg_color) if bg_color else 0.5
             is_light_bg = bg_luminance > 0.5
 
             # Detect if logo URL suggests it might be white/light colored

@@ -17,6 +17,10 @@ from services.palette_db_service import PaletteDBService
 from models.requests import DeckOutline
 from setup_logging_optimized import get_logger
 from agents.generation.color_contrast_manager import ColorContrastManager
+from utils.color_utils import (
+    estimate_brightness, adjust_brightness as adjust_brightness_util,
+    is_near_white, blend_colors as blend_colors_util
+)
 import logging
 
 logger = get_logger(__name__)
@@ -1941,38 +1945,12 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
     
     def _get_brightness(self, hex_color: str) -> float:
         """Calculate brightness of a hex color (0 = dark, 1 = light)."""
-        try:
-            # Remove # if present
-            hex_color = hex_color.lstrip('#')
-            # Convert to RGB
-            r = int(hex_color[0:2], 16) / 255.0
-            g = int(hex_color[2:4], 16) / 255.0
-            b = int(hex_color[4:6], 16) / 255.0
-            # Calculate perceived brightness
-            return (0.299 * r + 0.587 * g + 0.114 * b)
-        except:
-            return 0.5  # Default to medium brightness
-    
+        return estimate_brightness(hex_color)
+
     def _adjust_brightness(self, hex_color: str, factor: float) -> str:
         """Adjust brightness of a hex color."""
-        try:
-            # Remove # if present
-            hex_color = hex_color.lstrip('#')
-            
-            # Convert to RGB
-            r = int(hex_color[0:2], 16)
-            g = int(hex_color[2:4], 16)
-            b = int(hex_color[4:6], 16)
-            
-            # Adjust brightness
-            r = min(255, max(0, int(r * factor)))
-            g = min(255, max(0, int(g * factor)))
-            b = min(255, max(0, int(b * factor)))
-            
-            # Convert back to hex
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except:
-            return f"#{hex_color}" if not hex_color.startswith('#') else hex_color
+        # factor < 1 darkens, > 1 lightens - convert to our util's convention
+        return adjust_brightness_util(hex_color, factor - 1.0)
     
     def _get_default_theme(self) -> Dict[str, Any]:
         """Return minimal default theme as last resort."""
@@ -2585,17 +2563,7 @@ Return ONLY the exact font name, nothing else. Pick from Sans Serif or Designer 
     
     def _lighten_color(self, hex_color: str, factor: float = 0.95) -> str:
         """Lighten a color by mixing with white"""
-        hex_color = hex_color.lstrip('#')
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16) 
-        b = int(hex_color[4:6], 16)
-        
-        # Mix with white
-        r = int(r + (255 - r) * factor)
-        g = int(g + (255 - g) * factor)
-        b = int(b + (255 - b) * factor)
-        
-        return f"#{r:02x}{g:02x}{b:02x}"
+        return adjust_brightness_util(hex_color, factor)
     
     def _darken_if_needed(self, color: str, bg_color: str) -> str:
         """Darken a color if it doesn't have enough contrast with the background"""
