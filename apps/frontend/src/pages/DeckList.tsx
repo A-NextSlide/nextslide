@@ -1994,9 +1994,8 @@ const DeckList: React.FC = () => {
                               )}
                             >
                               <span className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                                Enter a URL like <span className="underline decoration-dotted underline-offset-2">nike.com</span> for branded slides
+                                Add your domain <span className="text-zinc-400 dark:text-zinc-500">(e.g.</span> <span className="font-semibold">Nike.com</span><span className="text-zinc-400 dark:text-zinc-500">)</span> for branded slides
                               </span>
-                              <span className="text-[10px] text-orange-400 dark:text-orange-500">Try your domain!</span>
                             </div>
 
                             <div className="relative group">
