@@ -25,6 +25,9 @@ import { uploadFile } from '@/utils/fileUploadUtils';
 import { deckSyncService } from '@/lib/deckSyncService';
 import { useEditor } from '@/hooks/useEditor';
 import { useEditorStore } from '@/stores/editorStore';
+import { useThemeStore } from '@/stores/themeStore';
+import { API_CONFIG } from '@/config/environment';
+import type { SlideData } from '@/types/SlideTypes';
 import { v4 as uuidv4 } from 'uuid';
 import { BROWSER } from '@/utils/browser';
 import { streamOutlineAgentChat } from '@/services/outlineApi';
@@ -47,6 +50,7 @@ import {
   convertMessagesToApiFormat,
   getWelcomeMessage,
 } from './chat';
+import { sendChatToApi } from '@/components/chat/utils/messageUtils';
 
 // Re-export types for consumers of this file
 export type { ExtendedChatMessageProps, ChatPanelProps };
