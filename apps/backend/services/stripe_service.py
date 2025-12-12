@@ -15,10 +15,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load env vars from backend directory - do this first
+# Load env vars from backend directory - only if file exists, don't override system env
 backend_dir = Path(__file__).parent.parent
 env_path = backend_dir / ".env"
-load_dotenv(env_path, override=True)
+if env_path.exists():
+    load_dotenv(env_path, override=False)  # Don't override system env vars (Render)
 
 try:
     import stripe
@@ -83,7 +84,9 @@ class StripeService:
     def _check_stripe_available(self):
         """Check if Stripe is properly configured."""
         if not _ensure_stripe_configured():
-            raise ValueError("Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.")
+            key = _get_stripe_key()
+            key_preview = f"{key[:8]}..." if key else "None"
+            raise ValueError(f"Stripe not configured. STRIPE_AVAILABLE={STRIPE_AVAILABLE}, key={key_preview}")
 
     async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
         """Get or create a Stripe customer for a user."""
