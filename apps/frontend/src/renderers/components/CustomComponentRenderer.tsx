@@ -141,8 +141,9 @@ export const CustomComponentRenderer: React.FC<{
   const { updateComponent } = useActiveSlide();
 
   // Listen for image selection events and update component directly
+  // NOTE: Disabled on iOS due to postMessage crash issues
   useEffect(() => {
-    if (!isEditing || isThumbnail) return;
+    if (!isEditing || isThumbnail || BROWSER.isIOS) return;
 
     const handleImageSelected = (event: CustomEvent) => {
       const { componentId, propName, imageUrl, elementId } = event.detail || {};
@@ -1300,34 +1301,59 @@ export const CustomComponentRenderer: React.FC<{
   const containerFileInputRef = useRef<HTMLInputElement>(null);
 
   // Update container bounds when resizing
+  // NOTE: ResizeObserver can crash on iOS Safari, so we skip it there
   useEffect(() => {
+    if (BROWSER.isIOS) return; // Skip ResizeObserver on iOS
+
     const updateBounds = () => {
-      if (contentInnerRef.current) {
-        setContainerBoundsState(contentInnerRef.current.getBoundingClientRect());
+      try {
+        if (contentInnerRef.current) {
+          setContainerBoundsState(contentInnerRef.current.getBoundingClientRect());
+        }
+      } catch (err) {
+        // Ignore getBoundingClientRect errors on iOS
       }
     };
 
     updateBounds();
-    const observer = new ResizeObserver(updateBounds);
-    if (contentInnerRef.current) {
-      observer.observe(contentInnerRef.current);
+    let observer: ResizeObserver | null = null;
+    try {
+      observer = new ResizeObserver(updateBounds);
+      if (contentInnerRef.current) {
+        observer.observe(contentInnerRef.current);
+      }
+    } catch (err) {
+      // ResizeObserver may not be available or may crash
     }
 
-    return () => observer.disconnect();
+    return () => {
+      try {
+        observer?.disconnect();
+      } catch (err) {
+        // Ignore disconnect errors
+      }
+    };
   }, []);
 
   // Listen for image processing events from ImageSlotEditor and notify iframe
+  // NOTE: Disabled on iOS due to postMessage crash issues
   useEffect(() => {
+    if (BROWSER.isIOS) return; // Skip on iOS
+
     const handleImageProcessing = (event: CustomEvent<{ componentId: string; propName: string; isProcessing: boolean }>) => {
       const { componentId: targetComponentId, propName, isProcessing } = event.detail;
       if (targetComponentId === component.id) {
         // Send message to iframe to show/hide processing overlay on the specific image
-        if (iframeRef.current?.contentWindow) {
-          iframeRef.current.contentWindow.postMessage({
-            type: 'image-processing',
-            propName,
-            isProcessing
-          }, '*');
+        try {
+          if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+              type: 'image-processing',
+              propName,
+              isProcessing
+            }, '*');
+          }
+        } catch (err) {
+          // Ignore postMessage errors on iOS
         }
       }
     };
@@ -1673,12 +1699,15 @@ export const CustomComponentRenderer: React.FC<{
     });
     let html = injectImageProps(iframeSrcDoc, imageProps);
 
-    // Then add click handlers for edit mode
-    html = injectImageClickHandlers(html, component.id);
+    // Then add click handlers for edit mode (skip on iOS due to postMessage issues)
+    if (!BROWSER.isIOS) {
+      html = injectImageClickHandlers(html, component.id);
+    }
 
     // Inject element-level edit mode when in edit mode (not just when selected)
     // This allows hover effects and double-click to work before selection
-    if (effectiveIsEditMode) {
+    // NOTE: Skip on iOS due to postMessage crash issues
+    if (effectiveIsEditMode && !BROWSER.isIOS) {
       DEBUG_CUSTOM_COMPONENT && console.log('[CustomComponent] INJECTING edit mode script:', {
         componentId: component.id.slice(0, 8),
         isSelected,
@@ -1782,8 +1811,9 @@ export const CustomComponentRenderer: React.FC<{
   }, [iframeSrcDoc, component.id, isEditing, propsKey, effectiveIsEditMode, isSelected]); // Use propsKey instead of object reference
 
   // Listen for messages from iframe (placeholder image clicks and edit mode)
+  // NOTE: Disabled on iOS due to postMessage crash issues
   useEffect(() => {
-    if (!isIframeComponent || !isEditing) return;
+    if (!isIframeComponent || !isEditing || BROWSER.isIOS) return;
 
     const handleMessage = (event: MessageEvent) => {
       // Handle placeholder image clicks (legacy)
@@ -2043,6 +2073,7 @@ export const CustomComponentRenderer: React.FC<{
   }, [compilationError, compiledRender, isIframeComponent, componentProps, state, updateState, component.id, isThumbnail, effectiveIsEditMode, containerWidth, containerHeight]);
 
   // Scaling Logic
+  // NOTE: ResizeObserver can crash on iOS Safari, use fallback there
   const [scale, setScale] = useState(1);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -2050,20 +2081,52 @@ export const CustomComponentRenderer: React.FC<{
     const element = rootRef.current;
     if (!element) return;
 
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width } = entry.contentRect;
-        // Calculate scale based on the ratio of current container width to the design width
-        // If containerWidth (design width) is 0 or invalid, default to 1 to avoid division by zero
-        if (containerWidth > 0) {
-          const newScale = width / containerWidth;
-          setScale(newScale);
+    // On iOS, just calculate scale once and skip ResizeObserver
+    if (BROWSER.isIOS) {
+      try {
+        const width = element.getBoundingClientRect().width;
+        if (containerWidth > 0 && width > 0) {
+          setScale(width / containerWidth);
         }
+      } catch (err) {
+        // Ignore errors on iOS
       }
-    });
+      return;
+    }
 
-    observer.observe(element);
-    return () => observer.disconnect();
+    let observer: ResizeObserver | null = null;
+    try {
+      observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width } = entry.contentRect;
+          // Calculate scale based on the ratio of current container width to the design width
+          // If containerWidth (design width) is 0 or invalid, default to 1 to avoid division by zero
+          if (containerWidth > 0) {
+            const newScale = width / containerWidth;
+            setScale(newScale);
+          }
+        }
+      });
+      observer.observe(element);
+    } catch (err) {
+      // ResizeObserver may crash, fallback to single calculation
+      try {
+        const width = element.getBoundingClientRect().width;
+        if (containerWidth > 0 && width > 0) {
+          setScale(width / containerWidth);
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+
+    return () => {
+      try {
+        observer?.disconnect();
+      } catch (err) {
+        // Ignore disconnect errors
+      }
+    };
   }, [containerWidth]);
 
   // Handler for HTML updates from CustomComponentEditOverlay
