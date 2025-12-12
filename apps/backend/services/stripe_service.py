@@ -391,7 +391,7 @@ class StripeService:
 
         # Reset credits to free tier
         db.table("credit_balances").update({
-            "monthly_credits": 200,
+            "monthly_credits": 50,
             "updated_at": now.isoformat()
         }).eq("user_id", user_id).execute()
 
@@ -444,10 +444,10 @@ class StripeService:
 
         # Update credit allocation based on plan
         plan_credits = {
-            "free": 200,
-            "starter": 300,
-            "pro": 700,
-            "enterprise": 10000  # Effectively unlimited
+            "free": 50,
+            "starter": 1000,
+            "pro": 2000,
+            "enterprise": 100000  # Effectively unlimited
         }
 
         db.table("credit_balances").update({
@@ -643,10 +643,10 @@ class StripeService:
 
             # Plan credits mapping
             plan_credits = {
-                "free": 200,
-                "starter": 300,
-                "pro": 700,
-                "enterprise": 10000
+                "free": 50,
+                "starter": 1000,
+                "pro": 2000,
+                "enterprise": 100000
             }
 
             # Update subscription

@@ -178,16 +178,16 @@ async def get_subscription(user: dict = Depends(get_current_user)):
 
     # Default features by plan
     default_features = {
-        "free": ["10 credits/month", "Basic AI features", "Export to PDF"],
+        "free": ["50 credits/month", "All AI features", "Export to PDF"],
         "starter": [
-            "200 credits/month",
+            "1,000 credits/month",
             "All AI features",
             "Export to PDF & PPTX",
-            "Priority support",
+            "Email support",
             "Unlimited presentations"
         ],
         "pro": [
-            "500 credits/month",
+            "2,000 credits/month",
             "All AI features",
             "Export to PDF & PPTX",
             "Priority support",

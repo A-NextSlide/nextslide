@@ -141,13 +141,13 @@ const Pricing: React.FC = () => {
       name: 'Free',
       tagline: 'Try NextSlide',
       price: 0,
-      credits: 10,
+      credits: 50,
       cta: user ? 'Current Plan' : 'Get Started',
       icon: Sparkles,
       features: [
-        '10 credits/month',
-        '~2 presentations',
-        'Basic AI features',
+        '50 credits/month',
+        '~10 presentations',
+        'All AI features',
         'Export to PDF',
         'Nextslide watermark',
       ],
@@ -158,13 +158,13 @@ const Pricing: React.FC = () => {
       name: 'Starter',
       tagline: 'For individuals',
       price: 999,
-      credits: 200,
+      credits: 1000,
       cta: 'Start Free Trial',
       icon: Zap,
       popular: false,
       features: [
-        '200 credits/month',
-        '~30-40 presentations',
+        '1,000 credits/month',
+        '~200 presentations',
         'All AI features',
         'Export to PDF & PPTX',
         'No watermark',
@@ -177,18 +177,18 @@ const Pricing: React.FC = () => {
       name: 'Pro',
       tagline: 'For professionals',
       price: 1999,
-      credits: 500,
+      credits: 2000,
       cta: 'Start Pro Trial',
       icon: Crown,
       popular: true,
       features: [
-        '500 credits/month',
-        '~75-100 presentations',
+        '2,000 credits/month',
+        '~400 presentations',
         'Priority AI generation',
         'All export formats',
         'Custom branding',
         'Priority support',
-        '$0.02/credit if you go over',
+        '$0.03/credit if you go over',
       ],
       excluded: [],
     },
@@ -222,7 +222,7 @@ const Pricing: React.FC = () => {
     {
       question: 'What happens if I run out of credits?',
       answer:
-        "On Free, you'll need to wait until next month or upgrade. On Pro, you can keep going with a small per-credit fee ($0.02/credit) so you're never blocked.",
+        "On Free or Starter, you'll need to wait until next month or upgrade. On Pro, you can keep going with a small per-credit fee ($0.03/credit) so you're never blocked.",
     },
     {
       question: 'Can I cancel anytime?',
@@ -316,8 +316,11 @@ const Pricing: React.FC = () => {
           >
             Simple, transparent pricing
           </h1>
-          <p className="text-xl text-black/60 dark:text-white/60 max-w-2xl mx-auto mb-8">
+          <p className="text-xl text-black/60 dark:text-white/60 max-w-2xl mx-auto mb-4">
             Start free. Upgrade when you need more. No surprises.
+          </p>
+          <p className="text-sm text-black/40 dark:text-white/40 mb-8">
+            Each slide uses ~5 credits
           </p>
 
           {/* Billing toggle - disabled for now */}
@@ -547,8 +550,8 @@ const Pricing: React.FC = () => {
               <div>
                 <h4 className="font-bold text-black dark:text-white mb-1">Quick estimate</h4>
                 <p className="text-sm text-black/60 dark:text-white/60">
-                  A typical 10-slide presentation uses about <strong>50-60 credits</strong>. On Pro,
-                  that's roughly <strong>8-10 full presentations per month</strong>.
+                  A typical 10-slide presentation uses about <strong>50-60 credits</strong>. On Pro (2,000 credits),
+                  that's roughly <strong>30-40 full presentations per month</strong>.
                 </p>
               </div>
             </div>

@@ -156,8 +156,8 @@ class BillingService:
             # Create balance
             client.table("credit_balances").upsert({
                 "user_id": user_id,
-                "monthly_credits": 200,  # Free tier credits
-                "purchased_credits": 200,  # Early user bonus
+                "monthly_credits": 50,  # Free tier credits
+                "purchased_credits": 450,  # Early user bonus
                 "used_credits": 0,
                 "period_start": now.isoformat(),
                 "period_end": period_end.isoformat()

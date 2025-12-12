@@ -762,7 +762,7 @@ const Profile: React.FC = () => {
                             <div className="flex-1">
                               <p className="font-medium text-sm mb-1">Upgrade for more credits</p>
                               <p className="text-sm text-muted-foreground">
-                                Get up to 500 credits/month with Pro, plus priority support and unlimited presentations.
+                                Get up to 2,000 credits/month with Pro, plus priority support and unlimited presentations.
                               </p>
                             </div>
                             <Button size="sm" onClick={() => navigate('/pricing?from=settings')}>

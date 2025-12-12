@@ -197,7 +197,7 @@ export const UpgradePaywallRenderer: React.FC<RendererProps> = ({ component, sty
                         fontSize: '13px',
                         color: 'rgba(255,255,255,0.4)'
                     }}>
-                        Starter plan: <span style={{ color: 'rgba(255,255,255,0.6)' }}>$9.99/mo</span> for 200 credits (~40 presentations)
+                        Starter plan: <span style={{ color: 'rgba(255,255,255,0.6)' }}>$9.99/mo</span> for 1,000 credits (~200 presentations)
                     </p>
                 )}
 

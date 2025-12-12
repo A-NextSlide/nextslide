@@ -125,7 +125,7 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({ onClose }) => {
                 Upgrade to Pro and get:
               </p>
               {[
-                '500 credits/month (~75-100 presentations)',
+                '2,000 credits/month (~400 presentations)',
                 'Priority AI generation',
                 'All export formats',
                 'Pay-as-you-go if you need more'

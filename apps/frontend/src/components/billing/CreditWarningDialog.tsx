@@ -182,7 +182,7 @@ export function CreditWarningDialog({
                 <div className="w-5 h-5 rounded-full bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0">
                   <CheckCircle2 className="w-3 h-3 text-[#FF4301]" />
                 </div>
-                <span>200 credits per month (~40 presentations)</span>
+                <span>1,000 credits per month (~200 presentations)</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300">
                 <div className="w-5 h-5 rounded-full bg-[#FF4301]/10 flex items-center justify-center flex-shrink-0">
@@ -276,7 +276,7 @@ export function CreditWarningDialog({
                   }}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Upgrade to Starter — $9.99/mo
+                  Upgrade to Starter — $9.99/mo (1,000 credits)
                 </Button>
 
                 {/* Partial generation option for free users with some credits */}

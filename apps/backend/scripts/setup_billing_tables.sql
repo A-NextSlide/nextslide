@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS public.pricing_plans (
 
 -- Insert default plans
 INSERT INTO public.pricing_plans (id, name, description, monthly_credits, price_cents, features) VALUES
-  ('free', 'Free', 'Try NextSlide with limited credits', 10, 0, '["2 free slides", "Basic AI features", "Export to PDF"]'::jsonb),
-  ('starter', 'Starter', 'Perfect for individuals', 200, 999, '["~30-40 presentations/month", "All AI features", "Export to PDF & PPTX", "Email support"]'::jsonb),
-  ('pro', 'Pro', 'For professionals and teams', 500, 1999, '["~75-100 presentations/month", "Priority AI generation", "All export formats", "Priority support", "Custom branding"]'::jsonb),
+  ('free', 'Free', 'Try NextSlide with limited credits', 50, 0, '["~10 presentations/month", "All AI features", "Export to PDF"]'::jsonb),
+  ('starter', 'Starter', 'Perfect for individuals', 1000, 999, '["~200 presentations/month", "All AI features", "Export to PDF & PPTX", "Email support"]'::jsonb),
+  ('pro', 'Pro', 'For professionals and teams', 2000, 1999, '["~400 presentations/month", "Priority AI generation", "All export formats", "Priority support", "Custom branding", "$0.03/credit overage"]'::jsonb),
   ('enterprise', 'Enterprise', 'Custom solutions for large teams', -1, 0, '["Unlimited credits", "Dedicated support", "Custom integrations", "SSO & SAML", "SLA"]'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -190,9 +190,9 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION public.initialize_user_credits()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Create credit balance with 200 monthly + 200 early user bonus
+  -- Create credit balance with 50 monthly + 450 early user bonus
   INSERT INTO public.credit_balances (user_id, monthly_credits, purchased_credits, used_credits, period_start, period_end)
-  VALUES (NEW.id, 200, 200, 0, NOW(), NOW() + INTERVAL '1 month')
+  VALUES (NEW.id, 50, 450, 0, NOW(), NOW() + INTERVAL '1 month')
   ON CONFLICT (user_id) DO NOTHING;
 
   -- Create free subscription

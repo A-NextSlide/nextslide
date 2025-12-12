@@ -1064,7 +1064,7 @@ const Landing: React.FC = () => {
                 <div className="text-4xl font-bold text-black dark:text-white mb-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   $0
                 </div>
-                <div className="text-sm text-black/50 dark:text-white/50">20 credits/month*</div>
+                <div className="text-sm text-black/50 dark:text-white/50">50 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
                 {['Full editor access', 'All AI features', 'Free forever'].map((feature, i) => (
@@ -1086,7 +1086,7 @@ const Landing: React.FC = () => {
                 <div className="text-4xl font-bold text-black dark:text-white mb-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   $9.99
                 </div>
-                <div className="text-sm text-black/50 dark:text-white/50">200 credits/month</div>
+                <div className="text-sm text-black/50 dark:text-white/50">1,000 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
                 {['All AI features', 'Priority support', 'Better rates'].map((feature, i) => (
@@ -1111,7 +1111,7 @@ const Landing: React.FC = () => {
                 <div className="text-4xl font-bold mb-1" style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}>
                   $19.99
                 </div>
-                <div className="text-sm opacity-90">500 credits/month</div>
+                <div className="text-sm opacity-90">2,000 credits/month</div>
               </div>
               <ul className="space-y-2 mb-6 text-sm">
                 {['Priority AI', 'Unlimited presentations', 'Best rates'].map((feature, i) => (
@@ -1149,8 +1149,13 @@ const Landing: React.FC = () => {
             </div>
           </div>
 
+          {/* Credit info */}
+          <p className="text-center text-sm text-black/40 dark:text-white/40 mt-6">
+            Each slide uses ~5 credits
+          </p>
+
           {/* See all plans link */}
-          <div className="text-center mt-8">
+          <div className="text-center mt-4">
             <Button variant="link" className="text-[#FF4301]" onClick={() => navigate('/pricing')}>
               See all plans & credit details →
             </Button>
