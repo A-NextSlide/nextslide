@@ -7,7 +7,7 @@ export const API_ENDPOINTS = {
   BASE_URL: import.meta.env.VITE_API_URL || (
     import.meta.env.DEV
       ? 'http://localhost:9090/api'  // Full URL in development
-      : 'https://api.nextslide.ai/api'  // Production default
+      : 'https://nextslide-backend.onrender.com/api'  // Production default
   ),
   
   // Outline generation endpoints
