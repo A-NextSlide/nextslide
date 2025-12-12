@@ -158,21 +158,35 @@ const Profile: React.FC = () => {
       const syncAndRefresh = async () => {
         setBillingLoading(true);
         let showedWelcome = false;
-        try {
-          // Sync subscription from Stripe
-          const syncResult = await billingApi.syncSubscription();
-          if (syncResult.synced && (syncResult.monthly_credits || syncResult.monthly_credits === -1)) {
-            const isFF = syncResult.monthly_credits === -1;
-            setWelcomeModal({
-              show: true,
-              planName: isFF ? 'Friends & Family' : (syncResult.plan_id === 'pro' ? 'Pro' : 'Starter'),
-              credits: syncResult.monthly_credits,
-              isFriendsFamily: isFF
-            });
-            showedWelcome = true;
+
+        // Retry sync up to 3 times with delay (Stripe may take a moment to activate subscription)
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[Billing] Sync attempt ${attempt}/3...`);
+            const syncResult = await billingApi.syncSubscription();
+            console.log('[Billing] Sync result:', syncResult);
+
+            if (syncResult.synced && (syncResult.monthly_credits || syncResult.monthly_credits === -1)) {
+              const isFF = syncResult.monthly_credits === -1;
+              setWelcomeModal({
+                show: true,
+                planName: isFF ? 'Friends & Family' : (syncResult.plan_id === 'pro' ? 'Pro' : 'Starter'),
+                credits: syncResult.monthly_credits,
+                isFriendsFamily: isFF
+              });
+              showedWelcome = true;
+              break; // Success, exit retry loop
+            } else if (attempt < 3) {
+              // Wait before retry (1s, 2s)
+              console.log(`[Billing] Sync not ready, waiting ${attempt}s...`);
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            }
+          } catch (err) {
+            console.error(`[Billing] Sync attempt ${attempt} failed:`, err);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            }
           }
-        } catch (err) {
-          console.error('Failed to sync subscription:', err);
         }
 
         try {
