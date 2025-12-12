@@ -369,9 +369,23 @@ class StripeService:
             "enterprise": 100000
         }
 
+        # Check for Friends & Family coupon by fetching the subscription from Stripe
+        is_friends_family = False
+        subscription_id = session.get("subscription")
+        if subscription_id:
+            try:
+                sub = stripe.Subscription.retrieve(subscription_id)
+                if sub.discount and sub.discount.coupon:
+                    coupon_id = sub.discount.coupon.id
+                    if coupon_id == "WOOHOOFREESLIDES":
+                        is_friends_family = True
+                        logger.info(f"Checkout: User {user_id} has Friends & Family coupon!")
+            except Exception as e:
+                logger.warning(f"Could not fetch subscription to check coupon: {e}")
+
         # Update subscription with Stripe IDs AND plan details
         sub_result = db.table("subscriptions").update({
-            "stripe_subscription_id": session.get("subscription"),
+            "stripe_subscription_id": subscription_id,
             "stripe_customer_id": session.get("customer"),
             "plan_id": plan_id,
             "status": "active",
@@ -381,8 +395,8 @@ class StripeService:
         if not sub_result.data:
             logger.warning(f"Checkout: subscriptions update returned no data for user {user_id}")
 
-        # Also update credits immediately
-        monthly_credits = plan_credits.get(plan_id, 100)
+        # Friends & Family get unlimited credits (-1)
+        monthly_credits = -1 if is_friends_family else plan_credits.get(plan_id, 100)
         credits_result = db.table("credit_balances").update({
             "monthly_credits": monthly_credits,
             "used_credits": 0,
@@ -392,7 +406,7 @@ class StripeService:
         if not credits_result.data:
             logger.warning(f"Checkout: credit_balances update returned no data for user {user_id}")
 
-        logger.info(f"Checkout completed for user {user_id}: plan={plan_id}, credits={monthly_credits}")
+        logger.info(f"Checkout completed for user {user_id}: plan={plan_id}, credits={monthly_credits}, friends_family={is_friends_family}")
 
     async def _handle_subscription_created(self, subscription: Dict[str, Any]):
         """Handle new subscription created."""
