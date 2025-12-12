@@ -1,10 +1,10 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 interface EmptyDeckListProps {
   searchQuery: string;
-  onCreateDeck: () => void;
+  onCreateDeck?: () => void;
   authError?: boolean;
   onReload?: () => void;
 }
@@ -34,18 +34,8 @@ const EmptyDeckList: React.FC<EmptyDeckListProps> = ({ searchQuery, onCreateDeck
   return (
     <div className="text-center py-12">
       <h3 className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
-        {searchQuery ? 'No presentations match your search.' : "You haven\'t created any presentations yet"}
+        {searchQuery ? 'No presentations match your search.' : ''}
       </h3>
-      {!searchQuery && (
-        <Button 
-          onClick={onCreateDeck} 
-          className="mt-4"
-          variant="outline"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Create your first presentation
-        </Button>
-      )}
     </div>
   );
 };

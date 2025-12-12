@@ -327,7 +327,23 @@ const DeckList: React.FC = () => {
     shouldShowAiHints,
     shouldAskOverageConfirmation,
     markOverageConfirmed,
+    loading: onboardingLoading,
   } = useOnboarding();
+
+  // Track if onboarding has finished loading (to reload decks after tutorial deck is created)
+  const onboardingLoadedRef = useRef(false);
+
+  // Reload decks after onboarding state finishes loading (tutorial deck may have been created)
+  useEffect(() => {
+    if (!onboardingLoading && !onboardingLoadedRef.current && isAuthenticated) {
+      onboardingLoadedRef.current = true;
+      // Small delay to ensure tutorial deck is fully created in the database
+      setTimeout(() => {
+        console.log('[DeckList] Onboarding loaded, reloading decks to show tutorial deck');
+        loadDecks();
+      }, 500);
+    }
+  }, [onboardingLoading, isAuthenticated, loadDecks]);
 
   const [heroInput, setHeroInput] = useState('');
   const [isUserTyping, setIsUserTyping] = useState(false);
@@ -1948,6 +1964,18 @@ const DeckList: React.FC = () => {
 
                           {/* Input Area */}
                           <div className="relative max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100">
+                            {/* Branded slides hint bubble */}
+                            <div
+                              className={cn(
+                                "absolute -top-8 left-2 flex items-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/50 rounded-full shadow-sm transition-all duration-300",
+                                heroInput ? "opacity-0 -translate-y-2 pointer-events-none" : "opacity-100 translate-y-0"
+                              )}
+                            >
+                              <span className="text-xs font-medium text-orange-600 dark:text-orange-400">
+                                Try <span className="font-semibold">YourSite.com</span> for branded slides
+                              </span>
+                            </div>
+
                             <div className="relative group">
                               <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500/20 to-blue-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                               <div
