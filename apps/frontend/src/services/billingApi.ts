@@ -10,7 +10,9 @@
 
 import { authService } from './authService';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:9090';
+// Remove trailing /api if present since we add it in the endpoints
+const rawApiBase = import.meta.env.VITE_API_URL || 'http://localhost:9090';
+const API_BASE = rawApiBase.replace(/\/api\/?$/, '');
 
 interface CreditBalance {
   remaining_credits: number;
