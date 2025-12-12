@@ -246,33 +246,44 @@ async def prefetch_images_for_content(
     async with ImageStorageService() as storage:
 
         async def search_and_upload(index: int, term: str) -> Tuple[int, str, Optional[str]]:
-            """Search SerpAPI, upload first good result to our bucket."""
+            """Search SerpAPI, get 10 results, pick one at random."""
             try:
                 # Log the exact query being sent
                 print(f"[PREFETCH] 🔎 Searching: '{term}'")
 
-                # Search for images - use the term directly, no modifiers
+                # Search for 10 images - same query that would be pre-populated in image picker
                 result = await serpapi.search_images(
                     query=term,
-                    per_page=5,
+                    per_page=10,
                     size="large"
                 )
 
                 photos = result.get('photos', [])
                 print(f"[PREFETCH] 📷 Got {len(photos)} results for '{term}'")
 
-                # Try each result until one uploads successfully
-                for photo in photos:
+                # Filter valid URLs first
+                valid_photos = []
+                for photo in photos[:10]:  # Limit to first 10
                     url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
-                    if not url or url.startswith('data:'):
-                        continue
+                    if url and not url.startswith('data:'):
+                        valid_photos.append(url)
 
+                if not valid_photos:
+                    print(f"[PREFETCH] ⚠️ No valid images for: {term}")
+                    return (index, term, None)
+
+                # Shuffle and try random images until one uploads successfully
+                import random
+                random.shuffle(valid_photos)
+                print(f"[PREFETCH] 🎲 Shuffled {len(valid_photos)} valid images, picking randomly")
+
+                for url in valid_photos:
                     # Upload to our Supabase bucket
                     try:
                         upload_result = await storage.upload_image_from_url(url)
                         if 'error' not in upload_result and upload_result.get('url'):
                             our_url = upload_result['url']
-                            print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> uploaded")
+                            print(f"[PREFETCH] ✅ image{index + 1} ({term}) -> uploaded (random pick)")
                             return (index, term, our_url)
                     except Exception as e:
                         logger.debug(f"[PREFETCH] Upload failed: {e}")
