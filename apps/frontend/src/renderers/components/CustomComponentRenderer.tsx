@@ -20,6 +20,9 @@ import * as gsapImport from 'gsap';
 // Extracted string utilities
 import { ensureHtmlNewlines, escapeRawNewlinesInStringLiterals } from './custom/stringUtils';
 
+// Browser detection for iOS-specific safety checks
+import { BROWSER } from '@/utils/browser';
+
 // Debug flag - disabled in production for mobile performance
 const DEBUG_CUSTOM_COMPONENT = false;
 
@@ -2343,7 +2346,8 @@ export const CustomComponentRenderer: React.FC<{
 
           {/* ELEMENT-LEVEL EDIT OVERLAY for selected custom components */}
           {/* Renders interaction layer over the iframe with hit areas, selection, drag/resize, and text editing */}
-          {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && (
+          {/* NOTE: Disabled on iOS due to iframe/postMessage crash issues */}
+          {effectiveIsEditMode && isSelected && isIframeComponent && stableIframeSrcDoc && !BROWSER.isIOS && (
             <CustomComponentEditOverlay
               componentId={component.id}
               slideId={component.slideId}
@@ -2524,8 +2528,8 @@ export const CustomComponentRenderer: React.FC<{
         })()}
 
         {/* TEXT ELEMENT - Small floating AI button (doesn't block editing) */}
-        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
-        {selectedElement && selectedElement.type === 'text' && typeof document !== 'undefined' && document.body && createPortal(
+        {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'text' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && createPortal(
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -2719,8 +2723,8 @@ export const CustomComponentRenderer: React.FC<{
         )}
 
         {/* CONTAINER ELEMENT AI EDIT - ChatPanel style */}
-        {/* Safety check: only render portal if document.body exists (prevents mobile crash) */}
-        {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && (() => {
+        {/* Safety check: only render portal if document.body exists and not iOS (prevents mobile crash) */}
+        {selectedElement && selectedElement.type === 'container' && typeof document !== 'undefined' && document.body && !BROWSER.isIOS && (() => {
           // Position at top-right of the selected element, shift left if needed to stay in slide
           const panelWidth = 300;
           const panelHeight = 280;
