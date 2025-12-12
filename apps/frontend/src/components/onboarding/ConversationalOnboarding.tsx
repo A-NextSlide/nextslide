@@ -157,10 +157,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusPhase, setStatusPhase] = useState<string | null>(null);
-  // File upload confirmation - ask if for reference or direct use
-  const [pendingFileConfirmation, setPendingFileConfirmation] = useState<{
-    files: Array<{ file: File; previewUrl?: string }>;
-  } | null>(null);
+  // File intent is inferred by the model from chat + file metadata (no confirmation UI).
 
   // Thinking steps for rich progress display
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
@@ -221,6 +218,11 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   // Clear thinking steps
   const clearThinkingSteps = useCallback(() => {
     setThinkingSteps([]);
+  }, []);
+
+  // Mark a thinking step as completed (by phase key)
+  const completeThinkingStep = useCallback((phase: string) => {
+    setThinkingSteps(prev => prev.map(s => (s.phase === phase ? { ...s, status: 'completed' as const } : s)));
   }, []);
 
   // Build theme block from outline data - always creates a theme with defaults
@@ -339,7 +341,8 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     };
 
     // Store in theme store
-    setOutlineDeckTheme(themePayload);
+    const outlineId = (outlineFlow as any)?.id || (outlineBlock as any)?.outlineId || 'onboarding';
+    setOutlineDeckTheme(outlineId, themePayload);
 
     // Also update collected data stylePreferences
     setCollectedData(prev => ({
@@ -1042,33 +1045,15 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
     }
 
     if (validFiles.length > 0) {
-      // Show confirmation dialog asking how to use the files
-      setPendingFileConfirmation({ files: validFiles });
+      // Add files directly; model will infer how to use them based on conversation.
+      setUploadedFiles(prev => [...prev, ...validFiles]);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  // Handle file confirmation - user chooses how to use uploaded files
-  const handleFileConfirmation = (useDirectly: boolean) => {
-    if (!pendingFileConfirmation) return;
-
-    const { files } = pendingFileConfirmation;
-    setUploadedFiles(prev => [...prev, ...files]);
-
-    if (useDirectly) {
-      // Add instruction for AI to use content directly
-      const fileNames = files.map(f => f.file.name).join(', ');
-      addMessage('user', `Use the content from ${fileNames} directly in the slides. Don't summarize or change it - use it exactly as provided.`);
-    } else {
-      // Files are for reference/inspiration only
-      const fileNames = files.map(f => f.file.name).join(', ');
-      addMessage('user', `I've uploaded ${fileNames} for reference and design inspiration. Use it to inform the style and structure but create fresh content.`);
-    }
-
-    setPendingFileConfirmation(null);
-  };
+  // (removed file intent confirmation flow)
 
   const handleRemoveFile = (index: number) => {
     setUploadedFiles(prev => {
@@ -1688,41 +1673,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           </div>
         )}
 
-        {/* File Upload Confirmation Dialog */}
-        {pendingFileConfirmation && (
-          <div className="flex w-full animate-in slide-in-from-bottom-4 duration-300 justify-start">
-            <div className="max-w-[85%] rounded-xl border bg-white dark:bg-zinc-900 shadow-lg border-orange-200 dark:border-orange-700/50 overflow-hidden">
-              <div className="px-4 py-3 bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800/30">
-                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                  How should I use {pendingFileConfirmation.files.length === 1 ? 'this file' : 'these files'}?
-                </p>
-                <div className="flex gap-1 mt-1.5 flex-wrap">
-                  {pendingFileConfirmation.files.map((f, i) => (
-                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-800/30 text-orange-700 dark:text-orange-300">
-                      {f.file.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="p-3 flex gap-2">
-                <button
-                  onClick={() => handleFileConfirmation(true)}
-                  className="flex-1 px-3 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition-colors"
-                >
-                  Use Content Directly
-                  <span className="block text-[10px] opacity-80 font-normal">Include exact content in slides</span>
-                </button>
-                <button
-                  onClick={() => handleFileConfirmation(false)}
-                  className="flex-1 px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm font-medium transition-colors"
-                >
-                  Reference Only
-                  <span className="block text-[10px] opacity-70 font-normal">For style/design inspiration</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* File intent confirmation removed — model infers usage from chat + file metadata */}
 
 
         {/* Fallback: Show "Continue" button after 1+ user messages if no outline generated yet */}
@@ -1918,8 +1869,6 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
           slideCount={creditWarningData.slideCount}
           planName={creditWarningData.planName}
           mode={creditWarningData.mode}
-          overageAlreadyConfirmed={!shouldAskOverageConfirmation}
-          onOverageConfirmed={markOverageConfirmed}
           onProceed={() => {
             // User confirmed to proceed (either with overage or partial generation)
             if (creditWarningData.pendingSlideMode) {

@@ -1581,6 +1581,7 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 logger.info(f"[OutlineAgent] File analysis complete: {file_count} files, {len(file_context)} chars context")
 
                 # Send file analysis complete event with results
+                # Include extracted design for frontend to preserve across chat turns
                 event_data = {
                     'type': 'status',
                     'status': 'files_analyzed',
@@ -1588,7 +1589,10 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                     'analyses': file_analysis['analyses'],
                     'detected_intent': detected_intent,
                     'detected_slide_style': detected_slide_style,
-                    'has_design': extracted_design_context is not None
+                    'has_design': extracted_design_context is not None,
+                    # CRITICAL: Send extracted design so frontend can preserve it across turns
+                    'extracted_design': extracted_design_context,
+                    'slide_screenshots_count': len(extracted_slide_screenshots) if extracted_slide_screenshots else 0
                 }
                 yield f"data: {json.dumps(event_data)}\n\n"
             else:
@@ -1601,6 +1605,18 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
             previous_analysis = request.context['previousFileAnalysis']
             file_context = f"\n\n[PREVIOUSLY ANALYZED FILES]\n{previous_analysis}\n(Files were analyzed earlier in this conversation - use the chat history for full context)\n"
             logger.info(f"[OutlineAgent] Using previous file analysis context: {len(file_context)} chars")
+
+            # CRITICAL: Also restore extracted design context, intent, and screenshots from previous analysis
+            # This ensures follow-up messages preserve the user's extracted design colors
+            if request.context.get('previousExtractedDesign'):
+                extracted_design_context = request.context['previousExtractedDesign']
+                logger.info(f"[OutlineAgent] ✅ Restored extracted design from previous turn: {list(extracted_design_context.get('color_palette', {}).keys())}")
+            if request.context.get('previousFileIntent'):
+                detected_intent = request.context['previousFileIntent']
+                logger.info(f"[OutlineAgent] ✅ Restored file_intent from previous turn: {detected_intent}")
+            if request.context.get('previousSlideScreenshots'):
+                extracted_slide_screenshots = request.context['previousSlideScreenshots']
+                logger.info(f"[OutlineAgent] ✅ Restored {len(extracted_slide_screenshots)} slide screenshots from previous turn")
 
         # Detect URLs in the message and auto-scrape them
         url_pattern = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+|(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:life|com|co|io|org|net|ai|app|xyz|dev)(?:/[^\s]*)?)', re.IGNORECASE)
@@ -2003,6 +2019,21 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 if extracted_slide_screenshots:
                     outline_data['slide_screenshots'] = extracted_slide_screenshots
                     logger.info(f"[OutlineAgent] 📸 Attached {len(extracted_slide_screenshots)} slide screenshots for visual design reference")
+
+                    # CRITICAL: Also set stylePreferences.referenceImages so slide generator can use them!
+                    # The CustomComponent generator expects reference images in stylePreferences.referenceImages
+                    if 'stylePreferences' not in outline_data:
+                        outline_data['stylePreferences'] = {}
+                    # Convert base64 screenshots to data URLs for the vision model
+                    reference_data_urls = []
+                    for screenshot in extracted_slide_screenshots[:3]:  # Limit to 3 for performance
+                        if screenshot.startswith('data:'):
+                            reference_data_urls.append(screenshot)
+                        else:
+                            # Assume PNG if no prefix
+                            reference_data_urls.append(f"data:image/png;base64,{screenshot}")
+                    outline_data['stylePreferences']['referenceImages'] = reference_data_urls
+                    logger.info(f"[OutlineAgent] 📸 Set stylePreferences.referenceImages with {len(reference_data_urls)} screenshots for CustomComponent")
                 if detected_slide_style and detected_slide_style != 'auto':
                     # Only override if AI didn't already set it
                     if not outline_data.get('slide_style'):

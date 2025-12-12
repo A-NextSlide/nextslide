@@ -1155,4 +1155,4 @@ if __name__ == "__main__":
     
     # Set workers=1 (process) but enable multiple concurrent requests within the process
     # Enable reload for development
-    uvicorn.run("api.chat_server:app", host=host, port=port, reload=True, workers=1) 
+    uvicorn.run("api.chat_server:app", host=host, port=port, reload=True, workers=1, access_log=False)

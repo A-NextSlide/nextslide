@@ -216,7 +216,7 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                 logger.info(f"[BRANDFETCH DB] ✅ Found brand data for {brand_name}: {len(colors)} colors ({len(backgrounds)} bg, {len(texts)} text, {len(accents)} accent), {len(fonts)} fonts, logo: {bool(logo_url)}, labeled: {bool(labeled_colors)}")
                 return result
             else:
-                logger.info(f"[BRANDFETCH DB] Brand data found but no colors for {domain}")
+                logger.info(f"[BRANDFETCH DB] Brand data found but no colors for {identifier}")
                 return None
                 
     except Exception as e:

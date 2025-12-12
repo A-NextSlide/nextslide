@@ -16,15 +16,157 @@ This plan simplifies the entire editing architecture following modern best pract
 
 ### 🚨 Immediate Action Items (Do Now)
 
-1. **🔴 CRITICAL: Add targeted edit tools** - Current `edit_slide` does FULL REWRITE, not targeted edits
-2. **Add `selected_component_ids` to orchestrator** - Fix "make this red" not working
-3. **Add `reorder_slides` and `duplicate_slide` tools** - Common operations missing
-4. **Clean legacy aliases from config.py** - 40 lines of dead code
-5. **Extract 4 more hooks from ChatPanel** - Reduce from 4932 to ~1500 lines
+1. **🔴🔴 P0: Reuse CustomComponentGenerator prompts for edits** - Edit prompts are 8 lines vs 50+ for generation (see Gap #1)
+2. **🔴 P0: Add targeted edit tools (str_replace, prop_update)** - Current `edit_slide` does FULL REWRITE, not targeted edits (see Gap #2)
+3. **🔴 P1: Add `selected_component_ids` to orchestrator** - Fix "make this red" not working
+4. **🟡 P2: Add `reorder_slides` and `duplicate_slide` tools** - Common operations missing
+5. **🟡 P2: Clean legacy aliases from config.py** - 40 lines of dead code
+6. **🟢 P3: Extract 4 more hooks from ChatPanel** - Reduce from 4932 to ~1500 lines
 
 ---
 
-## 🔴 CRITICAL GAP: Targeted Edits vs Full Rewrites
+## 🔴 CRITICAL GAP #1: Edit Prompts Are 10x Weaker Than Generation Prompts
+
+### The Problem
+
+The prompts used during **editing** are dramatically weaker than those used during **generation**:
+
+| Aspect | CustomComponentGenerator | slide_tools.py Edit |
+|--------|-------------------------|---------------------|
+| Prompt length | ~50-70 lines | ~8 lines |
+| Theme colors | ✅ `--accent, --secondary, --text, --bg` | ❌ Not passed |
+| Fonts | ✅ Hero/body font integration | ❌ Not mentioned |
+| Z-index layering | ✅ Detailed (bg: 1-10, content: 40-50, titles: 100+) | ❌ None |
+| Interactive features | ✅ Full arsenal (counters, quizzes, accordions) | ❌ None |
+| Image handling | ✅ "Use EXACT URLs provided, NEVER unsplash" | ❌ None |
+| Design matching | ✅ "Match design to content type" | ❌ None |
+
+### Generation Prompt (CustomComponentGenerator._build_system_prompt)
+
+```python
+return f"""You are an elite creative technologist. Build INTERACTIVE experiences that make people say "WOW!"
+
+THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
+FONTS: {hero_font} / {body_font}
+IMAGES: Use the EXACT URLs provided in the user prompt. NEVER use unsplash.com, pexels.com...
+
+INTERACTIVE ARSENAL - use these:
+• Animated diagrams that BUILD on click
+• Interactive timelines - click nodes to reveal content
+• Quizzes with clickable answers, feedback, confetti
+• Animated counters that count up
+• Before/after comparison sliders
+• Hover-to-reveal cards that flip or expand
+• Click-through step-by-step processes
+• Expandable accordions
+• SVG animations that draw themselves
+
+Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
+- Background/decorative elements: z-index: 1-10
+- Images and media: z-index: 20-30
+- Content boxes/cards: z-index: 40-50
+- TITLES AND HEADINGS: z-index: 100+ (ALWAYS on top)
+
+OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
+```
+
+### Current Edit Prompt (slide_tools.py) - THE PROBLEM
+
+```python
+CUSTOM_COMPONENT_REWRITE_PROMPT = """You are an expert HTML/CSS designer. Modify this CustomComponent.
+
+CURRENT HTML:
+{current_html}
+
+USER REQUEST: {instruction}
+
+Return the COMPLETE updated HTML. Use Tailwind CSS classes.
+Keep on ONE LINE, use SINGLE QUOTES for attributes.
+"""
+```
+
+**The edit prompt has NONE of the generation prompt's quality!**
+
+### The Fix: REUSE CustomComponentGenerator Prompts
+
+Don't create new guidelines - **use the same generator for edits**:
+
+```python
+# slide_tools.py - in _rewrite_custom_component()
+
+from agents.generation.custom_component_generator import CustomComponentGenerator
+
+def _rewrite_custom_component(slide_id, custom_component, instruction, 
+                               deck_data=None, attachments=None):
+    """Rewrite using the SAME generator that creates slides."""
+    
+    # Extract theme from deck
+    theme = deck_data.get('theme', {})
+    colors = theme.get('color_palette', {})
+    typography = theme.get('typography', {})
+    
+    # Get the SAME system prompt used in generation
+    generator = CustomComponentGenerator()
+    system_prompt = generator._build_system_prompt(
+        colors=colors,
+        typography=typography,
+        style_keywords=[],
+        slide_mode='interactive'  # or detect from current HTML
+    )
+    
+    # Build user prompt with current HTML + instruction
+    user_prompt = f"""CURRENT SLIDE HTML (modify based on request):
+{current_html[:25000]}
+
+USER REQUEST: {instruction}
+
+Apply the requested changes while maintaining:
+- The overall structure and layout
+- Theme consistency
+- Interactive features
+
+Return the COMPLETE updated HTML."""
+
+    # Invoke with same model as generation
+    response = invoke(client, model, [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ])
+    
+    return response
+```
+
+### Why This Works
+
+1. **Same quality** - Edits use identical design principles as generation
+2. **Theme consistency** - Colors, fonts, z-index all preserved
+3. **Interactive features** - Edits can add/modify interactivity properly
+4. **No code duplication** - Single source of truth for design guidelines
+
+### Update slide_tools.py
+
+```python
+# In _rewrite_custom_component()
+
+from agents.prompts.shared_design_guidelines import get_edit_prompt
+
+def _rewrite_custom_component(slide_id, custom_component, instruction, attachments=None):
+    # Get theme from deck context
+    theme = get_deck_theme(current_slide)
+    
+    # Use COMPREHENSIVE prompt, not the weak 8-line one
+    prompt = get_edit_prompt(
+        current_html=current_html,
+        instruction=instruction,
+        theme=theme
+    )
+    
+    # Rest of function...
+```
+
+---
+
+## 🔴 CRITICAL GAP #2: Targeted Edits vs Full Rewrites
 
 ### The Problem
 

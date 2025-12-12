@@ -177,7 +177,12 @@ function isValidDeckDiff(diff: DeckDiff): boolean {
     
     // Each slide must be a valid slide data object
     for (const slide of diff.slides_to_add) {
-      if (!slide || typeof slide.id !== 'string' || typeof slide.title !== 'string') {
+      // Title is optional for backend-generated diffs; we'll default it during apply.
+      // Requiring title here causes slide-add diffs to be rejected, forcing a full page refresh.
+      if (!slide || typeof slide.id !== 'string') {
+        return false;
+      }
+      if (slide.title !== undefined && typeof slide.title !== 'string') {
         return false;
       }
     }
@@ -512,17 +517,20 @@ function applySlideUpdates(deck: CompleteDeckData, deckDiff: DeckDiff): Complete
     const validSlidesToAdd = deckDiff.slides_to_add
       .filter(slide => slide && typeof slide.id === 'string' && !existingSlideIds.has(slide.id))
       .map(slide => {
+        // Ensure required fields exist even when backend omits them
+        const ensuredTitle = (slide as any).title || 'New Slide';
         // If slide is missing necessary properties, ensure it's complete
         if (!slide.components) {
           // Create a blank slide and merge properties from the provided slide
-          const blankSlide = createBlankSlide({ title: slide.title || 'New Slide' });
+          const blankSlide = createBlankSlide({ title: ensuredTitle });
           return {
             ...blankSlide,
             ...slide,
             id: slide.id  // Ensure ID is preserved
           };
         }
-        return slide;
+        // If components exist, still ensure title is present
+        return { ...slide, title: ensuredTitle };
       });
     
     if (validSlidesToAdd.length > 0) {

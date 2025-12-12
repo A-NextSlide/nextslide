@@ -2,6 +2,7 @@
 
 import os
 import json
+import re
 import logging
 import hashlib
 from typing import List, Dict, Any
@@ -308,11 +309,55 @@ def _invoke_freeform(client, model: str, messages: List[Dict], system: str, kwar
 
     # Gemini-style
     if hasattr(raw_client, 'models'):
-        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-        if system:
-            prompt = f"System: {system}\n{prompt}"
-        result = raw_client.models.generate_content(model=model, contents=prompt)
-        return result.text
+        # If any message content is multimodal (list of parts), convert to Gemini inline_data parts
+        try:
+            has_parts = any(isinstance(m.get("content"), list) for m in messages)
+            if has_parts:
+                parts: List[Dict[str, Any]] = []
+                if system:
+                    parts.append({"text": system})
+                for m in messages:
+                    role = m.get("role", "user")
+                    content = m.get("content")
+                    # Treat explicit system messages as text parts
+                    if role == "system" and isinstance(content, str) and content.strip():
+                        parts.append({"text": content})
+                        continue
+                    if isinstance(content, list):
+                        for p in content:
+                            ptype = (p or {}).get("type")
+                            if ptype == "text":
+                                txt = (p or {}).get("text", "")
+                                if txt:
+                                    parts.append({"text": txt})
+                            elif ptype == "image":
+                                src = (p or {}).get("source") or {}
+                                if src.get("type") == "base64":
+                                    data = src.get("data")
+                                    mime = src.get("media_type") or "image/png"
+                                    if data:
+                                        parts.append({"inline_data": {"mime_type": mime, "data": data}})
+                    else:
+                        # Fallback to text part
+                        if content:
+                            parts.append({"text": f"{role}: {content}"})
+
+                result = raw_client.models.generate_content(model=model, contents=parts, **kwargs)
+                return result.text
+
+            # Text-only
+            prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            if system:
+                prompt = f"System: {system}\n{prompt}"
+            result = raw_client.models.generate_content(model=model, contents=prompt, **kwargs)
+            return result.text
+        except Exception:
+            # Last-resort fallback: stringify everything
+            prompt = "\n".join([f"{m.get('role')}: {m.get('content')}" for m in messages])
+            if system:
+                prompt = f"System: {system}\n{prompt}"
+            result = raw_client.models.generate_content(model=model, contents=prompt, **kwargs)
+            return result.text
 
     raise ValueError(f"Unknown client type: {type(raw_client)}")
 
@@ -325,8 +370,77 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
 
     # Gemini
     if model.startswith("gemini"):
+        # NOTE:
+        # We intentionally DO NOT use the instructor-wrapped Gemini client here.
+        # Certain genai/instructor combos can misinterpret long prompt strings as file paths
+        # (leading to: OSError [Errno 63] File name too long).
+        #
+        # Instead, we call the raw google.genai Client directly and parse JSON ourselves.
+
+        raw_client, _ = get_client(model, wrap_with_instructor=False)
         gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
-        return client.create(model=model, messages=messages, response_model=response_model, max_retries=max_retries, **gk)
+
+        def _build_prompt() -> str:
+            base = "\n".join([f"{m.get('role', 'user')}: {m.get('content')}" for m in messages])
+            if system:
+                base = f"System: {system}\n{base}"
+            # Include schema to increase determinism
+            schema = None
+            try:
+                schema = response_model.model_json_schema()
+            except Exception:
+                try:
+                    schema = response_model.schema()
+                except Exception:
+                    schema = None
+            if schema:
+                return (
+                    f"{base}\n\n"
+                    "Return ONLY valid JSON (no markdown, no code fences, no commentary) "
+                    "that conforms to this JSON Schema:\n"
+                    f"{json.dumps(schema, ensure_ascii=False)}"
+                )
+            return (
+                f"{base}\n\n"
+                "Return ONLY valid JSON (no markdown, no code fences, no commentary)."
+            )
+
+        def _extract_json(text: str) -> str:
+            if not isinstance(text, str):
+                text = str(text)
+            t = text.strip()
+            # Strip ```json fences if present
+            if t.startswith("```"):
+                t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+                t = re.sub(r"\s*```$", "", t).strip()
+            # If it's already a JSON object/array, keep
+            if (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]")):
+                return t
+            # Best-effort: grab first {...} or [...]
+            m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", t)
+            if m:
+                return m.group(1).strip()
+            return t
+
+        prompt = _build_prompt()
+        last_err = None
+        for _attempt in range(max_retries):
+            try:
+                result = raw_client.models.generate_content(model=model, contents=prompt, **gk)
+                text = getattr(result, "text", None) or str(result)
+                payload = _extract_json(text)
+                # Validate/parse into response_model
+                try:
+                    return response_model.model_validate_json(payload)
+                except Exception:
+                    return response_model.parse_raw(payload)
+            except Exception as e:
+                last_err = e
+                continue
+        # Re-raise with the final error context
+        if last_err:
+            raise last_err
+        raise ValueError("Gemini structured invocation failed")
 
     # Claude (with system)
     if hasattr(client, 'create') and not hasattr(client, 'chat'):

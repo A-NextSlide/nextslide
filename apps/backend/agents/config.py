@@ -36,10 +36,12 @@ PERPLEXITY_SONAR = "perplexity-sonar"
 PERPLEXITY_SONAR_PRO = "perplexity-sonar-pro"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MODEL STRATEGY (Claude Sonnet for hard, Haiku for easy, Opus fallback)
+# MODEL STRATEGY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-MODEL_HARD = CLAUDE_SONNET     # Creative/complex tasks (Gemini has instructor issues)
+# HARD should be the highest-quality model for creative + reasoning work.
+# We want Gemini 3 Pro for slide/design generation & editing.
+MODEL_HARD = GEMINI_3_PRO
 MODEL_EASY = CLAUDE_HAIKU      # Fast/simple tasks
 MODEL_FALLBACK = CLAUDE_OPUS   # Rate limit fallback
 MODEL_RESEARCH = PERPLEXITY_SONAR_PRO  # Web search
@@ -60,7 +62,7 @@ TASK_MODELS = {
     "slide_generate": MODEL_HARD,
     "component_create": MODEL_HARD,
     "component_edit": MODEL_HARD,
-    "custom_component_rewrite": MODEL_HARD,
+    "custom_component_rewrite": GEMINI_3_PRO,
     "theme_generate": MODEL_HARD,
     "slide_style": MODEL_HARD,
 
@@ -73,6 +75,7 @@ TASK_MODELS = {
     "image_search": MODEL_EASY,
     "chat": MODEL_EASY,
     "file_analysis_fast": MODEL_EASY,
+    "vision_import": GEMINI_FLASH_LITE,
 
     # Research - Perplexity
     "outline_research": MODEL_RESEARCH,
@@ -106,7 +109,8 @@ SLIDE_STYLE_MODEL = MODEL_HARD
 CUSTOM_COMPONENT_COMPOSER = MODEL_EASY
 CUSTOM_COMPONENT_CREATIVE = MODEL_HARD
 CUSTOM_COMPONENT_FALLBACK = MODEL_FALLBACK
-CUSTOM_COMPONENT_MODEL = MODEL_HARD
+# Prefer Gemini 3 Pro for CustomComponentGenerator (raw HTML generation works well even when structured output is finicky)
+CUSTOM_COMPONENT_MODEL = GEMINI_3_PRO
 CUSTOM_COMPONENT_FALLBACK_MODEL = MODEL_FALLBACK
 CUSTOM_COMPONENT_EDIT_MODEL = MODEL_HARD
 CUSTOM_COMPONENT_SIMPLE_MODEL = MODEL_EASY

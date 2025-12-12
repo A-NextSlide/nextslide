@@ -535,6 +535,30 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
             narrative_flow_task.add_done_callback(task_done_callback)
             logger.info(f"[NARRATIVE FLOW] Background generation task started and tracked for deck {deck_uuid}")
             
+            # Initialize conversation_history with the initial request
+            try:
+                initial_request = None
+                # Try to get the initial user prompt from stylePreferences.vibeContext or outline.topic
+                if hasattr(deck_outline, 'stylePreferences') and deck_outline.stylePreferences:
+                    sp = deck_outline.stylePreferences
+                    if hasattr(sp, 'vibeContext') and sp.vibeContext:
+                        initial_request = sp.vibeContext
+                    elif isinstance(sp, dict) and sp.get('vibeContext'):
+                        initial_request = sp.get('vibeContext')
+
+                # Fallback to outline title if no vibeContext
+                if not initial_request and deck_outline.title:
+                    initial_request = f"Create a presentation about: {deck_outline.title}"
+
+                deck_data_with_outline["conversation_history"] = {
+                    "initial_request": initial_request,
+                    "messages": []
+                }
+                logger.info(f"[DECK_CREATE] Initialized conversation_history with initial_request: {initial_request[:100] if initial_request else 'None'}...")
+            except Exception as conv_err:
+                logger.warning(f"[DECK_CREATE] Failed to initialize conversation_history: {conv_err}")
+                deck_data_with_outline["conversation_history"] = {"initial_request": None, "messages": []}
+
             # CRITICAL: Save deck to database BEFORE sending deck_created event
             try:
                 upload_deck(deck_data_with_outline, deck_uuid, user_id)

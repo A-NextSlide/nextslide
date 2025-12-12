@@ -209,7 +209,7 @@ class SupabaseAuthService:
 
     def ensure_user_profile(self, user_id: str, email: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """
-        Ensure user profile exists in the users table
+        Ensure user profile exists in the users table and has a tutorial deck.
 
         Args:
             user_id: User's UUID
@@ -224,6 +224,9 @@ class SupabaseAuthService:
             existing = self.supabase.table("users").select("*").eq("id", user_id).execute()
 
             if existing.data and len(existing.data) > 0:
+                # Profile exists (likely created by Supabase trigger)
+                # Still ensure tutorial deck is copied
+                self._ensure_tutorial_deck_for_user(user_id)
                 return existing.data[0]
 
             # Create profile if it doesn't exist
@@ -242,7 +245,7 @@ class SupabaseAuthService:
                 logger.info(f"Created profile for user {email}")
 
                 # Copy tutorial deck for new user
-                self._copy_tutorial_deck_for_user(user_id)
+                self._ensure_tutorial_deck_for_user(user_id)
 
                 return response.data[0]
 
@@ -257,18 +260,27 @@ class SupabaseAuthService:
                 "created_at": datetime.utcnow().isoformat()
             }
 
-    def _copy_tutorial_deck_for_user(self, user_id: str) -> Optional[str]:
+    def _ensure_tutorial_deck_for_user(self, user_id: str) -> Optional[str]:
         """
-        Copy the tutorial deck for a new user. Each user gets their own editable copy.
+        Ensure the user has a copy of the tutorial deck. Creates one if not exists.
 
         Args:
-            user_id: The new user's UUID
+            user_id: The user's UUID
 
         Returns:
-            The UUID of the copied deck, or None if failed
+            The UUID of the user's tutorial deck, or None if failed
         """
         try:
             import uuid as uuid_module
+
+            # First check if user already has a tutorial deck (by name pattern)
+            existing_tutorial = self.supabase.table("decks").select("uuid").eq(
+                "user_id", user_id
+            ).ilike("name", "%How to Use%").execute()
+
+            if existing_tutorial.data and len(existing_tutorial.data) > 0:
+                logger.debug(f"User {user_id} already has tutorial deck")
+                return existing_tutorial.data[0]["uuid"]
 
             # Get the tutorial deck from featured_decks (more reliable than decks table)
             tutorial = self.supabase.table("featured_decks").select(
@@ -325,7 +337,7 @@ class SupabaseAuthService:
             return None
 
         except Exception as e:
-            logger.error(f"Error copying tutorial deck for user {user_id}: {str(e)}")
+            logger.error(f"Error ensuring tutorial deck for user {user_id}: {str(e)}")
             return None
 
     def sign_in(self, email: str, password: str) -> Dict[str, Any]:

@@ -68,6 +68,7 @@ class DeckDiffBase(BaseModel):
     slides_to_update: List[SlideDiffBase] = Field(default_factory=list, description="Updates to existing slides")
     slides_to_add: List[Dict[str, Any]] = Field(default_factory=list, description="New slides to add to the deck")
     slides_to_remove: List[str] = Field(default_factory=list, description="IDs of slides to remove")
+    slide_order: Optional[List[str]] = Field(default=None, description="Optional full slide ID order to apply (reorder deck slides).")
 
 def create_typed_deck_model(slide_model: Type[SlideBase]):
     slides = (

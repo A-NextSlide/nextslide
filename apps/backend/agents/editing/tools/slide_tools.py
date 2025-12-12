@@ -18,8 +18,137 @@ from models.registry import ComponentRegistry
 from agents.ai.clients import get_client, invoke
 from agents.ai.rate_limit_tracker import is_provider_in_cooldown, mark_provider_rate_limited
 from agents.config import get_model, MODEL_FALLBACK
+import requests
+import base64
+import re
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MULTIMODAL HELPER - Download images for vision models
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_multimodal_content(text_content: str, attachments: List[Dict] = None) -> List[Dict[str, Any]]:
+    """
+    Build multimodal content array for vision models.
+    Downloads images from URLs and includes them as base64 for the AI to see.
+
+    Args:
+        text_content: The text prompt
+        attachments: List of attachments with 'url', 'name', 'mimeType'
+
+    Returns:
+        List of content blocks for multimodal message
+    """
+    content_parts = []
+
+    # Add text first
+    content_parts.append({
+        "type": "text",
+        "text": text_content
+    })
+
+    if not attachments:
+        return content_parts
+
+    # Process image attachments
+    image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'}
+    image_mimes = {'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'}
+
+    for att in attachments[:3]:  # Limit to 3 images for performance
+        url = att.get('url', '')
+        name = att.get('name', '') or ''
+        mime = att.get('mimeType', '') or att.get('type', '') or ''
+
+        # Check if it's an image
+        is_image = (
+            mime.lower() in image_mimes or
+            any(name.lower().endswith(ext) for ext in image_extensions) or
+            any(ext in url.lower() for ext in image_extensions)
+        )
+
+        if not is_image or not url:
+            continue
+
+        try:
+            # Handle data URLs
+            if url.startswith('data:'):
+                match = re.match(r'data:([^;]+);base64,(.+)', url)
+                if match:
+                    media_type = match.group(1)
+                    img_b64 = match.group(2)
+                    content_parts.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": img_b64
+                        }
+                    })
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"[Image: {name} - ANALYZE THIS and follow its design/content exactly]"
+                    })
+                    logger.info(f"[MULTIMODAL] ✅ Added base64 image: {name}")
+            else:
+                # Download from URL
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    img_b64 = base64.b64encode(response.content).decode('utf-8')
+
+                    # Determine media type
+                    content_type = response.headers.get('content-type', '')
+                    if 'png' in content_type or name.lower().endswith('.png'):
+                        media_type = 'image/png'
+                    elif 'gif' in content_type or name.lower().endswith('.gif'):
+                        media_type = 'image/gif'
+                    elif 'webp' in content_type or name.lower().endswith('.webp'):
+                        media_type = 'image/webp'
+                    else:
+                        media_type = 'image/jpeg'
+
+                    content_parts.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": img_b64
+                        }
+                    })
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"[Image: {name} - ANALYZE THIS and follow its design/content exactly]"
+                    })
+                    logger.info(f"[MULTIMODAL] ✅ Downloaded and added image: {name} ({len(img_b64)} bytes)")
+        except Exception as e:
+            logger.warning(f"[MULTIMODAL] Failed to process image {name}: {e}")
+            # Fall back to just mentioning the URL
+            content_parts.append({
+                "type": "text",
+                "text": f"[Image URL - could not download: {url}]"
+            })
+
+    return content_parts
+
+# region agent log
+def _dbg(hypothesisId: str, location: str, message: str, data: Dict[str, Any], runId: str = "pre-fix") -> None:
+    try:
+        import json, time
+        payload = {
+            "sessionId": "debug-session",
+            "runId": runId,
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with open("/Users/ahmed/Documents/Dev/nextslide/.cursor/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+# endregion
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -225,7 +354,41 @@ def edit_slide(
     custom_component = next((c for c in components if _get_attr(c, 'type') == 'CustomComponent'), None)
     is_empty = len(non_bg_components) == 0
 
+    instruction_l = (instruction or "").lower()
+    has_image_attachments = bool(attachments) and any(
+        (a.get("mimeType", "") or "").startswith("image/")
+        or (a.get("type", "") or "").startswith("image/")
+        or any((a.get("name", "") or "").lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"])
+        for a in (attachments or [])
+    )
+    rewrite_keywords = [
+        "redesign", "redo", "rebuild", "from scratch", "start over",
+        "completely different", "entirely different", "make it totally different",
+        "overhaul", "transform",
+        "replace the current", "match the image", "like the image", "use the image",
+    ]
+    wants_rewrite = any(k in instruction_l for k in rewrite_keywords) or ("img_" in instruction_l) or (".jpeg" in instruction_l) or (".png" in instruction_l)
+
     logger.info(f"[edit_slide] slide={slide_id}, empty={is_empty}, has_custom={custom_component is not None}")
+    _dbg("B", "slide_tools.py:edit_slide", "branch_decision", {"slide_id": slide_id, "is_empty": is_empty, "has_custom": custom_component is not None, "wants_rewrite": wants_rewrite, "instruction_preview": (instruction or "")[:120]}, runId="pre-fix")
+
+    # FORCE: For explicit redesign/rewrite requests, always produce a full-bleed CustomComponent.
+    # This prevents the "NEW SLIDE" placeholder outcome when the slide has only standard components.
+    if wants_rewrite and not custom_component:
+        deck_diff = DeckDiff(DeckDiffBase())
+        # remove non-background components
+        for c in non_bg_components:
+            cid = _get_attr(c, "id")
+            if cid:
+                deck_diff.remove_component(slide_id, cid)
+        try:
+            new_cc = _generate_full_bleed_custom_component(slide_id, instruction, deck_data, current_slide, attachments)
+            deck_diff.add_component(slide_id, new_cc)
+            _dbg("B", "slide_tools.py:edit_slide", "forced_full_bleed_custom_component", {"slide_id": slide_id, "new_component_id": new_cc.get("id"), "render_len": len(((new_cc.get("props") or {}).get("render")) or "")}, runId="pre-fix")
+            return deck_diff
+        except Exception as e:
+            _dbg("B", "slide_tools.py:edit_slide", "forced_full_bleed_custom_component_failed", {"slide_id": slide_id, "error": str(e)[:200]}, runId="pre-fix")
+            # fall through to existing behavior as last resort
 
     # CASE 1: Empty slide → Generate full content
     if is_empty:
@@ -233,10 +396,206 @@ def edit_slide(
 
     # CASE 2: Has CustomComponent → Rewrite HTML
     if custom_component:
-        return _rewrite_custom_component(slide_id, custom_component, instruction, attachments)
+        # Only do full rewrite if user explicitly asked for redesign/redo/etc.
+        if wants_rewrite:
+            return custom_component_rewrite(
+                args={"slide_id": slide_id, "component_id": _get_attr(custom_component, "id"), "instruction": instruction},
+                deck_data=deck_data,
+                current_slide=current_slide,
+                registry=registry,
+                attachments=attachments,
+            )
+        # Otherwise: targeted edit attempt (Cursor-style) guided by AI to propose 1-3 exact replacements
+        return _targeted_custom_component_edit(slide_id, custom_component, instruction, deck_data, attachments)
 
     # CASE 3: Standard components → Generate new slide content
     return _edit_standard_components(slide_id, components, instruction, attachments)
+
+class _ReplaceOp(BaseModel):
+    old_string: str = Field(description="Exact string to find in the HTML (must exist verbatim).")
+    new_string: str = Field(description="Replacement string.")
+
+class _ReplacePlan(BaseModel):
+    ops: List[_ReplaceOp] = Field(default_factory=list, description="1-3 replacement operations to apply in order.")
+    note: str = Field(default="", description="Brief note about what will change.")
+
+def _gather_reference_images(current_html: str, attachments: List[Dict] = None) -> List[str]:
+    """Collect reference image URLs from current HTML + attachments (return ALL unique URLs)."""
+    reference_images: List[str] = []
+    try:
+        import re
+        reference_images = re.findall(r"https?://[^\s'\"]+slide-media[^\s'\"]+", current_html or "")
+    except Exception:
+        reference_images = []
+    if attachments:
+        for a in attachments:
+            url = a.get("url") or a.get("publicUrl")
+            mime = a.get("mimeType") or a.get("type") or ""
+            name = (a.get("name") or "").lower()
+            if url and (mime.startswith("image/") or name.endswith((".png", ".jpg", ".jpeg", ".webp"))):
+                reference_images.append(url)
+    return list(dict.fromkeys([u for u in reference_images if u]))
+
+def _run_async(coro):
+    """Run async coroutine from sync context."""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+def _generate_full_bleed_custom_component(
+    slide_id: str,
+    instruction: str,
+    deck_data: Dict,
+    current_slide: Dict,
+    attachments: List[Dict] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a full-bleed CustomComponent via CustomComponentGenerator (same quality path as generation).
+    Returns a normalized component dict {id,type,props}.
+    """
+    from agents.generation.custom_component_generator import CustomComponentGenerator
+    theme = (deck_data or {}).get("theme") or {}
+    colors = theme.get("color_palette") or theme.get("colors") or {}
+    reference_images = _gather_reference_images("", attachments)
+
+    gen = CustomComponentGenerator()
+    slide_context = {
+        "title": _get_attr(current_slide, "title", "") or (deck_data or {}).get("name") or "Slide",
+        "slide_index": 0,
+        "total_slides": len((deck_data or {}).get("slides") or []) or 1,
+        "slide_type": "content",
+        "is_full_slide": True,
+        "presentation_context": (deck_data or {}).get("name") or "",
+        "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
+    }
+
+    generated = _run_async(
+        gen.generate(
+            content=f"{instruction}\n\nIMPORTANT:\n- Fill the entire 1920x1080 canvas.\n- If reference images are provided, match their layout/style and transcribe any visible text the user asks to use exactly.\n",
+            theme=theme if isinstance(theme, dict) else {},
+            slide_context=slide_context,
+            component_purpose="visualize",
+            width=1920,
+            height=1080,
+            position={"x": 0, "y": 0},
+            reference_images=reference_images or None,
+        )
+    )
+    html = ((generated or {}).get("props") or {}).get("render") or ""
+    if not html:
+        raise ValueError("CustomComponentGenerator returned empty render")
+
+    props = (generated or {}).get("props") or {}
+    props = dict(props) if isinstance(props, dict) else {}
+    props["render"] = html
+    props["position"] = {"x": 0, "y": 0}
+    props["width"] = 1920
+    props["height"] = 1080
+
+    return {"id": str(uuid.uuid4()), "type": "CustomComponent", "props": props}
+
+def _targeted_custom_component_edit(
+    slide_id: str,
+    custom_component: Dict,
+    instruction: str,
+    deck_data: Dict,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Perform a surgical edit on CustomComponent HTML:
+    - Use AI to propose exact old_string/new_string replacements (1-3)
+    - Apply replacements mechanically (no HTML regeneration)
+    If plan fails (no exact match), fall back to rewrite ONLY if needed.
+    """
+    comp_id = _get_attr(custom_component, "id")
+    props = _get_attr(custom_component, "props", {}) or {}
+    current_html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+
+    # Theme context
+    theme = (deck_data or {}).get("theme") or {}
+    colors = theme.get("color_palette") or theme.get("colors") or {}
+    typography = theme.get("typography") or {}
+    att_hint = ""
+    if attachments:
+        try:
+            safe = [f"- {a.get('name','file')}: {a.get('url','')}" for a in attachments]
+            att_hint = "\n\nFILES AVAILABLE:\n" + "\n".join(safe)
+        except Exception:
+            att_hint = ""
+
+    prompt = f"""You are a precise HTML editor. You must make a SMALL, TARGETED change without redesigning.
+
+RULES:
+- Do NOT rewrite the whole HTML.
+- Propose 1-3 exact search/replace operations.
+- old_string MUST exist verbatim in the provided HTML.
+- Keep changes minimal and localized.
+
+THEME (for color/font consistency):
+- accent_1: {colors.get('accent_1')}
+- accent_2: {colors.get('accent_2')}
+- primary_text: {colors.get('primary_text')}
+- primary_background: {colors.get('primary_background')}
+- typography: {str(typography)[:500]}
+
+CURRENT HTML (truncated to 25k):
+{current_html[:25000]}
+
+USER REQUEST:
+{instruction}{att_hint}
+
+Return a JSON object with:
+{{"ops":[{{"old_string":"...", "new_string":"..."}}], "note":"..."}}"""
+
+    client, model = _get_model_and_client("validation")
+    plan = _invoke_with_fallback(
+        client=client,
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_model=_ReplacePlan,
+        max_tokens=2500,
+    )
+
+    _dbg("B", "slide_tools.py:_targeted_custom_component_edit", "replace_plan", {"slide_id": slide_id, "component_id": comp_id, "ops": len(plan.ops), "note": plan.note[:200]}, runId="pre-fix")
+
+    # Apply ops
+    new_html = current_html
+    applied = 0
+    for op in (plan.ops or [])[:3]:
+        if not op.old_string:
+            continue
+        if op.old_string not in new_html:
+            _dbg("B", "slide_tools.py:_targeted_custom_component_edit", "old_string_missing", {"missing_preview": op.old_string[:120], "component_id": comp_id}, runId="pre-fix")
+            break
+        new_html = new_html.replace(op.old_string, op.new_string or "", 1)
+        applied += 1
+
+    if applied == 0:
+        # Fallback: do NOT rewrite unless the request strongly implies redesign.
+        # If we can't apply targeted changes, use the higher-quality rewrite (CustomComponentGenerator prompt).
+        return custom_component_rewrite(
+            args={"slide_id": slide_id, "component_id": comp_id, "instruction": instruction},
+            deck_data=deck_data,
+            current_slide={"id": slide_id, "components": [custom_component]},
+            registry=None,
+            attachments=attachments,
+        )
+
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.update_component(
+        slide_id,
+        comp_id,
+        ComponentDiffBase(id=comp_id, type="CustomComponent", props={"render": new_html}),
+    )
+    _dbg("B", "slide_tools.py:_targeted_custom_component_edit", "applied_replace_ops", {"applied": applied, "old_len": len(current_html), "new_len": len(new_html)}, runId="pre-fix")
+    return deck_diff
 
 
 def _generate_slide_content(
@@ -255,16 +614,9 @@ def _generate_slide_content(
         None
     )
 
-    # Build attachment context
-    att_context = ""
-    if attachments:
-        att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
-        att_context = f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
-
     prompt = f"""{SLIDE_GENERATOR_PROMPT}
 
 EXISTING BACKGROUND: {_get_attr(background, 'props') if background else 'None - create a dark gradient background'}
-{att_context}
 
 USER REQUEST: {instruction}
 
@@ -274,10 +626,30 @@ Use CustomComponent for complex layouts (cards, grids, timelines, etc.)."""
 
     client, model = _get_model_and_client("slide_generate")
 
+    # Check if we have image attachments - use multimodal content if so
+    has_images = attachments and any(
+        a.get('mimeType', '').startswith('image/') or
+        a.get('type', '').startswith('image/') or
+        any(a.get('name', '').lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'])
+        for a in attachments
+    )
+
+    if has_images:
+        # Build multimodal content with images for the AI to SEE
+        logger.info(f"[_generate_slide_content] 🖼️ Building multimodal content with {len(attachments)} attachments")
+        user_content = _build_multimodal_content(prompt, attachments)
+        messages = [{"role": "user", "content": user_content}]
+    else:
+        # Text-only, include attachment URLs in text
+        if attachments:
+            att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
+            prompt += f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
+        messages = [{"role": "user", "content": prompt}]
+
     response = _invoke_with_fallback(
         client=client,
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         response_model=SlideContent,
         max_tokens=16000,
     )
@@ -301,18 +673,49 @@ Use CustomComponent for complex layouts (cards, grids, timelines, etc.)."""
     return deck_diff
 
 
-def _rewrite_custom_component(
-    slide_id: str,
-    custom_component: Dict,
-    instruction: str,
+def _detect_slide_mode_from_html(html: str) -> str:
+    try:
+        h = (html or "").lower()
+        if "<script" in h or "onclick=" in h or "onmouseover=" in h:
+            return "interactive"
+        return "static"
+    except Exception:
+        return "interactive"
+
+def custom_component_rewrite(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
     attachments: List[Dict] = None,
 ) -> DeckDiff:
-    """Rewrite CustomComponent HTML based on instruction."""
-    logger.info(f"[_rewrite_custom_component] Rewriting custom component")
+    """
+    High-quality rewrite for a specific CustomComponent using CustomComponentGenerator prompts.
+    Only use when user explicitly requests redesign/redo/etc., or as last resort fallback.
+
+    Args: {"slide_id": str, "component_id": str, "instruction": str}
+    """
+    slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
+    component_id = args.get("component_id")
+    instruction = args.get("instruction", "")
+
+    components = _get_attr(current_slide, "components", []) or []
+    custom_component = next((c for c in components if _get_attr(c, "id") == component_id), None)
+    if not custom_component:
+        custom_component = next((c for c in components if _get_attr(c, "type") == "CustomComponent"), None)
+    if not custom_component:
+        raise ValueError("CustomComponent not found for rewrite")
+
+    logger.info(f"[custom_component_rewrite] Rewriting custom component")
 
     comp_id = _get_attr(custom_component, 'id')
     props = _get_attr(custom_component, 'props', {}) or {}
     current_html = props.get('render', '') if isinstance(props, dict) else getattr(props, 'render', '')
+
+    # Extract theme context from deck
+    theme = (deck_data or {}).get("theme") or {}
+    colors = theme.get("color_palette") or theme.get("colors") or {}
+    typography = theme.get("typography") or {}
 
     # Build attachment context
     att_context = ""
@@ -320,19 +723,118 @@ def _rewrite_custom_component(
         att_list = ["- " + a.get('name', 'file') + ": " + a.get('url', '') for a in attachments]
         att_context = "\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
 
-    # Build prompt without f-strings to avoid issues with # in HTML
-    prompt = CUSTOM_COMPONENT_REWRITE_PROMPT.format(
-        current_html=current_html[:30000],
-        instruction=instruction,
-    ) + att_context
+    slide_mode = _detect_slide_mode_from_html(current_html)
+
+    # Gather ALL reference images (we embed a few as multimodal, but include all URLs in text context)
+    reference_images = _gather_reference_images(current_html, attachments)
+
+    # Prefer the full CustomComponentGenerator.generate() flow (same as slide generation).
+    def _run_async(coro):
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    return pool.submit(asyncio.run, coro).result()
+            return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    try:
+        from agents.generation.custom_component_generator import CustomComponentGenerator
+        gen = CustomComponentGenerator()
+        # Compute slide index if present in deck_data
+        try:
+            slides = (deck_data or {}).get("slides") or []
+            slide_index = next((i for i, s in enumerate(slides) if isinstance(s, dict) and s.get("id") == slide_id), 0)
+        except Exception:
+            slide_index = 0
+
+        slide_context = {
+            "title": _get_attr(current_slide, "title", "") or (deck_data or {}).get("name") or "Slide",
+            "slide_index": slide_index,
+            "total_slides": len((deck_data or {}).get("slides") or []) or 1,
+            "slide_type": "content",
+            "is_full_slide": True,
+            "presentation_context": (deck_data or {}).get("name") or "",
+            "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
+        }
+        theme_for_gen = theme if isinstance(theme, dict) else {}
+        # Include all attachment URLs in the prompt text so the model can infer intent without UI buttons.
+        attachment_context = ""
+        if attachments:
+            safe = [f"- {a.get('name','file')}: {a.get('url','')}" for a in attachments]
+            attachment_context = "\n\nFILES (infer intent; if user says 'use this' and images exist, treat as primary reference and recreate):\n" + "\n".join(safe)
+
+        generated = _run_async(
+            gen.generate(
+                content=f"{instruction}{attachment_context}\n\nIMPORTANT: Fill the entire 1920x1080 canvas. Do not use max-width containers. If reference images are provided, match their layout and style.",
+                theme=theme_for_gen,
+                slide_context=slide_context,
+                component_purpose="visualize",
+                width=1920,
+                height=1080,
+                position={"x": 0, "y": 0},
+                reference_images=reference_images or None,
+            )
+        )
+        new_html = ((generated or {}).get("props") or {}).get("render") or ""
+        if not new_html:
+            raise ValueError("generator returned empty render")
+
+        # Build diff with render + full-bleed sizing
+        deck_diff = DeckDiff(DeckDiffBase())
+        component_diff = ComponentDiffBase(
+            id=comp_id,
+            type="CustomComponent",
+            props={"render": new_html, "position": {"x": 0, "y": 0}, "width": 1920, "height": 1080},
+        )
+        deck_diff.update_component(slide_id, comp_id, component_diff)
+
+        _dbg("B", "slide_tools.py:custom_component_rewrite", "rewrite_done", {"slide_id": slide_id, "component_id": comp_id, "mode": slide_mode, "model": getattr(gen, "model", None), "reference_images": reference_images, "old_len": len(current_html), "new_len": len(new_html)}, runId="pre-fix")
+        logger.info(f"[custom_component_rewrite] Rewrote via CustomComponentGenerator ({len(current_html)} → {len(new_html)} chars)")
+        return deck_diff
+    except Exception as e:
+        logger.warning(f"[custom_component_rewrite] Generator path failed, falling back to prompt-based rewrite: {e}")
+
+    # Fallback: prompt-based rewrite (kept for safety)
+    # Reuse CustomComponentGenerator prompt builder for quality parity
+    try:
+        from agents.generation.custom_component_generator import CustomComponentGenerator
+        gen = CustomComponentGenerator()
+        system_prompt = gen._build_system_prompt(
+            colors=colors if isinstance(colors, dict) else {},
+            typography=typography if isinstance(typography, dict) else {},
+            style_keywords=[],
+            slide_mode=slide_mode,
+            logo_url=None,
+            logo_needs_invert=False,
+        )
+    except Exception as e:
+        system_prompt = "You are an expert HTML/CSS designer. Modify the CustomComponent with high quality and theme consistency. Fill 1920x1080."
+        logger.warning(f"[custom_component_rewrite] Failed to build generator prompt, using fallback: {e}")
+
+    user_prompt = f"""CURRENT CUSTOMCOMPONENT HTML:
+{current_html[:25000]}
+
+REFERENCE IMAGE URLS (if any): {', '.join(reference_images) if reference_images else 'none'}
+
+USER REQUEST:
+{instruction}
+
+IMPORTANT:
+- Fill the entire 1920x1080 canvas.
+- Do not use max-width containers (no max-w-7xl).
+
+Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
 
     client, model = _get_model_and_client("custom_component_rewrite")
 
-    # Get raw HTML response (no structured output)
     new_html = _invoke_with_fallback(
         client=client,
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
         response_model=None,  # Raw output
         max_tokens=16000,
     )
@@ -352,8 +854,135 @@ def _rewrite_custom_component(
     )
     deck_diff.update_component(slide_id, comp_id, component_diff)
 
-    logger.info(f"[_rewrite_custom_component] Rewrote HTML ({len(current_html)} → {len(new_html)} chars)")
+    _dbg("B", "slide_tools.py:custom_component_rewrite", "rewrite_done", {"slide_id": slide_id, "component_id": comp_id, "mode": slide_mode, "model": model, "sys_len": len(system_prompt), "user_len": len(user_prompt), "old_len": len(current_html), "new_len": len(new_html)}, runId="pre-fix")
+    logger.info(f"[custom_component_rewrite] Rewrote HTML ({len(current_html)} → {len(new_html)} chars)")
     return deck_diff
+
+def custom_component_str_replace(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Cursor-style surgical replacement inside an existing CustomComponent's render HTML.
+    Args: {"slide_id": str, "component_id": str, "old_string": str, "new_string": str}
+    """
+    slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
+    component_id = args.get("component_id")
+    old_string = args.get("old_string") or ""
+    new_string = args.get("new_string") or ""
+
+    if not component_id:
+        raise ValueError("component_id is required")
+    if not old_string:
+        raise ValueError("old_string is required")
+
+    components = _get_attr(current_slide, "components", []) or []
+    comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+    if not comp or _get_attr(comp, "type") != "CustomComponent":
+        raise ValueError(f"CustomComponent {component_id} not found")
+
+    props = _get_attr(comp, "props", {}) or {}
+    html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+    if old_string not in html:
+        raise ValueError("old_string not found in CustomComponent HTML")
+
+    new_html = html.replace(old_string, new_string, 1)
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.update_component(
+        slide_id,
+        component_id,
+        ComponentDiffBase(id=component_id, type="CustomComponent", props={"render": new_html}),
+    )
+    _dbg("B", "slide_tools.py:custom_component_str_replace", "str_replace_applied", {"slide_id": slide_id, "component_id": component_id, "old_preview": old_string[:120], "new_preview": new_string[:120]}, runId="pre-fix")
+    return deck_diff
+
+def component_prop_update(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Mechanical prop merge for a component. No AI.
+    Args: {"slide_id": str, "component_id": str, "updates": { ... }}
+    """
+    slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
+    component_id = args.get("component_id")
+    updates = args.get("updates") or {}
+    if not component_id:
+        raise ValueError("component_id is required")
+    if not isinstance(updates, dict):
+        raise ValueError("updates must be an object")
+
+    components = _get_attr(current_slide, "components", []) or []
+    comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+    if not comp:
+        raise ValueError(f"Component {component_id} not found")
+
+    ctype = _get_attr(comp, "type", "Unknown")
+    props = _get_attr(comp, "props", {}) or {}
+    if not isinstance(props, dict):
+        props = dict(props) if hasattr(props, "__iter__") else {}
+    new_props = {**props, **updates}
+
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.update_component(
+        slide_id,
+        component_id,
+        ComponentDiffBase(id=component_id, type=ctype, props=new_props),
+    )
+    _dbg("B", "slide_tools.py:component_prop_update", "prop_update", {"slide_id": slide_id, "component_id": component_id, "type": ctype, "keys": list(updates.keys())[:30]}, runId="pre-fix")
+    return deck_diff
+
+def view_component(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Return component details (and HTML preview for CustomComponent).
+    This is a read-only tool - returns an empty DeckDiff.
+    The component info is logged for the AI to see in context.
+
+    Args: {"slide_id": str, "component_id": str}
+    """
+    component_id = args.get("component_id")
+    if not component_id:
+        raise ValueError("component_id is required")
+
+    components = _get_attr(current_slide, "components", []) or []
+    comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+    if not comp:
+        raise ValueError(f"Component {component_id} not found")
+
+    ctype = _get_attr(comp, "type", "Unknown")
+    props = _get_attr(comp, "props", {}) or {}
+    out: Dict[str, Any] = {"id": component_id, "type": ctype, "props": props}
+    if ctype == "CustomComponent":
+        html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+        # Provide full HTML so the agent can actually reason + do targeted edits.
+        # (Logs are not fed back into the LLM prompt; orchestrator will read this observation.)
+        out["html"] = html or ""
+        out["html_preview"] = (html or "")[:2000]
+
+    # Log the component info for debugging/AI context
+    logger.info(f"[view_component] Viewed component {component_id}: type={ctype}, props_keys={list(props.keys()) if isinstance(props, dict) else 'N/A'}")
+    _dbg("B", "slide_tools.py:view_component", "component_viewed", out, runId="pre-fix")
+
+    # Return empty DeckDiff since this is a read-only operation,
+    # but attach the observation so orchestrator can feed it back to the agent.
+    dd = DeckDiff(DeckDiffBase())
+    try:
+        setattr(dd, "observation", out)
+    except Exception:
+        pass
+    return dd
 
 
 def _edit_standard_components(
@@ -365,29 +994,42 @@ def _edit_standard_components(
     """Edit standard components or replace with CustomComponent."""
     logger.info(f"[_edit_standard_components] Editing {len(components)} components")
 
-    # Build attachment context
-    att_context = ""
-    if attachments:
-        att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
-        att_context = f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
-
     prompt = f"""{SLIDE_GENERATOR_PROMPT}
 
 {SLIDE_EDIT_PROMPT.format(
     current_components=_format_components_for_prompt(components),
     instruction=instruction,
 )}
-{att_context}
 
 Return ALL components for the slide (modified + unchanged).
 Consider converting to a CustomComponent if the request requires complex layout."""
 
     client, model = _get_model_and_client("slide_generate")
 
+    # Check if we have image attachments - use multimodal content if so
+    has_images = attachments and any(
+        a.get('mimeType', '').startswith('image/') or
+        a.get('type', '').startswith('image/') or
+        any(a.get('name', '').lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp'])
+        for a in attachments
+    )
+
+    if has_images:
+        # Build multimodal content with images for the AI to SEE
+        logger.info(f"[_edit_standard_components] 🖼️ Building multimodal content with {len(attachments)} attachments")
+        user_content = _build_multimodal_content(prompt, attachments)
+        messages = [{"role": "user", "content": user_content}]
+    else:
+        # Text-only, include attachment URLs in text
+        if attachments:
+            att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
+            prompt += f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
+        messages = [{"role": "user", "content": prompt}]
+
     response = _invoke_with_fallback(
         client=client,
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         response_model=SlideContent,
         max_tokens=16000,
     )
@@ -457,7 +1099,8 @@ USER REQUEST: {instruction}
 
 Generate a complete, beautiful slide. Include:
 1. A Background component (dark gradient recommended)
-2. Content components (use CustomComponent for complex layouts)
+2. Prefer ONE CustomComponent for the entire layout (cards/grids/illustrations/text), so the slide feels cohesive.
+   Only add extra components if absolutely necessary.
 
 Make it visually stunning and professional."""
 
@@ -473,8 +1116,17 @@ Make it visually stunning and professional."""
 
     # Build slide
     slide_id = str(uuid.uuid4())
+    # Frontend expects slides to have a title; backend diffs without title require a full refetch.
+    # Use a reasonable default derived from the instruction.
+    slide_title = (instruction or "").strip()
+    if not slide_title:
+        slide_title = "New Slide"
+    # Keep titles short to avoid ugly thumbnails
+    if len(slide_title) > 80:
+        slide_title = slide_title[:77].rstrip() + "..."
     slide = {
         "id": slide_id,
+        "title": slide_title,
         "components": []
     }
 
@@ -517,4 +1169,95 @@ def delete_slide(
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.remove_slide(slide_id)
 
+    return deck_diff
+
+
+def duplicate_slide(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Duplicate an existing slide (mechanical, no AI).
+    Args: {"slide_id": str, "insert_after": optional str}
+    """
+    import copy
+    slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
+    insert_after = args.get("insert_after")
+    slides = (deck_data or {}).get("slides") or []
+
+    original = next((s for s in slides if isinstance(s, dict) and s.get("id") == slide_id), None)
+    if not original:
+        # Fall back to current_slide snapshot
+        original = current_slide if isinstance(current_slide, dict) else None
+    if not original:
+        raise ValueError(f"Slide {slide_id} not found")
+
+    new_slide = copy.deepcopy(original)
+    new_slide["id"] = str(uuid.uuid4())
+    # New component IDs
+    for c in (new_slide.get("components") or []):
+        if isinstance(c, dict):
+            c["id"] = str(uuid.uuid4())
+
+    # Add as slide_to_add; ordering handled by slide_order if desired later
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.deck_diff.slides_to_add.append(new_slide)
+
+    # If insert_after provided, produce a new slide_order (optional)
+    if insert_after:
+        try:
+            ids = [s.get("id") for s in slides if isinstance(s, dict) and s.get("id")]
+            if insert_after in ids:
+                idx = ids.index(insert_after) + 1
+                ids.insert(idx, new_slide["id"])
+                deck_diff.deck_diff.slide_order = ids
+        except Exception:
+            pass
+
+    return deck_diff
+
+
+def reorder_slides(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Reorder slides by producing deck_diff.slide_order, applied by agent_apply.apply_deckdiff.
+    Args:
+      - {"slide_id": str, "new_index": int}
+      - OR {"slide_order": [slide_id,...]} (full order)
+    """
+    slides = (deck_data or {}).get("slides") or []
+    ids = [s.get("id") for s in slides if isinstance(s, dict) and s.get("id")]
+
+    order = args.get("slide_order")
+    if isinstance(order, list) and order:
+        # Trust provided order; append any missing to preserve
+        mentioned = [sid for sid in order if sid in ids]
+        tail = [sid for sid in ids if sid not in set(mentioned)]
+        final = mentioned + tail
+    else:
+        sid = args.get("slide_id")
+        new_index = args.get("new_index")
+        if sid not in ids:
+            raise ValueError("slide_id not found in deck")
+        if not isinstance(new_index, int):
+            raise ValueError("new_index must be an integer")
+        ids.remove(sid)
+        # clamp
+        if new_index < 0:
+            new_index = 0
+        if new_index > len(ids):
+            new_index = len(ids)
+        ids.insert(new_index, sid)
+        final = ids
+
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.deck_diff.slide_order = final
     return deck_diff

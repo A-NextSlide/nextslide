@@ -41,6 +41,12 @@ def execute_tool(
         edit_slide,
         create_slide,
         delete_slide,
+        duplicate_slide,
+        reorder_slides,
+        custom_component_rewrite,
+        custom_component_str_replace,
+        component_prop_update,
+        view_component,
     )
     from agents.editing.tools.component_tools import (
         edit_component,
@@ -54,10 +60,16 @@ def execute_tool(
         "edit_slide": edit_slide,
         "create_slide": create_slide,
         "delete_slide": delete_slide,
+        "duplicate_slide": duplicate_slide,
+        "reorder_slides": reorder_slides,
         "edit_component": edit_component,
         "create_component": create_component,
         "delete_component": delete_component,
         "apply_theme": apply_theme,
+        "custom_component_rewrite": custom_component_rewrite,
+        "custom_component_str_replace": custom_component_str_replace,
+        "component_prop_update": component_prop_update,
+        "view_component": view_component,
     }
 
     if tool_name not in TOOLS:

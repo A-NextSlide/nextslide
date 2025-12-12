@@ -27,6 +27,7 @@ import { applyDeckDiffPure } from '@/utils/deckDiffUtils';
 import { createComponent } from '@/utils/componentUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/utils/fileUploadUtils';
+import { deckSyncService } from '@/lib/deckSyncService';
 import { useEditor } from '@/hooks/useEditor';
 import { useEditorStore } from '@/stores/editorStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -233,6 +234,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   opacity = 1,
   newSystemMessage,
   outline,
+  deckId,
   isExistingDeck = false,
   outlineMode = false,
   useOutlineAgent = false,
@@ -535,7 +537,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 autoSelectImages: true, // Default to true - auto-populate images
                 uploadedMedia: uploadedMediaFromAgent // Pre-processed media from agent
               },
-              (event) => {
+              (event: any) => {
                 console.log('[ChatPanel] 📥 Stream event:', event.type, event);
 
                 // Handle error events from backend
@@ -767,6 +769,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  // File intent is inferred by the model from chat + selection + file metadata (no confirmation UI).
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragCounterRef = useRef<number>(0);
   const isUploadingRef = useRef<boolean>(false);
@@ -2212,11 +2215,32 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       // This ensures changes are visible regardless of edit mode or realtime status
                       console.log('[Realtime][edit.applied] no cached diff; forcing deck reload from database');
                       setTimeout(() => {
-                        const deckStore = useDeckStore.getState();
-                        if (deckStore.loadDeck) {
-                          deckStore.loadDeck();
-                          console.log('[Realtime][edit.applied] ✅ Forced deck reload triggered');
-                        }
+                        (async () => {
+                          try {
+                            const deckStore = useDeckStore.getState();
+                            const deckIdToRefresh = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+                            if (!deckIdToRefresh) return;
+                            const latest = await deckSyncService.getFullDeck(String(deckIdToRefresh));
+                            if (latest && (latest as any).slides) {
+                              deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
+                              console.log('[Realtime][edit.applied] ✅ Forced deck refetch applied', {
+                                deckId: deckIdToRefresh,
+                                slideCount: (latest as any).slides?.length
+                              });
+                              return;
+                            }
+                          } catch (e) {
+                            console.warn('[Realtime][edit.applied] Forced refetch failed (non-fatal)', e);
+                          }
+                          // Fallback to legacy store reload if available
+                          try {
+                            const deckStore = useDeckStore.getState();
+                            if ((deckStore as any).loadDeck) {
+                              (deckStore as any).loadDeck();
+                              console.log('[Realtime][edit.applied] ✅ Forced deck reload triggered (fallback)');
+                            }
+                          } catch { }
+                        })();
                       }, 500); // Small delay to ensure backend write completes
                     }
                   }
@@ -2226,6 +2250,37 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 // Forcing a reload here can fetch stale data and replace the locally applied changes
                 if (deckRevision) {
                   console.log('[Realtime][edit.applied] deckRevision provided; relying on Supabase realtime', { deckRevision });
+                }
+              } catch { }
+
+              // Extra safety: for structural edits (add/remove/reorder slides), schedule a lightweight refetch.
+              // This eliminates "I have to refresh the whole page to see the new slide" even if local diff
+              // application was blocked by guards or realtime delivery was delayed.
+              try {
+                const deckStore = useDeckStore.getState();
+                const deckIdToRefresh = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+                const editId = appliedEditId;
+                const diffMaybe = editId ? proposedDiffsRef.current.get(editId) : undefined;
+                const needsStructuralRefresh =
+                  !!(diffMaybe as any)?.slides_to_add?.length ||
+                  !!(diffMaybe as any)?.slides_to_remove?.length ||
+                  !!(diffMaybe as any)?.slide_order;
+
+                if (deckIdToRefresh && needsStructuralRefresh) {
+                  setTimeout(async () => {
+                    try {
+                      const latest = await deckSyncService.getFullDeck(String(deckIdToRefresh));
+                      if (latest && (latest as any).slides) {
+                        deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
+                        console.log('[Realtime][edit.applied] ✅ Structural refetch applied', {
+                          deckId: deckIdToRefresh,
+                          slideCount: (latest as any).slides?.length
+                        });
+                      }
+                    } catch (e) {
+                      console.warn('[Realtime][edit.applied] Structural refetch failed (non-fatal)', e);
+                    }
+                  }, 600);
                 }
               } catch { }
               return;
@@ -2799,16 +2854,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [ensureAgentSession, agentSessionId, setMessages]);
 
+  // (removed file intent confirmation flow)
+
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    // Immediately add pending attachments as badges and start upload + registration
-    // Create image previews for image files
-    const pending: PendingAttachment[] = files.map(file => {
-      const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
-      return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
-    });
-    console.log('[ChatPanel] 📎 handleFileChange - Adding', pending.length, 'files with file refs:', pending.map(p => ({ name: p.name, hasFile: !!p.file })));
+
+    // Create file objects with previews
+    const filesWithPreviews = files.map(file => ({
+      file,
+      previewUrl: file.type.startsWith('image/') ? createImagePreview(file) : undefined
+    }));
+
+    // Add directly without asking; model will infer how to use the files.
+    const pending: PendingAttachment[] = filesWithPreviews.map(({ file, previewUrl }) => ({
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      file,
+      previewUrl
+    }));
+    console.log('[ChatPanel] 📎 handleFileChange - Adding', pending.length, 'files (no intent dialog)');
 
     // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
     const newAttachments = [...attachmentsRef.current, ...pending];
@@ -2849,13 +2915,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     setIsDraggingOver(false);
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length === 0) return;
-    // Show pending badges immediately and start upload
-    // Create image previews for image files
-    const pending: PendingAttachment[] = files.map(file => {
-      const previewUrl = file.type.startsWith('image/') ? createImagePreview(file) : undefined;
-      return { name: file.name, type: file.type || 'application/octet-stream', size: file.size, file, previewUrl: previewUrl || undefined };
-    });
-    console.log('[ChatPanel] 📎 onDropPanel - Adding', pending.length, 'files');
+
+    // Create file objects with previews
+    const filesWithPreviews = files.map(file => ({
+      file,
+      previewUrl: file.type.startsWith('image/') ? createImagePreview(file) : undefined
+    }));
+
+    // Add directly without asking; model will infer how to use the files.
+    const pending: PendingAttachment[] = filesWithPreviews.map(({ file, previewUrl }) => ({
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      file,
+      previewUrl
+    }));
+    console.log('[ChatPanel] 📎 onDropPanel - Adding', pending.length, 'files (no intent dialog)');
 
     // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
     const newAttachments = [...attachmentsRef.current, ...pending];
@@ -3323,7 +3398,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           enableResearch: true,
           autoSelectImages: true
         },
-        (event) => {
+        (event: any) => {
           console.log('[ChatPanel] Fallback stream event:', event.type);
 
           if (event.type === 'outline_structure') {
@@ -4525,6 +4600,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 />
               );
             })}
+
+            {/* File intent confirmation removed — model infers usage from chat + selection + file metadata */}
 
             {/* Fallback generate button - subtle, appears after 2+ messages without generation */}
             {showFallbackGenerate && (

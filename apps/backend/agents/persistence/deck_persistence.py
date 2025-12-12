@@ -95,18 +95,28 @@ class DeckPersistence:
         
         return None
     
-    async def save_deck(self, deck_uuid: str, deck_data: Dict[str, Any]) -> bool:
+    async def save_deck(self, deck_uuid: str, deck_data: Dict[str, Any], force_immediate: bool = False) -> bool:
         """Save deck to database and update cache."""
-        return await self.save_deck_with_user(deck_uuid, deck_data, None)
+        return await self.save_deck_with_user(deck_uuid, deck_data, None, force_immediate=force_immediate)
     
-    async def save_deck_with_user(self, deck_uuid: str, deck_data: Dict[str, Any], user_id: Optional[str] = None) -> bool:
-        """Save deck to database with optional user ID."""
+    async def save_deck_with_user(
+        self,
+        deck_uuid: str,
+        deck_data: Dict[str, Any],
+        user_id: Optional[str] = None,
+        force_immediate: bool = False,
+    ) -> bool:
+        """Save deck to database with optional user ID.
+
+        Important: this path is used for structural changes (add/remove/reorder slides).
+        We must bump `version` and `last_modified` so clients reliably refresh.
+        """
         try:
             # Update cache first - this is the source of truth during composition
             self._deck_cache[deck_uuid] = copy.deepcopy(deck_data)
             
             # Check if we should throttle this save
-            if self.should_throttle_save(deck_uuid):
+            if (not force_immediate) and self.should_throttle_save(deck_uuid):
                 logger = logging.getLogger(__name__)
                 logger.debug(f"Throttling save for deck {deck_uuid} - too frequent updates")
                 return True  # Return success but skip actual save
@@ -121,6 +131,15 @@ class DeckPersistence:
             # Upload to database with user_id (run in executor to avoid blocking)
             import asyncio
             from concurrent.futures import ThreadPoolExecutor
+
+            # IMPORTANT: Update timestamp and version for realtime (matches slide update path)
+            try:
+                import uuid
+                deck_data["last_modified"] = datetime.utcnow().isoformat()
+                deck_data["version"] = str(uuid.uuid4())
+            except Exception:
+                # Don't fail save just because metadata couldn't be set
+                pass
             
             with ThreadPoolExecutor(max_workers=1) as executor:
                 loop = asyncio.get_event_loop()
@@ -277,7 +296,7 @@ class DeckPersistence:
                 import logging as _logging
                 bg = next((c for c in (slide_data.get('components') or []) if c.get('type') == 'Background'), None)
                 texts = [c for c in (slide_data.get('components') or []) if c.get('type') in ['TextBlock','TiptapTextBlock','Title']][:2]
-                _logging.getLogger(__name__).info(
+                _logging.getLogger(__name__).debug(
                     "[PERSISTENCE] Slide %s background=%s text0=%s text1=%s",
                     slide_index,
                     (bg.get('props') if isinstance(bg, dict) else None),
@@ -305,21 +324,21 @@ class DeckPersistence:
 
                 # Log for debugging
                 logger.debug(f"Setting last_modified to {deck['last_modified']} for realtime update")
-                print(f"\n🔵 [PERSISTENCE] About to upload deck {deck_uuid}")
-                print(f"🔵 [PERSISTENCE] Slide {slide_index} has {len(deck['slides'][slide_index].get('components', []))} components before upload")
-                component_types = [c.get('type') for c in deck['slides'][slide_index].get('components', [])]
-                print(f"🔵 [PERSISTENCE] Component types: {component_types}")
-                # Log CustomComponent render length being sent
-                for comp in deck['slides'][slide_index].get('components', []):
-                    if comp.get('type') == 'CustomComponent':
-                        render_len = len(comp.get('props', {}).get('render', ''))
-                        print(f"🔵 [PERSISTENCE] CustomComponent {comp.get('id')}: {render_len} chars being sent to upload_deck")
+                if logger.isEnabledFor(logging.DEBUG):
+                    comps = deck["slides"][slide_index].get("components", []) or []
+                    component_types = [c.get("type") for c in comps]
+                    logger.debug(
+                        "[PERSISTENCE] Uploading deck %s (slide=%s, components=%s, types=%s)",
+                        deck_uuid,
+                        slide_index,
+                        len(comps),
+                        component_types,
+                    )
 
                 # Run upload_deck in executor
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     loop = asyncio.get_event_loop()
                     await loop.run_in_executor(executor, upload_deck, deck, deck_uuid)
-                print(f"🔵 [PERSISTENCE] upload_deck completed")
                 logger.debug(f"[PERSISTENCE] Successfully uploaded deck {deck_uuid} to database")
                 
                 # Verify the update
@@ -329,18 +348,15 @@ class DeckPersistence:
                 if verify_deck and verify_deck.get('slides') and slide_index < len(verify_deck['slides']):
                     verify_components = len(verify_deck['slides'][slide_index].get('components', []))
                     logger.debug(f"[PERSISTENCE] Verification: Slide {slide_index} in DB now has {verify_components} components")
-                    print(f"🔍 [PERSISTENCE] VERIFICATION:")
-                    print(f"  - Slide {slide_index} in database has {verify_components} components")
-                    # Log CustomComponent render lengths
-                    for comp in verify_deck['slides'][slide_index].get('components', []):
-                        if comp.get('type') == 'CustomComponent':
-                            render_len = len(comp.get('props', {}).get('render', ''))
-                            print(f"  - CustomComponent {comp.get('id')}: {render_len} chars in DB")
                     if verify_components == 0:
-                        print(f"  ❌ WARNING: Components were not saved to database!")
-                        print(f"  - Expected: {len(slide_data.get('components', []))} components")
+                        logger.warning(
+                            "[PERSISTENCE] Verification failed: slide %s saved with 0 components (expected %s) for deck %s",
+                            slide_index,
+                            len(slide_data.get("components", []) or []),
+                            deck_uuid,
+                        )
                 else:
-                    print(f"❌ [PERSISTENCE] Could not verify update!")
+                    logger.warning("[PERSISTENCE] Could not verify update for deck %s slide %s", deck_uuid, slide_index)
                 
                 return True
             except Exception:

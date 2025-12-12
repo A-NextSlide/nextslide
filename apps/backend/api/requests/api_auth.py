@@ -547,14 +547,14 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
             user = auth_service.get_user_with_token(token)
             if user:
                 user_id = user.get('id')
-                logger.info(f"🔵 Getting deck {deck_uuid} for user {user_id}")
+                logger.debug("Getting deck %s for user %s", deck_uuid, user_id)
             else:
                 logger.warning(f"⚠️ Invalid token when fetching deck {deck_uuid}")
         else:
-            logger.info(f"🔵 Getting deck {deck_uuid} without authentication")
+            logger.debug("Getting deck %s without authentication", deck_uuid)
 
         # Get deck from database
-        logger.info(f"🔍 Querying database for deck {deck_uuid}...")
+        logger.debug("Querying database for deck %s...", deck_uuid)
         deck = get_deck(deck_uuid)
 
         if not deck:
@@ -573,14 +573,22 @@ async def get_full_deck(deck_uuid: str, token: Optional[str] = Depends(get_auth_
                 logger.error(f"❌ Direct query also failed: {direct_error}")
             raise HTTPException(status_code=404, detail="Deck not found")
 
-        logger.info(f"✅ Deck {deck_uuid} found! User: {deck.get('user_id')}, Slides: {len(deck.get('slides', []))}")
-
-        # Debug: Log CustomComponent render lengths for persistence tracking
-        for i, slide in enumerate(deck.get('slides', [])):
-            for comp in slide.get('components', []):
-                if comp.get('type') == 'CustomComponent':
-                    render_len = len(comp.get('props', {}).get('render', ''))
-                    print(f"📖 [GET_DECK] Slide {i} CustomComponent {comp.get('id')}: {render_len} chars from DB")
+        logger.debug(
+            "Deck %s found (owner=%s, slides=%s)",
+            deck_uuid,
+            deck.get("user_id"),
+            len(deck.get("slides", []) or []),
+        )
+        # Keep per-slide/per-component logging disabled by default; it was too noisy.
+        if logger.isEnabledFor(logging.DEBUG):
+            try:
+                custom_components = 0
+                for slide in (deck.get("slides", []) or []):
+                    comps = slide.get("components") or []
+                    custom_components += sum(1 for c in comps if c.get("type") == "CustomComponent")
+                logger.debug("Deck %s contains %s CustomComponents", deck_uuid, custom_components)
+            except Exception:
+                pass
         
         # Check access permissions
         deck_user_id = deck.get('user_id')

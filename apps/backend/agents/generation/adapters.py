@@ -576,7 +576,17 @@ class SimpleDeckComposer(IDeckComposer):
                             (theme_bg in DEFAULT_BACKGROUNDS and theme_accent1 in DEFAULT_ACCENTS)
                         )
 
-                        if is_fun_topic and has_boring_fonts:
+                        # CRITICAL: Check if colors came from user's extracted design (uploaded file)
+                        # If file_intent indicates design extraction, ALWAYS preserve those colors
+                        file_intent = getattr(deck_outline, 'file_intent', None)
+                        has_extracted_design = file_intent in ('use_both', 'use_design_only', 'recreate_exact')
+
+                        if has_extracted_design:
+                            # User uploaded a file with specific design - NEVER override with brand lookup
+                            logger.info(f"[DECK COMPOSER] 📸 PRESERVING EXTRACTED DESIGN - file_intent={file_intent}")
+                            logger.info(f"[DECK COMPOSER]   Extracted colors: bg={theme_bg}, accent1={theme_accent1}, accent2={theme_accent2}")
+                            # Keep outline_theme as-is
+                        elif is_fun_topic and has_boring_fonts:
                             logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES! 🎮🎮🎮")
                             logger.debug(f"  Title: '{deck_outline.title}'")
                             logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
@@ -831,7 +841,17 @@ class SimpleDeckComposer(IDeckComposer):
                                 (theme_bg in DEFAULT_BACKGROUNDS and theme_accent1 in DEFAULT_ACCENTS)
                             )
 
-                            if is_fun_topic and has_boring_fonts:
+                            # CRITICAL: Check if colors came from user's extracted design (uploaded file)
+                            # If file_intent indicates design extraction, ALWAYS preserve those colors
+                            file_intent = getattr(deck_outline, 'file_intent', None)
+                            has_extracted_design = file_intent in ('use_both', 'use_design_only', 'recreate_exact')
+
+                            if has_extracted_design:
+                                # User uploaded a file with specific design - NEVER override with brand lookup
+                                logger.info(f"[DECK COMPOSER] 📸 PRESERVING EXTRACTED DESIGN (2nd check) - file_intent={file_intent}")
+                                logger.info(f"[DECK COMPOSER]   Extracted colors: bg={theme_bg}, accent1={theme_accent1}, accent2={theme_accent2}")
+                                # Keep outline_theme as-is
+                            elif is_fun_topic and has_boring_fonts:
                                 logger.debug(f"FUN TOPIC WITH BORING FONTS IN OUTLINE.NOTES (2nd check)! 🎮🎮🎮")
                                 logger.debug(f"  Title: '{deck_outline.title}'")
                                 logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
@@ -1758,7 +1778,7 @@ class SimpleDeckComposer(IDeckComposer):
             # SKIP Layout Architect - CustomComponent generator creates full HTML slides
             # and doesn't use the blueprints anyway. This saves an AI call per deck.
             logger.info("[DECK COMPOSER] ⏭️ Skipping LayoutArchitect - using CustomComponent full-slide mode")
-            print("[DECK COMPOSER] ⏭️ Skipping LayoutArchitect - CustomComponent mode generates full HTML slides")
+            logger.debug("[DECK COMPOSER] Skipping LayoutArchitect (CustomComponent full-slide mode)")
 
             # Process tagged media to upload base64 images to Supabase
             # Check if any media needs processing

@@ -307,19 +307,28 @@ def _deep_merge_dict(target: Dict[str, Any], updates: Dict[str, Any]) -> Dict[st
     """
     if not isinstance(updates, dict):
         return target
-    # Log if this is a CustomComponent render update
-    if 'render' in updates:
-        print(f"🔶 [DEEP_MERGE] Merging render prop: {len(updates.get('render', ''))} chars")
+    # Keep render-prop diagnostics at DEBUG (was previously print-spammy)
+    if "render" in (updates or {}) and logger.isEnabledFor(logging.DEBUG):
+        try:
+            logger.debug("[DEEP_MERGE] Merging render prop (%s chars)", len((updates or {}).get("render", "") or ""))
+        except Exception:
+            pass
     updates = _prune_nones(updates or {})
-    if 'render' in updates:
-        print(f"🔶 [DEEP_MERGE] After prune_nones: render has {len(updates.get('render', ''))} chars")
+    if "render" in updates and logger.isEnabledFor(logging.DEBUG):
+        try:
+            logger.debug("[DEEP_MERGE] After prune_nones: render (%s chars)", len((updates or {}).get("render", "") or ""))
+        except Exception:
+            pass
     for key, value in updates.items():
         if isinstance(value, dict) and isinstance(target.get(key), dict):
             _deep_merge_dict(target[key], value)
         else:
             target[key] = value
-            if key == 'render':
-                print(f"🔶 [DEEP_MERGE] Set target['render'] = {len(value)} chars")
+            if key == "render" and logger.isEnabledFor(logging.DEBUG):
+                try:
+                    logger.debug("[DEEP_MERGE] Set target['render'] (%s chars)", len(value or ""))
+                except Exception:
+                    pass
     return target
 
 
@@ -543,17 +552,54 @@ async def apply_fast_operations(deck_id: str, operations: List[Dict[str, Any]], 
 
 async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optional[str] = None) -> Optional[str]:
     """Apply our internal DeckDiff schema (slides_to_update/add/remove with component diffs)."""
-    print(f"\n🔵 [APPLY_DECKDIFF] Starting apply_deckdiff for deck {deck_id}")
-    print(f"🔵 [APPLY_DECKDIFF] Diff received: slides_to_update={len(deck_diff.get('slides_to_update', []))}, slides_to_add={len(deck_diff.get('slides_to_add', []))}, slides_to_remove={len(deck_diff.get('slides_to_remove', []))}")
+    logger.debug(
+        "[APPLY_DECKDIFF] Starting for deck %s (update=%s add=%s remove=%s)",
+        deck_id,
+        len(deck_diff.get("slides_to_update", []) or []),
+        len(deck_diff.get("slides_to_add", []) or []),
+        len(deck_diff.get("slides_to_remove", []) or []),
+    )
 
     deck = get_deck(deck_id)
     if not deck:
-        print(f"❌ [APPLY_DECKDIFF] Deck {deck_id} not found!")
+        logger.warning("[APPLY_DECKDIFF] Deck %s not found", deck_id)
         return None
 
     slides = deck.get("slides", []) or []
     changed_slide_ids: set[str] = set()
-    print(f"🔵 [APPLY_DECKDIFF] Deck has {len(slides)} slides")
+    logger.debug("[APPLY_DECKDIFF] Deck has %s slides", len(slides))
+
+    # Reorder slides (optional, full deck operation)
+    # If slide_order is present, reorder the slides list to match. Persist full deck.
+    slide_order = deck_diff.get("slide_order")
+    if slide_order and isinstance(slide_order, list):
+        try:
+            slide_map = {s.get("id"): s for s in slides if isinstance(s, dict) and s.get("id")}
+            new_slides = []
+            missing = []
+            for sid in slide_order:
+                if sid in slide_map:
+                    new_slides.append(slide_map[sid])
+                else:
+                    missing.append(sid)
+            # Append any slides not mentioned to preserve data
+            mentioned = set([s.get("id") for s in new_slides if isinstance(s, dict)])
+            tail = [s for s in slides if isinstance(s, dict) and s.get("id") not in mentioned]
+            slides = new_slides + tail
+            deck["slides"] = slides
+            logger.debug(
+                "[APPLY_DECKDIFF] Applied slide_order reorder (requested=%s missing=%s total=%s)",
+                len(slide_order),
+                len(missing),
+                len(slides),
+            )
+            # Persist entire deck structure immediately
+            persistence = DeckPersistence()
+            await persistence.save_deck_with_user(deck_id, deck, user_id=user_id, force_immediate=True)
+            updated = get_deck(deck_id)
+            return updated.get("version") if updated else None
+        except Exception as e:
+            logger.warning("[APPLY_DECKDIFF] slide_order reorder failed: %s", e)
 
     # Remove slides first
     if deck_diff.get("slides_to_remove"):
@@ -600,14 +646,22 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
             cid = cdiff.get("id")
             comp = _find_component(slide, cid)
             if not comp:
-                print(f"⚠️ [APPLY_DIFF] Component {cid} NOT FOUND on slide {sid}")
+                logger.debug("[APPLY_DIFF] Component %s not found on slide %s", cid, sid)
                 continue
-            print(f"🔵 [APPLY_DIFF] Updating component {cid} (type={comp.get('type')})")
-            print(f"🔵 [APPLY_DIFF] Component diff props: {list(cdiff.get('props', {}).keys())}")
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    logger.debug(
+                        "[APPLY_DIFF] Updating component %s (type=%s) props=%s",
+                        cid,
+                        comp.get("type"),
+                        list((cdiff.get("props") or {}).keys()),
+                    )
+                except Exception:
+                    pass
             # Log render prop specifically for CustomComponent
             if comp.get('type') == 'CustomComponent' and 'render' in (cdiff.get('props') or {}):
                 new_render = cdiff.get('props', {}).get('render', '')
-                print(f"🔵 [APPLY_DIFF] CustomComponent render update: {len(new_render)} chars")
+                logger.debug("[APPLY_DIFF] CustomComponent render update (%s chars)", len(new_render or ""))
             props = comp.setdefault("props", {})
             # Special handling: Tiptap text color changes should be applied inside editor doc
             desired_color = None
@@ -676,7 +730,7 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
             # Log final state for CustomComponent
             if comp.get('type') == 'CustomComponent':
                 final_render = props.get('render', '')
-                print(f"🔵 [APPLY_DIFF] CustomComponent after merge: render={len(final_render)} chars")
+                logger.debug("[APPLY_DIFF] CustomComponent after merge: render=%s chars", len(final_render or ""))
         # slide_properties
         for k, v in (sd.get("slide_properties") or {}).items():
             slide[k] = v
@@ -686,11 +740,18 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         num_added = len(sd.get("components_to_add", []) or [])
         num_updated = len(sd.get("components_to_update", []) or [])
         num_props = len(sd.get("slide_properties") or {})
-        print(f"\n🟡 [APPLY_DIFF] Slide {sid}: removed={num_removed}, added={num_added}, updated={num_updated}, props={num_props}")
-        print(f"🟡 [APPLY_DIFF] Slide now has {len(slide.get('components', []))} components")
+        logger.debug(
+            "[APPLY_DIFF] Slide %s: removed=%s added=%s updated=%s props=%s components_now=%s",
+            sid,
+            num_removed,
+            num_added,
+            num_updated,
+            num_props,
+            len(slide.get("components", []) or []),
+        )
 
         changed_slide_ids.add(sid)
-        print(f"🟡 [APPLY_DIFF] Added slide {sid} to changed_slide_ids (now has {len(changed_slide_ids)} slides)")
+        logger.debug("[APPLY_DIFF] Marked slide %s changed (%s total)", sid, len(changed_slide_ids))
 
     # AUTO-CLEANUP: Remove duplicate CustomComponents from all slides
     # This prevents issues where edits target one component but another duplicate is covering it
@@ -699,13 +760,13 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         custom_components = [c for c in components if c.get("type") == "CustomComponent"]
         if len(custom_components) > 1:
             slide_id = slide.get("id", "unknown")
-            print(f"🧹 [APPLY_DIFF] AUTO-CLEANUP: Found {len(custom_components)} CustomComponents on slide {slide_id}")
+            logger.debug("[APPLY_DIFF] AUTO-CLEANUP: Found %s CustomComponents on slide %s", len(custom_components), slide_id)
             # Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
             # This prevents losing content when a minimal duplicate gets created
             sorted_cc = sorted(custom_components, key=lambda c: len((c.get("props") or {}).get("render") or ""), reverse=True)
             keep_id = sorted_cc[0].get("id")
             remove_ids = {c.get("id") for c in sorted_cc[1:]}
-            print(f"🧹 [APPLY_DIFF] AUTO-CLEANUP: Keeping {keep_id} (largest), removing {remove_ids}")
+            logger.debug("[APPLY_DIFF] AUTO-CLEANUP: Keeping %s (largest), removing %s", keep_id, list(remove_ids))
             slide["components"] = [c for c in components if c.get("id") not in remove_ids]
             if slide.get("id"):
                 changed_slide_ids.add(slide.get("id"))
@@ -719,7 +780,8 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         # Save full deck to include structure changes and then return new version
         # Ensure deck object contains our updated slides list
         deck["slides"] = slides
-        await persistence.save_deck_with_user(deck_id, deck, user_id=user_id)
+        # Structural changes must bypass throttling and bump deck version
+        await persistence.save_deck_with_user(deck_id, deck, user_id=user_id, force_immediate=True)
         updated = get_deck(deck_id)
         return updated.get("version") if updated else None
 
@@ -728,26 +790,17 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
         return None
     # Recompute index map in case slide list changed during updates
     slide_index_map = {s.get("id"): idx for idx, s in enumerate(slides) if isinstance(s, dict) and s.get("id")}
-    print(f"\n🟣 [APPLY_DIFF] changed_slide_ids: {changed_slide_ids}")
-    print(f"🟣 [APPLY_DIFF] slide_index_map keys: {list(slide_index_map.keys())}")
+    logger.debug("[APPLY_DIFF] Persisting %s changed slides", len(changed_slide_ids))
     for sid in changed_slide_ids:
         idx = slide_index_map.get(sid)
-        print(f"🟣 [APPLY_DIFF] Processing slide {sid}, idx={idx}, len(slides)={len(slides)}")
         if idx is None or idx >= len(slides):
-            print(f"❌ [APPLY_DIFF] Skipping slide {sid}: idx is None or out of bounds")
+            logger.debug("[APPLY_DIFF] Skipping slide %s: idx missing/out of bounds", sid)
             continue
-        print(f"🟣 [APPLY_DIFF] Persisting slide {sid} at index {idx}")
-        print(f"🟣 [APPLY_DIFF] Slide has {len(slides[idx].get('components', []))} components")
-        # Log CustomComponent render length before persisting
-        for comp in slides[idx].get('components', []):
-            if comp.get('type') == 'CustomComponent':
-                render_len = len(comp.get('props', {}).get('render', ''))
-                print(f"🟣 [APPLY_DIFF] CustomComponent {comp.get('id')} render: {render_len} chars (before persist)")
         await persistence.update_slide_with_user(deck_id, idx, slides[idx], user_id=user_id, force_immediate=True)
 
     updated = get_deck(deck_id)
     version = updated.get("version") if updated else None
-    print(f"✅ [APPLY_DECKDIFF] Complete! Persisted {len(changed_slide_ids)} slides, version: {version}")
+    logger.debug("[APPLY_DECKDIFF] Complete (persisted=%s version=%s)", len(changed_slide_ids), version)
     return version
 
 

@@ -9,6 +9,7 @@ Philosophy:
 """
 
 from typing import Dict, List, Optional, Any, Union
+import json
 from pydantic import BaseModel, Field, create_model
 import logging
 import uuid
@@ -22,6 +23,25 @@ from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
 
 logger = logging.getLogger(__name__)
+
+# region agent log
+def _dbg(hypothesisId: str, location: str, message: str, data: Dict[str, Any], runId: str = "pre-fix") -> None:
+    try:
+        import json, time
+        payload = {
+            "sessionId": "debug-session",
+            "runId": runId,
+            "hypothesisId": hypothesisId,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with open("/Users/ahmed/Documents/Dev/nextslide/.cursor/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+# endregion
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -51,6 +71,13 @@ RULES:
 
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
+CRITICAL: TARGETED EDITS vs FULL REWRITES
+- If user asks for a small change (color, wording, spacing, move, resize), DO NOT rewrite the whole slide/HTML.
+- Prefer surgical tools when available:
+  - custom_component_str_replace (CustomComponent HTML search/replace)
+  - component_prop_update (mechanical prop merge)
+- Only use full rewrite flows when user explicitly asks: "redesign", "redo", "rebuild", "from scratch", "completely different".
+
 CRITICAL - EMPTY SLIDE HANDLING:
 If the current slide only has a Background (or is empty), and user wants content:
 → Use edit_slide with instruction describing what to create
@@ -64,6 +91,9 @@ TOOL SELECTION:
 - create_component: Add a component to a slide
 - delete_component: Remove a component
 - apply_theme: Change colors/fonts across deck
+- custom_component_str_replace: Surgical HTML edit for an existing CustomComponent
+- component_prop_update: Mechanical prop update for an existing component
+- view_component: Inspect a component's current props/HTML preview before surgical edits
 """
 
 
@@ -82,6 +112,47 @@ class OrchestratorResponse(BaseModel):
     """LLM response containing tool calls."""
     tool_calls: List[ToolCall] = Field(description="List of tools to execute")
 
+def parse_selections_from_message(user_message: str) -> tuple[str, List[Dict[str, Any]]]:
+    """
+    Extract selections appended by upstream as:
+      "... \n\n[USER_SELECTIONS] comp_id (Type)@slide_id, ..."
+    Returns (clean_message, selections)
+    selections: [{id, type, slide_id}]
+    """
+    if not user_message or "[USER_SELECTIONS]" not in user_message:
+        return user_message, []
+
+    try:
+        parts = user_message.split("[USER_SELECTIONS]", 1)
+        clean = parts[0].strip()
+        sel_line = parts[1].split("\n", 1)[0].strip()
+        selections: List[Dict[str, Any]] = []
+        for raw in (sel_line.split(",") if sel_line else []):
+            s = raw.strip()
+            if not s:
+                continue
+            cid = None
+            ctype = None
+            sid = None
+            # formats: "id (Type)@slide", "id (Type)", "id@slide"
+            if "(" in s:
+                cid = s.split("(", 1)[0].strip()
+                inside = s.split("(", 1)[1]
+                ctype = inside.split(")", 1)[0].strip() if ")" in inside else None
+                after = inside.split(")", 1)[1] if ")" in inside else ""
+                if "@" in after:
+                    sid = after.split("@", 1)[1].strip()
+            else:
+                if "@" in s:
+                    cid, sid = [p.strip() for p in s.split("@", 1)]
+                else:
+                    cid = s.strip()
+            if cid:
+                selections.append({"id": cid, "type": ctype, "slide_id": sid})
+        return clean, selections
+    except Exception:
+        return user_message, []
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONTEXT BUILDER
@@ -92,6 +163,7 @@ def build_context(
     current_slide,
     attachments: List[Dict] = None,
     chat_history: List = None,
+    selections: List[Dict[str, Any]] = None,
 ) -> str:
     """Build concise context for LLM."""
 
@@ -141,6 +213,40 @@ def build_context(
 
     components_str = "\n".join(component_list) if component_list else "  (no components)"
 
+    # Selections (critical for "this" references)
+    sel_str = ""
+    if selections:
+        sel_lines = []
+        for sel in selections:
+            sid = sel.get("slide_id")
+            cid = sel.get("id")
+            ctype = sel.get("type")
+            # If selection is a slide, call it out explicitly
+            if ctype == "Slide" or (cid and sid and cid == sid):
+                sel_lines.append(f"  - Slide selected: {sid or cid}")
+                continue
+            # Otherwise try to find component details on current slide
+            comp = next((c for c in components if _get_attr(c, "id") == cid), None)
+            if comp:
+                ctype2 = _get_attr(comp, "type", ctype or "Unknown")
+                props = _get_attr(comp, "props", {}) or {}
+                preview = ""
+                if ctype2 == "CustomComponent":
+                    html = ""
+                    if isinstance(props, dict):
+                        html = str(props.get("render", ""))[:300]
+                    else:
+                        html = str(getattr(props, "render", ""))[:300]
+                    preview = f" (HTML preview: {html}...)"
+                elif ctype2 == "TiptapTextBlock":
+                    t = props.get("text") if isinstance(props, dict) else getattr(props, "text", "")
+                    preview = f" (text preview: {str(t)[:120]}...)"
+                sel_lines.append(f"  - {ctype2} [{cid}] on slide {sid or slide_id}{preview}")
+            else:
+                sel_lines.append(f"  - Selection: {cid} ({ctype or 'Unknown'})@{sid or slide_id}")
+        if sel_lines:
+            sel_str = "\n\n🎯 SELECTED (user likely refers to these as 'this'):\n" + "\n".join(sel_lines)
+
     # Attachments
     att_str = ""
     if attachments:
@@ -154,11 +260,13 @@ def build_context(
         history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:100]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
-    return f"""CURRENT SLIDE: {slide_id}
+    context = f"""CURRENT SLIDE: {slide_id}
 STATUS: {slide_status}
 
 COMPONENTS:
-{components_str}{att_str}{history_str}"""
+{components_str}{sel_str}{att_str}{history_str}"""
+    _dbg("A", "orchestrator_v2.py:build_context", "built_context", {"slide_id": slide_id, "has_selections": bool(selections), "selection_count": len(selections or []), "context_len": len(context)}, runId="pre-fix")
+    return context
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -183,24 +291,47 @@ AVAILABLE TOOLS:
    - Remove a slide from the deck
    - Args: { "slide_id": str }
 
-4. edit_component
+4. duplicate_slide
+   - Duplicate a slide (mechanical)
+   - Args: { "slide_id": str, "insert_after": optional str }
+
+5. reorder_slides
+   - Reorder slides (mechanical)
+   - Args: { "slide_id": str, "new_index": int } OR { "slide_order": [slide_id,...] }
+
+6. edit_component
    - Edit a specific component by ID
    - Args: { "slide_id": str, "component_id": str, "instruction": str }
    - Example: {"component_id": "xyz", "instruction": "Change the color to blue"}
 
-5. create_component
+7. create_component
    - Add a new component to a slide
    - Args: { "slide_id": str, "component_type": str, "instruction": str }
    - component_type: TiptapTextBlock, Image, Chart, Shape, CustomComponent
 
-6. delete_component
+8. delete_component
    - Remove a component from a slide
    - Args: { "slide_id": str, "component_id": str }
 
-7. apply_theme
+9. apply_theme
    - Apply colors/fonts to the deck
    - Args: { "instruction": str }
    - Example: {"instruction": "Use Apple's brand colors"}
+
+10. custom_component_str_replace
+   - Surgical edit for CustomComponent HTML (Cursor-style search/replace)
+   - WHEN: User wants a small change (wording/color/class tweak) on an existing CustomComponent
+   - Args: { "slide_id": str, "component_id": str, "old_string": str, "new_string": str }
+
+11. component_prop_update
+   - Mechanical prop merge for a component (no AI)
+   - WHEN: User wants to move/resize/change font size/color on a selected component
+   - Args: { "slide_id": str, "component_id": str, "updates": { ... } }
+
+12. view_component
+   - Return a component's current props (and HTML preview for CustomComponent)
+   - WHEN: Before a surgical edit so you can reference exact strings/classes
+   - Args: { "slide_id": str, "component_id": str }
 """
 
 
@@ -239,15 +370,42 @@ def orchestrate(
     """
     from agents.editing.tools.tool_executor import execute_tool
 
-    # Build context
-    context = build_context(deck_data, current_slide, attachments, chat_history)
+    def _is_empty_deckdiff(dd: DeckDiff) -> bool:
+        try:
+            base = dd.deck_diff if hasattr(dd, "deck_diff") else dd
+            if hasattr(base, "model_dump"):
+                payload = base.model_dump()
+            elif hasattr(base, "dict"):
+                payload = base.dict()
+            else:
+                payload = base
+            return (
+                not (payload.get("slides_to_update") or [])
+                and not (payload.get("slides_to_add") or [])
+                and not (payload.get("slides_to_remove") or [])
+                and not (payload.get("slide_order") or None)
+            )
+        except Exception:
+            return False
+
+    clean_message, selections = parse_selections_from_message(user_message or "")
+    _dbg(
+        "A",
+        "orchestrator_v2.py:orchestrate",
+        "parsed_selections",
+        {"has_marker": "[USER_SELECTIONS]" in (user_message or ""), "selection_count": len(selections), "msg_len": len(user_message or ""), "clean_len": len(clean_message or "")},
+        runId="pre-fix",
+    )
+
+    # Build context (include selection info)
+    context = build_context(deck_data, current_slide, attachments, chat_history, selections=selections)
 
     # Full prompt
     prompt = f"""{context}
 
 {TOOL_DESCRIPTIONS}
 
-USER REQUEST: {user_message}
+USER REQUEST: {clean_message}
 
 Respond with the tool_calls to execute."""
 
@@ -301,61 +459,122 @@ Respond with the tool_calls to execute."""
         except Exception:
             pass
 
-    # Execute tools sequentially
-    deck_diff = DeckDiff(DeckDiffBase())
-    edit_summaries = []
+    def _execute_tool_calls(tool_calls: List[ToolCall]) -> tuple[DeckDiff, List[str], List[Dict[str, Any]]]:
+        """Execute tool calls and collect any attached observations."""
+        dd = DeckDiff(DeckDiffBase())
+        summaries: List[str] = []
+        observations: List[Dict[str, Any]] = []
 
-    for tool_call in response.tool_calls:
-        tool_name = tool_call.tool_name
-        tool_args = tool_call.tool_args
+        for tool_call in tool_calls or []:
+            tool_name = tool_call.tool_name
+            tool_args = tool_call.tool_args
 
-        # Emit tool start
-        if event_cb:
+            # Emit tool start
+            if event_cb:
+                try:
+                    event_cb("agent.tool.start", {"tool": tool_name})
+                except Exception:
+                    pass
+
+            logger.info(f"[ORCHESTRATOR] Executing tool: {tool_name}")
+
             try:
-                event_cb("agent.tool.start", {"tool": tool_name})
+                tool_diff = execute_tool(
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    deck_data=deck_data,
+                    current_slide=current_slide,
+                    registry=registry,
+                    attachments=attachments,
+                )
+
+                # Collect read-only observation payloads (e.g., view_component)
+                try:
+                    obs = getattr(tool_diff, "observation", None)
+                    if isinstance(obs, dict) and obs:
+                        observations.append({"tool": tool_name, "data": obs})
+                except Exception:
+                    pass
+
+                if tool_diff:
+                    dd = dd.merge(tool_diff)
+
+                summaries.append(tool_call.summary)
+
+                if event_cb:
+                    try:
+                        event_cb("agent.tool.finish", {"tool": tool_name, "summary": tool_call.summary})
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"[ORCHESTRATOR] Tool {tool_name} failed: {e}")
+                if event_cb:
+                    try:
+                        event_cb("agent.tool.error", {"tool": tool_name, "error": str(e)})
+                    except Exception:
+                        pass
+                continue
+
+        return dd, summaries, observations
+
+    # Pass 1: execute initial tool calls
+    deck_diff, edit_summaries, observations = _execute_tool_calls(response.tool_calls)
+
+    # Pass 2 (lightweight): if the agent only "looked" (e.g., view_component) and made no changes,
+    # immediately feed the observation back in and ask for actionable tool calls.
+    # This prevents the frustrating "we viewed it, now user must re-ask" loop.
+    if observations and _is_empty_deckdiff(deck_diff):
+        try:
+            followup_prompt = f"""{context}
+
+{TOOL_DESCRIPTIONS}
+
+USER REQUEST: {clean_message}
+
+You already executed read-only tools and obtained these observations (JSON):
+{json.dumps(observations, ensure_ascii=False)[:24000]}
+
+Now propose the NEXT tool_calls needed to actually satisfy the user request.
+- Do NOT call view_component again unless absolutely necessary.
+- Prefer targeted edits (custom_component_str_replace / component_prop_update) when possible.
+
+Respond with the tool_calls to execute."""
+
+            followup = invoke(
+                client=client,
+                model=actual_model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": followup_prompt},
+                ],
+                response_model=OrchestratorResponse,
+                max_tokens=4096,
+            )
+
+            # Prevent redundant re-views in follow-up when we already have the observation.
+            try:
+                followup.tool_calls = [
+                    tc for tc in (followup.tool_calls or [])
+                    if tc.tool_name != "view_component"
+                ]
             except Exception:
                 pass
 
-        logger.info(f"[ORCHESTRATOR] Executing tool: {tool_name}")
-
-        try:
-            # Execute the tool
-            tool_diff = execute_tool(
-                tool_name=tool_name,
-                tool_args=tool_args,
-                deck_data=deck_data,
-                current_slide=current_slide,
-                registry=registry,
-                attachments=attachments,
-            )
-
-            # Merge diff
-            if tool_diff:
-                deck_diff = deck_diff.merge(tool_diff)
-
-            edit_summaries.append(tool_call.summary)
-
-            # Emit tool finish
-            if event_cb:
+            if event_cb and followup.tool_calls:
+                plan = [{"title": tc.summary} for tc in followup.tool_calls]
                 try:
-                    event_cb("agent.tool.finish", {"tool": tool_name, "summary": tool_call.summary})
+                    event_cb("agent.plan.update", {"plan": plan})
                 except Exception:
                     pass
 
+            dd2, summaries2, _obs2 = _execute_tool_calls(followup.tool_calls)
+            deck_diff = deck_diff.merge(dd2)
+            edit_summaries.extend(summaries2)
         except Exception as e:
-            logger.error(f"[ORCHESTRATOR] Tool {tool_name} failed: {e}")
-            if event_cb:
-                try:
-                    event_cb("agent.tool.error", {"tool": tool_name, "error": str(e)})
-                except Exception:
-                    pass
-            # Continue with other tools
-            continue
+            logger.warning(f"[ORCHESTRATOR] Follow-up after observation failed: {e}")
 
-    return {
-        "deck_diff": deck_diff,
-        "edit_summary": "\n".join(edit_summaries)
-    }
+    return {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

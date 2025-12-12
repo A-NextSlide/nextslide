@@ -150,13 +150,14 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
     supabase = get_supabase_client()
 
     try:
-        logger.debug(f"Uploading deck {deck_uuid} - {len(deck_data.get('slides', []))} slides, status: {deck_data.get('status', {}).get('state', 'unknown')}, user: {user_id or 'anonymous'}")
-        
-        # Debug: Log the actual slide data being uploaded
-        for i, slide in enumerate(deck_data.get('slides', [])[:3]):  # First 3 slides
-            components_count = len(slide.get('components', []))
-            visual_fixes = slide.get('_visual_fixes_saved', False)
-            logger.debug(f"  Slide {i+1}: {components_count} components, visual_fixes={visual_fixes}")
+        slides = deck_data.get("slides", []) or []
+        logger.debug(
+            "Uploading deck %s - %s slides, status: %s, user: %s",
+            deck_uuid,
+            len(slides),
+            (deck_data.get("status", {}) or {}).get("state", "unknown"),
+            user_id or "anonymous",
+        )
         
         # Build data field for JSONB 'data' column
         # 1) Start from provided deck_data['data'] if present (caller may have merged slide_themes, etc.)
@@ -177,17 +178,20 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             deck_record["name"] = deck_data.get("name")
         if deck_data.get("slides") is not None:
             deck_record["slides"] = deck_data.get("slides")
-            print(f"\n🟢 [UPLOAD_DECK] Preparing to upload {len(deck_data.get('slides', []))} slides")
-            for i, slide in enumerate(deck_data.get("slides", [])[:3]):  # Log first 3 slides
-                comp_count = len(slide.get('components', []))
-                comp_types = [c.get('type') for c in slide.get('components', [])]
-                print(f"🟢 [UPLOAD_DECK] Slide {i}: {comp_count} components - {comp_types}")
-            # Log ALL CustomComponents across ALL slides
-            for i, slide in enumerate(deck_data.get("slides", [])):
-                for comp in slide.get('components', []):
-                    if comp.get('type') == 'CustomComponent':
-                        render_len = len(comp.get('props', {}).get('render', ''))
-                        print(f"🟢 [UPLOAD_DECK] Slide {i} CustomComponent {comp.get('id')}: {render_len} chars being uploaded")
+            if logger.isEnabledFor(logging.DEBUG):
+                # Keep upload logging lightweight by summarizing instead of per-component logging
+                custom_components = 0
+                total_components = 0
+                for slide in (deck_data.get("slides") or []):
+                    comps = slide.get("components") or []
+                    total_components += len(comps)
+                    custom_components += sum(1 for c in comps if c.get("type") == "CustomComponent")
+                logger.debug(
+                    "[UPLOAD_DECK] Prepared %s slides (%s total components, %s CustomComponents)",
+                    len(deck_data.get("slides") or []),
+                    total_components,
+                    custom_components,
+                )
         if deck_data.get("size") is not None:
             deck_record["size"] = deck_data.get("size")
         if deck_data.get("status") is not None:
@@ -218,8 +222,14 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             timeout_seconds=8.0
         )
         if existing.data:
-            logger.warning(f"⚠️ DUPLICATE DECK CREATION DETECTED! Deck {deck_uuid} already exists (created at {existing.data[0].get('created_at')})")
-            logger.warning(f"   Existing: '{existing.data[0].get('name')}' | New: '{deck_data.get('name')}'")
+            # This can happen during rapid successive saves; keep at DEBUG to avoid log spam.
+            logger.debug(
+                "Duplicate deck upsert detected for %s (created_at=%s, existing_name=%r, new_name=%r)",
+                deck_uuid,
+                existing.data[0].get("created_at"),
+                existing.data[0].get("name"),
+                deck_data.get("name"),
+            )
             # Shallow-merge existing data into data_field to preserve keys when we update only some
             try:
                 existing_full = perform_supabase_operation_with_retry(
@@ -262,18 +272,7 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             logger.error(f"❌ Failed to upload deck {deck_uuid}")
             raise Exception("Failed to upload deck to Supabase")
 
-        # Log what the upsert returned
-        print(f"🟢 [UPLOAD_DECK] Upsert completed successfully")
-        if response.data and response.data[0].get('slides'):
-            resp_slides = response.data[0].get('slides', [])
-            for i, slide in enumerate(resp_slides):
-                for comp in slide.get('components', []):
-                    if comp.get('type') == 'CustomComponent':
-                        render_len = len(comp.get('props', {}).get('render', ''))
-                        print(f"🟢 [UPLOAD_DECK] Upsert RETURNED: Slide {i} CustomComponent {comp.get('id')}: {render_len} chars")
-
-        # Verify what was actually saved by reading it back
-        print(f"🔍 [UPLOAD_DECK] Verifying what was saved to database...")
+        # Verify what was actually saved by reading it back (warn only on anomalies)
         verify_response = perform_supabase_operation_with_retry(
             lambda: supabase.table("decks").select("slides").eq("uuid", deck_uuid).single().execute(),
             description=f"verify deck {deck_uuid}",
@@ -281,11 +280,15 @@ def upload_deck(deck_data: Dict[str, Any], deck_uuid: str, user_id: Optional[str
             timeout_seconds=8.0
         )
         if verify_response.data and verify_response.data.get("slides"):
-            for i, slide in enumerate(verify_response.data.get("slides", [])):
-                for comp in slide.get('components', []):
-                    if comp.get('type') == 'CustomComponent':
-                        render_len = len(comp.get('props', {}).get('render', ''))
-                        print(f"🔍 [UPLOAD_DECK] VERIFIED: Slide {i} CustomComponent {comp.get('id')}: {render_len} chars in DB")
+            # If any slide unexpectedly has zero components after upload, surface it.
+            empty_slides = [
+                i for i, slide in enumerate(verify_response.data.get("slides", []) or [])
+                if not (slide.get("components") or [])
+            ]
+            if empty_slides:
+                logger.warning("[UPLOAD_DECK] Verification: %s slides saved with 0 components: %s", len(empty_slides), empty_slides[:20])
+            else:
+                logger.debug("[UPLOAD_DECK] Verification OK for deck %s", deck_uuid)
 
         logger.debug(f"Successfully uploaded deck {deck_uuid} for user {user_id or 'anonymous'}")
         return response.data[0]

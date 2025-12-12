@@ -35,6 +35,48 @@ logger = get_logger(__name__)
 from agents.config import MAX_API_CONCURRENT_CALLS
 _AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
 
+def _reference_images_from_uploaded_media(uploaded_media: Optional[list]) -> List[str]:
+    """
+    Convert user-uploaded media (taggedMedia) into reference image URLs/data-URLs
+    so the model can SEE them as multimodal design references.
+    """
+    if not uploaded_media:
+        return []
+
+    refs: List[str] = []
+    for m in uploaded_media:
+        if not isinstance(m, dict):
+            continue
+        # Prefer previewUrl/url if present
+        url = m.get("previewUrl") or m.get("url")
+        if not url:
+            # Fall back to data URL if we have base64 content + a type
+            content_b64 = m.get("content") or ""
+            mime = m.get("type") or m.get("mimeType") or "image/png"
+            if content_b64 and isinstance(content_b64, str):
+                url = f"data:{mime};base64,{content_b64}"
+        if not url or not isinstance(url, str):
+            continue
+
+        # Only include image-like references (skip PDFs/etc.)
+        mt = (m.get("type") or m.get("mimeType") or "").lower()
+        fn = (m.get("filename") or m.get("name") or "").lower()
+        if mt and mt.startswith("image/"):
+            refs.append(url)
+        elif any(fn.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]):
+            refs.append(url)
+        elif url.startswith("data:image/"):
+            refs.append(url)
+
+    # Deduplicate while preserving order
+    seen = set()
+    out: List[str] = []
+    for r in refs:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
 
 async def prefetch_images_for_content(
     content: str,
@@ -232,7 +274,18 @@ Return ONLY a JSON array of 3-5 SPECIFIC names from the content:
         if match:
             terms = json.loads(match.group())
             print(f"[PREFETCH] 🧠 AI-generated search terms: {terms}")
-            return terms[:5]
+            # Filter out obvious local filenames / uploads (these produce bad image search results)
+            cleaned: List[str] = []
+            for t in terms:
+                if not isinstance(t, str):
+                    continue
+                tl = t.strip().lower()
+                if not tl:
+                    continue
+                if tl.startswith("img_") or tl.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                    continue
+                cleaned.append(t)
+            return cleaned[:5]
     except Exception as e:
         logger.warning(f"[PREFETCH] AI search term extraction failed: {e}, falling back to regex")
         print(f"[PREFETCH] ⚠️ AI extraction failed: {e}, using fallback")
@@ -648,6 +701,11 @@ class CustomComponentGenerator:
         start_time = datetime.now()
 
         try:
+            # If the user uploaded images during conversational onboarding (taggedMedia),
+            # treat them as design reference images by default so the model can SEE them.
+            if (not reference_images) and uploaded_media:
+                reference_images = _reference_images_from_uploaded_media(uploaded_media) or None
+
             # Extract theme information
             colors = theme.get('color_palette', {})
             typography = theme.get('typography', {})
@@ -800,41 +858,66 @@ class CustomComponentGenerator:
                 # Add instruction about the reference images
                 user_content_parts.append({
                     "type": "text",
-                    "text": "🎨 DESIGN REFERENCE IMAGES - Analyze these to match the style:\n"
+                    "text": "🎨 DESIGN REFERENCE IMAGES - You MUST analyze these images and match their exact style:\n- Copy the color scheme exactly\n- Match the layout structure\n- Use similar typography and spacing\n- Replicate visual elements like borders, shadows, patterns\n"
                 })
 
-                # Download and encode each reference image (limit to 3)
+                # Process each reference image (limit to 3)
                 for idx, img_url in enumerate(reference_images[:3]):
                     try:
-                        resp = requests.get(img_url, timeout=10)
-                        if resp.status_code == 200:
-                            img_b64 = b64_module.b64encode(resp.content).decode('utf-8')
-                            # Determine media type from content-type header or URL
-                            content_type = resp.headers.get('content-type', 'image/png')
-                            if 'jpeg' in content_type or 'jpg' in content_type:
-                                media_type = 'image/jpeg'
-                            elif 'gif' in content_type:
-                                media_type = 'image/gif'
-                            elif 'webp' in content_type:
-                                media_type = 'image/webp'
+                        # Handle data URLs (base64 encoded images)
+                        if img_url.startswith('data:'):
+                            # Parse data URL: data:image/png;base64,XXXXX
+                            import re
+                            match = re.match(r'data:([^;]+);base64,(.+)', img_url)
+                            if match:
+                                media_type = match.group(1)
+                                img_b64 = match.group(2)
+                                user_content_parts.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": img_b64
+                                    }
+                                })
+                                user_content_parts.append({
+                                    "type": "text",
+                                    "text": f"[Design Reference {idx + 1} - MATCH THIS STYLE EXACTLY]"
+                                })
+                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added base64 reference image {idx + 1}")
                             else:
-                                media_type = 'image/png'
+                                logger.warning(f"[CUSTOM_COMPONENT] Invalid data URL format for reference {idx + 1}")
+                        else:
+                            # Handle regular URLs - download and encode
+                            resp = requests.get(img_url, timeout=10)
+                            if resp.status_code == 200:
+                                img_b64 = b64_module.b64encode(resp.content).decode('utf-8')
+                                # Determine media type from content-type header or URL
+                                content_type = resp.headers.get('content-type', 'image/png')
+                                if 'jpeg' in content_type or 'jpg' in content_type:
+                                    media_type = 'image/jpeg'
+                                elif 'gif' in content_type:
+                                    media_type = 'image/gif'
+                                elif 'webp' in content_type:
+                                    media_type = 'image/webp'
+                                else:
+                                    media_type = 'image/png'
 
-                            user_content_parts.append({
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": img_b64
-                                }
-                            })
-                            user_content_parts.append({
-                                "type": "text",
-                                "text": f"[Reference image {idx + 1}]"
-                            })
-                            logger.info(f"[CUSTOM_COMPONENT] Added reference image {idx + 1}: {img_url[:60]}...")
+                                user_content_parts.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": img_b64
+                                    }
+                                })
+                                user_content_parts.append({
+                                    "type": "text",
+                                    "text": f"[Design Reference {idx + 1} - MATCH THIS STYLE EXACTLY]"
+                                })
+                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added URL reference image {idx + 1}: {img_url[:60]}...")
                     except Exception as e:
-                        logger.warning(f"[CUSTOM_COMPONENT] Failed to load reference image {img_url}: {e}")
+                        logger.warning(f"[CUSTOM_COMPONENT] Failed to load reference image {img_url[:50]}: {e}")
 
                 # Add the main prompt text
                 user_content_parts.append({
@@ -1258,7 +1341,8 @@ STYLE HINT: "{presentation_context}"
         # Build design reference images section (e.g., PPT screenshots to match style)
         design_reference_section = ""
         if reference_images and len(reference_images) > 0:
-            ref_urls = "\n".join([f"  - {url}" for url in reference_images[:3]])
+            # Include ALL reference URLs in text context (even if we only embed the first few as multimodal images)
+            ref_urls = "\n".join([f"  - {url}" for url in reference_images])
             design_reference_section = f"""
 DESIGN REFERENCES (match this style, don't place these images):
 {ref_urls}

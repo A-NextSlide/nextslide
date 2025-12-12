@@ -14,6 +14,56 @@ thread_pool = ThreadPoolExecutor(max_workers=32)
 
 logger = logging.getLogger(__name__)
 
+
+async def save_conversation_message(deck_uuid: str, role: str, content: str):
+    """
+    Save a chat message to the deck's conversation_history.
+
+    Args:
+        deck_uuid: The deck's UUID
+        role: 'user' or 'assistant'
+        content: The message content
+    """
+    try:
+        from utils.supabase import get_supabase_client
+        supabase = get_supabase_client()
+
+        # Get current conversation history
+        result = supabase.table("decks").select("conversation_history").eq("uuid", deck_uuid).execute()
+
+        if not result.data:
+            logger.warning(f"Deck {deck_uuid} not found, skipping conversation save")
+            return
+
+        # Get existing history or create new
+        current_history = result.data[0].get("conversation_history") or {"initial_request": None, "messages": []}
+
+        # Handle case where column doesn't exist yet (returns None)
+        if current_history is None:
+            current_history = {"initial_request": None, "messages": []}
+
+        # Ensure messages array exists
+        if "messages" not in current_history:
+            current_history["messages"] = []
+
+        # Add new message
+        current_history["messages"].append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+        # Update the deck
+        supabase.table("decks").update({
+            "conversation_history": current_history
+        }).eq("uuid", deck_uuid).execute()
+
+        logger.debug(f"Saved {role} message to deck {deck_uuid}")
+
+    except Exception as e:
+        # Don't fail the chat if conversation logging fails
+        logger.error(f"Failed to save conversation message: {e}")
+
 async def process_api_chat(request: ChatRequest, registry: Optional[ComponentRegistry]):
     """
     Process a chat message and return a response with deck updates
@@ -135,6 +185,16 @@ Be friendly, not robotic!"""
         # Conversational error response
         ai_response = "Hmm, I'm having trouble with that. Could you try rephrasing your request?"
         deck_diff = None
+
+    # Save conversation to deck's history (non-blocking)
+    if request.deck_data and request.deck_data.uuid:
+        try:
+            # Save user message
+            await save_conversation_message(request.deck_data.uuid, "user", request.message)
+            # Save assistant response
+            await save_conversation_message(request.deck_data.uuid, "assistant", ai_response)
+        except Exception as save_err:
+            logger.warning(f"Failed to save conversation: {save_err}")
 
     # Return the response with deck updates
     return ChatResponse(
