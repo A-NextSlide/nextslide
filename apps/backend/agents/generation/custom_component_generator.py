@@ -32,6 +32,221 @@ from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
 
+
+def _extract_search_query_from_prop_name(prop_name: str) -> str:
+    """
+    Convert a camelCase prop name to a search query.
+    This matches the frontend's extractSearchQueryFromPropName logic.
+
+    Examples:
+        heroImage -> hero image
+        elonMuskPhoto -> elon musk photo
+        ceoPortrait -> ceo portrait
+        teslaModel3 -> tesla model 3
+    """
+    import re
+
+    if not prop_name:
+        return ""
+
+    # Remove common suffixes that aren't useful for search
+    clean_name = re.sub(r'(Image|Photo|Pic|Picture|Img|Src|Url|Background|Bg)$', '', prop_name, flags=re.IGNORECASE)
+
+    # Convert camelCase to spaces: "elonMuskPhoto" -> "elon Musk Photo"
+    # Insert space before uppercase letters
+    spaced = re.sub(r'([a-z])([A-Z])', r'\1 \2', clean_name)
+
+    # Insert space between letters and numbers: "model3" -> "model 3"
+    spaced = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', spaced)
+    spaced = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', spaced)
+
+    # Clean up and lowercase
+    result = spaced.strip().lower()
+
+    # Filter out generic terms
+    generic_terms = ['image', 'photo', 'pic', 'picture', 'img', 'src', 'url', 'background', 'bg', 'hero', 'main']
+    words = [w for w in result.split() if w not in generic_terms]
+
+    return ' '.join(words) if words else result
+
+
+def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
+    """
+    Extract image prop names and their search queries from generated HTML.
+    Returns list of (prop_name, search_query) tuples.
+
+    Looks for patterns like:
+    - ${propName} in src attributes
+    - props.propName in src attributes
+    - const propName = "placeholder" in JS
+    """
+    import re
+
+    results = []
+    seen_props = set()
+
+    # Pattern 1: ${propName} in img src
+    # Matches: src="${heroImage}" or src='${teamPhoto}'
+    pattern1 = re.findall(r'<img[^>]*src=["\']?\$\{(\w+)\}["\']?', html, re.IGNORECASE)
+    for prop in pattern1:
+        if prop not in seen_props:
+            query = _extract_search_query_from_prop_name(prop)
+            if query and len(query) > 2:
+                results.append((prop, query))
+                seen_props.add(prop)
+
+    # Pattern 2: props.propName in src
+    # Matches: src="props.heroImage"
+    pattern2 = re.findall(r'<img[^>]*src=["\']props\.(\w+)["\']', html, re.IGNORECASE)
+    for prop in pattern2:
+        if prop not in seen_props:
+            query = _extract_search_query_from_prop_name(prop)
+            if query and len(query) > 2:
+                results.append((prop, query))
+                seen_props.add(prop)
+
+    # Pattern 3: JS const with image-related name
+    # Matches: const heroImage = "..." or let teamPhoto = '...'
+    pattern3 = re.findall(r'(?:const|let|var)\s+(\w*(?:image|photo|pic|img|src)\w*)\s*=', html, re.IGNORECASE)
+    for prop in pattern3:
+        if prop not in seen_props:
+            query = _extract_search_query_from_prop_name(prop)
+            if query and len(query) > 2:
+                results.append((prop, query))
+                seen_props.add(prop)
+
+    # Pattern 4: Alt text from placeholder images
+    # Matches: <img... alt="Elon Musk"... src="placeholder..." or src=""
+    placeholder_imgs = re.findall(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\'](?:placeholder|data:|about:blank|)["\']?[^>]*>', html, re.IGNORECASE)
+    placeholder_imgs += re.findall(r'<img[^>]*src=["\'](?:placeholder|data:|about:blank|)["\']?[^>]*alt=["\']([^"\']+)["\']', html, re.IGNORECASE)
+    for alt in placeholder_imgs:
+        clean_alt = alt.strip().lower()
+        if clean_alt and clean_alt not in seen_props and len(clean_alt) > 2:
+            # Use alt text directly as search query
+            if clean_alt not in ['image', 'photo', 'placeholder', 'hero', 'background']:
+                results.append((f"alt_{clean_alt.replace(' ', '_')}", clean_alt))
+                seen_props.add(clean_alt)
+
+    print(f"[IMAGE_EXTRACT] Found {len(results)} image props from HTML: {results}")
+    return results
+
+
+async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """
+    Search SERP API for images using the same queries that would appear in the image picker.
+    Picks randomly from the first 10 results for each query.
+
+    Args:
+        prop_queries: List of (prop_name, search_query) tuples from _extract_image_props_from_html
+        theme: Optional theme dict for Brandfetch logos
+
+    Returns:
+        Dict mapping prop names to uploaded image URLs
+    """
+    import random
+    from services.serpapi_service import SerpAPIService
+    from services.image_storage_service import ImageStorageService
+
+    prefetched = {}
+    theme = theme or {}
+
+    # Include Brandfetch logos if available
+    brand_info = theme.get('brandInfo', {})
+    color_palette = theme.get('color_palette', {})
+    brandfetch_logo = (
+        brand_info.get('logoUrl') or
+        brand_info.get('logo_url') or
+        color_palette.get('metadata', {}).get('logo_url') or
+        color_palette.get('metadata', {}).get('logo_url_light')
+    )
+    if brandfetch_logo:
+        prefetched['logoUrl'] = brandfetch_logo
+        prefetched['logoUrl_query'] = 'brand logo'
+        print(f"[POST_SEARCH] ✅ Using Brandfetch logo")
+
+    if not prop_queries:
+        print("[POST_SEARCH] No prop queries to search")
+        return prefetched
+
+    # Initialize SerpAPI
+    try:
+        serpapi = SerpAPIService()
+        if not serpapi.is_available:
+            print("[POST_SEARCH] ❌ SerpAPI not available")
+            return prefetched
+    except Exception as e:
+        print(f"[POST_SEARCH] ❌ Could not init SerpAPI: {e}")
+        return prefetched
+
+    print(f"[POST_SEARCH] 🔍 Searching SERP API for {len(prop_queries)} image props")
+
+    async with ImageStorageService() as storage:
+
+        async def search_and_pick_random(prop_name: str, query: str) -> Tuple[str, str, Optional[str]]:
+            """Search SERP API, pick randomly from first 10 results."""
+            try:
+                print(f"[POST_SEARCH] 🔎 Searching: '{query}' (for prop: {prop_name})")
+
+                # Search for 10 images - same as image picker would see
+                result = await serpapi.search_images(
+                    query=query,
+                    per_page=10,
+                    size="large"
+                )
+
+                photos = result.get('photos', [])
+                print(f"[POST_SEARCH] 📷 Got {len(photos)} results for '{query}'")
+
+                # Filter valid URLs
+                valid_urls = []
+                for photo in photos[:10]:
+                    url = photo.get('original') or photo.get('url') or photo.get('src', {}).get('original')
+                    if url and not url.startswith('data:'):
+                        valid_urls.append(url)
+
+                if not valid_urls:
+                    print(f"[POST_SEARCH] ⚠️ No valid images for: {query}")
+                    return (prop_name, query, None)
+
+                # Shuffle and pick randomly
+                random.shuffle(valid_urls)
+                print(f"[POST_SEARCH] 🎲 Picking randomly from {len(valid_urls)} results")
+
+                # Try to upload until one succeeds
+                for url in valid_urls:
+                    try:
+                        upload_result = await storage.upload_image_from_url(url)
+                        if 'error' not in upload_result and upload_result.get('url'):
+                            our_url = upload_result['url']
+                            print(f"[POST_SEARCH] ✅ {prop_name} ({query}) -> uploaded (random pick)")
+                            return (prop_name, query, our_url)
+                    except Exception as e:
+                        logger.debug(f"[POST_SEARCH] Upload failed: {e}")
+                        continue
+
+                print(f"[POST_SEARCH] ⚠️ All uploads failed for: {query}")
+                return (prop_name, query, None)
+
+            except Exception as e:
+                print(f"[POST_SEARCH] ❌ Error for '{query}': {e}")
+                return (prop_name, query, None)
+
+        # Run searches in parallel
+        tasks = [search_and_pick_random(prop, query) for prop, query in prop_queries[:8]]  # Max 8
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Build result dict
+        for result in results:
+            if isinstance(result, tuple) and len(result) == 3 and result[2]:
+                prop_name, query, url = result
+                prefetched[prop_name] = url
+                prefetched[f"{prop_name}_query"] = query
+
+    image_count = len([k for k in prefetched if not k.endswith('_query') and not k.startswith('logo')])
+    print(f"[POST_SEARCH] 📸 Total images found: {image_count}")
+    return prefetched
+
+
 # Global semaphore to limit concurrent AI calls (prevents rate limiting)
 # Uses config value - Gemini Tier 3 has 2000+ RPM, so we can run many in parallel
 from agents.config import MAX_API_CONCURRENT_CALLS
@@ -768,68 +983,14 @@ class CustomComponentGenerator:
                         else:
                             print(f"[CUSTOM_COMPONENT]   {key}: {val}")
 
-            # PRE-FETCH IMAGES if not already provided and auto_prefetch enabled
-            # Note: We now prefetch for ALL slides including title slides because
-            # Gemini often generates HTML with images even for title/cover slides
+            # SIMPLIFIED IMAGE SYSTEM: No pre-generation search!
+            # Images are searched AFTER HTML is generated using the same prop names/search terms
+            # that the image picker would use. This ensures consistency.
             slide_title = slide_context.get('title', '')
 
-            # Debug: Log why prefetch might be skipped
-            logger.info(f"[CUSTOM_COMPONENT] Prefetch check: prefetched={bool(prefetched_images)}, auto_prefetch={auto_prefetch}, external_media={bool(external_media)}")
-            print(f"[CUSTOM_COMPONENT] 🔍 Prefetch check: prefetched={bool(prefetched_images)}, auto={auto_prefetch}, ext_media={bool(external_media)}")
-
-            # ALWAYS prefetch if we don't have images, regardless of external_media
-            # (external_media may exist but be empty, and we still need images)
-            if not prefetched_images and auto_prefetch:
-                logger.info("[CUSTOM_COMPONENT] Auto-prefetching images for content...")
-                print("[CUSTOM_COMPONENT] 🔍 Pre-fetching images before generation...")
-                try:
-                    prefetched_images = await prefetch_images_for_content(
-                        content=content,
-                        slide_title=slide_title,
-                        max_images=8,  # Only for specific named entities (Pokémon, people, products)
-                        slide_context=slide_context,  # Pass full context for smarter search terms!
-                        theme=theme  # Pass theme for Brandfetch logos and context
-                    )
-                    if prefetched_images:
-                        logger.info(f"[CUSTOM_COMPONENT] Pre-fetched {len(prefetched_images)} images")
-                        print(f"[CUSTOM_COMPONENT] ✅ Pre-fetched {len(prefetched_images)} images: {list(prefetched_images.keys())}")
-                    else:
-                        logger.warning("[CUSTOM_COMPONENT] Prefetch returned empty/None!")
-                        print("[CUSTOM_COMPONENT] ⚠️ Prefetch returned empty - no images found")
-                except Exception as e:
-                    logger.error(f"[CUSTOM_COMPONENT] Image prefetch EXCEPTION: {e}", exc_info=True)
-                    print(f"[CUSTOM_COMPONENT] ❌ Prefetch exception: {e}")
-                    prefetched_images = {}
-
-            # CRITICAL: Convert external_media images to prefetched_images format for injection
-            # This ensures images from Firecrawl/external sources are also injected into HTML
-            if not prefetched_images and external_media:
-                external_images = external_media.get('images', [])
-                if external_images:
-                    logger.info(f"[CUSTOM_COMPONENT] Converting {len(external_images)} external_media images for injection")
-                    print(f"[CUSTOM_COMPONENT] 📸 Using {len(external_images)} images from external_media for injection")
-                    prefetched_images = {}
-                    for i, img_url in enumerate(external_images[:5], 1):  # Max 5 images
-                        prefetched_images[f"image{i}"] = img_url
-                        prefetched_images[f"image{i}_query"] = "external media"
-                    print(f"[CUSTOM_COMPONENT] ✅ Converted external images: {list(prefetched_images.keys())}")
-                else:
-                    # external_media exists but has no images - try auto-prefetch as fallback
-                    logger.info("[CUSTOM_COMPONENT] external_media has no images, trying auto-prefetch...")
-                    print("[CUSTOM_COMPONENT] ⚠️ external_media has no images, falling back to auto-prefetch...")
-                    try:
-                        prefetched_images = await prefetch_images_for_content(
-                            content=content,
-                            slide_title=slide_title,
-                            max_images=8,  # Only for specific named entities
-                            slide_context=slide_context,  # Pass full context for smarter search terms!
-                            theme=theme  # Pass theme for Brandfetch logos and context
-                        )
-                        if prefetched_images:
-                            print(f"[CUSTOM_COMPONENT] ✅ Fallback prefetch got {len(prefetched_images)} images")
-                    except Exception as e:
-                        logger.warning(f"[CUSTOM_COMPONENT] Fallback prefetch failed: {e}")
-                        prefetched_images = {}
+            # Skip pre-generation prefetch - we'll do post-generation search instead
+            # This uses the exact same search terms as the image picker
+            print(f"[CUSTOM_COMPONENT] 🆕 Using simplified image system (post-generation SERP search)")
 
             # Detect if this is a title slide
             is_title_slide = self._is_title_slide(slide_context)
@@ -1184,14 +1345,34 @@ class CustomComponentGenerator:
 
             print(f"[CUSTOM_COMPONENT] ✅ HTML extracted: {len(html_content)} chars")
 
-            # GUARANTEED IMAGE INJECTION - Post-process HTML to inject real URLs
-            # This runs AFTER generation to ensure images appear regardless of what AI generated
-            print(f"[CUSTOM_COMPONENT] 🔍 Checking for image injection: prefetched_images={'available with ' + str(len(prefetched_images)) + ' keys' if prefetched_images else 'NONE'}")
+            # POST-GENERATION IMAGE SEARCH - Extract prop names from HTML and search with same terms as image picker
+            # This is our ONLY image search - uses the exact same queries the image picker would show
 
             # Check if HTML has placeholders that need injection
             has_placeholders = 'placeholder' in html_content.lower() or '${' in html_content or 'src=""' in html_content
+            print(f"[CUSTOM_COMPONENT] 🔍 HTML has placeholders: {has_placeholders}")
+
+            # Extract image prop names from HTML and search SERP API
             if has_placeholders:
-                print(f"[CUSTOM_COMPONENT] ⚠️ HTML has placeholders that need injection!")
+                print(f"[CUSTOM_COMPONENT] 🔎 Extracting image props from generated HTML...")
+                image_props_from_html = _extract_image_props_from_html(html_content)
+
+                if image_props_from_html:
+                    print(f"[CUSTOM_COMPONENT] 🔎 Searching SERP API with image picker queries: {[q for _, q in image_props_from_html]}")
+                    # Search SERP API with those exact queries (same as image picker would use)
+                    prefetched_images = await _search_images_for_props(image_props_from_html, theme)
+                    if prefetched_images:
+                        image_count = len([k for k in prefetched_images if not k.endswith('_query')])
+                        print(f"[CUSTOM_COMPONENT] ✅ SERP search found {image_count} images (random pick from top 10)")
+                    else:
+                        print(f"[CUSTOM_COMPONENT] ⚠️ SERP search returned no images")
+                        prefetched_images = {}
+                else:
+                    print(f"[CUSTOM_COMPONENT] ⚠️ No image props found in HTML")
+                    prefetched_images = {}
+            else:
+                print(f"[CUSTOM_COMPONENT] ✓ No placeholders found - skipping image search")
+                prefetched_images = prefetched_images or {}
 
             if prefetched_images:
                 print(f"[CUSTOM_COMPONENT] 🔧 Running image injection with keys: {list(prefetched_images.keys())}")
