@@ -426,12 +426,34 @@ const DeckList: React.FC = () => {
 
   const handleLinkAdd = () => {
     if (linkInput.trim()) {
-      // For now just clear it, in real app we'd validate and add to a list
+      // Extract domain and append to heroInput for branded slides
+      let url = linkInput.trim();
+      // Add protocol if missing for proper URL parsing
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+
+      // Try to extract just the domain for cleaner display
+      let domain = url;
+      try {
+        const urlObj = new URL(url);
+        domain = urlObj.hostname.replace('www.', '');
+      } catch {
+        // If URL parsing fails, use as-is
+        domain = linkInput.trim().replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
+      }
+
+      // Append to heroInput so it gets sent to the outline agent for brand extraction
+      setHeroInput(prev => {
+        const separator = prev.trim() ? ' ' : '';
+        return `${prev}${separator}${domain}`;
+      });
+
       setLinkInput('');
       setIsLinkPopoverOpen(false);
       toast({
-        title: "Link added",
-        description: "Link has been added to context",
+        title: "URL added",
+        description: `${domain} will be used for branded slides`,
       });
     }
   };
@@ -1967,13 +1989,14 @@ const DeckList: React.FC = () => {
                             {/* Branded slides hint bubble */}
                             <div
                               className={cn(
-                                "absolute -top-8 left-2 flex items-center gap-2 px-3 py-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/50 rounded-full shadow-sm transition-all duration-300",
+                                "absolute -top-8 left-2 flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/50 rounded-full shadow-sm transition-all duration-300",
                                 heroInput ? "opacity-0 -translate-y-2 pointer-events-none" : "opacity-100 translate-y-0"
                               )}
                             >
                               <span className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                                Try <span className="font-semibold">YourSite.com</span> for branded slides
+                                Enter a URL like <span className="underline decoration-dotted underline-offset-2">nike.com</span> for branded slides
                               </span>
+                              <span className="text-[10px] text-orange-400 dark:text-orange-500">Try your domain!</span>
                             </div>
 
                             <div className="relative group">
