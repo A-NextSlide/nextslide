@@ -309,14 +309,14 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     const minWidth = screenWidth < 768 ? 500 : 650;
 
     // Max width scales with screen size:
-    // - Small screens (<1024px): max 850px
-    // - Medium screens (1024-1440px): max 1000px
-    // - Large screens (1440-1920px): max 1150px
-    // - Extra large screens (>1920px): max 1300px
-    const maxWidth = screenWidth < 1024 ? 850
-                   : screenWidth < 1440 ? 1000
-                   : screenWidth < 1920 ? 1150
-                   : 1300;
+    // - Small screens (<1024px): max 750px
+    // - Medium screens (1024-1440px): max 880px
+    // - Large screens (1440-1920px): max 980px
+    // - Extra large screens (>1920px): max 1100px
+    const maxWidth = screenWidth < 1024 ? 750
+                   : screenWidth < 1440 ? 880
+                   : screenWidth < 1920 ? 980
+                   : 1100;
 
     return Math.max(minWidth, Math.min(maxWidth, optimalWidth));
   }, [windowDimensions.width, windowDimensions.height]);

@@ -658,13 +658,8 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   };
 
   // Deselect components and exit text editing when changing slides
+  // In edit mode, auto-select CustomComponent to show image editing panel
   React.useEffect(() => {
-    // Clear local selection
-    setSelectedComponentId(null);
-
-    // Clear global multi-selection
-    try { useEditorStore.getState().clearSelection(); } catch { }
-
     // Exit text editing and blur active editor if present
     // Add a small delay to allow any pending text saves to complete
     const timeoutId = setTimeout(() => {
@@ -685,10 +680,32 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
           }, 50);
         }
       } catch { }
+
+      // Auto-select CustomComponent when in edit mode for quick image editing
+      if (isEditing && currentSlide?.components) {
+        // Find the first CustomComponent on the slide
+        const customComponent = currentSlide.components.find(c => c.type === 'CustomComponent');
+        if (customComponent) {
+          // Select the CustomComponent to show its settings panel with images expanded
+          setSelectedComponentId(customComponent.id);
+          try {
+            useEditorStore.getState().clearSelection();
+            useEditorStore.getState().selectComponent(customComponent.id);
+          } catch { }
+        } else {
+          // No CustomComponent, clear selection
+          setSelectedComponentId(null);
+          try { useEditorStore.getState().clearSelection(); } catch { }
+        }
+      } else {
+        // Not in edit mode, clear selection
+        setSelectedComponentId(null);
+        try { useEditorStore.getState().clearSelection(); } catch { }
+      }
     }, 10);
 
     return () => clearTimeout(timeoutId);
-  }, [currentSlideIndex]);
+  }, [currentSlideIndex, isEditing, currentSlide?.id]);
 
   // Setup event listeners for slide navigation
   React.useEffect(() => {

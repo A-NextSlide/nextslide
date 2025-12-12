@@ -35,6 +35,89 @@ logger = get_logger(__name__)
 from agents.config import MAX_API_CONCURRENT_CALLS
 _AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMAGE OPTIMIZATION - Prevent token inflation from large images
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Maximum dimensions for reference images (to prevent token explosion)
+MAX_IMAGE_DIMENSION = 1024  # Max width or height in pixels
+MAX_IMAGE_BYTES = 500_000   # Max ~500KB per image after compression
+JPEG_QUALITY = 70           # JPEG quality for compression
+
+def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_IMAGE_DIMENSION, max_bytes: int = MAX_IMAGE_BYTES) -> Tuple[bytes, str]:
+    """
+    Compress and resize an image to prevent token inflation in multimodal messages.
+
+    Args:
+        image_data: Raw image bytes
+        max_dimension: Maximum width or height
+        max_bytes: Maximum output size in bytes
+
+    Returns:
+        Tuple of (compressed_bytes, media_type)
+    """
+    try:
+        from PIL import Image
+        from io import BytesIO
+
+        # Load image
+        img = Image.open(BytesIO(image_data))
+        original_size = len(image_data)
+        original_dims = img.size
+
+        # Convert to RGB if necessary (for JPEG output)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            # Create white background for transparent images
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Resize if too large
+        width, height = img.size
+        if width > max_dimension or height > max_dimension:
+            ratio = min(max_dimension / width, max_dimension / height)
+            new_size = (int(width * ratio), int(height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            logger.info(f"[IMAGE_COMPRESS] Resized from {original_dims} to {new_size}")
+
+        # Compress to JPEG with decreasing quality until under max_bytes
+        quality = JPEG_QUALITY
+        output = BytesIO()
+        img.save(output, format='JPEG', quality=quality, optimize=True)
+
+        while output.tell() > max_bytes and quality > 30:
+            quality -= 10
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=quality, optimize=True)
+
+        compressed_data = output.getvalue()
+        final_size = len(compressed_data)
+
+        reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+        logger.info(f"[IMAGE_COMPRESS] {original_size:,} -> {final_size:,} bytes ({reduction:.1f}% reduction, quality={quality})")
+        print(f"[IMAGE_COMPRESS] {original_size//1024}KB -> {final_size//1024}KB ({reduction:.0f}% reduction)")
+
+        return compressed_data, 'image/jpeg'
+
+    except ImportError:
+        logger.warning("[IMAGE_COMPRESS] PIL not available, using original image")
+        return image_data, 'image/png'
+    except Exception as e:
+        logger.warning(f"[IMAGE_COMPRESS] Compression failed: {e}, using original")
+        return image_data, 'image/png'
+
+
+def _estimate_token_count(base64_data: str) -> int:
+    """
+    Estimate token count for base64 image data.
+    Gemini uses ~4 characters per token for base64.
+    """
+    return len(base64_data) // 4
+
 def _reference_images_from_uploaded_media(uploaded_media: Optional[list]) -> List[str]:
     """
     Convert user-uploaded media (taggedMedia) into reference image URLs/data-URLs
@@ -942,6 +1025,8 @@ class CustomComponentGenerator:
                 import base64 as b64_module
 
                 user_content_parts = []
+                total_image_tokens = 0
+                MAX_TOTAL_IMAGE_TOKENS = 200_000  # ~200K tokens max for all images combined
 
                 # Add instruction about the reference images
                 user_content_parts.append({
@@ -949,8 +1034,15 @@ class CustomComponentGenerator:
                     "text": "🎨 DESIGN REFERENCE - Study these images and extract everything relevant to create beautiful slides:\n- Colors, fonts, spacing, layout structure\n- How they use imagery, icons, visual hierarchy\n- Their design personality and brand feel\n- Any patterns, textures, or stylistic choices\nUse whatever you find most useful to make the output stunning.\n"
                 })
 
-                # Process each reference image (limit to 3)
+                # Process each reference image (limit to 3, with token budget)
+                images_added = 0
                 for idx, img_url in enumerate(reference_images[:3]):
+                    # Check if we've exceeded our token budget
+                    if total_image_tokens >= MAX_TOTAL_IMAGE_TOKENS:
+                        logger.warning(f"[CUSTOM_COMPONENT] Skipping remaining images - token budget exhausted ({total_image_tokens:,} tokens)")
+                        print(f"[CUSTOM_COMPONENT] ⚠️ Token budget exhausted, skipping remaining images")
+                        break
+
                     try:
                         # Handle data URLs (base64 encoded images)
                         if img_url.startswith('data:'):
@@ -958,8 +1050,29 @@ class CustomComponentGenerator:
                             import re
                             match = re.match(r'data:([^;]+);base64,(.+)', img_url)
                             if match:
-                                media_type = match.group(1)
-                                img_b64 = match.group(2)
+                                original_media_type = match.group(1)
+                                original_b64 = match.group(2)
+                                original_tokens = _estimate_token_count(original_b64)
+
+                                # Decode, compress, and re-encode
+                                try:
+                                    original_data = b64_module.b64decode(original_b64)
+                                    compressed_data, media_type = _compress_image_for_multimodal(original_data)
+                                    img_b64 = b64_module.b64encode(compressed_data).decode('utf-8')
+                                    new_tokens = _estimate_token_count(img_b64)
+                                    logger.info(f"[CUSTOM_COMPONENT] Data URL compressed: {original_tokens:,} -> {new_tokens:,} tokens")
+                                except Exception as e:
+                                    logger.warning(f"[CUSTOM_COMPONENT] Compression failed for data URL: {e}")
+                                    img_b64 = original_b64
+                                    media_type = original_media_type
+                                    new_tokens = original_tokens
+
+                                # Check token budget
+                                if total_image_tokens + new_tokens > MAX_TOTAL_IMAGE_TOKENS:
+                                    logger.warning(f"[CUSTOM_COMPONENT] Skipping image {idx + 1} - would exceed token budget")
+                                    continue
+
+                                total_image_tokens += new_tokens
                                 user_content_parts.append({
                                     "type": "image",
                                     "source": {
@@ -972,25 +1085,30 @@ class CustomComponentGenerator:
                                     "type": "text",
                                     "text": f"[Design Reference {idx + 1} - MATCH THIS STYLE EXACTLY]"
                                 })
-                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added base64 reference image {idx + 1}")
+                                images_added += 1
+                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added base64 reference image {idx + 1} ({new_tokens:,} tokens)")
                             else:
                                 logger.warning(f"[CUSTOM_COMPONENT] Invalid data URL format for reference {idx + 1}")
                         else:
-                            # Handle regular URLs - download and encode
-                            resp = requests.get(img_url, timeout=10)
+                            # Handle regular URLs - download, compress, and encode
+                            resp = requests.get(img_url, timeout=10, headers={
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                                'Accept': 'image/*'
+                            })
                             if resp.status_code == 200:
-                                img_b64 = b64_module.b64encode(resp.content).decode('utf-8')
-                                # Determine media type from content-type header or URL
-                                content_type = resp.headers.get('content-type', 'image/png')
-                                if 'jpeg' in content_type or 'jpg' in content_type:
-                                    media_type = 'image/jpeg'
-                                elif 'gif' in content_type:
-                                    media_type = 'image/gif'
-                                elif 'webp' in content_type:
-                                    media_type = 'image/webp'
-                                else:
-                                    media_type = 'image/png'
+                                original_size = len(resp.content)
 
+                                # Compress the image to prevent token explosion
+                                compressed_data, media_type = _compress_image_for_multimodal(resp.content)
+                                img_b64 = b64_module.b64encode(compressed_data).decode('utf-8')
+                                new_tokens = _estimate_token_count(img_b64)
+
+                                # Check token budget
+                                if total_image_tokens + new_tokens > MAX_TOTAL_IMAGE_TOKENS:
+                                    logger.warning(f"[CUSTOM_COMPONENT] Skipping image {idx + 1} - would exceed token budget")
+                                    continue
+
+                                total_image_tokens += new_tokens
                                 user_content_parts.append({
                                     "type": "image",
                                     "source": {
@@ -1003,7 +1121,10 @@ class CustomComponentGenerator:
                                     "type": "text",
                                     "text": f"[Design Reference {idx + 1} - MATCH THIS STYLE EXACTLY]"
                                 })
-                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added URL reference image {idx + 1}: {img_url[:60]}...")
+                                images_added += 1
+                                logger.info(f"[CUSTOM_COMPONENT] ✅ Added URL reference image {idx + 1}: {img_url[:60]}... ({new_tokens:,} tokens)")
+                            else:
+                                logger.warning(f"[CUSTOM_COMPONENT] Failed to download reference image {idx + 1}: HTTP {resp.status_code}")
                     except Exception as e:
                         logger.warning(f"[CUSTOM_COMPONENT] Failed to load reference image {img_url[:50]}: {e}")
 
@@ -1014,7 +1135,8 @@ class CustomComponentGenerator:
                 })
 
                 user_content = user_content_parts
-                logger.info(f"[CUSTOM_COMPONENT] Created multimodal message with {len([p for p in user_content_parts if p.get('type') == 'image'])} images")
+                logger.info(f"[CUSTOM_COMPONENT] Created multimodal message with {images_added} images (total ~{total_image_tokens:,} image tokens)")
+                print(f"[CUSTOM_COMPONENT] 📸 Added {images_added} reference images (~{total_image_tokens//1000}K tokens)")
 
             messages = [
                 {"role": "system", "content": system_prompt},

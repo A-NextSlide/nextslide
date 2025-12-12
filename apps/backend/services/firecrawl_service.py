@@ -49,6 +49,126 @@ class _FirecrawlService:
             return self._client
         return None
 
+    def _compress_screenshot(self, screenshot_input: str, max_dimension: int = 1024, max_bytes: int = 400_000) -> str:
+        """
+        Compress a screenshot to prevent token inflation.
+
+        Screenshots from Firecrawl can be:
+        - A URL to an image (https://...)
+        - Base64-encoded image (with or without data URL prefix)
+
+        This function handles both cases, downloads if needed, then resizes and
+        compresses to a reasonable size for use as design reference.
+
+        Args:
+            screenshot_input: Either a URL or base64-encoded image
+            max_dimension: Maximum width or height in pixels
+            max_bytes: Maximum size of output base64 string
+
+        Returns:
+            Compressed base64-encoded image as data URL (data:image/jpeg;base64,...)
+        """
+        import base64
+        from io import BytesIO
+
+        try:
+            from PIL import Image
+
+            original_data = None
+
+            # Check if it's a URL (Firecrawl sometimes returns URLs instead of base64)
+            if screenshot_input.startswith('http://') or screenshot_input.startswith('https://'):
+                logger.info(f"[SCREENSHOT_COMPRESS] Screenshot is URL, downloading: {screenshot_input[:100]}...")
+                try:
+                    import requests
+                    resp = requests.get(screenshot_input, timeout=30, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    resp.raise_for_status()
+                    original_data = resp.content
+                    logger.info(f"[SCREENSHOT_COMPRESS] Downloaded {len(original_data)} bytes from URL")
+                except Exception as e:
+                    logger.warning(f"[SCREENSHOT_COMPRESS] Failed to download screenshot URL: {e}")
+                    # Return the URL as-is if we can't download it
+                    return screenshot_input
+            else:
+                # It's base64 data
+                screenshot_b64 = screenshot_input
+
+                # Strip data URL prefix if present
+                if screenshot_b64.startswith('data:'):
+                    # Extract base64 part: data:image/png;base64,XXXXX
+                    parts = screenshot_b64.split(',', 1)
+                    if len(parts) == 2:
+                        screenshot_b64 = parts[1]
+
+                # Decode base64
+                original_data = base64.b64decode(screenshot_b64)
+
+            original_size = len(original_data)
+
+            # Open image
+            img = Image.open(BytesIO(original_data))
+            original_dims = img.size
+
+            # Convert to RGB if necessary
+            if img.mode in ('RGBA', 'P', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                if img.mode in ('RGBA', 'LA'):
+                    background.paste(img, mask=img.split()[-1])
+                else:
+                    background.paste(img)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Resize if too large
+            width, height = img.size
+            if width > max_dimension or height > max_dimension:
+                ratio = min(max_dimension / width, max_dimension / height)
+                new_size = (int(width * ratio), int(height * ratio))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info(f"[SCREENSHOT_COMPRESS] Resized from {original_dims} to {new_size}")
+
+            # Compress to JPEG with decreasing quality until under max_bytes
+            quality = 70
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=quality, optimize=True)
+
+            while output.tell() > max_bytes and quality > 30:
+                quality -= 10
+                output = BytesIO()
+                img.save(output, format='JPEG', quality=quality, optimize=True)
+
+            compressed_data = output.getvalue()
+            compressed_b64 = base64.b64encode(compressed_data).decode('utf-8')
+
+            original_b64_size = original_size * 4 // 3  # Approximate base64 size
+            reduction = ((original_b64_size - len(compressed_b64)) / original_b64_size * 100) if original_b64_size > 0 else 0
+            logger.info(f"[SCREENSHOT_COMPRESS] {original_b64_size//1024}KB -> {len(compressed_b64)//1024}KB ({reduction:.0f}% reduction, quality={quality})")
+
+            # Return as data URL for consistent handling downstream
+            return f"data:image/jpeg;base64,{compressed_b64}"
+
+        except ImportError:
+            logger.warning("[SCREENSHOT_COMPRESS] PIL not available, returning original")
+            # Return the original input as-is
+            if screenshot_input.startswith('http'):
+                return screenshot_input
+            if not screenshot_input.startswith('data:'):
+                return f"data:image/png;base64,{screenshot_input}"
+            return screenshot_input
+        except Exception as e:
+            logger.warning(f"[SCREENSHOT_COMPRESS] Compression failed: {e}, returning original")
+            # Return the original input as-is
+            if screenshot_input.startswith('http'):
+                return screenshot_input
+            if not screenshot_input.startswith('data:'):
+                return f"data:image/png;base64,{screenshot_input}"
+            return screenshot_input
+
     # ----------------------------
     # High-level API
     # ----------------------------
@@ -379,8 +499,11 @@ class _FirecrawlService:
             if include_screenshot:
                 screenshot = data.get("screenshot")
                 if screenshot:
-                    brand_design["screenshot"] = screenshot
-                    logger.info(f"[BRAND_DESIGN] Got screenshot ({len(screenshot)} chars)")
+                    # Compress screenshot to prevent token inflation
+                    # Firecrawl returns base64-encoded PNG which can be 1-2MB+
+                    compressed_screenshot = self._compress_screenshot(screenshot)
+                    brand_design["screenshot"] = compressed_screenshot
+                    logger.info(f"[BRAND_DESIGN] Got screenshot ({len(screenshot)} chars -> {len(compressed_screenshot)} chars after compression)")
                 else:
                     logger.warning("[BRAND_DESIGN] Screenshot requested but not returned")
 

@@ -29,10 +29,70 @@ logger = logging.getLogger(__name__)
 # MULTIMODAL HELPER - Download images for vision models
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Maximum dimensions for multimodal images (to prevent token explosion)
+MAX_IMAGE_DIMENSION = 1024  # Max width or height in pixels
+MAX_IMAGE_BYTES = 500_000   # Max ~500KB per image after compression
+JPEG_QUALITY = 70           # JPEG quality for compression
+
+def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_IMAGE_DIMENSION, max_bytes: int = MAX_IMAGE_BYTES) -> tuple:
+    """
+    Compress and resize an image to prevent token inflation in multimodal messages.
+
+    Returns:
+        Tuple of (compressed_bytes, media_type)
+    """
+    try:
+        from PIL import Image
+        from io import BytesIO
+
+        img = Image.open(BytesIO(image_data))
+        original_size = len(image_data)
+
+        # Convert to RGB if necessary
+        if img.mode in ('RGBA', 'P', 'LA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Resize if too large
+        width, height = img.size
+        if width > max_dimension or height > max_dimension:
+            ratio = min(max_dimension / width, max_dimension / height)
+            new_size = (int(width * ratio), int(height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Compress to JPEG
+        quality = JPEG_QUALITY
+        output = BytesIO()
+        img.save(output, format='JPEG', quality=quality, optimize=True)
+
+        while output.tell() > max_bytes and quality > 30:
+            quality -= 10
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=quality, optimize=True)
+
+        compressed_data = output.getvalue()
+        reduction = ((original_size - len(compressed_data)) / original_size * 100) if original_size > 0 else 0
+        logger.info(f"[IMAGE_COMPRESS] {original_size//1024}KB -> {len(compressed_data)//1024}KB ({reduction:.0f}% reduction)")
+
+        return compressed_data, 'image/jpeg'
+
+    except ImportError:
+        logger.warning("[IMAGE_COMPRESS] PIL not available, using original image")
+        return image_data, 'image/png'
+    except Exception as e:
+        logger.warning(f"[IMAGE_COMPRESS] Compression failed: {e}")
+        return image_data, 'image/png'
+
+
 def _build_multimodal_content(text_content: str, attachments: List[Dict] = None) -> List[Dict[str, Any]]:
     """
     Build multimodal content array for vision models.
-    Downloads images from URLs and includes them as base64 for the AI to see.
+    Downloads images from URLs, compresses them, and includes them as base64 for the AI to see.
 
     Args:
         text_content: The text prompt
@@ -55,6 +115,8 @@ def _build_multimodal_content(text_content: str, attachments: List[Dict] = None)
     # Process image attachments
     image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'}
     image_mimes = {'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'}
+    total_tokens = 0
+    MAX_TOTAL_TOKENS = 200_000  # Budget for all images
 
     for att in attachments[:3]:  # Limit to 3 images for performance
         url = att.get('url', '')
@@ -76,8 +138,22 @@ def _build_multimodal_content(text_content: str, attachments: List[Dict] = None)
             if url.startswith('data:'):
                 match = re.match(r'data:([^;]+);base64,(.+)', url)
                 if match:
-                    media_type = match.group(1)
-                    img_b64 = match.group(2)
+                    original_b64 = match.group(2)
+                    # Decode, compress, and re-encode
+                    try:
+                        original_data = base64.b64decode(original_b64)
+                        compressed_data, media_type = _compress_image_for_multimodal(original_data)
+                        img_b64 = base64.b64encode(compressed_data).decode('utf-8')
+                    except Exception:
+                        img_b64 = original_b64
+                        media_type = match.group(1)
+
+                    est_tokens = len(img_b64) // 4
+                    if total_tokens + est_tokens > MAX_TOTAL_TOKENS:
+                        logger.warning(f"[MULTIMODAL] Skipping image - would exceed token budget")
+                        continue
+                    total_tokens += est_tokens
+
                     content_parts.append({
                         "type": "image",
                         "source": {
@@ -90,23 +166,23 @@ def _build_multimodal_content(text_content: str, attachments: List[Dict] = None)
                         "type": "text",
                         "text": f"[Image: {name} - ANALYZE THIS and follow its design/content exactly]"
                     })
-                    logger.info(f"[MULTIMODAL] ✅ Added base64 image: {name}")
+                    logger.info(f"[MULTIMODAL] ✅ Added base64 image: {name} (~{est_tokens//1000}K tokens)")
             else:
                 # Download from URL
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=10, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'image/*'
+                })
                 if response.status_code == 200:
-                    img_b64 = base64.b64encode(response.content).decode('utf-8')
+                    # Compress the image to prevent token explosion
+                    compressed_data, media_type = _compress_image_for_multimodal(response.content)
+                    img_b64 = base64.b64encode(compressed_data).decode('utf-8')
 
-                    # Determine media type
-                    content_type = response.headers.get('content-type', '')
-                    if 'png' in content_type or name.lower().endswith('.png'):
-                        media_type = 'image/png'
-                    elif 'gif' in content_type or name.lower().endswith('.gif'):
-                        media_type = 'image/gif'
-                    elif 'webp' in content_type or name.lower().endswith('.webp'):
-                        media_type = 'image/webp'
-                    else:
-                        media_type = 'image/jpeg'
+                    est_tokens = len(img_b64) // 4
+                    if total_tokens + est_tokens > MAX_TOTAL_TOKENS:
+                        logger.warning(f"[MULTIMODAL] Skipping image - would exceed token budget")
+                        continue
+                    total_tokens += est_tokens
 
                     content_parts.append({
                         "type": "image",
@@ -120,15 +196,15 @@ def _build_multimodal_content(text_content: str, attachments: List[Dict] = None)
                         "type": "text",
                         "text": f"[Image: {name} - ANALYZE THIS and follow its design/content exactly]"
                     })
-                    logger.info(f"[MULTIMODAL] ✅ Downloaded and added image: {name} ({len(img_b64)} bytes)")
+                    logger.info(f"[MULTIMODAL] ✅ Added image: {name} (~{est_tokens//1000}K tokens)")
         except Exception as e:
             logger.warning(f"[MULTIMODAL] Failed to process image {name}: {e}")
-            # Fall back to just mentioning the URL
             content_parts.append({
                 "type": "text",
                 "text": f"[Image URL - could not download: {url}]"
             })
 
+    logger.info(f"[MULTIMODAL] Total image tokens: ~{total_tokens//1000}K")
     return content_parts
 
 # region agent log

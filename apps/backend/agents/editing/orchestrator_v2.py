@@ -531,30 +531,37 @@ Respond with the tool_calls to execute."""
                     pass
 
                 if tool_diff:
-                    dd = dd.merge(tool_diff)
+                    # Ensure tool_diff is a DeckDiff object, not a dict
+                    if isinstance(tool_diff, dict):
+                        logger.warning(f"[ORCHESTRATOR] Tool {tool_name} returned dict instead of DeckDiff, skipping merge")
+                    else:
+                        dd = dd.merge(tool_diff)
 
-                    # CRITICAL: Track accumulated props for sequential operations
-                    # Extract updated props from the diff so next operations see the changes
-                    try:
-                        for slide_diff in (tool_diff.deck_diff.slides_to_update or []):
-                            for comp_diff in (getattr(slide_diff, 'components_to_update', None) or []):
-                                comp_id = getattr(comp_diff, 'id', None)
-                                comp_props = getattr(comp_diff, 'props', None)
-                                if comp_id and comp_props:
-                                    # Get existing accumulated props and merge
-                                    existing = accumulated_props.get(comp_id, {})
-                                    if hasattr(comp_props, 'model_dump'):
-                                        new_props = comp_props.model_dump(exclude_none=True)
-                                    elif hasattr(comp_props, 'dict'):
-                                        new_props = comp_props.dict(exclude_none=True)
-                                    elif isinstance(comp_props, dict):
-                                        new_props = comp_props
-                                    else:
-                                        new_props = {}
-                                    accumulated_props[comp_id] = {**existing, **new_props}
-                                    logger.info(f"[ORCHESTRATOR] Accumulated props for {comp_id}: {list(new_props.keys())}")
-                    except Exception as e:
-                        logger.warning(f"[ORCHESTRATOR] Failed to accumulate props: {e}")
+                        # CRITICAL: Track accumulated props for sequential operations
+                        # Extract updated props from the diff so next operations see the changes
+                        try:
+                            # Safely access deck_diff - some DeckDiff wrappers may not have it
+                            deck_diff_inner = getattr(tool_diff, 'deck_diff', None)
+                            if deck_diff_inner and hasattr(deck_diff_inner, 'slides_to_update'):
+                                for slide_diff in (deck_diff_inner.slides_to_update or []):
+                                    for comp_diff in (getattr(slide_diff, 'components_to_update', None) or []):
+                                        comp_id = getattr(comp_diff, 'id', None)
+                                        comp_props = getattr(comp_diff, 'props', None)
+                                        if comp_id and comp_props:
+                                            # Get existing accumulated props and merge
+                                            existing = accumulated_props.get(comp_id, {})
+                                            if hasattr(comp_props, 'model_dump'):
+                                                new_props = comp_props.model_dump(exclude_none=True)
+                                            elif hasattr(comp_props, 'dict'):
+                                                new_props = comp_props.dict(exclude_none=True)
+                                            elif isinstance(comp_props, dict):
+                                                new_props = comp_props
+                                            else:
+                                                new_props = {}
+                                            accumulated_props[comp_id] = {**existing, **new_props}
+                                            logger.info(f"[ORCHESTRATOR] Accumulated props for {comp_id}: {list(new_props.keys())}")
+                        except Exception as e:
+                            logger.warning(f"[ORCHESTRATOR] Failed to accumulate props: {e}")
 
                 summaries.append(tool_call.summary)
 

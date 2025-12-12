@@ -81,11 +81,11 @@ class ImageStorageService:
     async def upload_image_from_url(self, image_url: str, metadata: Optional[Dict[str, Any]] = None, headers_override: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Upload an image from a URL to Supabase storage.
-        
+
         Args:
             image_url: The URL of the image to upload
             metadata: Optional metadata to store with the image
-            
+
         Returns:
             Dict with 'url' (Supabase URL) and 'path' (storage path)
         """
@@ -93,57 +93,97 @@ class ImageStorageService:
         if image_url in self._cache:
             logger.debug(f"Image already cached: {self._truncate_data_url(image_url)}")
             return self._cache[image_url]
-            
+
         try:
             session = self._get_session()
-            
-            # Add browser-like headers to avoid 403 errors
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate',  # Remove 'br' to avoid Brotli encoding
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Sec-Fetch-Dest': 'image',
-                'Sec-Fetch-Mode': 'no-cors',
-                'Sec-Fetch-Site': 'cross-site',
-                'Referer': 'https://www.google.com/'
-            }
-            if isinstance(headers_override, dict):
-                headers.update(headers_override)
-            
-            # Download the image with browser headers
-            try:
-                async with session.get(image_url, headers=headers, timeout=30) as response:
-                    if response.status == 403:
-                        # Try with a different referer if 403
-                        headers['Referer'] = urlparse(image_url).scheme + '://' + urlparse(image_url).netloc + '/'
-                        async with session.get(image_url, headers=headers, timeout=30) as retry_response:
-                            if retry_response.status != 200:
-                                logger.warning(f"Failed to download image after retry: {self._truncate_data_url(image_url)} (status: {retry_response.status})")
-                                raise Exception(f"Failed to download image: {retry_response.status}")
-                            response = retry_response
+            parsed_url = urlparse(image_url)
+
+            # Different header sets to try for 403 errors
+            header_variants = [
+                # Variant 1: Standard browser with Google referer
+                {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Fetch-Dest': 'image',
+                    'Sec-Fetch-Mode': 'no-cors',
+                    'Sec-Fetch-Site': 'cross-site',
+                    'Referer': 'https://www.google.com/'
+                },
+                # Variant 2: Same origin referer (pretend we're from the same site)
+                {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'identity',
+                    'Sec-Fetch-Dest': 'image',
+                    'Sec-Fetch-Mode': 'same-origin',
+                    'Sec-Fetch-Site': 'same-origin',
+                    'Referer': f'{parsed_url.scheme}://{parsed_url.netloc}/',
+                    'Origin': f'{parsed_url.scheme}://{parsed_url.netloc}'
+                },
+                # Variant 3: Minimal headers (some servers block on too many headers)
+                {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': '*/*'
+                },
+                # Variant 4: Curl-like (no browser fingerprinting)
+                {
+                    'User-Agent': 'curl/7.88.1',
+                    'Accept': '*/*'
+                },
+            ]
+
+            content = None
+            content_type = 'image/jpeg'
+            last_error = None
+
+            for variant_idx, headers in enumerate(header_variants):
+                if isinstance(headers_override, dict):
+                    headers.update(headers_override)
+
+                try:
+                    async with session.get(image_url, headers=headers, timeout=30, allow_redirects=True) as response:
+                        if response.status == 200:
                             content = await response.read()
                             content_type = response.headers.get('Content-Type', 'image/jpeg')
-                    elif response.status != 200:
-                        raise Exception(f"Failed to download image: {response.status}")
-                    else:
-                        content = await response.read()
-                        content_type = response.headers.get('Content-Type', 'image/jpeg')
-            except aiohttp.ClientError as e:
-                # Handle various aiohttp errors including encoding issues
-                if "brotli" in str(e).lower():
-                    logger.warning(f"Brotli encoding issue, retrying without br support: {self._truncate_data_url(image_url)}")
-                    # Retry without any encoding preferences
-                    headers['Accept-Encoding'] = 'identity'
-                    async with session.get(image_url, headers=headers, timeout=30) as response:
-                        if response.status != 200:
-                            raise Exception(f"Failed to download image: {response.status}")
-                        content = await response.read()
-                        content_type = response.headers.get('Content-Type', 'image/jpeg')
-                else:
-                    raise
+                            logger.debug(f"Successfully downloaded with variant {variant_idx + 1}")
+                            break
+                        elif response.status == 403:
+                            logger.debug(f"403 with variant {variant_idx + 1}, trying next...")
+                            last_error = f"403 Forbidden"
+                            continue
+                        elif response.status == 404:
+                            logger.warning(f"Image not found (404): {self._truncate_data_url(image_url)}")
+                            last_error = "404 Not Found"
+                            break  # Don't retry on 404
+                        else:
+                            last_error = f"HTTP {response.status}"
+                            continue
+                except aiohttp.ClientError as e:
+                    if "brotli" in str(e).lower():
+                        logger.debug(f"Brotli encoding issue with variant {variant_idx + 1}")
+                        headers['Accept-Encoding'] = 'identity'
+                        try:
+                            async with session.get(image_url, headers=headers, timeout=30) as retry_response:
+                                if retry_response.status == 200:
+                                    content = await retry_response.read()
+                                    content_type = retry_response.headers.get('Content-Type', 'image/jpeg')
+                                    break
+                        except Exception:
+                            pass
+                    last_error = str(e)
+                    continue
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+
+            if content is None:
+                logger.error(f"Failed to download image after all retries: {self._truncate_data_url(image_url)} ({last_error})")
+                raise Exception(f"Failed to download image: {last_error}")
 
             # CRITICAL: Validate that we actually got an image, not HTML/redirect
             # Some sites return HTML redirect pages instead of images

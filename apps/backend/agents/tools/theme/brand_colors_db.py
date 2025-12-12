@@ -179,7 +179,10 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                                         logger.info(f"[BRANDFETCH DB] Found logo URL ({logo_type}): {logo_url}")
                                         break
             
-            if colors:
+            # Check if we have colors from hex_list OR from labeled colors
+            has_labeled = labeled_colors.get('accent') or labeled_colors.get('background') or labeled_colors.get('text')
+
+            if colors or has_labeled:
                 # Build categorized color lists based on the category information
                 # Check for labeled format first (admin panel edits)
                 if labeled_colors.get('background'):
@@ -198,6 +201,19 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
                         accents.append(labeled_colors['accent2'])
                 else:
                     accents = [c for c in colors if color_categories.get(c) == 'accent']
+
+                # If we only have labeled colors but no hex_list, build the colors list from labeled
+                if not colors and has_labeled:
+                    colors = []
+                    if labeled_colors.get('accent'):
+                        colors.append(labeled_colors['accent'])
+                    if labeled_colors.get('accent2'):
+                        colors.append(labeled_colors['accent2'])
+                    if labeled_colors.get('background'):
+                        colors.append(labeled_colors['background'])
+                    if labeled_colors.get('text'):
+                        colors.append(labeled_colors['text'])
+                    logger.info(f"[BRANDFETCH DB] Built colors list from labeled: {colors}")
 
                 result = {
                     "colors": colors,
