@@ -337,11 +337,8 @@ async def create_checkout(request: CheckoutRequest, user: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Checkout error: {e}", exc_info=True)
-        # Include error details in development, generic message in production
-        import os
-        if os.getenv("ENV", "production") == "development":
-            raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+        # Show actual error for debugging (can hide later)
+        raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
 
 
 @router.post("/portal", response_model=PortalResponse)
