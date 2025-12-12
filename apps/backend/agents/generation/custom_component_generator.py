@@ -127,6 +127,31 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
                 results.append((f"alt_{clean_alt.replace(' ', '_')}", clean_alt))
                 seen_props.add(clean_alt)
 
+    # Pattern 5: Alt text from images with EXTERNAL URLs (Unsplash, Pexels, etc.)
+    # These are images where AI hardcoded stock URLs - we want to replace them with SERP results
+    # Skip our own bucket URLs (nextslide.ai, supabase.co)
+    OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
+    external_imgs = re.findall(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(https?://[^\s"\'>]+)["\']?[^>]*>', html, re.IGNORECASE)
+    external_imgs += re.findall(r'<img[^>]*src=["\']?(https?://[^\s"\'>]+)["\']?[^>]*alt=["\']([^"\']+)["\'][^>]*>', html, re.IGNORECASE)
+    for match in external_imgs:
+        # Handle both match group orders
+        if isinstance(match, tuple):
+            alt, url = match if not match[0].startswith('http') else (match[1], match[0])
+        else:
+            continue
+
+        # Skip our own URLs
+        if any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS):
+            continue
+
+        clean_alt = alt.strip().lower()
+        if clean_alt and clean_alt not in seen_props and len(clean_alt) > 2:
+            # Use alt text directly as search query
+            if clean_alt not in ['image', 'photo', 'placeholder', 'hero', 'background', 'icon', 'logo']:
+                results.append((f"alt_{clean_alt.replace(' ', '_').replace('-', '_')}", clean_alt))
+                seen_props.add(clean_alt)
+                print(f"[IMAGE_EXTRACT] Found external URL with alt text: '{clean_alt}' -> will search SERP")
+
     print(f"[IMAGE_EXTRACT] Found {len(results)} image props from HTML: {results}")
     return results
 
@@ -1348,12 +1373,26 @@ class CustomComponentGenerator:
             # POST-GENERATION IMAGE SEARCH - Extract prop names from HTML and search with same terms as image picker
             # This is our ONLY image search - uses the exact same queries the image picker would show
 
-            # Check if HTML has placeholders that need injection
+            # Check if HTML has placeholders OR external URLs that need injection
+            # External URLs (Unsplash, Pexels, etc.) should also trigger SERP search for better images
+            import re  # Local import to avoid scoping issues
+            OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
             has_placeholders = 'placeholder' in html_content.lower() or '${' in html_content or 'src=""' in html_content
-            print(f"[CUSTOM_COMPONENT] 🔍 HTML has placeholders: {has_placeholders}")
+            has_external_urls = bool(re.search(r'<img[^>]*src=["\']https?://', html_content, re.IGNORECASE))
+
+            # If there are external URLs, check if they're NOT from our bucket
+            if has_external_urls and not has_placeholders:
+                external_matches = re.findall(r'<img[^>]*src=["\']?(https?://[^\s"\'>]+)["\']?', html_content, re.IGNORECASE)
+                non_bucket_external = [url for url in external_matches if not any(d in url.lower() for d in OUR_BUCKET_DOMAINS)]
+                has_external_urls = len(non_bucket_external) > 0
+                if has_external_urls:
+                    print(f"[CUSTOM_COMPONENT] 🔍 Found {len(non_bucket_external)} external URLs to replace (e.g., Unsplash)")
+
+            needs_image_search = has_placeholders or has_external_urls
+            print(f"[CUSTOM_COMPONENT] 🔍 HTML has placeholders: {has_placeholders}, external URLs: {has_external_urls} -> needs search: {needs_image_search}")
 
             # Extract image prop names from HTML and search SERP API
-            if has_placeholders:
+            if needs_image_search:
                 print(f"[CUSTOM_COMPONENT] 🔎 Extracting image props from generated HTML...")
                 image_props_from_html = _extract_image_props_from_html(html_content)
 
@@ -1371,14 +1410,14 @@ class CustomComponentGenerator:
                     print(f"[CUSTOM_COMPONENT] ⚠️ No image props found in HTML")
                     prefetched_images = {}
             else:
-                print(f"[CUSTOM_COMPONENT] ✓ No placeholders found - skipping image search")
+                print(f"[CUSTOM_COMPONENT] ✓ No placeholders or external URLs - skipping image search")
                 prefetched_images = prefetched_images or {}
 
             if prefetched_images:
                 print(f"[CUSTOM_COMPONENT] 🔧 Running image injection with keys: {list(prefetched_images.keys())}")
                 html_content = self._inject_prefetched_images_into_html(html_content, prefetched_images)
-            elif has_placeholders:
-                print(f"[CUSTOM_COMPONENT] ❌ NO IMAGES TO INJECT but HTML has placeholders!")
+            elif needs_image_search:
+                print(f"[CUSTOM_COMPONENT] ❌ NO IMAGES TO INJECT but HTML needs images!")
 
             # CRITICAL FALLBACK: Upload any external URLs still in HTML to our bucket
             # This catches cases where prefetch failed or AI generated unexpected URLs
@@ -1471,13 +1510,7 @@ class CustomComponentGenerator:
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} / {body_font}
-
-IMAGE PHILOSOPHY - LESS IS MORE:
-- Use images ONLY for SPECIFIC things (named people, products, characters, places)
-- Do NOT use images for abstract concepts (innovation, growth, teamwork, success)
-- Prefer: bold typography, icons, shapes, gradients, data visualizations
-- Generic stock photos make slides look cheap - avoid them!
-- If you must use an image, use ONLY the exact URLs provided (never unsplash/pexels){logo_info}"""
+IMAGES: Use <img src="placeholder" alt="search term"> - we auto-fetch real images from the alt text.{logo_info}"""
 
         if slide_mode == 'static':
             # Traditional PPT - beautiful, clean, professional (static but elegant with entrance animations)
@@ -1598,6 +1631,8 @@ Match the design to content:
 - Data? Animated counters, interactive charts
 - Process? Click-through steps
 - Educational? Explorable, clickable, quiz-able
+
+NEVER copy website headers, navigation bars, or menus from reference screenshots - these are slides, not webpages.
 
 OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
 
@@ -1974,6 +2009,29 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
             """Check if URL is from our storage bucket."""
             return any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS)
 
+        # PATTERN 0 (FIRST): Replace images by matching alt text - THIS RUNS FIRST
+        # For keys like 'alt_niels_bohr', find <img alt="Niels Bohr" ...> and replace its src
+        for key, url in prefetched_images.items():
+            if not key.startswith('alt_') or not url.startswith('http'):
+                continue
+            alt_text = prefetched_images.get(f"{key}_query", key[4:].replace('_', ' '))
+            if not alt_text:
+                continue
+            # Match img tags with this alt text and replace src
+            escaped_alt = re.escape(alt_text)
+            def replace_by_alt_first(match, url=url, alt_text=alt_text):
+                nonlocal images_injected
+                full_tag = match.group(0)
+                if is_our_url(full_tag):
+                    return full_tag
+                new_tag = re.sub(r'src=["\'][^"\']*["\']', f'src="{url}"', full_tag)
+                if new_tag != full_tag:
+                    images_injected += 1
+                    print(f"[IMAGE_INJECT] ✅ ALT-MATCH: '{alt_text}' -> {url[:40]}...")
+                return new_tag
+            alt_pattern = rf'<img[^>]*alt=["\'](?:{escaped_alt})["\'][^>]*>'
+            result = re.sub(alt_pattern, replace_by_alt_first, result, flags=re.IGNORECASE)
+
         # PATTERN 1: Replace ${propName} patterns with real URLs
         # Matches: src="${image1}" or src="${anyPropName}"
         def replace_variable_src(match):
@@ -2230,6 +2288,49 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
                 result = re.sub(js_pattern, replacement, result)
                 logger.info(f"[IMAGE_INJECT] Replaced JS variable {key}")
                 print(f"[IMAGE_INJECT] ✅ JS: {key} = '{url[:40]}...'")
+
+        # PATTERN 6: Replace images by matching alt text
+        # For keys like 'alt_yu_gi_oh_logo', find <img alt="Yu-Gi-Oh Logo" ...> and replace its src
+        for key, url in prefetched_images.items():
+            if not key.startswith('alt_') or not url.startswith('http'):
+                continue
+
+            # Get the original alt text from the stored query (more reliable than reconstructing)
+            alt_text = prefetched_images.get(f"{key}_query", "")
+            if not alt_text:
+                # Fallback: reconstruct from key (alt_yu_gi_oh_logo -> yu gi oh logo)
+                alt_text = key[4:].replace('_', ' ')
+
+            # Find img tags with this alt text (case-insensitive) and replace their src
+            # Pattern matches: <img ... alt="alt_text" ... src="anything" ...> or <img ... src="anything" ... alt="alt_text" ...>
+            def replace_by_alt(match, url=url, alt_text=alt_text):  # Capture url and alt_text for closure
+                nonlocal images_injected
+                full_tag = match.group(0)
+
+                # Skip if already using our URL
+                if is_our_url(full_tag):
+                    return full_tag
+
+                # Replace the src attribute with our URL
+                new_tag = re.sub(r'src=["\'][^"\']*["\']', f'src="{url}"', full_tag)
+                if new_tag != full_tag:
+                    images_injected += 1
+                    logger.info(f"[IMAGE_INJECT] Replaced image by alt text '{alt_text}' with {url[:50]}...")
+                    print(f"[IMAGE_INJECT] ✅ ALT-TEXT: '{alt_text}' -> {url[:40]}...")
+                return new_tag
+
+            # Match img tags with this alt text (escape special regex chars in alt_text)
+            # Use a flexible pattern that handles hyphens, underscores, and spaces
+            escaped_alt = re.escape(alt_text)
+            # Also try with hyphens replaced by spaces or underscores (for "Yu-Gi-Oh" matching "yu gi oh")
+            alt_variants = [
+                escaped_alt,  # Original: "yu-gi-oh logo"
+                re.escape(alt_text.replace('-', ' ')),  # "yu gi oh logo"
+                re.escape(alt_text.replace('-', '_')),  # "yu_gi_oh_logo"
+            ]
+            # Build pattern that matches any variant
+            alt_pattern = rf'<img[^>]*alt=["\'](?:{"|".join(set(alt_variants))})["\'][^>]*>'
+            result = re.sub(alt_pattern, replace_by_alt, result, flags=re.IGNORECASE)
 
         if images_injected > 0:
             logger.info(f"[IMAGE_INJECT] Successfully injected {images_injected} images")
@@ -2765,6 +2866,7 @@ Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
 - Logo: z-index: 80+
 
 {mode_instruction}
+IMAGES (optional): If a stunning image would help, use <img src="placeholder" alt="simple search term">.
 Use CSS variables. Fill 1920x1080."""
 
     def _build_title_slide_user_prompt(
