@@ -127,16 +127,66 @@ class ThemeAgent:
                     except Exception as e:
                         logger.warning(f"[ThemeAgent] Video fetch error (non-blocking): {e}")
 
+                    # Also fetch brand design (screenshot + additional context) for custom component gen
+                    # This runs in parallel and augments the result with visual reference
+                    try:
+                        brand_design = await self._fetch_brand_design(domain)
+                        if brand_design:
+                            result["brand_design"] = brand_design
+                            logger.info(f"[ThemeAgent] 🎨 Got brand design context for {domain}")
+                    except Exception as e:
+                        logger.warning(f"[ThemeAgent] Brand design fetch error (non-blocking): {e}")
+
                     logger.info(f"[ThemeAgent] ✅ Brandfetch success: {result['colors'][:3]}")
                     return result
                 else:
-                    # Brandfetch failed, try to get logo from website via Firecrawl
-                    logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl for logo...")
-                    logo_url = await self._fetch_logo_from_website(domain)
-                    if logo_url:
-                        result["logo_url"] = logo_url
+                    # Brandfetch failed, try Firecrawl brand design for colors, logo, AND screenshot
+                    logger.info("[ThemeAgent] Brandfetch failed, trying Firecrawl brand design...")
+                    brand_design = await self._fetch_brand_design(domain)
+
+                    if brand_design:
+                        result["brand_design"] = brand_design
                         result["domain"] = domain
                         result["brand_name"] = theme_analysis.get("brand")
+
+                        # Extract colors from Firecrawl branding
+                        fc_colors = brand_design.get("colors", {})
+                        if fc_colors:
+                            # Build color list from Firecrawl branding
+                            color_list = []
+                            for key in ["primary", "secondary", "accent", "background"]:
+                                if fc_colors.get(key):
+                                    color_list.append(fc_colors[key])
+
+                            if color_list:
+                                result["colors"] = color_list
+                                result["accent"] = fc_colors.get("primary") or fc_colors.get("accent")
+                                result["accent2"] = fc_colors.get("secondary") or fc_colors.get("accent")
+                                result["background"] = fc_colors.get("background", "#FFFFFF")
+                                result["text"] = fc_colors.get("textPrimary", "#1A1A1A")
+                                result["source"] = "firecrawl_branding"
+                                logger.info(f"[ThemeAgent] ✅ Firecrawl branding colors: {color_list[:3]}")
+
+                        # Extract logo
+                        if brand_design.get("logo"):
+                            result["logo_url"] = brand_design["logo"]
+
+                        # Extract fonts (Firecrawl returns dicts like {'family': 'Arial', 'count': 102})
+                        fc_fonts = brand_design.get("fonts", [])
+                        if fc_fonts:
+                            first_font = fc_fonts[0]
+                            font_name = first_font.get('family') if isinstance(first_font, dict) else first_font
+                            if font_name:
+                                validated = _validate_font_against_registry(font_name)
+                                if validated:
+                                    result["fonts"]["hero"] = validated
+                    else:
+                        # Full fallback - just try to get logo
+                        logo_url = await self._fetch_logo_from_website(domain)
+                        if logo_url:
+                            result["logo_url"] = logo_url
+                            result["domain"] = domain
+                            result["brand_name"] = theme_analysis.get("brand")
 
                     # Still try to fetch videos even if Brandfetch failed
                     try:
@@ -344,6 +394,58 @@ IMPORTANT:
         except Exception as e:
             logger.warning(f"[ThemeAgent] Video fetch error for {domain}: {e}")
             return []
+
+    async def _fetch_brand_design(self, domain: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch comprehensive brand design from website using Firecrawl.
+
+        Returns colors, fonts, logo, AND screenshot for visual reference.
+        This is used to give the custom component generator visual context.
+        """
+        try:
+            from services.firecrawl_service import get_firecrawl_service
+
+            firecrawl = get_firecrawl_service()
+            if not firecrawl.is_configured():
+                logger.warning("[ThemeAgent] Firecrawl not configured for brand design")
+                return None
+
+            url = f"https://{domain}"
+            logger.info(f"[ThemeAgent] 🎨 Fetching brand design from {url}")
+
+            # Run in executor since it's a blocking HTTP call
+            loop = asyncio.get_event_loop()
+            try:
+                async with asyncio.timeout(30):
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda: firecrawl.extract_brand_design(url, include_screenshot=True)
+                    )
+            except asyncio.TimeoutError:
+                logger.warning(f"[ThemeAgent] Brand design fetch timeout for {domain}")
+                return None
+
+            if not result.get("success"):
+                logger.warning(f"[ThemeAgent] Brand design fetch failed: {result.get('error')}")
+                return None
+
+            brand_design = result.get("data", {})
+
+            # Log what we got
+            colors = brand_design.get("colors", {})
+            fonts = brand_design.get("fonts", [])
+            has_screenshot = bool(brand_design.get("screenshot"))
+            has_logo = bool(brand_design.get("logo"))
+
+            logger.info(f"[ThemeAgent] 🎨 Brand design extracted: "
+                       f"{len(colors)} colors, {len(fonts)} fonts, "
+                       f"screenshot={has_screenshot}, logo={has_logo}")
+
+            return brand_design
+
+        except Exception as e:
+            logger.warning(f"[ThemeAgent] Brand design fetch error: {e}")
+            return None
 
     async def _fetch_logo_from_website(self, domain: str) -> Optional[str]:
         """Fallback: Try to get logo from website using Firecrawl."""

@@ -82,7 +82,8 @@ async def prefetch_images_for_content(
     content: str,
     slide_title: str,
     max_images: int = 5,
-    slide_context: Optional[Dict[str, Any]] = None
+    slide_context: Optional[Dict[str, Any]] = None,
+    theme: Optional[Dict[str, Any]] = None
 ) -> Dict[str, str]:
     """
     Pre-fetch images for slide content BEFORE generation.
@@ -90,19 +91,49 @@ async def prefetch_images_for_content(
     Searches for images via SerpAPI, uploads them to our Supabase bucket,
     and returns our own hosted URLs (reliable, no external dependencies).
 
+    If Brandfetch logos are available in theme, includes them automatically.
+
     Args:
         content: The slide content to analyze
         slide_title: The slide title for additional context
         max_images: Maximum number of images to fetch
         slide_context: Full slide context including presentation_context, slide_type, etc.
+        theme: Theme dict that may contain Brandfetch logos in brandInfo or color_palette.metadata
 
     Returns:
         Dict mapping prop names to our Supabase URLs, e.g.:
         {"image1": "https://auth.nextslide.ai/storage/...", ...}
         Also includes search term hints: {"image1_query": "Tesla", ...}
+        May include "logoUrl" if Brandfetch provided one.
     """
     from services.serpapi_service import SerpAPIService
     from services.image_storage_service import ImageStorageService
+
+    prefetched = {}
+    theme = theme or {}
+
+    # FIRST: Check if we have Brandfetch logos available - include them as pre-fetched
+    brand_info = theme.get('brandInfo', {})
+    color_palette = theme.get('color_palette', {})
+    brandfetch_logo = (
+        brand_info.get('logoUrl') or
+        brand_info.get('logo_url') or
+        color_palette.get('metadata', {}).get('logo_url') or
+        color_palette.get('metadata', {}).get('logo_url_light')
+    )
+    brandfetch_logo_dark = (
+        brand_info.get('logoUrlDark') or
+        brand_info.get('logo_url_dark') or
+        color_palette.get('metadata', {}).get('logo_url_dark')
+    )
+
+    if brandfetch_logo:
+        prefetched['logoUrl'] = brandfetch_logo
+        prefetched['logoUrl_query'] = 'brand logo'
+        print(f"[PREFETCH] ✅ Using Brandfetch logo: {brandfetch_logo[:60]}...")
+    if brandfetch_logo_dark:
+        prefetched['logoUrlDark'] = brandfetch_logo_dark
+        prefetched['logoUrlDark_query'] = 'brand logo dark'
 
     # Initialize SerpAPI
     try:
@@ -110,20 +141,21 @@ async def prefetch_images_for_content(
         if not serpapi.is_available:
             logger.warning("[PREFETCH] SerpAPI not available (no API key)")
             print("[PREFETCH] ❌ SerpAPI not available")
-            return {}
+            return prefetched  # Return Brandfetch logos if we have them
     except Exception as e:
         logger.warning(f"[PREFETCH] Could not init SerpAPI: {e}")
-        return {}
+        return prefetched  # Return Brandfetch logos if we have them
 
     # Extract search terms using AI with FULL CONTEXT for better quality
-    search_terms = await _extract_image_search_terms_with_ai(content, slide_title, slide_context)
+    # Pass theme so AI knows if we already have logos (won't search for them)
+    search_terms = await _extract_image_search_terms_with_ai(content, slide_title, slide_context, theme)
     if not search_terms:
         print("[PREFETCH] ⚠️ No search terms extracted")
-        return {}
+        return prefetched  # Return Brandfetch logos if we have them
 
     print(f"[PREFETCH] 🔍 Search terms: {search_terms[:max_images]}")
     search_terms = search_terms[:max_images]
-    prefetched = {}
+    # NOTE: Don't reset prefetched - it may already have Brandfetch logos
 
     # Use ImageStorageService to upload to our bucket
     async with ImageStorageService() as storage:
@@ -131,14 +163,18 @@ async def prefetch_images_for_content(
         async def search_and_upload(index: int, term: str) -> Tuple[int, str, Optional[str]]:
             """Search SerpAPI, upload first good result to our bucket."""
             try:
-                # Search for images
+                # Log the exact query being sent
+                print(f"[PREFETCH] 🔎 Searching: '{term}'")
+
+                # Search for images - use the term directly, no modifiers
                 result = await serpapi.search_images(
-                    query=f"{term} high quality",
+                    query=term,
                     per_page=5,
                     size="large"
                 )
 
                 photos = result.get('photos', [])
+                print(f"[PREFETCH] 📷 Got {len(photos)} results for '{term}'")
 
                 # Try each result until one uploads successfully
                 for photo in photos:
@@ -175,24 +211,34 @@ async def prefetch_images_for_content(
                 prefetched[f"image{index + 1}"] = url
                 prefetched[f"image{index + 1}_query"] = term
 
-    count = len([k for k in prefetched if not k.endswith('_query')])
-    print(f"[PREFETCH] 📸 Uploaded {count} images to our bucket")
+    # Count images (exclude _query metadata keys)
+    image_keys = [k for k in prefetched if not k.endswith('_query')]
+    searched_count = len([k for k in image_keys if k.startswith('image')])
+    brand_count = len([k for k in image_keys if k.startswith('logo')])
+    print(f"[PREFETCH] 📸 Total images: {len(image_keys)} ({searched_count} searched, {brand_count} from Brandfetch)")
     return prefetched
 
 
-async def _extract_image_search_terms_with_ai(content: str, slide_title: str, slide_context: Optional[Dict[str, Any]] = None) -> List[str]:
+async def _extract_image_search_terms_with_ai(
+    content: str,
+    slide_title: str,
+    slide_context: Optional[Dict[str, Any]] = None,
+    theme: Optional[Dict[str, Any]] = None
+) -> List[str]:
     """
     Use AI to generate PRECISE Google Image search queries for SPECIFIC visual elements.
 
-    This function must:
-    1. FIRST analyze what visual elements the slide needs (hero image, icons, backgrounds, etc.)
-    2. THEN generate a precise search query for EACH specific element
-    3. Each query should find EXACTLY the right image for its purpose
+    This function:
+    1. Analyzes what visual elements the slide needs (hero image, icons, backgrounds, etc.)
+    2. Generates precise, disambiguated search queries for each element
+    3. Handles ambiguous terms (e.g., "Apple" → "Apple company logo" not apple fruit)
+    4. Avoids searching for logos if Brandfetch already provided them
     """
     from agents.ai.clients import get_client, invoke
 
     # Extract all available context
     slide_context = slide_context or {}
+    theme = theme or {}
     presentation_context = slide_context.get('presentation_context', '')
     presentation_topic = slide_context.get('presentation_topic', '')
     slide_type = slide_context.get('slide_type', '')
@@ -201,6 +247,23 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
     deck_title = slide_context.get('deck_title', '')
     industry = slide_context.get('industry', '')
     audience = slide_context.get('audience', '')
+    vibe_context = slide_context.get('vibe_context', '') or slide_context.get('initial_idea', '')
+
+    # Check if we already have brand logos from Brandfetch (don't search for logos then)
+    has_brand_logo = False
+    brand_name = ""
+    brand_info = theme.get('brandInfo', {})
+    color_palette = theme.get('color_palette', {})
+    if brand_info.get('logoUrl') or brand_info.get('logo_url'):
+        has_brand_logo = True
+    if color_palette.get('metadata', {}).get('logo_url'):
+        has_brand_logo = True
+
+    # Try to extract brand name from various sources
+    if vibe_context:
+        brand_name = vibe_context
+    elif deck_title:
+        brand_name = deck_title
 
     # Build rich context string
     context_parts = []
@@ -210,6 +273,8 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
         context_parts.append(f"DECK TITLE: {deck_title}")
     if presentation_topic:
         context_parts.append(f"MAIN SUBJECT: {presentation_topic}")
+    if vibe_context:
+        context_parts.append(f"BRAND/VIBE: {vibe_context}")
     if industry:
         context_parts.append(f"INDUSTRY: {industry}")
     if audience:
@@ -219,40 +284,47 @@ async def _extract_image_search_terms_with_ai(content: str, slide_title: str, sl
 
     context_block = "\n".join(context_parts) if context_parts else "No additional context"
 
+    # Instruction about logos if we already have them
+    logo_instruction = ""
+    if has_brand_logo:
+        logo_instruction = f"""
+IMPORTANT: We already have the brand logo for this presentation. Do NOT search for:
+- "{brand_name} logo" or any company logos
+- Brand marks, wordmarks, or company symbols
+Instead, focus on OTHER visual content the slide needs (products, people, concepts, etc.)."""
+
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Extract the SPECIFIC names/entities mentioned in this slide for image search.
+        # Log what we're searching for
+        print(f"[PREFETCH] 📝 Generating search terms for: '{slide_title}'")
+        if has_brand_logo:
+            print(f"[PREFETCH] ✅ Has Brandfetch logo - will skip logo searches")
+
+        prompt = f"""Extract image search terms for this slide.
 
 SLIDE TITLE: {slide_title}
-SLIDE CONTENT: {content[:1000]}
+CONTENT: {content[:1200]}
+{logo_instruction}
 
-YOUR JOB: Find the ACTUAL NAMES of things mentioned - characters, people, products, places, brands.
+EXTRACT SEARCH TERMS FOR:
+- Named people → "Elon Musk CEO portrait"
+- Named products → "iPhone 15 Pro"
+- Named characters → "Pikachu Pokemon"
+- Named brands/companies → "Instacart grocery app"
+- Industry context → "grocery delivery", "electric vehicle", "mobile shopping"
 
-RULES:
-1. USE EXACT NAMES from the content - "Princess Zelda" not "video game princess"
-2. USE SPECIFIC CHARACTERS - "Sheik Zelda" not "ninja character"
-3. USE BRAND NAMES - "Tesla Model 3" not "electric car"
-4. USE REAL NAMES - "Faker T1" not "esports player"
-5. Keep 2-4 words per search
-6. ONE entity per search
+MAKE TERMS SPECIFIC:
+- "Apple" → "Apple Inc company" (not fruit)
+- "Profit Performance" → "business profit chart" or "financial growth"
+- "Order Frequency" → "online shopping orders"
 
-EXAMPLES:
+SKIP images only for:
+- Pure quote slides with just text
+- Slides listing only numbers/stats with no context
 
-Content: "Zelda transforms into Sheik to hide from Ganondorf"
-→ ["Sheik Zelda", "Ganondorf", "Princess Zelda"]
-NOT → ["video game character", "ninja warrior"]
-
-Content: "Pikachu evolves from Pichu into Raichu"
-→ ["Pikachu", "Pichu Pokemon", "Raichu"]
-NOT → ["electric mouse", "yellow pokemon"]
-
-Content: "T1 Faker wins Worlds championship"
-→ ["Faker T1", "League of Legends Worlds"]
-NOT → ["esports player", "gaming tournament"]
-
-Return ONLY a JSON array of 3-5 SPECIFIC names from the content:
-["name1", "name2", "name3"]"""
+Return JSON array with 2-4 relevant terms:
+["term1", "term2"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -273,8 +345,9 @@ Return ONLY a JSON array of 3-5 SPECIFIC names from the content:
         match = re.search(r'\[.*?\]', response_str, re.DOTALL)
         if match:
             terms = json.loads(match.group())
-            print(f"[PREFETCH] 🧠 AI-generated search terms: {terms}")
-            # Filter out obvious local filenames / uploads (these produce bad image search results)
+            print(f"[PREFETCH] 🧠 AI raw response: {terms}")
+
+            # Filter out obvious local filenames / uploads
             cleaned: List[str] = []
             for t in terms:
                 if not isinstance(t, str):
@@ -283,9 +356,20 @@ Return ONLY a JSON array of 3-5 SPECIFIC names from the content:
                 if not tl:
                     continue
                 if tl.startswith("img_") or tl.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                    print(f"[PREFETCH] ⏭️ Skipping filename: '{t}'")
+                    continue
+                # Skip logo queries if we already have brand logo
+                if has_brand_logo and ("logo" in tl or "wordmark" in tl or "brandmark" in tl):
+                    print(f"[PREFETCH] ⏭️ Skipping '{t}' - already have brand logo")
                     continue
                 cleaned.append(t)
-            return cleaned[:5]
+
+            if len(cleaned) == 0:
+                print(f"[PREFETCH] ⚠️ No valid search terms after filtering")
+                return []
+
+            print(f"[PREFETCH] ✅ Search terms: {cleaned[:8]}")
+            return cleaned[:8]
     except Exception as e:
         logger.warning(f"[PREFETCH] AI search term extraction failed: {e}, falling back to regex")
         print(f"[PREFETCH] ⚠️ AI extraction failed: {e}, using fallback")
@@ -742,8 +826,9 @@ class CustomComponentGenerator:
                     prefetched_images = await prefetch_images_for_content(
                         content=content,
                         slide_title=slide_title,
-                        max_images=5,
-                        slide_context=slide_context  # Pass full context for smarter search terms!
+                        max_images=8,  # Only for specific named entities (Pokémon, people, products)
+                        slide_context=slide_context,  # Pass full context for smarter search terms!
+                        theme=theme  # Pass theme for Brandfetch logos and context
                     )
                     if prefetched_images:
                         logger.info(f"[CUSTOM_COMPONENT] Pre-fetched {len(prefetched_images)} images")
@@ -776,8 +861,9 @@ class CustomComponentGenerator:
                         prefetched_images = await prefetch_images_for_content(
                             content=content,
                             slide_title=slide_title,
-                            max_images=5,
-                            slide_context=slide_context  # Pass full context for smarter search terms!
+                            max_images=8,  # Only for specific named entities
+                            slide_context=slide_context,  # Pass full context for smarter search terms!
+                            theme=theme  # Pass theme for Brandfetch logos and context
                         )
                         if prefetched_images:
                             print(f"[CUSTOM_COMPONENT] ✅ Fallback prefetch got {len(prefetched_images)} images")
@@ -790,8 +876,10 @@ class CustomComponentGenerator:
 
             # Get slide_mode from context: 'interactive' (NextGen) or 'static' (Traditional PPT)
             slide_mode = slide_context.get('slide_mode', 'interactive')
-            logger.info(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({'Traditional PPT' if slide_mode == 'static' else 'NextGen Interactive'})")
-            print(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({'Traditional PPT' if slide_mode == 'static' else 'NextGen Interactive'})")
+            is_educational = slide_context.get('is_educational', False)
+            mode_desc = 'Traditional PPT' if slide_mode == 'static' else ('NextGen Educational' if is_educational else 'NextGen Interactive')
+            logger.info(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({mode_desc})")
+            print(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({mode_desc})")
 
             # Extract logo URL from theme - pass background color for light/dark selection
             background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
@@ -807,7 +895,7 @@ class CustomComponentGenerator:
             if is_title_slide:
                 system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url, slide_mode, logo_needs_invert)
             else:
-                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url, logo_needs_invert)
+                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url, logo_needs_invert, is_educational)
 
             # Build the user prompt with full context
             if is_title_slide:
@@ -858,7 +946,7 @@ class CustomComponentGenerator:
                 # Add instruction about the reference images
                 user_content_parts.append({
                     "type": "text",
-                    "text": "🎨 DESIGN REFERENCE IMAGES - You MUST analyze these images and match their exact style:\n- Copy the color scheme exactly\n- Match the layout structure\n- Use similar typography and spacing\n- Replicate visual elements like borders, shadows, patterns\n"
+                    "text": "🎨 DESIGN REFERENCE - Study these images and extract everything relevant to create beautiful slides:\n- Colors, fonts, spacing, layout structure\n- How they use imagery, icons, visual hierarchy\n- Their design personality and brand feel\n- Any patterns, textures, or stylistic choices\nUse whatever you find most useful to make the output stunning.\n"
                 })
 
                 # Process each reference image (limit to 3)
@@ -1178,7 +1266,8 @@ class CustomComponentGenerator:
         style_keywords: list,
         slide_mode: str = 'interactive',
         logo_url: Optional[str] = None,
-        logo_needs_invert: bool = False
+        logo_needs_invert: bool = False,
+        is_educational: bool = False
     ) -> str:
         """Build the system prompt for CustomComponent generation."""
 
@@ -1201,22 +1290,29 @@ class CustomComponentGenerator:
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} / {body_font}
-IMAGES: Use the EXACT URLs provided in the user prompt. NEVER use unsplash.com, pexels.com, or any stock photo URLs.{logo_info}"""
+
+IMAGE PHILOSOPHY - LESS IS MORE:
+- Use images ONLY for SPECIFIC things (named people, products, characters, places)
+- Do NOT use images for abstract concepts (innovation, growth, teamwork, success)
+- Prefer: bold typography, icons, shapes, gradients, data visualizations
+- Generic stock photos make slides look cheap - avoid them!
+- If you must use an image, use ONLY the exact URLs provided (never unsplash/pexels){logo_info}"""
 
         if slide_mode == 'static':
-            # Traditional PPT - beautiful, clean, professional (no interactivity)
+            # Traditional PPT - beautiful, clean, professional (static but elegant with entrance animations)
             return f"""You create stunning presentation slides like Apple Keynote or premium PowerPoint templates.
-THIS IS TRADITIONAL MODE - ABSOLUTELY NO JAVASCRIPT OR ANIMATIONS ALLOWED.
+THIS IS TRADITIONAL MODE - designed to be STILL and BEAUTIFUL like a premium PPTX.
 
 {theme_info}
 
 DESIGN PRINCIPLES:
 - Bold, impactful typography (titles 56-80px, big hero numbers)
 - Generous whitespace, elegant layouts
-- Beautiful charts and data visualizations (bar, pie, donut) - STATIC ONLY, drawn with pure HTML/CSS
-- High-quality iconography and imagery
-- Professional color usage with accent highlights
-- Clean visual hierarchy
+- Beautiful charts and data visualizations (bar, pie, donut) - drawn with pure HTML/CSS
+- Clean iconography (SVG icons, emoji, CSS shapes) - NOT stock photos
+- Professional color usage with gradients and accent highlights
+- Clean visual hierarchy - let typography do the heavy lifting
+- Everything FULLY VISIBLE after entrance - no interaction needed to see content
 
 Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
 - Background/decorative elements: z-index: 1-10
@@ -1225,35 +1321,72 @@ Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
 - TITLES AND HEADINGS: z-index: 100+ (ALWAYS on top)
 
 CONTENT STYLE:
-- BIG stats and numbers displayed prominently ("87%", "$2.4M", "+42%")
-- Minimal text - let visuals tell the story
+- BIG stats and numbers displayed prominently ("87%", "$2.4M", "+42%") - show FINAL values immediately
+- Minimal text - let typography and layout tell the story
 - Short punchy bullet points (max 5-7 words each)
-- Icons paired with key points
-- Professional imagery and illustrations
+- Icons paired with key points (use SVG/emoji, not photos)
+- CSS shapes, gradients, and geometric patterns for visual interest
 
-⛔ STRICTLY FORBIDDEN - VIOLATION WILL BREAK THE SLIDE:
-- NO <script> tags whatsoever
-- NO JavaScript code of any kind
+✅ ALLOWED - Elegant entrance animations ONLY:
+- fadeIn: @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+- slideInFromBottom: @keyframes slideIn {{ from {{ opacity: 0; transform: translateY(30px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+- slideInFromLeft/Right: similar with translateX
+- Use animation-fill-mode: forwards so elements stay visible
+- Stagger entrance delays for polish: animation-delay: 0.1s, 0.2s, 0.3s...
+- Keep animations SHORT: 0.4s-0.8s duration, ease-out timing
+
+⛔ STRICTLY FORBIDDEN:
+- NO <script> tags or JavaScript
 - NO onclick, onmouseover, onload, or ANY event handlers
-- NO CSS animations (@keyframes)
-- NO CSS transitions (transition: property)
-- NO hover effects (:hover pseudo-class)
+- NO hover effects (:hover pseudo-class) - no interaction required
 - NO interactive elements (quizzes, accordions, sliders, expandable sections)
-- NO animated counters or number animations
-- NO SVG animations or SMIL
-- NO requestAnimationFrame or setInterval references
+- NO animated counters or counting-up numbers - show FINAL values immediately
+- NO looping/infinite animations - entrance only, then STILL
+- NO transitions on user interaction (transition property with :hover/:focus)
+- NO elements hidden until clicked/hovered
 
 Think: Premium consulting deck, investor pitch, executive presentation.
+The slide should look complete and professional even as a static screenshot.
 Every slide should be screenshot-worthy and PPTX-export ready.
 
-OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>
-⚠️ PURE HTML/CSS ONLY - ANY JAVASCRIPT WILL CAUSE ERRORS"""
+OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"""
 
         else:  # interactive (default) - NextGen with FULL CREATIVE POWER
+            # Special educational mode - teaching-focused interactive components
+            educational_section = ""
+            if is_educational:
+                educational_section = """
+📚 EDUCATIONAL MODE - TEACHING-FOCUSED COMPONENTS:
+This is educational content! Create LEARNING experiences, not just presentations.
+
+TEACHING COMPONENTS TO USE:
+• Interactive concept explorers - click parts to learn more
+• Step-by-step walkthroughs with "Next" buttons
+• Knowledge check quizzes with instant feedback
+• Flip cards for term/definition pairs
+• Drag-and-drop matching exercises
+• Fill-in-the-blank activities
+• Interactive diagrams with labeled hotspots
+• Progress trackers showing what's been learned
+• "Try it yourself" interactive examples
+• Before/after concept comparisons
+• Memory games for reinforcement
+• Sortable lists for sequencing lessons
+
+EDUCATIONAL DESIGN PRINCIPLES:
+- Break complex concepts into digestible chunks
+- Use visual metaphors to explain abstract ideas
+- Provide immediate feedback on interactions
+- Include "check your understanding" elements
+- Make learning feel like play, not work
+- Use consistent visual language for navigation
+
+"""
+
             return f"""You are an elite creative technologist. Build INTERACTIVE experiences that make people say "WOW!"
 
 {theme_info}
-
+{educational_section}
 INTERACTIVE ARSENAL - use these:
 • Animated diagrams that BUILD on click
 • Interactive timelines - click nodes to reveal content
@@ -1320,6 +1453,10 @@ OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
 
         # Get presentation context (user's original request) for design cues
         presentation_context = slide_context.get('presentation_context', '')
+        vibe_context = slide_context.get('vibe_context', '') or slide_context.get('initial_idea', '')
+        industry = slide_context.get('industry', '')
+        audience = slide_context.get('audience', '')
+        deck_title = slide_context.get('deck_title', '')
 
         # Full-slide mode instructions
         full_slide_instructions = ""
@@ -1331,20 +1468,32 @@ Font sizes: Title 48-56px, Body 14-16px
 
 """
 
-        # Build design context section if user provided design cues
-        design_context_section = ""
+        # Build rich design context section with all available context
+        design_context_parts = []
         if presentation_context:
+            design_context_parts.append(f'Topic: "{presentation_context}"')
+        if vibe_context and vibe_context != presentation_context:
+            design_context_parts.append(f'Brand/Style: "{vibe_context}"')
+        if deck_title and deck_title != slide_title and deck_title != presentation_context:
+            design_context_parts.append(f'Deck: "{deck_title}"')
+        if industry:
+            design_context_parts.append(f'Industry: {industry}')
+        if audience:
+            design_context_parts.append(f'Audience: {audience}')
+
+        design_context_section = ""
+        if design_context_parts:
             design_context_section = f"""
-STYLE HINT: "{presentation_context}"
+CONTEXT: {' | '.join(design_context_parts)}
 """
 
         # Build design reference images section (e.g., PPT screenshots to match style)
         design_reference_section = ""
         if reference_images and len(reference_images) > 0:
             # Include ALL reference URLs in text context (even if we only embed the first few as multimodal images)
-            ref_urls = "\n".join([f"  - {url}" for url in reference_images])
+            ref_urls = "\n".join([f"  - {url[:100]}..." if len(url) > 100 else f"  - {url}" for url in reference_images])
             design_reference_section = f"""
-DESIGN REFERENCES (match this style, don't place these images):
+DESIGN REFERENCES (study for inspiration - extract colors, layout, typography, imagery style):
 {ref_urls}
 """
 
@@ -1462,21 +1611,15 @@ USER UPLOADS:
                 image_block = "\n".join(image_assignments)
 
                 prefetched_images_section = f"""
-═══════════════════════════════════════════════════════════════
-🚨 MANDATORY: USE THESE EXACT IMAGE URLs IN YOUR HTML 🚨
-═══════════════════════════════════════════════════════════════
+AVAILABLE IMAGES (use ONLY if the slide genuinely needs photos of these specific things):
 {image_block}
 
-CRITICAL RULES:
-1. Copy-paste these EXACT URLs into your <img src="..."> tags
-2. DO NOT generate ANY image URLs yourself (no unsplash, pexels, placeholder.com)
-3. DO NOT use placeholder text like "placeholder" or empty src=""
-4. Use descriptive alt text based on the image description in parentheses
-5. If you need more images, repeat from IMAGE_1
-
-Example of CORRECT usage:
-<img src="{list(image_props.values())[0]}" alt="{prefetched_images.get(list(image_props.keys())[0] + '_query', 'Image')}" class="hero-img">
-═══════════════════════════════════════════════════════════════
+RULES:
+- Only use these if showing a SPECIFIC person/product/character/place
+- Do NOT force images into slides about abstract concepts
+- If the slide is about data, processes, or ideas - skip images entirely
+- Prefer typography, icons, and CSS visuals over stock photos
+- If you DO use an image, copy the EXACT URL above (never unsplash/pexels)
 """
 
         # Build logo section if logo URL is available
@@ -2363,12 +2506,19 @@ THINK LIKE A DESIGNER:
 
         # Mode-specific instructions
         if slide_mode == 'static':
-            mode_instruction = """⛔ STATIC MODE - NO JAVASCRIPT OR ANIMATIONS:
-- NO <script> tags, onclick, onmouseover, or event handlers
-- NO CSS animations, transitions, or @keyframes
-- NO hover effects or animated particles
+            mode_instruction = """✅ TRADITIONAL MODE - Elegant entrance animations ONLY:
+- Entrance animations ALLOWED: fadeIn, slideIn (from any direction), scale reveal
+- Use @keyframes with animation-fill-mode: forwards (element stays after animation)
+- Stagger delays for polish: 0.1s, 0.2s, 0.3s...
+- Keep animations SHORT: 0.4s-0.8s, ease-out
 
-OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html> - PURE CSS ONLY."""
+⛔ FORBIDDEN:
+- NO <script> tags, onclick, onmouseover, or event handlers
+- NO hover effects or :hover pseudo-class
+- NO looping/infinite animations - entrance only, then STILL
+- NO animated particles or continuous motion
+
+OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"""
         else:
             mode_instruction = """✨ INTERACTIVE MODE - Add elegant animations:
 - Entrance animations (fade, slide, reveal, scale)

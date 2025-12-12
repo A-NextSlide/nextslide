@@ -363,12 +363,19 @@ class BalancedSlideGenerator(ISlideGenerator):
         content = context.slide_outline.content or ''
         purpose = self._detect_component_purpose(content, context.slide_outline.title)
 
+        # Get slideMode from deck_outline.stylePreferences
+        slide_mode = 'interactive'  # default
+        if hasattr(context, 'deck_outline') and context.deck_outline and hasattr(context.deck_outline, 'stylePreferences') and context.deck_outline.stylePreferences:
+            style_prefs = context.deck_outline.stylePreferences
+            slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None) or 'interactive'
+
         # Build slide context for the generator
         slide_context = {
             'title': context.slide_outline.title,
             'slide_index': context.slide_index,
             'total_slides': context.total_slides,
-            'slide_type': getattr(context.slide_outline, 'layout', 'content')
+            'slide_type': getattr(context.slide_outline, 'layout', 'content'),
+            'slide_mode': slide_mode  # 'interactive' (NextGen) or 'static' (Traditional PPT)
         }
 
         # Check if this is a title slide (needs full-screen positioning)

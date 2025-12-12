@@ -1770,6 +1770,32 @@ async def process_outline_stream(request: OutlineRequest, registry=None):
                                 style_prefs.logoUrl = theme_result['logo_url']
                                 logger.info(f"[PARALLEL THEME] 🖼️ Logo URL set")
 
+                            # Add brand design screenshot as reference image for custom component generator
+                            brand_design = theme_result.get('brand_design')
+                            if brand_design and brand_design.get('screenshot'):
+                                screenshot = brand_design['screenshot']
+                                # Screenshot might be base64 or URL - convert to data URL if base64
+                                if screenshot.startswith('data:'):
+                                    ref_img = screenshot
+                                elif screenshot.startswith('http'):
+                                    ref_img = screenshot
+                                else:
+                                    # Assume base64, create data URL
+                                    ref_img = f"data:image/png;base64,{screenshot}"
+
+                                # Add to reference images (create list if doesn't exist)
+                                if not style_prefs.referenceImages:
+                                    style_prefs.referenceImages = []
+                                style_prefs.referenceImages.append(ref_img)
+                                logger.info(f"[PARALLEL THEME] 📸 Brand screenshot added as reference image ({len(screenshot)} chars)")
+
+                                # Also store the brand design colors in notes for the generator
+                                if brand_design.get('colors'):
+                                    if outline.notes is None:
+                                        outline.notes = {}
+                                    outline.notes['brand_design_colors'] = brand_design['colors']
+                                    logger.info(f"[PARALLEL THEME] 🎨 Brand design colors stored: {list(brand_design['colors'].keys())}")
+
                         # User-provided colors override theme agent
                         if isinstance(request.colorPreference, dict) and request.colorPreference.get('accent1'):
                             style_prefs.colors = ColorConfigItem(

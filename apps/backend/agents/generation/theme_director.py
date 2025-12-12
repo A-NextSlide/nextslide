@@ -625,10 +625,68 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                             
                             return analysis
                     
-                    # Not found in brandfetch DB
-                    logger.info(f"Brand {detected_brand} not found in brandfetch DB, falling back to general palette")
+                    # Not found in brandfetch DB - try Firecrawl branding as fallback
+                    logger.info(f"Brand {detected_brand} not found in brandfetch DB, trying Firecrawl branding...")
+                    try:
+                        from services.firecrawl_service import get_firecrawl_service
+                        firecrawl = get_firecrawl_service()
+                        if firecrawl.is_configured():
+                            fc_result = firecrawl.extract_brand_design(f"https://{detected_domain}", include_screenshot=True)
+                            if fc_result.get("success"):
+                                fc_data = fc_result.get("data", {})
+                                fc_colors = fc_data.get("colors", {})
+
+                                if fc_colors:
+                                    # Build color list from Firecrawl branding
+                                    color_list = []
+                                    for key in ["primary", "secondary", "accent", "background"]:
+                                        if fc_colors.get(key):
+                                            color_list.append(fc_colors[key])
+
+                                    if color_list:
+                                        analysis['is_brand'] = True
+                                        analysis['brand_name'] = detected_brand
+                                        analysis['brand_url'] = f"https://{detected_domain}"
+                                        analysis['website_url'] = f"https://{detected_domain}"
+                                        analysis['brand_confidence'] = 0.85
+                                        analysis['brand_colors'] = color_list
+                                        analysis['brand_fonts'] = fc_data.get('fonts', [])
+                                        analysis['brand_logo'] = fc_data.get('logo')
+                                        analysis['brand_screenshot'] = fc_data.get('screenshot')
+                                        analysis['firecrawl_branding'] = fc_data  # Store full data
+
+                                        # Build intelligent_brand_config for downstream processing
+                                        analysis['intelligent_brand_config'] = {
+                                            'brand_name': detected_brand,
+                                            'colors': {
+                                                'all_colors': color_list,
+                                                'light_colors': [c for c in [fc_colors.get('background')] if c],
+                                                'dark_colors': [c for c in [fc_colors.get('textPrimary')] if c],
+                                                'accent_colors': [c for c in [fc_colors.get('accent'), fc_colors.get('secondary')] if c],
+                                                'brand_colors': [c for c in [fc_colors.get('primary')] if c],
+                                                'primary': fc_colors.get('primary') or color_list[0] if color_list else None,
+                                                'background': fc_colors.get('background') or '#FFFFFF',
+                                                'accent': fc_colors.get('accent') or fc_colors.get('primary') or color_list[0] if color_list else '#000000'
+                                            },
+                                            'logo_url': fc_data.get('logo'),
+                                            'fonts': fc_data.get('fonts', []),
+                                            'screenshot': fc_data.get('screenshot'),
+                                            'extraction_method': 'firecrawl_branding',
+                                            'confidence_score': 85
+                                        }
+
+                                        print(f"   ✅ Firecrawl branding found: {detected_brand}")
+                                        print(f"   🎨 Colors: {len(color_list)} found - {color_list[:3]}...")
+                                        print(f"   🖼️  Logo: {'✅' if fc_data.get('logo') else '❌'}")
+                                        print(f"   📸 Screenshot: {'✅' if fc_data.get('screenshot') else '❌'}")
+
+                                        logger.info(f"[THEME] ✅ Firecrawl branding for {detected_brand}: {len(color_list)} colors")
+                                        return analysis
+                    except Exception as fc_err:
+                        logger.warning(f"Firecrawl branding fallback failed: {fc_err}")
+
                     raise RuntimeError("brand_not_in_db")
-                    
+
             except Exception as e:
                 logger.warning(f"Brandfetch DB lookup failed: {e}")
                 raise RuntimeError("brandfetch_lookup_failed")
@@ -1138,6 +1196,22 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
 
                                     logger.info(f"[BRANDFETCH] Categorized colors - backgrounds: {backgrounds}, accents: {accents}")
 
+                                # Also fetch brand screenshot via Firecrawl for visual reference
+                                brand_screenshot = None
+                                try:
+                                    from services.firecrawl_service import get_firecrawl_service
+                                    firecrawl = get_firecrawl_service()
+                                    if firecrawl.is_configured():
+                                        logger.info(f"[THEME DIRECTOR] 📸 Fetching brand screenshot for {brand_domain}")
+                                        fc_result = firecrawl.extract_brand_design(f"https://{brand_domain}", include_screenshot=True)
+                                        if fc_result.get("success"):
+                                            fc_data = fc_result.get("data", {})
+                                            brand_screenshot = fc_data.get("screenshot")
+                                            if brand_screenshot:
+                                                logger.info(f"[THEME DIRECTOR] 📸 Got brand screenshot ({len(brand_screenshot)} chars)")
+                                except Exception as fc_err:
+                                    logger.warning(f"[THEME DIRECTOR] Screenshot fetch failed (non-blocking): {fc_err}")
+
                                 return {
                                     'colors': brand_colors[:8],
                                     'source': 'brandfetch_cache',
@@ -1150,7 +1224,8 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                                         'domain': brand_domain,
                                         'logo_url': logo_url,
                                         'fonts': brand_fonts,
-                                        'source': 'brandfetch_cache'
+                                        'source': 'brandfetch_cache',
+                                        'brand_screenshot': brand_screenshot  # For visual reference in generation
                                     }
                                 }
                             else:
@@ -2033,6 +2108,15 @@ IMPORTANT:
                     if 'metadata' not in theme['color_palette']:
                         theme['color_palette']['metadata'] = {}
                     theme['color_palette']['metadata']['logo_url'] = logo_url_top
+            except Exception:
+                pass
+
+            # Add brand screenshot as reference image for visual design inspiration
+            try:
+                brand_screenshot = (color_result.get('metadata') or {}).get('brand_screenshot')
+                if brand_screenshot:
+                    theme['reference_images'] = [brand_screenshot]
+                    logger.info(f"[THEME DIRECTOR] 📸 Added brand screenshot to theme.reference_images")
             except Exception:
                 pass
 

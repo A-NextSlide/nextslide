@@ -453,14 +453,15 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                 <motion.div
                   layoutId={slide.id}
                   layout="position"
+                  initial={false}
                   animate={{
-                    scale: isDragged ? 0.95 : 1,
-                    opacity: isDragged ? 0.5 : 1
+                    opacity: isDragged ? 0.5 : 1,
+                    scale: isDragged ? 0.95 : 1
                   }}
                   transition={{
                     layout: { type: "spring", stiffness: 350, damping: 30 },
                     scale: { type: "spring", stiffness: 400, damping: 20 },
-                    opacity: { duration: 0.2 }
+                    opacity: { duration: 0.15 }
                   }}
                 >
                   <ThumbnailItem

@@ -1739,9 +1739,37 @@ class SlideGeneratorV2(ISlideGenerator):
 
         # Get slideMode from deck_outline.stylePreferences
         slide_mode = 'interactive'  # default
+        user_set_slide_mode = False  # Track if user explicitly set a preference
+        is_educational = False  # Track if content is educational
+
         if hasattr(context, 'deck_outline') and context.deck_outline and hasattr(context.deck_outline, 'stylePreferences') and context.deck_outline.stylePreferences:
             style_prefs = context.deck_outline.stylePreferences
-            slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None) or 'interactive'
+            explicit_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None)
+            if explicit_mode:
+                slide_mode = explicit_mode
+                user_set_slide_mode = True
+
+        # Detect educational content - force interactive if no user preference
+        educational_keywords = [
+            'learn', 'teach', 'lesson', 'course', 'class', 'training', 'tutorial',
+            'education', 'school', 'student', 'teacher', 'professor', 'lecture',
+            'workshop', 'seminar', 'curriculum', 'study', 'exam', 'quiz',
+            'chapter', 'module', 'concept', 'explain', 'understand', 'how to',
+            'introduction to', 'basics of', 'fundamentals', 'principles',
+            'history of', 'science', 'math', 'biology', 'chemistry', 'physics',
+            'geography', 'literature', 'language', 'grammar', 'vocabulary'
+        ]
+        context_text = (context.presentation_context or '').lower()
+        slide_title = (context.slide_outline.title or '').lower()
+        slide_content = content.lower() if content else ''
+        combined_text = f"{context_text} {slide_title} {slide_content}"
+
+        if any(keyword in combined_text for keyword in educational_keywords):
+            is_educational = True
+            # If educational and user hasn't set preference → force interactive
+            if not user_set_slide_mode:
+                slide_mode = 'interactive'
+                print(f"[GEMINI 3 PRO] 📚 Educational content detected - using INTERACTIVE mode for teaching components")
 
         # Generate a FULL-SLIDE CustomComponent (1920x1080, position 0,0)
         enhanced = await self.custom_component_generator.generate(
@@ -1755,7 +1783,8 @@ class SlideGeneratorV2(ISlideGenerator):
                 'is_full_slide': True,  # Signal this is a full-slide component
                 'background_color': bg_color,
                 'presentation_context': context.presentation_context,  # User's original request for design cues
-                'slide_mode': slide_mode  # 'interactive' (NextGen) or 'static' (Traditional PPT)
+                'slide_mode': slide_mode,  # 'interactive' (NextGen) or 'static' (Traditional PPT)
+                'is_educational': is_educational  # Educational content gets special teaching components
             },
             width=1920,
             height=1080,

@@ -67,10 +67,27 @@ export const SearchTab: React.FC<SearchTabProps> = ({ onSelect, onLoadMore, defa
         if (lastTokenRef.current === autoSearchToken) return; // already ran for this open
         lastTokenRef.current = autoSearchToken;
         setSearchTerm(defaultSearchTerm);
-        // Run after mount paint
-        const t = setTimeout(() => {
-            handleSearch();
-        }, 0);
+        // Run search after state update - use the defaultSearchTerm directly
+        const runSearch = async () => {
+            setIsLoading(true);
+            setAllResults([]);
+            setDisplayedResults([]);
+            setTotalResults(0);
+            setCurrentPage(1);
+            try {
+                const searchResponse = await searchWithBackend(defaultSearchTerm, activeTab, 100);
+                if (searchResponse.results && searchResponse.results.length > 0) {
+                    setAllResults(searchResponse.results);
+                    setTotalResults(searchResponse.total || searchResponse.results.length);
+                    setDisplayedResults(searchResponse.results.slice(0, ITEMS_PER_PAGE));
+                }
+            } catch (error) {
+                console.error('Auto-search error:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        const t = setTimeout(runSearch, 50);
         return () => clearTimeout(t);
     }, [autoSearchToken, defaultSearchTerm]);
 

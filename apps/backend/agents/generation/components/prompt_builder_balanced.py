@@ -10,7 +10,18 @@ logger = get_logger(__name__)
 
 class BalancedSlidePromptBuilder:
     """Builds balanced prompts for good slide generation with reasonable performance."""
-    
+
+    def _is_static_mode(self, context: SlideGenerationContext) -> bool:
+        """Check if slideMode is 'static' (traditional PPT without animations/interactivity)."""
+        try:
+            style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+            if style_prefs:
+                slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None)
+                return slide_mode == 'static'
+        except Exception:
+            pass
+        return False
+
     # More comprehensive system prompt
     SYSTEM_PROMPT = """You are an expert slide designer. Generate professional presentation slides.
 
@@ -130,6 +141,9 @@ Output valid JSON with this structure:
         # Detect user-provided content
         has_user_content = context.slide_outline.content and len(context.slide_outline.content.strip().split()) > 10
 
+        # Check for static mode (Traditional PPT)
+        is_static = self._is_static_mode(context)
+
         # Build balanced prompt
         prompt_parts = [
             f"Create slide {slide_num} of {total_slides}:",
@@ -149,6 +163,32 @@ Output valid JSON with this structure:
             f"- Body font: {body_font}",
             ""
         ]
+
+        # Add STATIC MODE instructions (Traditional PPT - static but elegant)
+        if is_static:
+            prompt_parts.extend([
+                "",
+                "** TRADITIONAL PRESENTATION MODE **",
+                "This is a TRADITIONAL slide like a premium PowerPoint/Keynote.",
+                "",
+                "✅ ALLOWED - Entrance animations ONLY:",
+                "- fadeIn, slideIn (from any direction) - elements animate in ONCE",
+                "- Use animation-fill-mode: forwards so elements stay visible",
+                "- Stagger delays for polish (0.1s, 0.2s, 0.3s...)",
+                "- Keep animations SHORT: 0.4s-0.8s, ease-out",
+                "",
+                "⛔ FORBIDDEN:",
+                "- NO JavaScript, onclick, onmouseover, or event handlers",
+                "- NO hover effects (:hover pseudo-class)",
+                "- NO animated counters or counting up numbers - show FINAL values",
+                "- NO looping/infinite animations - entrance only, then STILL",
+                "- NO interactive elements (quizzes, polls, accordions, expandable)",
+                "- NO elements that require clicking/hovering to reveal content",
+                "- ALL content must be FULLY VISIBLE after entrance animation",
+                "",
+                "Create clean, professional slides that look great as static screenshots.",
+                ""
+            ])
 
         # Add content instruction early
         if has_user_content:

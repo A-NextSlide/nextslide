@@ -583,9 +583,19 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   const [colorPickerOpen, setColorPickerOpen] = useState<Record<string, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     text: false,
-    images: false,
+    images: true,  // Images expanded by default for quick access
     containers: false,
   });
+
+  // Reset expanded sections when component changes (navigating slides)
+  // Keep images expanded by default
+  useEffect(() => {
+    setExpandedSections({
+      text: false,
+      images: true,  // Keep images expanded for quick access
+      containers: false,
+    });
+  }, [component.id]);
 
   // Get detected elements from the custom component edit store
   const { activeComponentId, detectedElements, selectedElement, updateElementStyle, updateElementText, updateElementImage, injectFont, requestHtmlUpdate } = useCustomComponentEditStore();

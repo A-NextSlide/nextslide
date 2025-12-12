@@ -358,6 +358,8 @@ const ImageSlotEditor: React.FC<ImageSlotEditorProps> = ({
           </div>
         }
         onSelect={handleMediaSelect}
+        defaultSearchTerm={searchQuery && searchQuery !== 'image' ? searchQuery : undefined}
+        autoSearch={!!(searchQuery && searchQuery !== 'image')}
       />
 
       {/* Tabs */}

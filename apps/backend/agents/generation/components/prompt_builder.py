@@ -64,14 +64,26 @@ class SlidePromptBuilder:
         # Add static mode instructions if applicable
         if self._is_static_mode(context):
             sections.extend([
-                "\n** CLASSIC DESIGN MODE - NO ANIMATIONS OR INTERACTIVE ELEMENTS **",
-                "This presentation uses CLASSIC DESIGN mode. Generate clean, professional slides:",
-                "- NO animated components (no ReactBits, no animations)",
-                "- NO interactive elements (no quizzes, polls, expandable panels)",
-                "- NO hover effects or transitions",
-                "- Use standard components: TiptapTextBlock, Image, Chart, Table, Icon",
-                "- Focus on clean typography, clear layout, and professional design",
-                "- This should look like a traditional PowerPoint presentation",
+                "",
+                "** TRADITIONAL PRESENTATION MODE **",
+                "This is a TRADITIONAL slide like a premium PowerPoint/Keynote.",
+                "",
+                "✅ ALLOWED - Entrance animations ONLY:",
+                "- fadeIn, slideIn (from any direction) - elements animate in ONCE",
+                "- Use animation-fill-mode: forwards so elements stay visible",
+                "- Stagger delays for polish (0.1s, 0.2s, 0.3s...)",
+                "- Keep animations SHORT: 0.4s-0.8s, ease-out",
+                "",
+                "⛔ FORBIDDEN:",
+                "- NO JavaScript, onclick, onmouseover, or event handlers",
+                "- NO hover effects (:hover pseudo-class)",
+                "- NO animated counters or counting up numbers - show FINAL values",
+                "- NO looping/infinite animations - entrance only, then STILL",
+                "- NO interactive elements (quizzes, polls, accordions, expandable)",
+                "- NO elements that require clicking/hovering to reveal content",
+                "- ALL content must be FULLY VISIBLE after entrance animation",
+                "",
+                "Create clean, professional slides that look great as static screenshots.",
                 ""
             ])
 

@@ -58,6 +58,17 @@ export interface DeckOutline {
     referenceLinks?: string[];
   };
   narrativeFlow?: NarrativeFlow; // Narrative flow analysis
+  notes?: {
+    videos?: Array<{
+      url: string;
+      title?: string;
+      thumbnail?: string;
+      source_type?: string;
+      embed_url?: string;
+    }>;
+    theme?: any;
+    [key: string]: any;
+  };
 }
 
 /**

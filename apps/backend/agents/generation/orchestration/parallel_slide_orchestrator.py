@@ -85,7 +85,12 @@ class ParallelSlideOrchestrator:
                             prewarm_presentation_context = " | ".join(parts)
                         # Extract design reference images
                         if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
-                            prewarm_reference_images = style_prefs.referenceImages
+                            prewarm_reference_images = list(style_prefs.referenceImages)
+
+                    # Also check theme for reference_images (brand screenshots from Firecrawl)
+                    theme_dict_prewarm = theme_to_pass.to_dict() if hasattr(theme_to_pass, 'to_dict') else {}
+                    if theme_dict_prewarm.get('reference_images'):
+                        prewarm_reference_images.extend(theme_dict_prewarm['reference_images'])
 
                     context = SlideGenerationContext(
                         slide_outline=first_slide,
@@ -420,8 +425,16 @@ class ParallelSlideOrchestrator:
                         logger.debug(f"[DESIGN CONTEXT] Extracted presentation context: {presentation_context[:100]}...")
                     # Extract design reference images
                     if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
-                        reference_images = style_prefs.referenceImages
-                        logger.info(f"[REFERENCE IMAGES] Found {len(reference_images)} design reference images")
+                        reference_images = list(style_prefs.referenceImages)
+                        logger.info(f"[REFERENCE IMAGES] Found {len(reference_images)} design reference images from stylePreferences")
+
+                # Also check theme for reference_images (brand screenshots from Firecrawl)
+                theme_dict = theme_to_pass.to_dict() if hasattr(theme_to_pass, 'to_dict') else (theme_to_pass if isinstance(theme_to_pass, dict) else {})
+                if theme_dict.get('reference_images'):
+                    theme_refs = theme_dict['reference_images']
+                    if isinstance(theme_refs, list):
+                        reference_images.extend(theme_refs)
+                        logger.info(f"[REFERENCE IMAGES] 📸 Added {len(theme_refs)} brand screenshots from theme")
 
                 # Include extracted images from uploaded PPTX/PDF files as available images
                 if hasattr(deck_state.deck_outline, 'extractedImages') and deck_state.deck_outline.extractedImages:
@@ -430,10 +443,12 @@ class ParallelSlideOrchestrator:
 
                 # Extract videos from deck notes (populated by ThemeAgent for real brands)
                 available_videos = []
+                logger.info(f"[VIDEO TRACE] deck_state.notes type: {type(deck_state.notes)}, value: {deck_state.notes}")
                 if deck_state.notes and isinstance(deck_state.notes, dict):
                     available_videos = deck_state.notes.get('videos', [])
-                    if available_videos:
-                        logger.debug(f"[VIDEO] Found {len(available_videos)} videos from brand website")
+                    logger.info(f"[VIDEO TRACE] Found {len(available_videos)} videos in deck_state.notes")
+                else:
+                    logger.info(f"[VIDEO TRACE] deck_state.notes is empty/None - no videos available")
 
                 context = SlideGenerationContext(
                     slide_outline=slide_outline,
@@ -459,6 +474,8 @@ class ParallelSlideOrchestrator:
                 
                 logger.debug(f"[SLIDE GENERATION] Created context with {len(context.tagged_media)} tagged media items")
                 logger.debug(f"[SLIDE GENERATION] Context has_chart_data property: {context.has_chart_data}")
+                if context.reference_images:
+                    logger.info(f"[SLIDE GENERATION] 📸 Slide {slide_index + 1} has {len(context.reference_images)} reference images for design inspiration")
                 
                 # Immediately emit slide_started event
                 await event_queue.put({

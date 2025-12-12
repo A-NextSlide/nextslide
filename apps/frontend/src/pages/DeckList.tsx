@@ -982,12 +982,21 @@ const DeckList: React.FC = () => {
       key_points?: string[];
     }>;
     narrative?: string;
+    // Videos scraped from website URLs for embedding in the deck
+    scrapedVideos?: Array<{
+      url: string;
+      title?: string;
+      thumbnail?: string;
+      source_type?: string;
+      embed_url?: string;
+    }>;
   }) => {
     console.log('[DeckList] Conversational onboarding complete:', data);
     console.log('[DeckList] Uploaded files count:', data.uploadedFiles?.length || 0);
     console.log('[DeckList] Uploaded media from agent:', data.uploadedMedia?.length || 0, data.uploadedMedia);
     console.log('[DeckList] Slide mode:', data.slideMode || 'interactive (default)');
     console.log('[DeckList] Pre-generated slides:', data.slides?.length || 0);
+    console.log('[DeckList] 🎬 Scraped videos from agent:', data.scrapedVideos?.length || 0, data.scrapedVideos);
 
     // Check if we have pre-generated slides - if so, DON'T hide conversational onboarding yet
     // We'll navigate directly to the deck, and the component will unmount naturally
@@ -1064,7 +1073,17 @@ const DeckList: React.FC = () => {
       } : null;
 
       // CRITICAL: Include notes.theme in outline so backend uses it without regenerating
-      const newOutline: FrontendDeckOutline & { notes?: { theme?: any } } = {
+      // Build notes object with theme and scraped videos
+      const notesPayload: { theme?: any; videos?: any[] } = {};
+      if (themePayload) {
+        notesPayload.theme = themePayload;
+      }
+      if (data.scrapedVideos && data.scrapedVideos.length > 0) {
+        notesPayload.videos = data.scrapedVideos;
+        console.log('[DeckList] 🎬 Including', data.scrapedVideos.length, 'scraped videos in outline.notes');
+      }
+
+      const newOutline: FrontendDeckOutline & { notes?: { theme?: any; videos?: any[] } } = {
         id: newOutlineId,
         title: data.topic || 'New Presentation',
         stylePreferences: {
@@ -1076,8 +1095,8 @@ const DeckList: React.FC = () => {
           logoUrl: parsedStylePrefs?.logoUrl,  // CRITICAL: Include logo URL for brand slides
         },
         slides: outlineSlides,
-        // CRITICAL: Embed theme in notes so backend finds it and uses it directly
-        notes: themePayload ? { theme: themePayload } : undefined,
+        // CRITICAL: Embed theme and videos in notes so backend finds them
+        notes: Object.keys(notesPayload).length > 0 ? notesPayload : undefined,
       };
 
       console.log('[DeckList] 🎨 Theme embedded in outline.notes:', themePayload ? 'YES' : 'NO');

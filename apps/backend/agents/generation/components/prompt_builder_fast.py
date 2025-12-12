@@ -10,7 +10,18 @@ logger = get_logger(__name__)
 
 class FastSlidePromptBuilder:
     """Builds minimal prompts for fast slide generation."""
-    
+
+    def _is_static_mode(self, context: SlideGenerationContext) -> bool:
+        """Check if slideMode is 'static' (traditional PPT without animations/interactivity)."""
+        try:
+            style_prefs = getattr(context.deck_outline, 'stylePreferences', None)
+            if style_prefs:
+                slide_mode = getattr(style_prefs, 'slideMode', None) or (style_prefs.get('slideMode') if isinstance(style_prefs, dict) else None)
+                return slide_mode == 'static'
+        except Exception:
+            pass
+        return False
+
     # Minimal system prompt
     SYSTEM_PROMPT = """You are a slide designer. Generate JSON slides with these components:
 Background, TiptapTextBlock, Image, Icon, Shape, Lines, CustomComponent.
@@ -108,7 +119,10 @@ Icon + text rules (optional, use sparingly):
         
         # Get key components only
         components = rag_context.get('predicted_components', [])[:5]  # Limit to 5
-        
+
+        # Check for static mode (Traditional PPT)
+        is_static = self._is_static_mode(context)
+
         # Detect user-provided content
         has_user_content = context.slide_outline.content and len(context.slide_outline.content.strip().split()) > 10
 
@@ -127,6 +141,32 @@ Icon + text rules (optional, use sparingly):
             ""
         ]
 
+        # Add STATIC MODE instructions (Traditional PPT - static but elegant)
+        if is_static:
+            prompt_parts.extend([
+                "",
+                "** TRADITIONAL PRESENTATION MODE **",
+                "This is a TRADITIONAL slide like a premium PowerPoint/Keynote.",
+                "",
+                "✅ ALLOWED - Entrance animations ONLY:",
+                "- fadeIn, slideIn (from any direction) - elements animate in ONCE",
+                "- Use animation-fill-mode: forwards so elements stay visible",
+                "- Stagger delays for polish (0.1s, 0.2s, 0.3s...)",
+                "- Keep animations SHORT: 0.4s-0.8s, ease-out",
+                "",
+                "⛔ FORBIDDEN:",
+                "- NO JavaScript, onclick, onmouseover, or event handlers",
+                "- NO hover effects (:hover pseudo-class)",
+                "- NO animated counters or counting up numbers - show FINAL values",
+                "- NO looping/infinite animations - entrance only, then STILL",
+                "- NO interactive elements (quizzes, polls, accordions, expandable)",
+                "- NO elements that require clicking/hovering to reveal content",
+                "- ALL content must be FULLY VISIBLE after entrance animation",
+                "",
+                "Create clean, professional slides that look great as static screenshots.",
+                ""
+            ])
+
         # Add content instruction
         if has_user_content:
             prompt_parts.extend([
@@ -134,15 +174,15 @@ Icon + text rules (optional, use sparingly):
                 "DO NOT add research or additional information. Focus on design and layout.",
                 ""
             ])
-        
+
         # Add chart data if present (minimal)
         if context.has_chart_data and context.chart_data:
             prompt_parts.append("Chart data provided - create appropriate chart.")
-            
+
         # Add image instruction (for Image components only, not CustomComponent HTML)
         if context.available_images:
             prompt_parts.append("Images available for Image components. For CustomComponent HTML, use <img src='placeholder' alt='descriptive search term'>.")
-            
+
         prompt_parts.append("\nGenerate slide JSON.")
         
         prompt = '\n'.join(prompt_parts)

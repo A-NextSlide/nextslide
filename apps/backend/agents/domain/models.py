@@ -37,6 +37,8 @@ class ThemeSpec:
     slide_themes: Dict[str, Any] = field(default_factory=dict)  # LayoutArchitect blueprints
     # Brand information including logo URL
     brandInfo: Dict[str, Any] = field(default_factory=dict)
+    # Design reference images (e.g., brand website screenshots from Firecrawl)
+    reference_images: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ThemeSpec':
@@ -54,7 +56,8 @@ class ThemeSpec:
             slide_templates=data.get('slide_templates', {}),
             design_rules=data.get('design_rules', {}),
             slide_themes=data.get('slide_themes', {}),
-            brandInfo=data.get('brandInfo', {})
+            brandInfo=data.get('brandInfo', {}),
+            reference_images=data.get('reference_images', [])
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -72,7 +75,8 @@ class ThemeSpec:
             'slide_templates': self.slide_templates,
             'design_rules': self.design_rules,
             'slide_themes': self.slide_themes,
-            'brandInfo': self.brandInfo
+            'brandInfo': self.brandInfo,
+            'reference_images': self.reference_images
         }
 
 

@@ -130,8 +130,15 @@ class SlideGeneratorAdapter:
                     presentation_context = " | ".join(parts)
                 # Extract design reference images (e.g., PPT screenshots for "make it look like this")
                 if hasattr(style_prefs, 'referenceImages') and style_prefs.referenceImages:
-                    reference_images = style_prefs.referenceImages
-                    logger.info(f"[ADAPTER] Found {len(reference_images)} design reference images")
+                    reference_images = list(style_prefs.referenceImages)
+                    logger.info(f"[ADAPTER] Found {len(reference_images)} design reference images from stylePreferences")
+
+            # Also check theme for reference_images (brand screenshots from Firecrawl)
+            if isinstance(theme, dict) and theme.get('reference_images'):
+                theme_refs = theme['reference_images']
+                if isinstance(theme_refs, list):
+                    reference_images.extend(theme_refs)
+                    logger.info(f"[ADAPTER] 📸 Added {len(theme_refs)} brand screenshots from theme to reference images")
 
             # Include extracted images from uploaded PPTX/PDF files as available images
             all_available_images = list(available_images or [])
@@ -536,6 +543,32 @@ class SimpleDeckComposer(IDeckComposer):
             theme_doc = None
 
             # CRITICAL: Check for existing theme from outline.notes FIRST (preserve from outline generation)
+            # Also preserve reference_images even when regenerating theme due to default colors
+            preserved_reference_images = []  # Will be set if we need to preserve brand screenshots
+
+            # CRITICAL: Fetch brand screenshot EARLY if we have a vibeContext domain
+            # This ensures we get the screenshot regardless of theme regeneration path
+            try:
+                style_prefs_early = getattr(deck_outline, 'stylePreferences', None)
+                if style_prefs_early:
+                    vibe_context_early = getattr(style_prefs_early, 'vibeContext', None)
+                    if vibe_context_early and '.' in vibe_context_early and ' ' not in vibe_context_early:
+                        # It's a domain - fetch brand screenshot
+                        from services.firecrawl_service import get_firecrawl_service
+                        firecrawl_svc = get_firecrawl_service()
+                        if firecrawl_svc.is_configured():
+                            brand_url = vibe_context_early if vibe_context_early.startswith('http') else f"https://{vibe_context_early}"
+                            logger.info(f"[DECK COMPOSER] 📸 EARLY: Fetching brand screenshot for {brand_url}")
+                            brand_result = firecrawl_svc.extract_brand_design(brand_url, include_screenshot=True)
+                            if brand_result.get('success') and brand_result.get('data', {}).get('screenshot'):
+                                screenshot = brand_result['data']['screenshot']
+                                preserved_reference_images = [screenshot]
+                                logger.info(f"[DECK COMPOSER] 📸 EARLY: Got brand screenshot ({len(screenshot)} chars) for design reference")
+                            else:
+                                logger.warning(f"[DECK COMPOSER] 📸 EARLY: No screenshot returned for {brand_url}")
+            except Exception as fc_early_err:
+                logger.warning(f"[DECK COMPOSER] 📸 EARLY: Firecrawl screenshot fetch failed: {fc_early_err}")
+
             try:
                 outline_notes = getattr(deck_outline, 'notes', None)
                 logger.info(f"[DECK COMPOSER] DEBUG: outline_notes type: {type(outline_notes)}")
@@ -546,6 +579,12 @@ class SimpleDeckComposer(IDeckComposer):
                         outline_theme = outline_notes.get('theme')
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
+                            # CRITICAL: Extract reference_images from theme BEFORE potentially clearing it
+                            # These are brand screenshots fetched via Firecrawl that should be preserved
+                            if outline_theme.get('reference_images'):
+                                preserved_reference_images = outline_theme.get('reference_images', [])
+                                logger.info(f"[DECK COMPOSER] 📸 Preserving {len(preserved_reference_images)} reference_images from outline.notes.theme")
+
                             # CRITICAL: Check if fun topic with boring fonts!
                             # Use word boundary matching to avoid false positives like "fun" in "fundraising"
                             import re
@@ -553,7 +592,7 @@ class SimpleDeckComposer(IDeckComposer):
                             fun_kws = ['pikachu', 'pokemon', 'mario', 'luigi', 'gaming', 'arcade', 'retro',
                                        'game', 'nintendo', 'kids', 'children', 'party', 'cartoon']
                             is_fun_topic = any(re.search(rf'\b{re.escape(kw)}\b', title_lower) for kw in fun_kws)
-                        
+
                         current_hero = outline_theme.get('typography', {}).get('hero_title', {}).get('family', '')
                         current_body = outline_theme.get('typography', {}).get('body_text', {}).get('family', '')
                         boring_fonts = ['roboto', 'inter', 'lato', 'raleway', 'montserrat', 'open sans', 'poppins']
@@ -592,12 +631,12 @@ class SimpleDeckComposer(IDeckComposer):
                             logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
                             logger.debug(f"  CLEARING outline.notes.theme to force regeneration!\n")
                             logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline.notes fonts - clearing")
-                            outline_theme = None  # Clear it!
+                            outline_theme = None  # Clear it! (reference_images already preserved above)
                         elif has_default_colors:
                             # Any topic with default colors should regenerate - let AI detect brands
                             logger.info(f"[DECK COMPOSER] 🎨 DEFAULT COLORS detected - regenerating to detect brand")
                             logger.info(f"[DECK COMPOSER]   Colors: accent1={theme_accent1}, accent2={theme_accent2}, bg={theme_bg}")
-                            outline_theme = None  # Clear it to force brand color lookup!
+                            outline_theme = None  # Clear it! (reference_images already preserved above)
                         else:
                             # PRESERVE extracted design theme from user's uploaded files
                             logger.info(f"[DECK COMPOSER] ✅ KEEPING OUTLINE THEME from extracted design")
@@ -670,6 +709,12 @@ class SimpleDeckComposer(IDeckComposer):
                 from utils.supabase import get_deck_theme, get_deck
                 existing_theme_data = get_deck_theme(deck_uuid)
                 if existing_theme_data:
+                    # CRITICAL: Extract reference_images from database theme (Firecrawl brand screenshots)
+                    # The theme API stores reference_images here, not in outline.notes.theme
+                    if existing_theme_data.get('reference_images') and not preserved_reference_images:
+                        preserved_reference_images = existing_theme_data.get('reference_images', [])
+                        logger.info(f"[DECK COMPOSER] 📸 Found {len(preserved_reference_images)} reference_images in DATABASE theme (from theme API/Firecrawl)")
+
                     # CRITICAL: Check if this is a fun topic that needs playful fonts
                     # If so, SKIP cached theme and regenerate!
                     # Use word boundary matching to avoid false positives like "fun" in "fundraising"
@@ -808,11 +853,16 @@ class SimpleDeckComposer(IDeckComposer):
                     outline_notes = getattr(deck_outline, 'notes', None)
                     logger.info(f"[DECK COMPOSER] DEBUG: outline_notes type: {type(outline_notes)}")
                     logger.info(f"[DECK COMPOSER] DEBUG: outline_notes keys: {list(outline_notes.keys()) if isinstance(outline_notes, dict) else 'not dict'}")
-                    
+
                     if isinstance(outline_notes, dict) and outline_notes.get('theme'):
                         outline_theme = outline_notes.get('theme')
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
+                            # CRITICAL: Extract reference_images BEFORE potentially clearing theme (2nd path)
+                            if outline_theme.get('reference_images') and not preserved_reference_images:
+                                preserved_reference_images = outline_theme.get('reference_images', [])
+                                logger.info(f"[DECK COMPOSER] 📸 Preserving {len(preserved_reference_images)} reference_images (2nd path)")
+
                             # CRITICAL: Check if fun topic with boring fonts!
                             # Use word boundary matching to avoid false positives like "fun" in "fundraising"
                             import re
@@ -857,12 +907,12 @@ class SimpleDeckComposer(IDeckComposer):
                                 logger.debug(f"  Cached fonts: {current_hero} + {current_body} (BORING!)")
                                 logger.debug(f"  CLEARING outline theme to force regeneration!\n")
                                 logger.info(f"[DECK COMPOSER] 🎮 Fun topic has boring outline fonts - clearing (2nd path)")
-                                outline_theme = None  # Clear it!
+                                outline_theme = None  # Clear it! (reference_images already preserved above)
                             elif has_default_colors:
                                 # Any topic with default colors should regenerate - let AI detect brands
                                 logger.info(f"[DECK COMPOSER] 🎨 DEFAULT COLORS detected (2nd check) - regenerating")
                                 logger.info(f"[DECK COMPOSER]   Colors: accent1={theme_accent1}, accent2={theme_accent2}")
-                                outline_theme = None  # Clear it!
+                                outline_theme = None  # Clear it! (reference_images already preserved above)
                             else:
                                 # PRESERVE extracted design theme from user's uploaded files
                                 logger.info(f"[DECK COMPOSER] ✅ KEEPING OUTLINE THEME (2nd check) from extracted design")
@@ -881,6 +931,12 @@ class SimpleDeckComposer(IDeckComposer):
                     existing_theme_data = get_deck_theme(deck_uuid)
 
                     if existing_theme_data:
+                        # CRITICAL: Extract reference_images from database theme (Firecrawl brand screenshots)
+                        # The theme API stores reference_images here, not in outline.notes.theme
+                        if existing_theme_data.get('reference_images') and not preserved_reference_images:
+                            preserved_reference_images = existing_theme_data.get('reference_images', [])
+                            logger.info(f"[DECK COMPOSER] 📸 Found {len(preserved_reference_images)} reference_images in DATABASE theme (2nd path)")
+
                         # CRITICAL: Check if this is a fun topic that needs playful fonts
                         # If so, SKIP cached theme and regenerate!
                         # Use word boundary matching to avoid false positives like "fun" in "fundraising"
@@ -1073,13 +1129,58 @@ class SimpleDeckComposer(IDeckComposer):
                                     if db_brand_data.get('accents'):
                                         brand_accents = db_brand_data['accents']
                                         logger.info(f"[DECK COMPOSER] ✅ Got brand accents from database: {brand_accents}")
+                                    # CRITICAL: If no labeled colors but we have raw colors, use them!
+                                    # This handles brands like dyna.co with only #000000 and #FFFFFF
+                                    if not brand_bg_color and not brand_accents and db_brand_data.get('colors'):
+                                        raw_colors = db_brand_data['colors']
+                                        logger.info(f"[DECK COMPOSER] 🎨 Using unlabeled brand colors: {raw_colors}")
+                                        # Assign colors intelligently - lighter one as background, darker as accent
+                                        for color in raw_colors:
+                                            if color.upper() in ['#FFFFFF', '#FFF', '#FAFAFA', '#F5F5F5']:
+                                                if not brand_bg_color:
+                                                    brand_bg_color = color
+                                            elif color.upper() in ['#000000', '#000', '#1A1A1A', '#111111']:
+                                                if not brand_text_color:
+                                                    brand_text_color = color
+                                            else:
+                                                brand_accents.append(color)
+                                        # If we still don't have accents, use the non-background colors
+                                        if not brand_accents:
+                                            brand_accents = [c for c in raw_colors if c != brand_bg_color]
+                                        logger.info(f"[DECK COMPOSER] 🎨 Derived: bg={brand_bg_color}, text={brand_text_color}, accents={brand_accents}")
                             except Exception as e:
                                 logger.debug(f"[DECK COMPOSER] Could not get brand data from DB: {e}")
+
+                        # CRITICAL: Fetch brand screenshot via Firecrawl if we have a brand domain
+                        # This is OUTSIDE the try/except above - runs regardless of brand_colors_db result
+                        # The theme API generated the screenshot but didn't store it in outline.notes
+                        if not preserved_reference_images and brand_identifier:
+                            # Check if brand_identifier looks like a domain
+                            is_domain = '.' in brand_identifier and ' ' not in brand_identifier
+                            if is_domain:
+                                try:
+                                    from services.firecrawl_service import get_firecrawl_service
+                                    firecrawl_svc = get_firecrawl_service()
+                                    if firecrawl_svc.is_configured():
+                                        brand_url = brand_identifier if brand_identifier.startswith('http') else f"https://{brand_identifier}"
+                                        logger.info(f"[DECK COMPOSER] 📸 Fetching brand screenshot for {brand_url}")
+                                        brand_result = firecrawl_svc.extract_brand_design(brand_url, include_screenshot=True)
+                                        if brand_result.get('success') and brand_result.get('data', {}).get('screenshot'):
+                                            screenshot = brand_result['data']['screenshot']
+                                            preserved_reference_images = [screenshot]
+                                            logger.info(f"[DECK COMPOSER] 📸 Got brand screenshot ({len(screenshot)} chars) for design reference")
+                                        else:
+                                            logger.warning(f"[DECK COMPOSER] 📸 No screenshot returned for {brand_url}")
+                                except Exception as fc_err:
+                                    logger.warning(f"[DECK COMPOSER] 📸 Firecrawl screenshot fetch failed: {fc_err}")
                     
                         # Get colors from ColorConfigItem
                         colors_config = getattr(style_prefs, 'colors', None)
                         logger.info(f"[DECK COMPOSER] DEBUG: colors_config type: {type(colors_config)}")
-                    
+
+                        # Known frontend default colors - skip these if we have brand colors from database
+                        FRONTEND_DEFAULTS = {'#FF4301', '#ff4301', '#3B82F6', '#3b82f6'}
+
                         if colors_config:
                             logger.info(f"[DECK COMPOSER] DEBUG: Processing colors_config...")
                             # Extract colors from ColorConfigItem (background, accent1, accent2, accent3, text)
@@ -1091,22 +1192,45 @@ class SimpleDeckComposer(IDeckComposer):
 
                             logger.info(f"[DECK COMPOSER] DEBUG: Raw colors - background: {background}, accent1: {accent1}, accent2: {accent2}, accent3: {accent3}, text: {text}")
 
-                            # Build brand_colors array using the EXACT SAME logic as the working theme API
-                            if accent1:
-                                brand_colors.append(accent1)
-                            if accent2:  # Include the missing red color!
-                                brand_colors.append(accent2)
-                            if accent3:
-                                brand_colors.append(accent3)
-                            if background and background.upper() != '#FFFFFF':  # Don't include white initially
-                                brand_colors.append(background)
-                            if text and text.upper() != '#000000':  # Don't include black
-                                brand_colors.append(text)
+                            # Check if these are known frontend defaults
+                            has_default_accents = (accent1 and accent1.upper() in {c.upper() for c in FRONTEND_DEFAULTS}) or \
+                                                  (accent2 and accent2.upper() in {c.upper() for c in FRONTEND_DEFAULTS})
 
-                            # For brand palettes like McDonald's, we need the white background too
-                            if background and background.upper() == '#FFFFFF' and len(brand_colors) > 0:
-                                brand_colors.append(background)  # Include white as part of brand palette - THE FIX!
-                            
+                            # If we have brand colors from database AND stylePreferences has default colors, skip stylePreferences
+                            if has_default_accents and (brand_bg_color or brand_accents):
+                                logger.info(f"[DECK COMPOSER] 🎨 SKIPPING frontend default colors - using brand colors from database instead")
+                                # Use brand colors from database
+                                if brand_bg_color:
+                                    brand_colors.append(brand_bg_color)
+                                brand_colors.extend(brand_accents)
+                                if brand_text_color:
+                                    brand_colors.append(brand_text_color)
+                            else:
+                                # Build brand_colors array using the EXACT SAME logic as the working theme API
+                                if accent1:
+                                    brand_colors.append(accent1)
+                                if accent2:  # Include the missing red color!
+                                    brand_colors.append(accent2)
+                                if accent3:
+                                    brand_colors.append(accent3)
+                                if background and background.upper() != '#FFFFFF':  # Don't include white initially
+                                    brand_colors.append(background)
+                                if text and text.upper() != '#000000':  # Don't include black
+                                    brand_colors.append(text)
+
+                                # For brand palettes like McDonald's, we need the white background too
+                                if background and background.upper() == '#FFFFFF' and len(brand_colors) > 0:
+                                    brand_colors.append(background)  # Include white as part of brand palette - THE FIX!
+                        else:
+                            # No colors_config from frontend - use brand colors from database if available
+                            if brand_bg_color or brand_accents:
+                                logger.info(f"[DECK COMPOSER] 🎨 No colors_config - using brand colors from database")
+                                if brand_bg_color:
+                                    brand_colors.append(brand_bg_color)
+                                brand_colors.extend(brand_accents)
+                                if brand_text_color:
+                                    brand_colors.append(brand_text_color)
+
                     logger.info(f"[DECK COMPOSER] DEBUG: Extracted brand data - colors: {brand_colors}, fonts: {brand_fonts}, body: {body_font}, logo: {logo_url[:60] if logo_url else None}...")
 
                     # CRITICAL: If we have deck_theme from frontend (ConversationalOnboarding), use it directly!
@@ -1273,11 +1397,13 @@ class SimpleDeckComposer(IDeckComposer):
                             "brandInfo": {
                                 "logoUrl": logo_url
                             } if logo_url else {},
-                            "visual_style": {}
+                            "visual_style": {},
+                            # CRITICAL: Preserve reference_images from original theme (brand screenshots from Firecrawl)
+                            "reference_images": preserved_reference_images if preserved_reference_images else []
                         }
-                        
+
                         theme = ThemeSpec.from_dict(theme_dict)
-                        
+
                         # Create palette matching working theme API format (use enhanced colors)
                         palette = {
                             "colors": final_brand_colors,  # Use enhanced colors
@@ -1285,6 +1411,8 @@ class SimpleDeckComposer(IDeckComposer):
                             "logo_url": logo_url
                         }
 
+                        if preserved_reference_images:
+                            logger.info(f"[DECK COMPOSER] 📸 Applied {len(preserved_reference_images)} preserved reference_images to reconstructed theme")
                         logger.info(f"[DECK COMPOSER] ✅ Successfully reconstructed theme from stylePreferences!")
                         logger.info(f"[DECK COMPOSER] Theme: {theme.theme_name}")
                         logger.info(f"[DECK COMPOSER] Colors: {final_brand_colors}")
@@ -1383,8 +1511,20 @@ class SimpleDeckComposer(IDeckComposer):
                                     logger.info(f"[DECK COMPOSER] ✅ Updated palette with user colors: {palette.get('colors')}, backgrounds: {palette.get('backgrounds')}")
                 except Exception as e:
                     logger.warning(f"[DECK COMPOSER] Error applying user color override: {e}")
-            
-            
+
+                # CRITICAL: Apply preserved reference_images to existing theme (from early Firecrawl fetch)
+                # This ensures brand screenshots are available even when theme colors are correct
+                if preserved_reference_images and theme:
+                    if hasattr(theme, 'reference_images'):
+                        if not theme.reference_images:
+                            theme.reference_images = preserved_reference_images
+                            logger.info(f"[DECK COMPOSER] 📸 Applied {len(preserved_reference_images)} preserved reference_images to preserved theme")
+                    elif isinstance(theme, dict):
+                        if not theme.get('reference_images'):
+                            theme['reference_images'] = preserved_reference_images
+                            logger.info(f"[DECK COMPOSER] 📸 Applied {len(preserved_reference_images)} preserved reference_images to preserved theme (dict)")
+
+
             # ONLY generate new theme if absolutely no theme found anywhere
             logger.info(f"[DECK COMPOSER] DEBUG: Final theme check before generation - theme is None: {theme is None}, theme type: {type(theme)}, theme truthy: {bool(theme)}")
             if not theme:
@@ -1395,10 +1535,22 @@ class SimpleDeckComposer(IDeckComposer):
                     theme_result = await self.theme_manager.generate_theme(deck_outline, {})
                     theme = theme_result.get('theme')
                     search_terms = theme_result.get('search_terms', [])
-                    
+
                     # Update palette from generated theme
                     palette = _palette_from_theme_obj(theme)
-                    
+
+                    # CRITICAL: Apply preserved reference_images to newly generated theme
+                    # These may have been captured from database before clearing theme due to default colors
+                    if preserved_reference_images and theme:
+                        if hasattr(theme, 'reference_images'):
+                            if not theme.reference_images:
+                                theme.reference_images = preserved_reference_images
+                                logger.info(f"[DECK COMPOSER] 📸 Applied {len(preserved_reference_images)} preserved reference_images to generated theme")
+                        elif isinstance(theme, dict):
+                            if not theme.get('reference_images'):
+                                theme['reference_images'] = preserved_reference_images
+                                logger.info(f"[DECK COMPOSER] 📸 Applied {len(preserved_reference_images)} preserved reference_images to generated theme (dict)")
+
                     logger.info(f"[DECK COMPOSER] ✅ Generated fresh theme: {getattr(theme, 'theme_name', 'Unknown')}")
                 except Exception as e:
                     logger.error(f"[DECK COMPOSER] Theme generation failed: {e}")
@@ -1980,13 +2132,21 @@ class SimpleDeckComposer(IDeckComposer):
             else:
                 logger.warning(f"⚠️ [PRE-DECKSTATE] deck_outline.stylePreferences is None or missing!")
 
+            # Log video tracking before DeckState creation
+            outline_notes = deck_outline.notes if hasattr(deck_outline, 'notes') else None
+            if outline_notes and isinstance(outline_notes, dict):
+                videos_in_notes = outline_notes.get('videos', [])
+                logger.info(f"[VIDEO TRACE] deck_outline.notes has {len(videos_in_notes)} videos")
+            else:
+                logger.info(f"[VIDEO TRACE] deck_outline.notes is empty or None: {outline_notes}")
+
             deck_state = DeckState(
                 deck_uuid=deck_uuid,
                 deck_outline=deck_outline,
                 theme=theme,
                 palette=palette,
                 style_manifesto=style_manifesto,
-                notes=deck_outline.notes if hasattr(deck_outline, 'notes') else None,  # Include notes from outline
+                notes=outline_notes,  # Include notes from outline
                 slides=[
                     {
                         "id": slide.id,

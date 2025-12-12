@@ -284,8 +284,9 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   // This ensures slides scale appropriately on large screens (4K) and small screens (mobile)
   const slideWidth = React.useMemo(() => {
     // Use containerDimensions if available, otherwise use window dimensions
-    const containerWidth = containerDimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 950);
-    const containerHeight = containerDimensions.height || (typeof window !== 'undefined' ? window.innerHeight - 200 : 600);
+    const containerWidth = containerDimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 1100);
+    const containerHeight = containerDimensions.height || (typeof window !== 'undefined' ? window.innerHeight - 200 : 700);
+    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
 
     // Calculate aspect ratio
     const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
@@ -300,13 +301,21 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     // Use the smaller of available width or height-constrained width
     const optimalWidth = Math.min(availableWidth, heightConstrainedWidth);
 
-    // Clamp between min/max values
-    // Min: 600px for readability on small screens
-    // Max: 1400px for large screens (prevents slides from being too stretched)
-    const minWidth = 600;
-    const maxWidth = 1400;
+    // Responsive min/max based on screen size
+    // Smaller screens: min 500px, larger screens: min 650px
+    const minWidth = screenWidth < 768 ? 500 : 650;
 
-    return Math.max(minWidth, Math.min(maxWidth, optimalWidth, 950)); // Default to max 950 for backward compat
+    // Max width scales with screen size:
+    // - Small screens (<1024px): max 850px
+    // - Medium screens (1024-1440px): max 1000px
+    // - Large screens (1440-1920px): max 1150px
+    // - Extra large screens (>1920px): max 1300px
+    const maxWidth = screenWidth < 1024 ? 850
+                   : screenWidth < 1440 ? 1000
+                   : screenWidth < 1920 ? 1150
+                   : 1300;
+
+    return Math.max(minWidth, Math.min(maxWidth, optimalWidth));
   }, [containerDimensions.width, containerDimensions.height]);
 
   const slideHeight = slideWidth * (DEFAULT_SLIDE_HEIGHT / DEFAULT_SLIDE_WIDTH);

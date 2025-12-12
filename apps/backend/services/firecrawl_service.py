@@ -276,6 +276,131 @@ class _FirecrawlService:
             logger.warning(f"Firecrawl extract_site_content error: {e}")
             return {"success": False, "error": str(e)}
 
+    def extract_brand_design(
+        self,
+        url: str,
+        include_screenshot: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Extract comprehensive brand design system from a website.
+
+        Uses Firecrawl's branding format to get colors, fonts, logos, spacing,
+        and optionally a screenshot for visual reference.
+
+        Args:
+            url: The website URL to analyze
+            include_screenshot: Whether to capture a full-page screenshot
+
+        Returns:
+            Dict with:
+            - colors: {primary, secondary, accent, background, textPrimary, textSecondary}
+            - fonts: List of font families used
+            - typography: {fontFamilies, fontSizes, fontWeights}
+            - logo: URL to primary logo
+            - favicon: URL to favicon
+            - screenshot: Base64 encoded screenshot (if requested)
+            - colorScheme: "light" or "dark"
+            - spacing: {baseUnit, borderRadius}
+            - personality: {tone, energy, targetAudience}
+            - source_url: The analyzed URL
+        """
+        formats = ["branding"]
+        if include_screenshot:
+            formats.append("screenshot@fullPage")
+
+        try:
+            # Use HTTP request directly for more control over response parsing
+            import requests
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "url": url,
+                "formats": formats,
+                "timeout": 60000,
+            }
+
+            logger.info(f"[BRAND_DESIGN] Fetching brand design from {url} with formats={formats}")
+
+            resp = requests.post(
+                f"{self.base_url}/v1/scrape",
+                json=payload,
+                headers=headers,
+                timeout=90
+            )
+            resp.raise_for_status()
+            result = resp.json()
+
+            if not result.get("success"):
+                logger.warning(f"[BRAND_DESIGN] Firecrawl returned success=false: {result}")
+                return {"success": False, "error": result.get("error", "Unknown error")}
+
+            data = result.get("data", {})
+            branding = data.get("branding", {})
+
+            # Extract and normalize the brand design data
+            brand_design = {
+                "source_url": url,
+                "colorScheme": branding.get("colorScheme", "light"),
+
+                # Colors - normalize to consistent structure
+                "colors": {
+                    "primary": branding.get("colors", {}).get("primary"),
+                    "secondary": branding.get("colors", {}).get("secondary"),
+                    "accent": branding.get("colors", {}).get("accent"),
+                    "background": branding.get("colors", {}).get("background"),
+                    "textPrimary": branding.get("colors", {}).get("textPrimary"),
+                    "textSecondary": branding.get("colors", {}).get("textSecondary"),
+                    # Semantic colors if available
+                    "success": branding.get("colors", {}).get("success"),
+                    "warning": branding.get("colors", {}).get("warning"),
+                    "error": branding.get("colors", {}).get("error"),
+                },
+
+                # Fonts
+                "fonts": branding.get("fonts", []),
+                "typography": branding.get("typography", {}),
+
+                # Logo and images
+                "logo": branding.get("logo") or branding.get("images", {}).get("logo"),
+                "favicon": branding.get("images", {}).get("favicon"),
+                "ogImage": branding.get("images", {}).get("og:image"),
+
+                # Design system details
+                "spacing": branding.get("spacing", {}),
+                "components": branding.get("components", {}),
+
+                # Brand personality
+                "personality": branding.get("personality", {}),
+            }
+
+            # Add screenshot if requested and available
+            if include_screenshot:
+                screenshot = data.get("screenshot")
+                if screenshot:
+                    brand_design["screenshot"] = screenshot
+                    logger.info(f"[BRAND_DESIGN] Got screenshot ({len(screenshot)} chars)")
+                else:
+                    logger.warning("[BRAND_DESIGN] Screenshot requested but not returned")
+
+            # Filter out None values from colors
+            brand_design["colors"] = {
+                k: v for k, v in brand_design["colors"].items() if v is not None
+            }
+
+            logger.info(f"[BRAND_DESIGN] Extracted: {len(brand_design['colors'])} colors, "
+                       f"{len(brand_design['fonts'])} fonts, logo={bool(brand_design['logo'])}")
+
+            return {"success": True, "data": brand_design}
+
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"[BRAND_DESIGN] HTTP error: {e}")
+            return {"success": False, "error": f"HTTP error: {e}"}
+        except Exception as e:
+            logger.warning(f"[BRAND_DESIGN] Error extracting brand design: {e}")
+            return {"success": False, "error": str(e)}
+
     def extract_json(self, url: str, prompt: str, timeout: int = 120000) -> Dict[str, Any]:
         """Extract without schema using a prompt.
         See: Extracting without schema in Firecrawl docs.
