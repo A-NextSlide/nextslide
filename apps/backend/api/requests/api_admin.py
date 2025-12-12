@@ -730,7 +730,7 @@ async def perform_user_action(
             }).eq("id", user_id).execute()
 
         elif action_request.action == "hard_delete":
-            # Hard delete - permanently remove user from auth.users and users table
+            # Hard delete - permanently remove user from everything
             import os
             service_key = os.getenv("SUPABASE_SERVICE_KEY")
             supabase_url = os.getenv("SUPABASE_URL")
@@ -738,7 +738,21 @@ async def perform_user_action(
             if not service_key:
                 raise HTTPException(status_code=500, detail="Service key not configured for hard delete")
 
-            # First, delete from Supabase Auth using Admin API
+            # 1. Cancel Stripe subscription if exists
+            try:
+                from services.stripe_service import get_stripe_service
+                stripe_service = get_stripe_service()
+                sub_data = supabase.table("subscriptions").select("stripe_subscription_id, stripe_customer_id").eq("user_id", user_id).execute()
+                if sub_data.data and sub_data.data[0].get("stripe_subscription_id"):
+                    try:
+                        await stripe_service.cancel_subscription(user_id, at_period_end=False)
+                        logger.info(f"Cancelled Stripe subscription for user {user_id}")
+                    except Exception as stripe_err:
+                        logger.warning(f"Could not cancel Stripe subscription: {stripe_err}")
+            except Exception as e:
+                logger.warning(f"Error checking/canceling Stripe: {e}")
+
+            # 2. Delete from Supabase Auth using Admin API
             try:
                 delete_response = httpx.delete(
                     f"{supabase_url}/auth/v1/admin/users/{user_id}",
@@ -751,18 +765,32 @@ async def perform_user_action(
 
                 if delete_response.status_code not in [200, 204]:
                     logger.warning(f"Auth delete response: {delete_response.status_code} - {delete_response.text}")
-                    # Continue anyway to clean up the users table
             except Exception as e:
                 logger.error(f"Error deleting from auth.users: {str(e)}")
-                # Continue anyway to clean up the users table
 
-            # Delete user's decks
-            supabase.table("decks").delete().eq("user_id", user_id).execute()
+            # 3. Delete all related data from database tables
+            tables_to_clean = [
+                ("decks", "user_id"),
+                ("subscriptions", "user_id"),
+                ("credit_balances", "user_id"),
+                ("credit_transactions", "user_id"),
+                ("onboarding_states", "user_id"),
+                ("team_members", "user_id"),
+                ("integrations", "user_id"),
+                ("google_drive_watch_channels", "user_id"),
+            ]
 
-            # Delete from users table
+            for table_name, column in tables_to_clean:
+                try:
+                    supabase.table(table_name).delete().eq(column, user_id).execute()
+                    logger.info(f"Deleted from {table_name} for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Could not delete from {table_name}: {e}")
+
+            # 4. Delete from users table (last, as other tables may reference it)
             supabase.table("users").delete().eq("id", user_id).execute()
 
-            logger.info(f"Hard deleted user {user_id} ({user_email})")
+            logger.info(f"Hard deleted user {user_id} ({user_email}) - removed from all tables and Stripe")
 
         elif action_request.action == "reset_password":
             # Generate password reset link via Supabase Admin API, then send via Resend
