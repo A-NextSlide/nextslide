@@ -159,7 +159,7 @@ const Pricing: React.FC = () => {
       tagline: 'For individuals',
       price: 999,
       credits: 1000,
-      cta: 'Start Free Trial',
+      cta: 'Get Starter',
       icon: Zap,
       popular: false,
       features: [
@@ -178,7 +178,7 @@ const Pricing: React.FC = () => {
       tagline: 'For professionals',
       price: 1999,
       credits: 2000,
-      cta: 'Start Pro Trial',
+      cta: 'Get Pro',
       icon: Crown,
       popular: true,
       features: [
@@ -235,9 +235,9 @@ const Pricing: React.FC = () => {
         'Currently, credits reset each month. We may add rollover in the future for annual plans.',
     },
     {
-      question: 'Is there a free trial?',
+      question: 'Can I try it for free?',
       answer:
-        'Yes! All paid plans come with a 7-day free trial. You can cancel anytime during the trial and pay nothing.',
+        "Yes! Our Free plan gives you 50 credits every month to try NextSlide. When you're ready for more, upgrade to Starter or Pro.",
     },
   ];
 

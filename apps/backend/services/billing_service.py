@@ -130,6 +130,44 @@ class BillingService:
                 if sub_data.get("pricing_plans"):
                     plan_name = sub_data["pricing_plans"].get("name", "Free")
 
+            # Check if period has expired and reset credits (for free users without Stripe)
+            # Paid users get reset via invoice.paid webhook, but free users need this
+            period_end_str = balance.get("period_end")
+            if period_end_str and plan_id == "free":
+                try:
+                    period_end_dt = datetime.fromisoformat(period_end_str.replace("Z", "+00:00"))
+                    # Make period_end_dt offset-naive for comparison
+                    if period_end_dt.tzinfo is not None:
+                        period_end_dt = period_end_dt.replace(tzinfo=None)
+                    now = datetime.utcnow()
+
+                    if now > period_end_dt:
+                        # Period expired - reset credits for new period
+                        new_period_start = now
+                        new_period_end = now + timedelta(days=30)
+
+                        client.table("credit_balances").update({
+                            "used_credits": 0,
+                            "period_start": new_period_start.isoformat(),
+                            "period_end": new_period_end.isoformat(),
+                            "updated_at": now.isoformat()
+                        }).eq("user_id", user_id).execute()
+
+                        # Update subscription period too
+                        client.table("subscriptions").update({
+                            "current_period_start": new_period_start.isoformat(),
+                            "current_period_end": new_period_end.isoformat(),
+                            "updated_at": now.isoformat()
+                        }).eq("user_id", user_id).execute()
+
+                        # Update local balance data
+                        balance["used_credits"] = 0
+                        balance["period_end"] = new_period_end.isoformat()
+
+                        logger.info(f"Reset credits for free user {user_id} (period expired)")
+                except Exception as reset_err:
+                    logger.warning(f"Failed to reset expired period for user {user_id}: {reset_err}")
+
             remaining = max(0, (balance["monthly_credits"] + balance["purchased_credits"]) - balance["used_credits"])
 
             return CreditBalance(

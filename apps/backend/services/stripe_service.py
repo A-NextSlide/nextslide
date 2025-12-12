@@ -638,8 +638,9 @@ class StripeService:
 
             # Calculate period dates
             now = datetime.utcnow()
-            period_start = datetime.fromtimestamp(sub.created)
-            period_end = period_start + timedelta(days=30)  # Monthly subscription
+            # Use actual Stripe period dates instead of hardcoded 30 days
+            period_start = datetime.fromtimestamp(sub.current_period_start)
+            period_end = datetime.fromtimestamp(sub.current_period_end)
 
             # Plan credits mapping
             plan_credits = {

@@ -247,3 +247,25 @@ CREATE POLICY "Service can manage balances" ON public.credit_balances
 
 CREATE POLICY "Service can manage transactions" ON public.credit_transactions
   FOR ALL USING (auth.role() = 'service_role');
+
+-- Cancellation Feedback (for analytics)
+CREATE TABLE IF NOT EXISTS public.cancellation_feedback (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  reason_details TEXT,
+  plan_at_cancel TEXT,
+  credits_at_cancel INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cancellation_feedback_user_id ON public.cancellation_feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_cancellation_feedback_created_at ON public.cancellation_feedback(created_at DESC);
+
+ALTER TABLE public.cancellation_feedback ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own feedback" ON public.cancellation_feedback
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Service can manage feedback" ON public.cancellation_feedback
+  FOR ALL USING (auth.role() = 'service_role');

@@ -46,11 +46,11 @@ async def consume_user_credits(
     action: CreditAction,
     metadata: Optional[dict] = None,
     description: Optional[str] = None
-) -> tuple[bool, int]:
+) -> tuple[bool, int, int]:
     """
     Consume credits for an action.
 
-    Returns: (success, remaining_credits)
+    Returns: (success, remaining_credits, overage_credits)
     """
     billing = get_billing_service()
     return await billing.consume_credits(user_id, action, metadata, description)
@@ -152,7 +152,7 @@ class CreditGuard:
         if not self.has_credits:
             return False
 
-        success, self.remaining = await consume_user_credits(
+        success, self.remaining, _ = await consume_user_credits(
             self.user_id,
             self.action,
             metadata=metadata
