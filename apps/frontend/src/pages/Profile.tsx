@@ -74,10 +74,11 @@ const Profile: React.FC = () => {
   const [billingLoading, setBillingLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const [welcomeModal, setWelcomeModal] = useState<{ show: boolean; planName: string; credits: number }>({
+  const [welcomeModal, setWelcomeModal] = useState<{ show: boolean; planName: string; credits: number; isFriendsFamily?: boolean }>({
     show: false,
     planName: '',
-    credits: 0
+    credits: 0,
+    isFriendsFamily: false
   });
 
   // Enable scrolling on this page
@@ -156,16 +157,25 @@ const Profile: React.FC = () => {
     if (billingSuccess === 'success' && !authLoading && user) {
       const syncAndRefresh = async () => {
         setBillingLoading(true);
+        let showedWelcome = false;
         try {
           // Sync subscription from Stripe
           const syncResult = await billingApi.syncSubscription();
-          if (syncResult.synced && syncResult.monthly_credits) {
+          if (syncResult.synced && (syncResult.monthly_credits || syncResult.monthly_credits === -1)) {
+            const isFF = syncResult.monthly_credits === -1;
             setWelcomeModal({
               show: true,
-              planName: syncResult.plan_id === 'pro' ? 'Pro' : 'Starter',
-              credits: syncResult.monthly_credits
+              planName: isFF ? 'Friends & Family' : (syncResult.plan_id === 'pro' ? 'Pro' : 'Starter'),
+              credits: syncResult.monthly_credits,
+              isFriendsFamily: isFF
             });
+            showedWelcome = true;
           }
+        } catch (err) {
+          console.error('Failed to sync subscription:', err);
+        }
+
+        try {
           // Load fresh billing data
           const [balance, subscription, usage] = await Promise.all([
             billingApi.getBalance(),
@@ -175,8 +185,19 @@ const Profile: React.FC = () => {
           setBillingBalance(balance);
           setBillingSubscription(subscription);
           setBillingUsage(usage);
+
+          // If sync didn't show welcome, try using fetched data
+          if (!showedWelcome && subscription.plan_id !== 'free') {
+            const isFF = balance.is_friends_family || balance.monthly_credits === -1;
+            setWelcomeModal({
+              show: true,
+              planName: isFF ? 'Friends & Family' : subscription.plan_name,
+              credits: balance.monthly_credits,
+              isFriendsFamily: isFF
+            });
+          }
         } catch (err) {
-          console.error('Failed to sync subscription:', err);
+          console.error('Failed to load billing data:', err);
         } finally {
           setBillingLoading(false);
           // Clear the billing param from URL
@@ -216,11 +237,26 @@ const Profile: React.FC = () => {
 
   // Handle manage billing click
   const handleManageBilling = async () => {
+    // Free users don't have a Stripe account - redirect to pricing
+    if (billingSubscription?.plan_id === 'free') {
+      navigate('/pricing?from=settings');
+      return;
+    }
+
     setPortalLoading(true);
     try {
       const session = await billingApi.createPortalSession();
       window.location.href = session.url;
-    } catch (err) {
+    } catch (err: any) {
+      // If no Stripe customer, prompt to upgrade
+      if (err?.response?.status === 400) {
+        toast({
+          title: 'No billing account',
+          description: 'Subscribe to a paid plan to manage billing.',
+        });
+        navigate('/pricing?from=settings');
+        return;
+      }
       toast({
         title: 'Error',
         description: 'Failed to open billing portal. Please try again.',
@@ -994,6 +1030,7 @@ const Profile: React.FC = () => {
         onClose={() => setWelcomeModal(prev => ({ ...prev, show: false }))}
         planName={welcomeModal.planName}
         monthlyCredits={welcomeModal.credits}
+        isFriendsFamily={welcomeModal.isFriendsFamily}
       />
 
       {/* Cancellation Modal */}

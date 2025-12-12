@@ -1430,6 +1430,12 @@ async def get_user_onboarding_state(token: Optional[str] = Depends(get_auth_head
         user_id = user["id"]
         supabase = auth_service.supabase
 
+        # Ensure tutorial deck exists for this user (copies "How to Use Nextslide" deck if not present)
+        try:
+            auth_service._ensure_tutorial_deck_for_user(user_id)
+        except Exception as e:
+            logger.warning(f"Failed to ensure tutorial deck for user {user_id}: {e}")
+
         # Get user's onboarding state from users table
         response = supabase.table("users").select(
             "welcome_shown, presentations_created, tutorial_views_count"

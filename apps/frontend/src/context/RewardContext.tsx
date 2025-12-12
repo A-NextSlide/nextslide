@@ -29,10 +29,10 @@ const RewardContext = createContext<RewardContextType | null>(null);
 export const REWARD_CONFIGS = {
   /** Welcome bonus for new users */
   welcomeBonus: {
-    amount: 200,
+    amount: 450,
     title: "A Token of Appreciation!",
     subtitle: "We're so grateful you're one of our early users. Here's a little gift to get you started.",
-    message: "Each slide costs 5 tokens. Create up to 40 slides!",
+    message: "Each slide costs 5 tokens. Create up to 90 slides!",
     buttonText: "Start Creating",
     icon: 'gift' as const,
   },

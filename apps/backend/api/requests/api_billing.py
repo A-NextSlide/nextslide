@@ -8,6 +8,7 @@ Handles:
 - Webhook processing
 """
 
+import json
 import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Depends, Header
@@ -226,11 +227,22 @@ async def get_subscription(user: dict = Depends(get_current_user)):
             features=default_features["free"]
         )
 
-    plan = sub.get("pricing_plans", {})
+    plan = sub.get("pricing_plans", {}) or {}
     plan_id = sub["plan_id"]
 
     # Use database features if available, otherwise use defaults
-    features = plan.get("features") if plan.get("features") else default_features.get(plan_id, [])
+    # Features may come as JSON string from database, need to parse
+    db_features = plan.get("features")
+    if db_features:
+        if isinstance(db_features, str):
+            try:
+                features = json.loads(db_features)
+            except json.JSONDecodeError:
+                features = default_features.get(plan_id, [])
+        else:
+            features = db_features
+    else:
+        features = default_features.get(plan_id, [])
 
     return SubscriptionResponse(
         plan_id=plan_id,
@@ -254,13 +266,21 @@ async def get_pricing_plans():
         # Estimate: 5 credits per slide, 8 slides per presentation
         estimated_presentations = (monthly_credits // 5) // 8 if monthly_credits > 0 else 0
 
+        # Parse features - may come as JSON string from database
+        features = plan.get("features", [])
+        if isinstance(features, str):
+            try:
+                features = json.loads(features)
+            except json.JSONDecodeError:
+                features = []
+
         result.append(PricingPlan(
             id=plan["id"],
             name=plan["name"],
             description=plan.get("description"),
             monthly_credits=monthly_credits,
             price_cents=plan.get("price_cents", 0),
-            features=plan.get("features", []),
+            features=features,
             estimated_presentations=estimated_presentations
         ))
 

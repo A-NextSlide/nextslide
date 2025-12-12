@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Zap, Sparkles, ArrowRight, Crown, Rocket } from 'lucide-react';
+import { X, Zap, Sparkles, ArrowRight, Crown, Rocket, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface WelcomeModalProps {
@@ -15,17 +15,21 @@ interface WelcomeModalProps {
   onClose: () => void;
   planName: string;
   monthlyCredits: number;
+  isFriendsFamily?: boolean;
 }
 
 export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   isOpen,
   onClose,
   planName,
-  monthlyCredits
+  monthlyCredits,
+  isFriendsFamily = false
 }) => {
   if (!isOpen) return null;
 
   const isPro = planName.toLowerCase() === 'pro';
+  // Detect F&F from credits (-1 = unlimited) or explicit prop
+  const isFF = isFriendsFamily || monthlyCredits === -1;
 
   return (
     <AnimatePresence>
@@ -61,7 +65,11 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
           </button>
 
           {/* Header gradient with celebration */}
-          <div className="bg-gradient-to-br from-[#FF4301] to-[#E63901] px-6 pt-10 pb-14 text-white text-center relative overflow-hidden">
+          <div className={`px-6 pt-10 pb-14 text-white text-center relative overflow-hidden ${
+            isFF
+              ? 'bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-500'
+              : 'bg-gradient-to-br from-[#FF4301] to-[#E63901]'
+          }`}>
             {/* Floating sparkles */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -101,7 +109,9 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
               transition={{ delay: 0.1, type: 'spring', damping: 12 }}
               className="w-20 h-20 mx-auto mb-5 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm"
             >
-              {isPro ? (
+              {isFF ? (
+                <Heart className="w-10 h-10" />
+              ) : isPro ? (
                 <Crown className="w-10 h-10" />
               ) : (
                 <Rocket className="w-10 h-10" />
@@ -117,10 +127,12 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
                 className="text-3xl font-bold mb-2"
                 style={{ fontFamily: '"HK Grotesk Wide", sans-serif' }}
               >
-                Welcome to {planName}!
+                {isFF ? 'Welcome to the Family!' : `Welcome to ${planName}!`}
               </h2>
               <p className="text-white/80 text-lg">
-                You're all set to create amazing presentations
+                {isFF
+                  ? "Ahmed must really like you! 💜"
+                  : "You're all set to create amazing presentations"}
               </p>
             </motion.div>
           </div>
@@ -134,15 +146,30 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
               transition={{ delay: 0.3 }}
               className="text-center py-6 mb-4"
             >
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <Zap className="w-6 h-6 text-[#FF4301]" />
-                <span className="text-4xl font-bold text-zinc-900 dark:text-white">
-                  {monthlyCredits}
-                </span>
-              </div>
-              <p className="text-zinc-500 dark:text-zinc-400">
-                credits ready to use this month
-              </p>
+              {isFF ? (
+                <>
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <span className="text-5xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+                      ∞
+                    </span>
+                  </div>
+                  <p className="text-zinc-500 dark:text-zinc-400">
+                    unlimited credits forever! 🎉
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Zap className="w-6 h-6 text-[#FF4301]" />
+                    <span className="text-4xl font-bold text-zinc-900 dark:text-white">
+                      {monthlyCredits.toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-zinc-500 dark:text-zinc-400">
+                    credits ready to use this month
+                  </p>
+                </>
+              )}
             </motion.div>
 
             {/* Quick stats */}
@@ -152,15 +179,31 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
               transition={{ delay: 0.4 }}
               className="grid grid-cols-2 gap-3 mb-6"
             >
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-center">
-                <p className="text-2xl font-bold text-zinc-900 dark:text-white">
-                  ~{Math.floor(monthlyCredits / 5 / 8)}
+              <div className={`p-4 rounded-xl text-center ${
+                isFF
+                  ? 'bg-gradient-to-r from-pink-50 to-purple-50 dark:from-pink-900/20 dark:to-purple-900/20'
+                  : 'bg-zinc-50 dark:bg-zinc-800/50'
+              }`}>
+                <p className={`text-2xl font-bold ${
+                  isFF
+                    ? 'text-purple-600 dark:text-purple-400'
+                    : 'text-zinc-900 dark:text-white'
+                }`}>
+                  {isFF ? '∞' : `~${Math.floor(monthlyCredits / 5 / 8)}`}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">presentations</p>
               </div>
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-center">
-                <p className="text-2xl font-bold text-zinc-900 dark:text-white">
-                  ~{Math.floor(monthlyCredits / 5)}
+              <div className={`p-4 rounded-xl text-center ${
+                isFF
+                  ? 'bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20'
+                  : 'bg-zinc-50 dark:bg-zinc-800/50'
+              }`}>
+                <p className={`text-2xl font-bold ${
+                  isFF
+                    ? 'text-purple-600 dark:text-purple-400'
+                    : 'text-zinc-900 dark:text-white'
+                }`}>
+                  {isFF ? '∞' : `~${Math.floor(monthlyCredits / 5)}`}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">slides</p>
               </div>

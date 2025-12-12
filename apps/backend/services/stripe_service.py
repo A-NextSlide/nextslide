@@ -202,7 +202,7 @@ class StripeService:
             "upgraded": True,
             "plan_id": new_plan_id,
             "subscription_id": subscription_id,
-            "redirect_url": success_url or f"{frontend_url}/profile?billing=upgraded"
+            "redirect_url": success_url or f"{frontend_url}/profile?tab=billing&billing=upgraded"
         }
 
     async def create_checkout_session(
@@ -261,7 +261,7 @@ class StripeService:
                 "quantity": 1
             }],
             mode="subscription",
-            success_url=success_url or f"{frontend_url}/profile?billing=success",
+            success_url=success_url or f"{frontend_url}/profile?tab=billing&billing=success",
             cancel_url=cancel_url or f"{frontend_url}/pricing?canceled=true",
             metadata={
                 "user_id": user_id,
@@ -290,17 +290,27 @@ class StripeService:
         sub = db.table("subscriptions").select("stripe_customer_id").eq("user_id", user_id).single().execute()
 
         if not sub.data or not sub.data.get("stripe_customer_id"):
-            raise ValueError("No Stripe customer found for user")
+            raise ValueError("No Stripe customer found for user. Please subscribe to a plan first.")
 
         frontend_url = _get_frontend_url()
-        session = stripe.billing_portal.Session.create(
-            customer=sub.data["stripe_customer_id"],
-            return_url=f"{frontend_url}/profile?tab=billing"
-        )
 
-        return {
-            "url": session.url
-        }
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=sub.data["stripe_customer_id"],
+                return_url=f"{frontend_url}/profile?tab=billing"
+            )
+            return {"url": session.url}
+        except stripe.error.InvalidRequestError as e:
+            # Customer doesn't exist in Stripe (maybe from different test/live mode)
+            if "No such customer" in str(e):
+                # Clear the invalid customer ID
+                db.table("subscriptions").update({
+                    "stripe_customer_id": None,
+                    "stripe_subscription_id": None
+                }).eq("user_id", user_id).execute()
+                logger.warning(f"Cleared invalid Stripe customer for user {user_id}")
+                raise ValueError("Your billing account needs to be re-linked. Please subscribe to a plan.")
+            raise
 
     async def handle_webhook(self, payload: bytes, signature: str) -> Dict[str, Any]:
         """Handle Stripe webhook events."""
@@ -346,16 +356,42 @@ class StripeService:
             logger.warning("No user_id in checkout session metadata")
             return
 
+        plan_id = session.get("metadata", {}).get("plan_id", "starter")
         db = self._get_db()
+        now = datetime.utcnow()
 
-        # Update subscription with Stripe IDs
-        db.table("subscriptions").update({
+        # Plan credits mapping
+        plan_credits = {
+            "free": 50,
+            "starter": 1000,
+            "pro": 2000,
+            "enterprise": 100000
+        }
+
+        # Update subscription with Stripe IDs AND plan details
+        sub_result = db.table("subscriptions").update({
             "stripe_subscription_id": session.get("subscription"),
             "stripe_customer_id": session.get("customer"),
-            "status": "active"
+            "plan_id": plan_id,
+            "status": "active",
+            "updated_at": now.isoformat()
         }).eq("user_id", user_id).execute()
 
-        logger.info(f"Checkout completed for user {user_id}")
+        if not sub_result.data:
+            logger.warning(f"Checkout: subscriptions update returned no data for user {user_id}")
+
+        # Also update credits immediately
+        monthly_credits = plan_credits.get(plan_id, 100)
+        credits_result = db.table("credit_balances").update({
+            "monthly_credits": monthly_credits,
+            "used_credits": 0,
+            "updated_at": now.isoformat()
+        }).eq("user_id", user_id).execute()
+
+        if not credits_result.data:
+            logger.warning(f"Checkout: credit_balances update returned no data for user {user_id}")
+
+        logger.info(f"Checkout completed for user {user_id}: plan={plan_id}, credits={monthly_credits}")
 
     async def _handle_subscription_created(self, subscription: Dict[str, Any]):
         """Handle new subscription created."""
@@ -416,7 +452,34 @@ class StripeService:
             logger.warning("Could not find user for subscription")
             return
 
-        plan_id = subscription.get("metadata", {}).get("plan_id", "pro")
+        # Get plan_id from subscription metadata, with fallbacks
+        plan_id = subscription.get("metadata", {}).get("plan_id")
+
+        # Fallback: check price/plan metadata
+        if not plan_id:
+            items = subscription.get("items", {})
+            if items and items.get("data"):
+                price = items["data"][0].get("price", {})
+                price_metadata = price.get("metadata", {})
+                plan_id = price_metadata.get("plan_id")
+
+        # Ultimate fallback based on price amount
+        if not plan_id:
+            items = subscription.get("items", {})
+            if items and items.get("data"):
+                price = items["data"][0].get("price", {})
+                amount = price.get("unit_amount", 0)
+                # $9.99 = 999 cents = starter, $19.99 = 1999 cents = pro
+                if amount >= 1999:
+                    plan_id = "pro"
+                elif amount >= 999:
+                    plan_id = "starter"
+                else:
+                    plan_id = "pro"  # Default to pro if unclear
+            else:
+                plan_id = "pro"
+
+        logger.info(f"Webhook: Resolved plan_id={plan_id} for user {user_id}")
 
         # Check for Friends & Family coupon (100% off forever)
         is_friends_family = False
@@ -645,8 +708,36 @@ class StripeService:
 
             sub = subscriptions.data[0]
 
-            # Get plan_id from metadata or price
-            plan_id = sub.metadata.get("plan_id", "starter")
+            # Get plan_id from subscription metadata, falling back to price metadata
+            plan_id = None
+
+            # Try subscription metadata first (dict-like or attribute access)
+            if hasattr(sub, 'metadata') and sub.metadata:
+                plan_id = sub.metadata.get("plan_id") if hasattr(sub.metadata, 'get') else sub.metadata.get("plan_id")
+
+            # Fallback: check price/plan metadata
+            if not plan_id and sub.get("items") and sub["items"].get("data"):
+                price = sub["items"]["data"][0].get("price", {})
+                price_metadata = price.get("metadata", {})
+                plan_id = price_metadata.get("plan_id")
+
+            # Ultimate fallback based on price amount
+            if not plan_id:
+                # Get price from subscription
+                if sub.get("items") and sub["items"].get("data"):
+                    price = sub["items"]["data"][0].get("price", {})
+                    amount = price.get("unit_amount", 0)
+                    # $9.99 = 999 cents = starter, $19.99 = 1999 cents = pro
+                    if amount >= 1999:
+                        plan_id = "pro"
+                    elif amount >= 999:
+                        plan_id = "starter"
+                    else:
+                        plan_id = "starter"
+                else:
+                    plan_id = "starter"
+
+            logger.info(f"Sync: Resolved plan_id={plan_id} for user {user_id} (customer={customer_id})")
 
             # Calculate period dates
             now = datetime.utcnow()
@@ -663,7 +754,7 @@ class StripeService:
             }
 
             # Update subscription
-            db.table("subscriptions").update({
+            sub_update_result = db.table("subscriptions").update({
                 "plan_id": plan_id,
                 "status": "active",
                 "stripe_subscription_id": sub.id,
@@ -673,16 +764,23 @@ class StripeService:
                 "updated_at": now.isoformat()
             }).eq("user_id", user_id).execute()
 
+            if not sub_update_result.data:
+                logger.warning(f"Sync: subscriptions update returned no data for user {user_id}")
+
             # Update credit balance
-            db.table("credit_balances").update({
-                "monthly_credits": plan_credits.get(plan_id, 100),
+            monthly_credits = plan_credits.get(plan_id, 100)
+            credits_update_result = db.table("credit_balances").update({
+                "monthly_credits": monthly_credits,
                 "used_credits": 0,  # Reset for new subscription
                 "period_start": period_start.isoformat(),
                 "period_end": period_end.isoformat(),
                 "updated_at": now.isoformat()
             }).eq("user_id", user_id).execute()
 
-            logger.info(f"Synced subscription for user {user_id}: plan={plan_id}")
+            if not credits_update_result.data:
+                logger.warning(f"Sync: credit_balances update returned no data for user {user_id}")
+
+            logger.info(f"Synced subscription for user {user_id}: plan={plan_id}, credits={monthly_credits}")
 
             return {
                 "synced": True,
