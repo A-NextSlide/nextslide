@@ -1224,77 +1224,9 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
               </div>
             )}
 
-            {/* Chat Blocks: Theme & Outline - show after last assistant message in planning */}
+            {/* Chat Blocks: Outline & Theme - show after last assistant message in planning */}
             {message.role === 'assistant' && index === messages.length - 1 && (stage === 'planning' || stage === 'slide_mode_selection') && (themeBlock || outlineBlock) && (
               <div className="mt-4 mb-3 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {/* Theme Block */}
-                {themeBlock && (
-                  <ThemeChatBlock
-                    data={{
-                      colors: {
-                        background: themeBlock.colors.primary_background,
-                        text: themeBlock.colors.primary_text,
-                        accent: themeBlock.colors.accent_1,
-                      },
-                      fonts: {
-                        heading: themeBlock.typography.headingFont,
-                        body: themeBlock.typography.bodyFont,
-                      },
-                      logo: themeBlock.branding?.logoUrl,
-                      brandName: themeBlock.branding?.brandName || themeBlock.vibeContext,
-                    }}
-                    onColorChange={(key, hex) => {
-                      const colorMap = { background: 'primary_background', text: 'primary_text', accent: 'accent_1' };
-                      handleThemeColorChange(colorMap[key], hex);
-                    }}
-                    onFontChange={(type, font) => {
-                      setThemeBlock(prev => prev ? {
-                        ...prev,
-                        typography: {
-                          ...prev.typography,
-                          [type === 'heading' ? 'headingFont' : 'bodyFont']: font,
-                        }
-                      } : prev);
-                      // Also update outlineFlow
-                      if (outlineFlow) {
-                        setOutlineFlow(prev => prev ? {
-                          ...prev,
-                          theme: {
-                            ...prev.theme,
-                            typography: {
-                              ...(prev.theme?.typography || {}),
-                              [type === 'heading' ? 'hero_title' : 'body_text']: { family: font }
-                            }
-                          }
-                        } : prev);
-                      }
-                    }}
-                    onLogoChange={(url) => {
-                      setThemeBlock(prev => prev ? {
-                        ...prev,
-                        branding: { ...prev.branding, logoUrl: url || undefined }
-                      } : prev);
-                      if (outlineFlow) {
-                        setOutlineFlow(prev => prev ? {
-                          ...prev,
-                          theme: {
-                            ...prev.theme,
-                            logo: url ? { url } : undefined
-                          }
-                        } : prev);
-                      }
-                    }}
-                    onBrandNameChange={(name) => {
-                      setThemeBlock(prev => prev ? {
-                        ...prev,
-                        branding: { ...prev.branding, brandName: name }
-                      } : prev);
-                    }}
-                    isEditable={!isProcessing}
-                    isLoading={isThemeLoading}
-                  />
-                )}
-
                 {/* Outline Block - Dropdown with editable content */}
                 {outlineBlock && (
                   <DropdownOutlineChatBlock
@@ -1442,6 +1374,74 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
                       }
                     }}
                     isEditable={!isProcessing}
+                  />
+                )}
+
+                {/* Theme Block */}
+                {themeBlock && (
+                  <ThemeChatBlock
+                    data={{
+                      colors: {
+                        background: themeBlock.colors.primary_background,
+                        text: themeBlock.colors.primary_text,
+                        accent: themeBlock.colors.accent_1,
+                      },
+                      fonts: {
+                        heading: themeBlock.typography.headingFont,
+                        body: themeBlock.typography.bodyFont,
+                      },
+                      logo: themeBlock.branding?.logoUrl,
+                      brandName: themeBlock.branding?.brandName || themeBlock.vibeContext,
+                    }}
+                    onColorChange={(key, hex) => {
+                      const colorMap = { background: 'primary_background', text: 'primary_text', accent: 'accent_1' };
+                      handleThemeColorChange(colorMap[key], hex);
+                    }}
+                    onFontChange={(type, font) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        typography: {
+                          ...prev.typography,
+                          [type === 'heading' ? 'headingFont' : 'bodyFont']: font,
+                        }
+                      } : prev);
+                      // Also update outlineFlow
+                      if (outlineFlow) {
+                        setOutlineFlow(prev => prev ? {
+                          ...prev,
+                          theme: {
+                            ...prev.theme,
+                            typography: {
+                              ...(prev.theme?.typography || {}),
+                              [type === 'heading' ? 'hero_title' : 'body_text']: { family: font }
+                            }
+                          }
+                        } : prev);
+                      }
+                    }}
+                    onLogoChange={(url) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        branding: { ...prev.branding, logoUrl: url || undefined }
+                      } : prev);
+                      if (outlineFlow) {
+                        setOutlineFlow(prev => prev ? {
+                          ...prev,
+                          theme: {
+                            ...prev.theme,
+                            logo: url ? { url } : undefined
+                          }
+                        } : prev);
+                      }
+                    }}
+                    onBrandNameChange={(name) => {
+                      setThemeBlock(prev => prev ? {
+                        ...prev,
+                        branding: { ...prev.branding, brandName: name }
+                      } : prev);
+                    }}
+                    isEditable={!isProcessing}
+                    isLoading={isThemeLoading}
                   />
                 )}
               </div>
