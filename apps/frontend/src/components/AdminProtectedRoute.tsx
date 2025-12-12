@@ -4,6 +4,7 @@ import { useAuth } from '@/context/SupabaseAuthContext';
 import { authService } from '@/services/authService';
 import LoadingDisplay from '@/components/common/LoadingDisplay';
 import { supabase } from '@/integrations/supabase/client';
+import { API_CONFIG } from '@/config/environment';
 
 interface AdminProtectedRouteProps {
   children: React.ReactNode;
@@ -46,7 +47,8 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
           setVerified(false);
           return;
         }
-        const res = await fetch('/api/admin/check', {
+        const apiBase = API_CONFIG.BASE_URL.replace(/\/$/, '');
+        const res = await fetch(`${apiBase}/admin/check`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (!res.ok) {
