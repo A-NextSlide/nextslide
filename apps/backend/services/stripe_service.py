@@ -418,6 +418,15 @@ class StripeService:
 
         plan_id = subscription.get("metadata", {}).get("plan_id", "pro")
 
+        # Check for Friends & Family coupon (100% off forever)
+        is_friends_family = False
+        discount = subscription.get("discount")
+        if discount and discount.get("coupon"):
+            coupon_id = discount["coupon"].get("id", "")
+            if coupon_id == "WOOHOOFREESLIDES":
+                is_friends_family = True
+                logger.info(f"User {user_id} has Friends & Family coupon - granting unlimited credits")
+
         # Map Stripe status to our status
         status_map = {
             "active": "active",
@@ -450,8 +459,11 @@ class StripeService:
             "enterprise": 100000  # Effectively unlimited
         }
 
+        # Friends & Family get unlimited credits (-1 = infinite)
+        monthly_credits = -1 if is_friends_family else plan_credits.get(plan_id, 100)
+
         db.table("credit_balances").update({
-            "monthly_credits": plan_credits.get(plan_id, 100),
+            "monthly_credits": monthly_credits,
             "period_end": datetime.fromtimestamp(subscription["current_period_end"]).isoformat(),
             "updated_at": now.isoformat()
         }).eq("user_id", user_id).execute()

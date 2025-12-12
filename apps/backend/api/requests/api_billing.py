@@ -55,6 +55,8 @@ class CreditBalanceResponse(BaseModel):
     overage_credits: int = 0
     overage_cost_cents: int = 0
     can_use_overage: bool = False
+    # Friends & Family (WOOHOOFREESLIDES coupon)
+    is_friends_family: bool = False
 
 
 class UsageStatsResponse(BaseModel):
@@ -125,13 +127,20 @@ async def get_credit_balance(user: dict = Depends(get_current_user)):
     if not balance:
         raise HTTPException(status_code=404, detail="Balance not found")
 
+    # Check for Friends & Family (unlimited credits = -1)
+    is_friends_family = balance.monthly_credits == -1
+
     # Estimate slides (avg 5 credits per slide)
-    estimated_slides = balance.remaining_credits // 5
-    estimated_presentations = estimated_slides // 8  # Avg 8 slides per presentation
+    if is_friends_family:
+        estimated_slides = 999999  # Unlimited
+        estimated_presentations = 999999
+    else:
+        estimated_slides = balance.remaining_credits // 5
+        estimated_presentations = estimated_slides // 8  # Avg 8 slides per presentation
 
     # Get overage info for Pro users
     overage_credits, overage_cost_cents = 0, 0
-    can_use_overage = balance.plan_id == "pro"
+    can_use_overage = balance.plan_id == "pro" and not is_friends_family
     if can_use_overage:
         overage_credits, overage_cost_cents = await billing.get_overage(user["id"])
 
@@ -147,7 +156,8 @@ async def get_credit_balance(user: dict = Depends(get_current_user)):
         estimated_presentations=estimated_presentations,
         overage_credits=overage_credits,
         overage_cost_cents=overage_cost_cents,
-        can_use_overage=can_use_overage
+        can_use_overage=can_use_overage,
+        is_friends_family=is_friends_family
     )
 
 

@@ -670,42 +670,79 @@ const Profile: React.FC = () => {
                         {/* Credits Progress */}
                         {billingBalance && (
                           <div className="space-y-3">
-                            <div className="flex items-end justify-between">
-                              <div>
-                                <p className="text-sm text-muted-foreground mb-1">Credits</p>
-                                <p className="text-2xl font-medium tabular-nums">
-                                  {billingBalance.remaining_credits}
-                                  <span className="text-base text-muted-foreground font-normal">
-                                    {' '}/ {billingBalance.monthly_credits + billingBalance.purchased_credits}
-                                  </span>
-                                  {billingBalance.purchased_credits > 0 && (
-                                    <span className="ml-2 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
-                                      +{billingBalance.purchased_credits} bonus
+                            {/* Friends & Family Special Display */}
+                            {billingBalance.is_friends_family ? (
+                              <div className="relative">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm text-muted-foreground mb-1">Credits</p>
+                                    <p className="text-4xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+                                      ∞
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-pink-100 to-purple-100 dark:from-pink-900/30 dark:to-purple-900/30 text-sm font-medium text-purple-700 dark:text-purple-300">
+                                      <span className="text-lg">💜</span> Friends & Family
                                     </span>
-                                  )}
-                                </p>
+                                  </div>
+                                </div>
+
+                                {/* Fun message card */}
+                                <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-pink-50 via-purple-50 to-indigo-50 dark:from-pink-900/20 dark:via-purple-900/20 dark:to-indigo-900/20 border border-purple-200 dark:border-purple-800">
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-3xl animate-bounce">🎉</div>
+                                    <div>
+                                      <p className="font-bold text-purple-900 dark:text-purple-100" style={{ fontFamily: '"Comic Sans MS", cursive, sans-serif' }}>
+                                        Wow! Ahmed must really love you!
+                                      </p>
+                                      <p className="text-sm text-purple-600 dark:text-purple-400 mt-1">
+                                        You have unlimited credits forever. Go wild! 🚀
+                                      </p>
+                                    </div>
+                                    <div className="text-3xl animate-bounce" style={{ animationDelay: '0.1s' }}>✨</div>
+                                  </div>
+                                </div>
                               </div>
-                              {billingBalance.period_end && (
-                                <p className="text-sm text-muted-foreground">
-                                  Resets {new Date(billingBalance.period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </p>
-                              )}
-                            </div>
+                            ) : (
+                              <>
+                                <div className="flex items-end justify-between">
+                                  <div>
+                                    <p className="text-sm text-muted-foreground mb-1">Credits</p>
+                                    <p className="text-2xl font-medium tabular-nums">
+                                      {billingBalance.remaining_credits}
+                                      <span className="text-base text-muted-foreground font-normal">
+                                        {' '}/ {billingBalance.monthly_credits + billingBalance.purchased_credits}
+                                      </span>
+                                      {billingBalance.purchased_credits > 0 && (
+                                        <span className="ml-2 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
+                                          +{billingBalance.purchased_credits} bonus
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                  {billingBalance.period_end && (
+                                    <p className="text-sm text-muted-foreground">
+                                      Resets {new Date(billingBalance.period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </p>
+                                  )}
+                                </div>
 
-                            <div className="h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-zinc-900 dark:bg-zinc-300 rounded-full transition-all duration-500"
-                                style={{
-                                  width: `${Math.min(100, (billingBalance.remaining_credits / (billingBalance.monthly_credits + billingBalance.purchased_credits)) * 100)}%`
-                                }}
-                              />
-                            </div>
+                                <div className="h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-zinc-900 dark:bg-zinc-300 rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min(100, (billingBalance.remaining_credits / (billingBalance.monthly_credits + billingBalance.purchased_credits)) * 100)}%`
+                                    }}
+                                  />
+                                </div>
 
-                            {/* Overage availability for Pro (when no overages yet) */}
-                            {billingBalance.can_use_overage && billingBalance.overage_credits === 0 && (
-                              <p className="text-sm text-muted-foreground">
-                                Pro plan: Additional credits available at $0.03 each
-                              </p>
+                                {/* Overage availability for Pro (when no overages yet) */}
+                                {billingBalance.can_use_overage && billingBalance.overage_credits === 0 && (
+                                  <p className="text-sm text-muted-foreground">
+                                    Pro plan: Additional credits available at $0.03 each
+                                  </p>
+                                )}
+                              </>
                             )}
                           </div>
                         )}
@@ -754,8 +791,8 @@ const Profile: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Upgrade prompt for free users */}
-                      {billingSubscription?.plan_id === 'free' && (
+                      {/* Upgrade prompt for free users (but not F&F) */}
+                      {billingSubscription?.plan_id === 'free' && !billingBalance?.is_friends_family && (
                         <div className="p-4 bg-gradient-to-r from-zinc-100 to-zinc-50 dark:from-zinc-800/50 dark:to-zinc-800/30 rounded-lg border border-zinc-200 dark:border-zinc-700">
                           <div className="flex items-start gap-3">
                             <Zap className="h-5 w-5 text-amber-500 mt-0.5" />

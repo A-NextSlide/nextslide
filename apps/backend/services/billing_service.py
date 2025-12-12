@@ -168,7 +168,11 @@ class BillingService:
                 except Exception as reset_err:
                     logger.warning(f"Failed to reset expired period for user {user_id}: {reset_err}")
 
-            remaining = max(0, (balance["monthly_credits"] + balance["purchased_credits"]) - balance["used_credits"])
+            # -1 monthly_credits = unlimited (Friends & Family)
+            if balance["monthly_credits"] == -1:
+                remaining = -1  # Infinite
+            else:
+                remaining = max(0, (balance["monthly_credits"] + balance["purchased_credits"]) - balance["used_credits"])
 
             return CreditBalance(
                 user_id=user_id,
@@ -226,6 +230,11 @@ class BillingService:
             return False, 0, 0
 
         cost = self.get_credit_cost(action)
+
+        # Unlimited credits (-1) = always has credits
+        if balance.remaining_credits == -1:
+            return True, cost, -1
+
         has_credits = balance.remaining_credits >= cost
 
         return has_credits, cost, balance.remaining_credits
@@ -264,6 +273,11 @@ class BillingService:
             balance = await self.get_user_balance(user_id)
             if not balance:
                 return False, 0, 0
+
+            # Unlimited credits (-1) = Friends & Family, don't deduct
+            if balance.remaining_credits == -1:
+                logger.info(f"User {user_id} has unlimited credits (Friends & Family) - no deduction for {action.value}")
+                return True, -1, 0
 
             new_remaining = balance.remaining_credits - cost
             overage = 0

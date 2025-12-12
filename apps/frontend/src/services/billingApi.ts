@@ -26,6 +26,8 @@ interface CreditBalance {
   overage_credits: number;
   overage_cost_cents: number;
   can_use_overage: boolean;
+  // Friends & Family (unlimited credits)
+  is_friends_family: boolean;
 }
 
 interface UsageStats {
