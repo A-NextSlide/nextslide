@@ -84,9 +84,7 @@ class StripeService:
     def _check_stripe_available(self):
         """Check if Stripe is properly configured."""
         if not _ensure_stripe_configured():
-            key = _get_stripe_key()
-            key_preview = f"{key[:8]}..." if key else "None"
-            raise ValueError(f"Stripe not configured. STRIPE_AVAILABLE={STRIPE_AVAILABLE}, key={key_preview}")
+            raise ValueError("Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.")
 
     async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
         """Get or create a Stripe customer for a user."""

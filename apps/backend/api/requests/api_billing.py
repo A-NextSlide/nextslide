@@ -336,9 +336,8 @@ async def create_checkout(request: CheckoutRequest, user: dict = Depends(get_cur
         logger.error(f"Checkout config error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Checkout error: {e}", exc_info=True)
-        # Show actual error for debugging (can hide later)
-        raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
+        logger.error(f"Checkout error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
 
 @router.post("/portal", response_model=PortalResponse)
