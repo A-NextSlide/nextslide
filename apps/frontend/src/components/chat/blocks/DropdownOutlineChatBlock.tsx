@@ -65,6 +65,30 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragNodeRef = useRef<HTMLDivElement | null>(null);
 
+  // Scroll container ref for boundary detection
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Handle wheel events to allow scroll pass-through at boundaries
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const isAtTop = scrollTop === 0;
+    const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 1;
+    const isScrollingUp = e.deltaY < 0;
+    const isScrollingDown = e.deltaY > 0;
+
+    // Allow scroll to pass through to parent when at boundaries
+    if ((isAtTop && isScrollingUp) || (isAtBottom && isScrollingDown)) {
+      // Don't prevent default - let it bubble to parent
+      return;
+    }
+
+    // Otherwise, stop propagation to prevent parent from scrolling
+    e.stopPropagation();
+  }, []);
+
   const toggleSlide = useCallback(async (slideId: string) => {
     const slide = data.slides.find(s => s.id === slideId);
     if (!slide) return;
@@ -249,7 +273,11 @@ const DropdownOutlineChatBlock: React.FC<DropdownOutlineChatBlockProps> = ({
       </div>
 
       {/* Slide list */}
-      <div className="max-h-[400px] overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        onWheel={handleWheel}
+        className="max-h-[400px] overflow-y-auto"
+      >
         {data.slides.map((slide, index) => {
           const isExpanded = expandedSlides.has(slide.id);
           const isLoading = loadingSlides.has(slide.id);
