@@ -72,11 +72,23 @@ RULES:
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
 CRITICAL: TARGETED EDITS vs FULL REWRITES
-- If user asks for a small change (color, wording, spacing, move, resize), DO NOT rewrite the whole slide/HTML.
-- Prefer surgical tools when available:
-  - custom_component_str_replace (CustomComponent HTML search/replace)
-  - component_prop_update (mechanical prop merge)
-- Only use full rewrite flows when user explicitly asks: "redesign", "redo", "rebuild", "from scratch", "completely different".
+
+USE edit_slide (FULL REWRITE) when:
+- User wants to change branding/co-brand ("make it co-branded with X", "rebrand")
+- User wants significant visual changes ("make it nicer", "improve the design", "more professional")
+- User wants to change the theme/style/look ("different style", "change the theme")
+- User wants to add/remove multiple elements
+- User explicitly asks: "redesign", "redo", "rebuild", "from scratch", "completely different", "overhaul"
+- The change affects the overall look/feel of the slide
+
+USE custom_component_str_replace (SURGICAL EDIT) ONLY when:
+- User wants ONE specific text change ("change 'Hello' to 'Hi'")
+- User wants to fix ONE color ("make the title red")
+- User wants to update ONE URL or image path
+- The change is literally replacing one string with another
+
+⚠️ DO NOT use multiple str_replace operations for substantial changes!
+If you find yourself needing 3+ str_replace operations, use edit_slide instead.
 
 CRITICAL - EMPTY SLIDE HANDLING:
 If the current slide only has a Background (or is empty), and user wants content:
@@ -84,14 +96,14 @@ If the current slide only has a Background (or is empty), and user wants content
 → The tool will generate full content for the empty slide
 
 TOOL SELECTION:
-- edit_slide: Edit/add content to existing slide (handles empty slides too!)
+- edit_slide: Edit/add content to existing slide (handles empty slides too!) - USE FOR MOST EDITS
 - create_slide: Create a NEW slide (adds to deck)
 - delete_slide: Remove a slide
 - edit_component: Edit a specific component by ID
 - create_component: Add a component to a slide
 - delete_component: Remove a component
 - apply_theme: Change colors/fonts across deck
-- custom_component_str_replace: Surgical HTML edit for an existing CustomComponent
+- custom_component_str_replace: ONLY for single, specific string replacements in HTML
 - component_prop_update: Mechanical prop update for an existing component
 - view_component: Inspect a component's current props/HTML preview before surgical edits
 """
@@ -276,11 +288,12 @@ COMPONENTS:
 TOOL_DESCRIPTIONS = """
 AVAILABLE TOOLS:
 
-1. edit_slide
-   - Edit content on the current slide
+1. edit_slide ⭐ PREFERRED FOR MOST EDITS
+   - Edit content on the current slide (AI rewrites the component)
+   - Use for: branding changes, design improvements, style changes, adding/removing elements
    - If slide is empty, generates new content
    - Args: { "slide_id": str, "instruction": str }
-   - Example: {"slide_id": "abc", "instruction": "Add a title saying 'Welcome' and 3 bullet points about AI"}
+   - Example: {"slide_id": "abc", "instruction": "Make this co-branded with Nike, use their colors and add their logo"}
 
 2. create_slide
    - Create a brand new slide (adds to deck)
@@ -318,9 +331,11 @@ AVAILABLE TOOLS:
    - Args: { "instruction": str }
    - Example: {"instruction": "Use Apple's brand colors"}
 
-10. custom_component_str_replace
-   - Surgical edit for CustomComponent HTML (Cursor-style search/replace)
-   - WHEN: User wants a small change (wording/color/class tweak) on an existing CustomComponent
+10. custom_component_str_replace ⚠️ USE SPARINGLY
+   - Surgical edit for CustomComponent HTML (single search/replace)
+   - ONLY use when: changing ONE specific string (e.g., ONE word, ONE color, ONE URL)
+   - DO NOT use for: branding changes, design improvements, multiple changes
+   - If you need 2+ str_replace calls, use edit_slide instead!
    - Args: { "slide_id": str, "component_id": str, "old_string": str, "new_string": str }
 
 11. component_prop_update
@@ -465,6 +480,10 @@ Respond with the tool_calls to execute."""
         summaries: List[str] = []
         observations: List[Dict[str, Any]] = []
 
+        # Track accumulated component updates so sequential str_replace ops see previous results
+        # Key: component_id, Value: latest props dict (especially 'render' for CustomComponent)
+        accumulated_props: Dict[str, Dict[str, Any]] = {}
+
         for tool_call in tool_calls or []:
             tool_name = tool_call.tool_name
             tool_args = tool_call.tool_args
@@ -478,12 +497,27 @@ Respond with the tool_calls to execute."""
 
             logger.info(f"[ORCHESTRATOR] Executing tool: {tool_name}")
 
+            # CRITICAL FIX: For str_replace operations, use accumulated HTML from previous ops
+            # This prevents each operation from reading stale original HTML
+            effective_slide = current_slide
+            if tool_name == "custom_component_str_replace" and accumulated_props:
+                comp_id = tool_args.get("component_id")
+                if comp_id and comp_id in accumulated_props:
+                    # Create a patched slide with the accumulated props
+                    import copy
+                    effective_slide = copy.deepcopy(current_slide)
+                    for c in (effective_slide.get("components") or []):
+                        if isinstance(c, dict) and c.get("id") == comp_id:
+                            c["props"] = accumulated_props[comp_id]
+                            break
+                    logger.info(f"[ORCHESTRATOR] Using accumulated HTML for {comp_id} ({len(accumulated_props[comp_id].get('render', ''))} chars)")
+
             try:
                 tool_diff = execute_tool(
                     tool_name=tool_name,
                     tool_args=tool_args,
                     deck_data=deck_data,
-                    current_slide=current_slide,
+                    current_slide=effective_slide,
                     registry=registry,
                     attachments=attachments,
                 )
@@ -498,6 +532,29 @@ Respond with the tool_calls to execute."""
 
                 if tool_diff:
                     dd = dd.merge(tool_diff)
+
+                    # CRITICAL: Track accumulated props for sequential operations
+                    # Extract updated props from the diff so next operations see the changes
+                    try:
+                        for slide_diff in (tool_diff.deck_diff.slides_to_update or []):
+                            for comp_diff in (getattr(slide_diff, 'components_to_update', None) or []):
+                                comp_id = getattr(comp_diff, 'id', None)
+                                comp_props = getattr(comp_diff, 'props', None)
+                                if comp_id and comp_props:
+                                    # Get existing accumulated props and merge
+                                    existing = accumulated_props.get(comp_id, {})
+                                    if hasattr(comp_props, 'model_dump'):
+                                        new_props = comp_props.model_dump(exclude_none=True)
+                                    elif hasattr(comp_props, 'dict'):
+                                        new_props = comp_props.dict(exclude_none=True)
+                                    elif isinstance(comp_props, dict):
+                                        new_props = comp_props
+                                    else:
+                                        new_props = {}
+                                    accumulated_props[comp_id] = {**existing, **new_props}
+                                    logger.info(f"[ORCHESTRATOR] Accumulated props for {comp_id}: {list(new_props.keys())}")
+                    except Exception as e:
+                        logger.warning(f"[ORCHESTRATOR] Failed to accumulate props: {e}")
 
                 summaries.append(tool_call.summary)
 

@@ -362,10 +362,19 @@ def edit_slide(
         for a in (attachments or [])
     )
     rewrite_keywords = [
+        # Explicit rewrite requests
         "redesign", "redo", "rebuild", "from scratch", "start over",
         "completely different", "entirely different", "make it totally different",
         "overhaul", "transform",
         "replace the current", "match the image", "like the image", "use the image",
+        # Branding changes (always need full rewrite)
+        "co-brand", "cobrand", "rebrand", "brand with", "branded with",
+        "add their logo", "add the logo", "use their logo",
+        # Significant visual changes
+        "make it nicer", "make it better", "improve the design",
+        "more professional", "more modern", "update the style",
+        "change the look", "change the style", "different style",
+        "make it look", "make this look",
     ]
     wants_rewrite = any(k in instruction_l for k in rewrite_keywords) or ("img_" in instruction_l) or (".jpeg" in instruction_l) or (".png" in instruction_l)
 
