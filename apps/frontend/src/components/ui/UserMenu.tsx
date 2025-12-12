@@ -15,6 +15,7 @@ import { User, LogOut, Settings, HelpCircle, Shield, Users, Plug } from 'lucide-
 import { useNavigate } from 'react-router-dom';
 import { authService } from '@/services/authService';
 import { IntegrationsDialog } from '@/components/integrations';
+import { API_CONFIG } from '@/config/environment';
 
 export function UserMenu() {
   const { user, signOut, isAuthenticated, isAdmin, adminRole, refreshAdminStatus } = useAuth();
@@ -30,7 +31,8 @@ export function UserMenu() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) return;
-      const res = await fetch('/api/admin/check', {
+      const apiBase = API_CONFIG.BASE_URL.replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/admin/check`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) return;

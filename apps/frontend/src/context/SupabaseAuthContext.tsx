@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { authService } from '@/services/authService';
 import { authRecoveryService } from '@/services/authRecoveryService';
+import { API_CONFIG } from '@/config/environment';
 
 interface AuthContextType {
   user: User | null;
@@ -72,7 +73,8 @@ export const SupabaseAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const { data: { session: current } } = await supabase.auth.getSession();
           const token = current?.access_token;
           if (!token) throw new Error('Missing auth token for admin check');
-          const response = await fetch('/api/admin/check', {
+          const apiBase = API_CONFIG.BASE_URL.replace(/\/$/, '');
+          const response = await fetch(`${apiBase}/admin/check`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,

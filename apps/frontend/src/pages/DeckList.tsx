@@ -114,7 +114,8 @@ const DeckList: React.FC = () => {
         const token = session?.access_token;
         if (token) {
           try {
-            await fetch('/api/admin/check', {
+            const apiBase = API_CONFIG.BASE_URL.replace(/\/$/, '');
+            await fetch(`${apiBase}/admin/check`, {
               method: 'GET',
               headers: { 'Authorization': `Bearer ${token}` },
             });
