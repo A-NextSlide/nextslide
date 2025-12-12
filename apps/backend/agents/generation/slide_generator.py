@@ -1428,7 +1428,8 @@ class SlideGeneratorV2(ISlideGenerator):
             position={'x': 0, 'y': 0},
             external_media=external_media,
             uploaded_media=uploaded_media,
-            reference_images=context.reference_images  # Design reference images (e.g., PPT screenshots)
+            reference_images=context.reference_images,  # Design reference images (e.g., PPT screenshots)
+            available_videos=context.available_videos  # Scraped videos from VideoScraper
         )
 
         if enhanced:

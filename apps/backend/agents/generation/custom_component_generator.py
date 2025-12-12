@@ -691,7 +691,8 @@ class CustomComponentGenerator:
         uploaded_media: Optional[list] = None,
         prefetched_images: Optional[Dict[str, str]] = None,
         auto_prefetch: bool = True,
-        reference_images: Optional[List[str]] = None
+        reference_images: Optional[List[str]] = None,
+        available_videos: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate a creative CustomComponent.
@@ -719,6 +720,9 @@ class CustomComponentGenerator:
             reference_images: Optional list of design reference image URLs (e.g., PPT screenshots)
                 - These are NOT for placing on the slide
                 - AI should analyze these to match the design style, layout, and visual patterns
+            available_videos: Optional list of scraped video dicts from VideoScraper:
+                - Each item has: url, title, thumbnail, platform, embed_url
+                - AI can embed these videos using iframe or video tags
 
         Returns:
             CustomComponent dict with type, props, position, etc.
@@ -868,7 +872,8 @@ class CustomComponentGenerator:
                     prefetched_images=prefetched_images,
                     reference_images=reference_images,
                     logo_url=logo_url,
-                    logo_needs_invert=logo_needs_invert
+                    logo_needs_invert=logo_needs_invert,
+                    available_videos=available_videos
                 )
 
             # Get client and generate
@@ -1418,7 +1423,8 @@ OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
         prefetched_images: Optional[Dict[str, str]] = None,
         reference_images: Optional[List[str]] = None,
         logo_url: Optional[str] = None,
-        logo_needs_invert: bool = False
+        logo_needs_invert: bool = False,
+        available_videos: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """Build the user prompt with full context."""
 
@@ -1497,6 +1503,30 @@ DESIGN REFERENCES (study for inspiration - extract colors, layout, typography, i
             external_media_section = f"""
 EXTERNAL MEDIA (use these URLs directly):
 {chr(10).join(media_list)}
+"""
+
+        # Build video section for scraped videos (from VideoScraper)
+        video_section = ""
+        if available_videos and len(available_videos) > 0:
+            print(f"[CUSTOM_COMPONENT] 🎬 Including {len(available_videos)} scraped videos in prompt")
+            video_list = []
+            for video in available_videos[:3]:  # Limit to 3 most relevant videos
+                title = video.get('title', 'Video')
+                embed_url = video.get('embed_url', video.get('url', ''))
+                platform = video.get('platform', 'unknown')
+                thumbnail = video.get('thumbnail', '')
+
+                if embed_url:
+                    video_list.append(f"- {title} ({platform}): {embed_url}")
+                    if thumbnail:
+                        video_list.append(f"  Thumbnail: {thumbnail}")
+
+            if video_list:
+                video_section = f"""
+AVAILABLE VIDEOS (embed using iframe - perfect for tutorials, demos, explanations):
+{chr(10).join(video_list)}
+IMPORTANT: When relevant, embed videos using responsive iframes. Example:
+<iframe src="VIDEO_EMBED_URL" style="width:100%; aspect-ratio:16/9; border:none; border-radius:8px;" allowfullscreen></iframe>
 """
 
         # Build uploaded media section for user-uploaded files
@@ -1634,7 +1664,7 @@ Position: corner placement, 40-60px height, no overlap with content.{contrast_wa
         tone_guidance = " Match the content tone." if not design_context_section else ""
 
         return f"""{full_slide_instructions}SLIDE: "{slide_title}" (Slide {slide_index} of {total_slides})
-{design_reference_section}{design_context_section}{external_media_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
+{design_reference_section}{design_context_section}{external_media_section}{video_section}{uploaded_media_section}{prefetched_images_section}{logo_section}
 CONTENT:
 {content}
 
