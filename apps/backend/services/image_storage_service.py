@@ -182,7 +182,15 @@ class ImageStorageService:
                     continue
 
             if content is None:
-                logger.error(f"Failed to download image after all retries: {self._truncate_data_url(image_url)} ({last_error})")
+                # Some domains commonly block image downloads (hotlink protection)
+                # Log at appropriate level based on domain
+                protected_domains = ['vecteezy.com', 'shutterstock.com', 'gettyimages.com', 'istockphoto.com', 'stock.adobe.com']
+                is_protected = any(domain in image_url.lower() for domain in protected_domains)
+
+                if is_protected and "403" in str(last_error):
+                    logger.warning(f"Image download blocked by hotlink protection: {self._truncate_data_url(image_url)}")
+                else:
+                    logger.error(f"Failed to download image after all retries: {self._truncate_data_url(image_url)} ({last_error})")
                 raise Exception(f"Failed to download image: {last_error}")
 
             # CRITICAL: Validate that we actually got an image, not HTML/redirect

@@ -518,16 +518,22 @@ class StripeService:
 
         now = datetime.utcnow()
 
-        # Update subscription
-        db.table("subscriptions").update({
+        # Update subscription - safely access period fields
+        update_data = {
             "plan_id": plan_id,
             "status": status,
             "stripe_subscription_id": subscription["id"],
-            "current_period_start": datetime.fromtimestamp(subscription["current_period_start"]).isoformat(),
-            "current_period_end": datetime.fromtimestamp(subscription["current_period_end"]).isoformat(),
             "cancel_at_period_end": subscription.get("cancel_at_period_end", False),
             "updated_at": now.isoformat()
-        }).eq("user_id", user_id).execute()
+        }
+
+        # Safely add period fields if they exist
+        if subscription.get("current_period_start"):
+            update_data["current_period_start"] = datetime.fromtimestamp(subscription["current_period_start"]).isoformat()
+        if subscription.get("current_period_end"):
+            update_data["current_period_end"] = datetime.fromtimestamp(subscription["current_period_end"]).isoformat()
+
+        db.table("subscriptions").update(update_data).eq("user_id", user_id).execute()
 
         # Update credit allocation based on plan
         plan_credits = {
@@ -540,11 +546,14 @@ class StripeService:
         # Friends & Family get unlimited credits (-1 = infinite)
         monthly_credits = -1 if is_friends_family else plan_credits.get(plan_id, 100)
 
-        db.table("credit_balances").update({
+        credit_update_data = {
             "monthly_credits": monthly_credits,
-            "period_end": datetime.fromtimestamp(subscription["current_period_end"]).isoformat(),
             "updated_at": now.isoformat()
-        }).eq("user_id", user_id).execute()
+        }
+        if subscription.get("current_period_end"):
+            credit_update_data["period_end"] = datetime.fromtimestamp(subscription["current_period_end"]).isoformat()
+
+        db.table("credit_balances").update(credit_update_data).eq("user_id", user_id).execute()
 
         logger.info(f"Updated subscription for user {user_id}: plan={plan_id}, status={status}")
 

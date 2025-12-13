@@ -337,7 +337,7 @@ def _get_model_and_client(task: str = "slide_generate"):
     return get_client(model)
 
 
-def _invoke_with_fallback(client, model, messages, response_model=None, max_tokens=16000):
+def _invoke_with_fallback(client, model, messages, response_model=None, max_tokens=32000):
     """Invoke LLM with automatic fallback on rate limit."""
     try:
         return invoke(
@@ -972,7 +972,9 @@ def custom_component_str_replace(
     props = _get_attr(comp, "props", {}) or {}
     html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
     if old_string not in html:
-        raise ValueError("old_string not found in CustomComponent HTML")
+        # Provide more context about what went wrong
+        html_preview = html[:500] if html else "(empty)"
+        raise ValueError(f"old_string not found in CustomComponent HTML. Searched for: '{old_string[:100]}...' in HTML starting with: '{html_preview}...'")
 
     new_html = html.replace(old_string, new_string, 1)
     deck_diff = DeckDiff(DeckDiffBase())
@@ -1038,13 +1040,23 @@ def view_component(
     Args: {"slide_id": str, "component_id": str}
     """
     component_id = args.get("component_id")
-    if not component_id:
-        raise ValueError("component_id is required")
-
     components = _get_attr(current_slide, "components", []) or []
-    comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
-    if not comp:
-        raise ValueError(f"Component {component_id} not found")
+
+    # If no component_id provided, try to find the first CustomComponent or the first non-Background component
+    if not component_id:
+        # Prefer CustomComponent as that's usually what users want to inspect
+        comp = next((c for c in components if _get_attr(c, "type") == "CustomComponent"), None)
+        if not comp:
+            # Fall back to first non-Background component
+            comp = next((c for c in components if _get_attr(c, "type") != "Background"), None)
+        if not comp:
+            raise ValueError("component_id is required - no suitable component found on slide")
+        component_id = _get_attr(comp, "id")
+        logger.info(f"[view_component] No component_id provided, defaulting to {component_id}")
+    else:
+        comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+        if not comp:
+            raise ValueError(f"Component {component_id} not found")
 
     ctype = _get_attr(comp, "type", "Unknown")
     props = _get_attr(comp, "props", {}) or {}

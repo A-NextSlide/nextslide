@@ -81,14 +81,20 @@ class PaletteDBService:
                         'match_count': limit * 2  # Get more results for filtering
                     }
                 ).execute()
-                
+
                 if not results.data:
                     logger.info(f"No semantic matches found, trying text search for: {query}")
                     return self._fallback_search(query, limit, category)
-                
+
                 logger.info(f"[VECTOR SEARCH] Found {len(results.data)} semantic matches")
             except Exception as rpc_error:
-                logger.error(f"Error calling match_palettes RPC: {rpc_error}")
+                # Vector search RPC failed - this is expected if pgvector isn't configured
+                # Fall back to text search silently (only log at debug level for known issues)
+                error_str = str(rpc_error).lower()
+                if "operator does not exist" in error_str or "vector" in error_str:
+                    logger.debug(f"Vector search not available, using text search fallback: {rpc_error}")
+                else:
+                    logger.warning(f"Error calling match_palettes RPC, falling back to text search: {rpc_error}")
                 return self._fallback_search(query, limit, category)
             
             # Filter by color count and category if specified
@@ -856,8 +862,12 @@ class PaletteDBService:
             return []
 
 # Create SQL function for vector similarity search (run this in Supabase SQL editor)
+# NOTE: If you get "operator does not exist: extensions.vector <=> extensions.vector",
+# you need to qualify the vector type with the correct schema. In Supabase, this is
+# typically the 'extensions' schema. Adjust the function parameter type accordingly.
 SETUP_SQL = """
 -- Create function for palette similarity search using pgvector
+-- NOTE: If pgvector is in 'extensions' schema, change 'vector(1536)' to 'extensions.vector(1536)'
 CREATE OR REPLACE FUNCTION match_palettes(
     query_embedding vector(1536),
     match_threshold float,
@@ -877,7 +887,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         p.id,
         p.name,
         p.colors,
@@ -894,7 +904,7 @@ END;
 $$;
 
 -- Create index for faster similarity search if not exists
-CREATE INDEX IF NOT EXISTS palettes_embedding_idx ON palettes 
+CREATE INDEX IF NOT EXISTS palettes_embedding_idx ON palettes
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 """

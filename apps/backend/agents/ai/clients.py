@@ -268,6 +268,7 @@ def invoke(
 
         except Exception as e:
             error_code = getattr(getattr(e, 'response', None), 'status_code', None) or getattr(e, 'status_code', None)
+            error_str = str(e).lower()
 
             if error_code == 529:
                 raise AIOverloadedError("AI service overloaded", cause=e)
@@ -275,6 +276,14 @@ def invoke(
                 raise AIRateLimitError("Rate limit exceeded", cause=e)
             elif error_code in [502, 504]:
                 raise AITimeoutError(f"AI timeout (HTTP {error_code})", cause=e)
+            elif "max_tokens" in error_str or "length limit" in error_str or "incomplete" in error_str:
+                # max_tokens truncation - provide a specific error message
+                logger.error(f"LLM max_tokens exceeded: {e}")
+                raise AIGenerationError(
+                    f"AI generation failed: The output is incomplete due to a max_tokens length limit. "
+                    f"Try simplifying the request or breaking it into smaller parts.",
+                    cause=e
+                )
 
             logger.error(f"LLM error: {e}")
             raise AIGenerationError(f"AI generation failed: {e}", cause=e)
@@ -379,6 +388,13 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
 
         raw_client, _ = get_client(model, wrap_with_instructor=False)
         gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
+
+        # Build generation config for Gemini with max_output_tokens
+        from google.genai import types as genai_types
+        gk["config"] = genai_types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
 
         def _build_prompt() -> str:
             base = "\n".join([f"{m.get('role', 'user')}: {m.get('content')}" for m in messages])

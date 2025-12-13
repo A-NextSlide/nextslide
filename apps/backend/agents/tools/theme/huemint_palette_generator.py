@@ -69,37 +69,76 @@ class HuemintPaletteGenerator:
                 "palette": palette[:num_colors]
             }
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    self.API_URL,
-                    json=request_data,
-                    headers={"Content-Type": "application/json; charset=utf-8"}
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"Huemint API error: {response.status_code} {response.text}")
-                    return []
-                
-                data = response.json()
-                results = data.get("results", [])
-                
-                # Format results into our palette structure
-                palettes = []
-                for i, result in enumerate(results):
-                    colors = result.get("palette", [])
-                    if colors:
-                        palettes.append({
-                            "name": f"Huemint Palette {i + 1}",
-                            "colors": colors,
-                            "source": "huemint_ai",
-                            "confidence": 0.95,  # Huemint generates high-quality palettes
-                            "category": "presentation",
-                            "tags": ["ai-generated", "harmonious"]
-                        })
-                
-                logger.info(f"Generated {len(palettes)} palettes via Huemint AI")
-                return palettes
-                
+            # Retry logic for transient failures (500 errors, timeouts)
+            max_retries = 3
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(
+                            self.API_URL,
+                            json=request_data,
+                            headers={"Content-Type": "application/json; charset=utf-8"}
+                        )
+
+                        if response.status_code == 200:
+                            break  # Success, continue processing
+                        elif response.status_code >= 500:
+                            # Server error - retry
+                            last_error = f"Huemint API error: {response.status_code}"
+                            logger.warning(f"Huemint API server error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
+                            if attempt < max_retries - 1:
+                                import asyncio
+                                await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+                                continue
+                        else:
+                            # Client error - don't retry
+                            logger.error(f"Huemint API error: {response.status_code} {response.text}")
+                            return []
+                except httpx.TimeoutException:
+                    last_error = "Huemint API timeout"
+                    logger.warning(f"Huemint API timeout (attempt {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(1 * (attempt + 1))
+                        continue
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning(f"Huemint API error (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(1 * (attempt + 1))
+                        continue
+            else:
+                # All retries exhausted
+                logger.error(f"Huemint API failed after {max_retries} attempts: {last_error}")
+                return []
+
+            if response.status_code != 200:
+                logger.error(f"Huemint API error after retries: {response.status_code}")
+                return []
+
+            data = response.json()
+            results = data.get("results", [])
+
+            # Format results into our palette structure
+            palettes = []
+            for i, result in enumerate(results):
+                colors = result.get("palette", [])
+                if colors:
+                    palettes.append({
+                        "name": f"Huemint Palette {i + 1}",
+                        "colors": colors,
+                        "source": "huemint_ai",
+                        "confidence": 0.95,  # Huemint generates high-quality palettes
+                        "category": "presentation",
+                        "tags": ["ai-generated", "harmonious"]
+                    })
+
+            logger.info(f"Generated {len(palettes)} palettes via Huemint AI")
+            return palettes
+
         except Exception as e:
             logger.error(f"Error generating Huemint palette: {e}")
             return []
