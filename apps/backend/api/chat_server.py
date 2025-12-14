@@ -232,6 +232,30 @@ app.add_middleware(
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
+# Global exception handler to ensure CORS headers are always sent even on 500 errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions and return proper JSON response with CORS headers."""
+    import traceback
+    logger.error(f"[GlobalExceptionHandler] Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
+
+    # Get origin from request
+    origin = request.headers.get("origin", "")
+
+    # Build response with CORS headers
+    response = JSONResponse(
+        status_code=500,
+        content={"error": {"code": "INTERNAL_ERROR", "message": str(exc)}}
+    )
+
+    # Add CORS headers manually for unhandled exceptions
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    return response
+
 # Mount static files for assets directory
 assets_dir = (Path(__file__).resolve().parent.parent / "assets").resolve()
 app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")

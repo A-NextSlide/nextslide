@@ -124,15 +124,6 @@ const SlideContent: React.FC<SlideProps> = ({
     return storeSlide?.components || null;
   });
 
-  // Debug: Log when storeSlideComponents changes (indicating real-time update)
-  useEffect(() => {
-    if (storeSlideComponents && !isThumbnail && !isEditing) {
-      console.log('[Slide] 📡 REAL-TIME: Store components updated for slide', slide.id, {
-        componentCount: storeSlideComponents.length,
-        customComponents: storeSlideComponents.filter((c: any) => c.type === 'CustomComponent').length
-      });
-    }
-  }, [storeSlideComponents, slide.id, isThumbnail, isEditing]);
 
   if (activeSlideContext) {
     // Context is available, use it

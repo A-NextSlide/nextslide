@@ -282,9 +282,10 @@ _AI_SEMAPHORE = asyncio.Semaphore(MAX_API_CONCURRENT_CALLS)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Maximum dimensions for reference images (to prevent token explosion)
-MAX_IMAGE_DIMENSION = 1024  # Max width or height in pixels
-MAX_IMAGE_BYTES = 500_000   # Max ~500KB per image after compression
-JPEG_QUALITY = 70           # JPEG quality for compression
+# NOTE: 384px is plenty for LLM context - larger sizes waste tokens
+MAX_IMAGE_DIMENSION = 384   # Max width or height in pixels (was 1024 - way too big)
+MAX_IMAGE_BYTES = 150_000   # Max ~150KB per image after compression
+JPEG_QUALITY = 60           # JPEG quality for compression (lower = smaller)
 
 def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_IMAGE_DIMENSION, max_bytes: int = MAX_IMAGE_BYTES) -> Tuple[bytes, str]:
     """
@@ -302,8 +303,21 @@ def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_I
         from PIL import Image
         from io import BytesIO
 
-        # Load image
-        img = Image.open(BytesIO(image_data))
+        # Check if it's an SVG (can't compress with PIL)
+        if image_data[:100].lower().find(b'<svg') != -1 or image_data[:100].lower().find(b'<?xml') != -1:
+            logger.info("[IMAGE_COMPRESS] SVG detected, skipping compression")
+            return image_data, 'image/svg+xml'
+
+        # Check if it looks like HTML error page
+        if image_data[:100].lower().find(b'<!doctype') != -1 or image_data[:100].lower().find(b'<html') != -1:
+            logger.warning("[IMAGE_COMPRESS] HTML content detected instead of image, skipping")
+            return image_data, 'text/html'
+
+        # Load image - reset stream position
+        img_stream = BytesIO(image_data)
+        img_stream.seek(0)
+        img = Image.open(img_stream)
+        img.load()  # Force load to catch format errors early
         original_size = len(image_data)
         original_dims = img.size
 
@@ -349,7 +363,18 @@ def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_I
         logger.warning("[IMAGE_COMPRESS] PIL not available, using original image")
         return image_data, 'image/png'
     except Exception as e:
-        logger.warning(f"[IMAGE_COMPRESS] Compression failed: {e}, using original")
+        # Log more details to help debug
+        header = image_data[:50] if len(image_data) > 50 else image_data
+        logger.warning(f"[IMAGE_COMPRESS] Compression failed: {e}. First bytes: {header[:30]!r}...")
+        # Try to detect format from magic bytes
+        if image_data[:4] == b'\x89PNG':
+            return image_data, 'image/png'
+        elif image_data[:2] == b'\xff\xd8':
+            return image_data, 'image/jpeg'
+        elif image_data[:4] == b'GIF8':
+            return image_data, 'image/gif'
+        elif image_data[:4] == b'RIFF' and image_data[8:12] == b'WEBP':
+            return image_data, 'image/webp'
         return image_data, 'image/png'
 
 

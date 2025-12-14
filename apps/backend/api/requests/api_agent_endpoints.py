@@ -1,8 +1,11 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.requests.api_auth import get_auth_header
+
+logger = logging.getLogger(__name__)
 from services.supabase_auth_service import get_auth_service
 from utils.supabase import get_supabase_client
 from utils.json_safe import ensure_json_serializable
@@ -108,6 +111,44 @@ async def update_context(session_id: str, body: Dict[str, Any], token: Optional[
     return {"ok": True}
 
 
+@router.post("/sessions/{session_id}/messages/snapshot")
+async def save_message_snapshot(session_id: str, body: Dict[str, Any], token: Optional[str] = Depends(get_auth_header)):
+    """Save slideSnapshot metadata for version history restore functionality."""
+    auth = get_auth_service()
+    user = auth.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
+
+    slide_snapshot = body.get("slideSnapshot")
+    pre_edit_snapshot = body.get("preEditSnapshot")
+    edit_summary = body.get("editSummary", "")
+    edit_id = body.get("editId")
+
+    if not slide_snapshot:
+        raise HTTPException(status_code=400, detail="slideSnapshot is required")
+
+    sb = get_supabase_client()
+
+    # Save as a special assistant message with slideSnapshot in attachments
+    # Include preEditSnapshot for restore functionality
+    message = {
+        "session_id": session_id,
+        "user_id": user["id"],
+        "role": "assistant",
+        "text": f"✅ {edit_summary}" if edit_summary else "✅ Edit applied",
+        "attachments": [{
+            "type": "slide_snapshot",
+            "data": slide_snapshot,
+            "preEditData": pre_edit_snapshot,  # State before edit for restoration
+            "editId": edit_id
+        }],
+        "selections": []
+    }
+    sb.table("agent_messages").insert(message).execute()
+    logger.info(f"[AgentChat] Saved slideSnapshot for session {session_id}, slide {slide_snapshot.get('id')}, hasPreEdit={pre_edit_snapshot is not None}")
+    return {"ok": True}
+
+
 @router.get("/sessions/{session_id}/edits")
 async def list_edits(session_id: str, token: Optional[str] = Depends(get_auth_header)):
     auth = get_auth_service()
@@ -116,8 +157,40 @@ async def list_edits(session_id: str, token: Optional[str] = Depends(get_auth_he
         raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
 
     sb = get_supabase_client()
-    res = sb.table("agent_edits").select("id,status,summary,deck_revision,created_at").eq("session_id", session_id).order("created_at", desc=True).execute()
+    res = sb.table("agent_edits").select("id,status,summary,deck_revision,created_at,diff").eq("session_id", session_id).order("created_at", desc=True).execute()
     return {"edits": res.data or []}
+
+
+@router.get("/decks/{deck_id}/edit-history")
+async def get_deck_edit_history(deck_id: str, token: Optional[str] = Depends(get_auth_header), limit: int = Query(20, ge=1, le=100)):
+    """Get edit history for a deck across all sessions to enable version restore."""
+    auth = get_auth_service()
+    user = auth.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
+
+    sb = get_supabase_client()
+    # Get all applied edits for this deck, ordered by time
+    res = sb.table("agent_edits").select(
+        "id,status,summary,deck_revision,applied_at,created_at,slide_ids"
+    ).eq("deck_id", deck_id).eq("status", "applied").order("applied_at", desc=True).limit(limit).execute()
+
+    edits = res.data or []
+
+    # Format as version history
+    versions = []
+    for i, edit in enumerate(edits):
+        versions.append({
+            "id": edit.get("id"),
+            "version_number": len(edits) - i,  # Reverse numbering (newest is highest)
+            "summary": edit.get("summary") or "Edit",
+            "timestamp": edit.get("applied_at") or edit.get("created_at"),
+            "deck_revision": edit.get("deck_revision"),
+            "slide_ids": edit.get("slide_ids") or [],
+            "can_restore": i > 0  # Can't restore to current version
+        })
+
+    return {"versions": versions}
 
 
 @router.post("/edits/{edit_id}/apply")
@@ -434,6 +507,168 @@ async def revert_edit(edit_id: str, token: Optional[str] = Depends(get_auth_head
     }).eq("id", edit_id).execute()
 
     return {"edit": {"id": edit_id, "status": "reverted"}}
+
+
+@router.post("/edits/{edit_id}/restore")
+async def restore_to_edit(edit_id: str, token: Optional[str] = Depends(get_auth_header)):
+    """Restore deck to the state after this edit was applied by re-applying its diff."""
+    auth = get_auth_service()
+    user = auth.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
+
+    sb = get_supabase_client()
+    edit_res = sb.table("agent_edits").select("*").eq("id", edit_id).single().execute()
+    if not edit_res.data:
+        raise HTTPException(status_code=404, detail="Edit not found")
+
+    edit = edit_res.data
+    deck_id = edit.get("deck_id")
+
+    if not deck_id:
+        raise HTTPException(status_code=400, detail="Edit has no associated deck")
+
+    # Get the diff from this edit and re-apply it
+    diff = edit.get("diff") or {}
+
+    if diff:
+        from services.agent_apply import apply_deckdiff
+        deck_revision = await apply_deckdiff(deck_id, diff, user_id=user["id"])
+
+        # Create a new "restored" edit record
+        restore_record = {
+            "session_id": edit.get("session_id"),
+            "deck_id": deck_id,
+            "slide_ids": edit.get("slide_ids") or [],
+            "status": "applied",
+            "diff": diff,
+            "summary": f"Restored to: {edit.get('summary', 'Previous version')}",
+            "applied_at": datetime.utcnow().isoformat(),
+            "applied_by": user["id"],
+            "deck_revision": str(deck_revision) if deck_revision else None
+        }
+        new_edit = sb.table("agent_edits").insert(restore_record).execute().data[0]
+
+        # Broadcast the restoration event
+        from services.agent_stream_bus import agent_stream_bus
+        await agent_stream_bus.publish(edit.get("session_id") or "", ensure_json_serializable({
+            "type": "deck.edit.restored",
+            "sessionId": edit.get("session_id"),
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "data": {
+                "originalEditId": edit_id,
+                "newEditId": new_edit.get("id"),
+                "deckRevision": deck_revision,
+                "summary": restore_record["summary"]
+            }
+        }))
+
+        return {
+            "success": True,
+            "edit": {
+                "id": new_edit.get("id"),
+                "status": "applied",
+                "summary": restore_record["summary"]
+            },
+            "deckRevision": deck_revision
+        }
+
+    return {"success": False, "error": "No diff to restore"}
+
+
+@router.post("/sessions/{session_id}/select-variant")
+async def select_slide_variant(session_id: str, body: Dict[str, Any], token: Optional[str] = Depends(get_auth_header)):
+    """Select a slide variant from the generated options."""
+    auth = get_auth_service()
+    user = auth.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
+
+    slide_data = body.get("slide")
+    insert_after = body.get("insert_after")
+
+    if not slide_data or not slide_data.get("id"):
+        raise HTTPException(status_code=400, detail="slide data with id is required")
+
+    sb = get_supabase_client()
+
+    # Get the session to find the deck_id
+    session_res = sb.table("agent_sessions").select("deck_id").eq("id", session_id).single().execute()
+    if not session_res.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    deck_id = session_res.data.get("deck_id")
+    if not deck_id:
+        raise HTTPException(status_code=400, detail="Session has no associated deck")
+
+    # Build a DeckDiff to add the selected slide
+    from models.deck import DeckDiff, DeckDiffBase
+    deck_diff = DeckDiff(DeckDiffBase())
+    deck_diff.deck_diff.slides_to_add.append(slide_data)
+
+    # Convert to plain dict
+    from utils.json_safe import to_json_safe
+    deck_diff_plain = to_json_safe(deck_diff.deck_diff.model_dump(exclude_none=True, exclude_unset=False))
+
+    # Apply the diff
+    from services.agent_apply import apply_deckdiff
+    deck_revision = await apply_deckdiff(deck_id, deck_diff_plain, user_id=user["id"])
+
+    # Record as an edit
+    edit_record = {
+        "session_id": session_id,
+        "deck_id": deck_id,
+        "slide_ids": [slide_data.get("id")],
+        "status": "applied",
+        "diff": deck_diff_plain,
+        "summary": f"Added slide: {slide_data.get('title', 'New slide')}",
+        "applied_at": datetime.utcnow().isoformat(),
+        "applied_by": user["id"],
+        "deck_revision": str(deck_revision) if deck_revision else None
+    }
+    edit_res = sb.table("agent_edits").insert(edit_record).execute()
+
+    # Broadcast the event
+    from services.agent_stream_bus import agent_stream_bus
+    await agent_stream_bus.publish(session_id, ensure_json_serializable({
+        "type": "deck.edit.applied",
+        "sessionId": session_id,
+        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+        "data": {
+            "editId": edit_res.data[0]["id"] if edit_res.data else None,
+            "deckRevision": deck_revision,
+            "updatedSlideIds": [slide_data.get("id")],
+            "deck_diff": deck_diff_plain
+        }
+    }))
+
+    return {
+        "success": True,
+        "slide_id": slide_data.get("id"),
+        "deck_revision": deck_revision
+    }
+
+
+@router.get("/sessions/{session_id}/messages")
+async def get_messages(session_id: str, token: Optional[str] = Depends(get_auth_header), limit: int = Query(50, ge=1, le=200)):
+    """Get chat message history for a session to restore conversation."""
+    try:
+        auth = get_auth_service()
+        user = auth.get_user_with_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORIZED", "message": "Missing or invalid token"}})
+
+        sb = get_supabase_client()
+        res = sb.table("agent_messages").select("id,role,text,attachments,selections,created_at").eq("session_id", session_id).order("created_at", desc=False).limit(limit).execute()
+        logger.info(f"[AgentChat] 📜 GET MESSAGES for session {session_id}: found {len(res.data or [])} messages")
+        for msg in (res.data or [])[:5]:
+            logger.info(f"  - {msg.get('role')}: {(msg.get('text') or '')[:60]}...")
+        return {"messages": res.data or []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[AgentChat] ❌ GET MESSAGES failed for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail={"error": {"code": "INTERNAL_ERROR", "message": str(e)}})
 
 
 @router.get("/sessions/{session_id}/timeline")

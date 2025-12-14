@@ -1677,13 +1677,6 @@ export const CustomComponentRenderer: React.FC<{
   const stableIframeSrcDoc = useMemo(() => {
     if (!iframeSrcDoc) return null;
 
-    // DEBUG: Log when stableIframeSrcDoc is recomputed
-    console.log('[CustomComponent] 🔄 stableIframeSrcDoc recomputing:', {
-      componentId: component.id,
-      iframeSrcDocLen: iframeSrcDoc?.length || 0,
-      propsKeyLen: propsKey?.length || 0
-    });
-
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs
     const imageProps = component.props.props || {};
@@ -2381,16 +2374,6 @@ export const CustomComponentRenderer: React.FC<{
               ref={iframeRef}
               key={`${component.id}-${renderCodeHash}-${propsKey.length}-${propsKey.slice(-20)}`}
               srcDoc={stableIframeSrcDoc}
-              onLoad={() => {
-                console.log('[CustomComponent] ✅ IFRAME LOADED:', {
-                  componentId: component.id,
-                  hash: renderCodeHash,
-                  srcDocLen: stableIframeSrcDoc?.length || 0,
-                  key: `${component.id}-${renderCodeHash}`,
-                  // Show first 500 chars of body content to debug blank slides
-                  bodyPreview: stableIframeSrcDoc?.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1]?.slice(0, 500) || 'NO BODY FOUND'
-                });
-              }}
               style={{
                 position: 'absolute',
                 top: 0,

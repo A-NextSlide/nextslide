@@ -308,7 +308,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     // Handle CustomComponent prop selection - dispatch callback event
     if (customComponentPropInfo && imageUrl !== 'generating://ai-image') {
       const { propName, componentId, searchQuery } = customComponentPropInfo;
-      console.log('[SlideContainer] CustomComponent image selection:', { propName, componentId, imageUrl: imageUrl.substring(0, 60) });
 
       // Helper to update HTML with a URL
       const updateHtmlWithImage = (url: string) => {
@@ -365,15 +364,12 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       // STEP 1: Immediately show a loading placeholder (data URI of a simple loading image)
       const loadingPlaceholder = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="#1a1a2e" width="400" height="300"/><text x="200" y="150" text-anchor="middle" fill="#666" font-family="system-ui" font-size="14">Loading image...</text></svg>`);
       updateHtmlWithImage(loadingPlaceholder);
-      console.log('[SlideContainer] Applied loading placeholder immediately');
 
       let finalUrl = imageUrl;
 
       // STEP 2: Proxy external images through our backend to Supabase
       if (imageUrl.startsWith('http') && !imageUrl.includes('supabase') && !imageUrl.includes('nextslide')) {
         try {
-          console.log('[SlideContainer] Proxying external image to Supabase...');
-
           const response = await fetch('/api/media/proxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -381,21 +377,16 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
           });
 
           const data = await response.json();
-          console.log('[SlideContainer] Proxy response:', data);
 
           if (response.ok && data.success && data.url) {
             finalUrl = data.url;
-            console.log('[SlideContainer] Proxied URL:', finalUrl);
-          } else {
-            console.warn('[SlideContainer] Proxy failed, using original URL:', data.error || 'Unknown error');
           }
-        } catch (error) {
-          console.error('[SlideContainer] Error proxying image for CustomComponent:', error);
+        } catch {
+          // Silent error handling - use original URL
         }
       }
 
       // STEP 3: Update with the final URL
-      console.log('[SlideContainer] Updating CustomComponent HTML with final image:', { componentId, propName, imageUrl: finalUrl.substring(0, 60) });
       if (updateHtmlWithImage(finalUrl)) {
         toast({
           title: "Image applied",
@@ -577,7 +568,6 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
       return imageOptions.slides[currentSlide.id].topics || [];
     }
     
-    console.log(`[SlideContainer] Topics for slide ${currentSlide.id} ONLY:`, topics);
     return topics;
   }, [currentSlide?.id, imageOptions]);
   
@@ -716,12 +706,8 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
   
   // Listen for slide images becoming available and show notification
   useEffect(() => {
-    const handleSlideImagesAvailable = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { slideId, images } = customEvent.detail;
-      
-      console.log('[SlideContainer] Images available for slide:', slideId, images?.length);
-      // Toast removed - too noisy for auto-selection
+    const handleSlideImagesAvailable = (_event: Event) => {
+      // Event handler for slide images - toast removed as too noisy for auto-selection
     };
     
     window.addEventListener('slide_images_available', handleSlideImagesAvailable as EventListener);

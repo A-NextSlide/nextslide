@@ -54,6 +54,10 @@ def execute_tool(
         delete_component,
     )
     from agents.editing.tools.theme_tools import apply_theme
+    from agents.editing.tools.images import (
+        search_images,
+        replace_image_from_search,
+    )
 
     # Tool map
     TOOLS = {
@@ -70,6 +74,8 @@ def execute_tool(
         "custom_component_str_replace": custom_component_str_replace,
         "component_prop_update": component_prop_update,
         "view_component": view_component,
+        "search_images": search_images,
+        "replace_image": replace_image_from_search,
     }
 
     if tool_name not in TOOLS:

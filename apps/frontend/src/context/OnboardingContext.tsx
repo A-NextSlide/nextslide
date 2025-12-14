@@ -80,9 +80,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
     setLoading(true);
     try {
-      console.log('[OnboardingContext] Fetching onboarding state...');
       const onboardingState = await authService.getOnboardingState();
-      console.log('[OnboardingContext] Got state:', onboardingState);
       if (onboardingState) {
         setState({
           welcome_shown: onboardingState.welcome_shown ?? false,
@@ -96,7 +94,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
             : [],
         });
       } else {
-        console.log('[OnboardingContext] No state returned, using defaults');
         setState(defaultState);
       }
     } catch (error) {

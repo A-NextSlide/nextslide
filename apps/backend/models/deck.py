@@ -349,13 +349,17 @@ class DeckDiff:
             for other_slide_diff in other_deck_diff.deck_diff.slides_to_update:
                 # Check if we already have an update for this slide
                 existing_slide_diff = self.get_slide_diff(other_slide_diff.slide_id)
-                
+
                 if existing_slide_diff:
                     # If we already have an update for this slide, merge the diffs
                     self._merge_slide_diff(existing_slide_diff, other_slide_diff)
                 else:
                     # If no existing diff was found, add the new one
                     self.deck_diff.slides_to_update.append(other_slide_diff)
-        
+
+        # Merge slide_order (last one wins - most recent reorder takes precedence)
+        if hasattr(other_deck_diff.deck_diff, "slide_order") and other_deck_diff.deck_diff.slide_order:
+            self.deck_diff.slide_order = other_deck_diff.deck_diff.slide_order
+
         return self
 

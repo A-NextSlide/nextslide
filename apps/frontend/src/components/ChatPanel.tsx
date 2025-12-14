@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, XCircle, Plus, Image as ImageIcon, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File } from 'lucide-react';
+import { Sparkles, XCircle, Plus, Image as ImageIcon, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File, History } from 'lucide-react';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,8 @@ import {
   getWelcomeMessage,
 } from './chat';
 import { sendChatToApi } from '@/components/chat/utils/messageUtils';
+import { captureTinySlideScreenshot, shouldCaptureScreenshotForEdit } from '@/utils/slideScreenshot';
+import SlideSnapshotThumbnail from './chat/blocks/SlideSnapshotThumbnail';
 
 // Re-export types for consumers of this file
 export type { ExtendedChatMessageProps, ChatPanelProps };
@@ -161,6 +163,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  // Old chat history - hidden by default, shown when user clicks "Load older messages"
+  const [oldMessages, setOldMessages] = useState<ExtendedChatMessageProps[]>([]);
+  const [showOldMessages, setShowOldMessages] = useState(false);
+  const hasOldMessages = oldMessages.length > 0;
   const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
   const [outlineSlideTarget, setOutlineSlideTarget] = useState<number | 'all'>('all');
 
@@ -1732,6 +1739,45 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 pendingDiffsByMessageIdRef.current.set(previewMessageId, diff);
               }
               try {
+                // IMPORTANT: Capture slide state BEFORE applying the diff for restore functionality
+                try {
+                  const deckStore = useDeckStore.getState();
+                  const slides = deckStore.deckData?.slides || [];
+
+                  // Get the slide IDs being modified from the diff (uses slide_id field)
+                  const slidesToUpdate = diff?.slides_to_update || [];
+                  const modifiedSlideIds = slidesToUpdate.map((s: any) => s.slide_id || s.id).filter(Boolean);
+
+                  // Also check preview slides for IDs
+                  const previewSlideIds = (previewSlidesPayload || []).map((s: any) => s.id).filter(Boolean);
+                  const targetSlideIds = modifiedSlideIds.length > 0 ? modifiedSlideIds : previewSlideIds;
+
+                  console.log('[AgentChat] Pre-edit snapshot: targetSlideIds=', targetSlideIds, 'from diff slides_to_update=', slidesToUpdate?.length, 'preview slides=', previewSlideIds?.length);
+
+                  if (targetSlideIds.length > 0) {
+                    // Capture the FIRST modified slide (typically only one slide is edited at a time)
+                    const targetSlideId = targetSlideIds[0];
+                    const originalSlide = slides.find((s: any) => s.id === targetSlideId);
+                    if (originalSlide) {
+                      (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(originalSlide));
+                      console.log('[AgentChat] Captured pre-edit snapshot for modified slide:', originalSlide.id);
+                    } else {
+                      console.warn('[AgentChat] Could not find slide with id:', targetSlideId, 'in deck slides:', slides.map((s: any) => s.id));
+                    }
+                  } else {
+                    // Fallback: use current slide from navigation context
+                    const navContext = (window as any).__navigationContext;
+                    const currentSlideIdx = navContext?.currentSlideIndex || 0;
+                    const currentSlide = slides[currentSlideIdx];
+                    if (currentSlide) {
+                      (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(currentSlide));
+                      console.log('[AgentChat] Captured pre-edit snapshot for current slide (fallback):', currentSlide.id);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[AgentChat] Failed to capture pre-edit snapshot:', e);
+                }
+
                 // Only set preview guards for preview-type events to avoid suppressing realtime DB updates
                 const now = Date.now();
                 (window as any).__pendingPreviewTs = now;
@@ -1799,10 +1845,104 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 diffSlidesCount: (evt as any).data?.deck_diff?.slides_to_update?.length || 0,
                 normalizedSlidesCount: normalizedAppliedSlides.length
               });
+              // Keep pre-edit snapshot for potential restoration
+              const preEditSnapshot = (window as any).__preEditSlideSnapshot || null;
+              (window as any).__preEditSlideSnapshot = null;
+
+              // Try to get summary from event
+              const editSummary = (evt as any).data?.summary || '';
+
+              // Get the slide ID that was edited/added from the diff
+              const diffSlidesToUpdate = (evt as any).data?.deck_diff?.slides_to_update || [];
+              const diffSlidesToAdd = (evt as any).data?.deck_diff?.slides_to_add || [];
+              // Prefer newly added slides for thumbnail (they're the most interesting), then updated, then fallback to preEdit
+              const editedSlideId = diffSlidesToAdd[0]?.id || diffSlidesToUpdate[0]?.slide_id || diffSlidesToUpdate[0]?.id || preEditSnapshot?.id;
+              const isNewSlide = diffSlidesToAdd.length > 0;
+
+              // Store info to capture post-edit snapshot after diff is applied
+              const messageId = `applied-${Date.now()}`;
+              (window as any).__pendingPostEditCapture = {
+                messageId,
+                editedSlideId,
+                preEditSnapshot,
+                editId: appliedEditId,
+                editSummary
+              };
+
+              // Try to get an immediate snapshot of the current state as fallback
+              let immediateSnapshot = null;
+              try {
+                const deckStore = useDeckStore.getState();
+                const slides = deckStore.deckData?.slides || [];
+
+                // For new slides, get the slide data directly from the diff (it's not in store yet)
+                if (isNewSlide && diffSlidesToAdd[0]) {
+                  immediateSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
+                  console.log('[AgentChat] Using new slide from diff for snapshot:', immediateSnapshot?.id);
+                } else {
+                  const targetSlide = editedSlideId
+                    ? slides.find((s: any) => s.id === editedSlideId)
+                    : slides[0];
+                  if (targetSlide) {
+                    immediateSnapshot = JSON.parse(JSON.stringify(targetSlide));
+                  }
+                }
+              } catch (e) {
+                console.warn('[AgentChat] Failed to capture immediate snapshot:', e);
+              }
+
+              // AUTO-NAVIGATE to newly created slide so user can see it
+              if (isNewSlide && editedSlideId) {
+                setTimeout(() => {
+                  try {
+                    const deckStore = useDeckStore.getState();
+                    const slides = deckStore.deckData?.slides || [];
+                    const newSlideIndex = slides.findIndex((s: any) => s.id === editedSlideId);
+                    if (newSlideIndex >= 0) {
+                      deckStore.setCurrentSlideIndex(newSlideIndex);
+                      console.log('[AgentChat] 🎯 Auto-navigated to new slide:', editedSlideId, 'index:', newSlideIndex);
+                    }
+                  } catch (e) {
+                    console.warn('[AgentChat] Failed to auto-navigate to new slide:', e);
+                  }
+                }, 700); // After deck is updated
+              }
+
+              // Add message with immediate snapshot (will be updated after diff applied if available)
               setMessages(prev => [
                 ...prev,
-                { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true, showIcon: false } }
+                {
+                  id: messageId,
+                  type: 'system',
+                  message: `✅ Edit applied`,
+                  timestamp: new Date(),
+                  feedback: null,
+                  metadata: {
+                    type: 'edit_applied',
+                    compactRow: false,
+                    showIcon: false,
+                    slideSnapshot: immediateSnapshot, // Use immediate snapshot as fallback
+                    preEditSnapshot, // For restoration
+                    editId: appliedEditId,
+                    editSummary
+                  }
+                }
               ]);
+
+              // Persist immediate snapshot as fallback (will be overwritten if diff-based capture succeeds)
+              if (immediateSnapshot && agentClientRef.current && agentSessionId) {
+                // Use a small delay to allow the diff-based capture to potentially run first
+                setTimeout(() => {
+                  // Only persist if the pendingPostEditCapture wasn't already handled
+                  const pendingCapture = (window as any).__pendingPostEditCapture;
+                  if (pendingCapture && pendingCapture.messageId === messageId) {
+                    agentClientRef.current?.saveSlideSnapshot(agentSessionId, immediateSnapshot, editSummary, appliedEditId, preEditSnapshot)
+                      .catch(err => console.warn('[AgentChat] Failed to persist immediate slideSnapshot:', err));
+                    console.log('[AgentChat] Persisted immediate snapshot (fallback):', immediateSnapshot.id);
+                  }
+                }, 500);
+              }
+
               // Prevent any trailing tool/progress lines from appearing after this
               agentFlowLockoutUntilRef.current = Date.now() + 1500;
 
@@ -1824,6 +1964,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   console.log('[Realtime][edit.applied] applying diff', { editId, diffKeys: Object.keys(diff), slidesToUpdate: diff.slides_to_update?.length });
                   const before = useDeckStore.getState().deckData;
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
+
+                  // Capture post-edit snapshot and update message with thumbnail
                   setTimeout(() => {
                     const after = useDeckStore.getState().deckData;
                     console.log('[AgentChat] Stored diff applied', {
@@ -1832,7 +1974,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       versionBefore: (before as any)?.version,
                       versionAfter: (after as any)?.version,
                     });
-                  }, 0);
+
+                    // Capture the post-edit state for thumbnail display
+                    const pendingCapture = (window as any).__pendingPostEditCapture;
+                    if (pendingCapture) {
+                      const { messageId, editedSlideId, preEditSnapshot, editId: capturedEditId, editSummary } = pendingCapture;
+                      delete (window as any).__pendingPostEditCapture;
+
+                      // Find the edited slide in the updated deck
+                      const slides = after?.slides || [];
+                      const postEditSlide = editedSlideId
+                        ? slides.find((s: any) => s.id === editedSlideId)
+                        : slides[0]; // Fallback to first slide
+
+                      if (postEditSlide) {
+                        const postEditSnapshot = JSON.parse(JSON.stringify(postEditSlide));
+                        console.log('[AgentChat] Captured post-edit snapshot for slide:', postEditSlide.id);
+
+                        // Update the message with the post-edit snapshot
+                        setMessages(prev => prev.map(msg =>
+                          msg.id === messageId
+                            ? {
+                                ...msg,
+                                metadata: {
+                                  ...msg.metadata,
+                                  slideSnapshot: postEditSnapshot, // Show current state
+                                  preEditSnapshot, // Keep for restoration
+                                }
+                              }
+                            : msg
+                        ));
+
+                        // Persist to database (include preEditSnapshot for restore functionality)
+                        if (agentClientRef.current && agentSessionId) {
+                          agentClientRef.current.saveSlideSnapshot(agentSessionId, postEditSnapshot, editSummary, capturedEditId, preEditSnapshot)
+                            .catch(err => console.warn('[AgentChat] Failed to persist slideSnapshot:', err));
+                        }
+                      }
+                    }
+                  }, 100); // Small delay to ensure state is fully updated
+
                   proposedDiffsRef.current.delete(editId);
 
                   // CRITICAL FIX: Mark slides as unchanged since backend has already persisted them
@@ -2060,11 +2241,80 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
           }
         }, token || undefined);
-        const sid = await client.createSession(String(deckId), String(slideId), { agentProfile: 'authoring' });
+        // Use getOrCreateSession to resume existing sessions
+        const sid = await client.getOrCreateSession(String(deckId), String(slideId), { agentProfile: 'authoring' });
         client.openWebSocket();
         agentClientRef.current = client;
         setAgentSessionId(sid);
         sessionSlideIdRef.current = slideId;
+
+        // Load existing chat history ASYNC (store in oldMessages, don't auto-display)
+        // This keeps the chat clean on load - user can click "Load older messages" to see history
+        (async () => {
+          try {
+            const { messages: historyMessages } = await client.getMessages(sid, 50);
+            console.log('[AgentChat] 📜 RAW MESSAGE HISTORY FROM DB:', {
+              sessionId: sid,
+              count: historyMessages?.length || 0,
+              messages: historyMessages?.map((m: any) => ({ id: m.id, role: m.role, textPreview: m.text?.substring(0, 80) }))
+            });
+            if (historyMessages && historyMessages.length > 0) {
+              console.log('[AgentChat] Loaded chat history:', historyMessages.length, 'messages (stored, not displayed)');
+              const restoredMessages: ExtendedChatMessageProps[] = historyMessages
+                .map((msg: any) => {
+                  // Check for slideSnapshot attachment (for version restore)
+                  const snapshotAttachment = msg.attachments?.find((a: any) => a.type === 'slide_snapshot');
+                  if (snapshotAttachment) {
+                    // Reconstruct edit_applied message with slideSnapshot thumbnail
+                    // preEditData contains the state before the edit for restoration
+                    return {
+                      id: msg.id,
+                      type: 'system' as const,
+                      message: msg.text || '✅ Edit applied',
+                      timestamp: new Date(msg.created_at),
+                      feedback: null,
+                      metadata: {
+                        type: 'edit_applied',
+                        compactRow: false,
+                        slideSnapshot: snapshotAttachment.data,
+                        preEditSnapshot: snapshotAttachment.preEditData, // For restore button
+                        editId: snapshotAttachment.editId
+                      }
+                    };
+                  }
+
+                  // Filter out useless "Done! Proposed edit" messages without thumbnails
+                  const text = (msg.text || '').trim();
+                  if (msg.role === 'assistant' && (
+                    text.startsWith('Done!') ||
+                    text.includes('Proposed edit') ||
+                    text === '✅ Edit applied' ||
+                    text === ''
+                  )) {
+                    return null; // Will be filtered out
+                  }
+
+                  // Regular message (user or meaningful AI response)
+                  return {
+                    id: msg.id,
+                    type: msg.role === 'user' ? 'user' : 'ai',
+                    message: msg.text || '',
+                    timestamp: new Date(msg.created_at),
+                    feedback: null,
+                    metadata: {
+                      attachments: msg.attachments || [],
+                      selections: msg.selections || []
+                    }
+                  };
+                })
+                .filter((msg): msg is ExtendedChatMessageProps => msg !== null);
+              // Store in oldMessages - don't auto-display, user can click to load
+              setOldMessages(restoredMessages);
+            }
+          } catch (historyErr) {
+            console.warn('[AgentChat] Failed to load chat history:', historyErr);
+          }
+        })();
       } catch (e) {
         console.warn('[AgentChat] init skipped:', e);
       }
@@ -2486,6 +2736,41 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             if (evt.type === 'deck.preview.diff') {
               const diff = (evt as any).data?.diff;
               try {
+                // IMPORTANT: Capture slide state BEFORE applying the diff for restore functionality
+                try {
+                  const deckStore = useDeckStore.getState();
+                  const slides = deckStore.deckData?.slides || [];
+
+                  // Get the slide IDs being modified from the diff (uses slide_id field)
+                  const slidesToUpdate = diff?.slides_to_update || [];
+                  const modifiedSlideIds = slidesToUpdate.map((s: any) => s.slide_id || s.id).filter(Boolean);
+
+                  console.log('[AgentChat] Pre-edit snapshot (secondary): targetSlideIds=', modifiedSlideIds, 'from diff slides_to_update=', slidesToUpdate?.length);
+
+                  if (modifiedSlideIds.length > 0) {
+                    // Capture the FIRST modified slide
+                    const targetSlideId = modifiedSlideIds[0];
+                    const originalSlide = slides.find((s: any) => s.id === targetSlideId);
+                    if (originalSlide) {
+                      (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(originalSlide));
+                      console.log('[AgentChat] Captured pre-edit snapshot for modified slide:', originalSlide.id);
+                    } else {
+                      console.warn('[AgentChat] Could not find slide with id:', targetSlideId, 'in deck slides:', slides.map((s: any) => s.id));
+                    }
+                  } else {
+                    // Fallback: use current slide from navigation context
+                    const navContext = (window as any).__navigationContext;
+                    const currentSlideIdx = navContext?.currentSlideIndex || 0;
+                    const currentSlide = slides[currentSlideIdx];
+                    if (currentSlide) {
+                      (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(currentSlide));
+                      console.log('[AgentChat] Captured pre-edit snapshot for current slide (fallback):', currentSlide.id);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[AgentChat] Failed to capture pre-edit snapshot:', e);
+                }
+
                 // Mark that a preview has been applied so realtime DB updates older than this are ignored
                 try {
                   (window as any).__pendingPreviewTs = Date.now();
@@ -2499,7 +2784,70 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               return;
             }
             if (evt.type === 'deck.edit.applied') {
-              setMessages(prev => [...prev, { id: `applied-${Date.now()}`, type: 'system', message: `✅ Edit applied`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_applied', compactRow: true } }]);
+              // Keep pre-edit snapshot for restoration
+              const preEditSnapshot = (window as any).__preEditSlideSnapshot || null;
+              (window as any).__preEditSlideSnapshot = null;
+
+              const editId = (evt as any).data?.editId;
+
+              // Capture post-edit state (current slide after edit applied)
+              let postEditSnapshot = null;
+              try {
+                const deckStore = useDeckStore.getState();
+                const diffSlidesToUpdate = (evt as any).data?.deck_diff?.slides_to_update || [];
+                const diffSlidesToAdd = (evt as any).data?.deck_diff?.slides_to_add || [];
+                // Prefer newly added slides for thumbnail
+                const editedSlideId = diffSlidesToAdd[0]?.id || diffSlidesToUpdate[0]?.slide_id || diffSlidesToUpdate[0]?.id || preEditSnapshot?.id;
+                const isNewSlide = diffSlidesToAdd.length > 0;
+
+                const slides = deckStore.deckData?.slides || [];
+
+                // For new slides, get the slide data directly from the diff
+                if (isNewSlide && diffSlidesToAdd[0]) {
+                  postEditSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
+                } else {
+                  const postEditSlide = editedSlideId
+                    ? slides.find((s: any) => s.id === editedSlideId)
+                    : slides[0];
+                  if (postEditSlide) {
+                    postEditSnapshot = JSON.parse(JSON.stringify(postEditSlide));
+                  }
+                }
+
+                // AUTO-NAVIGATE to newly created slide
+                if (isNewSlide && editedSlideId) {
+                  setTimeout(() => {
+                    const newSlideIndex = deckStore.deckData?.slides?.findIndex((s: any) => s.id === editedSlideId);
+                    if (newSlideIndex !== undefined && newSlideIndex >= 0) {
+                      deckStore.setCurrentSlideIndex(newSlideIndex);
+                      console.log('[AgentChat] 🎯 Auto-navigated to new slide (secondary):', editedSlideId);
+                    }
+                  }, 700);
+                }
+              } catch (e) {
+                console.warn('[AgentChat] Failed to capture post-edit snapshot (secondary):', e);
+              }
+
+              setMessages(prev => [...prev, {
+                id: `applied-${Date.now()}`,
+                type: 'system',
+                message: `✅ Edit applied`,
+                timestamp: new Date(),
+                feedback: null,
+                metadata: {
+                  type: 'edit_applied',
+                  compactRow: false,
+                  slideSnapshot: postEditSnapshot, // Show current state
+                  preEditSnapshot, // For restoration
+                  editId
+                }
+              }]);
+
+              // Persist postEditSnapshot to database for chat history (include preEditSnapshot for restore)
+              if (postEditSnapshot && agentClientRef.current && agentSessionId) {
+                agentClientRef.current.saveSlideSnapshot(agentSessionId, postEditSnapshot, '', editId, preEditSnapshot)
+                  .catch(err => console.warn('[AgentChat] Failed to persist slideSnapshot (secondary):', err));
+              }
 
               // NOTE: Do NOT clear preview guards here - the primary handler keeps them active for 2 seconds
               // to protect against stale Supabase realtime updates overwriting the edit
@@ -2538,11 +2886,79 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
           }
         }, token || undefined);
-        const sid = await client.createSession(String(deckId), String(slideId), { agentProfile: 'authoring' });
+        // Use getOrCreateSession to resume existing sessions
+        const sid = await client.getOrCreateSession(String(deckId), String(slideId), { agentProfile: 'authoring' });
         client.openWebSocket();
         agentClientRef.current = client;
         setAgentSessionId(sid);
         sessionSlideIdRef.current = slideId;
+
+        // Load existing chat history ASYNC (store in oldMessages, don't auto-display)
+        (async () => {
+          try {
+            const { messages: historyMessages } = await client.getMessages(sid, 50);
+            if (historyMessages && historyMessages.length > 0) {
+              console.log('[AgentChat] Loaded chat history:', historyMessages.length, 'messages (stored, not displayed)');
+              const restoredMessages: ExtendedChatMessageProps[] = historyMessages
+                .map((msg: any) => {
+                  // Check for slideSnapshot attachment (for version restore)
+                  const snapshotAttachment = msg.attachments?.find((a: any) => a.type === 'slide_snapshot');
+                  if (snapshotAttachment) {
+                    // Reconstruct edit_applied message with slideSnapshot thumbnail
+                    // preEditData contains the state before the edit for restoration
+                    return {
+                      id: msg.id,
+                      type: 'system' as const,
+                      message: msg.text || '✅ Edit applied',
+                      timestamp: new Date(msg.created_at),
+                      feedback: null,
+                      metadata: {
+                        type: 'edit_applied',
+                        compactRow: false,
+                        slideSnapshot: snapshotAttachment.data,
+                        preEditSnapshot: snapshotAttachment.preEditData, // For restore button
+                        editId: snapshotAttachment.editId
+                      }
+                    };
+                  }
+
+                  // Filter out useless "Done! Proposed edit" messages without thumbnails
+                  const text = (msg.text || '').trim();
+                  if (msg.role === 'assistant' && (
+                    text.startsWith('Done!') ||
+                    text.includes('Proposed edit') ||
+                    text === '✅ Edit applied' ||
+                    text === ''
+                  )) {
+                    return null; // Will be filtered out
+                  }
+
+                  // Regular message (user or meaningful AI response)
+                  return {
+                    id: msg.id,
+                    type: msg.role === 'user' ? 'user' : 'ai',
+                    message: msg.text || '',
+                    timestamp: new Date(msg.created_at),
+                    feedback: null,
+                    metadata: {
+                      attachments: msg.attachments || [],
+                      selections: msg.selections || []
+                    }
+                  };
+                })
+                .filter((msg): msg is ExtendedChatMessageProps => msg !== null);
+              // Store in oldMessages - don't auto-display
+              setOldMessages(prev => {
+                const existingIds = new Set(prev.map(m => m.id));
+                const newMsgs = restoredMessages.filter(m => !existingIds.has(m.id));
+                return [...newMsgs, ...prev];
+              });
+            }
+          } catch (historyErr) {
+            console.warn('[AgentChat] Failed to load chat history:', historyErr);
+          }
+        })();
+
         connectingRef.current = null;
         return true;
       } catch (err) {
@@ -4006,6 +4422,36 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         attachmentMeta: attachmentMeta.map(a => ({ name: a.name, hasUrl: !!a.url, urlPrefix: a.url?.substring(0, 50) }))
       });
 
+      // 📸 AUTO-CAPTURE TINY SCREENSHOT for visual context when editing slides/CustomComponents
+      // This helps the AI "see" the current slide state for visual/layout issues
+      // Triggers for both explicit CustomComponent selection AND implicit Slide selection (which contains CustomComponents)
+      const shouldCaptureVisualContext = effectiveSelections.some(
+        s => s.elementType === 'CustomComponent' || s.elementType === 'Slide'
+      );
+      if (shouldCaptureVisualContext && shouldCaptureScreenshotForEdit(input, true)) {
+        try {
+          // Find the slide viewport container
+          const slideViewport = document.querySelector('[data-slide-viewport]') as HTMLElement;
+          if (slideViewport) {
+            console.log('[ChatPanel] 📸 Capturing tiny screenshot for AI context...');
+            const screenshotDataUrl = await captureTinySlideScreenshot(slideViewport);
+            if (screenshotDataUrl) {
+              // Add screenshot as a special attachment
+              attachmentMeta.push({
+                name: '_slide_context.jpg',
+                mimeType: 'image/jpeg',
+                size: Math.ceil((screenshotDataUrl.length - 'data:image/jpeg;base64,'.length) * 0.75),
+                url: screenshotDataUrl, // Data URL will be processed by backend
+                attachmentId: `screenshot-${Date.now()}`
+              });
+              console.log('[ChatPanel] 📸 Screenshot attached for AI visual context');
+            }
+          }
+        } catch (screenshotError) {
+          console.warn('[ChatPanel] Screenshot capture failed (non-blocking):', screenshotError);
+        }
+      }
+
       // IMPORTANT: Update the user message in state with the uploaded URLs
       // This MERGES finalized attachments, preserving any that are still pending
       // This ensures pending attachments stay visible (with loading indicator) until upload completes
@@ -4038,16 +4484,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // Immediately clear UI selection bubbles and highlights before network call
       clearSelections();
-      // Revoke preview URLs ONLY for attachments that have an uploaded URL replacement
-      // This ensures we don't break previews for attachments that failed to upload
-      latestAttachments.forEach(a => {
-        const preview = (a as any).previewUrl;
-        const hasUploadedUrl = !!(a as any).url;
-        if (preview && hasUploadedUrl) revokeImagePreview(preview);
-      });
+
+      // Clear attachments state FIRST (so input area clears immediately)
       setAttachments([]);
       attachmentsRef.current = []; // Also clear the ref immediately
       setIsSelecting(false);
+
+      // Revoke blob preview URLs AFTER a short delay to ensure React has rendered the updated message
+      // This prevents the image from showing broken while React re-renders
+      setTimeout(() => {
+        latestAttachments.forEach(a => {
+          const preview = (a as any).previewUrl;
+          const hasUploadedUrl = !!(a as any).url;
+          // Only revoke blob URLs (not data URLs or uploaded URLs)
+          if (preview && hasUploadedUrl && preview.startsWith('blob:')) {
+            revokeImagePreview(preview);
+          }
+        });
+      }, 100);
 
       // Send the message to the API with selections and attachments
       let data: any = null;
@@ -4254,6 +4708,109 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 {/* We'll pass this down below to the active streaming row only */}
               </div>
             )}
+            {/* Load older messages button - shown when there's history to load */}
+            {hasOldMessages && !showOldMessages && (
+              <button
+                onClick={() => setShowOldMessages(true)}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 mb-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-lg transition-colors"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Load older messages ({oldMessages.length})</span>
+              </button>
+            )}
+
+            {/* Old messages - only shown when user clicks to load */}
+            {showOldMessages && oldMessages.map((msg) => {
+              // Skip transient numeric-only AI/system crumbs
+              const txt = typeof msg.message === 'string' ? msg.message : '';
+              if ((msg.type === 'ai' || msg.type === 'system') && /^\s*\d+\s*$/.test(txt)) {
+                return null;
+              }
+
+              // Render edit_applied with slide snapshot thumbnail
+              if (msg.metadata?.type === 'edit_applied' && msg.metadata?.slideSnapshot) {
+                const preEditSnapshot = msg.metadata.preEditSnapshot;
+                return (
+                  <div key={msg.id} className="mb-2 opacity-70">
+                    <ChatMessage
+                      {...msg}
+                      message={msg.message}
+                      onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                    />
+                    <div className="ml-11">
+                      <SlideSnapshotThumbnail
+                        slideSnapshot={msg.metadata.slideSnapshot}
+                        editId={msg.metadata.editId}
+                        timestamp={msg.timestamp}
+                        summary={msg.metadata.editSummary}
+                        onApply={async () => {
+                          // Apply the thumbnail version (post-edit state)
+                          try {
+                            const snapshot = msg.metadata.slideSnapshot;
+                            const deckStore = useDeckStore.getState();
+                            const slides = deckStore.deckData?.slides || [];
+                            const slideIndex = slides.findIndex((s: any) => s.id === snapshot.id);
+                            if (slideIndex === -1) throw new Error(`Slide ${snapshot.id} not found`);
+                            const updatedSlides = [...slides];
+                            updatedSlides[slideIndex] = {
+                              ...updatedSlides[slideIndex],
+                              components: JSON.parse(JSON.stringify(snapshot.components))
+                            };
+                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
+                            const { slideSyncService } = await import('@/lib/slideSyncService');
+                            await slideSyncService.sendSlideUpdate(updatedSlides[slideIndex], updatedSlides);
+                            console.log('[SlideSnapshot] Applied thumbnail version:', snapshot.id);
+                          } catch (err) {
+                            console.error('[SlideSnapshot] Apply failed:', err);
+                            throw err;
+                          }
+                        }}
+                        onRestore={preEditSnapshot ? async () => {
+                          // Restore to pre-edit state (undo the change)
+                          try {
+                            const deckStore = useDeckStore.getState();
+                            const slides = deckStore.deckData?.slides || [];
+                            const slideIndex = slides.findIndex((s: any) => s.id === preEditSnapshot.id);
+                            if (slideIndex === -1) throw new Error(`Slide ${preEditSnapshot.id} not found`);
+                            const updatedSlides = [...slides];
+                            updatedSlides[slideIndex] = {
+                              ...updatedSlides[slideIndex],
+                              components: JSON.parse(JSON.stringify(preEditSnapshot.components))
+                            };
+                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
+                            const { slideSyncService } = await import('@/lib/slideSyncService');
+                            await slideSyncService.sendSlideUpdate(updatedSlides[slideIndex], updatedSlides);
+                            console.log('[SlideSnapshot] Restored to pre-edit state:', preEditSnapshot.id);
+                          } catch (err) {
+                            console.error('[SlideSnapshot] Restore failed:', err);
+                            throw err;
+                          }
+                        } : undefined}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={msg.id} className="opacity-70">
+                  <ChatMessage
+                    {...msg}
+                    onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                  />
+                </div>
+              );
+            })}
+
+            {/* Divider between old and new messages */}
+            {showOldMessages && oldMessages.length > 0 && messages.length > 1 && (
+              <div className="flex items-center gap-2 my-3">
+                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">New messages</span>
+                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+              </div>
+            )}
+
             {messages.map((msg) => {
               // Skip transient numeric-only AI/system crumbs (e.g., "0")
               const txt = typeof msg.message === 'string' ? msg.message : '';
@@ -4351,6 +4908,76 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               // Show thinking status when isTyping and message has thinking content
               const isThinkingStatus = msg.metadata?.isTyping && msg.metadata?.thinkingPhase;
               const showAsLoading = msg.metadata?.isTyping && !msg.message?.trim();
+
+              // Render edit_applied with slide snapshot thumbnail
+              if (msg.metadata?.type === 'edit_applied' && msg.metadata?.slideSnapshot) {
+                // slideSnapshot = current state (what was just created/edited)
+                // preEditSnapshot = state before edit (for restoration)
+                const preEditSnapshot = msg.metadata.preEditSnapshot;
+
+                return (
+                  <div key={msg.id} className="mb-2">
+                    <ChatMessage
+                      {...msg}
+                      message={msg.message}
+                      onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                    />
+                    <div className="ml-11">
+                      <SlideSnapshotThumbnail
+                        slideSnapshot={msg.metadata.slideSnapshot}
+                        editId={msg.metadata.editId}
+                        timestamp={msg.timestamp}
+                        summary={msg.metadata.editSummary}
+                        onApply={async () => {
+                          // Apply the thumbnail version (post-edit state)
+                          try {
+                            const snapshot = msg.metadata.slideSnapshot;
+                            const deckStore = useDeckStore.getState();
+                            const slides = deckStore.deckData?.slides || [];
+                            const slideIndex = slides.findIndex((s: any) => s.id === snapshot.id);
+                            if (slideIndex === -1) throw new Error(`Slide ${snapshot.id} not found`);
+                            const updatedSlides = [...slides];
+                            const appliedSlide = {
+                              ...updatedSlides[slideIndex],
+                              components: JSON.parse(JSON.stringify(snapshot.components))
+                            };
+                            updatedSlides[slideIndex] = appliedSlide;
+                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
+                            const { slideSyncService } = await import('@/lib/slideSyncService');
+                            await slideSyncService.sendSlideUpdate(appliedSlide, updatedSlides);
+                            console.log('[SlideSnapshot] Applied thumbnail version:', snapshot.id);
+                          } catch (err) {
+                            console.error('[SlideSnapshot] Apply failed:', err);
+                            throw err;
+                          }
+                        }}
+                        onRestore={preEditSnapshot ? async () => {
+                          // Restore to the pre-edit state (undo the change)
+                          try {
+                            const deckStore = useDeckStore.getState();
+                            const slides = deckStore.deckData?.slides || [];
+                            const slideIndex = slides.findIndex((s: any) => s.id === preEditSnapshot.id);
+                            if (slideIndex === -1) throw new Error(`Slide ${preEditSnapshot.id} not found`);
+                            const updatedSlides = [...slides];
+                            const restoredSlide = {
+                              ...updatedSlides[slideIndex],
+                              components: JSON.parse(JSON.stringify(preEditSnapshot.components))
+                            };
+                            updatedSlides[slideIndex] = restoredSlide;
+                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
+                            const { slideSyncService } = await import('@/lib/slideSyncService');
+                            await slideSyncService.sendSlideUpdate(restoredSlide, updatedSlides);
+                            console.log('[SlideSnapshot] Restored to pre-edit state:', preEditSnapshot.id);
+                          } catch (err) {
+                            console.error('[SlideSnapshot] Restore failed:', err);
+                            throw err;
+                          }
+                        } : undefined}
+                      />
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <ChatMessage

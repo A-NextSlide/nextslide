@@ -61,51 +61,112 @@ def _get_attr(obj, key, default=None):
 # SYSTEM PROMPT - Keep it simple and direct
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT = """You are a slide deck editor. Execute the user's request using tools.
+SYSTEM_PROMPT = """You are a helpful and friendly slide deck design assistant. Help users create beautiful presentations through conversation.
+
+PERSONALITY:
+- Be conversational and friendly - acknowledge what the user wants
+- Explain what you're doing in simple terms (not technical jargon)
+- If something is ambiguous, make a reasonable choice and mention it
+- After making changes, briefly describe what you did
 
 RULES:
 1. Use tools to make changes. Never output raw HTML/code.
 2. Be precise - if user says "red", use red (#FF0000 or similar)
 3. For creative requests (like "make a slide about X"), use edit_slide or create_slide
-4. You can call multiple tools in one response
+4. You can and SHOULD call multiple tools in one response when needed
+5. Always provide a conversational response with your tool calls
+
+IMAGE REPLACEMENT (IMPORTANT):
+- For "replace images", "fix images", "new images" → call search_images directly
+- DON'T call view_component first - you can see the slide from the screenshot attachment
+- Call search_images ONCE per image you need to replace
+- Use image_index (0, 1, 2, ...) to target each image separately
+
+GENERATING SEARCH QUERIES (CRITICAL FOR QUALITY):
+1. UNDERSTAND THE SLIDE CONTEXT first:
+   - What is the slide about? (topic, company, product, concept)
+   - What would look GOOD visually, not just match the text literally
+   - Is the current image chaotic/ugly? Replace with something clean and professional
+
+2. SEARCH QUERY BEST PRACTICES:
+   - Company-specific: Search "[Company Name] logo", "[Company Name] product", "[Company Name] office"
+   - Abstract/aesthetic: For concepts like sustainability → "dense green forest landscape", "clean energy wind turbines blue sky"
+   - Professional: For business slides → "modern office team meeting professional", "corporate handshake business deal"
+   - Avoid generic: DON'T just search "business" or "technology" - be SPECIFIC
+   - Design-first: Think about what image would make the slide LOOK beautiful
+
+3. EXAMPLES OF GOOD VS BAD QUERIES:
+   BAD: "company" → TOO VAGUE
+   GOOD: "Apple headquarters Cupertino building" → SPECIFIC
+
+   BAD: "technology" → GENERIC
+   GOOD: "modern data center server racks blue lighting" → VISUALLY APPEALING
+
+   BAD: "environment" → BORING
+   GOOD: "aerial view lush green rainforest misty mountains" → BEAUTIFUL
+
+4. WHEN TO USE ABSTRACT IMAGES:
+   - For slide backgrounds or decorative elements
+   - When the concept is abstract (innovation, growth, success)
+   - When you need something that "looks good" more than "represents exactly"
+
+EXAMPLE - "Replace all 4 company images":
+Return 4 tool_calls in your response:
+  {"tool_name": "search_images", "tool_args": {"query": "Apple vintage computer garage startup history", "image_index": 0}, "summary": "Replace Apple image"}
+  {"tool_name": "search_images", "tool_args": {"query": "Oracle cloud database infrastructure modern", "image_index": 1}, "summary": "Replace Oracle image"}
+  {"tool_name": "search_images", "tool_args": {"query": "Cisco networking equipment data center professional", "image_index": 2}, "summary": "Replace Cisco image"}
+  {"tool_name": "search_images", "tool_args": {"query": "NVIDIA GPU AI computing technology futuristic", "image_index": 3}, "summary": "Replace NVIDIA image"}
 
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
-CRITICAL: TARGETED EDITS vs FULL REWRITES
+⚠️ CRITICAL: TARGETED EDITS - DO NOT OVER-EDIT
 
-USE edit_slide (FULL REWRITE) when:
-- User wants to change branding/co-brand ("make it co-branded with X", "rebrand")
-- User wants significant visual changes ("make it nicer", "improve the design", "more professional")
-- User wants to change the theme/style/look ("different style", "change the theme")
-- User wants to add/remove multiple elements
-- User explicitly asks: "redesign", "redo", "rebuild", "from scratch", "completely different", "overhaul"
-- The change affects the overall look/feel of the slide
+When user asks for a SPECIFIC change, ONLY change that ONE thing:
+- "Fix the logo" → Only fix the logo, keep everything else EXACTLY as-is
+- "Make the title red" → Only change the title color, nothing else
+- "Change 'Hello' to 'Hi'" → Only replace that text
+- "Use Geisslers logo" → Only update the logo image/URL
 
-USE custom_component_str_replace (SURGICAL EDIT) ONLY when:
-- User wants ONE specific text change ("change 'Hello' to 'Hi'")
-- User wants to fix ONE color ("make the title red")
-- User wants to update ONE URL or image path
-- The change is literally replacing one string with another
+DO NOT:
+- Restructure the layout when user only asked for a text/color/logo change
+- Change fonts, colors, or spacing that user didn't mention
+- "Improve" or "clean up" things user didn't ask about
+- Rewrite the entire component for a single-element fix
 
-⚠️ DO NOT use multiple str_replace operations for substantial changes!
-If you find yourself needing 3+ str_replace operations, use edit_slide instead.
+WHEN TO USE EACH TOOL:
 
-CRITICAL - EMPTY SLIDE HANDLING:
-If the current slide only has a Background (or is empty), and user wants content:
-→ Use edit_slide with instruction describing what to create
-→ The tool will generate full content for the empty slide
+custom_component_str_replace (SURGICAL - PREFERRED for single changes):
+- ONE text change, ONE color, ONE URL, ONE image
+- Pass the EXACT instruction to fix just that element
+- Example: "Fix the logo" → instruction: "Replace the logo with [new logo URL]"
+
+edit_slide (FULL REWRITE - only when necessary):
+- User explicitly wants redesign/rebrand/overhaul
+- User wants to change the overall theme/style
+- User wants to add/remove MULTIPLE elements
+- Slide is empty and needs content
+- User says: "redesign", "redo", "rebuild", "from scratch"
+
+STAY ON THEME (CRITICAL):
+- ALWAYS check the 🎨 DECK THEME section in context for colors and typography
+- Use those EXACT colors/fonts in any generated content
+- When editing or creating, preserve the existing design language
+- Only change theme colors if user EXPLICITLY asks to change them
+- If user says "make it red", apply red while keeping other theme elements
 
 TOOL SELECTION:
-- edit_slide: Edit/add content to existing slide (handles empty slides too!) - USE FOR MOST EDITS
-- create_slide: Create a NEW slide (adds to deck)
+- custom_component_str_replace: ⭐ PREFERRED - Targeted edit for single changes (logo, color, text, image)
+- edit_slide: Full rewrite (ONLY for major redesigns, NOT for single fixes)
+- create_slide: Create a NEW slide
 - delete_slide: Remove a slide
 - edit_component: Edit a specific component by ID
 - create_component: Add a component to a slide
 - delete_component: Remove a component
 - apply_theme: Change colors/fonts across deck
-- custom_component_str_replace: ONLY for single, specific string replacements in HTML
 - component_prop_update: Mechanical prop update for an existing component
-- view_component: Inspect a component's current props/HTML preview before surgical edits
+- view_component: Inspect a component's current props/HTML preview
+
+NOTE: Visual context (screenshot) is automatically provided when relevant.
 """
 
 
@@ -121,8 +182,9 @@ class ToolCall(BaseModel):
 
 
 class OrchestratorResponse(BaseModel):
-    """LLM response containing tool calls."""
+    """LLM response containing tool calls and conversational message."""
     tool_calls: List[ToolCall] = Field(description="List of tools to execute")
+    message: str = Field(default="", description="Friendly conversational response to the user explaining what was done")
 
 def parse_selections_from_message(user_message: str) -> tuple[str, List[Dict[str, Any]]]:
     """
@@ -183,6 +245,45 @@ def build_context(
     slide_id = _get_attr(current_slide, 'id', 'unknown')
     components = _get_attr(current_slide, 'components', []) or []
 
+    # Extract theme for context
+    theme = _get_attr(deck_data, 'theme', {}) or {}
+    color_palette = theme.get('color_palette', {}) or theme.get('colors', {}) or {}
+    typography = theme.get('typography', {}) or {}
+
+    # Build theme context string with explicit color values
+    theme_str = ""
+    if color_palette or typography:
+        theme_lines = ["🎨 DECK THEME (ALWAYS use these colors/fonts to stay on brand unless user asks otherwise):"]
+        if color_palette:
+            # Extract specific colors
+            bg_color = color_palette.get('primary_background', '')
+            text_color = color_palette.get('primary_text', '')
+            accent_colors = color_palette.get('colors', [])
+            colors_list = []
+            if bg_color:
+                colors_list.append(f"Background: {bg_color}")
+            if text_color:
+                colors_list.append(f"Text: {text_color}")
+            if accent_colors and isinstance(accent_colors, list):
+                colors_list.append(f"Accent colors: {', '.join(str(c) for c in accent_colors[:4])}")
+            # Also include other palette values
+            for k, v in list(color_palette.items())[:8]:
+                if k not in ['primary_background', 'primary_text', 'colors'] and isinstance(v, str):
+                    colors_list.append(f"{k}: {v}")
+            if colors_list:
+                theme_lines.append(f"  Colors: " + " | ".join(colors_list[:6]))
+        if typography:
+            fonts_list = []
+            for k, v in list(typography.items())[:4]:
+                if isinstance(v, dict) and 'family' in v:
+                    fonts_list.append(f"{k}: {v['family']}")
+                elif isinstance(v, str):
+                    fonts_list.append(f"{k}: {v}")
+            if fonts_list:
+                theme_lines.append(f"  Fonts: " + " | ".join(fonts_list))
+        theme_lines.append("  ⚠️ When editing, preserve these brand colors/fonts!")
+        theme_str = "\n".join(theme_lines) + "\n\n"
+
     # Analyze what's on the slide
     non_bg_components = [c for c in components if _get_attr(c, 'type') != 'Background']
     has_custom = any(_get_attr(c, 'type') == 'CustomComponent' for c in components)
@@ -192,7 +293,7 @@ def build_context(
     if is_empty:
         slide_status = "⚠️ SLIDE IS EMPTY (only has background). Use edit_slide to add content."
     elif has_custom:
-        slide_status = "Slide has CustomComponent - edit_slide will rewrite the HTML."
+        slide_status = "Slide has CustomComponent - use custom_component_str_replace for targeted edits."
     else:
         slide_status = f"Slide has {len(non_bg_components)} components."
 
@@ -225,8 +326,9 @@ def build_context(
 
     components_str = "\n".join(component_list) if component_list else "  (no components)"
 
-    # Selections (critical for "this" references)
+    # Selections (critical for "this" references) - include FULL HTML for selected CustomComponents
     sel_str = ""
+    full_html_str = ""
     if selections:
         sel_lines = []
         for sel in selections:
@@ -244,12 +346,16 @@ def build_context(
                 props = _get_attr(comp, "props", {}) or {}
                 preview = ""
                 if ctype2 == "CustomComponent":
-                    html = ""
+                    # Get FULL HTML for selected CustomComponent (for targeted edits)
+                    full_html = ""
                     if isinstance(props, dict):
-                        html = str(props.get("render", ""))[:300]
+                        full_html = str(props.get("render", ""))
                     else:
-                        html = str(getattr(props, "render", ""))[:300]
-                    preview = f" (HTML preview: {html}...)"
+                        full_html = str(getattr(props, "render", ""))
+                    preview = f" ({len(full_html)} chars)"
+                    # Include full HTML so model can make targeted edits
+                    if full_html:
+                        full_html_str = f"\n\n📄 SELECTED COMPONENT FULL HTML (component_id={cid}):\n```html\n{full_html}\n```\n⚠️ For targeted edits, use custom_component_str_replace with specific instruction."
                 elif ctype2 == "TiptapTextBlock":
                     t = props.get("text") if isinstance(props, dict) else getattr(props, "text", "")
                     preview = f" (text preview: {str(t)[:120]}...)"
@@ -257,7 +363,7 @@ def build_context(
             else:
                 sel_lines.append(f"  - Selection: {cid} ({ctype or 'Unknown'})@{sid or slide_id}")
         if sel_lines:
-            sel_str = "\n\n🎯 SELECTED (user likely refers to these as 'this'):\n" + "\n".join(sel_lines)
+            sel_str = "\n\n🎯 SELECTED (user refers to this as 'this'):\n" + "\n".join(sel_lines) + full_html_str
 
     # Attachments
     att_str = ""
@@ -272,7 +378,7 @@ def build_context(
         history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:100]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
-    context = f"""CURRENT SLIDE: {slide_id}
+    context = f"""{theme_str}CURRENT SLIDE: {slide_id}
 STATUS: {slide_status}
 
 COMPONENTS:
@@ -288,65 +394,91 @@ COMPONENTS:
 TOOL_DESCRIPTIONS = """
 AVAILABLE TOOLS:
 
-1. edit_slide ⭐ PREFERRED FOR MOST EDITS
-   - Edit content on the current slide (AI rewrites the component)
-   - Use for: branding changes, design improvements, style changes, adding/removing elements
-   - If slide is empty, generates new content
+1. custom_component_str_replace ⭐ PREFERRED FOR TARGETED EDITS
+   - Make a SINGLE targeted edit to a CustomComponent
+   - ✅ USE FOR: fix logo, change one color, update one text, fix one image, adjust one element
+   - Pass a clear instruction describing ONLY what to change
+   - Args: { "slide_id": str, "component_id": str, "instruction": str }
+   - Example: {"instruction": "Replace the logo with the Geisslers logo"}
+   - Example: {"instruction": "Change the title color to red"}
+   - Example: {"instruction": "Fix the cropped image by adjusting its size"}
+
+2. edit_slide (FULL REWRITE - use sparingly)
+   - Completely rewrites the slide content (AI regenerates everything)
+   - ⚠️ ONLY use when user explicitly wants: redesign, rebrand, overhaul, "from scratch"
+   - ⚠️ DO NOT use for single fixes like "fix the logo" or "change one color"
    - Args: { "slide_id": str, "instruction": str }
-   - Example: {"slide_id": "abc", "instruction": "Make this co-branded with Nike, use their colors and add their logo"}
+   - Example: {"instruction": "Redesign this slide with Nike branding throughout"}
 
-2. create_slide
-   - Create a brand new slide (adds to deck)
-   - Args: { "instruction": str, "insert_after": optional str }
-   - Example: {"instruction": "Create a slide about market trends with a chart"}
+3. create_slide ⭐ FOR NEW SLIDES
+   - Create a new slide
+   - ✅ USE THIS for any "add slide", "create slide", "new slide" request
+   - ALWAYS set insert_after to the current slide ID so the new slide appears right after it
+   - Args: { "instruction": str, "insert_after": str (REQUIRED - use current slide ID) }
 
-3. delete_slide
+4. delete_slide
    - Remove a slide from the deck
    - Args: { "slide_id": str }
 
-4. duplicate_slide
+5. duplicate_slide
    - Duplicate a slide (mechanical)
    - Args: { "slide_id": str, "insert_after": optional str }
 
-5. reorder_slides
+6. reorder_slides
    - Reorder slides (mechanical)
    - Args: { "slide_id": str, "new_index": int } OR { "slide_order": [slide_id,...] }
 
-6. edit_component
+7. edit_component
    - Edit a specific component by ID
    - Args: { "slide_id": str, "component_id": str, "instruction": str }
-   - Example: {"component_id": "xyz", "instruction": "Change the color to blue"}
 
-7. create_component
+8. create_component
    - Add a new component to a slide
    - Args: { "slide_id": str, "component_type": str, "instruction": str }
    - component_type: TiptapTextBlock, Image, Chart, Shape, CustomComponent
 
-8. delete_component
+9. delete_component
    - Remove a component from a slide
    - Args: { "slide_id": str, "component_id": str }
 
-9. apply_theme
+10. apply_theme
    - Apply colors/fonts to the deck
    - Args: { "instruction": str }
-   - Example: {"instruction": "Use Apple's brand colors"}
-
-10. custom_component_str_replace ⚠️ USE SPARINGLY
-   - Surgical edit for CustomComponent HTML (single search/replace)
-   - ONLY use when: changing ONE specific string (e.g., ONE word, ONE color, ONE URL)
-   - DO NOT use for: branding changes, design improvements, multiple changes
-   - If you need 2+ str_replace calls, use edit_slide instead!
-   - Args: { "slide_id": str, "component_id": str, "old_string": str, "new_string": str }
 
 11. component_prop_update
    - Mechanical prop merge for a component (no AI)
    - WHEN: User wants to move/resize/change font size/color on a selected component
    - Args: { "slide_id": str, "component_id": str, "updates": { ... } }
 
-12. view_component
+13. view_component
    - Return a component's current props (and HTML preview for CustomComponent)
    - WHEN: Before a surgical edit so you can reference exact strings/classes
    - Args: { "slide_id": str, "component_id": str }
+
+14. search_images ⭐ FOR IMAGE REPLACEMENT
+   - Search Google Images and replace ONE image at a time
+   - ✅ USE FOR: "replace the image", "find a better image", "fix the images"
+   - Works with BOTH Image components AND CustomComponents (replaces <img> tags in HTML)
+   - SMART MATCHING: Scores each image by alt text and surrounding context to find best match
+   - ⚠️ CRITICAL: This tool replaces ONE image per call. For "replace ALL images":
+     - Call search_images MULTIPLE TIMES with different queries
+     - Use image_index to target specific images (0=first, 1=second, etc.)
+   - Args: { "query": str, "image_index": optional int, "old_url": optional str, "orientation": "landscape"|"portrait"|"square" }
+
+   🎯 QUERY QUALITY IS CRITICAL - Generate SPECIFIC, VISUAL queries:
+   - For companies: "Tesla Model S electric car sleek", "Microsoft headquarters Redmond campus", "Amazon warehouse fulfillment center"
+   - For concepts: "team collaboration modern office whiteboard brainstorming", "sustainable energy solar panels sunrise"
+   - For aesthetics: "minimalist abstract blue gradient technology", "professional business handshake deal"
+   - AVOID: "company", "business", "technology" (too generic!)
+   - THINK: What image would make this slide look BEAUTIFUL and PROFESSIONAL?
+
+   - Example: {"query": "Apple vintage Macintosh computer garage startup", "image_index": 0}
+   - Example: {"query": "Oracle cloud infrastructure data center modern blue", "image_index": 1}
+
+15. replace_image
+   - Replace an Image component with a specific URL
+   - WHEN: After search_images, or when user provides a URL
+   - Args: { "component_id": str, "image_url": str, "alt": optional str }
 """
 
 
@@ -466,9 +598,34 @@ Respond with the tool_calls to execute."""
         else:
             raise
 
-    # Emit plan if callback provided
+    # Log LLM's tool call decisions
+    if response.tool_calls:
+        tool_names = [tc.tool_name for tc in response.tool_calls]
+        logger.info(f"[ORCHESTRATOR] 📋 LLM decided to call tools: {tool_names}")
+    else:
+        logger.info(f"[ORCHESTRATOR] 📋 LLM returned no tool calls")
+    if response.message:
+        logger.info(f"[ORCHESTRATOR] 💬 LLM message: {response.message[:100]}...")
+
+    # Emit plan if callback provided (with user-friendly titles)
     if event_cb and response.tool_calls:
-        plan = [{"title": tc.summary} for tc in response.tool_calls]
+        def _user_friendly_summary(summary: str, tool_name: str) -> str:
+            """Convert technical summaries to user-friendly descriptions."""
+            s = summary.lower()
+            # Hide technical terms from users
+            if "view_component" in tool_name or "view" in s and "component" in s:
+                return "Analyzing the component"
+            if "customcomponent" in s or "custom component" in s:
+                return summary.replace("CustomComponent", "component").replace("customcomponent", "component")
+            if "html" in s and ("div" in s or "element" in s):
+                return "Updating the component"
+            # Clean up common technical patterns
+            cleaned = summary
+            for tech_term in ["HTML", "div element", "div", "DOM", "props", "str_replace"]:
+                cleaned = cleaned.replace(tech_term, "content")
+            return cleaned
+
+        plan = [{"title": _user_friendly_summary(tc.summary, tc.tool_name)} for tc in response.tool_calls]
         try:
             event_cb("agent.plan.update", {"plan": plan})
         except Exception:
@@ -495,20 +652,34 @@ Respond with the tool_calls to execute."""
                 except Exception:
                     pass
 
-            logger.info(f"[ORCHESTRATOR] Executing tool: {tool_name}")
+            logger.info(f"[ORCHESTRATOR] 🔧 Executing tool: {tool_name} with args: {list(tool_args.keys())}")
 
-            # CRITICAL FIX: For str_replace operations, use accumulated HTML from previous ops
+            # CRITICAL FIX: For tools that modify CustomComponent HTML, use accumulated HTML from previous ops
             # This prevents each operation from reading stale original HTML
             effective_slide = current_slide
-            if tool_name == "custom_component_str_replace" and accumulated_props:
+            # Tools that modify CustomComponent HTML and should use accumulated state
+            html_modifying_tools = {"custom_component_str_replace", "search_images", "custom_component_rewrite"}
+            if tool_name in html_modifying_tools and accumulated_props:
                 comp_id = tool_args.get("component_id")
+                # CRITICAL: Auto-detect CustomComponent ID if not in tool_args
+                # search_images auto-detects this, so we need to do the same here
+                if not comp_id and current_slide:
+                    for c in (current_slide.get("components") or []):
+                        if isinstance(c, dict) and c.get("type") == "CustomComponent":
+                            comp_id = c.get("id")
+                            logger.info(f"[ORCHESTRATOR] Auto-detected CustomComponent for accumulated props: {comp_id}")
+                            break
                 if comp_id and comp_id in accumulated_props:
                     # Create a patched slide with the accumulated props
                     import copy
                     effective_slide = copy.deepcopy(current_slide)
                     for c in (effective_slide.get("components") or []):
                         if isinstance(c, dict) and c.get("id") == comp_id:
-                            c["props"] = accumulated_props[comp_id]
+                            # Merge accumulated props with existing props (don't fully replace)
+                            if isinstance(c.get("props"), dict):
+                                c["props"] = {**c["props"], **accumulated_props[comp_id]}
+                            else:
+                                c["props"] = accumulated_props[comp_id]
                             break
                     logger.info(f"[ORCHESTRATOR] Using accumulated HTML for {comp_id} ({len(accumulated_props[comp_id].get('render', ''))} chars)")
 
@@ -535,6 +706,17 @@ Respond with the tool_calls to execute."""
                     if isinstance(tool_diff, dict):
                         logger.warning(f"[ORCHESTRATOR] Tool {tool_name} returned dict instead of DeckDiff, skipping merge")
                     else:
+                        # Log before merge for debugging
+                        try:
+                            inner = getattr(tool_diff, 'deck_diff', None)
+                            if inner and hasattr(inner, 'slides_to_update'):
+                                updates = inner.slides_to_update or []
+                                logger.info(f"[ORCHESTRATOR] 🔧 Tool {tool_name} returned DeckDiff with {len(updates)} slide updates")
+                                for su in updates:
+                                    comp_updates = getattr(su, 'components_to_update', None) or []
+                                    logger.info(f"[ORCHESTRATOR] 🔧   Slide {getattr(su, 'slide_id', '?')}: {len(comp_updates)} component updates")
+                        except Exception:
+                            pass
                         dd = dd.merge(tool_diff)
 
                         # CRITICAL: Track accumulated props for sequential operations
@@ -588,7 +770,9 @@ Respond with the tool_calls to execute."""
     # Pass 2 (lightweight): if the agent only "looked" (e.g., view_component) and made no changes,
     # immediately feed the observation back in and ask for actionable tool calls.
     # This prevents the frustrating "we viewed it, now user must re-ask" loop.
+    logger.info(f"[ORCHESTRATOR] Pass 2 check: observations={bool(observations)}, is_empty_deckdiff={_is_empty_deckdiff(deck_diff)}")
     if observations and _is_empty_deckdiff(deck_diff):
+        logger.info(f"[ORCHESTRATOR] 🔄 Starting follow-up pass - agent only viewed, need actionable edits")
         try:
             followup_prompt = f"""{context}
 
@@ -600,11 +784,21 @@ You already executed read-only tools and obtained these observations (JSON):
 {json.dumps(observations, ensure_ascii=False)[:24000]}
 
 Now propose the NEXT tool_calls needed to actually satisfy the user request.
-- Do NOT call view_component again unless absolutely necessary.
-- Prefer targeted edits (custom_component_str_replace / component_prop_update) when possible.
+- Do NOT call view_component again - you already have the component HTML in the observations above.
+- For IMAGE REPLACEMENT requests ("replace images", "fix images", "new images"):
+  → Use search_images tool - call it ONCE per image you need to replace
+  → Use image_index (0, 1, 2...) to target specific images
+  → Generate HIGH-QUALITY search queries based on slide context:
+    * Look at the slide title and content - what is this slide ABOUT?
+    * For companies: search "[Company] logo", "[Company] product", "[Company] headquarters"
+    * For concepts: use VISUAL, AESTHETIC terms like "modern office sunrise glass building"
+    * AVOID generic terms like "business", "technology", "image"
+    * Think: what would make this slide look BEAUTIFUL and PROFESSIONAL?
+- For TEXT edits: use custom_component_str_replace or component_prop_update.
 
 Respond with the tool_calls to execute."""
 
+            logger.info(f"[ORCHESTRATOR] 🔄 Invoking follow-up LLM call...")
             followup = invoke(
                 client=client,
                 model=actual_model,
@@ -615,30 +809,68 @@ Respond with the tool_calls to execute."""
                 response_model=OrchestratorResponse,
                 max_tokens=4096,
             )
+            logger.info(f"[ORCHESTRATOR] 🔄 Follow-up response: tool_calls={[tc.tool_name for tc in (followup.tool_calls or [])]}")
 
             # Prevent redundant re-views in follow-up when we already have the observation.
             try:
+                original_count = len(followup.tool_calls or [])
                 followup.tool_calls = [
                     tc for tc in (followup.tool_calls or [])
                     if tc.tool_name != "view_component"
                 ]
+                filtered_count = len(followup.tool_calls or [])
+                if original_count != filtered_count:
+                    logger.info(f"[ORCHESTRATOR] 🔄 Filtered out {original_count - filtered_count} view_component calls")
             except Exception:
                 pass
 
             if event_cb and followup.tool_calls:
-                plan = [{"title": tc.summary} for tc in followup.tool_calls]
+                def _friendly(summary: str, tool_name: str) -> str:
+                    s = summary.lower()
+                    if "view_component" in tool_name or "view" in s and "component" in s:
+                        return "Analyzing the component"
+                    if "customcomponent" in s or "custom component" in s:
+                        return summary.replace("CustomComponent", "component").replace("customcomponent", "component")
+                    if "html" in s and ("div" in s or "element" in s):
+                        return "Updating the component"
+                    cleaned = summary
+                    for tech_term in ["HTML", "div element", "div", "DOM", "props", "str_replace"]:
+                        cleaned = cleaned.replace(tech_term, "content")
+                    return cleaned
+                plan = [{"title": _friendly(tc.summary, tc.tool_name)} for tc in followup.tool_calls]
                 try:
                     event_cb("agent.plan.update", {"plan": plan})
                 except Exception:
                     pass
 
-            dd2, summaries2, _obs2 = _execute_tool_calls(followup.tool_calls)
-            deck_diff = deck_diff.merge(dd2)
-            edit_summaries.extend(summaries2)
+            if followup.tool_calls:
+                logger.info(f"[ORCHESTRATOR] 🔄 Executing {len(followup.tool_calls)} follow-up tool calls")
+                dd2, summaries2, _obs2 = _execute_tool_calls(followup.tool_calls)
+                deck_diff = deck_diff.merge(dd2)
+                edit_summaries.extend(summaries2)
+                logger.info(f"[ORCHESTRATOR] 🔄 Follow-up complete: {len(summaries2)} summaries, empty_diff={_is_empty_deckdiff(deck_diff)}")
+            else:
+                # Log debug info when no tool calls are returned
+                obs_str = json.dumps(observations, ensure_ascii=False)
+                followup_msg = getattr(followup, 'message', '') or ''
+                logger.warning(f"[ORCHESTRATOR] 🔄 Follow-up returned NO tool calls - agent may need more guidance")
+                logger.warning(f"[ORCHESTRATOR] 🔄 Observations length: {len(obs_str)} chars, followup message: {followup_msg[:200] if followup_msg else '(empty)'}")
         except Exception as e:
             logger.warning(f"[ORCHESTRATOR] Follow-up after observation failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
 
-    return {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries)}
+    # Extract the conversational message from the response
+    agent_message = getattr(response, 'message', '') or ''
+
+    # Emit the conversational message to the frontend
+    if event_cb and agent_message:
+        try:
+            event_cb("assistant.message.delta", {"delta": agent_message})
+        except Exception:
+            pass
+
+    return {"deck_diff": deck_diff, "edit_summary": "\n".join(edit_summaries), "message": agent_message}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -692,5 +924,6 @@ def edit_deck(
 
     return {
         "deck_diff": deck_diff_data,
-        "edit_summary": result.get('edit_summary', '')
+        "edit_summary": result.get('edit_summary', ''),
+        "message": result.get('message', '')
     }

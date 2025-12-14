@@ -569,8 +569,29 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
     changed_slide_ids: set[str] = set()
     logger.debug("[APPLY_DECKDIFF] Deck has %s slides", len(slides))
 
-    # Reorder slides (optional, full deck operation)
-    # If slide_order is present, reorder the slides list to match. Persist full deck.
+    # IMPORTANT: Process slides_to_add FIRST so slide_order can find new slides
+    # Add slides
+    for slide in deck_diff.get("slides_to_add", []) or []:
+        # Ensure slide has components list
+        if isinstance(slide, dict) and "components" not in slide:
+            slide["components"] = []
+        slides.append(slide)
+        if isinstance(slide, dict) and slide.get("id"):
+            changed_slide_ids.add(slide.get("id"))
+            logger.debug("[APPLY_DECKDIFF] Added slide %s", slide.get("id"))
+
+    # Remove slides
+    if deck_diff.get("slides_to_remove"):
+        # Build map before removals
+        slide_index_map_rm: Dict[str, int] = {s.get("id"): idx for idx, s in enumerate(slides) if s.get("id")}
+        for sid in deck_diff.get("slides_to_remove", []) or []:
+            if sid in slide_index_map_rm:
+                idx = slide_index_map_rm[sid]
+                slides.pop(idx)
+                changed_slide_ids.add(sid)
+        # No need to maintain map consistency during removals; we'll rebuild below
+
+    # Apply slide_order AFTER add/remove so new slides can be positioned correctly
     slide_order = deck_diff.get("slide_order")
     if slide_order and isinstance(slide_order, list):
         try:
@@ -593,35 +614,10 @@ async def apply_deckdiff(deck_id: str, deck_diff: Dict[str, Any], user_id: Optio
                 len(missing),
                 len(slides),
             )
-            # Persist entire deck structure immediately
-            persistence = DeckPersistence()
-            await persistence.save_deck_with_user(deck_id, deck, user_id=user_id, force_immediate=True)
-            updated = get_deck(deck_id)
-            return updated.get("version") if updated else None
         except Exception as e:
             logger.warning("[APPLY_DECKDIFF] slide_order reorder failed: %s", e)
 
-    # Remove slides first
-    if deck_diff.get("slides_to_remove"):
-        # Build map before removals
-        slide_index_map_rm: Dict[str, int] = {s.get("id"): idx for idx, s in enumerate(slides) if s.get("id")}
-        for sid in deck_diff.get("slides_to_remove", []) or []:
-            if sid in slide_index_map_rm:
-                idx = slide_index_map_rm[sid]
-                slides.pop(idx)
-                changed_slide_ids.add(sid)
-        # No need to maintain map consistency during removals; we'll rebuild below
-
-    # Add slides
-    for slide in deck_diff.get("slides_to_add", []) or []:
-        # Ensure slide has components list
-        if isinstance(slide, dict) and "components" not in slide:
-            slide["components"] = []
-        slides.append(slide)
-        if isinstance(slide, dict) and slide.get("id"):
-            changed_slide_ids.add(slide.get("id"))
-
-    # Rebuild index map AFTER add/remove so updates target correct indices
+    # Rebuild index map AFTER add/remove/reorder so updates target correct indices
     slide_index_map: Dict[str, int] = {s.get("id"): idx for idx, s in enumerate(slides) if isinstance(s, dict) and s.get("id")}
 
     # Update slides (components and slide properties)

@@ -783,6 +783,7 @@ const SlideViewport: React.FC<SlideViewportProps> = ({
   return (
     <div
       ref={viewportRef}
+      data-slide-viewport="true"
       className="flex-1 relative overflow-hidden flex items-center justify-center max-w-full w-full h-full bg-background"
       onClick={handleViewportClick}
       tabIndex={-1}

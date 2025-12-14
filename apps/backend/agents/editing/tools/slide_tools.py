@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Maximum dimensions for multimodal images (to prevent token explosion)
-MAX_IMAGE_DIMENSION = 1024  # Max width or height in pixels
-MAX_IMAGE_BYTES = 500_000   # Max ~500KB per image after compression
-JPEG_QUALITY = 70           # JPEG quality for compression
+# NOTE: 384px is plenty for LLM context - larger sizes waste tokens
+MAX_IMAGE_DIMENSION = 384   # Max width or height in pixels (was 1024 - way too big)
+MAX_IMAGE_BYTES = 150_000   # Max ~150KB per image after compression
+JPEG_QUALITY = 60           # JPEG quality for compression (lower = smaller)
 
 def _compress_image_for_multimodal(image_data: bytes, max_dimension: int = MAX_IMAGE_DIMENSION, max_bytes: int = MAX_IMAGE_BYTES) -> tuple:
     """
@@ -951,23 +952,39 @@ def custom_component_str_replace(
     attachments: List[Dict] = None,
 ) -> DeckDiff:
     """
-    Cursor-style surgical replacement inside an existing CustomComponent's render HTML.
-    Args: {"slide_id": str, "component_id": str, "old_string": str, "new_string": str}
+    Make a targeted edit to a CustomComponent.
+    Can accept either:
+    - instruction: str - AI will figure out what to change
+    - old_string/new_string: str - Direct replacement
+    Args: {"slide_id": str, "component_id": str, "instruction": str} OR {"slide_id": str, "component_id": str, "old_string": str, "new_string": str}
     """
     slide_id = args.get("slide_id") or _get_attr(current_slide, "id")
     component_id = args.get("component_id")
+    instruction = args.get("instruction") or ""
     old_string = args.get("old_string") or ""
     new_string = args.get("new_string") or ""
 
-    if not component_id:
-        raise ValueError("component_id is required")
-    if not old_string:
-        raise ValueError("old_string is required")
-
     components = _get_attr(current_slide, "components", []) or []
-    comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+
+    # Find the component - first try by ID, then find any CustomComponent
+    comp = None
+    if component_id:
+        comp = next((c for c in components if _get_attr(c, "id") == component_id), None)
+    if not comp:
+        comp = next((c for c in components if _get_attr(c, "type") == "CustomComponent"), None)
     if not comp or _get_attr(comp, "type") != "CustomComponent":
-        raise ValueError(f"CustomComponent {component_id} not found")
+        raise ValueError(f"CustomComponent not found on slide")
+
+    component_id = _get_attr(comp, "id")
+
+    # If we have instruction but no old_string, use AI to figure out the replacement
+    if instruction and not old_string:
+        logger.info(f"[custom_component_str_replace] Using AI to determine replacement for: {instruction[:50]}...")
+        return _targeted_custom_component_edit(slide_id, comp, instruction, deck_data, attachments)
+
+    # Otherwise do direct replacement
+    if not old_string:
+        raise ValueError("Either 'instruction' or 'old_string' is required")
 
     props = _get_attr(comp, "props", {}) or {}
     html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
@@ -1181,7 +1198,12 @@ def create_slide(
     instruction = args.get('instruction', '')
     insert_after = args.get('insert_after')
 
-    logger.info(f"[create_slide] Creating new slide: {instruction[:50]}...")
+    # CRITICAL: Default insert_after to current slide so new slides appear after current, not at end
+    if not insert_after and current_slide:
+        insert_after = _get_attr(current_slide, 'id')
+        logger.info(f"[create_slide] Auto-setting insert_after to current slide: {insert_after}")
+
+    logger.info(f"[create_slide] Creating new slide: {instruction[:50]}... (insert_after={insert_after})")
 
     # Build attachment context
     att_context = ""
@@ -1239,8 +1261,151 @@ Make it visually stunning and professional."""
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.deck_diff.slides_to_add.append(slide)
 
+    # If insert_after provided, set slide_order to position new slide correctly
+    if insert_after and deck_data:
+        try:
+            slides = (deck_data or {}).get("slides") or []
+            ids = [s.get("id") for s in slides if isinstance(s, dict) and s.get("id")]
+            if insert_after in ids:
+                idx = ids.index(insert_after) + 1
+                ids.insert(idx, slide_id)
+                deck_diff.deck_diff.slide_order = ids
+                logger.info(f"[create_slide] Set slide_order: new slide at position {idx}")
+        except Exception as e:
+            logger.warning(f"[create_slide] Failed to set slide_order: {e}")
+
     logger.info(f"[create_slide] Created slide with {len(slide['components'])} components")
     return deck_diff
+
+
+def create_slide_variants(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> Dict[str, Any]:
+    """
+    Create TWO different versions of a new slide for user to choose from.
+    Returns a special response with variants instead of a DeckDiff.
+
+    Args:
+        args: { "instruction": str, "insert_after": optional str }
+    """
+    instruction = args.get('instruction', '')
+    insert_after = args.get('insert_after')
+
+    # CRITICAL: Default insert_after to current slide so new slides appear after current, not at end
+    if not insert_after and current_slide:
+        insert_after = _get_attr(current_slide, 'id')
+        logger.info(f"[create_slide_variants] Auto-setting insert_after to current slide: {insert_after}")
+
+    logger.info(f"[create_slide_variants] 🎯 CALLED - Creating 2 slide variants: {instruction[:50]}... (insert_after={insert_after})")
+
+    # Build attachment context
+    att_context = ""
+    if attachments:
+        att_list = [f"- {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
+        att_context = f"\n\nUSER ATTACHMENTS (incorporate if relevant):\n" + "\n".join(att_list)
+
+    # Extract theme context from deck
+    theme_context = ""
+    try:
+        deck_theme = (deck_data or {}).get("theme") or {}
+        if deck_theme:
+            colors = deck_theme.get("color_palette") or {}
+            bg_color = colors.get("primary_background", "#1e1e2e")
+            text_color = colors.get("primary_text", "#ffffff")
+            accent_colors = colors.get("colors", [])
+            typography = deck_theme.get("typography") or {}
+            title_font = typography.get("hero_title", {}).get("family", "Inter")
+            body_font = typography.get("body_text", {}).get("family", "Inter")
+            theme_context = f"""
+DECK THEME (use these colors/fonts):
+- Background: {bg_color}
+- Text: {text_color}
+- Accent colors: {', '.join(accent_colors[:3]) if accent_colors else 'blue, purple, green'}
+- Title font: {title_font}
+- Body font: {body_font}
+"""
+    except Exception:
+        pass
+
+    client, model = _get_model_and_client("slide_generate")
+
+    # Generate two different variants
+    variants = []
+
+    for variant_num in [1, 2]:
+        style_hint = "clean and minimal" if variant_num == 1 else "bold and dynamic"
+        prompt = f"""{SLIDE_GENERATOR_PROMPT}
+{att_context}
+{theme_context}
+
+USER REQUEST: {instruction}
+
+STYLE: Create a {style_hint} version.
+
+Generate a complete, beautiful slide. Include:
+1. A Background component (use theme colors if provided)
+2. Prefer ONE CustomComponent for the entire layout
+3. Make it visually stunning and professional
+4. {"Use clean lines, whitespace, and subtle styling" if variant_num == 1 else "Use bold typography, strong colors, and dynamic composition"}
+"""
+
+        try:
+            response = _invoke_with_fallback(
+                client=client,
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_model=SlideContent,
+                max_tokens=16000,
+            )
+
+            # Build slide
+            slide_id = str(uuid.uuid4())
+            slide_title = (instruction or "").strip()
+            if not slide_title:
+                slide_title = "New Slide"
+            if len(slide_title) > 80:
+                slide_title = slide_title[:77].rstrip() + "..."
+
+            slide = {
+                "id": slide_id,
+                "title": slide_title,
+                "components": [],
+                "variant_style": style_hint
+            }
+
+            for component in response.components:
+                comp_dict = {
+                    "id": str(uuid.uuid4()),
+                    "type": component.type,
+                    "props": component.props,
+                }
+                slide["components"].append(comp_dict)
+
+            variants.append({
+                "slide": slide,
+                "label": f"Option {variant_num}: {style_hint.title()}",
+                "style": style_hint
+            })
+
+            logger.info(f"[create_slide_variants] Created variant {variant_num} with {len(slide['components'])} components")
+        except Exception as e:
+            logger.warning(f"[create_slide_variants] Failed to create variant {variant_num}: {e}")
+            continue
+
+    if not variants:
+        raise ValueError("Failed to create any slide variants")
+
+    logger.info(f"[create_slide_variants] ✅ Returning {len(variants)} variants to orchestrator")
+    return {
+        "type": "slide_variants",
+        "variants": variants,
+        "instruction": instruction,
+        "insert_after": insert_after
+    }
 
 
 def delete_slide(

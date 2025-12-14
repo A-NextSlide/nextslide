@@ -231,7 +231,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               <Bot size={18} />
             </div>
           </div>
-          <div className="max-w-[80%] rounded-md px-4 py-3 glass-panel border border-[#929292]">
+          <div className="max-w-[80%] rounded-lg px-3 py-2 glass-panel border border-[#929292] shadow-none">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-green-600 dark:text-green-400">
                 {primaryMessage}
@@ -254,7 +254,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             <div className="flex-shrink-0 mr-3">
               <div className="w-8 h-8" /> {/* Spacer */}
             </div>
-            <div className="max-w-[80%] rounded-md px-4 py-3 glass-panel border border-[#929292]">
+            <div className="max-w-[80%] rounded-lg px-3 py-2 glass-panel border border-[#929292] shadow-none">
               <div className="text-sm whitespace-pre-wrap">
                 {secondaryMessage.split('Press E or double-click').map((part, index) => {
                   if (index === 0) {
@@ -288,11 +288,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       className={cn(
         'flex w-full items-start animate-fade-in min-w-0',
         type === 'user' ? 'justify-end' : 'justify-start',
-        isCompactMetaRow ? 'mb-1' : 'mb-4'
+        isCompactMetaRow ? 'mb-1' : 'mb-2'
       )}
     >
       {type !== 'user' && !isCompactMetaRow && (
-        <div className="flex-shrink-0 mr-3">
+        <div className="flex-shrink-0 mr-2">
           <div className={cn(
             "w-8 h-8 rounded-full text-white flex items-center justify-center"
           )} style={{ backgroundColor: COLORS.SUGGESTION_PINK }}>
@@ -310,22 +310,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
       <div
         className={cn(
-          'rounded-md text-left break-words overflow-x-hidden min-w-0',
-          isCompactMetaRow ? 'px-2 py-0.5 ml-11' : 'px-4 py-3',
+          'rounded-lg text-left break-words overflow-x-hidden min-w-0',
+          // ml-10 aligns compact rows under the avatar (w-8) + mr-2 spacing
+          isCompactMetaRow ? 'px-2 py-0.5 ml-10' : 'px-3 py-2',
           type === 'user'
-            ? 'bg-transparent text-foreground border-2 border-zinc-700 dark:border-[#929292] max-w-[80%]'
+            ? 'bg-transparent text-foreground border border-zinc-700/70 dark:border-[#929292]/80 max-w-[80%]'
             : type === 'system'
             ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress')
               ? 'bg-transparent max-w-[80%]'
               : 'bg-muted max-w-[80%]'
             : isStreamingMessage && !isCompleted
             ? 'border border-[#929292] bg-transparent w-full'
-            : 'glass-panel border border-[#929292] max-w-[80%]'
+            : 'glass-panel border border-[#929292] max-w-[80%] shadow-none'
         )}
         style={bubbleStyleWithSafariFix}
       >
         <div className="flex flex-col">
-          <div className="text-sm min-w-0">
+          <div className="text-[13px] leading-snug min-w-0">
             {isLoading ? (
               <div style={{ minHeight: '20px' }}>
                 <ThinkingIndicator
@@ -426,7 +427,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 )}
               </div>
             ) : (
-              <div className="whitespace-pre-wrap break-words text-sm">
+              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug">
                 {/* Compact, styled agent rows */}
                 {metadata?.type === 'agent_plan' ? (
                   <div className="flex flex-col gap-1.5 max-w-full text-[11px] whitespace-normal break-words min-w-0" style={planStyle}>
@@ -497,7 +498,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
           {/* Timestamp/feedback hidden for compact agent rows */}
           {!(metadata?.compactRow) && safeMessage.trim().length > 0 && !/^\d+$/.test(safeMessage.trim()) && (
-            <div className="flex items-center justify-between mt-3">
+            <div className="flex items-center justify-between mt-2">
               <span className="text-xs text-muted-foreground">
                 {formattedTime}
               </span>
@@ -507,7 +508,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   <button
                     onClick={() => handleFeedback('positive')}
                     className={cn(
-                      'p-1 rounded hover:bg-muted transition-colors',
+                      'p-0.5 rounded hover:bg-muted transition-colors',
                       feedback === 'positive' && 'text-green-600'
                     )}
                     aria-label="Good response"
@@ -517,7 +518,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   <button
                     onClick={() => handleFeedback('negative')}
                     className={cn(
-                      'p-1 rounded hover:bg-muted transition-colors',
+                      'p-0.5 rounded hover:bg-muted transition-colors',
                       feedback === 'negative' && 'text-red-600'
                     )}
                     aria-label="Bad response"
@@ -613,7 +614,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       </div>
 
       {type === 'user' && (
-        <div className="flex-shrink-0 ml-3">
+        <div className="flex-shrink-0 ml-2">
           <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center">
             <User size={18} />
           </div>

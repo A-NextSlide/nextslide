@@ -1833,9 +1833,17 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
             if analysis.get('is_brand') and analysis.get('brand_name'):
                 # BRAND DETECTED but brand fonts not available - use AI to select brand-appropriate fonts
                 brand_name = analysis.get('brand_name')
+                # Get the original brand fonts that weren't available (for similarity matching)
+                original_brand_fonts = analysis.get('brand_fonts', []) or scraped_fonts or []
+                brand_fonts_str = ', '.join(original_brand_fonts) if original_brand_fonts else None
+
                 logger.info(f"🏷️ BRAND DETECTED: {brand_name} → Selecting brand-appropriate fonts with AI")
+                if brand_fonts_str:
+                    logger.info(f"   Original brand fonts (unavailable): {brand_fonts_str}")
                 print(f"\n🏷️🏷️🏷️ BRAND DETECTED IN THEME_DIRECTOR 🏷️🏷️🏷️")
                 print(f"   Brand: '{brand_name}'")
+                if brand_fonts_str:
+                    print(f"   Original fonts: {brand_fonts_str}")
                 print(f"   → Selecting fonts that match the brand's personality!\n")
 
                 try:
@@ -1849,14 +1857,33 @@ Return JSON: {{"brand": "Name", "domain": "domain.com"}} or {{"brand": null, "do
                             font_list_parts.append(f"**{category}**: {', '.join(fonts_in_cat[:25])}")
                     available_fonts_str = "\n".join(font_list_parts)
 
-                    prompt = f"""Select appropriate fonts for a presentation about the brand "{brand_name}".
+                    # Build prompt with original font information for similarity matching
+                    if brand_fonts_str:
+                        font_context = f"""The brand's original fonts are: {brand_fonts_str}
+These aren't available in our library, so select fonts that are VISUALLY SIMILAR to these original brand fonts.
 
-The brand's own fonts aren't available, so select fonts from our library that MATCH THE BRAND'S PERSONALITY and visual identity.
+Font similarity guidelines:
+- Geometric sans-serifs (Futura, Proxima Nova, Gotham, Avenir) → Montserrat, Poppins, DM Sans, Raleway
+- Humanist sans-serifs (Gill Sans, Frutiger, Myriad) → Open Sans, Lato, Source Sans Pro
+- Neo-grotesque sans-serifs (Helvetica, Arial, Univers) → Inter, Roboto, IBM Plex Sans
+- Modern serifs (Didot, Bodoni) → Playfair Display, Cormorant
+- Transitional serifs (Times, Baskerville) → Merriweather, Libre Baskerville
+- Slab serifs (Rockwell, Clarendon) → Roboto Slab, Zilla Slab
+
+Consider both:
+1. Visual similarity to "{brand_fonts_str}" (weight, style, x-height, proportions)
+2. The brand's overall personality and industry"""
+                    else:
+                        font_context = """The brand's own fonts aren't available, so select fonts from our library that MATCH THE BRAND'S PERSONALITY and visual identity.
 
 Consider the brand's characteristics:
 - Industry/sector (tech, food, luxury, sports, etc.)
 - Brand personality (modern, traditional, playful, sophisticated, etc.)
-- Target audience (young, professional, mass market, premium, etc.)
+- Target audience (young, professional, mass market, premium, etc.)"""
+
+                    prompt = f"""Select appropriate fonts for a presentation about the brand "{brand_name}".
+
+{font_context}
 
 Available fonts by category:
 {available_fonts_str}

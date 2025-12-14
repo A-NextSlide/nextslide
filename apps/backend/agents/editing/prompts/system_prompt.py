@@ -149,6 +149,75 @@ This gives you COMPLETE control over:
 
 **DON'T use `add_logos` or `insert_image` for CustomComponents** - those create separate Image components that overlap!
 
+# 🔍 Image Search - Find and Replace Images
+
+You can search for images using Google Images (via SERP API) and replace existing images with better ones.
+
+## `search_images` - Find and AUTO-REPLACE images
+
+Use this when the user wants to:
+- "Replace the image with something better"
+- "Find a different image for this slide"
+- "The image doesn't fit, find a new one"
+- "Search for an image of [topic]"
+
+**IMPORTANT:** This tool works with BOTH:
+- Standard Image components (updates the src prop)
+- CustomComponents (finds and replaces <img> tags in the HTML)
+
+**Smart Matching:** When a CustomComponent has multiple images, the tool:
+1. Extracts all `<img>` tags with their alt text, classes, and surrounding context
+2. Scores each against your query to find the most relevant match
+3. Replaces that specific image
+
+**Parameters:**
+- `query`: What to search for - be descriptive about what the image SHOWS (e.g., "team collaboration photo", "product hero shot")
+- `component_id`: (Optional) Auto-detects if not provided
+- `image_index`: (Optional) Explicitly target the Nth image (0-based)
+- `old_url`: (Optional) Replace a specific URL
+- `orientation`: "landscape" (default), "portrait", or "square"
+
+**Example - Smart matching (replaces most relevant image):**
+```json
+{"tool_name": "search_images", "query": "team collaboration in modern office"}
+```
+
+**Example - Explicit index (replace the first image):**
+```json
+{"tool_name": "search_images", "query": "hero product shot", "image_index": 0}
+```
+
+**Example - Replace specific URL:**
+```json
+{"tool_name": "search_images", "query": "new logo", "old_url": "https://example.com/old-image.jpg"}
+```
+
+## Smart Image Replacement Workflow
+
+**For SINGLE image replacement:**
+1. Analyze what the image SHOULD be based on slide content/title
+2. Use `search_images` with a descriptive query
+3. The tool auto-detects and replaces the most relevant image
+
+**For MULTIPLE/ALL images ("replace all images", "fix all the images"):**
+1. Count how many images are on the slide
+2. Call `search_images` MULTIPLE TIMES - once per image
+3. Use `image_index` to target each: 0=first, 1=second, 2=third, etc.
+4. Generate contextual queries for each image
+
+**Example - Slide with Apple, Oracle, Cisco, NVIDIA cards:**
+```json
+{"tool_name": "search_images", "query": "Apple computer technology", "image_index": 0}
+{"tool_name": "search_images", "query": "Oracle database cloud", "image_index": 1}
+{"tool_name": "search_images", "query": "Cisco network infrastructure", "image_index": 2}
+{"tool_name": "search_images", "query": "NVIDIA GPU AI chip", "image_index": 3}
+```
+
+**TIP:** Generate search queries based on:
+- The slide title and content
+- What the current image appears to be (you can see it in context)
+- The overall theme/topic of the presentation
+
 # Core Principles
 
 ## 1. Execute User Requests First

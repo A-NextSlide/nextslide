@@ -110,6 +110,7 @@ export interface DeckDiff {
   slides_to_update?: SlideDiff[];
   slides_to_add?: SlideData[];
   slides_to_remove?: string[];
+  slide_order?: string[];  // Optional reordering: array of slide IDs in desired order
 }
 
 /**

@@ -1,8 +1,16 @@
 from typing import Dict, Any, List, Optional
+import re
 
 from models.deck import DeckDiff, DeckDiffBase
 from models.slide import SlideDiffBase
 from models.component import ComponentDiffBase
+
+
+def _word_match(word: str, text: str) -> bool:
+    """Check if word exists in text as a whole word (not substring)."""
+    # Use word boundary regex to avoid "red" matching "redo"
+    pattern = r'\b' + re.escape(word) + r'\b'
+    return bool(re.search(pattern, text, re.IGNORECASE))
 
 
 def _match_intent(text: str) -> Optional[str]:
@@ -15,8 +23,11 @@ def _match_intent(text: str) -> Optional[str]:
     ]
     # Require an intent verb + a style keyword to reduce false positives
     intent_verbs = ["make", "set", "change", "turn", "update", "apply"]
-    style_keywords = ["color", "colour", "background", "font", "typeface", "family", "text"] + color_words
-    if (any(k in t for k in style_keywords) and any(v in t for v in intent_verbs)) or any(k in t for k in ["font", "typeface", "family"]):
+    style_keywords = ["color", "colour", "background", "font", "typeface", "family", "text"]
+    # Use word matching for colors to avoid "red" matching "redo"
+    color_match = any(_word_match(c, t) for c in color_words)
+    keyword_match = any(k in t for k in style_keywords) or color_match
+    if (keyword_match and any(v in t for v in intent_verbs)) or any(k in t for k in ["font", "typeface", "family"]):
         return "update_component_style"
     if any(k in t for k in ["align", "center", "centre", "left", "right", "middle"]):
         return "align_components"
@@ -78,11 +89,12 @@ def build_fast_deck_diff(message_text: str, selections: List[Dict[str, Any]]) ->
     }
     chosen_color: Optional[str] = None
     chosen_font: Optional[str] = None
-    
+
     if message_text:
         lower = message_text.lower()
+        # Use word boundary matching to avoid "red" matching "redo"
         for name, hexcode in COLOR_MAP.items():
-            if name in lower:
+            if _word_match(name, lower):
                 chosen_color = hexcode
                 break
         FONT_MAP = {
@@ -137,7 +149,7 @@ def build_fast_deck_diff(message_text: str, selections: List[Dict[str, Any]]) ->
 
     if not op:
         # Allow simple color-only updates when there is at least one selection
-        # Recompute quick color detection locally
+        # Recompute quick color detection locally using word boundary matching
         quick_color = None
         try:
             COLOR_MAP_LOCAL = {
@@ -146,8 +158,9 @@ def build_fast_deck_diff(message_text: str, selections: List[Dict[str, Any]]) ->
                 'cyan': '#00838F', 'black': '#000000', 'white': '#FFFFFF'
             }
             low = (message_text or "").lower()
+            # Use word boundary matching to avoid "red" matching "redo"
             for name, code in COLOR_MAP_LOCAL.items():
-                if name in low:
+                if _word_match(name, low):
                     quick_color = code
                     break
         except Exception:

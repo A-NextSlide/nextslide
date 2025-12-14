@@ -608,20 +608,52 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                 deck_diff_for_frontend = {}
 
             # Stream minimal assistant acknowledgement and applied event
+            # Build a more conversational response based on what was changed
+            assistant_response = "Done! I've applied that change for you."
+            try:
+                ops = diff.get("operations", [])
+                if ops:
+                    first_op = ops[0] if isinstance(ops, list) and len(ops) > 0 else {}
+                    style = first_op.get("style", {}) if isinstance(first_op, dict) else {}
+                    if isinstance(style, dict):
+                        if style.get("background"):
+                            bg = style["background"]
+                            if isinstance(bg, dict) and bg.get("color"):
+                                assistant_response = f"Done! I've updated the background color."
+                        elif style.get("textColor"):
+                            assistant_response = f"Done! I've changed the text color."
+                        elif style.get("fontFamily"):
+                            assistant_response = f"Done! I've updated the font to {style['fontFamily']}."
+            except Exception:
+                pass
+
             await agent_stream_bus.publish(session_id, {
                 "type": "assistant.message.delta",
                 "sessionId": session_id,
                 "messageId": message_id,
                 "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "data": {"delta": "Applying quick edit..."}
+                "data": {"delta": assistant_response}
             })
             sb.table("agent_events").insert({
                 "session_id": session_id,
                 "user_id": user["id"],
                 "message_id": message_id,
                 "type": "assistant.message.delta",
-                "data": {"delta": "Applying quick edit..."}
+                "data": {"delta": assistant_response}
             }).execute()
+
+            # CRITICAL: Persist assistant message to agent_messages for chat history
+            try:
+                sb.table("agent_messages").insert({
+                    "session_id": session_id,
+                    "user_id": user["id"],
+                    "role": "assistant",
+                    "text": assistant_response,
+                    "attachments": [],
+                    "selections": []
+                }).execute()
+            except Exception as e:
+                logger.warning(f"[AgentChat] Failed to persist FastPath assistant message: {e}")
             await agent_stream_bus.publish(session_id, ensure_json_serializable({
                 "type": "deck.edit.applied",
                 "sessionId": session_id,
@@ -878,6 +910,19 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                             "data": {"messageId": message_id}
                         }).execute()
 
+                        # Save assistant message for chart creation
+                        try:
+                            sb.table("agent_messages").insert({
+                                "session_id": session_id,
+                                "user_id": user["id"],
+                                "role": "assistant",
+                                "text": f"Done! I've created a {chart_type} chart from your uploaded data.",
+                                "attachments": [],
+                                "selections": []
+                            }).execute()
+                        except Exception:
+                            pass
+
                         return {"messageId": message_id}
     except Exception:
         # On any failure, continue to agentic orchestrator
@@ -909,6 +954,18 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
             "timestamp": int(datetime.utcnow().timestamp() * 1000),
             "data": {"code": "MISSING_CONTEXT", "message": "Deck or registry not available"}
         })
+        # Save error message to chat
+        try:
+            sb.table("agent_messages").insert({
+                "session_id": session_id,
+                "user_id": user["id"],
+                "role": "assistant",
+                "text": "Sorry, I couldn't complete that request. The presentation context isn't available.",
+                "attachments": [],
+                "selections": []
+            }).execute()
+        except Exception:
+            pass
         return {"messageId": message_id}
 
     # Determine current slide for orchestrator
@@ -920,8 +977,18 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
             # Extract slide_id from first selection (user's current slide)
             first_sel = selections[0]
             selected_slide_id = first_sel.get("slideId") or first_sel.get("slide_id")
-    except Exception:
-        pass
+
+            # CRITICAL FIX: If slideId is missing but we have a component ID, look up which slide contains it
+            if not selected_slide_id:
+                component_id = first_sel.get("elementId") or first_sel.get("componentId")
+                if component_id:
+                    from utils.deck import find_component_by_id
+                    comp_info = find_component_by_id(deck_data, component_id)
+                    if comp_info:
+                        selected_slide_id = comp_info.get("slide_id")
+                        logger.info(f"[AgentChat] Resolved slideId={selected_slide_id} from componentId={component_id}")
+    except Exception as e:
+        logger.warning(f"[AgentChat] Error resolving slide from selection: {e}")
 
     # Fall back to session slide_id if no selection provided
     if not selected_slide_id:
@@ -1024,22 +1091,9 @@ YOU MUST:
 
 This is a TARGETED EDIT request. Apply the user's changes to the selected CustomComponent."""
 
-                # Stream a small delta so the frontend can show selection context immediately
-                await agent_stream_bus.publish(session_id, {
-                    "type": "assistant.message.delta",
-                    "sessionId": session_id,
-                    "messageId": message_id,
-                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                    "data": {"delta": f"Using selection: {', '.join(sel_summaries)}"}
-                })
-                print(f"[AgentChat] streaming selection delta: Using selection: {', '.join(sel_summaries)}")
-                sb.table("agent_events").insert({
-                    "session_id": session_id,
-                    "user_id": user["id"],
-                    "message_id": message_id,
-                    "type": "assistant.message.delta",
-                    "data": {"delta": f"Using selection: {', '.join(sel_summaries)}"}
-                }).execute()
+                # Log selection info internally but don't stream technical details to user
+                # The selection context is already passed to the LLM via llm_message
+                print(f"[AgentChat] selection context (internal): {', '.join(sel_summaries)}")
     except Exception:
         pass
 
@@ -1215,6 +1269,27 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     else:
         logger.warning(f"[DEBUG] No deck_diff_plain! This will prevent auto-apply from working")
     summary = result.get("edit_summary") or "Proposed edit"
+    agent_message = result.get("message") or ""
+    logger.info(f"[DEBUG] agent_message from result: '{agent_message[:200] if agent_message else 'EMPTY'}'")
+    logger.info(f"[DEBUG] edit_summary from result: '{summary[:200] if summary else 'EMPTY'}'")
+
+    # ALWAYS persist an assistant message - use edit summary as fallback if no conversational message
+    # Prefer the actual conversational message from the LLM
+    assistant_text = agent_message if agent_message.strip() else f"Done! {summary}"
+    logger.info(f"[DEBUG] Final assistant_text: '{assistant_text[:200]}'...")
+    try:
+        assistant_msg_record = {
+            "session_id": session_id,
+            "user_id": user["id"],
+            "role": "assistant",
+            "text": assistant_text,
+            "attachments": [],
+            "selections": [],
+        }
+        sb.table("agent_messages").insert(assistant_msg_record).execute()
+        logger.info(f"[AgentChat] Saved assistant message: {assistant_text[:100]}...")
+    except Exception as e:
+        logger.warning(f"[AgentChat] Failed to persist assistant message: {e}")
 
     # Emit a preview diff BEFORE any persistence/apply so the UI can update immediately
     if deck_id and deck_diff_plain:

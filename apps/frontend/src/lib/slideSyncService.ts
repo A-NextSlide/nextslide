@@ -103,58 +103,47 @@ export class SlideSyncService {
    * Saves a slide by updating the slides array in the deck
    * This method is now updated to work with the decks table instead of the slides table
    */
-  private async saveSlideToTable(slide: SlideData): Promise<{ data: any, error: any } | undefined> {
+  private async saveSlideToTable(slide: SlideData, allSlides?: SlideData[]): Promise<{ data: any, error: any } | undefined> {
     if (!this.useSupabase) return;
-    
+
     try {
-      // We need to find which deck contains this slide
-      const { data: deckData, error: deckError } = await supabase
-        .from('decks')
-        .select('*');
-      
-      if (deckError) {
-        console.error('Error fetching decks to update slide:', deckError);
-        return { data: null, error: deckError };
+      // Get the deck UUID from the store to avoid expensive query
+      const { useDeckStore } = await import('@/stores/deckStore');
+      const deckStore = useDeckStore.getState();
+      const deckUuid = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+
+      if (!deckUuid) {
+        console.error('No deck UUID available - cannot save slide');
+        return { data: null, error: new Error('No deck UUID available') };
       }
-      
-      // Find the deck that contains this slide
-      let targetDeck = null;
-      let slideIndex = -1;
-      
-      for (const deck of deckData) {
-        // Ensure deck.slides is an array before using findIndex
-        if (!deck.slides || !Array.isArray(deck.slides)) continue;
-        
-        slideIndex = deck.slides.findIndex((s: any) => s.id === slide.id);
-        if (slideIndex !== -1) {
-          targetDeck = deck;
-          break;
-        }
+
+      // Use provided allSlides or get from store
+      const slides = allSlides || deckStore.deckData?.slides || [];
+      const slideIndex = slides.findIndex((s: any) => s.id === slide.id);
+
+      if (slideIndex === -1) {
+        console.error(`Slide ${slide.id} not found in deck`);
+        return { data: null, error: new Error(`Slide ${slide.id} not found in deck`) };
       }
-      
-      if (!targetDeck) {
-        console.error(`Slide ${slide.id} not found in any deck`);
-        return { data: null, error: new Error(`Slide ${slide.id} not found in any deck`) };
-      }
-      
-      // Update the slide in the deck
-      const updatedSlides = [...targetDeck.slides];
+
+      // Update the slide in the slides array
+      const updatedSlides = [...slides];
       updatedSlides[slideIndex] = slide;
-      
-      // Update the deck in Supabase
+
+      // Update the deck in Supabase directly with the known UUID
       const { data, error } = await supabase
         .from('decks')
-        .update({ 
+        .update({
           slides: updatedSlides,
           lastModified: new Date().toISOString()
         })
-        .eq('uuid', targetDeck.uuid);
-      
+        .eq('uuid', deckUuid);
+
       if (error) {
         console.error(`Error updating slide ${slide.id} in deck:`, error);
         return { data: null, error };
       }
-      
+
       return { data, error: null };
     } catch (err) {
       console.error('Failed to save slide to deck in Supabase:', err);
@@ -171,9 +160,9 @@ export class SlideSyncService {
   async sendSlideUpdate(slide: SlideData, allSlides: SlideData[]): Promise<Response> {
     // Record the edit in Supabase
     await this.recordEdit(slide.id, slide, 'slide_update');
-    
-    // Save the actual slide
-    const saveResult = await this.saveSlideToTable(slide);
+
+    // Save the actual slide (pass allSlides to avoid expensive query)
+    const saveResult = await this.saveSlideToTable(slide, allSlides);
     
     if (this.useSupabase) {
       // If we're using Supabase, return a mock response

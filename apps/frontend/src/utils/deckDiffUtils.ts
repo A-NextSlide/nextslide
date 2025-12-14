@@ -201,7 +201,20 @@ function isValidDeckDiff(diff: DeckDiff): boolean {
       }
     }
   }
-  
+
+  // Validate slide_order if present
+  if ((diff as any).slide_order !== undefined) {
+    if (!Array.isArray((diff as any).slide_order)) {
+      return false;
+    }
+    // Each ID must be a non-empty string
+    for (const id of (diff as any).slide_order) {
+      if (typeof id !== 'string' || id.trim() === '') {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -542,6 +555,32 @@ function applySlideUpdates(deck: CompleteDeckData, deckDiff: DeckDiff): Complete
   if (deckDiff.slides_to_remove && deckDiff.slides_to_remove.length > 0) {
     const slideIdsToRemove = new Set(deckDiff.slides_to_remove);
     updatedDeck.slides = updatedDeck.slides.filter(slide => !slideIdsToRemove.has(slide.id));
+  }
+
+  // Apply slide_order (reorder slides according to provided order)
+  if ((deckDiff as any).slide_order && Array.isArray((deckDiff as any).slide_order)) {
+    const slideOrder = (deckDiff as any).slide_order as string[];
+    const slideMap = new Map(updatedDeck.slides.map(s => [s.id, s]));
+    const reorderedSlides: typeof updatedDeck.slides = [];
+
+    // Add slides in the specified order
+    for (const slideId of slideOrder) {
+      const slide = slideMap.get(slideId);
+      if (slide) {
+        reorderedSlides.push(slide);
+        slideMap.delete(slideId);
+      }
+    }
+
+    // Add any remaining slides that weren't in the order (shouldn't happen, but safety)
+    for (const slide of slideMap.values()) {
+      reorderedSlides.push(slide);
+    }
+
+    if (reorderedSlides.length > 0) {
+      updatedDeck.slides = reorderedSlides;
+      console.log('[DeckDiff] Applied slide_order:', slideOrder.length, 'slides reordered');
+    }
   }
 
   return updatedDeck;

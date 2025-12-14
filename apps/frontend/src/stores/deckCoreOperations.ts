@@ -292,7 +292,6 @@ export const createCoreDeckOperations = (set, get) => {
           const components = slide.components || [];
           const customComponents = components.filter(c => c.type === 'CustomComponent');
           if (customComponents.length > 1) {
-            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Found', customComponents.length, 'CustomComponents on slide', slide.id);
             // Sort by render HTML length (DESCENDING) - keep the LARGEST one (most content)
             // This prevents losing content when a minimal duplicate gets created
             const sorted = [...customComponents].sort((a, b) => {
@@ -300,9 +299,7 @@ export const createCoreDeckOperations = (set, get) => {
               const bLen = (b.props?.render as string)?.length || 0;
               return bLen - aLen;  // Descending: largest first
             });
-            const keepId = sorted[0].id;
             const removeIds = new Set(sorted.slice(1).map(c => c.id));
-            console.log('[updateDeckData] 🧹 AUTO-CLEANUP: Keeping', keepId, '(largest), removing', Array.from(removeIds));
             return {
               ...slide,
               components: components.filter(c => !removeIds.has(c.id))

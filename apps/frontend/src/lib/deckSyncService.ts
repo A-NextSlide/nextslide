@@ -133,7 +133,6 @@ export class DeckSyncService {
       const cacheBuster = `_t=${Date.now()}`;
       const baseUrl = this.getApiUrl(endpoint);
       const url = baseUrl.includes('?') ? `${baseUrl}&${cacheBuster}` : `${baseUrl}?${cacheBuster}`;
-      console.log(`🌐 [deckSyncService] Fetching deck: ${url}`);
 
 
       const token = await authService.getAuthTokenAsync();
@@ -177,17 +176,6 @@ export class DeckSyncService {
       // Handle response structure - backend returns { deck: ..., access_type: ... }
       const deckData = data.deck || data;
 
-      // Debug: Log CustomComponent render lengths from raw API response
-      if (Array.isArray(deckData?.slides)) {
-        deckData.slides.forEach((slide: any, i: number) => {
-          slide.components?.forEach((comp: any) => {
-            if (comp.type === 'CustomComponent') {
-              const renderLen = comp.props?.render?.length || 0;
-              console.log(`📡 [deckSyncService RAW] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars from fetch response`);
-            }
-          });
-        });
-      }
 
       return this.formatBackendDeck(deckData);
     } catch (err) {

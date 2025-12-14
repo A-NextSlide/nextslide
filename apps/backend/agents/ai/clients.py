@@ -245,10 +245,17 @@ def invoke(
     # Build invoke kwargs
     invoke_kwargs = {k: v for k, v in kwargs.items()}
 
-    # Handle max_tokens param name
+    # Handle max_tokens param name based on provider
     if any(m in model for m in MAX_COMPLETION_TOKEN_MODELS):
         invoke_kwargs["max_completion_tokens"] = max_tokens
-    elif not model.startswith("gemini"):
+    elif model.startswith("gemini"):
+        # Gemini uses generation config with max_output_tokens
+        from google.genai import types as genai_types
+        invoke_kwargs["config"] = genai_types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
+    else:
         invoke_kwargs["max_tokens"] = max_tokens
 
     if stream:
@@ -387,14 +394,8 @@ def _invoke_structured(client, model: str, messages: List[Dict], system: str, re
         # Instead, we call the raw google.genai Client directly and parse JSON ourselves.
 
         raw_client, _ = get_client(model, wrap_with_instructor=False)
+        # Keep only relevant kwargs - config is already set by invoke() with max_output_tokens
         gk = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
-
-        # Build generation config for Gemini with max_output_tokens
-        from google.genai import types as genai_types
-        gk["config"] = genai_types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        )
 
         def _build_prompt() -> str:
             base = "\n".join([f"{m.get('role', 'user')}: {m.get('content')}" for m in messages])

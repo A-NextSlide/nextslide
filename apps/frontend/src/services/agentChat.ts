@@ -6,8 +6,10 @@ export type AgentEvent =
   | { type: 'agent.plan.update'; data: { plan: Array<{ title: string }> } }
   | { type: 'agent.tool.start' | 'agent.tool.finish' | 'agent.tool.error'; data: { tool: string; status: 'start'|'finish'|'error'; detail?: any } }
   | { type: 'deck.edit.proposed'; data: { edit: { id: string; diff: any; summary?: string } } }
-  | { type: 'deck.edit.applied'; data: { editId: string; deckRevision?: number } }
+  | { type: 'deck.edit.applied'; data: { editId: string; deckRevision?: number; deck_diff?: any; slides?: any[] } }
+  | { type: 'deck.edit.restored'; data: { originalEditId: string; newEditId: string; deckRevision?: number; summary: string } }
   | { type: 'deck.preview.diff'; data: { diff: any; thumbnailUrl?: string } }
+  | { type: 'slide.variants.created'; data: { variants: Array<{ slide: any; label: string; style: string }>; instruction: string; insert_after?: string } }
   | { type: 'progress.update'; data: { phase?: string; percent?: number } }
   | { type: 'file.request'; data: { prompt: string } }
   | { type: 'error'; data: { code: string; message: string } };
@@ -263,6 +265,121 @@ export class AgentChatClient {
     this.ws = null;
     if (this.es) try { this.es.close(); } catch {}
     this.es = null;
+  }
+
+  /**
+   * Get existing sessions for a deck (to resume conversation)
+   */
+  async getSessions(deckId: string): Promise<{ sessions: Array<{ id: string; deck_id: string; slide_id?: string; status: string; last_activity: string }> }> {
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/sessions?deckId=${encodeURIComponent(deckId)}`;
+    const res = await fetch(url, {
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {},
+    });
+    if (!res.ok) throw new Error(`getSessions failed: ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * Get chat messages for a session to restore conversation
+   */
+  async getMessages(sessionId: string, limit = 50): Promise<{ messages: Array<{ id: string; role: string; text: string; attachments: any[]; created_at: string }> }> {
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/sessions/${sessionId}/messages?limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {},
+    });
+    if (!res.ok) throw new Error(`getMessages failed: ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * Save slideSnapshot for version history restore functionality
+   * @param slideSnapshot - The current/post-edit state of the slide (what's displayed)
+   * @param preEditSnapshot - The state before the edit (for restoration)
+   */
+  async saveSlideSnapshot(sessionId: string, slideSnapshot: any, editSummary?: string, editId?: string, preEditSnapshot?: any): Promise<void> {
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/sessions/${sessionId}/messages/snapshot`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      },
+      body: JSON.stringify({ slideSnapshot, editSummary, editId, preEditSnapshot }),
+    });
+    if (!res.ok) throw new Error(`saveSlideSnapshot failed: ${res.status}`);
+  }
+
+  /**
+   * Get version/edit history for a deck to enable restore functionality
+   */
+  async getEditHistory(deckId: string, limit = 20): Promise<{ versions: Array<{ id: string; version_number: number; summary: string; timestamp: string; deck_revision?: string; slide_ids: string[]; can_restore: boolean }> }> {
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/decks/${deckId}/edit-history?limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {},
+    });
+    if (!res.ok) throw new Error(`getEditHistory failed: ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * Restore to a specific edit version by reverting subsequent edits
+   */
+  async restoreToVersion(editId: string): Promise<void> {
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/edits/${editId}/restore`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`restoreToVersion failed: ${res.status}`);
+  }
+
+  /**
+   * Select a slide variant from the generated options
+   */
+  async selectSlideVariant(slide: any, insertAfter?: string): Promise<{ success: boolean; slide_id: string; deck_revision?: number }> {
+    if (!this.sessionId) throw new Error('selectSlideVariant called before createSession');
+    const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+    const url = `${base}/v1/agent/sessions/${this.sessionId}/select-variant`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      },
+      body: JSON.stringify({ slide, insert_after: insertAfter }),
+    });
+    if (!res.ok) throw new Error(`selectSlideVariant failed: ${res.status}`);
+    return res.json();
+  }
+
+  /**
+   * Get or create session for a deck - resumes existing session if available
+   */
+  async getOrCreateSession(deckId: string, slideId: string, metadata?: Record<string, any>): Promise<string> {
+    // First try to get existing active session
+    try {
+      const { sessions } = await this.getSessions(deckId);
+      const activeSession = sessions.find(s => s.status === 'active');
+      if (activeSession) {
+        this.sessionId = activeSession.id;
+        const base = (API_CONFIG.AGENT_BASE_URL || '').replace(/\/$/, '');
+        this.resolvedBaseUrl = base;
+        return this.sessionId;
+      }
+    } catch (e) {
+      console.warn('[AgentChat] Failed to get existing sessions, creating new one', e);
+    }
+
+    // No active session, create new one
+    return this.createSession(deckId, slideId, metadata);
   }
 }
 

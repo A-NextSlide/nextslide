@@ -41,9 +41,7 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      console.log('[CreditsContext] Fetching balance...');
       const data = await billingApi.getBalance();
-      console.log('[CreditsContext] Got balance:', data);
       setBalance(data);
     } catch (err) {
       console.error('[CreditsContext] Failed to fetch credits:', err);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { IconButton } from '../ui/IconButton';
-import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Type } from 'lucide-react';
+import { Edit, Plus, ChevronLeft, Undo, Redo, History, ZoomIn, ZoomOut, Search, Users, RefreshCw, Edit3, Undo2, Redo2, Presentation, HelpCircle, Menu, NotepadText, FileJson, Layers, UploadCloud, Sun, Moon, MessageSquare, Settings, Plug, LogOut } from 'lucide-react';
 import { useVersionHistory } from '@/context/VersionHistoryContext';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -22,6 +22,8 @@ import { useTheme } from "next-themes";
 import { extractDeckComponents } from '@/lib/componentExtractor';
 import { googleIntegrationApi } from '@/services/googleIntegrationApi';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/SupabaseAuthContext';
+import { IntegrationsDialog } from '@/components/integrations';
 
 interface DeckHeaderProps {
   isEditing: boolean;
@@ -63,7 +65,8 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   const { setTheme } = useTheme();
   const deckData = useDeckStore(state => state.deckData);
   const [isExporting, setIsExporting] = useState(false);
-  // Removed font optimization state
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const { signOut } = useAuth();
   const { toast } = useToast();
   
   // Get Yjs status from deck store
@@ -198,31 +201,6 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
     }
   }, [deckName, deckData?.slides]);
 
-  // Manual text fitting trigger for debugging
-  const handleOptimizeAllSlides = useCallback(async () => {
-    const SlideCompletionHandler = (await import('@/services/SlideCompletionHandler')).SlideCompletionHandler;
-    const handler = SlideCompletionHandler.getInstance();
-    const slides = deckData?.slides || [];
-
-    console.log('[DeckHeader] Manually triggering text fitting for all slides');
-
-    let optimizedCount = 0;
-    for (let i = 0; i < slides.length; i++) {
-      const slide = slides[i];
-      if (slide && slide.components && slide.components.length > 0) {
-        console.log(`[DeckHeader] Processing slide ${i + 1} of ${slides.length}`);
-        // Force refit all text components
-        await handler.optimizeTextFitting(slide, i, true);
-        optimizedCount++;
-      }
-    }
-
-    toast({
-      title: "Text fitting complete",
-      description: `Optimized ${optimizedCount} slides with text content`
-    });
-  }, [deckData?.slides, toast]);
-
   const startGoogleExport = useCallback(async (mode: 'images' | 'editable') => {
     try {
       setIsExporting(true);
@@ -245,6 +223,7 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
   }, [deckName, deckData?.slides]);
   
   return (
+    <>
     <div className="w-full py-2 px-4 border-b border-border flex items-center justify-between bg-card/80 fixed top-0 left-0 right-0 z-50">
       <div className="flex items-center gap-2">
         <IconButton
@@ -475,10 +454,6 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
               <History size={14} className="mr-2" />
               Version history
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleOptimizeAllSlides}>
-              <Type size={14} className="mr-2" />
-              Optimize Text Size (All Slides)
-            </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Search size={14} className="mr-2" />
@@ -571,14 +546,41 @@ const DeckHeader: React.FC<DeckHeaderProps> = ({
 
             <DropdownMenuSeparator />
 
+            <DropdownMenuItem onClick={() => navigate('/team')}>
+              <Users size={14} className="mr-2" />
+              Team Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/profile')}>
+              <Settings size={14} className="mr-2" />
+              Profile Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setIntegrationsOpen(true)}>
+              <Plug size={14} className="mr-2" />
+              Integrations
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
             <DropdownMenuItem onClick={() => { try { window.dispatchEvent(new CustomEvent('tour:start')); } catch {} }}>
               <HelpCircle size={14} className="mr-2" />
               Quick tour
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={signOut} className="text-red-600 dark:text-red-500">
+              <LogOut size={14} className="mr-2" />
+              Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </div>
+    <IntegrationsDialog
+      open={integrationsOpen}
+      onOpenChange={setIntegrationsOpen}
+    />
+    </>
   );
 };
 
