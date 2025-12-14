@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { RotateCcw, Check, Layers } from 'lucide-react';
 import MiniSlide from '@/components/deck/MiniSlide';
+import { useDeckStore } from '@/stores/deckStore';
 
 interface SlideSnapshotThumbnailProps {
   /** The slide data at the time of the edit (post-edit state shown in thumbnail) */
@@ -13,11 +14,21 @@ interface SlideSnapshotThumbnailProps {
       props: any;
     }>;
   };
+  /** Pre-edit snapshot for restoration (optional - enables restore button) */
+  preEditSnapshot?: {
+    id: string;
+    title?: string;
+    components: Array<{
+      id: string;
+      type: string;
+      props: any;
+    }>;
+  };
   /** Edit ID for restoration */
   editId?: string;
-  /** Callback to restore to PRE-edit state (undo the change) */
+  /** Callback to restore to PRE-edit state (undo the change) - if not provided, uses internal store */
   onRestore?: (slideSnapshot: any) => Promise<void>;
-  /** Callback to apply the thumbnail version (post-edit state) */
+  /** Callback to apply the thumbnail version (post-edit state) - if not provided, uses internal store */
   onApply?: (slideSnapshot: any) => Promise<void>;
   /** Timestamp of the edit */
   timestamp?: Date;
@@ -27,6 +38,7 @@ interface SlideSnapshotThumbnailProps {
 
 export function SlideSnapshotThumbnail({
   slideSnapshot,
+  preEditSnapshot,
   editId,
   onRestore,
   onApply,
@@ -37,6 +49,56 @@ export function SlideSnapshotThumbnail({
   const [restored, setRestored] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+
+  // Internal restore function - applies snapshot to deck
+  // Uses getState() to avoid subscribing to deck changes (prevents re-render on every update)
+  const internalRestore = useCallback(async (snapshot: any) => {
+    if (!snapshot?.id || !snapshot?.components) {
+      console.error('[SlideSnapshotThumbnail] Invalid snapshot for restore');
+      return;
+    }
+
+    try {
+      // Get current deck state without subscribing
+      const { deckData, updateDeckData } = useDeckStore.getState();
+      const slides = deckData?.slides || [];
+      const slideIndex = slides.findIndex((s: any) => s.id === snapshot.id);
+
+      if (slideIndex === -1) {
+        console.error('[SlideSnapshotThumbnail] Slide not found:', snapshot.id);
+        return;
+      }
+
+      // Create updated slides array with the restored slide
+      const updatedSlides = [...slides];
+      updatedSlides[slideIndex] = {
+        ...slides[slideIndex],
+        components: snapshot.components
+      };
+
+      // Clear any agent edit lock so the restore can take effect
+      if (typeof window !== 'undefined') {
+        (window as any).__agentEditInProgress = false;
+        (window as any).__lastAgentEditTimestamp = 0;
+      }
+
+      // Update deck with restored slide
+      updateDeckData({
+        ...deckData,
+        slides: updatedSlides
+      }, { skipBackend: false }); // Save to backend
+
+      // Dispatch event to force UI refresh
+      window.dispatchEvent(new CustomEvent('deck:restore', {
+        detail: { slideId: snapshot.id, slideIndex }
+      }));
+
+      console.log('[SlideSnapshotThumbnail] Restored slide:', snapshot.id);
+    } catch (error) {
+      console.error('[SlideSnapshotThumbnail] Restore failed:', error);
+      throw error;
+    }
+  }, []);
 
   // Convert slideSnapshot to SlideData format for MiniSlide
   const slideData = useMemo(() => {
@@ -70,13 +132,33 @@ export function SlideSnapshotThumbnail({
     return luminance > 0.5;
   }, [bgColor]);
 
+  // Restore to PRE-edit state (undo the change)
   const handleRestore = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!onRestore || isRestoring) return;
+    if (isRestoring) return;
+
+    console.log('[SlideSnapshot] handleRestore called', {
+      hasOnRestore: !!onRestore,
+      hasPreEditSnapshot: !!preEditSnapshot,
+      preEditSnapshotId: preEditSnapshot?.id,
+      preEditComponentCount: preEditSnapshot?.components?.length
+    });
+
+    // Need either a callback or preEditSnapshot to restore
+    if (!onRestore && !preEditSnapshot) {
+      console.warn('[SlideSnapshot] No restore callback or preEditSnapshot available');
+      return;
+    }
 
     setIsRestoring(true);
     try {
-      await onRestore(slideSnapshot);
+      if (onRestore) {
+        console.log('[SlideSnapshot] Using onRestore callback');
+        await onRestore(preEditSnapshot || slideSnapshot);
+      } else if (preEditSnapshot) {
+        console.log('[SlideSnapshot] Using internalRestore with preEditSnapshot');
+        await internalRestore(preEditSnapshot);
+      }
       setRestored(true);
       setTimeout(() => setRestored(false), 2000);
     } catch (error) {
@@ -84,15 +166,19 @@ export function SlideSnapshotThumbnail({
     } finally {
       setIsRestoring(false);
     }
-  }, [onRestore, slideSnapshot, isRestoring]);
+  }, [onRestore, preEditSnapshot, slideSnapshot, isRestoring, internalRestore]);
 
   // Apply the thumbnail version (post-edit state)
   const handleApply = useCallback(async () => {
-    if (!onApply || isApplying) return;
+    if (isApplying) return;
 
     setIsApplying(true);
     try {
-      await onApply(slideSnapshot);
+      if (onApply) {
+        await onApply(slideSnapshot);
+      } else {
+        await internalRestore(slideSnapshot);
+      }
       setApplied(true);
       setTimeout(() => setApplied(false), 2000);
     } catch (error) {
@@ -100,14 +186,17 @@ export function SlideSnapshotThumbnail({
     } finally {
       setIsApplying(false);
     }
-  }, [onApply, slideSnapshot, isApplying]);
+  }, [onApply, slideSnapshot, isApplying, internalRestore]);
+
+  // Determine if restore is possible
+  const canRestore = !!(onRestore || preEditSnapshot);
 
   if (!slideSnapshot || !slideSnapshot.components) {
     return null;
   }
 
   return (
-    <div className="mt-2 flex items-start gap-2">
+    <div className="mt-2 flex flex-col">
       {/* Thumbnail container */}
       <div className="relative w-48 aspect-video rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-all hover:border-blue-400 hover:shadow-md group">
         {/* Render slide using MiniSlide */}
@@ -130,29 +219,27 @@ export function SlideSnapshotThumbnail({
           </div>
         )}
 
-        {/* Hover overlay - click to apply thumbnail version */}
-        {onApply && (
-          <div
-            onClick={handleApply}
-            className={`absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 cursor-pointer ${
-              isApplying || applied ? 'opacity-100 bg-black/40' : ''
-            }`}
-          >
-            {isApplying ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : applied ? (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-green-500 text-white">
-                <Check className="w-3 h-3" />
-                <span>Restored!</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white text-gray-800 hover:bg-gray-100 transition-colors">
-                <RotateCcw className="w-3 h-3" />
-                <span>Restore</span>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Hover overlay - click to apply thumbnail version (always available with internal restore) */}
+        <div
+          onClick={handleApply}
+          className={`absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 cursor-pointer ${
+            isApplying || applied ? 'opacity-100 bg-black/40' : ''
+          }`}
+        >
+          {isApplying ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : applied ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-green-500 text-white">
+              <Check className="w-3 h-3" />
+              <span>Applied!</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white text-gray-800 hover:bg-gray-100 transition-colors">
+              <RotateCcw className="w-3 h-3" />
+              <span>Apply</span>
+            </div>
+          )}
+        </div>
 
         {/* Version badge */}
         <div className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-medium z-10 ${isLightBg ? 'bg-gray-800/70 text-white' : 'bg-black/50 text-white/80'}`}>
@@ -160,24 +247,32 @@ export function SlideSnapshotThumbnail({
         </div>
       </div>
 
-      {/* Undo button - always visible, restores to PRE-edit state */}
-      {onRestore && (
+      {/* Reset button - small text underneath thumbnail, resets to original version */}
+      {canRestore && (
         <button
           onClick={handleRestore}
           disabled={isRestoring}
-          title={restored ? 'Undone!' : 'Undo this edit'}
-          className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+          className={`mt-1 flex items-center gap-1 text-[10px] transition-colors ${
             restored
-              ? 'bg-green-500 text-white'
-              : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
           } disabled:opacity-50`}
         >
           {isRestoring ? (
-            <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            <>
+              <div className="w-3 h-3 border-[1.5px] border-gray-400 border-t-transparent rounded-full animate-spin" />
+              <span>Resetting...</span>
+            </>
           ) : restored ? (
-            <Check className="w-3.5 h-3.5" />
+            <>
+              <Check className="w-3 h-3" />
+              <span>Reset!</span>
+            </>
           ) : (
-            <RotateCcw className="w-3.5 h-3.5" />
+            <>
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset</span>
+            </>
           )}
         </button>
       )}

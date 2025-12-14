@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { createComponent } from '@/utils/componentUtils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useEditorSettingsStore } from '@/stores/editorSettingsStore';
+import { useEditorStore } from '@/stores/editorStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { registry } from '@/registry';
 import { CHART_TYPES } from '@/registry/library/chart-properties';
@@ -376,13 +377,16 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     
     // Add the component to the active slide using the ActiveSlideContext
     addComponent(newComponent);
-    
-    // Select the newly added component
+
+    // IMMEDIATELY select the new component in the editor store
+    // This ensures the component is selected before React state updates propagate
+    useEditorStore.getState().selectComponent(newComponent.id, false);
+
+    // Also notify parent with a small delay to ensure component is in activeComponents
     if (onComponentSelected) {
-        // Add a slight delay to ensure the component is rendered before selection
         setTimeout(() => {
             onComponentSelected(newComponent.id);
-        }, 10); 
+        }, 50); // Increased delay to ensure state propagates
     }
   };
   
@@ -415,15 +419,18 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     
     // Add the component to the active slide
     addComponent(newComponent);
-    
-    // Select the newly created component
+
+    // IMMEDIATELY select the new component in the editor store
+    useEditorStore.getState().selectComponent(newComponent.id, false);
+
+    // Also notify parent with a small delay to ensure component is in activeComponents
     if (onComponentSelected) {
       setTimeout(() => {
         onComponentSelected(newComponent.id);
-      }, 10);
+      }, 50);
     }
   };
-  
+
   // Function to start shape creation mode
   const startShapeCreation = (shapeType: string) => {
     setSelectedShapeType(shapeType);
@@ -822,11 +829,21 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     
     // Add the component to the active slide
     addComponent(newComponent);
-    
+
+    // IMMEDIATELY select the new component in the editor store
+    useEditorStore.getState().selectComponent(newComponent.id, false);
+
+    // Also notify parent with a small delay to ensure component is in activeComponents
+    if (onComponentSelected) {
+      setTimeout(() => {
+        onComponentSelected(newComponent.id);
+      }, 50);
+    }
+
     // Return the component ID for tracking
     return newComponent.id;
   };
-  
+
   // Function to start line creation mode
   const startLineCreation = () => {
     setIsCreatingLine(true);
@@ -1044,14 +1061,17 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
       
       // Add the component
       addComponent(newComponent);
-      
-      // Select the component with a small delay to ensure it's rendered
+
+      // IMMEDIATELY select the new component in the editor store
+      useEditorStore.getState().selectComponent(newComponent.id, false);
+
+      // Also notify parent with a small delay to ensure component is in activeComponents
       if (onComponentSelected) {
         setTimeout(() => {
           onComponentSelected(newComponent.id);
         }, 50);
       }
-      
+
       // Clean up
       cleanup();
     };
@@ -1150,7 +1170,17 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     
     // Add the component to the active slide
     addComponent(newComponent);
-    
+
+    // IMMEDIATELY select the new component in the editor store
+    useEditorStore.getState().selectComponent(newComponent.id, false);
+
+    // Also notify parent with a small delay to ensure component is in activeComponents
+    if (onComponentSelected) {
+      setTimeout(() => {
+        onComponentSelected(newComponent.id);
+      }, 50);
+    }
+
     // Return the component ID for tracking
     return newComponent.id;
   };
@@ -1171,15 +1201,18 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
           existingComponents: activeComponents 
         });
         addComponent(newComponent);
-        
+
+        // IMMEDIATELY select the new component in the editor store
+        useEditorStore.getState().selectComponent(newComponent.id, false);
+
         // Track this component for later update
         generatingComponentsRef.current.set('ai-generation', newComponent.id);
-        
-        // Select the component
+
+        // Also notify parent with a small delay to ensure component is in activeComponents
         if (onComponentSelected) {
           setTimeout(() => {
             onComponentSelected(newComponent.id);
-          }, 10);
+          }, 50);
         }
       } else if (url === 'failed://ai-image') {
         // Remove the generating component if it failed
@@ -1310,12 +1343,15 @@ const ComponentToolbar: React.FC<ComponentToolbarProps> = ({
     
     // Add the component to the active slide
     addComponent(newComponent);
-    
-    // Select the newly created component
+
+    // IMMEDIATELY select the new component in the editor store
+    useEditorStore.getState().selectComponent(newComponent.id, false);
+
+    // Also notify parent with a small delay to ensure component is in activeComponents
     if (onComponentSelected) {
       setTimeout(() => {
         onComponentSelected(newComponent.id);
-      }, 10);
+      }, 50);
     }
   };
 

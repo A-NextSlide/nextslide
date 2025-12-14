@@ -1458,46 +1458,66 @@ async def get_user_trends(
     """
     try:
         supabase = get_supabase_client()
-        
+
         # Get data for the past 7 days
         trends = []
-        
+
+        # Try to get login counts from auth audit log via RPC
+        login_counts_by_date = {}
+        try:
+            login_data = supabase.rpc("get_daily_login_counts", {"days_back": 7}).execute()
+            if login_data.data:
+                for row in login_data.data:
+                    # Convert date string to date object for matching
+                    login_date = row.get("login_date")
+                    if login_date:
+                        login_counts_by_date[login_date] = row.get("login_count", 0)
+        except Exception as rpc_err:
+            logger.warning(f"Could not get login counts from audit log (RPC may not exist yet): {str(rpc_err)}")
+            # Fall back to the old method if RPC doesn't exist
+
         for i in range(7):
             date = datetime.utcnow() - timedelta(days=6-i)
-            
+            date_str = date.strftime("%Y-%m-%d")  # Format for matching with RPC results
+
             # Get signups for this day
             start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_day = start_of_day + timedelta(days=1)
-            
+
             signups = supabase.table("users").select("id", count="exact").gte(
                 "created_at", start_of_day.isoformat()
             ).lt("created_at", end_of_day.isoformat()).execute()
-            
-            # Get logins for this day (using last_sign_in_at)
-            logins = supabase.table("users").select("id", count="exact").gte(
-                "last_sign_in_at", start_of_day.isoformat()
-            ).lt("last_sign_in_at", end_of_day.isoformat()).execute()
-            
+
+            # Get logins from the pre-fetched audit log data, or fall back to old method
+            if login_counts_by_date:
+                login_count = login_counts_by_date.get(date_str, 0)
+            else:
+                # Fallback: use last_sign_in_at (less accurate but works without migration)
+                logins = supabase.table("users").select("id", count="exact").gte(
+                    "last_sign_in_at", start_of_day.isoformat()
+                ).lt("last_sign_in_at", end_of_day.isoformat()).execute()
+                login_count = logins.count or 0
+
             # Format date as "Jan 1" - handle platform differences
             day_str = str(date.day)  # Avoid platform-specific strftime codes
             month_str = date.strftime("%b")
             formatted_date = f"{month_str} {day_str}"
-            
+
             trends.append(UserTrendData(
                 date=formatted_date,
                 signups=signups.count or 0,
-                logins=logins.count or 0
+                logins=login_count
             ))
-        
+
         # Log the action
         await log_admin_action(
             admin_user_id=admin["id"],
             action="view_user_trends",
             request=request
         )
-        
+
         return UserTrendsResponse(trends=trends)
-        
+
     except Exception as e:
         logger.error(f"Get user trends error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -3112,3 +3132,149 @@ async def estimate_costs(
     }
 
     return estimates
+
+
+# ==================== Test Data Cleanup ====================
+
+class CleanupRequest(BaseModel):
+    user_email: str
+    keep_last_days: int = 10
+    keep_every_nth: int = 10
+    keep_first_n: int = 10
+    dry_run: bool = True
+
+
+class CleanupResponse(BaseModel):
+    total_decks: int
+    decks_to_keep: int
+    decks_to_delete: int
+    deleted_deck_ids: List[str]
+    kept_deck_ids: List[str]
+    dry_run: bool
+
+
+@router.post("/cleanup/user-decks", response_model=CleanupResponse)
+async def cleanup_user_decks(
+    request: Request,
+    cleanup_request: CleanupRequest,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Clean up test user's decks while preserving important data.
+
+    Rules:
+    1. Keep all decks from the last N days
+    2. Keep every Nth deck from before that
+    3. Keep the first N decks ever created
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Find the user by email
+        user_response = supabase.table("users").select("id").eq(
+            "email", cleanup_request.user_email
+        ).single().execute()
+
+        if not user_response.data:
+            raise HTTPException(status_code=404, detail=f"User not found: {cleanup_request.user_email}")
+
+        user_id = user_response.data["id"]
+
+        # Get all decks for this user, ordered by created_at
+        decks_response = supabase.table("decks").select(
+            "uuid, name, created_at"
+        ).eq("user_id", user_id).order("created_at", desc=False).execute()
+
+        all_decks = decks_response.data or []
+        total_decks = len(all_decks)
+
+        if total_decks == 0:
+            return CleanupResponse(
+                total_decks=0,
+                decks_to_keep=0,
+                decks_to_delete=0,
+                deleted_deck_ids=[],
+                kept_deck_ids=[],
+                dry_run=cleanup_request.dry_run
+            )
+
+        # Calculate cutoff date for "recent" decks
+        cutoff_date = datetime.utcnow() - timedelta(days=cleanup_request.keep_last_days)
+
+        decks_to_keep = set()
+        decks_to_delete = set()
+
+        # Rule 1: Keep first N decks
+        first_n = min(cleanup_request.keep_first_n, total_decks)
+        for i in range(first_n):
+            decks_to_keep.add(all_decks[i]["uuid"])
+
+        # Process remaining decks
+        older_deck_index = 0
+        for i, deck in enumerate(all_decks):
+            deck_id = deck["uuid"]
+            created_at_str = deck.get("created_at", "")
+
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            except:
+                created_at = datetime.min
+
+            # Rule 2: Keep all decks from the last N days
+            if created_at >= cutoff_date:
+                decks_to_keep.add(deck_id)
+                continue
+
+            # Rule 3: For older decks (not in first N), keep every Nth
+            if deck_id not in decks_to_keep:
+                if older_deck_index % cleanup_request.keep_every_nth == 0:
+                    decks_to_keep.add(deck_id)
+                else:
+                    decks_to_delete.add(deck_id)
+                older_deck_index += 1
+
+        # Remove any decks from delete list that are in keep list
+        decks_to_delete = decks_to_delete - decks_to_keep
+
+        deleted_ids = []
+        kept_ids = list(decks_to_keep)
+
+        # Perform deletion if not dry run
+        if not cleanup_request.dry_run and decks_to_delete:
+            for deck_id in decks_to_delete:
+                try:
+                    # Hard delete the deck
+                    supabase.table("decks").delete().eq("uuid", deck_id).execute()
+                    deleted_ids.append(deck_id)
+                except Exception as del_err:
+                    logger.warning(f"Failed to delete deck {deck_id}: {del_err}")
+
+            # Log the action
+            await log_admin_action(
+                admin_user_id=admin["id"],
+                action="bulk_delete_decks",
+                request=request,
+                action_details={
+                    "target_user_email": cleanup_request.user_email,
+                    "target_user_id": user_id,
+                    "deleted_count": len(deleted_ids),
+                    "kept_count": len(decks_to_keep)
+                }
+            )
+        else:
+            deleted_ids = list(decks_to_delete)
+
+        return CleanupResponse(
+            total_decks=total_decks,
+            decks_to_keep=len(decks_to_keep),
+            decks_to_delete=len(decks_to_delete),
+            deleted_deck_ids=deleted_ids,
+            kept_deck_ids=kept_ids,
+            dry_run=cleanup_request.dry_run
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cleanup error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

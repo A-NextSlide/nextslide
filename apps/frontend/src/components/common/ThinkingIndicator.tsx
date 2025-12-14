@@ -136,10 +136,19 @@ const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
         "flex items-center gap-1.5",
         className
       )}
+      style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}
     >
       {showStar && <DancingStar size={size} />}
       <span className={cn(textClass, "text-muted-foreground")}>
-        <span className="font-medium" style={{ color: '#FF4301' }}>
+        <span
+          className="font-semibold tracking-wide"
+          style={{
+            color: '#FF4301',
+            fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+            fontWeight: 600,
+            letterSpacing: '0.02em'
+          }}
+        >
           {displayText}
         </span>
         <AnimatedEllipsis />

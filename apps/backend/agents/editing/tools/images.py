@@ -4,7 +4,7 @@ Image tools - search and manage images in slides.
 import asyncio
 import logging
 import re
-from typing import Literal, Optional, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any, Tuple
 from pydantic import Field, BaseModel
 
 from models.tools import ToolModel
@@ -14,6 +14,34 @@ from models.slide import SlideDiffBase
 from utils.images import image_exists
 
 logger = logging.getLogger(__name__)
+
+
+async def _upload_image_to_supabase(image_url: str) -> Tuple[str, bool]:
+    """
+    Upload an external image to Supabase storage.
+    Returns (url, success) - either the Supabase URL or original URL on failure.
+    """
+    from services.image_storage_service import ImageStorageService
+
+    # Skip if already our bucket URL
+    OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
+    if any(domain in image_url.lower() for domain in OUR_BUCKET_DOMAINS):
+        logger.info(f"[SEARCH_IMAGES] Image already in our bucket: {image_url[:50]}...")
+        return image_url, True
+
+    try:
+        async with ImageStorageService() as storage:
+            result = await storage.upload_image_from_url(image_url)
+            if 'error' not in result and result.get('url'):
+                uploaded_url = result['url']
+                logger.info(f"[SEARCH_IMAGES] ✅ Uploaded to Supabase: {image_url[:40]}... -> {uploaded_url[:50]}...")
+                return uploaded_url, True
+            else:
+                logger.warning(f"[SEARCH_IMAGES] Upload failed, using original: {result.get('error', 'Unknown error')}")
+                return image_url, False
+    except Exception as e:
+        logger.error(f"[SEARCH_IMAGES] Upload exception: {e}")
+        return image_url, False
 
 
 # Generic/vague terms that need AI enhancement
@@ -234,15 +262,25 @@ def search_images(
 
         logger.info(f"[SEARCH_IMAGES] Found {len(photos)} valid images for '{query}'")
 
-        # Get the best image URL
+        # Get the best image URL and upload to Supabase
         best_image_url = None
         best_image_alt = query
         for photo in photos:
             url = photo.get("url") or photo.get("src", {}).get("large")
             if url:
-                best_image_url = url
-                best_image_alt = photo.get("alt", query)
-                break
+                # CRITICAL: Upload to Supabase first, like slide generation does
+                # This ensures images are in our bucket and won't break/expire
+                logger.info(f"[SEARCH_IMAGES] Uploading image to Supabase: {url[:60]}...")
+                uploaded_url, success = loop.run_until_complete(_upload_image_to_supabase(url))
+                if success:
+                    best_image_url = uploaded_url
+                    best_image_alt = photo.get("alt", query)
+                    logger.info(f"[SEARCH_IMAGES] Using Supabase URL: {best_image_url[:60]}...")
+                    break
+                else:
+                    # Try next image if upload failed
+                    logger.warning(f"[SEARCH_IMAGES] Upload failed for {url[:40]}..., trying next image")
+                    continue
 
         # If component_id provided and we found an image, replace it
         if component_id and best_image_url:
@@ -319,6 +357,11 @@ def search_images(
                             props = target_component.get("props", {})
                             render_html = props.get("render", "")
 
+                            # CRITICAL: Strip frontend editing scripts from HTML before processing
+                            # These can accumulate if frontend sends back HTML with injected scripts
+                            from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+                            render_html = strip_frontend_editing_scripts(render_html)
+
                             if render_html:
                                 import re
                                 old_url = args.get("old_url")  # Optional: specific URL to replace
@@ -328,25 +371,76 @@ def search_images(
                                     # Replace specific URL
                                     new_html = render_html.replace(old_url, best_image_url)
                                 else:
-                                    # Find all img tags with their full context
+                                    # Find all images: both <img> tags AND CSS background-image URLs
+                                    # Pattern 1: <img src="...">
                                     img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
-                                    matches = list(re.finditer(img_pattern, render_html))
+                                    # Pattern 2: background-image: url('...') or url("...")
+                                    bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
+                                    # Pattern 3: style="...background-image: url('...')..." inline
+                                    inline_bg_pattern = r'style=["\'][^"\']*background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)[^"\']*["\']'
+
+                                    img_matches = list(re.finditer(img_pattern, render_html))
+                                    bg_matches = list(re.finditer(bg_pattern, render_html))
+                                    inline_bg_matches = list(re.finditer(inline_bg_pattern, render_html))
+
+                                    # Combine all matches, keeping track of their positions
+                                    # CRITICAL: Deduplicate by URL to avoid double-counting
+                                    # bg_pattern and inline_bg_pattern can match the same URL
+                                    all_matches = []
+                                    seen_urls = set()
+
+                                    # Add img matches first (these are unique - <img> tags)
+                                    for m in img_matches:
+                                        url = m.group(1)
+                                        if url not in seen_urls:
+                                            all_matches.append((m.start(), m, 'img'))
+                                            seen_urls.add(url)
+
+                                    # For background images, prefer inline_bg matches (more context)
+                                    # over bare bg_pattern matches
+                                    for m in inline_bg_matches:
+                                        url = m.group(1)
+                                        if url not in seen_urls:
+                                            all_matches.append((m.start(), m, 'inline_bg'))
+                                            seen_urls.add(url)
+
+                                    # Only add bg_pattern matches if not already seen
+                                    for m in bg_matches:
+                                        url = m.group(1)
+                                        if url not in seen_urls:
+                                            all_matches.append((m.start(), m, 'bg'))
+                                            seen_urls.add(url)
+
+                                    # Sort by position to maintain order
+                                    all_matches.sort(key=lambda x: x[0])
+                                    matches = [m[1] for m in all_matches]
+
+                                    logger.info(f"[SEARCH_IMAGES] Found {len(matches)} unique images ({len(img_matches)} <img> tags, {len(bg_matches)} CSS bg, {len(inline_bg_matches)} inline bg - deduplicated)")
 
                                     if not matches:
-                                        logger.warning(f"[SEARCH_IMAGES] No img tags found in CustomComponent HTML")
+                                        logger.warning(f"[SEARCH_IMAGES] No images found in CustomComponent HTML (checked <img> tags and CSS background-images)")
                                         return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+                                    # Log what each image index maps to (helpful for debugging)
+                                    for idx, m in enumerate(matches):
+                                        url = m.group(1)
+                                        # Get surrounding context for logging
+                                        ctx_start = max(0, m.start() - 100)
+                                        ctx_end = min(len(render_html), m.end() + 100)
+                                        ctx = re.sub(r'<[^>]+>', ' ', render_html[ctx_start:ctx_end])
+                                        ctx = ' '.join(ctx.split())[:80]
+                                        logger.info(f"[SEARCH_IMAGES] Index {idx}: {url[:60]}... context: '{ctx}'")
 
                                     # If only one image, just replace it
                                     if len(matches) == 1:
                                         old_url = matches[0].group(1)
                                         new_html = render_html.replace(old_url, best_image_url, 1)
                                         logger.info(f"[SEARCH_IMAGES] Replacing only image: {old_url[:50]}... -> {best_image_url[:50]}...")
-                                    elif image_index is not None and 0 <= image_index < len(matches):
-                                        # Explicit index provided
-                                        old_url = matches[image_index].group(1)
-                                        new_html = render_html.replace(old_url, best_image_url, 1)
-                                        logger.info(f"[SEARCH_IMAGES] Replacing image at index {image_index}: {old_url[:50]}...")
                                     else:
+                                        # ALWAYS use smart scoring for multiple images
+                                        # The LLM's image_index guesses are often wrong (it doesn't know
+                                        # that index 0 might be a logo, not a card background)
+                                        # image_index is used as a hint/tiebreaker, not an override
                                         # Multiple images - score each by relevance to query
                                         query_words = set(query.lower().split())
                                         # Identify generic words that shouldn't dominate scoring
@@ -405,6 +499,11 @@ def search_images(
                                             # Bonus if we matched a specific (non-generic) word
                                             if specific_word_matched:
                                                 score += 5
+
+                                            # Small tiebreaker bonus if LLM's image_index matches
+                                            # This shouldn't override strong matches but helps when scores are equal
+                                            if image_index is not None and idx == image_index:
+                                                score += 0.5  # Small bonus, not enough to override real matches
 
                                             logger.info(f"[SEARCH_IMAGES] Image {idx}: score={score}, specific_match={specific_word_matched}, alt='{alt_text[:30]}', text_near='{text_content[:50]}...'")
 
@@ -480,6 +579,21 @@ def replace_image_from_search(
     # Validate the image URL (optional - log warning but proceed)
     if not image_exists(image_url):
         logger.warning(f"[REPLACE_IMAGE] Image URL may not be accessible: {image_url[:80]}")
+
+    # CRITICAL: Upload to Supabase first, like slide generation does
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    logger.info(f"[REPLACE_IMAGE] Uploading image to Supabase: {image_url[:60]}...")
+    uploaded_url, success = loop.run_until_complete(_upload_image_to_supabase(image_url))
+    if success:
+        image_url = uploaded_url
+        logger.info(f"[REPLACE_IMAGE] Using Supabase URL: {image_url[:60]}...")
+    else:
+        logger.warning(f"[REPLACE_IMAGE] Upload failed, using original URL")
 
     logger.info(f"[REPLACE_IMAGE] Replacing {component_id} with {image_url[:80]}...")
 

@@ -274,18 +274,6 @@ export const createCoreDeckOperations = (set, get) => {
     
     // Update deck data action with debouncing to minimize renders
     updateDeckData: (data: Partial<CompleteDeckData>, options: { skipBackend?: boolean, batchUpdate?: boolean, isRealtimeUpdate?: boolean } = {}) => {
-      // Debug: Log CustomComponent changes
-      if (data.slides && Array.isArray(data.slides)) {
-        data.slides.forEach((slide: any, i: number) => {
-          slide.components?.forEach((comp: any) => {
-            if (comp.type === 'CustomComponent') {
-              const renderLen = comp.props?.render?.length || 0;
-              console.log(`📥 [updateDeckData] Slide ${i} CustomComponent ${comp.id}: ${renderLen} chars incoming (skipBackend: ${options.skipBackend || false}, isRealtime: ${options.isRealtimeUpdate || false})`);
-            }
-          });
-        });
-      }
-
       // AUTO-CLEANUP: Remove duplicate CustomComponents from all slides BEFORE storing
       if (data.slides && Array.isArray(data.slides)) {
         data.slides = data.slides.map(slide => {

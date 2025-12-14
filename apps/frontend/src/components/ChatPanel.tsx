@@ -19,7 +19,7 @@ import { saveFeedback } from '@/utils/feedbackService';
 import { COLORS } from '@/utils/colors';
 import { getOverlappingComponentIds, getComponentBounds } from '@/utils/overlapDetection';
 import AgentChatClient from '@/services/agentChat';
-import { applyDeckDiffPure } from '@/utils/deckDiffUtils';
+import { applyDeckDiffPure, isValidDeckDiff } from '@/utils/deckDiffUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadFile } from '@/utils/fileUploadUtils';
 import { deckSyncService } from '@/lib/deckSyncService';
@@ -45,6 +45,7 @@ import {
   ExtendedChatMessageProps,
   ChatPanelProps,
   ALL_SUGGESTIONS,
+  DEFAULT_SUGGESTION,
   OUTLINE_SUGGESTIONS,
   sampleArray,
   convertMessagesToApiFormat,
@@ -52,7 +53,7 @@ import {
 } from './chat';
 import { sendChatToApi } from '@/components/chat/utils/messageUtils';
 import { captureTinySlideScreenshot, shouldCaptureScreenshotForEdit } from '@/utils/slideScreenshot';
-import SlideSnapshotThumbnail from './chat/blocks/SlideSnapshotThumbnail';
+// SlideSnapshotThumbnail is now rendered inside ChatMessage component
 
 // Re-export types for consumers of this file
 export type { ExtendedChatMessageProps, ChatPanelProps };
@@ -133,17 +134,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       return outlineMessages;
     }
 
-    // Default welcome message - uses shared utility
-    return [{
-      id: 'welcome-message',
-      type: 'ai',
-      message: getWelcomeMessage(outlineMode, isExistingDeck),
-      timestamp: new Date(),
-      feedback: null
-    }];
+    // For slide editing mode, don't show welcome message until deck loads (handled by effect)
+    // This prevents the typewriter animation from competing with deck loading
+    return [];
   };
 
   const [messages, setMessages] = useState<ExtendedChatMessageProps[]>(getInitialMessages());
+
+  // Track if welcome message has been shown
+  const welcomeMessageShownRef = useRef(false);
+
   // Track pending messages by ID for parallel processing (replaces single isLoading boolean)
   // Using ref + forceUpdate pattern to avoid closure issues with state batching
   const pendingMessageIdsRef = useRef<Set<string>>(new Set());
@@ -174,6 +174,34 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Get deck data for slide dropdown in outline mode
   const deckData = useDeckStore(state => state.deckData);
 
+  // Add welcome message after deck finishes loading (prevents animation competing with render)
+  // Use slides length as dependency to avoid re-renders on every slides array reference change
+  const slideCount = deckData?.slides?.length ?? 0;
+  useEffect(() => {
+    // Only for slide editing mode (not outline mode)
+    if (outlineMode || useOutlineAgent) return;
+
+    // Only show once and only after deck loads
+    if (slideCount > 0 && !welcomeMessageShownRef.current) {
+      welcomeMessageShownRef.current = true;
+      // Small delay to let the UI settle after deck render
+      const timer = setTimeout(() => {
+        setMessages(prev => {
+          // Don't add if already has messages (e.g., from chat history)
+          if (prev.length > 0) return prev;
+          return [{
+            id: 'welcome-message',
+            type: 'ai',
+            message: getWelcomeMessage(false, isExistingDeck),
+            timestamp: new Date(),
+            feedback: null
+          }];
+        });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [slideCount, outlineMode, useOutlineAgent, isExistingDeck]);
+
   // Outline agent for conversational outline generation (only when enabled)
   const outlineAgentData = useOutlineAgentHook();
   const outlineAgent = (outlineMode && useOutlineAgent) ? outlineAgentData : null;
@@ -181,25 +209,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Handle initial conversational data from onboarding
   const hasProcessedConversationalDataRef = useRef(false);
   useEffect(() => {
-    console.log('[ChatPanel] Effect running, checking conditions:', {
-      hasInitialData: !!initialConversationalData,
-      hasProcessed: hasProcessedConversationalDataRef.current,
-      hasToolCallCb: !!onOutlineAgentToolCall,
-      hasAgent: !!outlineAgent
-    });
-    
     if (
       initialConversationalData &&
       !hasProcessedConversationalDataRef.current &&
       onOutlineAgentToolCall
       // Remove outlineAgent requirement - we're calling the API directly now
     ) {
-      console.log('[ChatPanel] ✅ Processing initial conversational data:', initialConversationalData);
       hasProcessedConversationalDataRef.current = true;
 
       // If we already have slides (e.g. from a narrative flow that generated them), use them directly
       if (initialConversationalData.slides && initialConversationalData.slides.length > 0) {
-        console.log('[ChatPanel] Using pre-generated slides from conversational agent:', initialConversationalData.slides.length, 'slides');
 
         onOutlineAgentToolCall({
           topic: initialConversationalData.topic,
@@ -256,9 +275,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 font: searchedFont
               }
             };
-            console.log('[ChatPanel] 🎨 Triggering theme generation for pre-generated slides');
-            console.log('[ChatPanel] 🎨 Theme changes from conversation:', themeChanges);
-            console.log('[ChatPanel] 🎨 Searched colors:', searchedColors);
 
             // Dispatch theme_loading event so UI shows loading state
             window.dispatchEvent(new CustomEvent('theme_preview_update', {
@@ -266,7 +282,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }));
 
             await outlineApi.generateThemeFromOutline(outlineForTheme as any, deckId, (evt) => {
-              console.log('[ChatPanel] 🎨 Theme event:', evt);
               // Relay theme events to the UI
               window.dispatchEvent(new CustomEvent('theme_preview_update', { detail: evt }));
             });
@@ -290,14 +305,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const uploadedFilesFromConversation = initialConversationalData.uploadedFiles || [];
         const uploadedMediaFromAgent = initialConversationalData.uploadedMedia || [];
 
-        console.log('[ChatPanel] 📸 Uploaded media from agent:', uploadedMediaFromAgent.length, uploadedMediaFromAgent);
 
         // If no topic, try to extract from chat history (user's first message)
         if (!topic && chatHistory && chatHistory.length > 0) {
           const firstUserMessage = chatHistory.find((msg: any) => msg.role === 'user');
           if (firstUserMessage?.content) {
             topic = firstUserMessage.content;
-            console.log('[ChatPanel] Extracted topic from chat history:', topic);
           }
         }
 
@@ -339,8 +352,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         // Call the REAL streaming outline endpoint
         (async () => {
           try {
-            console.log('[ChatPanel] 🚀 Calling REAL streaming outline endpoint with Perplexity');
-            console.log('[ChatPanel] 📁 Files from conversation:', uploadedFilesFromConversation.length);
             const { outlineApi } = await import('@/services/outlineApi');
 
             // Notify parent that generation is starting
@@ -348,8 +359,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               onOutlineChatGeneratingChange(true);
             }
 
-            console.log('[ChatPanel] 📤 Sending files to API:', uploadedFilesFromConversation.length);
-            console.log('[ChatPanel] 📸 Sending uploaded media to API:', uploadedMediaFromAgent.length);
 
             // Start streaming generation (API expects raw File objects, it handles base64 conversion)
             const outline = await outlineApi.generateOutlineStream(
@@ -364,7 +373,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 uploadedMedia: uploadedMediaFromAgent // Pre-processed media from agent
               },
               (event: any) => {
-                console.log('[ChatPanel] 📥 Stream event:', event.type, event);
 
                 // Handle error events from backend
                 if (event.type === 'error') {
@@ -389,7 +397,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
                 // Forward events to parent for display
                 if (event.type === 'outline_structure') {
-                  console.log('[ChatPanel] 📋 OUTLINE_STRUCTURE - Slide titles:', event.slideTitles);
                   // Emit initial structure with placeholder slides
                   const placeholderSlides = (event.slideTitles || []).map((title: string, idx: number) => ({
                     id: `placeholder-${idx}`,
@@ -407,12 +414,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   });
                 } else if (event.type === 'slide_complete' && event.slide) {
                   // Stream individual slides as they complete
-                  console.log('[ChatPanel] 🎯 SLIDE_COMPLETE for index', event.slideIndex);
-                  console.log('[ChatPanel] 📝 Slide title:', event.slide.title);
-                  console.log('[ChatPanel] 📄 Content preview (first 200 chars):', event.slide.content?.substring(0, 200));
-                  console.log('[ChatPanel] 📚 Citations count:', event.slide.citations?.length || 0);
-                  console.log('[ChatPanel] 🔗 Footnotes count:', event.slide.footnotes?.length || 0);
-                  console.log('[ChatPanel] 🖼️ Tagged media count:', event.slide.taggedMedia?.length || 0);
                   
                   onOutlineAgentToolCall({
                     topic: topic,
@@ -424,9 +425,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 } else if (event.type === 'outline_complete') {
                   // Slides were already streamed, but we need to pass stylePreferences from outline_complete!
                   // This is where the backend sends the theme colors (e.g., Pikachu yellow)
-                  console.log('[ChatPanel] ✅ Outline generation complete');
-                  console.log('[ChatPanel] 🎨 Outline stylePreferences:', event.outline?.stylePreferences);
-                  console.log('[ChatPanel] 🎨 Outline font:', event.outline?.stylePreferences?.font);
                   
                   // CRITICAL: Pass stylePreferences to DeckList so theme colors are applied!
                   if (event.outline?.stylePreferences && onOutlineAgentToolCall) {
@@ -446,7 +444,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
             );
             
-            console.log('[ChatPanel] ✅ Streaming outline generation complete:', outline);
             
             // Ensure loading state is cleared
             if (onOutlineChatGeneratingChange) {
@@ -484,7 +481,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       !hasProcessedInitialPromptRef.current &&
       !outlineAgent.isProcessing
     ) {
-      console.log('[ChatPanel] Auto-sending initial prompt from URL:', initialPromptFromURL);
       hasProcessedInitialPromptRef.current = true;
 
       // Use the clean prompt - no need to add preferences to the agent message
@@ -542,7 +538,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           cleanPrompt,
           (outlineData) => {
             // Agent generated/updated outline
-            console.log('[ChatPanel] Initial prompt outline data received:', outlineData);
 
             if (outlineData.action === 'update_outline' && outline && onOutlineUpdate) {
               const updatedSlides = outlineData.slides.map((slide, index) => ({
@@ -614,6 +609,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const pendingSlidesByMessageIdRef = useRef<Map<string, any[]>>(new Map());
   const toolDedupRef = useRef<Map<string, number>>(new Map());
   const TOOL_DEDUP_WINDOW_MS = 2500;
+  // Track processed edit events to prevent duplicate handling from multiple subscriptions
+  const processedEditEventsRef = useRef<Set<string>>(new Set());
   const styleToolStateRef = useRef<{ active: boolean; name: string; lastStartTs: number; lastFinishTs: number }>({ active: false, name: '', lastStartTs: 0, lastFinishTs: 0 });
 
   // Access slide editor edit mode to coordinate mutual exclusivity
@@ -778,16 +775,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, [formatSelectionLabel]);
 
   const appendToolRow = useCallback((tool: string, status: string) => {
+    // SEAMLESS UX: Don't show tool start/finish messages - they're too technical
+    // Just track state for internal use (e.g., style tools)
     const now = Date.now();
     if (now < agentFlowLockoutUntilRef.current) return;
-    const text = status === 'start' ? `Using tool: ${tool}` : status === 'finish' ? `Tool finished: ${tool}` : `⚠️ ${tool} error`;
     const key = `${status}:${tool}`;
     const last = toolDedupRef.current.get(key) || 0;
     if (now - last < TOOL_DEDUP_WINDOW_MS) return;
     toolDedupRef.current.set(key, now);
     toolDedupRef.current.forEach((t, k) => { if (now - t > TOOL_DEDUP_WINDOW_MS * 3) toolDedupRef.current.delete(k); });
-    setMessages(prev => [...prev, { id: `tool-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'system', message: text, timestamp: new Date(), feedback: null, metadata: { type: 'agent_tool', status, tool, compactRow: true } }]);
-  }, [setMessages]);
+    // Silent tracking only - no visible message added
+  }, []);
 
   const isStyleTool = useCallback((toolName?: string): boolean => {
     const t = (toolName || '').toLowerCase();
@@ -815,53 +813,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Apply deck diff respecting edit mode
   const applyDeckDiffRespectingEditMode = useCallback((deckDiff: DeckDiff, isEditDiff = false) => {
     if (!deckDiff) {
-      console.log('[applyDeckDiff] No diff provided, returning');
       return;
     }
-
-    console.log('[applyDeckDiff] Starting diff application', {
-      hasSlides: !!(deckDiff as any).slides_to_update?.length,
-      slidesCount: (deckDiff as any).slides_to_update?.length,
-      isEditDiff
-    });
-
-    console.log('[applyDeckDiff] Starting diff application', {
-      isEditDiff,
-      diffKeys: Object.keys(deckDiff || {}),
-      slidesToUpdate: (deckDiff as any)?.slides_to_update?.length || 0,
-      firstSlideComponentUpdates: (deckDiff as any)?.slides_to_update?.[0]?.components_to_update?.length || 0
-    });
 
     // HARD GUARD: If deck is already completed, do not process any generation diffs
     // BUT: Always allow edit diffs through (component updates from editing agent)
     try {
       const deckData = (useDeckStore as any).getState().deckData;
       const allCompleted = Array.isArray(deckData?.slides) && deckData.slides.length > 0 && deckData.slides.every((s: any) => s.status === 'completed');
-      console.log('[applyDeckDiff] Completion check', {
-        hasSlides: Array.isArray(deckData?.slides),
-        slideCount: deckData?.slides?.length,
-        allCompleted,
-        isEditDiff
-      });
       if (allCompleted && !isEditDiff) {
-        console.log('[ChatPanel] Deck is completed; skipping generation diff application');
         setIsGenerating(false);
         return;
       }
-      if (allCompleted && isEditDiff) {
-        console.log('[ChatPanel] Deck is completed but this is an edit diff; allowing through');
-      }
     } catch (e) {
-      console.log('[applyDeckDiff] Error checking completion status', e);
+      // Ignore errors
     }
 
     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-    console.log('[applyDeckDiff] Edit mode check', {
-      isEditing,
-      isEditDiff,
-      slidesToUpdate: (deckDiff as any).slides_to_update?.length,
-      hasComponentUpdates: (deckDiff as any).slides_to_update?.some((s: any) => s.components_to_update?.length > 0)
-    });
 
     if (isEditing) {
       // Skip applying diffs while actively interacting (drag/resize)
@@ -872,7 +840,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           (window as any).__isResizingCharts === true
         );
         if (interacting) {
-          console.log('[AgentChat] Skipping diff due to active interaction');
           return;
         }
       } catch { }
@@ -891,7 +858,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           // CRITICAL: Always process removals first, even if slide has local changes
           // Removals are explicit user actions that must be applied immediately
           (slideDiff.components_to_remove || []).forEach((compId: string) => {
-            console.log('[ChatPanel] Removing component from draft', { slideId, compId });
             editorStore.removeDraftComponent(slideId, compId, true);
           });
 
@@ -902,25 +868,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             try {
               const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
               if (hasLocal) {
-                console.log('[ChatPanel] Skipping updates/additions for slide with local changes', { slideId });
                 return;
               }
             } catch { }
           } else {
-            console.log('[ChatPanel] Applying agent edit regardless of local changes', { slideId, isEditDiff });
           }
 
           // Apply component updates
           let needsDraftResync = false;
           (slideDiff.components_to_update || []).forEach((compDiff: any) => {
-            console.log('[ChatPanel] Applying component update', {
-              slideId,
-              componentId: compDiff.id,
-              type: compDiff.type,
-              hasRenderProp: !!compDiff.props?.render,
-              renderPreview: compDiff.props?.render?.substring(0, 100)
-            });
-
             // Check if component exists in draft BEFORE updating
             const draftBefore = editorStore.getDraftComponents(slideId);
             const existsInDraft = draftBefore?.some((c: any) => c.id === compDiff.id);
@@ -943,19 +899,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               },
               true // skipHistory
             );
-            // Debug: verify update was applied
-            const updatedDraft = editorStore.getDraftComponents(slideId);
-            const updatedComp = updatedDraft?.find((c: any) => c.id === compDiff.id);
-            console.log('[ChatPanel] Component after update', {
-              componentId: compDiff.id,
-              found: !!updatedComp,
-              newRenderPreview: updatedComp?.props?.render?.substring(0, 100)
-            });
           });
 
           // If component wasn't found in draft, flag for resync
           if (needsDraftResync) {
-            console.log('[ChatPanel] Marking slide for draft resync:', slideId);
             (slideDiff as any)._needsDraftResync = true;
           }
 
@@ -967,27 +914,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
         // Apply deck-level changes to main store
         const { deckData, updateDeckData } = (useDeckStore as any).getState();
-        console.log('[ChatPanel] Applying deck diff to main store', {
-          isEditing,
-          hasRemoves: !!(deckDiff as any).slides_to_update?.some((s: any) => s.components_to_remove?.length > 0)
-        });
         const updated = applyDeckDiffPure(deckData, deckDiff as any);
         if (updated !== deckData) {
           // CRITICAL FIX: Backend auto-apply has ALREADY persisted deck-level changes
           // So we should ALWAYS skip backend here to avoid double-saving
           // Just update local state for instant preview
-          const hasSlideAdditions = (deckDiff as any).slides_to_add && (deckDiff as any).slides_to_add.length > 0;
-          const hasSlideRemovals = (deckDiff as any).slides_to_remove && (deckDiff as any).slides_to_remove.length > 0;
-          const hasDeckProps = (deckDiff as any).deck_properties && Object.keys((deckDiff as any).deck_properties).length > 0;
-
-          console.log('[ChatPanel][applyDeckDiff] Applying deck-level changes locally', {
-            hasSlideAdditions,
-            hasSlideRemovals,
-            hasDeckProps,
-            slidesInUpdated: updated.slides?.length,
-            slidesInCurrent: deckData.slides?.length
-          });
-
           // Always skip backend since backend auto-apply already persisted
           updateDeckData(updated, { skipBackend: true });
 
@@ -999,7 +930,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             .map((s: any) => s.slide_id);
 
           if (slidesToResync.length > 0) {
-            console.log('[ChatPanel] Resyncing drafts from main deck for slides:', slidesToResync);
             // Use a small delay to ensure the main deck update has propagated
             setTimeout(() => {
               // Get fresh references to stores inside the callback
@@ -1008,11 +938,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 const freshDeckData = (useDeckStore as any).getState().deckData;
                 const slideFromDeck = freshDeckData.slides?.find((s: any) => s.id === slideId);
                 if (slideFromDeck?.components) {
-                  console.log('[ChatPanel] Reinitializing draft from main deck', {
-                    slideId,
-                    componentCount: slideFromDeck.components.length,
-                    componentIds: slideFromDeck.components.map((c: any) => c.id)
-                  });
                   // Clear existing draft and reinitialize from main deck
                   freshEditorStore.clearDraftComponents(slideId);
                   freshEditorStore.initializeDraftComponents(slideId);
@@ -1047,7 +972,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const deckData = (useDeckStore as any).getState().deckData;
       const allCompleted = Array.isArray(deckData?.slides) && deckData.slides.length > 0 && deckData.slides.every((s: any) => s.status === 'completed');
       if (allCompleted) {
-        console.log('[ChatPanel] Deck is completed; skipping preview merge');
         setIsGenerating(false);
         return;
       }
@@ -1081,7 +1005,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         (window as any).__isResizingCharts === true
       );
       if (interacting) {
-        console.log('[AgentChat] Skipping preview merge due to active interaction');
         return;
       }
     } catch { }
@@ -1096,12 +1019,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           try {
             const hasLocal = typeof editorStore.hasSlideChanged === 'function' && editorStore.hasSlideChanged(slideId);
             if (hasLocal) {
-              console.log('[ChatPanel] Skipping preview slide merge for slide with local changes', { slideId });
               return;
             }
           } catch { }
         } else {
-          console.log('[ChatPanel] Applying agent preview slide merge regardless of local changes', { slideId });
         }
         const previewComponents: any[] = Array.isArray(previewSlide.components) ? previewSlide.components : [];
         const draftComponents: any[] = editorStore.getDraftComponents(slideId) || [];
@@ -1158,6 +1079,34 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollHeightBeforeLoadRef = useRef<number>(0);
+
+  // Handler for "Load older messages" - saves scroll height before loading
+  const handleLoadOlderMessages = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollHeightBeforeLoadRef.current = scrollContainerRef.current.scrollHeight;
+    }
+    setShowOldMessages(true);
+  }, []);
+
+  // After old messages load, adjust scroll to keep current view in place
+  useEffect(() => {
+    if (showOldMessages && scrollContainerRef.current && scrollHeightBeforeLoadRef.current > 0) {
+      // Calculate how much new content was added above
+      const newScrollHeight = scrollContainerRef.current.scrollHeight;
+      const heightDiff = newScrollHeight - scrollHeightBeforeLoadRef.current;
+
+      // Scroll down by the height of the newly loaded content to maintain position
+      if (heightDiff > 0) {
+        scrollContainerRef.current.scrollTop = heightDiff;
+      }
+
+      // Reset the ref so this only runs once
+      scrollHeightBeforeLoadRef.current = 0;
+    }
+  }, [showOldMessages]);
+
   const previousMessageCountRef = useRef(messages.length);
   const lastMessageTypeRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1213,7 +1162,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (!themePreview?.palette?.colors?.length) {
       const initialTheme = getInitialThemePreview();
       if (initialTheme) {
-        console.log('[ChatPanel] Initializing themePreview from outline stylePreferences:', initialTheme);
         setThemePreview(initialTheme);
       }
     }
@@ -1432,7 +1380,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Notify parent when outline generation state changes (one-way only, no sync back)
   useEffect(() => {
     if (outlineMode && onOutlineChatGeneratingChange) {
-      console.log('[ChatPanel] Notifying parent of generation state change:', isGenerating);
       onOutlineChatGeneratingChange(isGenerating);
     }
   }, [outlineMode, isGenerating, onOutlineChatGeneratingChange]);
@@ -1444,7 +1391,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         slide.content && slide.content.trim() !== ''
       );
       if (allSlidesHaveContent) {
-        console.log('[ChatPanel] All slides now have content, stopping isGenerating');
         setIsGenerating(false);
       }
     }
@@ -1452,12 +1398,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // Sync outline slide target with current slide index (works in both outline and slide modes)
   useEffect(() => {
-    console.log('[ChatPanel] outlineCurrentSlideIndex changed:', outlineCurrentSlideIndex);
-    console.log('[ChatPanel] Current outlineSlideTarget:', outlineSlideTarget);
     if (outlineCurrentSlideIndex !== undefined && outlineCurrentSlideIndex >= 0) {
-      console.log('[ChatPanel] Setting dropdown to slide:', outlineCurrentSlideIndex + 1);
       setOutlineSlideTarget(outlineCurrentSlideIndex);
-      console.log('[ChatPanel] Dropdown should now show: Slide', outlineCurrentSlideIndex + 1);
     }
   }, [outlineCurrentSlideIndex]);
 
@@ -1467,12 +1409,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     const onThemePreview = (e: CustomEvent) => {
       const d = e.detail || {};
-      console.log('[ChatPanel] 🎨 theme_preview_update received:', {
-        paletteColors: d.palette?.colors,
-        paletteBg: d.palette?.primary_background,
-        themePaletteColors: d.theme?.color_palette?.colors,
-        themePaletteAccent1: d.theme?.color_palette?.accent_1,
-      });
       setThemePreview(prev => {
         const next = { ...(prev || {}), ...d } as any;
         // Derive logo if not explicitly provided
@@ -1626,6 +1562,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const client = new AgentChatClient({
           onEvent: (evt) => {
             if (!evt || !evt.type) return;
+            // Debug: log ALL events to trace missing events
             // Handle streaming tokens
             if (evt.type === 'assistant.message.delta') {
               const rawDelta = (evt as any).data?.delta || '';
@@ -1668,6 +1605,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 });
               }
               streamingAiMsgIdRef.current = null;
+
+              // CRITICAL: Clean up plan message when assistant completes
+              clearPlanTimers();
+              if (planMsgIdRef.current) {
+                const planId = planMsgIdRef.current;
+                setMessages(prev => prev.filter(m => m.id !== planId));
+                planMsgIdRef.current = null;
+                planCreatedAtRef.current = null;
+              }
               return;
             }
             // Plan updates: show lightweight typing indicator under chat box
@@ -1696,34 +1642,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
             if (evt.type === 'deck.edit.proposed') {
               const edit = (evt as any).data?.edit;
-              console.log('[AgentChat] deck.edit.proposed received', {
-                editId: edit?.id,
-                hasDiff: Boolean(edit?.diff),
-                diffKeys: edit?.diff ? Object.keys(edit.diff) : [],
-              });
               const summary = edit?.summary || 'Proposed edit available';
               if (edit?.id && edit?.diff) {
                 try {
                   proposedDiffsRef.current.set(edit.id, edit.diff);
-                  console.log('[AgentChat] Stored proposed diff for edit', edit.id);
                 } catch (e) {
                   console.warn('[AgentChat] Failed to store proposed diff', e);
                 }
                 // Apply preview diff immediately for real-time preview, respecting edit mode
                 try {
-                  const before = useDeckStore.getState().deckData;
-                  console.log('[AgentChat] Applying preview diff', {
-                    slidesBefore: before?.slides?.length,
-                    versionBefore: (before as any)?.version,
-                  });
                   applyDeckDiffRespectingEditMode(edit.diff, true);  // Pass true - this is an edit proposal
-                  setTimeout(() => {
-                    const after = useDeckStore.getState().deckData;
-                    console.log('[AgentChat] Preview diff applied', {
-                      slidesAfter: after?.slides?.length,
-                      versionAfter: (after as any)?.version,
-                    });
-                  }, 0);
                 } catch { }
               }
               setMessages(prev => [...prev, { id: `proposed-${Date.now()}`, type: 'system', message: `✨ ${summary}`, timestamp: new Date(), feedback: null, metadata: { type: 'edit_proposed', compactRow: true } }]);
@@ -1752,7 +1680,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   const previewSlideIds = (previewSlidesPayload || []).map((s: any) => s.id).filter(Boolean);
                   const targetSlideIds = modifiedSlideIds.length > 0 ? modifiedSlideIds : previewSlideIds;
 
-                  console.log('[AgentChat] Pre-edit snapshot: targetSlideIds=', targetSlideIds, 'from diff slides_to_update=', slidesToUpdate?.length, 'preview slides=', previewSlideIds?.length);
 
                   if (targetSlideIds.length > 0) {
                     // Capture the FIRST modified slide (typically only one slide is edited at a time)
@@ -1760,7 +1687,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const originalSlide = slides.find((s: any) => s.id === targetSlideId);
                     if (originalSlide) {
                       (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(originalSlide));
-                      console.log('[AgentChat] Captured pre-edit snapshot for modified slide:', originalSlide.id);
                     } else {
                       console.warn('[AgentChat] Could not find slide with id:', targetSlideId, 'in deck slides:', slides.map((s: any) => s.id));
                     }
@@ -1771,7 +1697,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const currentSlide = slides[currentSlideIdx];
                     if (currentSlide) {
                       (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(currentSlide));
-                      console.log('[AgentChat] Captured pre-edit snapshot for current slide (fallback):', currentSlide.id);
                     }
                   }
                 } catch (e) {
@@ -1809,7 +1734,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
                 // Fallback to diff-based updates if no preview slides
                 if (diff) {
-                  console.log('[Realtime][preview.diff] Applying diff', { editId, hasSlides: !!(diff.slides_to_update?.length) });
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true - this is an edit preview
                 } else {
                   console.warn('[Realtime][preview.diff] No diff or slides in payload', { editId });
@@ -1820,9 +1744,42 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               return;
             }
             if (evt.type === 'deck.edit.applied') {
+              // WRAP ENTIRE HANDLER IN TRY-CATCH to prevent silent failures
+              try {
+
+              // CRITICAL: Clear plan message immediately when edit is applied
+              clearPlanTimers();
+              if (planMsgIdRef.current) {
+                const planId = planMsgIdRef.current;
+                setMessages(prev => prev.filter(m => m.id !== planId));
+                planMsgIdRef.current = null;
+                planCreatedAtRef.current = null;
+              }
+
+              const rawDiff = (evt as any).data?.deck_diff;
+              // DEDUP: Prevent duplicate handling from multiple subscriptions
+              // Safety check: ensure ref is initialized as a Set
+              if (!processedEditEventsRef.current) {
+                processedEditEventsRef.current = new Set();
+              }
+              const eventKey = `${(evt as any).data?.editId || ''}-${(evt as any).timestamp || Date.now()}`;
+              if (processedEditEventsRef.current.has(eventKey)) {
+                return;
+              }
+              processedEditEventsRef.current.add(eventKey);
+              // Clean up old entries after 10 seconds to prevent memory leak
+              setTimeout(() => processedEditEventsRef.current?.delete(eventKey), 10000);
+
               const appliedEditId = (evt as any).data?.editId;
               const appliedMessageId = (evt as any).messageId;
               let normalizedAppliedSlides = normalizeSlidesPayload((evt as any).data?.slides);
+
+              // CRITICAL FIX: Actually apply the deck_diff to the store!
+              // The event contains the diff but it was never being applied
+              const deckDiff = (evt as any).data?.deck_diff;
+              if (deckDiff && isValidDeckDiff(deckDiff)) {
+                applyDeckDiffRespectingEditMode(deckDiff, true);
+              }
               if (appliedMessageId) {
                 pendingDiffsByMessageIdRef.current.delete(appliedMessageId);
                 if (normalizedAppliedSlides.length === 0) {
@@ -1833,18 +1790,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 }
                 pendingSlidesByMessageIdRef.current.delete(appliedMessageId);
               }
-              const deckRevision = (evt as any).data?.deckRevision;
-              const ts = Date.now();
-              const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-              console.log('[Realtime][edit.applied] 🔔 RECEIVED', {
-                editId: appliedEditId,
-                deckRevision,
-                ts,
-                isEditMode: isEditing,
-                hasDeckDiff: !!(evt as any).data?.deck_diff,
-                diffSlidesCount: (evt as any).data?.deck_diff?.slides_to_update?.length || 0,
-                normalizedSlidesCount: normalizedAppliedSlides.length
-              });
               // Keep pre-edit snapshot for potential restoration
               const preEditSnapshot = (window as any).__preEditSlideSnapshot || null;
               (window as any).__preEditSlideSnapshot = null;
@@ -1869,26 +1814,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 editSummary
               };
 
-              // Try to get an immediate snapshot of the current state as fallback
+              // SIMPLE: Just get the current slide from the store
               let immediateSnapshot = null;
               try {
                 const deckStore = useDeckStore.getState();
                 const slides = deckStore.deckData?.slides || [];
+                const currentIdx = deckStore.currentSlideIndex || 0;
 
-                // For new slides, get the slide data directly from the diff (it's not in store yet)
+                // For new slides, use the diff data directly
                 if (isNewSlide && diffSlidesToAdd[0]) {
                   immediateSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
-                  console.log('[AgentChat] Using new slide from diff for snapshot:', immediateSnapshot?.id);
                 } else {
-                  const targetSlide = editedSlideId
-                    ? slides.find((s: any) => s.id === editedSlideId)
-                    : slides[0];
-                  if (targetSlide) {
-                    immediateSnapshot = JSON.parse(JSON.stringify(targetSlide));
+                  // Otherwise just get the current slide
+                  const currentSlide = slides[currentIdx] || slides[0];
+                  if (currentSlide) {
+                    immediateSnapshot = JSON.parse(JSON.stringify(currentSlide));
                   }
                 }
               } catch (e) {
-                console.warn('[AgentChat] Failed to capture immediate snapshot:', e);
+                console.error('[AgentChat] Snapshot capture failed:', e);
               }
 
               // AUTO-NAVIGATE to newly created slide so user can see it
@@ -1900,7 +1844,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const newSlideIndex = slides.findIndex((s: any) => s.id === editedSlideId);
                     if (newSlideIndex >= 0) {
                       deckStore.setCurrentSlideIndex(newSlideIndex);
-                      console.log('[AgentChat] 🎯 Auto-navigated to new slide:', editedSlideId, 'index:', newSlideIndex);
                     }
                   } catch (e) {
                     console.warn('[AgentChat] Failed to auto-navigate to new slide:', e);
@@ -1909,11 +1852,20 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
 
               // Add message with immediate snapshot (will be updated after diff applied if available)
-              setMessages(prev => [
-                ...prev,
-                {
+              console.log('[AgentChat:primary] Creating edit_applied message:', {
+                hasImmediateSnapshot: !!immediateSnapshot,
+                immediateSnapshotId: immediateSnapshot?.id,
+                componentCount: immediateSnapshot?.components?.length || 0,
+                hasPreEditSnapshot: !!preEditSnapshot,
+                editId: appliedEditId
+              });
+
+              // Insert edit_applied message RIGHT AFTER the last AI message (not at end of array)
+              // This ensures the rendering pairing logic works: AI message + adjacent edit_applied
+              setMessages(prev => {
+                const newMsg = {
                   id: messageId,
-                  type: 'system',
+                  type: 'system' as const,
                   message: `✅ Edit applied`,
                   timestamp: new Date(),
                   feedback: null,
@@ -1926,8 +1878,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     editId: appliedEditId,
                     editSummary
                   }
+                };
+
+                // Find the last AI message index
+                let lastAiIndex = -1;
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  if (prev[i].type === 'ai') {
+                    lastAiIndex = i;
+                    break;
+                  }
                 }
-              ]);
+
+                // If found, insert right after it; otherwise append at end
+                if (lastAiIndex >= 0) {
+                  const result = [...prev];
+                  result.splice(lastAiIndex + 1, 0, newMsg);
+                  return result;
+                }
+                return [...prev, newMsg];
+              });
 
               // Persist immediate snapshot as fallback (will be overwritten if diff-based capture succeeds)
               if (immediateSnapshot && agentClientRef.current && agentSessionId) {
@@ -1938,7 +1907,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   if (pendingCapture && pendingCapture.messageId === messageId) {
                     agentClientRef.current?.saveSlideSnapshot(agentSessionId, immediateSnapshot, editSummary, appliedEditId, preEditSnapshot)
                       .catch(err => console.warn('[AgentChat] Failed to persist immediate slideSnapshot:', err));
-                    console.log('[AgentChat] Persisted immediate snapshot (fallback):', immediateSnapshot.id);
                   }
                 }, 500);
               }
@@ -1957,23 +1925,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 // CRITICAL FIX: Try to get deck_diff from the event data directly
                 if (!diff && (evt as any).data?.deck_diff) {
                   diff = (evt as any).data.deck_diff;
-                  console.log('[Realtime][edit.applied] using deck_diff from event data', { editId, diff });
                 }
 
                 if (diff) {
-                  console.log('[Realtime][edit.applied] applying diff', { editId, diffKeys: Object.keys(diff), slidesToUpdate: diff.slides_to_update?.length });
                   const before = useDeckStore.getState().deckData;
                   applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
 
                   // Capture post-edit snapshot and update message with thumbnail
                   setTimeout(() => {
                     const after = useDeckStore.getState().deckData;
-                    console.log('[AgentChat] Stored diff applied', {
-                      slidesBefore: before?.slides?.length,
-                      slidesAfter: after?.slides?.length,
-                      versionBefore: (before as any)?.version,
-                      versionAfter: (after as any)?.version,
-                    });
 
                     // Capture the post-edit state for thumbnail display
                     const pendingCapture = (window as any).__pendingPostEditCapture;
@@ -1989,7 +1949,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
                       if (postEditSlide) {
                         const postEditSnapshot = JSON.parse(JSON.stringify(postEditSlide));
-                        console.log('[AgentChat] Captured post-edit snapshot for slide:', postEditSlide.id);
 
                         // Update the message with the post-edit snapshot
                         setMessages(prev => prev.map(msg =>
@@ -2023,7 +1982,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     ((diff as any).slides_to_update || []).forEach((slideDiff: any) => {
                       if (slideDiff?.slide_id && typeof editorStore.markSlideAsUnchanged === 'function') {
                         editorStore.markSlideAsUnchanged(slideDiff.slide_id);
-                        console.log('[Realtime][edit.applied] Marked slide as unchanged (backend persisted)', { slideId: slideDiff.slide_id });
                       }
                     });
                   } catch { }
@@ -2040,7 +1998,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
                     // This ensures drafts are properly initialized from the final deck state
                     if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
-                      console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync');
                       const freshEditorStore = useEditorStore.getState();
                       const freshDeckData = useDeckStore.getState().deckData;
                       const navContext = (window as any).__navigationContext;
@@ -2050,7 +2007,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         // Clear and reinitialize drafts from the now-complete deck
                         freshEditorStore.clearDraftComponents(currentSlide.id);
                         freshEditorStore.initializeDraftComponents(currentSlide.id);
-                        console.log('[Realtime][edit.applied] Draft resync complete for slide', currentSlide.id);
                       }
                       delete (window as any).__enteredEditModeDuringAgentEdit;
                     }
@@ -2059,7 +2015,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     setTimeout(() => {
                       if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
                       if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-                      console.log('[Realtime][edit.applied] Preview guards cleared after 2s delay');
                     }, 2000);
                   } catch { }
 
@@ -2075,10 +2030,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   // CRITICAL FIX: Try deck_diff from event data as final fallback
                   if (!diff && (evt as any).data?.deck_diff) {
                     diff = (evt as any).data.deck_diff;
-                    console.log('[Realtime][edit.applied] using deck_diff from event data (message fallback)', { messageId: appliedMessageId });
                   }
                   if (diff) {
-                    console.log('[Realtime][edit.applied] applying message-based diff', { messageId: appliedMessageId });
                     applyDeckDiffRespectingEditMode(diff, true);  // Pass true to indicate this is an edit diff
 
                     // CRITICAL FIX: Mark slides as unchanged since backend has already persisted them
@@ -2087,7 +2040,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       ((diff as any).slides_to_update || []).forEach((slideDiff: any) => {
                         if (slideDiff?.slide_id && typeof editorStore.markSlideAsUnchanged === 'function') {
                           editorStore.markSlideAsUnchanged(slideDiff.slide_id);
-                          console.log('[Realtime][edit.applied] Marked slide as unchanged (backend persisted, message path)', { slideId: slideDiff.slide_id });
                         }
                       });
                     } catch { }
@@ -2101,7 +2053,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
                       // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
                       if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
-                        console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync (message path)');
                         const freshEditorStore = useEditorStore.getState();
                         const freshDeckData = useDeckStore.getState().deckData;
                         const navContext = (window as any).__navigationContext;
@@ -2110,7 +2061,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         if (currentSlide?.id) {
                           freshEditorStore.clearDraftComponents(currentSlide.id);
                           freshEditorStore.initializeDraftComponents(currentSlide.id);
-                          console.log('[Realtime][edit.applied] Draft resync complete for slide (message path)', currentSlide.id);
                         }
                         delete (window as any).__enteredEditModeDuringAgentEdit;
                       }
@@ -2119,7 +2069,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       setTimeout(() => {
                         if ((window as any).__pendingPreviewTs) delete (window as any).__pendingPreviewTs;
                         if ((window as any).__pendingPreviewEditId) delete (window as any).__pendingPreviewEditId;
-                        console.log('[Realtime][edit.applied] Preview guards cleared after 2s (message-based diff path)');
                       }, 2000);
                     } catch { }
 
@@ -2137,7 +2086,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
                       // CRITICAL FIX: If user entered edit mode during this AI edit, force a full draft resync
                       if ((window as any).__enteredEditModeDuringAgentEdit && (window as any).__isEditMode) {
-                        console.log('[Realtime][edit.applied] User entered edit mode during AI edit - forcing draft resync (no diff path)');
                         const freshEditorStore = useEditorStore.getState();
                         const freshDeckData = useDeckStore.getState().deckData;
                         const navContext = (window as any).__navigationContext;
@@ -2146,22 +2094,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         if (currentSlide?.id) {
                           freshEditorStore.clearDraftComponents(currentSlide.id);
                           freshEditorStore.initializeDraftComponents(currentSlide.id);
-                          console.log('[Realtime][edit.applied] Draft resync complete for slide (no diff path)', currentSlide.id);
                         }
                         delete (window as any).__enteredEditModeDuringAgentEdit;
                       }
 
-                      console.log('[Realtime][edit.applied] Preview guards cleared (no diff fallback path)');
                     } catch { }
 
                     const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
                     if (normalizedAppliedSlides.length > 0) {
-                      console.log('[Realtime][edit.applied] applying slide payload fallback', { count: normalizedAppliedSlides.length });
                       applyPreviewSlidesRespectingEditMode(normalizedAppliedSlides, true);  // Pass true - this is an agent edit
                     } else {
                       // CRITICAL FIX: Force reload deck from database since no local diff is available
                       // This ensures changes are visible regardless of edit mode or realtime status
-                      console.log('[Realtime][edit.applied] no cached diff; forcing deck reload from database');
                       setTimeout(() => {
                         (async () => {
                           try {
@@ -2171,10 +2115,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                             const latest = await deckSyncService.getFullDeck(String(deckIdToRefresh));
                             if (latest && (latest as any).slides) {
                               deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
-                              console.log('[Realtime][edit.applied] ✅ Forced deck refetch applied', {
-                                deckId: deckIdToRefresh,
-                                slideCount: (latest as any).slides?.length
-                              });
                               return;
                             }
                           } catch (e) {
@@ -2185,7 +2125,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                             const deckStore = useDeckStore.getState();
                             if ((deckStore as any).loadDeck) {
                               (deckStore as any).loadDeck();
-                              console.log('[Realtime][edit.applied] ✅ Forced deck reload triggered (fallback)');
                             }
                           } catch { }
                         })();
@@ -2197,7 +2136,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 // Let Supabase realtime handle it naturally since guards are cleared
                 // Forcing a reload here can fetch stale data and replace the locally applied changes
                 if (deckRevision) {
-                  console.log('[Realtime][edit.applied] deckRevision provided; relying on Supabase realtime', { deckRevision });
                 }
               } catch { }
 
@@ -2220,10 +2158,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       const latest = await deckSyncService.getFullDeck(String(deckIdToRefresh));
                       if (latest && (latest as any).slides) {
                         deckStore.updateDeckData(latest as any, { skipBackend: true, isRealtimeUpdate: true });
-                        console.log('[Realtime][edit.applied] ✅ Structural refetch applied', {
-                          deckId: deckIdToRefresh,
-                          slideCount: (latest as any).slides?.length
-                        });
                       }
                     } catch (e) {
                       console.warn('[Realtime][edit.applied] Structural refetch failed (non-fatal)', e);
@@ -2231,6 +2165,29 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }, 600);
                 }
               } catch { }
+
+              } catch (handlerError) {
+                // CRITICAL: Log any error in the handler so we know what's failing
+                console.error('[ChatPanel:primary] ❌❌❌ deck.edit.applied HANDLER CRASHED!', handlerError);
+
+                // Still try to create a basic edit_applied message so user sees something
+                try {
+                  setMessages(prev => [...prev, {
+                    id: `applied-error-${Date.now()}`,
+                    type: 'system',
+                    message: `✅ Edit applied`,
+                    timestamp: new Date(),
+                    feedback: null,
+                    metadata: {
+                      type: 'edit_applied',
+                      compactRow: false,
+                      slideSnapshot: null,
+                      preEditSnapshot: null,
+                      editId: (evt as any).data?.editId
+                    }
+                  }]);
+                } catch { }
+              }
               return;
             }
             if (evt.type === 'progress.update') {
@@ -2253,13 +2210,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         (async () => {
           try {
             const { messages: historyMessages } = await client.getMessages(sid, 50);
-            console.log('[AgentChat] 📜 RAW MESSAGE HISTORY FROM DB:', {
-              sessionId: sid,
-              count: historyMessages?.length || 0,
-              messages: historyMessages?.map((m: any) => ({ id: m.id, role: m.role, textPreview: m.text?.substring(0, 80) }))
-            });
             if (historyMessages && historyMessages.length > 0) {
-              console.log('[AgentChat] Loaded chat history:', historyMessages.length, 'messages (stored, not displayed)');
               const restoredMessages: ExtendedChatMessageProps[] = historyMessages
                 .map((msg: any) => {
                   // Check for slideSnapshot attachment (for version restore)
@@ -2667,6 +2618,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         const client = new AgentChatClient({
           onEvent: (evt) => {
             if (!evt || !evt.type) return;
+            // Debug: log ALL events to trace missing events
             if (evt.type === 'assistant.message.delta') {
               const rawDelta = (evt as any).data?.delta || '';
               const trimmed = String(rawDelta).trim();
@@ -2704,6 +2656,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 });
               }
               streamingAiMsgIdRef.current = null;
+
+              // CRITICAL: Clean up plan message when assistant completes
+              clearPlanTimers();
+              if (planMsgIdRef.current) {
+                const planId = planMsgIdRef.current;
+                setMessages(prev => prev.filter(m => m.id !== planId));
+                planMsgIdRef.current = null;
+                planCreatedAtRef.current = null;
+              }
               return;
             }
             if ((evt as any).type === 'agent.plan.update') {
@@ -2745,7 +2706,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   const slidesToUpdate = diff?.slides_to_update || [];
                   const modifiedSlideIds = slidesToUpdate.map((s: any) => s.slide_id || s.id).filter(Boolean);
 
-                  console.log('[AgentChat] Pre-edit snapshot (secondary): targetSlideIds=', modifiedSlideIds, 'from diff slides_to_update=', slidesToUpdate?.length);
 
                   if (modifiedSlideIds.length > 0) {
                     // Capture the FIRST modified slide
@@ -2753,7 +2713,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const originalSlide = slides.find((s: any) => s.id === targetSlideId);
                     if (originalSlide) {
                       (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(originalSlide));
-                      console.log('[AgentChat] Captured pre-edit snapshot for modified slide:', originalSlide.id);
                     } else {
                       console.warn('[AgentChat] Could not find slide with id:', targetSlideId, 'in deck slides:', slides.map((s: any) => s.id));
                     }
@@ -2764,7 +2723,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const currentSlide = slides[currentSlideIdx];
                     if (currentSlide) {
                       (window as any).__preEditSlideSnapshot = JSON.parse(JSON.stringify(currentSlide));
-                      console.log('[AgentChat] Captured pre-edit snapshot for current slide (fallback):', currentSlide.id);
                     }
                   }
                 } catch (e) {
@@ -2784,90 +2742,186 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               return;
             }
             if (evt.type === 'deck.edit.applied') {
-              // Keep pre-edit snapshot for restoration
-              const preEditSnapshot = (window as any).__preEditSlideSnapshot || null;
-              (window as any).__preEditSlideSnapshot = null;
-
-              const editId = (evt as any).data?.editId;
-
-              // Capture post-edit state (current slide after edit applied)
-              let postEditSnapshot = null;
+              // WRAP ENTIRE HANDLER IN TRY-CATCH to prevent silent failures
               try {
-                const deckStore = useDeckStore.getState();
-                const diffSlidesToUpdate = (evt as any).data?.deck_diff?.slides_to_update || [];
-                const diffSlidesToAdd = (evt as any).data?.deck_diff?.slides_to_add || [];
-                // Prefer newly added slides for thumbnail
-                const editedSlideId = diffSlidesToAdd[0]?.id || diffSlidesToUpdate[0]?.slide_id || diffSlidesToUpdate[0]?.id || preEditSnapshot?.id;
-                const isNewSlide = diffSlidesToAdd.length > 0;
+                console.warn('[ChatPanel:secondary] 🎯🎯🎯 deck.edit.applied EVENT RECEIVED (secondary)! 🎯🎯🎯', evt);
 
-                const slides = deckStore.deckData?.slides || [];
-
-                // For new slides, get the slide data directly from the diff
-                if (isNewSlide && diffSlidesToAdd[0]) {
-                  postEditSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
-                } else {
-                  const postEditSlide = editedSlideId
-                    ? slides.find((s: any) => s.id === editedSlideId)
-                    : slides[0];
-                  if (postEditSlide) {
-                    postEditSnapshot = JSON.parse(JSON.stringify(postEditSlide));
-                  }
+                // CRITICAL: Clear plan message immediately when edit is applied
+                clearPlanTimers();
+                if (planMsgIdRef.current) {
+                  const planId = planMsgIdRef.current;
+                  setMessages(prev => prev.filter(m => m.id !== planId));
+                  planMsgIdRef.current = null;
+                  planCreatedAtRef.current = null;
                 }
 
-                // AUTO-NAVIGATE to newly created slide
-                if (isNewSlide && editedSlideId) {
-                  setTimeout(() => {
-                    const newSlideIndex = deckStore.deckData?.slides?.findIndex((s: any) => s.id === editedSlideId);
-                    if (newSlideIndex !== undefined && newSlideIndex >= 0) {
-                      deckStore.setCurrentSlideIndex(newSlideIndex);
-                      console.log('[AgentChat] 🎯 Auto-navigated to new slide (secondary):', editedSlideId);
+                const rawDiff2 = (evt as any).data?.deck_diff;
+
+                // DEDUP: Prevent duplicate handling from multiple subscriptions
+                // Safety check: ensure ref is initialized as a Set
+                if (!processedEditEventsRef.current) {
+                  processedEditEventsRef.current = new Set();
+                }
+                const eventKey = `${(evt as any).data?.editId || ''}-${(evt as any).timestamp || Date.now()}`;
+                if (processedEditEventsRef.current.has(eventKey)) {
+                  return;
+                }
+                processedEditEventsRef.current.add(eventKey);
+                setTimeout(() => processedEditEventsRef.current?.delete(eventKey), 10000);
+
+                // CRITICAL FIX: Actually apply the deck_diff to the store!
+                const deckDiff = (evt as any).data?.deck_diff;
+                if (deckDiff && isValidDeckDiff(deckDiff)) {
+                  applyDeckDiffRespectingEditMode(deckDiff, true);
+                }
+
+                // Keep pre-edit snapshot for restoration
+                const preEditSnapshot = (window as any).__preEditSlideSnapshot || null;
+                (window as any).__preEditSlideSnapshot = null;
+
+                const editId = (evt as any).data?.editId;
+
+                // Capture post-edit state (current slide after edit applied)
+                let postEditSnapshot = null;
+                try {
+                  const deckStore = useDeckStore.getState();
+                  const diffSlidesToUpdate = (evt as any).data?.deck_diff?.slides_to_update || [];
+                  const diffSlidesToAdd = (evt as any).data?.deck_diff?.slides_to_add || [];
+                  // Prefer newly added slides for thumbnail
+                  const editedSlideId = diffSlidesToAdd[0]?.id || diffSlidesToUpdate[0]?.slide_id || diffSlidesToUpdate[0]?.id || preEditSnapshot?.id;
+                  const isNewSlide = diffSlidesToAdd.length > 0;
+
+                  const slides = deckStore.deckData?.slides || [];
+                  const currentIdx = deckStore.currentSlideIndex || 0;
+
+                  // For new slides, get the slide data directly from the diff
+                  if (isNewSlide && diffSlidesToAdd[0]) {
+                    postEditSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
+                    console.log('[AgentChat:secondary] Using new slide from diff:', postEditSnapshot?.id);
+                  } else {
+                    // Use current slide index as better fallback
+                    const postEditSlide = editedSlideId
+                      ? slides.find((s: any) => s.id === editedSlideId)
+                      : slides[currentIdx] || slides[0];
+                    if (postEditSlide) {
+                      postEditSnapshot = JSON.parse(JSON.stringify(postEditSlide));
+                      console.log('[AgentChat:secondary] Using slide for snapshot:', postEditSlide.id);
                     }
-                  }, 700);
-                }
-              } catch (e) {
-                console.warn('[AgentChat] Failed to capture post-edit snapshot (secondary):', e);
-              }
-
-              setMessages(prev => [...prev, {
-                id: `applied-${Date.now()}`,
-                type: 'system',
-                message: `✅ Edit applied`,
-                timestamp: new Date(),
-                feedback: null,
-                metadata: {
-                  type: 'edit_applied',
-                  compactRow: false,
-                  slideSnapshot: postEditSnapshot, // Show current state
-                  preEditSnapshot, // For restoration
-                  editId
-                }
-              }]);
-
-              // Persist postEditSnapshot to database for chat history (include preEditSnapshot for restore)
-              if (postEditSnapshot && agentClientRef.current && agentSessionId) {
-                agentClientRef.current.saveSlideSnapshot(agentSessionId, postEditSnapshot, '', editId, preEditSnapshot)
-                  .catch(err => console.warn('[AgentChat] Failed to persist slideSnapshot (secondary):', err));
-              }
-
-              // NOTE: Do NOT clear preview guards here - the primary handler keeps them active for 2 seconds
-              // to protect against stale Supabase realtime updates overwriting the edit
-              // The guards are cleared in the primary handler after a 2-second delay
-              console.log('[Realtime][edit.applied][secondary] Keeping preview guards active (managed by primary handler)');
-
-              // Persist immediately in edit mode to avoid losing AI changes when toggling modes
-              try {
-                const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
-                if (isEditing) {
-                  const editorStore = useEditorStore.getState();
-                  if (typeof editorStore.applyDraftChanges === 'function') {
-                    editorStore.applyDraftChanges();
                   }
-                }
-              } catch { }
 
-              // NOTE: Removed the 2-second deck reload - the primary handler already applies the diff
-              // and the Supabase realtime subscription will sync once guards expire
-              // Reloading could fetch stale data and overwrite the edit
+                  // ULTIMATE FALLBACK
+                  if (!postEditSnapshot && slides.length > 0) {
+                    postEditSnapshot = JSON.parse(JSON.stringify(slides[currentIdx] || slides[0]));
+                    console.log('[AgentChat:secondary] ULTIMATE FALLBACK:', postEditSnapshot?.id);
+                  }
+
+                  console.log('[AgentChat:secondary] Snapshot result:', {
+                    hasSnapshot: !!postEditSnapshot,
+                    snapshotId: postEditSnapshot?.id,
+                    hasComponents: !!postEditSnapshot?.components,
+                    componentCount: postEditSnapshot?.components?.length || 0
+                  });
+
+                  // AUTO-NAVIGATE to newly created slide
+                  if (isNewSlide && editedSlideId) {
+                    setTimeout(() => {
+                      const newSlideIndex = deckStore.deckData?.slides?.findIndex((s: any) => s.id === editedSlideId);
+                      if (newSlideIndex !== undefined && newSlideIndex >= 0) {
+                        deckStore.setCurrentSlideIndex(newSlideIndex);
+                      }
+                    }, 700);
+                  }
+                } catch (e) {
+                  console.error('[AgentChat] Failed to capture post-edit snapshot (secondary):', e);
+                }
+
+                console.log('[AgentChat:secondary] Creating edit_applied message:', {
+                  hasPostEditSnapshot: !!postEditSnapshot,
+                  postEditSnapshotId: postEditSnapshot?.id,
+                  componentCount: postEditSnapshot?.components?.length || 0,
+                  hasPreEditSnapshot: !!preEditSnapshot,
+                  editId
+                });
+
+                // Insert edit_applied message RIGHT AFTER the last AI message (not at end of array)
+                // This ensures the rendering pairing logic works: AI message + adjacent edit_applied
+                setMessages(prev => {
+                  const newMsg = {
+                    id: `applied-${Date.now()}`,
+                    type: 'system' as const,
+                    message: `✅ Edit applied`,
+                    timestamp: new Date(),
+                    feedback: null,
+                    metadata: {
+                      type: 'edit_applied',
+                      compactRow: false,
+                      slideSnapshot: postEditSnapshot, // Show current state (may be null)
+                      preEditSnapshot, // For restoration
+                      editId
+                    }
+                  };
+
+                  // Find the last AI message index
+                  let lastAiIndex = -1;
+                  for (let i = prev.length - 1; i >= 0; i--) {
+                    if (prev[i].type === 'ai') {
+                      lastAiIndex = i;
+                      break;
+                    }
+                  }
+
+                  // If found, insert right after it; otherwise append at end
+                  if (lastAiIndex >= 0) {
+                    const result = [...prev];
+                    result.splice(lastAiIndex + 1, 0, newMsg);
+                    return result;
+                  }
+                  return [...prev, newMsg];
+                });
+
+                // Persist postEditSnapshot to database for chat history (include preEditSnapshot for restore)
+                if (postEditSnapshot && agentClientRef.current && agentSessionId) {
+                  agentClientRef.current.saveSlideSnapshot(agentSessionId, postEditSnapshot, '', editId, preEditSnapshot)
+                    .catch(err => console.warn('[AgentChat] Failed to persist slideSnapshot (secondary):', err));
+                }
+
+                // NOTE: Do NOT clear preview guards here - the primary handler keeps them active for 2 seconds
+                // to protect against stale Supabase realtime updates overwriting the edit
+                // The guards are cleared in the primary handler after a 2-second delay
+
+                // Persist immediately in edit mode to avoid losing AI changes when toggling modes
+                try {
+                  const isEditing = typeof window !== 'undefined' && (window as any).__isEditMode === true;
+                  if (isEditing) {
+                    const editorStore = useEditorStore.getState();
+                    if (typeof editorStore.applyDraftChanges === 'function') {
+                      editorStore.applyDraftChanges();
+                    }
+                  }
+                } catch { }
+
+              } catch (handlerError) {
+                // CRITICAL: Log any error in the handler so we know what's failing
+                console.error('[ChatPanel:secondary] ❌❌❌ deck.edit.applied HANDLER CRASHED!', handlerError);
+
+                // Still try to create a basic edit_applied message so user sees something
+                try {
+                  setMessages(prev => [...prev, {
+                    id: `applied-error-${Date.now()}`,
+                    type: 'system',
+                    message: `✅ Edit applied`,
+                    timestamp: new Date(),
+                    feedback: null,
+                    metadata: {
+                      type: 'edit_applied',
+                      compactRow: false,
+                      slideSnapshot: null,
+                      preEditSnapshot: null,
+                      editId: (evt as any).data?.editId
+                    }
+                  }]);
+                } catch { }
+              }
 
               return;
             }
@@ -2898,7 +2952,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           try {
             const { messages: historyMessages } = await client.getMessages(sid, 50);
             if (historyMessages && historyMessages.length > 0) {
-              console.log('[AgentChat] Loaded chat history:', historyMessages.length, 'messages (stored, not displayed)');
               const restoredMessages: ExtendedChatMessageProps[] = historyMessages
                 .map((msg: any) => {
                   // Check for slideSnapshot attachment (for version restore)
@@ -3014,7 +3067,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             previewUrl: original.previewUrl,
             type: original.type || reg.mimeType // Ensure type is preserved
           };
-          console.log('[ChatPanel] 📎 processAndRegisterFiles - Updated attachment, hasFile:', !!(next[idx] as any).file);
         } else {
           next.push(reg);
         }
@@ -3022,7 +3074,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
       attachmentsRef.current = next;
-      console.log('[ChatPanel] 📎 processAndRegisterFiles - Ref synced with', next.length, 'attachments, files:', next.map(a => ({ name: a.name, hasFile: !!(a as any).file })));
 
       setAttachments(next);
     } catch (err) {
@@ -3054,12 +3105,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       file,
       previewUrl
     }));
-    console.log('[ChatPanel] 📎 handleFileChange - Adding', pending.length, 'files (no intent dialog)');
 
     // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
     const newAttachments = [...attachmentsRef.current, ...pending];
     attachmentsRef.current = newAttachments;
-    console.log('[ChatPanel] 📎 Ref updated SYNCHRONOUSLY, now has', attachmentsRef.current.length, 'items');
 
     setAttachments(newAttachments);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -3110,7 +3159,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       file,
       previewUrl
     }));
-    console.log('[ChatPanel] 📎 onDropPanel - Adding', pending.length, 'files (no intent dialog)');
 
     // CRITICAL: Update ref SYNCHRONOUSLY before React batches the setState
     const newAttachments = [...attachmentsRef.current, ...pending];
@@ -3281,15 +3329,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       }
 
       setMessages(prevMessages => {
-        console.log('[ChatPanel] Processing new system message:', {
-          message: systemMessageToAdd.message.substring(0, 50),
-          type: systemMessageToAdd.metadata?.type,
-          stage: systemMessageToAdd.metadata?.stage,
-          isStreamingUpdate: systemMessageToAdd.metadata?.isStreamingUpdate,
-          progress: systemMessageToAdd.metadata?.progress,
-          existingProgressMessage: prevMessages.some(m => m.id === 'generation-progress')
-        });
-
         // Update generation state based on message type
         if (systemMessageToAdd.metadata?.isStreamingUpdate) {
           // If deck already completed, ignore streaming updates and set isGenerating false
@@ -3540,7 +3579,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const handleFallbackGenerate = async () => {
     if (!onOutlineAgentToolCall) return;
 
-    console.log('[ChatPanel] Fallback generate triggered');
 
     // Extract topic from conversation - look for user messages
     const userMessages = messages.filter(m => m.type === 'user').map(m => m.message);
@@ -3579,7 +3617,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           autoSelectImages: true
         },
         (event: any) => {
-          console.log('[ChatPanel] Fallback stream event:', event.type);
 
           if (event.type === 'outline_structure') {
             const placeholderSlides = (event.slideTitles || []).map((title: string, idx: number) => ({
@@ -3642,13 +3679,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const sendMessage = async () => {
     if (!input.trim()) return;
 
-    console.log('[ChatPanel] sendMessage called', {
-      outlineMode,
-      useOutlineAgent,
-      hasOnOutlineAgentToolCall: !!onOutlineAgentToolCall,
-      input: input.substring(0, 50)
-    });
-
     // Create timestamp now for consistency
     const timestamp = new Date();
     const userMessageId = `user-${Date.now()}`;
@@ -3668,21 +3698,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       previewUrl: (a as any).previewUrl || (a as any).url,
       file: (a as any).file // Keep file reference for base64 conversion
     }));
-
-    console.log('[ChatPanel] 📎 ATTACHMENTS DEBUG:', {
-      attachmentsStateCount: attachments.length,
-      attachmentsRefCount: currentAttachments.length,
-      attachmentsRaw: JSON.stringify(currentAttachments.map(a => ({ name: a.name, hasFile: !!(a as any).file }))),
-      fullAttachmentsCount: fullAttachments.length,
-      fullAttachments: fullAttachments.map(a => ({ name: a.name, type: a.type, hasFile: !!a.file, hasPreviewUrl: !!a.previewUrl }))
-    });
-
-    // CRITICAL DEBUG: Check if attachments is actually populated
-    if (currentAttachments.length === 0) {
-      console.error('[ChatPanel] ❌ ATTACHMENTS IS EMPTY! File badge might be stale UI state.');
-    } else {
-      console.log('[ChatPanel] ✅ Found', currentAttachments.length, 'attachment(s)');
-    }
 
     // Create the user message object
     const userMessage: ExtendedChatMessageProps = {
@@ -3712,15 +3727,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     // }
 
     // Handle outline mode with conversational agent
-    console.log('[ChatPanel] 🔍 MODE CHECK:', {
-      outlineMode,
-      useOutlineAgent,
-      hasOnOutlineAgentToolCall: !!onOutlineAgentToolCall,
-      willUseOutlineMode: outlineMode && useOutlineAgent && !!onOutlineAgentToolCall
-    });
-
     if (outlineMode && useOutlineAgent && onOutlineAgentToolCall) {
-      console.log('[ChatPanel] ✅ Entering outline agent mode');
       const currentInput = input;
 
       // STEP 1: Add user message to UI IMMEDIATELY
@@ -3740,7 +3747,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
       setInput('');
       // Clear attachments and revoke preview URLs ONLY for attachments with uploaded URLs
-      console.log('[ChatPanel] 🧹 CLEARING ATTACHMENTS:', currentAttachments.length);
       currentAttachments.forEach(a => {
         const preview = (a as any).previewUrl;
         const hasUploadedUrl = !!(a as any).url;
@@ -3749,7 +3755,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       });
       setAttachments([]);
       attachmentsRef.current = []; // Also clear the ref immediately
-      console.log('[ChatPanel] ✅ Attachments cleared');
       // NOTE: Don't set isGenerating(true) here - it causes all slides to show loading
       // We only set isGenerating when the agent actually triggers generation (generate_outline action)
 
@@ -3799,7 +3804,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const stylePrefs = (outline as any)?.stylePreferences;
       if (stylePrefs?.referenceLinks && Array.isArray(stylePrefs.referenceLinks) && stylePrefs.referenceLinks.length > 0) {
         context.reference_links = stylePrefs.referenceLinks;
-        console.log('[ChatPanel] Including reference links in context:', stylePrefs.referenceLinks);
       }
 
       // STEP 4: Stream response from agent
@@ -3807,15 +3811,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         let fullResponse = '';
         let outlineData: any = null;
 
-        console.log('[ChatPanel] Starting stream with context:', context);
 
         // Prepare files for analysis if any are attached
         // Use fullAttachments snapshot since attachments state is cleared before this runs
-        console.log('[ChatPanel] 📤 PREPARING FILES FOR ANALYSIS:', {
-          fullAttachmentsCount: fullAttachments.length,
-          fullAttachments: fullAttachments.map(a => ({ name: a.name, type: a.type, hasFile: !!a.file }))
-        });
-
         const filesToAnalyze = fullAttachments.length > 0 ? await Promise.all(
           fullAttachments.map(async (att) => {
             const file = att.file as File | undefined;
@@ -3823,11 +3821,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
             // Convert file to base64 if we have the raw file
             if (file) {
-              console.log('[ChatPanel] 📄 Converting file to base64:', att.name);
               content = await fileToBase64(file);
-              console.log('[ChatPanel] ✅ File converted:', att.name, 'base64 length:', content?.length || 0);
-            } else {
-              console.log('[ChatPanel] ⚠️ No file object for:', att.name);
             }
 
             return {
@@ -3841,11 +3835,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           })
         ) : undefined;
 
-        console.log('[ChatPanel] 📤 FILES TO SEND TO BACKEND:', {
-          count: filesToAnalyze?.length || 0,
-          files: filesToAnalyze?.map(f => ({ name: f.name, type: f.type, hasContent: !!f.content, contentLength: f.content?.length || 0 }))
-        });
-
         for await (const event of streamOutlineAgentChat({
           message: currentInput,
           chat_history: convertMessagesToApiFormat(messages),
@@ -3853,11 +3842,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           files: filesToAnalyze
         })) {
           // Debug: log all events
-          console.log('[ChatPanel] Event received:', event.type, event.type === 'status' ? (event as any).status : '', event.type === 'text' ? `"${(event as any).content?.slice(0, 50)}..."` : '');
 
           if (event.type === 'status') {
             // Handle status events (researching, scraping, etc.)
-            console.log('[ChatPanel] 🔔 STATUS EVENT:', event.status, (event as any).message || (event as any).query || '');
 
             if (event.status === 'thinking') {
               setMessages(prev => prev.map(m =>
@@ -4036,7 +4023,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (outlineData) {
           if (outlineData.action === 'update_theme' && outline && outlineData.theme_changes) {
             // Apply theme changes
-            console.log('[ChatPanel] Applying theme changes:', outlineData.theme_changes);
 
             try {
               // Call the backend to process theme changes
@@ -4051,7 +4037,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
               if (response.ok) {
                 const result = await response.json();
-                console.log('[ChatPanel] Theme changes applied:', result);
 
                 // Update stylePreferences if provided
                 if (result.style_preferences && onOutlineUpdate) {
@@ -4191,7 +4176,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 }
 
                 // Show success message
-                console.log('[ChatPanel] Theme update complete:', result.message);
               } else {
                 console.error('[ChatPanel] Failed to apply theme changes:', response.statusText);
               }
@@ -4200,7 +4184,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
           } else if (outlineData.action === 'update_slides' && outline && onOutlineUpdate) {
             // Diff-based update - only update specific slides
-            console.log('[ChatPanel] Applying diff-based slide updates:', outlineData.updated_slides);
 
             const updatedSlides = [...outline.slides];
             const updatedIndices = new Set<number>();
@@ -4227,7 +4210,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               }
             }
 
-            console.log(`[ChatPanel] Updated ${updatedIndices.size} slides:`, Array.from(updatedIndices).map(i => i + 1).join(', '));
             onOutlineUpdate({ ...outline, slides: updatedSlides });
           } else if (outlineData.action === 'update_outline' && outline && onOutlineUpdate) {
             // Legacy full update (deprecated, but keep for backwards compatibility)
@@ -4257,7 +4239,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 deep_research: false
               }))
             };
-            console.log('[ChatPanel] Creating outline with slides:', newOutline.slides.map(s => ({ title: s.title, hasContent: !!s.content, content: s.content?.substring(0, 50) })));
             onOutlineUpdate(newOutline);
 
             onOutlineAgentToolCall({
@@ -4270,11 +4251,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
             // Check if created slides actually have content
             const slidesWithoutContent = newOutline.slides.filter((s: any) => !s.content || s.content.trim() === '');
-            console.log('[ChatPanel] Created outline - slides without content:', slidesWithoutContent.length, '/', newOutline.slides.length);
 
             // Keep isGenerating true if slides are empty (will be filled by streaming or other mechanism)
             if (slidesWithoutContent.length > 0) {
-              console.log('[ChatPanel] Outline has empty slides, keeping isGenerating true');
               return; // Don't set isGenerating to false yet
             }
           }
@@ -4303,7 +4282,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     // Handle outline mode without agent (legacy/fallback)
     if (outlineMode && onOutlineGenerate) {
-      console.log('[ChatPanel] ⚠️ Outline generation mode (non-agent) - ATTACHMENTS NOT SUPPORTED HERE!');
 
       const outlineMsgId = `user-${Date.now()}`;
 
@@ -4342,7 +4320,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const userMsgId = `user-${Date.now()}`;
 
     try {
-      console.log('[ChatPanel] 🎨 Slide edit mode - sending message with', fullAttachments.length, 'attachments');
 
       // STEP 1: Add user message to UI IMMEDIATELY (just like outline mode)
       setMessages(prev => [...prev, {
@@ -4416,12 +4393,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         attachmentId: (a as any).attachmentId // Include attachment ID if available
       }));
 
-      console.log('[ChatPanel] 📎 SENDING attachments to backend:', {
-        latestCount: latestAttachments.length,
-        finalizedCount: finalized.length,
-        attachmentMeta: attachmentMeta.map(a => ({ name: a.name, hasUrl: !!a.url, urlPrefix: a.url?.substring(0, 50) }))
-      });
-
       // 📸 AUTO-CAPTURE TINY SCREENSHOT for visual context when editing slides/CustomComponents
       // This helps the AI "see" the current slide state for visual/layout issues
       // Triggers for both explicit CustomComponent selection AND implicit Slide selection (which contains CustomComponents)
@@ -4433,7 +4404,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           // Find the slide viewport container
           const slideViewport = document.querySelector('[data-slide-viewport]') as HTMLElement;
           if (slideViewport) {
-            console.log('[ChatPanel] 📸 Capturing tiny screenshot for AI context...');
             const screenshotDataUrl = await captureTinySlideScreenshot(slideViewport);
             if (screenshotDataUrl) {
               // Add screenshot as a special attachment
@@ -4444,7 +4414,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 url: screenshotDataUrl, // Data URL will be processed by backend
                 attachmentId: `screenshot-${Date.now()}`
               });
-              console.log('[ChatPanel] 📸 Screenshot attached for AI visual context');
             }
           }
         } catch (screenshotError) {
@@ -4662,13 +4631,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   // Pick a random set of suggestions on mount and when mode changes
+  // Always show "Redesign this slide" first in editing mode
   useEffect(() => {
     if (outlineMode && useOutlineAgent) {
       // Convert string[] to { label, prompt }[] for outline mode
       const sampled = sampleArray(OUTLINE_SUGGESTIONS, 4);
       setSuggestions(sampled.map(s => ({ label: s, prompt: s })));
     } else {
-      setSuggestions(sampleArray(ALL_SUGGESTIONS, 4));
+      // Always show DEFAULT_SUGGESTION first, then sample 3 more from the pool
+      const sampled = sampleArray(ALL_SUGGESTIONS, 3);
+      setSuggestions([DEFAULT_SUGGESTION, ...sampled]);
     }
   }, [outlineMode, useOutlineAgent]);
 
@@ -4685,18 +4657,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       onDragLeave={onDragLeavePanel}
       onDrop={onDropPanel}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between p-3 min-w-0 whitespace-nowrap">
-        {!isCollapsed && <div className="flex items-center">
-          {/* ThemeToggle removed */}
-        </div>}
-      </div>
-
       {!isCollapsed && (
         <>
+          {/* Load older messages - small text above scroll area */}
+          {hasOldMessages && !showOldMessages && (
+            <button
+              onClick={handleLoadOlderMessages}
+              className="flex items-center justify-center gap-1.5 py-1 px-2 mx-auto text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              <History className="w-3 h-3" />
+              <span>Load older messages ({oldMessages.length})</span>
+            </button>
+          )}
 
-          {/* Messages - Fixed height to prevent resizing during streaming */}
-          <div className="overflow-y-auto overflow-x-hidden p-2.5 pr-3 h-[calc(100vh-380px)] min-w-0" style={{ scrollbarGutter: 'stable both-edges' }}>
+          {/* Messages */}
+          <div ref={scrollContainerRef} className="overflow-y-auto overflow-x-hidden p-2.5 pr-3 flex-1 min-h-0 min-w-0" style={{ scrollbarGutter: 'stable both-edges' }}>
             {/* Safari-specific: ensure bubbles don't inherit a dark gradient/mask */}
             {BROWSER.isSafari && (
               <style>{`.glass-panel{background-color:rgba(255,255,255,0.06) !important; background-image:none !important;}`}</style>
@@ -4708,95 +4683,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 {/* We'll pass this down below to the active streaming row only */}
               </div>
             )}
-            {/* Load older messages button - shown when there's history to load */}
-            {hasOldMessages && !showOldMessages && (
-              <button
-                onClick={() => setShowOldMessages(true)}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 mb-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-lg transition-colors"
-              >
-                <History className="w-3.5 h-3.5" />
-                <span>Load older messages ({oldMessages.length})</span>
-              </button>
-            )}
 
             {/* Old messages - only shown when user clicks to load */}
-            {showOldMessages && oldMessages.map((msg) => {
+            {showOldMessages && oldMessages.map((msg, idx) => {
               // Skip transient numeric-only AI/system crumbs
               const txt = typeof msg.message === 'string' ? msg.message : '';
               if ((msg.type === 'ai' || msg.type === 'system') && /^\s*\d+\s*$/.test(txt)) {
                 return null;
               }
 
-              // Render edit_applied with slide snapshot thumbnail
-              if (msg.metadata?.type === 'edit_applied' && msg.metadata?.slideSnapshot) {
-                const preEditSnapshot = msg.metadata.preEditSnapshot;
-                return (
-                  <div key={msg.id} className="mb-2 opacity-70">
-                    <ChatMessage
-                      {...msg}
-                      message={msg.message}
-                      onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
-                    />
-                    <div className="ml-11">
-                      <SlideSnapshotThumbnail
-                        slideSnapshot={msg.metadata.slideSnapshot}
-                        editId={msg.metadata.editId}
-                        timestamp={msg.timestamp}
-                        summary={msg.metadata.editSummary}
-                        onApply={async () => {
-                          // Apply the thumbnail version (post-edit state)
-                          try {
-                            const snapshot = msg.metadata.slideSnapshot;
-                            const deckStore = useDeckStore.getState();
-                            const slides = deckStore.deckData?.slides || [];
-                            const slideIndex = slides.findIndex((s: any) => s.id === snapshot.id);
-                            if (slideIndex === -1) throw new Error(`Slide ${snapshot.id} not found`);
-                            const updatedSlides = [...slides];
-                            updatedSlides[slideIndex] = {
-                              ...updatedSlides[slideIndex],
-                              components: JSON.parse(JSON.stringify(snapshot.components))
-                            };
-                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
-                            const { slideSyncService } = await import('@/lib/slideSyncService');
-                            await slideSyncService.sendSlideUpdate(updatedSlides[slideIndex], updatedSlides);
-                            console.log('[SlideSnapshot] Applied thumbnail version:', snapshot.id);
-                          } catch (err) {
-                            console.error('[SlideSnapshot] Apply failed:', err);
-                            throw err;
-                          }
-                        }}
-                        onRestore={preEditSnapshot ? async () => {
-                          // Restore to pre-edit state (undo the change)
-                          try {
-                            const deckStore = useDeckStore.getState();
-                            const slides = deckStore.deckData?.slides || [];
-                            const slideIndex = slides.findIndex((s: any) => s.id === preEditSnapshot.id);
-                            if (slideIndex === -1) throw new Error(`Slide ${preEditSnapshot.id} not found`);
-                            const updatedSlides = [...slides];
-                            updatedSlides[slideIndex] = {
-                              ...updatedSlides[slideIndex],
-                              components: JSON.parse(JSON.stringify(preEditSnapshot.components))
-                            };
-                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
-                            const { slideSyncService } = await import('@/lib/slideSyncService');
-                            await slideSyncService.sendSlideUpdate(updatedSlides[slideIndex], updatedSlides);
-                            console.log('[SlideSnapshot] Restored to pre-edit state:', preEditSnapshot.id);
-                          } catch (err) {
-                            console.error('[SlideSnapshot] Restore failed:', err);
-                            throw err;
-                          }
-                        } : undefined}
-                      />
-                    </div>
-                  </div>
-                );
+              // Skip standalone edit_applied messages - they'll be rendered within the preceding AI bubble
+              if (msg.metadata?.type === 'edit_applied') {
+                const prevMsg = idx > 0 ? oldMessages[idx - 1] : null;
+                if (prevMsg?.type === 'ai') {
+                  return null;
+                }
               }
+
+              // Look ahead: if this is an AI message and next is edit_applied, pass edit data
+              const nextMsg = idx < oldMessages.length - 1 ? oldMessages[idx + 1] : null;
+              const editAppliedData = (msg.type === 'ai' && nextMsg?.metadata?.type === 'edit_applied')
+                ? nextMsg.metadata
+                : null;
+
+              // Get slide number for user-friendly naming
+              const getSlideNumber = (slideId: string | undefined): number | null => {
+                if (!slideId || !deckData?.slides) return null;
+                const index = deckData.slides.findIndex((s: any) => s.id === slideId);
+                return index >= 0 ? index + 1 : null;
+              };
+
+              const slideNumber = editAppliedData?.slideSnapshot?.id
+                ? getSlideNumber(editAppliedData.slideSnapshot.id)
+                : null;
 
               return (
                 <div key={msg.id} className="opacity-70">
                   <ChatMessage
                     {...msg}
                     onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                    editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
                   />
                 </div>
               );
@@ -4811,14 +4737,40 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               </div>
             )}
 
-            {messages.map((msg) => {
+            {/* DEBUG: Log edit_applied messages in array */}
+            {(() => {
+              const editAppliedMsgs = messages.filter(m => m.metadata?.type === 'edit_applied');
+              if (editAppliedMsgs.length > 0) {
+                console.log('[ChatPanel:render] Found edit_applied messages:', editAppliedMsgs.map(m => ({
+                  id: m.id,
+                  hasSnapshot: !!m.metadata?.slideSnapshot,
+                  snapshotId: m.metadata?.slideSnapshot?.id,
+                  componentCount: m.metadata?.slideSnapshot?.components?.length
+                })));
+              }
+              return null;
+            })()}
+            {messages.map((msg, idx) => {
               // Skip transient numeric-only AI/system crumbs (e.g., "0")
               const txt = typeof msg.message === 'string' ? msg.message : '';
               if ((msg.type === 'ai' || msg.type === 'system') && /^\s*\d+\s*$/.test(txt)) {
                 return null;
               }
-              // Don't show SlideGeneratingUI for generation status messages
-              // Let them render as normal chat messages
+
+              // Skip standalone edit_applied messages - they'll be rendered within the preceding AI bubble
+              if (msg.metadata?.type === 'edit_applied') {
+                // Check if the previous message was an AI message - if so, skip (it's grouped)
+                const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                if (prevMsg?.type === 'ai') {
+                  return null;
+                }
+              }
+
+              // Look ahead: if this is an AI message and next is edit_applied, pass edit data
+              const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+              const editAppliedData = (msg.type === 'ai' && nextMsg?.metadata?.type === 'edit_applied')
+                ? nextMsg.metadata
+                : null;
 
               // Otherwise render normal chat message
               const inline = (msg.metadata?.isStreamingUpdate && themePreview) ? (
@@ -4909,75 +4861,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               const isThinkingStatus = msg.metadata?.isTyping && msg.metadata?.thinkingPhase;
               const showAsLoading = msg.metadata?.isTyping && !msg.message?.trim();
 
-              // Render edit_applied with slide snapshot thumbnail
-              if (msg.metadata?.type === 'edit_applied' && msg.metadata?.slideSnapshot) {
-                // slideSnapshot = current state (what was just created/edited)
-                // preEditSnapshot = state before edit (for restoration)
-                const preEditSnapshot = msg.metadata.preEditSnapshot;
+              // Get slide index for user-friendly naming (e.g., "Slide 1" instead of "slide-0")
+              const getSlideNumber = (slideId: string | undefined): number | null => {
+                if (!slideId || !deckData?.slides) return null;
+                const index = deckData.slides.findIndex((s: any) => s.id === slideId);
+                return index >= 0 ? index + 1 : null;
+              };
 
-                return (
-                  <div key={msg.id} className="mb-2">
-                    <ChatMessage
-                      {...msg}
-                      message={msg.message}
-                      onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
-                    />
-                    <div className="ml-11">
-                      <SlideSnapshotThumbnail
-                        slideSnapshot={msg.metadata.slideSnapshot}
-                        editId={msg.metadata.editId}
-                        timestamp={msg.timestamp}
-                        summary={msg.metadata.editSummary}
-                        onApply={async () => {
-                          // Apply the thumbnail version (post-edit state)
-                          try {
-                            const snapshot = msg.metadata.slideSnapshot;
-                            const deckStore = useDeckStore.getState();
-                            const slides = deckStore.deckData?.slides || [];
-                            const slideIndex = slides.findIndex((s: any) => s.id === snapshot.id);
-                            if (slideIndex === -1) throw new Error(`Slide ${snapshot.id} not found`);
-                            const updatedSlides = [...slides];
-                            const appliedSlide = {
-                              ...updatedSlides[slideIndex],
-                              components: JSON.parse(JSON.stringify(snapshot.components))
-                            };
-                            updatedSlides[slideIndex] = appliedSlide;
-                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
-                            const { slideSyncService } = await import('@/lib/slideSyncService');
-                            await slideSyncService.sendSlideUpdate(appliedSlide, updatedSlides);
-                            console.log('[SlideSnapshot] Applied thumbnail version:', snapshot.id);
-                          } catch (err) {
-                            console.error('[SlideSnapshot] Apply failed:', err);
-                            throw err;
-                          }
-                        }}
-                        onRestore={preEditSnapshot ? async () => {
-                          // Restore to the pre-edit state (undo the change)
-                          try {
-                            const deckStore = useDeckStore.getState();
-                            const slides = deckStore.deckData?.slides || [];
-                            const slideIndex = slides.findIndex((s: any) => s.id === preEditSnapshot.id);
-                            if (slideIndex === -1) throw new Error(`Slide ${preEditSnapshot.id} not found`);
-                            const updatedSlides = [...slides];
-                            const restoredSlide = {
-                              ...updatedSlides[slideIndex],
-                              components: JSON.parse(JSON.stringify(preEditSnapshot.components))
-                            };
-                            updatedSlides[slideIndex] = restoredSlide;
-                            deckStore.updateDeckData({ ...deckStore.deckData, slides: updatedSlides });
-                            const { slideSyncService } = await import('@/lib/slideSyncService');
-                            await slideSyncService.sendSlideUpdate(restoredSlide, updatedSlides);
-                            console.log('[SlideSnapshot] Restored to pre-edit state:', preEditSnapshot.id);
-                          } catch (err) {
-                            console.error('[SlideSnapshot] Restore failed:', err);
-                            throw err;
-                          }
-                        } : undefined}
-                      />
-                    </div>
-                  </div>
-                );
-              }
+              const slideNumber = editAppliedData?.slideSnapshot?.id
+                ? getSlideNumber(editAppliedData.slideSnapshot.id)
+                : null;
 
               return (
                 <ChatMessage
@@ -4988,6 +4881,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   isLoading={showAsLoading}
                   inlineBelow={inline}
                   onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
+                  editAppliedData={editAppliedData ? { ...editAppliedData, slideNumber } : undefined}
                 />
               );
             })}

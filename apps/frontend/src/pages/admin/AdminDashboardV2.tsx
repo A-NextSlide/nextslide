@@ -6,7 +6,6 @@ import { Users, FileStack, Server, BarChart3, RefreshCw, Palette, TrendingUp, La
 import { cn } from '@/lib/utils';
 import { adminApi, ServiceHealthResponse, AnalyticsOverview } from '@/services/adminApi';
 import { StatCard, DashboardHeader, QuickActionCard } from '@/components/admin/AdminComponents';
-import LoadingDisplay from '@/components/common/LoadingDisplay';
 import { motion } from 'framer-motion';
 
 const AdminDashboardV2: React.FC = () => {
@@ -17,11 +16,9 @@ const AdminDashboardV2: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Add a small artificial delay to show off the nice loading state if it's too fast
       const [metricsData, healthData] = await Promise.all([
         adminApi.getAnalyticsOverview(),
         adminApi.getServicesHealth().catch(() => null),
-        new Promise(resolve => setTimeout(resolve, 800))
       ]);
       setMetrics(metricsData);
       setServiceHealth(healthData);
@@ -43,10 +40,15 @@ const AdminDashboardV2: React.FC = () => {
   if (loading) {
     return (
       <AdminLayoutV2>
-        <LoadingDisplay
-          message="LOADING DASHBOARD"
-          className="h-[calc(100vh-8rem)] bg-transparent dark:bg-transparent"
-        />
+        <div className="w-full max-w-[1600px] mx-auto space-y-4">
+          <div className="h-8 w-48 bg-zinc-100 dark:bg-zinc-800 rounded animate-pulse" />
+          <div className="h-16 w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-28 bg-zinc-100 dark:bg-zinc-800 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        </div>
       </AdminLayoutV2>
     );
   }

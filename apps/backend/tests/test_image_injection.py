@@ -130,40 +130,6 @@ def test_inject_prefetched_images():
     return True
 
 
-def test_extract_search_terms():
-    """Test that search terms are correctly extracted from content."""
-
-    from agents.generation.custom_component_generator import _extract_image_search_terms
-
-    # Test Case 1: Proper nouns
-    content1 = "Elon Musk founded Tesla and SpaceX. He also created Neuralink."
-    terms1 = _extract_image_search_terms(content1, "Tech Leaders")
-
-    assert any("Elon Musk" in t or "elon" in t.lower() for t in terms1), f"Should find Elon Musk in {terms1}"
-    assert any("Tesla" in t for t in terms1), f"Should find Tesla in {terms1}"
-    print(f"✅ Test 1 PASSED: Found terms: {terms1[:5]}")
-
-    # Test Case 2: Quoted terms
-    content2 = 'The "Smart Checkout" system uses "AI Vision" technology.'
-    terms2 = _extract_image_search_terms(content2, "Checkout Systems")
-
-    assert any("Smart Checkout" in t for t in terms2), f"Should find 'Smart Checkout' in {terms2}"
-    print(f"✅ Test 2 PASSED: Found quoted terms: {terms2[:5]}")
-
-    # Test Case 3: Tech patterns
-    content3 = "Using React and Python with AWS for the backend. GPT-4 for AI."
-    terms3 = _extract_image_search_terms(content3, "Tech Stack")
-
-    # Should find some tech terms
-    assert len(terms3) > 0, "Should extract some terms"
-    print(f"✅ Test 3 PASSED: Found tech terms: {terms3[:5]}")
-
-    print("\n" + "="*60)
-    print("🎉 ALL SEARCH TERM TESTS PASSED!")
-    print("="*60)
-    return True
-
-
 def test_term_to_prop_name():
     """Test prop name conversion."""
 
@@ -177,38 +143,6 @@ def test_term_to_prop_name():
     assert _term_to_prop_name("AI") == "aiImage"
 
     print("✅ Prop name conversion tests PASSED")
-    return True
-
-
-async def test_prefetch_images_mock():
-    """Test the prefetch flow with a mock (doesn't call real API)."""
-
-    print("\n" + "="*60)
-    print("Testing prefetch flow (structure only, no API call)...")
-    print("="*60)
-
-    from agents.generation.custom_component_generator import _extract_image_search_terms
-
-    content = """
-    # Smart Checkout Revolution
-
-    Kroger partners with Caper for AI-powered shopping carts.
-    The technology uses computer vision and machine learning.
-
-    ## Key Benefits
-    - Reduced wait times
-    - Better customer experience
-    - Increased revenue
-    """
-
-    terms = _extract_image_search_terms(content, "Smart Checkout Revolution")
-
-    print(f"Extracted {len(terms)} search terms:")
-    for i, term in enumerate(terms[:5]):
-        print(f"  {i+1}. {term}")
-
-    assert len(terms) >= 2, "Should extract at least 2 terms"
-    print("\n✅ Prefetch structure test PASSED")
     return True
 
 
@@ -371,12 +305,10 @@ def run_all_tests():
     try:
         # Synchronous tests
         test_inject_prefetched_images()
-        test_extract_search_terms()
         test_term_to_prop_name()
-        test_external_media_conversion()  # New test
+        test_external_media_conversion()
 
         # Async tests
-        asyncio.run(test_prefetch_images_mock())
         asyncio.run(test_full_flow_mock())
 
         print("\n" + "="*60)

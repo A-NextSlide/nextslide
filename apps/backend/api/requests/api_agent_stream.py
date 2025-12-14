@@ -58,6 +58,11 @@ async def ws_agent_stream(websocket: WebSocket, sessionId: Optional[str] = None,
             # Relay outbound events
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=10)
+                event_type = (event or {}).get("type", "unknown")
+                # Log deck events for debugging
+                if event_type.startswith("deck."):
+                    import logging
+                    logging.getLogger(__name__).info(f"[WS_STREAM] Sending event to client: {event_type}")
                 try:
                     await websocket.send_json(event)
                 except WebSocketDisconnect:
@@ -110,7 +115,11 @@ async def ws_agent_stream(websocket: WebSocket, sessionId: Optional[str] = None,
                                 "applied_by": user_id,
                                 "deck_revision": str(deck_revision) if deck_revision else None
                             }).eq("id", edit_id).execute()
-                            await agent_stream_bus.publish(session_id, ensure_json_serializable(_envelope("deck.edit.applied", session_id, None, {"editId": edit_id, "deckRevision": deck_revision})))
+                            await agent_stream_bus.publish(session_id, ensure_json_serializable(_envelope("deck.edit.applied", session_id, None, {
+                                "editId": edit_id,
+                                "deckRevision": deck_revision,
+                                "deck_diff": diff  # CRITICAL: Include deck_diff for frontend real-time updates
+                            })))
                 elif msg_type == "client.update_context":
                     # Optionally store as system message/context update
                     sb.table("agent_messages").insert({

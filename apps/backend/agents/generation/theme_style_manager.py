@@ -1265,8 +1265,8 @@ Provide specific recommendations that create a cohesive, memorable design system
             async def generate_search_terms_task():
                 """Generate per-slide image search terms in parallel"""
                 logger.info("[THEME PARALLEL] Task 4: Starting per-slide search terms generation...")
-                
-                # Step 4: Get slide-specific search terms
+
+                # Step 4: Get slide-specific search terms using photographable scene guidance
                 image_prompt = f"""Generate specific image search terms for EACH slide listed below.
 
 Deck: {title}
@@ -1275,24 +1275,33 @@ SLIDES TO ANALYZE:
 {first_slides}
 
 REQUIREMENTS PER SLIDE:
-1. Generate 2-3 search terms for EACH slide
-2. Terms must be 1-3 words, specific to that slide's content
-3. Use concrete nouns related to slide title and content
-4. Think: "What images would help illustrate THIS specific slide?"
+1. Generate 1-2 search terms for EACH slide
+2. Each term must be a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words)
+3. Describe a REAL scene: "person doing X", "object in Y setting"
+4. Include specific visual details that a photographer could capture
+
+TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
+- "analytics" → "data analyst reviewing dashboard on monitor"
+- "electric car" → "Tesla charging station parking lot"
+- "sustainability" → "wind turbines on green hillside"
+- "teamwork" → "business team around conference table"
+- "growth" → "startup founders celebrating in office"
+- "technology" → "software developer coding on laptop"
 
 OUTPUT FORMAT:
 For each slide, write:
-Slide N: term1, term2, term3
+Slide N: scene description 1, scene description 2
 
-GOOD EXAMPLE:
-Slide 1: video game controller, retro arcade
-Slide 2: pac-man arcade, space invaders cabinet
-Slide 3: nintendo console, sega genesis
-Slide 4: 3d graphics card, polygon rendering
+GOOD EXAMPLES (photographable scenes):
+Slide 1: gamer holding controller in dark room, retro arcade machines neon lights
+Slide 2: pac-man arcade cabinet closeup, space invaders game screen
+Slide 3: nintendo switch on wooden table, gaming setup with multiple monitors
+Slide 4: 3d graphics card computer build, game developer at workstation
 
-BAD EXAMPLE:
-Slide 1: gaming, history, evolution (too generic)
-Slide 2: arcade (too vague)
+BAD EXAMPLES (too vague - avoid these):
+Slide 1: gaming, history, evolution (not photographable)
+Slide 2: arcade (single word, no scene)
+Slide 3: technology, innovation (abstract concepts)
 
 Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
             
@@ -1300,46 +1309,37 @@ Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
                 client=client,
                 model=model,
                 messages=[{"role": "user", "content": image_prompt}],
-                max_tokens=300,  # Increased for per-slide output
+                max_tokens=600,  # Increased for longer photographable scene descriptions
                 response_model=None,
                 temperature=0.5
                 )
-                
-                # Parse per-slide terms from response
+
+                # Parse per-slide terms from response - trust the AI output, minimal filtering
                 raw_lines = image_response.strip().split('\n')
                 search_terms_dict = {}  # Dict keyed by slide index
-                
+
                 for line in raw_lines:
                     line = line.strip()
                     if not line:
                         continue
-                    
+
                     # Look for "Slide N:" pattern
                     match = re.match(r'slide\s+(\d+)\s*:\s*(.+)', line, re.IGNORECASE)
                     if match:
                         slide_num = int(match.group(1)) - 1  # Convert to 0-based index
                         terms_str = match.group(2)
-                        
-                        # Split terms by comma
+
+                        # Split terms by comma and clean - allow 3-6 word photographable scenes
                         terms = [t.strip().strip('"\':,.') for t in terms_str.split(',')]
-                        # Filter and clean
-                        cleaned_terms = []
-                        for term in terms:
-                            if term and len(term) >= 3 and len(term.split()) <= 4:
-                                cleaned_terms.append(term)
-                        
+                        # Only filter out empty terms - trust AI for quality
+                        cleaned_terms = [term for term in terms if term and len(term) >= 3]
+
                         if cleaned_terms:
-                            search_terms_dict[str(slide_num)] = cleaned_terms[:3]  # Max 3 per slide
-                
-                # Fallback: if parsing failed, create simple per-slide terms
-                if not search_terms_dict and deck_outline and hasattr(deck_outline, 'slides'):
-                    logger.warning("[THEME IMAGE] Parsing failed, using fallback per-slide extraction")
-                    for idx, slide in enumerate(deck_outline.slides[:10]):
-                        slide_title = getattr(slide, 'title', '')
-                        # Extract 2 key words from title
-                        words = [w for w in slide_title.split() if len(w) > 3]
-                        if words:
-                            search_terms_dict[str(idx)] = words[:2]
+                            search_terms_dict[str(slide_num)] = cleaned_terms[:2]  # Max 2 per slide
+
+                # Fallback: if parsing failed completely, log warning (don't force bad fallback terms)
+                if not search_terms_dict:
+                    logger.warning("[THEME IMAGE] Parsing failed, no search terms extracted")
                 
                 # Debug logging
                 logger.info(f"[THEME IMAGE] Raw response: {image_response[:300]}...")

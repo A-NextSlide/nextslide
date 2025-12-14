@@ -1499,13 +1499,18 @@ export const CustomComponentRenderer: React.FC<{
 })();
 </script>`;
 
+    // DEDUPLICATION: Only inject if not already present
+    if (html.includes('NEXTSLIDE EDIT MODE V2')) {
+      return html; // Already has click handlers
+    }
+
     // Inject before </body> or at end
     if (html.includes('</body>')) {
-      return html.replace('</body>', clickHandlerScript + '</body>');
+      return html.replace('</body>', clickHandlerScript + '\n<!-- NEXTSLIDE EDIT MODE V2 -->\n</body>');
     } else if (html.includes('</html>')) {
-      return html.replace('</html>', clickHandlerScript + '</html>');
+      return html.replace('</html>', clickHandlerScript + '\n<!-- NEXTSLIDE EDIT MODE V2 -->\n</html>');
     } else {
-      return html + clickHandlerScript;
+      return html + clickHandlerScript + '\n<!-- NEXTSLIDE EDIT MODE V2 -->\n';
     }
   };
 
@@ -1677,6 +1682,31 @@ export const CustomComponentRenderer: React.FC<{
   const stableIframeSrcDoc = useMemo(() => {
     if (!iframeSrcDoc) return null;
 
+    // CLEANUP: Strip duplicate injected scripts from HTML (can happen from backend accumulation)
+    let cleanHtml = iframeSrcDoc;
+    // Remove all instances of our injected scripts/markers so we can re-inject cleanly
+    cleanHtml = cleanHtml.replace(/<!-- NEXTSLIDE EDIT MODE V2 -->/g, '');
+    // Remove duplicate processing overlay styles/scripts (keep checking until no more found)
+    const processingOverlayRegex = /<style>\s*\.ns-image-processing-overlay[\s\S]*?<\/script>/g;
+    const matches = cleanHtml.match(processingOverlayRegex);
+    if (matches && matches.length > 1) {
+      // Keep only the first occurrence, remove the rest
+      let firstRemoved = false;
+      cleanHtml = cleanHtml.replace(processingOverlayRegex, (match) => {
+        if (!firstRemoved) {
+          firstRemoved = true;
+          return ''; // Remove the first one too, we'll re-inject fresh
+        }
+        return '';
+      });
+    } else if (matches) {
+      // Remove the single occurrence so we re-inject fresh
+      cleanHtml = cleanHtml.replace(processingOverlayRegex, '');
+    }
+    // Remove duplicate placeholder scripts
+    const placeholderRegex = /<style>\s*\.ns-placeholder-wrapper[\s\S]*?<!-- NEXTSLIDE EDIT MODE V2 -->/g;
+    cleanHtml = cleanHtml.replace(placeholderRegex, '');
+
     // First inject image props from component.props.props (the nested props object)
     // componentProps already spreads these, but we need the actual image URLs
     const imageProps = component.props.props || {};
@@ -1687,10 +1717,10 @@ export const CustomComponentRenderer: React.FC<{
           .filter(([k]) => k.toLowerCase().includes('image'))
           .map(([k, v]) => [k, typeof v === 'string' ? v.substring(0, 60) + '...' : v])
       ),
-      hasPlaceholders: iframeSrcDoc.includes('${'),
+      hasPlaceholders: cleanHtml.includes('${'),
       propsKey: propsKey.substring(0, 100)
     });
-    let html = injectImageProps(iframeSrcDoc, imageProps);
+    let html = injectImageProps(cleanHtml, imageProps);
 
     // Then add click handlers for edit mode (skip on iOS due to postMessage issues)
     if (!BROWSER.isIOS) {
@@ -1791,13 +1821,15 @@ export const CustomComponentRenderer: React.FC<{
 })();
 </script>`;
 
-    // Inject before </head> or at the start
-    if (html.includes('</head>')) {
-      html = html.replace('</head>', processingOverlayScript + '</head>');
-    } else if (html.includes('<body')) {
-      html = html.replace('<body', processingOverlayScript + '<body');
-    } else {
-      html = processingOverlayScript + html;
+    // DEDUPLICATION: Only inject processing overlay if not already present
+    if (!html.includes('ns-image-processing-overlay')) {
+      if (html.includes('</head>')) {
+        html = html.replace('</head>', processingOverlayScript + '</head>');
+      } else if (html.includes('<body')) {
+        html = html.replace('<body', processingOverlayScript + '<body');
+      } else {
+        html = processingOverlayScript + html;
+      }
     }
 
     return html;

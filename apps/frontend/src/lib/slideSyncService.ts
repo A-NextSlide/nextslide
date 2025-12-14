@@ -19,7 +19,7 @@ export class SlideSyncService {
   }
 
   /**
-   * Records an edit to the slide_edits table in Supabase
+   * Records an edit to the deck_versions table in Supabase
    * @param slideId The ID of the slide being edited
    * @param componentId Optional ID of the specific component being edited
    * @param payload The data payload being sent
@@ -28,27 +28,38 @@ export class SlideSyncService {
    */
   private async recordEdit(slideId: string, payload: any, editType: string, componentId?: string) {
     if (!this.useSupabase) return;
-    
+
     try {
+      // Get the actual deck UUID - deck_versions.deck_id expects a UUID, not slide ID
+      const { useDeckStore } = await import('@/stores/deckStore');
+      const deckStore = useDeckStore.getState();
+      const deckUuid = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+
+      if (!deckUuid) {
+        console.warn(`[recordEdit] No deck UUID available - skipping edit recording for slide ${slideId}`);
+        return;
+      }
+
       console.log(`Recording edit to Supabase: ${editType} for slide ${slideId}`, {
         slideId,
         componentId,
         editType,
+        deckUuid,
         payloadSummary: JSON.stringify(payload).substring(0, 100) + '...'
       });
 
       const { data, error } = await supabase
         .from('deck_versions')
         .insert({
-          deck_id: slideId,
+          deck_id: deckUuid,  // Use actual deck UUID, not slide ID
           data: payload as Json,
-          metadata: { editType, componentId }
+          metadata: { editType, componentId, slideId }  // Store slideId in metadata instead
         });
 
       if (error) {
         console.error('Error recording edit:', error);
       }
-      
+
       return { data, error };
     } catch (err) {
       console.error('Failed to record edit to Supabase:', err);
@@ -135,7 +146,7 @@ export class SlideSyncService {
         .from('decks')
         .update({
           slides: updatedSlides,
-          lastModified: new Date().toISOString()
+          last_modified: new Date().toISOString()  // snake_case to match PostgreSQL column
         })
         .eq('uuid', deckUuid);
 
@@ -498,9 +509,9 @@ export class SlideSyncService {
         // Update the deck with the modified slides array
         const { error } = await supabase
           .from('decks')
-          .update({ 
+          .update({
             slides: updatedSlides,
-            lastModified: new Date().toISOString()
+            last_modified: new Date().toISOString()  // snake_case to match PostgreSQL column
           })
           .eq('uuid', targetDeck.uuid);
         
@@ -536,7 +547,7 @@ export class SlideSyncService {
     try {
       const { data: decks, error } = await supabase
         .from('decks')
-        .select('uuid, name, version, lastModified, slides');
+        .select('uuid, name, version, last_modified, slides');
 
       if (error) {
         console.error('Error fetching decks to find deck info:', error);
@@ -550,7 +561,7 @@ export class SlideSyncService {
               uuid: deck.uuid,
               name: deck.name || 'Untitled Deck',
               version: deck.version || '1.0',
-              lastModified: deck.lastModified || new Date().toISOString()
+              lastModified: deck.last_modified || new Date().toISOString()
             };
           }
         }

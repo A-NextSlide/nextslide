@@ -813,7 +813,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
             : el.iframeBounds,
         }));
 
-        console.log('[CustomComponentEdit] Elements extracted:', elements.length, 'elements, coordinator:', !!coordinatorRef.current);
         setVirtualElements(elements);
         // Update global store for settings panel
         setDetectedElements(elements);
@@ -851,7 +850,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
           }
 
           if (closestElement) {
-            console.log('[CustomComponentEdit] Auto-selecting closest element:', closestElement.id, closestElement.type);
             setSelectedElementId(closestElement.id);
             onElementSelect(toDetectedElement(closestElement), cursorX, cursorY);
           }
@@ -869,7 +867,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
       // Handle text editing finished - save changes and re-enable hit areas
       if (data.type === 'text-changed') {
-        console.log('[CustomComponentEdit] Text changed, requesting HTML save:', data);
         setEditingTextId(null);
 
         // Request HTML from iframe to persist the text change
@@ -877,7 +874,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         const sourceWindow = event.source as Window;
         if (sourceWindow) {
           setTimeout(() => {
-            console.log('[CustomComponentEdit] Sending get-html request');
             sourceWindow.postMessage({
               target: 'ns-custom-component-edit',
               type: 'get-html',
@@ -886,7 +882,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         } else if (iframeRef.current?.contentWindow) {
           // Fallback to iframeRef
           setTimeout(() => {
-            console.log('[CustomComponentEdit] Sending get-html request (fallback)');
             iframeRef.current?.contentWindow?.postMessage({
               target: 'ns-custom-component-edit',
               type: 'get-html',
@@ -900,7 +895,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
       // Handle HTML response for persistence
       if (data.type === 'html-response' && data.html) {
-        console.log('[CustomComponentEdit] Received HTML for persistence, length:', data.html.length);
         onHtmlUpdate(data.html);
       }
     };
@@ -935,7 +929,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
         e.preventDefault();
         e.stopPropagation();
 
-        console.log('[CustomComponentEdit] Delete key pressed, deleting inner element:', selectedElementId);
 
         // Delete the selected inner element
         const element = virtualElements.find(el => el.id === selectedElementId);
@@ -972,13 +965,10 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   // Handle element selection - single click selects (for drag), double-click edits (for text)
   const handleSelectElement = useCallback((elementId: string, cursorX?: number, cursorY?: number) => {
-    console.log('[CustomComponentEdit] handleSelectElement called:', elementId, 'cursor:', cursorX, cursorY);
     const element = virtualElements.find(e => e.id === elementId);
     if (!element) {
-      console.log('[CustomComponentEdit] Element not found in virtualElements');
       return;
     }
-    console.log('[CustomComponentEdit] Element found:', element.type, element.selector);
 
     // For ALL elements (including TEXT): show selection overlay on single click
     // This allows dragging text elements. Double-click will enter edit mode.
@@ -999,14 +989,12 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
   const handleStartTextEdit = useCallback((element: VirtualElement) => {
     if (element.type !== 'text') return;
 
-    console.log('[CustomComponentEdit] Starting text edit for:', element.selector);
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage({
         target: 'ns-custom-component-edit',
         type: 'start-text-edit',
         selector: element.selector,
       }, '*');
-      console.log('[CustomComponentEdit] Sent start-text-edit message');
     }
     // Hide selection overlay while editing text
     setSelectedElementId(null);
@@ -1016,7 +1004,6 @@ export const CustomComponentEditOverlay: React.FC<CustomComponentEditOverlayProp
 
   // Handle double-click - for TEXT: enter edit mode, for IMAGE: open settings
   const handleDoubleClick = useCallback((element: VirtualElement) => {
-    console.log('[CustomComponentEdit] handleDoubleClick called:', element.type, element.selector);
     if (element.type === 'text') {
       handleStartTextEdit(element);
     } else if (element.type === 'image') {

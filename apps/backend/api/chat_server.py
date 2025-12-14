@@ -158,6 +158,7 @@ from api.requests.api_agent_messages import router as agent_messages_router
 from api.requests.api_theme import router as theme_router
 from api.requests.api_deck_notes import router as deck_notes_router
 from api.requests.api_admin import router as admin_router
+from api.requests.api_admin_analytics import router as admin_analytics_router
 from api.requests.api_google_integration import router as google_router
 from api.requests.api_integrations import router as integrations_router
 from api.requests.api_file_analysis import router as file_analysis_router
@@ -280,6 +281,7 @@ if narrative_test_router is not None:
 app.include_router(websocket_analytics_router, prefix="", tags=["Websocket Analytics"])
 app.include_router(deck_notes_router, prefix="", tags=["Deck Notes"])
 app.include_router(admin_router)
+app.include_router(admin_analytics_router)
 app.include_router(agent_router)
 app.include_router(agent_stream_router)
 app.include_router(uploads_router)

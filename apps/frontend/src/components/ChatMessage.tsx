@@ -13,6 +13,7 @@ import TypewriterText from '@/components/common/TypewriterText';
 import ThinkingIndicator from '@/components/common/ThinkingIndicator';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { SlideSnapshotThumbnail } from '@/components/chat/blocks/SlideSnapshotThumbnail';
 
 export type MessageType = 'ai' | 'user' | 'system';
 export type FeedbackType = 'positive' | 'negative' | null;
@@ -25,6 +26,14 @@ export interface ChatMessageProps {
   onFeedback?: (feedback: FeedbackType) => void;
   metadata?: Record<string, any>;
   inlineBelow?: React.ReactNode;
+  /** Edit applied data to render within AI bubble (grouped with message) */
+  editAppliedData?: {
+    slideSnapshot?: any;
+    preEditSnapshot?: any;
+    editId?: string;
+    editSummary?: string;
+    slideNumber?: number | null;
+  };
 }
 
 
@@ -52,11 +61,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   onFeedback,
   metadata,
   inlineBelow,
+  editAppliedData,
 }) => {
-  // Debug: log what we're rendering for AI messages with thinking state
-  if (type === 'ai' && (metadata?.isTyping || metadata?.thinkingPhase)) {
-    console.log('[ChatMessage] Rendering AI message:', { message: message?.slice(0, 50), isLoading, thinkingPhase: metadata?.thinkingPhase, isTyping: metadata?.isTyping });
-  }
   const [feedback, setFeedback] = useState<FeedbackType>(null);
   const isToolRow = metadata?.type === 'agent_tool';
   const isPlanRow = metadata?.type === 'agent_plan';
@@ -291,7 +297,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         isCompactMetaRow ? 'mb-1' : 'mb-2'
       )}
     >
-      {type !== 'user' && !isCompactMetaRow && (
+      {type !== 'user' && !isCompactMetaRow && !isPlanRow && (
         <div className="flex-shrink-0 mr-2">
           <div className={cn(
             "w-8 h-8 rounded-full text-white flex items-center justify-center"
@@ -326,7 +332,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         style={bubbleStyleWithSafariFix}
       >
         <div className="flex flex-col">
-          <div className="text-[13px] leading-snug min-w-0">
+          <div className="text-[12px] leading-snug min-w-0">
             {isLoading ? (
               <div style={{ minHeight: '20px' }}>
                 <ThinkingIndicator
@@ -427,16 +433,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 )}
               </div>
             ) : (
-              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug">
+              <div
+                className="whitespace-pre-wrap break-words text-[12px] leading-snug"
+              >
                 {/* Compact, styled agent rows */}
                 {metadata?.type === 'agent_plan' ? (
-                  <div className="flex flex-col gap-1.5 max-w-full text-[11px] whitespace-normal break-words min-w-0" style={planStyle}>
-                    <span className="inline-flex items-center gap-1 text-muted-foreground">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-                      <span>Planning</span>
+                  <div className="flex flex-col gap-1 max-w-full text-[10px] whitespace-normal break-words min-w-0" style={planStyle}>
+                    <span className="inline-flex items-center gap-1 text-muted-foreground text-[9px]">
+                      <span className="w-1 h-1 rounded-full bg-orange-500 animate-pulse" />
+                      <span>Reviewing slide</span>
                     </span>
                     {/* Show full planning text for each step */}
-                    <motion.div layout className="flex flex-col gap-1 min-w-0">
+                    <motion.div layout className="flex flex-col gap-0.5 min-w-0">
                       {(() => {
                         const rawSteps: string[] = (metadata?.steps || []) as string[];
                         return rawSteps.map((s, i) => (
@@ -446,7 +454,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                             initial={{ opacity: 0, y: -5 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6, delay: i * 0.05 }}
-                            className="break-words whitespace-normal text-[12px] text-foreground/80 pl-3 border-l-2 border-orange-500/30"
+                            className="break-words whitespace-normal text-[10px] text-foreground/70 pl-2 border-l border-orange-500/30"
                           >
                             {s}
                           </motion.div>
@@ -467,19 +475,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     {message}
                   </div>
                 ) : metadata?.type === 'edit_applied' ? (
-                  <div className="inline-flex items-center max-w-full gap-2 text-[11px]" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full ring-1 ring-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
-                      <CheckCircle2 className="w-3 h-3" />
-                    </span>
-                    <TypewriterText
-                      text={safeMessage.replace(/^✅\s*/, '').toUpperCase()}
-                      delay={22}
-                      className="text-[11px] font-extrabold tracking-wide text-[#FF4301] dark:text-[#FF4301]"
-                      fontSizePx={12}
-                      fontWeight={900}
-                      uppercase={true}
-                      cursorColor={COLORS.SUGGESTION_PINK}
-                    />
+                  <div className="flex flex-col gap-2">
+                    {/* Edit applied header */}
+                    <div className="inline-flex items-center max-w-full gap-2 text-[11px]" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full ring-1 ring-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="w-3 h-3" />
+                      </span>
+                      <TypewriterText
+                        text={safeMessage.replace(/^✅\s*/, '').toUpperCase()}
+                        delay={22}
+                        className="text-[11px] font-extrabold tracking-wide text-[#FF4301] dark:text-[#FF4301]"
+                        fontSizePx={12}
+                        fontWeight={900}
+                        uppercase={true}
+                        cursorColor={COLORS.SUGGESTION_PINK}
+                      />
+                    </div>
+                    {/* Slide thumbnail for restore */}
+                    {metadata?.slideSnapshot && (
+                      <SlideSnapshotThumbnail
+                        slideSnapshot={metadata.slideSnapshot}
+                        preEditSnapshot={metadata.preEditSnapshot}
+                        editId={metadata.editId}
+                        onApply={metadata.onApply}
+                        onRestore={metadata.onRestore}
+                        timestamp={timestamp}
+                        summary={metadata.editSummary}
+                      />
+                    )}
                   </div>
                 ) : metadata?.type === 'spacer' ? (
                   <div className="h-2" />
@@ -487,43 +510,82 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   <div className="inline-flex items-center max-w-full text-[11px] text-muted-foreground">
                     {message}
                   </div>
+                ) : type === 'ai' ? (
+                  <TypewriterText
+                    text={primaryMessage}
+                    delay={8}
+                    uppercase={false}
+                    fontSizePx={12}
+                    fontWeight={400}
+                    fontFamily="inherit"
+                    cursorColor={COLORS.SUGGESTION_PINK}
+                    renderMarkdown={true}
+                  />
                 ) : (
                   <>{renderMarkdown(primaryMessage)}</>
                 )}
               </div>
             )}
-            
+
+            {/* Edit Applied section - rendered within AI bubble */}
+            {type === 'ai' && editAppliedData?.slideSnapshot && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="mt-3 pt-3 border-t border-gray-200/50 dark:border-gray-700/50"
+              >
+                {/* Slide X - Edit Applied label */}
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CheckCircle2 className="w-3 h-3 text-green-500" />
+                  <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
+                    {editAppliedData.slideNumber ? `Slide ${editAppliedData.slideNumber}` : 'Slide'} — Edit Applied
+                  </span>
+                </div>
+
+                {/* Thumbnail with restore button */}
+                <div className="flex items-start gap-2">
+                  <SlideSnapshotThumbnail
+                    slideSnapshot={editAppliedData.slideSnapshot}
+                    preEditSnapshot={editAppliedData.preEditSnapshot}
+                    editId={editAppliedData.editId}
+                    timestamp={timestamp}
+                    summary={editAppliedData.editSummary}
+                  />
+                </div>
+              </motion.div>
+            )}
 
           </div>
 
           {/* Timestamp/feedback hidden for compact agent rows */}
           {!(metadata?.compactRow) && safeMessage.trim().length > 0 && !/^\d+$/.test(safeMessage.trim()) && (
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[9px] text-muted-foreground/70">
                 {formattedTime}
               </span>
 
               {type === 'ai' && !isLoading && onFeedback && !isStreamingMessage && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => handleFeedback('positive')}
                     className={cn(
-                      'p-0.5 rounded hover:bg-muted transition-colors',
+                      'p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground/50 hover:text-muted-foreground',
                       feedback === 'positive' && 'text-green-600'
                     )}
                     aria-label="Good response"
                   >
-                    <ThumbsUp size={14} />
+                    <ThumbsUp size={10} />
                   </button>
                   <button
                     onClick={() => handleFeedback('negative')}
                     className={cn(
-                      'p-0.5 rounded hover:bg-muted transition-colors',
+                      'p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground/50 hover:text-muted-foreground',
                       feedback === 'negative' && 'text-red-600'
                     )}
                     aria-label="Bad response"
                   >
-                    <ThumbsDown size={14} />
+                    <ThumbsDown size={10} />
                   </button>
                 </div>
               )}

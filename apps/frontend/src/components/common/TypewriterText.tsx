@@ -10,17 +10,34 @@ interface TypewriterTextProps {
   fontWeight?: number;
   uppercase?: boolean;
   cursorColor?: string;
+  fontFamily?: string;
+  renderMarkdown?: boolean;
 }
 
-const TypewriterText: React.FC<TypewriterTextProps> = React.memo(({ 
-  text, 
-  delay = 50, 
+/**
+ * Helper function to render text with **bold** markdown
+ */
+const renderMarkdownText = (text: string): React.ReactNode => {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
+const TypewriterText: React.FC<TypewriterTextProps> = React.memo(({
+  text,
+  delay = 50,
   className,
   onComplete,
   fontSizePx,
   fontWeight,
   uppercase = true,
-  cursorColor
+  cursorColor,
+  fontFamily,
+  renderMarkdown = false
 }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
@@ -116,23 +133,24 @@ const TypewriterText: React.FC<TypewriterTextProps> = React.memo(({
   const effectiveFontSize = fontSizePx ?? (className?.includes('text-lg') ? 18 : 24);
   const effectiveFontWeight = fontWeight ?? 900;
   const effectiveCursorColor = cursorColor ?? '#FF4301';
+  const effectiveFontFamily = fontFamily ?? "'HK Grotesk Wide', 'Hanken Grotesk', sans-serif";
 
   return (
-    <span 
+    <span
       className={cn(
         "text-[#383636] dark:text-gray-100",
         className
       )}
-      style={{ 
-        fontFamily: "'HK Grotesk Wide', 'Hanken Grotesk', sans-serif",
+      style={{
+        fontFamily: effectiveFontFamily,
         fontWeight: effectiveFontWeight,
         fontSize: `${effectiveFontSize}px`,
-        letterSpacing: '0.5px',
+        letterSpacing: uppercase ? '0.5px' : 'normal',
         textTransform: uppercase ? 'uppercase' as const : 'none'
       }}
     >
-      {displayedText}
-      <span 
+      {renderMarkdown ? renderMarkdownText(displayedText) : displayedText}
+      <span
         className={cn(
           "inline-block w-[3px] h-[1.2em] ml-[2px] align-middle",
           showCursor ? "opacity-100" : "opacity-0",

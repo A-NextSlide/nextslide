@@ -368,6 +368,74 @@ def _invoke_with_fallback(client, model, messages, response_model=None, max_toke
         raise
 
 
+def _extract_content_from_html(html: str) -> str:
+    """Extract text content from HTML for use as slide content context."""
+    if not html:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        # Remove script and style elements
+        for script in soup(["script", "style"]):
+            script.decompose()
+        # Get text, preserving some structure
+        text = soup.get_text(separator='\n', strip=True)
+        # Clean up excessive newlines
+        import re
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        # Limit length
+        return text[:2000] if text else ""
+    except Exception:
+        # Fallback: simple regex extraction
+        import re
+        text = re.sub(r'<[^>]+>', ' ', html)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:2000] if text else ""
+
+
+def _extract_slide_content_for_redesign(current_slide: dict, existing_html: str = None) -> str:
+    """
+    Extract actual content from an existing slide for redesign purposes.
+    Returns a description of what the slide is ABOUT, not instructions on how to redesign it.
+    """
+    content_parts = []
+
+    # Get slide title
+    title = _get_attr(current_slide, "title", "")
+    if title:
+        content_parts.append(f"Slide Title: {title}")
+
+    # Get description if available
+    description = _get_attr(current_slide, "description", "")
+    if description:
+        content_parts.append(f"Description: {description}")
+
+    # Extract content from existing HTML if provided
+    if existing_html:
+        html_content = _extract_content_from_html(existing_html)
+        if html_content:
+            content_parts.append(f"Current Content:\n{html_content}")
+
+    # If we have components but no HTML, extract from components
+    if not existing_html:
+        components = _get_attr(current_slide, "components", []) or []
+        for c in components:
+            ctype = _get_attr(c, "type", "")
+            props = _get_attr(c, "props", {}) or {}
+
+            if ctype == "CustomComponent":
+                html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+                html_content = _extract_content_from_html(html)
+                if html_content:
+                    content_parts.append(f"Current Content:\n{html_content}")
+            elif ctype == "TiptapTextBlock":
+                text = props.get("text", "") if isinstance(props, dict) else getattr(props, "text", "")
+                if text:
+                    content_parts.append(f"Text: {str(text)[:500]}")
+
+    return "\n\n".join(content_parts) if content_parts else "Empty slide"
+
+
 def _format_components_for_prompt(components: List) -> str:
     """Format components for inclusion in prompt."""
     lines = []
@@ -562,9 +630,21 @@ def _generate_full_bleed_custom_component(
         "background_color": (colors.get("primary_background") if isinstance(colors, dict) else None),
     }
 
+    # Extract actual slide content - DO NOT pass user instructions as content
+    actual_content = _extract_slide_content_for_redesign(current_slide)
+
     generated = _run_async(
         gen.generate(
-            content=f"{instruction}\n\nIMPORTANT:\n- Fill the entire 1920x1080 canvas.\n- If reference images are provided, match their layout/style and transcribe any visible text the user asks to use exactly.\n",
+            content=f"""REDESIGN REQUEST: {instruction}
+
+EXISTING SLIDE CONTENT TO REDESIGN:
+{actual_content}
+
+IMPORTANT:
+- Fill the entire 1920x1080 canvas.
+- If reference images are provided, match their layout/style and transcribe any visible text the user asks to use exactly.
+- DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
+- The slide content should be based on the EXISTING SLIDE CONTENT above, not the redesign instructions.""",
             theme=theme if isinstance(theme, dict) else {},
             slide_context=slide_context,
             component_purpose="visualize",
@@ -603,6 +683,10 @@ def _targeted_custom_component_edit(
     comp_id = _get_attr(custom_component, "id")
     props = _get_attr(custom_component, "props", {}) or {}
     current_html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+
+    # CRITICAL: Strip frontend editing scripts from HTML before processing
+    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+    current_html = strip_frontend_editing_scripts(current_html)
 
     # Theme context
     theme = (deck_data or {}).get("theme") or {}
@@ -737,7 +821,7 @@ Use CustomComponent for complex layouts (cards, grids, timelines, etc.)."""
         model=model,
         messages=messages,
         response_model=SlideContent,
-        max_tokens=16000,
+        max_tokens=32000,
     )
 
     # Build diff
@@ -798,6 +882,10 @@ def custom_component_rewrite(
     props = _get_attr(custom_component, 'props', {}) or {}
     current_html = props.get('render', '') if isinstance(props, dict) else getattr(props, 'render', '')
 
+    # CRITICAL: Strip frontend editing scripts from HTML before processing
+    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+    current_html = strip_frontend_editing_scripts(current_html)
+
     # Extract theme context from deck
     theme = (deck_data or {}).get("theme") or {}
     colors = theme.get("color_palette") or theme.get("colors") or {}
@@ -853,9 +941,21 @@ def custom_component_rewrite(
             safe = [f"- {a.get('name','file')}: {a.get('url','')}" for a in attachments]
             attachment_context = "\n\nFILES (infer intent; if user says 'use this' and images exist, treat as primary reference and recreate):\n" + "\n".join(safe)
 
+        # Extract actual content from existing HTML - DO NOT pass user instructions as content
+        actual_content = _extract_slide_content_for_redesign(current_slide, current_html)
+
         generated = _run_async(
             gen.generate(
-                content=f"{instruction}{attachment_context}\n\nIMPORTANT: Fill the entire 1920x1080 canvas. Do not use max-width containers. If reference images are provided, match their layout and style.",
+                content=f"""REDESIGN REQUEST: {instruction}{attachment_context}
+
+EXISTING SLIDE CONTENT TO REDESIGN:
+{actual_content}
+
+IMPORTANT:
+- Fill the entire 1920x1080 canvas. Do not use max-width containers.
+- If reference images are provided, match their layout and style.
+- DO NOT display the redesign request text in the slide. Use it only to guide your design approach.
+- The slide content should be based on the EXISTING SLIDE CONTENT above, not the redesign instructions.""",
                 theme=theme_for_gen,
                 slide_context=slide_context,
                 component_purpose="visualize",
@@ -906,12 +1006,14 @@ def custom_component_rewrite(
 
 REFERENCE IMAGE URLS (if any): {', '.join(reference_images) if reference_images else 'none'}
 
-USER REQUEST:
+USER REQUEST (use this to guide your redesign, do NOT display this text in the slide):
 {instruction}
 
 IMPORTANT:
 - Fill the entire 1920x1080 canvas.
 - Do not use max-width containers (no max-w-7xl).
+- DO NOT include the user request text as visible content in the slide.
+- The slide content should be based on the CURRENT CUSTOMCOMPONENT HTML above, redesigned according to the user request.
 
 Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
 
@@ -922,7 +1024,7 @@ Return ONLY the complete updated HTML (starting with <!DOCTYPE html>)."""
         model=model,
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
         response_model=None,  # Raw output
-        max_tokens=16000,
+        max_tokens=32000,
     )
 
     # Clean up response (extract HTML if wrapped in markdown)
@@ -988,6 +1090,11 @@ def custom_component_str_replace(
 
     props = _get_attr(comp, "props", {}) or {}
     html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+
+    # CRITICAL: Strip frontend editing scripts from HTML before processing
+    from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+    html = strip_frontend_editing_scripts(html)
+
     if old_string not in html:
         # Provide more context about what went wrong
         html_preview = html[:500] if html else "(empty)"
@@ -1080,6 +1187,9 @@ def view_component(
     out: Dict[str, Any] = {"id": component_id, "type": ctype, "props": props}
     if ctype == "CustomComponent":
         html = props.get("render", "") if isinstance(props, dict) else getattr(props, "render", "")
+        # CRITICAL: Strip frontend editing scripts before showing to AI
+        from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+        html = strip_frontend_editing_scripts(html)
         # Provide full HTML so the agent can actually reason + do targeted edits.
         # (Logs are not fed back into the LLM prompt; orchestrator will read this observation.)
         out["html"] = html or ""
@@ -1145,7 +1255,7 @@ Consider converting to a CustomComponent if the request requires complex layout.
         model=model,
         messages=messages,
         response_model=SlideContent,
-        max_tokens=16000,
+        max_tokens=32000,
     )
 
     # Build diff - remove old components, add new ones
@@ -1230,7 +1340,7 @@ Make it visually stunning and professional."""
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_model=SlideContent,
-        max_tokens=16000,
+        max_tokens=32000,
     )
 
     # Build slide
@@ -1359,7 +1469,7 @@ Generate a complete, beautiful slide. Include:
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 response_model=SlideContent,
-                max_tokens=16000,
+                max_tokens=32000,
             )
 
             # Build slide
@@ -1523,3 +1633,94 @@ def reorder_slides(
     deck_diff = DeckDiff(DeckDiffBase())
     deck_diff.deck_diff.slide_order = final
     return deck_diff
+
+
+def apply_theme_to_custom_components(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry: ComponentRegistry = None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Apply theme colors and fonts to ALL CustomComponents in the deck.
+
+    This is a "hotswap" operation that updates CSS custom properties
+    and font-family declarations in CustomComponent HTML.
+
+    Args in dict:
+        colors: Optional dict with color values (accent_1, primary_text, etc.)
+        typography: Optional dict with font info (heading, body)
+
+    If not provided, uses deck's existing theme.
+    """
+    from agents.editing.orchestrator_v2 import (
+        apply_theme_to_custom_component_html,
+        strip_frontend_editing_scripts
+    )
+    from models.slide import SlideDiffBase
+
+    # Get theme from args or deck
+    colors = args.get("colors")
+    typography = args.get("typography")
+
+    # Fall back to deck theme if not provided
+    if not colors or not typography:
+        theme = (deck_data or {}).get("theme") or {}
+        if not colors:
+            colors = theme.get("color_palette") or theme.get("colors") or {}
+        if not typography:
+            typography = theme.get("typography") or {}
+
+    if not colors and not typography:
+        logger.warning("[apply_theme_to_custom_components] No theme colors or typography to apply")
+        return DeckDiff(DeckDiffBase())
+
+    logger.info(f"[apply_theme_to_custom_components] Applying theme to all CustomComponents")
+    logger.info(f"[apply_theme_to_custom_components] Colors: {list(colors.keys()) if colors else 'None'}")
+    logger.info(f"[apply_theme_to_custom_components] Typography: {list(typography.keys()) if typography else 'None'}")
+
+    slides_to_update = []
+    updated_count = 0
+
+    for slide in (deck_data or {}).get("slides", []):
+        slide_id = slide.get("id")
+        components = slide.get("components", [])
+        components_to_update = []
+
+        for comp in components:
+            if comp.get("type") != "CustomComponent":
+                continue
+
+            props = comp.get("props", {})
+            html = props.get("render", "")
+            if not html:
+                continue
+
+            # Clean and apply theme
+            clean_html = strip_frontend_editing_scripts(html)
+            themed_html = apply_theme_to_custom_component_html(clean_html, colors, typography)
+
+            if themed_html != html:
+                comp_id = comp.get("id")
+                components_to_update.append(
+                    ComponentDiffBase(
+                        id=comp_id,
+                        type="CustomComponent",
+                        props={"render": themed_html}
+                    )
+                )
+                updated_count += 1
+                logger.info(f"[apply_theme_to_custom_components] Updated component {comp_id} on slide {slide_id}")
+
+        if components_to_update:
+            slides_to_update.append(
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=components_to_update
+                )
+            )
+
+    logger.info(f"[apply_theme_to_custom_components] Updated {updated_count} CustomComponents across {len(slides_to_update)} slides")
+
+    return DeckDiff(DeckDiffBase(slides_to_update=slides_to_update))

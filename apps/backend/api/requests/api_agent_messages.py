@@ -20,6 +20,53 @@ from utils.json_safe import ensure_json_serializable
 
 router = APIRouter(prefix="/v1/agent", tags=["Agent Messages"])
 logger = logging.getLogger(__name__)
+
+
+def _summarize_deck_diff(diff: dict) -> str:
+    """Create a condensed summary of a deck diff for logging (without full HTML)."""
+    if not diff or not isinstance(diff, dict):
+        return "(empty diff)"
+
+    parts = []
+
+    # Slides to update
+    slides_update = diff.get("slides_to_update") or []
+    if slides_update:
+        slide_summaries = []
+        for s in slides_update[:5]:  # Limit to 5 slides
+            sid = s.get("slide_id", "?")[:20]
+            comps_update = s.get("components_to_update") or []
+            comps_add = s.get("components_to_add") or []
+            comps_remove = s.get("components_to_remove") or []
+
+            comp_parts = []
+            if comps_update:
+                comp_ids = [f"{c.get('id', '?')[:15]}({','.join(list(c.get('props', {}).keys())[:3])})" for c in comps_update[:3]]
+                comp_parts.append(f"update:{','.join(comp_ids)}")
+            if comps_add:
+                comp_parts.append(f"add:{len(comps_add)}")
+            if comps_remove:
+                comp_parts.append(f"rm:{len(comps_remove)}")
+
+            slide_summaries.append(f"{sid}[{'; '.join(comp_parts) or 'no changes'}]")
+
+        parts.append(f"update({len(slides_update)}): {', '.join(slide_summaries)}")
+
+    # Slides to add
+    slides_add = diff.get("slides_to_add") or []
+    if slides_add:
+        parts.append(f"add({len(slides_add)})")
+
+    # Slides to remove
+    slides_remove = diff.get("slides_to_remove") or []
+    if slides_remove:
+        parts.append(f"remove({len(slides_remove)})")
+
+    # Slide order change
+    if diff.get("slide_order"):
+        parts.append(f"reorder({len(diff['slide_order'])})")
+
+    return " | ".join(parts) if parts else "(no changes)"
 # Auto-apply by default (frontend without an Apply button). Tests disable via PYTEST_CURRENT_TEST.
 # Default to auto-apply in production, but disable under pytest to match tests that expect 'proposed'
 ALWAYS_AUTO_APPLY = (os.getenv("AGENT_AUTO_APPLY", "true").lower() == "true") and not bool(os.getenv("PYTEST_CURRENT_TEST"))
@@ -885,14 +932,24 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
                             "sessionId": session_id,
                             "messageId": message_id,
                             "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                            "data": {"editId": None, "deckRevision": deck_revision, "updatedSlideIds": [slide_id]}
+                            "data": {
+                                "editId": None,
+                                "deckRevision": deck_revision,
+                                "updatedSlideIds": [slide_id],
+                                "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend real-time updates
+                            }
                         })
                         sb.table("agent_events").insert({
                             "session_id": session_id,
                             "user_id": user["id"],
                             "message_id": message_id,
                             "type": "deck.edit.applied",
-                            "data": {"editId": None, "deckRevision": deck_revision, "updatedSlideIds": [slide_id]}
+                            "data": {
+                                "editId": None,
+                                "deckRevision": deck_revision,
+                                "updatedSlideIds": [slide_id],
+                                "deck_diff": deck_diff_plain
+                            }
                         }).execute()
 
                         await agent_stream_bus.publish(session_id, {
@@ -1176,18 +1233,23 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
     )
 
     # Convert orchestrator result to a proposed edit (or auto-apply if enabled)
-    logger.info(f"[DEBUG] Orchestrator result: {result}")
-    logger.info(f"[DEBUG] Orchestrator result keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
-    
     deck_diff = result.get("deck_diff")
-    logger.info(f"[DEBUG] Raw deck_diff from orchestrator: {deck_diff}")
-    logger.info(f"[DEBUG] Raw deck_diff type: {type(deck_diff)}")
-    
+    logger.info(f"[DEBUG] Orchestrator result: keys={list(result.keys()) if isinstance(result, dict) else 'N/A'}, message={result.get('message', '')[:80] if isinstance(result, dict) else 'N/A'}...")
+    logger.info(f"[DEBUG] Raw deck_diff type: {type(deck_diff).__name__}")
+
+    # CRITICAL FIX: Unwrap DeckDiff wrapper class to get the inner DeckDiffBase
+    # The DeckDiff class is a wrapper with a .deck_diff attribute containing the actual Pydantic model
+    # We need the inner model for proper serialization, otherwise we get {"deck_diff": {...}} instead of {...}
+    if deck_diff is not None and hasattr(deck_diff, 'deck_diff'):
+        logger.info(f"[DEBUG] Unwrapping DeckDiff wrapper class")
+        deck_diff = deck_diff.deck_diff  # Get the inner DeckDiffBase Pydantic model
+        logger.info(f"[DEBUG] Unwrapped deck_diff type: {type(deck_diff)}")
+
     # Ensure diff is JSON-serializable using comprehensive JSON-safe conversion
     from utils.json_safe import to_json_safe
     logger.info(f"[DEBUG] About to convert deck_diff of type {type(deck_diff)}")
     deck_diff_plain = {}
-    
+
     if deck_diff is not None:
         # Try multiple serialization approaches
         try:
@@ -1214,8 +1276,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         result = deck_diff.model_dump(exclude_none=False, exclude_unset=False)
                     else:
                         result = deck_diff.model_dump(exclude_none=True, exclude_unset=True)
-                    logger.info(f"[DEBUG] model_dump raw result: {result}")
-                    logger.info(f"[DEBUG] model_dump result type: {type(result)}")
+                    logger.info(f"[DEBUG] model_dump result: {_summarize_deck_diff(result) if isinstance(result, dict) else type(result).__name__}")
                     # Don't double-process with to_json_safe if it's already a dict
                     if isinstance(result, dict):
                         deck_diff_plain = result
@@ -1240,8 +1301,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                             result = deck_diff.dict(exclude_none=False, exclude_unset=False)
                         else:
                             result = deck_diff.dict(exclude_none=True, exclude_unset=True)
-                        logger.info(f"[DEBUG] dict raw result: {result}")
-                        logger.info(f"[DEBUG] dict result type: {type(result)}")
+                        logger.info(f"[DEBUG] dict result: {_summarize_deck_diff(result) if isinstance(result, dict) else type(result).__name__}")
                         # Don't double-process with to_json_safe if it's already a dict
                         if isinstance(result, dict):
                             deck_diff_plain = result
@@ -1265,7 +1325,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         logger.error(f"[DEBUG] deck_diff_plain is not a dict! Type: {type(deck_diff_plain)}, Value: {deck_diff_plain}")
     
     if deck_diff_plain:
-        logger.info(f"[DEBUG] Deck diff plain content: {deck_diff_plain}")
+        logger.info(f"[DEBUG] Deck diff: {_summarize_deck_diff(deck_diff_plain)}")
     else:
         logger.warning(f"[DEBUG] No deck_diff_plain! This will prevent auto-apply from working")
     summary = result.get("edit_summary") or "Proposed edit"
@@ -1377,12 +1437,25 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
             pass
 
     # Auto-apply configurable; default to proposed (tests expect proposed)
-    if deck_id and deck_diff_plain:
+    # Check if diff has actual changes (not just empty dict)
+    def _diff_has_changes(diff: dict) -> bool:
+        if not diff or not isinstance(diff, dict):
+            return False
+        return bool(
+            diff.get("slides_to_update") or
+            diff.get("slides_to_add") or
+            diff.get("slides_to_remove") or
+            diff.get("deck_properties") or
+            diff.get("slide_order")
+        )
+
+    has_actual_changes = _diff_has_changes(deck_diff_plain)
+    if deck_id and deck_diff_plain and has_actual_changes:
         # Respect explicit request flag; disable auto-apply under pytest
         auto_apply_request = bool(body.get("autoApply", False))
         is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST"))
         should_auto_apply = (ALWAYS_AUTO_APPLY or auto_apply_request) and not is_pytest
-        logger.info(f"[DEBUG] Auto-apply check: deck_id={deck_id}, deck_diff_plain={bool(deck_diff_plain)}, ALWAYS_AUTO_APPLY={ALWAYS_AUTO_APPLY}, auto_apply_request={auto_apply_request}, is_pytest={is_pytest}, should_auto_apply={should_auto_apply}")
+        logger.info(f"[DEBUG] Auto-apply check: deck_id={deck_id}, deck_diff_plain={bool(deck_diff_plain)}, has_actual_changes={has_actual_changes}, ALWAYS_AUTO_APPLY={ALWAYS_AUTO_APPLY}, auto_apply_request={auto_apply_request}, is_pytest={is_pytest}, should_auto_apply={should_auto_apply}")
         if should_auto_apply:
             try:
                 logger.info(f"[DEBUG] Starting auto-apply process for deck_id={deck_id}")
@@ -1403,7 +1476,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     "applied_at": datetime.utcnow().isoformat(),
                     "applied_by": user["id"],
                 }
-                logger.info(f"[DEBUG] Inserting applied record: {applied_rec}")
+                logger.info(f"[DEBUG] Inserting applied record: session={session_id[:8]}..., deck={deck_id[:8] if deck_id else 'N/A'}..., slides={applied_rec.get('slide_ids', [])}, diff={_summarize_deck_diff(applied_rec.get('diff', {}))}")
                 e = sb.table("agent_edits").insert(applied_rec).execute().data[0]
                 logger.info(f"[DEBUG] Applied record inserted with ID: {e.get('id')}")
 
@@ -1446,7 +1519,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         "deckRevision": deck_revision,
                         "updatedSlideIds": updated_slide_ids,
                         "slides": updated_slides_payload,
-                        "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                        "deck_diff": deck_diff_plain,  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                        "summary": summary  # Include summary for frontend message display
                     }
                 })
                 sb.table("agent_events").insert({
@@ -1459,7 +1533,8 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         "deckRevision": deck_revision,
                         "updatedSlideIds": updated_slide_ids,
                         "slides": updated_slides_payload,
-                        "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                        "deck_diff": deck_diff_plain,  # CRITICAL: Include deck_diff for frontend to apply changes locally
+                        "summary": summary
                     }
                 }).execute()
                 logger.info(f"[DEBUG] deck.edit.applied event published successfully")
@@ -1533,13 +1608,18 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     await agent_stream_bus.publish(session_id, _envelope("deck.edit.applied", session_id, message_id, {
                         "editId": e["id"],
                         "deckRevision": deck_revision,
+                        "deck_diff": deck_diff_plain  # CRITICAL: Include deck_diff for frontend real-time updates
                     }))
                     sb.table("agent_events").insert({
                         "session_id": session_id,
                         "user_id": user["id"],
                         "message_id": message_id,
                         "type": "deck.edit.applied",
-                        "data": {"editId": e["id"], "deckRevision": deck_revision}
+                        "data": {
+                            "editId": e["id"],
+                            "deckRevision": deck_revision,
+                            "deck_diff": deck_diff_plain
+                        }
                     }).execute()
             except Exception:
                 pass

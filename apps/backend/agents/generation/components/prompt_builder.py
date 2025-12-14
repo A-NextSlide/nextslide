@@ -2181,9 +2181,22 @@ class SlidePromptBuilder:
                 "DO NOT use any URLs - the user will select images later.",
                 "Create Image components with src: 'placeholder' where appropriate - not every slide needs an image! Use sparingly (~30–40%).",
                 "For title slides: Include a hero image with src: 'placeholder'!",
-                "ALSO: For EACH Image component, include props.searchQuery: a concise 2–5 word image search phrase for that specific box (not slide-wide).",
-                "Examples (good): 'super smash bros pikachu', 'venture capital portfolio', 'first round capital logo'.",
-                "Avoid (too generic): 'super', 'plant', 'sun', 'data', 'background'.",
+                "",
+                "SEARCHQUERY REQUIREMENTS (3-6 words describing a PHOTOGRAPHABLE SCENE):",
+                "For EACH Image component, include props.searchQuery with a specific, photographable scene.",
+                "Describe a REAL scene: 'person doing X', 'object in Y setting'",
+                "",
+                "GOOD searchQuery examples (photographable scenes):",
+                "- 'software developer coding on laptop'",
+                "- 'business team around conference table'",
+                "- 'Tesla charging station parking lot'",
+                "- 'startup founders celebrating in office'",
+                "",
+                "BAD searchQuery examples (too vague - avoid these):",
+                "- 'technology', 'innovation', 'growth' (abstract concepts)",
+                "- 'data', 'business', 'team' (single generic words)",
+                "- 'background', 'image', 'photo' (meaningless)",
+                "",
                 "Use images conservatively - data-heavy slides, timeline slides, and conclusion slides often work better without images. Avoid bottom-half banner crops."
             ])
         elif context.available_images:
@@ -2191,7 +2204,8 @@ class SlidePromptBuilder:
             sections.append(f"\n🖼️ AVAILABLE IMAGES ({len(context.available_images)} found):")
             sections.append(f"{self._format_available_images(context.available_images[:6])}")
             sections.append("\nUse the URLs above directly in your Image components.")
-            sections.append("Add props.searchQuery to each Image (2–5 words) to record the intended content for that slot.")
+            sections.append("Add props.searchQuery to each Image (3-6 words describing a photographable scene) to record the intended content.")
+            sections.append("Example searchQuery: 'software developer coding on laptop', 'business team around conference table'")
             sections.append("Use images conservatively - avoid wide short banners; prefer single focal images if used.")
         else:
             sections.extend([
@@ -2199,7 +2213,12 @@ class SlidePromptBuilder:
                 "For title slides: Use a focal hero image with src: 'placeholder' (avoid bottom-half banners).",
                 "For content slides: Use images conservatively where they enhance the message - not every slide needs an image!",
                 "Example (full-bleed): {\"type\": \"Image\", \"props\": {\"src\": \"placeholder\", \"position\": {\"x\": 0, \"y\": 0}, \"width\": 1920, \"height\": 1080}}",
-                "Also include props.searchQuery on each Image to guide later retrieval (2–5 precise words).",
+                "",
+                "SEARCHQUERY REQUIREMENTS (3-6 words describing a PHOTOGRAPHABLE SCENE):",
+                "Include props.searchQuery on each Image with a specific, photographable scene.",
+                "Good: 'software developer coding on laptop', 'business handshake close-up'",
+                "Bad: 'technology', 'business', 'growth' (too vague)",
+                "",
                 "Data-heavy slides, timeline slides, and conclusion slides often work better without images. Avoid wide, short, bottom-half images."
             ])
 

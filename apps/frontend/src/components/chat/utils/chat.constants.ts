@@ -8,6 +8,12 @@ export interface SuggestionItem {
   prompt: string;
 }
 
+// Default suggestion always shown first in editing mode
+export const DEFAULT_SUGGESTION: SuggestionItem = {
+  label: 'Redesign this slide',
+  prompt: 'Redesign this slide with a fresh, modern approach that makes the content more visually compelling and easier to understand'
+};
+
 // Pool of suggestions for editing mode; short label shown, detailed prompt inserted on click
 export const ALL_SUGGESTIONS: SuggestionItem[] = [
   // Style & Theme

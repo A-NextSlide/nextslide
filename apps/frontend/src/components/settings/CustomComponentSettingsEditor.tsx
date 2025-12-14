@@ -920,7 +920,6 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
   // Detect ALL images in HTML documents (for iframe mode) - both placeholders and real images
   const htmlPlaceholderImages = useMemo(() => {
     if (!renderCode) {
-      console.log('[CustomComponentSettings] No renderCode');
       return [];
     }
 
@@ -935,17 +934,6 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       trimmedCode.includes('<html') ||
       (trimmedCode.includes('<head') && trimmedCode.includes('<body')) ||
       (trimmedCode.includes('<style') && trimmedCode.includes('<img'));
-
-    console.log('[CustomComponentSettings] Checking HTML document:', {
-      isHtmlDoc,
-      hasDoctype: trimmedCode.includes('<!doctype html'),
-      hasHtmlTag: trimmedCode.includes('<html'),
-      hasHead: trimmedCode.includes('<head'),
-      hasBody: trimmedCode.includes('<body'),
-      hasImg: trimmedCode.includes('<img'),
-      codeLength: trimmedCode.length,
-      first100Chars: trimmedCode.slice(0, 100)
-    });
 
     // Only process HTML documents
     if (!isHtmlDoc) return [];
@@ -980,7 +968,6 @@ const CustomComponentSettingsEditor: React.FC<CustomComponentSettingsEditorProps
       index++;
     }
 
-    console.log('[CustomComponentSettings] Found HTML images:', images.length, images);
     return images;
   }, [renderCode]);
 

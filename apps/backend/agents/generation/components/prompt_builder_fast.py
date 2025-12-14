@@ -181,7 +181,7 @@ Icon + text rules (optional, use sparingly):
 
         # Add image instruction (for Image components only, not CustomComponent HTML)
         if context.available_images:
-            prompt_parts.append("Images available for Image components. For CustomComponent HTML, use <img src='placeholder' alt='descriptive search term'>.")
+            prompt_parts.append("Images available for Image components. For CustomComponent HTML, use <img src='placeholder' alt='photographable scene 3-6 words'>. Alt must be a specific scene: 'software developer coding on laptop' NOT 'technology'.")
 
         prompt_parts.append("\nGenerate slide JSON.")
         

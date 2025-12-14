@@ -47,6 +47,7 @@ def execute_tool(
         custom_component_str_replace,
         component_prop_update,
         view_component,
+        apply_theme_to_custom_components,
     )
     from agents.editing.tools.component_tools import (
         edit_component,
@@ -70,6 +71,7 @@ def execute_tool(
         "create_component": create_component,
         "delete_component": delete_component,
         "apply_theme": apply_theme,
+        "apply_theme_to_custom_components": apply_theme_to_custom_components,
         "custom_component_rewrite": custom_component_rewrite,
         "custom_component_str_replace": custom_component_str_replace,
         "component_prop_update": component_prop_update,

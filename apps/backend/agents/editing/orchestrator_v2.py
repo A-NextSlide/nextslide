@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, create_model
 import logging
 import uuid
 
+import re
+
 from models.deck import DeckDiff, DeckDiffBase
 from models.registry import ComponentRegistry
 from agents.ai.clients import get_client, invoke
@@ -23,6 +25,184 @@ from services.context_cache import get_deck_context_snapshot
 from utils.summaries import summarize_chat_history
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HTML CLEANUP - Strip frontend editing scripts before saving
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def apply_theme_to_custom_component_html(
+    html: str,
+    colors: Dict[str, str] = None,
+    typography: Dict[str, Any] = None
+) -> str:
+    """
+    Apply theme colors and fonts to CustomComponent HTML.
+
+    This updates CSS custom properties in :root blocks and font-family declarations.
+    Safe for "hotswapping" since it's just CSS value replacement.
+
+    Args:
+        html: The CustomComponent HTML
+        colors: Dict with keys like 'accent_1', 'primary_text', 'primary_background', etc.
+        typography: Dict with keys like 'heading', 'body' containing font info
+
+    Returns:
+        Updated HTML with theme applied
+    """
+    if not html or not isinstance(html, str):
+        return html
+
+    updated = html
+
+    # Apply color updates to CSS custom properties
+    if colors:
+        # Common CSS variable name mappings
+        color_var_mappings = {
+            'accent_1': ['--accent', '--accent-1', '--primary', '--accent-color'],
+            'accent_2': ['--secondary', '--accent-2', '--secondary-color'],
+            'primary_text': ['--text', '--text-color', '--primary-text', '--foreground'],
+            'primary_background': ['--bg', '--background', '--bg-color', '--primary-background'],
+            'accent_3': ['--accent-3', '--highlight'],
+        }
+
+        for color_key, css_vars in color_var_mappings.items():
+            color_value = colors.get(color_key)
+            if not color_value:
+                continue
+
+            for css_var in css_vars:
+                # Match CSS variable declaration like: --accent: #007354;
+                pattern = rf'({re.escape(css_var)}\s*:\s*)([^;]+)(;)'
+                updated = re.sub(pattern, rf'\g<1>{color_value}\g<3>', updated)
+
+    # Apply typography updates
+    if typography:
+        # Get font families from typography config
+        heading_font = None
+        body_font = None
+
+        if isinstance(typography.get('heading'), dict):
+            heading_font = typography['heading'].get('family')
+        elif isinstance(typography.get('heading'), str):
+            heading_font = typography['heading']
+
+        if isinstance(typography.get('body'), dict):
+            body_font = typography['body'].get('family')
+        elif isinstance(typography.get('body'), str):
+            body_font = typography['body']
+
+        # Update Google Fonts import if present
+        if heading_font or body_font:
+            fonts_to_import = []
+            if heading_font:
+                fonts_to_import.append(heading_font.replace(' ', '+'))
+            if body_font and body_font != heading_font:
+                fonts_to_import.append(body_font.replace(' ', '+'))
+
+            if fonts_to_import:
+                new_font_import = f'https://fonts.googleapis.com/css2?family={":wght@300;400;500;600;700&family=".join(fonts_to_import)}:wght@300;400;500;600;700&display=swap'
+                # Replace existing Google Fonts import
+                updated = re.sub(
+                    r'https://fonts\.googleapis\.com/css2\?[^"\'>\s]+',
+                    new_font_import,
+                    updated
+                )
+
+        # Update font-family declarations for headings (h1-h6)
+        if heading_font:
+            # Match h1, h2, etc. selectors and their font-family
+            for tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', '.title', '.heading', '.company-name']:
+                pattern = rf'({re.escape(tag)}[^{{]*{{[^}}]*font-family\s*:\s*)([^;]+)(;)'
+                replacement = rf"\g<1>'{heading_font}', sans-serif\g<3>"
+                updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+
+        # Update body font-family
+        if body_font:
+            # Update body selector
+            pattern = r'(body[^{]*{[^}]*font-family\s*:\s*)([^;]+)(;)'
+            replacement = rf"\g<1>'{body_font}', sans-serif\g<3>"
+            updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+
+    return updated
+
+
+def strip_frontend_editing_scripts(html: str) -> str:
+    """
+    Remove frontend editing scripts that get injected during live editing.
+    These should NOT be saved to the database - they're runtime-only.
+
+    Strips:
+    - <!-- NEXTSLIDE EDIT MODE V2 --> markers
+    - .ns-image-processing-overlay styles and scripts
+    - .ns-placeholder-wrapper styles and scripts
+    """
+    if not html or not isinstance(html, str):
+        return html
+
+    original_len = len(html)
+    cleaned = html
+
+    # Remove NEXTSLIDE EDIT MODE markers
+    cleaned = cleaned.replace('<!-- NEXTSLIDE EDIT MODE V2 -->', '')
+
+    # Remove ns-image-processing-overlay style+script blocks
+    # Pattern: <style>.ns-image-processing-overlay...styles...</style> followed by <script>...overlay code...</script>
+    overlay_pattern = re.compile(
+        r'<style>\s*\.ns-image-processing-overlay[\s\S]*?</style>\s*'
+        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
+        r'[\s\S]*?ns-image-processing-overlay[\s\S]*?</script>',
+        re.IGNORECASE
+    )
+    cleaned = overlay_pattern.sub('', cleaned)
+
+    # Remove ns-placeholder-wrapper style+script blocks
+    placeholder_pattern = re.compile(
+        r'<style>\s*\.ns-placeholder-wrapper[\s\S]*?</style>\s*'
+        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
+        r'[\s\S]*?ns-placeholder-wrapper[\s\S]*?</script>',
+        re.IGNORECASE
+    )
+    cleaned = placeholder_pattern.sub('', cleaned)
+
+    # Also catch any stray individual blocks that might be duplicated
+    # Individual overlay script pattern
+    single_overlay_script = re.compile(
+        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
+        r'[\s\S]*?ns-image-processing-overlay[\s\S]*?</script>',
+        re.IGNORECASE
+    )
+    cleaned = single_overlay_script.sub('', cleaned)
+
+    # Individual placeholder script pattern
+    single_placeholder_script = re.compile(
+        r'<script>\s*\(function\s*\(\)\s*\{\s*["\']use strict["\'];?\s*'
+        r'[\s\S]*?ns-placeholder-wrapper[\s\S]*?</script>',
+        re.IGNORECASE
+    )
+    cleaned = single_placeholder_script.sub('', cleaned)
+
+    # Clean up any leftover orphaned style blocks
+    orphan_overlay_style = re.compile(
+        r'<style>\s*\.ns-image-processing-overlay[\s\S]*?</style>',
+        re.IGNORECASE
+    )
+    cleaned = orphan_overlay_style.sub('', cleaned)
+
+    orphan_placeholder_style = re.compile(
+        r'<style>\s*\.ns-placeholder-wrapper[\s\S]*?</style>',
+        re.IGNORECASE
+    )
+    cleaned = orphan_placeholder_style.sub('', cleaned)
+
+    # Clean up multiple consecutive newlines that might result
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = cleaned.strip()
+
+    if len(cleaned) < original_len:
+        logger.info(f"[ORCHESTRATOR] Stripped frontend scripts: {original_len} -> {len(cleaned)} chars (saved {original_len - len(cleaned)} bytes)")
+
+    return cleaned
 
 # region agent log
 def _dbg(hypothesisId: str, location: str, message: str, data: Dict[str, Any], runId: str = "pre-fix") -> None:
@@ -64,10 +244,14 @@ def _get_attr(obj, key, default=None):
 SYSTEM_PROMPT = """You are a helpful and friendly slide deck design assistant. Help users create beautiful presentations through conversation.
 
 PERSONALITY:
-- Be conversational and friendly - acknowledge what the user wants
-- Explain what you're doing in simple terms (not technical jargon)
+- Be conversational and friendly
+- ALWAYS speak in PAST TENSE - the edits are already done when user sees your message
+- Say "I've enhanced..." "I updated..." "I replaced..." NOT "I'm going to..." or "I'll..."
+- NEVER use emojis in your responses
+- NEVER say technical terms like "CustomComponent", "HTML", "CSS", "component", "element", "props", "render"
+- Instead say "slide", "design", "layout", "style", "section" etc.
 - If something is ambiguous, make a reasonable choice and mention it
-- After making changes, briefly describe what you did
+- Briefly describe what you DID (past tense), not what you WILL do
 
 RULES:
 1. Use tools to make changes. Never output raw HTML/code.
@@ -82,40 +266,36 @@ IMAGE REPLACEMENT (IMPORTANT):
 - Call search_images ONCE per image you need to replace
 - Use image_index (0, 1, 2, ...) to target each image separately
 
-GENERATING SEARCH QUERIES (CRITICAL FOR QUALITY):
-1. UNDERSTAND THE SLIDE CONTEXT first:
-   - What is the slide about? (topic, company, product, concept)
-   - What would look GOOD visually, not just match the text literally
-   - Is the current image chaotic/ugly? Replace with something clean and professional
+GENERATING SEARCH QUERIES (KEEP IT SIMPLE):
+⚠️ CRITICAL: Use SHORT, SIMPLE queries (2-4 words MAX). Long queries get worse results!
 
-2. SEARCH QUERY BEST PRACTICES:
-   - Company-specific: Search "[Company Name] logo", "[Company Name] product", "[Company Name] office"
-   - Abstract/aesthetic: For concepts like sustainability → "dense green forest landscape", "clean energy wind turbines blue sky"
-   - Professional: For business slides → "modern office team meeting professional", "corporate handshake business deal"
-   - Avoid generic: DON'T just search "business" or "technology" - be SPECIFIC
-   - Design-first: Think about what image would make the slide LOOK beautiful
+1. QUERY FORMAT:
+   - For companies: "[Company] logo" or "[Company] product" (2-3 words)
+   - For concepts: "[noun] [adjective]" or "[thing] [setting]" (2-3 words)
+   - NEVER use 5+ word queries - they return poor results
 
-3. EXAMPLES OF GOOD VS BAD QUERIES:
-   BAD: "company" → TOO VAGUE
-   GOOD: "Apple headquarters Cupertino building" → SPECIFIC
+2. EXAMPLES:
+   ✅ GOOD (short & specific):
+   - "Google logo"
+   - "YouTube interface"
+   - "PayPal app"
+   - "LinkedIn profile"
+   - "solar panels"
+   - "office meeting"
 
-   BAD: "technology" → GENERIC
-   GOOD: "modern data center server racks blue lighting" → VISUALLY APPEALING
+   ❌ BAD (too long):
+   - "Google search homepage interface blue colorful tech" → WAY TOO LONG
+   - "modern data center server racks blue lighting professional" → VERBOSE
+   - "LinkedIn professional network connections business" → WORDY
 
-   BAD: "environment" → BORING
-   GOOD: "aerial view lush green rainforest misty mountains" → BEAUTIFUL
-
-4. WHEN TO USE ABSTRACT IMAGES:
-   - For slide backgrounds or decorative elements
-   - When the concept is abstract (innovation, growth, success)
-   - When you need something that "looks good" more than "represents exactly"
+3. SIMPLE RULE: If your query is more than 4 words, shorten it!
 
 EXAMPLE - "Replace all 4 company images":
 Return 4 tool_calls in your response:
-  {"tool_name": "search_images", "tool_args": {"query": "Apple vintage computer garage startup history", "image_index": 0}, "summary": "Replace Apple image"}
-  {"tool_name": "search_images", "tool_args": {"query": "Oracle cloud database infrastructure modern", "image_index": 1}, "summary": "Replace Oracle image"}
-  {"tool_name": "search_images", "tool_args": {"query": "Cisco networking equipment data center professional", "image_index": 2}, "summary": "Replace Cisco image"}
-  {"tool_name": "search_images", "tool_args": {"query": "NVIDIA GPU AI computing technology futuristic", "image_index": 3}, "summary": "Replace NVIDIA image"}
+  {"tool_name": "search_images", "tool_args": {"query": "Google logo", "image_index": 0}, "summary": "Replace Google image"}
+  {"tool_name": "search_images", "tool_args": {"query": "YouTube player", "image_index": 1}, "summary": "Replace YouTube image"}
+  {"tool_name": "search_images", "tool_args": {"query": "PayPal app", "image_index": 2}, "summary": "Replace PayPal image"}
+  {"tool_name": "search_images", "tool_args": {"query": "LinkedIn profile", "image_index": 3}, "summary": "Replace LinkedIn image"}
 
 CANVAS: 1920x1080 pixels. Origin (0,0) top-left.
 
@@ -442,8 +622,18 @@ AVAILABLE TOOLS:
    - Args: { "slide_id": str, "component_id": str }
 
 10. apply_theme
-   - Apply colors/fonts to the deck
+   - Apply colors/fonts to standard components in the deck
    - Args: { "instruction": str }
+   - NOTE: Does NOT affect CustomComponents - use apply_theme_to_custom_components for those
+
+10b. apply_theme_to_custom_components ⭐ FOR THEME UPDATES ON CUSTOM COMPONENTS
+   - Apply theme colors and fonts to ALL CustomComponents in the deck
+   - Hotswaps CSS custom properties (--accent, --text, --bg, etc.) and font-family declarations
+   - Safe operation - just updates CSS values, doesn't restructure HTML
+   - USE THIS when user says "change all colors to X" or "update fonts across the deck"
+   - Args: { "colors": optional dict, "typography": optional dict }
+   - If no args provided, uses deck's existing theme
+   - Example: {"colors": {"accent_1": "#FF0000", "primary_text": "#333333"}}
 
 11. component_prop_update
    - Mechanical prop merge for a component (no AI)
@@ -465,15 +655,13 @@ AVAILABLE TOOLS:
      - Use image_index to target specific images (0=first, 1=second, etc.)
    - Args: { "query": str, "image_index": optional int, "old_url": optional str, "orientation": "landscape"|"portrait"|"square" }
 
-   🎯 QUERY QUALITY IS CRITICAL - Generate SPECIFIC, VISUAL queries:
-   - For companies: "Tesla Model S electric car sleek", "Microsoft headquarters Redmond campus", "Amazon warehouse fulfillment center"
-   - For concepts: "team collaboration modern office whiteboard brainstorming", "sustainable energy solar panels sunrise"
-   - For aesthetics: "minimalist abstract blue gradient technology", "professional business handshake deal"
-   - AVOID: "company", "business", "technology" (too generic!)
-   - THINK: What image would make this slide look BEAUTIFUL and PROFESSIONAL?
+   🎯 KEEP QUERIES SHORT (2-4 words):
+   - For companies: "Tesla car", "Microsoft logo", "Amazon warehouse"
+   - For concepts: "team meeting", "solar panels", "office workspace"
+   - AVOID long queries - they return worse results!
 
-   - Example: {"query": "Apple vintage Macintosh computer garage startup", "image_index": 0}
-   - Example: {"query": "Oracle cloud infrastructure data center modern blue", "image_index": 1}
+   - Example: {"query": "Apple logo", "image_index": 0}
+   - Example: {"query": "Oracle database", "image_index": 1}
 
 15. replace_image
    - Replace an Image component with a specific URL
@@ -740,6 +928,9 @@ Respond with the tool_calls to execute."""
                                                 new_props = comp_props
                                             else:
                                                 new_props = {}
+                                            # CRITICAL: Clean HTML before accumulating to prevent script buildup
+                                            if 'render' in new_props and isinstance(new_props.get('render'), str):
+                                                new_props['render'] = strip_frontend_editing_scripts(new_props['render'])
                                             accumulated_props[comp_id] = {**existing, **new_props}
                                             logger.info(f"[ORCHESTRATOR] Accumulated props for {comp_id}: {list(new_props.keys())}")
                         except Exception as e:
@@ -788,12 +979,10 @@ Now propose the NEXT tool_calls needed to actually satisfy the user request.
 - For IMAGE REPLACEMENT requests ("replace images", "fix images", "new images"):
   → Use search_images tool - call it ONCE per image you need to replace
   → Use image_index (0, 1, 2...) to target specific images
-  → Generate HIGH-QUALITY search queries based on slide context:
-    * Look at the slide title and content - what is this slide ABOUT?
-    * For companies: search "[Company] logo", "[Company] product", "[Company] headquarters"
-    * For concepts: use VISUAL, AESTHETIC terms like "modern office sunrise glass building"
-    * AVOID generic terms like "business", "technology", "image"
-    * Think: what would make this slide look BEAUTIFUL and PROFESSIONAL?
+  → KEEP QUERIES SHORT (2-4 words MAX):
+    * For companies: "[Company] logo" or "[Company] product"
+    * For concepts: "[noun] [adjective]" like "office meeting" or "solar panels"
+    * NEVER use 5+ word queries - they return poor results!
 - For TEXT edits: use custom_component_str_replace or component_prop_update.
 
 Respond with the tool_calls to execute."""
@@ -922,8 +1111,66 @@ def edit_deck(
         else:
             deck_diff_data = deck_diff
 
+    # CRITICAL: Clean all HTML in the deck_diff before returning
+    # This catches any HTML that bypassed the accumulation path
+    deck_diff_data = _clean_deckdiff_html(deck_diff_data)
+
     return {
         "deck_diff": deck_diff_data,
         "edit_summary": result.get('edit_summary', ''),
         "message": result.get('message', '')
     }
+
+
+def _clean_deckdiff_html(deck_diff_data) -> Any:
+    """
+    Recursively clean all 'render' HTML props in a DeckDiff to remove frontend editing scripts.
+    Works with both Pydantic models and dicts.
+    """
+    if deck_diff_data is None:
+        return None
+
+    # Convert Pydantic to dict for easier manipulation
+    if hasattr(deck_diff_data, 'model_dump'):
+        data = deck_diff_data.model_dump()
+    elif hasattr(deck_diff_data, 'dict'):
+        data = deck_diff_data.dict()
+    elif isinstance(deck_diff_data, dict):
+        data = deck_diff_data
+    else:
+        return deck_diff_data
+
+    def clean_components(components_list):
+        if not components_list or not isinstance(components_list, list):
+            return components_list
+        for comp in components_list:
+            if isinstance(comp, dict):
+                props = comp.get('props')
+                if isinstance(props, dict) and 'render' in props:
+                    if isinstance(props['render'], str):
+                        props['render'] = strip_frontend_editing_scripts(props['render'])
+        return components_list
+
+    def clean_slide_diff(slide_diff):
+        if not isinstance(slide_diff, dict):
+            return slide_diff
+        # Clean components_to_update
+        if 'components_to_update' in slide_diff:
+            clean_components(slide_diff['components_to_update'])
+        # Clean components_to_add
+        if 'components_to_add' in slide_diff:
+            clean_components(slide_diff['components_to_add'])
+        return slide_diff
+
+    # Clean slides_to_update
+    if 'slides_to_update' in data and isinstance(data['slides_to_update'], list):
+        for slide_diff in data['slides_to_update']:
+            clean_slide_diff(slide_diff)
+
+    # Clean slides_to_add (full slides with components)
+    if 'slides_to_add' in data and isinstance(data['slides_to_add'], list):
+        for slide in data['slides_to_add']:
+            if isinstance(slide, dict) and 'components' in slide:
+                clean_components(slide['components'])
+
+    return data

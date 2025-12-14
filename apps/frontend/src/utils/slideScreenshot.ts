@@ -86,72 +86,192 @@ export const captureSlideScreenshot = async (
 };
 
 /**
- * Captures a TINY screenshot for AI agent context.
- * Optimized to stay under ~2000 tokens (~15KB).
- * - 384px width (216px height for 16:9)
- * - JPEG at 50% quality
+ * Captures a screenshot of the current slide for AI context.
+ * Uses iframe.contentDocument for CustomComponents (same-origin srcdoc)
+ * which preserves all CSS rendering including webkit features.
+ *
+ * - 768x432 output (0.4 scale of 1920x1080)
+ * - JPEG at 70% quality
  * - Returns base64 data URL
  */
 export const captureTinySlideScreenshot = async (
   slideContainer: HTMLElement
 ): Promise<string | null> => {
   try {
-    // Find the actual slide content
-    const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
-    if (!slideContent) {
-      console.warn('[TinyScreenshot] Slide content not found');
-      return null;
-    }
+    // Find iframes with srcDoc (CustomComponent content)
+    const iframe = slideContainer.querySelector('iframe[srcdoc]') as HTMLIFrameElement;
 
-    // Clone to avoid modifying original
-    const clone = slideContent.cloneNode(true) as HTMLElement;
+    // Wait for any animations/rendering to complete
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Create temporary container at full resolution
-    const tempContainer = document.createElement('div');
-    tempContainer.style.position = 'absolute';
-    tempContainer.style.left = '-9999px';
-    tempContainer.style.width = '1920px';
-    tempContainer.style.height = '1080px';
-    tempContainer.style.backgroundColor = '#ffffff';
-    tempContainer.style.overflow = 'hidden';
+    if (iframe && iframe.contentDocument?.body) {
+      // CustomComponent: Capture directly from iframe's internal document
+      // Since srcdoc iframes are same-origin, we can access contentDocument
+      console.log(`[TinyScreenshot] Using iframe.contentDocument for capture`);
 
-    // Reset transform on clone
-    clone.style.transform = 'none';
-    clone.style.position = 'relative';
+      const iframeBody = iframe.contentDocument.body;
 
-    tempContainer.appendChild(clone);
-    document.body.appendChild(tempContainer);
-
-    try {
-      // Capture at tiny scale (384x216 = 0.2 of 1920x1080)
-      const canvas = await html2canvas(tempContainer, {
-        scale: 0.2,
+      // Capture the iframe's rendered content
+      const canvas = await html2canvas(iframeBody, {
+        scale: 0.4,
         backgroundColor: '#ffffff',
         width: 1920,
         height: 1080,
         logging: false,
         useCORS: true,
         allowTaint: true,
+        imageTimeout: 2000,
       });
 
-      // Convert to JPEG at 50% quality for maximum compression
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-
-      // Log size for debugging
-      const base64Size = dataUrl.length - 'data:image/jpeg;base64,'.length;
-      const byteSize = Math.ceil(base64Size * 0.75);
-      const estimatedTokens = Math.ceil(byteSize / 8); // Rough estimate: 8 bytes per token
-      console.log(`[TinyScreenshot] Captured: ${byteSize} bytes, ~${estimatedTokens} estimated tokens`);
-
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      logScreenshotDebug(dataUrl, canvas);
       return dataUrl;
-    } finally {
-      document.body.removeChild(tempContainer);
+
+    } else if (iframe) {
+      // Fallback: Try to extract and render srcDoc (less accurate)
+      console.log(`[TinyScreenshot] iframe.contentDocument not accessible, using srcDoc extraction`);
+      const srcDoc = iframe.getAttribute('srcdoc') || '';
+      return await captureFromSrcDoc(srcDoc);
+
+    } else {
+      // Non-iframe slide: Capture directly from container
+      console.log(`[TinyScreenshot] Non-iframe slide, capturing from container`);
+
+      const slideContent = slideContainer.querySelector('div[style*="transform"]') as HTMLElement;
+      if (!slideContent) {
+        console.warn('[TinyScreenshot] No slide content found');
+        return null;
+      }
+
+      // Clone to avoid modifying the original
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '1920px';
+      tempContainer.style.height = '1080px';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.overflow = 'hidden';
+
+      const clone = slideContent.cloneNode(true) as HTMLElement;
+      clone.style.transform = 'none';
+      clone.style.position = 'relative';
+      clone.style.width = '1920px';
+      clone.style.height = '1080px';
+      tempContainer.appendChild(clone);
+      document.body.appendChild(tempContainer);
+
+      try {
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const canvas = await html2canvas(tempContainer, {
+          scale: 0.4,
+          backgroundColor: '#ffffff',
+          width: 1920,
+          height: 1080,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 2000,
+        });
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        logScreenshotDebug(dataUrl, canvas);
+        return dataUrl;
+      } finally {
+        document.body.removeChild(tempContainer);
+      }
     }
   } catch (error) {
     console.error('[TinyScreenshot] Failed to capture:', error);
     return null;
   }
 };
+
+/**
+ * Helper to capture from srcDoc HTML (fallback when contentDocument isn't accessible)
+ */
+async function captureFromSrcDoc(srcDoc: string): Promise<string | null> {
+  const tempContainer = document.createElement('div');
+  tempContainer.style.position = 'absolute';
+  tempContainer.style.left = '-9999px';
+  tempContainer.style.top = '0';
+  tempContainer.style.width = '1920px';
+  tempContainer.style.height = '1080px';
+  tempContainer.style.backgroundColor = '#ffffff';
+  tempContainer.style.overflow = 'hidden';
+  document.body.appendChild(tempContainer);
+
+  try {
+    // Parse and render srcDoc
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(srcDoc, 'text/html');
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '1920px';
+    wrapper.style.height = '1080px';
+    wrapper.style.position = 'relative';
+    wrapper.style.overflow = 'hidden';
+
+    // Copy styles
+    doc.querySelectorAll('style').forEach(style => {
+      const newStyle = document.createElement('style');
+      newStyle.textContent = style.textContent || '';
+      wrapper.appendChild(newStyle);
+    });
+
+    // Copy body content
+    const contentDiv = document.createElement('div');
+    contentDiv.style.width = '100%';
+    contentDiv.style.height = '100%';
+    contentDiv.innerHTML = doc.body.innerHTML;
+    wrapper.appendChild(contentDiv);
+    tempContainer.appendChild(wrapper);
+
+    // Wait for render
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const canvas = await html2canvas(tempContainer, {
+      scale: 0.4,
+      backgroundColor: '#ffffff',
+      width: 1920,
+      height: 1080,
+      logging: false,
+      useCORS: true,
+      allowTaint: true,
+      imageTimeout: 2000,
+    });
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    logScreenshotDebug(dataUrl, canvas);
+    return dataUrl;
+  } finally {
+    if (document.body.contains(tempContainer)) {
+      document.body.removeChild(tempContainer);
+    }
+  }
+}
+
+/**
+ * Helper to log screenshot debug info
+ */
+function logScreenshotDebug(dataUrl: string, canvas: HTMLCanvasElement) {
+  const base64Size = dataUrl.length - 'data:image/jpeg;base64,'.length;
+  const byteSize = Math.ceil(base64Size * 0.75);
+  const estimatedTokens = Math.ceil(byteSize / 8);
+  console.log(`[TinyScreenshot] Captured: ${byteSize} bytes, ~${estimatedTokens} estimated tokens`);
+  console.log(`[TinyScreenshot] Canvas dimensions: ${canvas.width}x${canvas.height}`);
+
+  // Store on window for easy access
+  (window as any).__lastScreenshot = dataUrl;
+  (window as any).viewLastScreenshot = () => {
+    const w = window.open();
+    if (w) {
+      w.document.write(`<img src="${dataUrl}" style="max-width:100%;"/>`);
+      w.document.title = 'TinyScreenshot Preview';
+    }
+  };
+  console.log(`[TinyScreenshot] 💡 Run window.viewLastScreenshot() to open in new tab`);
+}
 
 /**
  * Determines if a screenshot should be captured for an agent edit request.
@@ -178,4 +298,4 @@ export const shouldCaptureScreenshotForEdit = (
 
   // Check if message contains any visual keywords
   return visualKeywords.some(keyword => lowerMessage.includes(keyword));
-}; 
+};

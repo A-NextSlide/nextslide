@@ -63,8 +63,8 @@ function isValidComponentDiff(diff: ComponentDiff): boolean {
     return false;
   }
   
-  // Optional type must be string if present
-  if (diff.type !== undefined && (typeof diff.type !== 'string' || diff.type.trim() === '')) {
+  // Optional type must be string if present (null is allowed - means no type change)
+  if (diff.type !== undefined && diff.type !== null && (typeof diff.type !== 'string' || diff.type.trim() === '')) {
     return false;
   }
   
@@ -84,6 +84,7 @@ function isValidComponentDiff(diff: ComponentDiff): boolean {
 function isValidSlideDiff(diff: SlideDiff): boolean {
   // Must have a slide ID
   if (!diff || typeof diff.slide_id !== 'string' || diff.slide_id.trim() === '') {
+    console.log('[isValidSlideDiff] FAILED: missing/invalid slide_id', diff);
     return false;
   }
   
@@ -143,27 +144,31 @@ function isValidSlideDiff(diff: SlideDiff): boolean {
  * @param diff The deck diff to validate
  * @returns True if valid, false otherwise
  */
-function isValidDeckDiff(diff: DeckDiff): boolean {
+export function isValidDeckDiff(diff: DeckDiff): boolean {
   // Empty diff is technically valid but useless
-      if (!diff || typeof diff !== 'object') {
+  if (!diff || typeof diff !== 'object') {
+    console.log('[isValidDeckDiff] FAILED: not an object', diff);
     return false;
   }
   
   // Validate deck properties if present
-  if (diff.deck_properties !== undefined && 
+  if (diff.deck_properties !== undefined &&
       (!diff.deck_properties || typeof diff.deck_properties !== 'object')) {
+    console.log('[isValidDeckDiff] FAILED: invalid deck_properties');
     return false;
   }
   
   // Validate slides to update if present
-    if (diff.slides_to_update !== undefined) {
+  if (diff.slides_to_update !== undefined) {
     if (!Array.isArray(diff.slides_to_update)) {
+      console.log('[isValidDeckDiff] FAILED: slides_to_update not array');
       return false;
     }
-    
+
     // Each slide diff must be valid
     for (const slideDiff of diff.slides_to_update) {
       if (!isValidSlideDiff(slideDiff)) {
+        console.log('[isValidDeckDiff] FAILED: invalid slide diff', slideDiff);
         return false;
       }
     }
@@ -202,8 +207,8 @@ function isValidDeckDiff(diff: DeckDiff): boolean {
     }
   }
 
-  // Validate slide_order if present
-  if ((diff as any).slide_order !== undefined) {
+  // Validate slide_order if present (null is allowed - means no reordering)
+  if ((diff as any).slide_order !== undefined && (diff as any).slide_order !== null) {
     if (!Array.isArray((diff as any).slide_order)) {
       return false;
     }
@@ -618,6 +623,28 @@ function removeNullValuesRecursive(obj: any): any {
 }
 
 /**
+ * Normalizes deck diff structure from backend format to expected frontend format.
+ * Backend may send 'id' instead of 'slide_id' for slide diffs.
+ * @param diff The deck diff to normalize
+ * @returns A normalized deck diff
+ */
+function normalizeDeckDiff(diff: DeckDiff): DeckDiff {
+  if (!diff) return diff;
+
+  const normalized = { ...diff };
+
+  // Normalize slides_to_update - convert 'id' to 'slide_id'
+  if (normalized.slides_to_update && Array.isArray(normalized.slides_to_update)) {
+    normalized.slides_to_update = normalized.slides_to_update.map(slideDiff => ({
+      ...slideDiff,
+      slide_id: slideDiff.slide_id || (slideDiff as any).id
+    }));
+  }
+
+  return normalized;
+}
+
+/**
  * Removes null values from props in component diffs
  * @param diff The deck diff to clean
  * @returns A new deck diff with null values removed from props
@@ -682,9 +709,12 @@ function removeNullValuesFromProps(diff: DeckDiff): DeckDiff {
  */
 export function applyDeckDiffPure(deck: CompleteDeckData, diff: DeckDiff): CompleteDeckData {
   try {
+    // Normalize the diff structure (backend may send 'id' instead of 'slide_id')
+    const normalizedDiff = normalizeDeckDiff(diff);
+
     // Clean the diff by removing null values from props
-    const cleanedDiff = removeNullValuesFromProps(diff);
-    
+    const cleanedDiff = removeNullValuesFromProps(normalizedDiff);
+
     // Return original deck if no diff or invalid diff
     if (!cleanedDiff || !isValidDeckDiff(cleanedDiff)) {
       console.warn("Invalid or empty deck diff provided", diff);

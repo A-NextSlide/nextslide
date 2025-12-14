@@ -132,9 +132,9 @@ export const getWelcomeMessage = (
     return "Hi! I'll help you create your presentation. What would you like to create? Tell me about your topic, audience, or goal.";
   }
   if (isExistingDeck) {
-    return "Ask me anything to edit your slides, or click directly on elements to modify them. You can also drag and drop files here to add them.";
+    return "I can refine, redesign, or fix anything here. Drop an image for inspiration, data to chart, or a screenshot to recreate. Try: 'Redesign this slide,' 'Add an executive summary,' or 'Make this cleaner.'";
   }
-  return "Hi there! What kind of presentation are you looking to create? Drag and drop anything you want to add to your presentation in the chat.";
+  return "I can refine, redesign, or fix anything here. Drop an image for inspiration, data to chart, or a screenshot to recreate. Try: 'Redesign this slide,' 'Add an executive summary,' or 'Make this cleaner.'";
 };
 
 /**

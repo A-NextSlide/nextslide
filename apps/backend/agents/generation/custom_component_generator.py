@@ -70,6 +70,17 @@ def _extract_search_query_from_prop_name(prop_name: str) -> str:
     return ' '.join(words) if words else result
 
 
+def _simple_clean_query(query: str) -> str:
+    """Simple cleanup of search query - just strip whitespace and check for empty."""
+    if not query:
+        return ""
+    cleaned = query.strip()
+    # Skip if empty or clearly a template variable
+    if not cleaned or cleaned.startswith('${') or cleaned.startswith('props.'):
+        return ""
+    return cleaned
+
+
 def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     """
     Extract image prop names and their search queries from generated HTML.
@@ -79,6 +90,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     - ${propName} in src attributes
     - props.propName in src attributes
     - const propName = "placeholder" in JS
+    - alt text from placeholder images
     """
     import re
 
@@ -91,7 +103,8 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     for prop in pattern1:
         if prop not in seen_props:
             query = _extract_search_query_from_prop_name(prop)
-            if query and len(query) > 2:
+            query = _simple_clean_query(query)
+            if query:
                 results.append((prop, query))
                 seen_props.add(prop)
 
@@ -101,7 +114,8 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     for prop in pattern2:
         if prop not in seen_props:
             query = _extract_search_query_from_prop_name(prop)
-            if query and len(query) > 2:
+            query = _simple_clean_query(query)
+            if query:
                 results.append((prop, query))
                 seen_props.add(prop)
 
@@ -111,30 +125,37 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
     for prop in pattern3:
         if prop not in seen_props:
             query = _extract_search_query_from_prop_name(prop)
-            if query and len(query) > 2:
+            query = _simple_clean_query(query)
+            if query:
                 results.append((prop, query))
                 seen_props.add(prop)
 
-    # Pattern 4: Alt text from placeholder images
-    # Matches: <img... alt="Elon Musk"... src="placeholder..." or src=""
-    placeholder_imgs = re.findall(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\'](?:placeholder|data:|about:blank|)["\']?[^>]*>', html, re.IGNORECASE)
-    placeholder_imgs += re.findall(r'<img[^>]*src=["\'](?:placeholder|data:|about:blank|)["\']?[^>]*alt=["\']([^"\']+)["\']', html, re.IGNORECASE)
-    for alt in placeholder_imgs:
-        clean_alt = alt.strip().lower()
-        if clean_alt and clean_alt not in seen_props and len(clean_alt) > 2:
-            # Use alt text directly as search query
-            if clean_alt not in ['image', 'photo', 'placeholder', 'hero', 'background']:
-                results.append((f"alt_{clean_alt.replace(' ', '_')}", clean_alt))
-                seen_props.add(clean_alt)
+    # Pattern 4: Alt text from placeholder images - use alt text directly as search query
+    # Matches: <img... src="placeholder"... alt="search term">
+    all_img_tags = re.findall(r'<img[^>]+>', html, re.IGNORECASE)
+    for img_tag in all_img_tags:
+        # Check if this img has a placeholder src
+        src_match = re.search(r'src=["\']?(placeholder|data:|about:blank|)["\']?', img_tag, re.IGNORECASE)
+        if src_match or 'src=""' in img_tag or "src=''" in img_tag:
+            # Extract alt text - use it directly as search query (trust AI-generated alt text)
+            alt_match = re.search(r'alt=["\']([^"\']+)["\']', img_tag, re.IGNORECASE)
+            if alt_match:
+                alt = alt_match.group(1).strip()
+                if alt and alt.lower() not in seen_props:
+                    results.append((f"alt_{alt.replace(' ', '_')[:30]}", alt))
+                    seen_props.add(alt.lower())
+                    print(f"[IMAGE_EXTRACT] Found placeholder image with alt: '{alt}'")
 
     # Pattern 5: Alt text from images with EXTERNAL URLs (Unsplash, Pexels, etc.)
     # These are images where AI hardcoded stock URLs - we want to replace them with SERP results
-    # Skip our own bucket URLs (nextslide.ai, supabase.co)
     OUR_BUCKET_DOMAINS = ['nextslide.ai', 'supabase.co', 'supabase.com']
-    external_imgs = re.findall(r'<img[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(https?://[^\s"\'>]+)["\']?[^>]*>', html, re.IGNORECASE)
-    external_imgs += re.findall(r'<img[^>]*src=["\']?(https?://[^\s"\'>]+)["\']?[^>]*alt=["\']([^"\']+)["\'][^>]*>', html, re.IGNORECASE)
+    external_imgs = re.findall(r'<img\s*[^>]*alt=["\']([^"\']+)["\'][^>]*src=["\']?(https?://[^\s"\'<>]+)["\']?[^>]*>', html, re.IGNORECASE)
+    external_imgs += re.findall(r'<img\s*[^>]*src=["\']?(https?://[^\s"\'<>]+)["\']?[^>]*alt=["\']([^"\']+)["\'][^>]*>', html, re.IGNORECASE)
+
+    if external_imgs:
+        print(f"[IMAGE_EXTRACT] Found {len(external_imgs)} external URL img tags")
+
     for match in external_imgs:
-        # Handle both match group orders
         if isinstance(match, tuple):
             alt, url = match if not match[0].startswith('http') else (match[1], match[0])
         else:
@@ -144,26 +165,83 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
         if any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS):
             continue
 
-        clean_alt = alt.strip().lower()
-        if clean_alt and clean_alt not in seen_props and len(clean_alt) > 2:
-            # Use alt text directly as search query
-            if clean_alt not in ['image', 'photo', 'placeholder', 'hero', 'background', 'icon', 'logo']:
-                results.append((f"alt_{clean_alt.replace(' ', '_').replace('-', '_')}", clean_alt))
-                seen_props.add(clean_alt)
-                print(f"[IMAGE_EXTRACT] Found external URL with alt text: '{clean_alt}' -> will search SERP")
+        alt = alt.strip()
+        if alt and alt.lower() not in seen_props:
+            results.append((f"alt_{alt.replace(' ', '_').replace('-', '_')[:30]}", alt))
+            seen_props.add(alt.lower())
+            print(f"[IMAGE_EXTRACT] Found external URL with alt text: '{alt}' -> will search SERP")
 
     print(f"[IMAGE_EXTRACT] Found {len(results)} image props from HTML: {results}")
     return results
 
 
-async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+
+
+async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
+    """
+    Use AI to enhance a vague image query into a specific, photographable scene.
+    Returns the original query if enhancement fails.
+    """
+    from agents.ai.clients import get_client, invoke
+    from agents.config import IMAGE_SEARCH_MODEL
+
+    try:
+        client, model_name = get_client(IMAGE_SEARCH_MODEL)
+
+        prompt = f"""Transform this image search query into a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words).
+
+ORIGINAL QUERY: {query}
+CONTEXT: {slide_context[:300] if slide_context else 'Business presentation slide'}
+
+REQUIREMENTS:
+1. Return ONE specific, photographable scene (3-6 words)
+2. Describe a REAL scene: "person doing X", "object in Y setting"
+3. Include visual details a photographer could capture
+
+TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
+- "analytics" → "data analyst reviewing dashboard on monitor"
+- "growth" → "startup founders celebrating in office"
+- "teamwork" → "business team around conference table"
+- "technology" → "software developer coding on laptop"
+
+Return ONLY the enhanced query (3-6 words), nothing else."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            invoke,
+            client,
+            model_name,
+            [{"role": "user", "content": prompt}],
+            None,
+            100,  # Max tokens
+            0.3  # Temperature
+        )
+
+        enhanced = str(response).strip().strip('"\'')
+        if enhanced:
+            print(f"[POST_SEARCH] 🤖 AI enhanced query: '{query}' -> '{enhanced}'")
+            return enhanced
+    except Exception as e:
+        print(f"[POST_SEARCH] ⚠️ AI enhancement failed: {e}")
+
+    return query
+
+
+async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: Optional[Dict[str, Any]] = None, slide_context: str = "") -> Dict[str, str]:
     """
     Search SERP API for images using the same queries that would appear in the image picker.
     Picks randomly from the first 10 results for each query.
 
+    Features:
+    - Filters template placeholders and limits queries to 2-5 words
+    - Uses AI to enhance vague queries (e.g., "technology" -> "laptop code screen")
+    - Uploads found images to our Supabase bucket
+
     Args:
         prop_queries: List of (prop_name, search_query) tuples from _extract_image_props_from_html
         theme: Optional theme dict for Brandfetch logos
+        slide_context: Optional slide title/content for AI query enhancement
 
     Returns:
         Dict mapping prop names to uploaded image URLs
@@ -210,6 +288,7 @@ async def _search_images_for_props(prop_queries: List[Tuple[str, str]], theme: O
         async def search_and_pick_random(prop_name: str, query: str) -> Tuple[str, str, Optional[str]]:
             """Search SERP API, pick randomly from first 10 results."""
             try:
+                # Use query directly - AI prompts should generate good photographable scene queries
                 print(f"[POST_SEARCH] 🔎 Searching: '{query}' (for prop: {prop_name})")
 
                 # Search for 10 images - same as image picker would see
@@ -662,30 +741,42 @@ Instead, focus on OTHER visual content the slide needs (products, people, concep
         if has_brand_logo:
             print(f"[PREFETCH] ✅ Has Brandfetch logo - will skip logo searches")
 
-        prompt = f"""Extract image search terms for this slide.
+        prompt = f"""Generate image search terms for this slide. Each term must be a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words).
 
 SLIDE TITLE: {slide_title}
 CONTENT: {content[:1200]}
 {logo_instruction}
 
-EXTRACT SEARCH TERMS FOR:
-- Named people → "Elon Musk CEO portrait"
-- Named products → "iPhone 15 Pro"
-- Named characters → "Pikachu Pokemon"
-- Named brands/companies → "Instacart grocery app"
-- Industry context → "grocery delivery", "electric vehicle", "mobile shopping"
+REQUIREMENTS:
+1. Each term must describe a REAL, photographable scene (3-6 words)
+2. Use format: "person doing X", "object in Y setting", "specific thing in context"
+3. Include visual details a photographer could capture
 
-MAKE TERMS SPECIFIC:
-- "Apple" → "Apple Inc company" (not fruit)
-- "Profit Performance" → "business profit chart" or "financial growth"
-- "Order Frequency" → "online shopping orders"
+TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
+- "analytics" → "data analyst reviewing dashboard on monitor"
+- "growth" → "startup founders celebrating in office"
+- "teamwork" → "business team around conference table"
+- "technology" → "software developer coding on laptop"
+- "Tesla" → "Tesla charging station parking lot"
+- "iPhone" → "person holding iPhone in coffee shop"
+
+GOOD EXAMPLES (photographable scenes):
+- "warehouse robots moving packages"
+- "modern office conference room meeting"
+- "solar panels on rooftop building"
+- "business handshake close-up"
+
+BAD EXAMPLES (too vague - avoid):
+- "growth", "technology", "innovation" (abstract)
+- "iPhone", "Tesla" (product name only, no scene)
+- "business", "professional" (generic)
 
 SKIP images only for:
 - Pure quote slides with just text
 - Slides listing only numbers/stats with no context
 
-Return JSON array with 2-4 relevant terms:
-["term1", "term2"]"""
+Return JSON array with 1-3 photographable scene descriptions:
+["scene description 1", "scene description 2"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -699,7 +790,7 @@ Return JSON array with 2-4 relevant terms:
             0.3
         )
 
-        # Parse JSON array from response
+        # Parse JSON array from response - trust AI output, minimal filtering
         import json
         response_str = str(response).strip()
         # Find JSON array in response
@@ -708,167 +799,32 @@ Return JSON array with 2-4 relevant terms:
             terms = json.loads(match.group())
             print(f"[PREFETCH] 🧠 AI raw response: {terms}")
 
-            # Filter out obvious local filenames / uploads
+            # Minimal filtering - only remove empty strings and non-strings
             cleaned: List[str] = []
             for t in terms:
                 if not isinstance(t, str):
                     continue
-                tl = t.strip().lower()
-                if not tl:
-                    continue
-                if tl.startswith("img_") or tl.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
-                    print(f"[PREFETCH] ⏭️ Skipping filename: '{t}'")
+                t_stripped = t.strip()
+                if not t_stripped:
                     continue
                 # Skip logo queries if we already have brand logo
-                if has_brand_logo and ("logo" in tl or "wordmark" in tl or "brandmark" in tl):
+                if has_brand_logo and ("logo" in t_stripped.lower() or "wordmark" in t_stripped.lower()):
                     print(f"[PREFETCH] ⏭️ Skipping '{t}' - already have brand logo")
                     continue
-                cleaned.append(t)
+                cleaned.append(t_stripped)
 
             if len(cleaned) == 0:
-                print(f"[PREFETCH] ⚠️ No valid search terms after filtering")
+                print(f"[PREFETCH] ⚠️ No search terms from AI")
                 return []
 
-            print(f"[PREFETCH] ✅ Search terms: {cleaned[:8]}")
-            return cleaned[:8]
+            print(f"[PREFETCH] ✅ Search terms: {cleaned[:3]}")
+            return cleaned[:3]
     except Exception as e:
-        logger.warning(f"[PREFETCH] AI search term extraction failed: {e}, falling back to regex")
-        print(f"[PREFETCH] ⚠️ AI extraction failed: {e}, using fallback")
+        logger.warning(f"[PREFETCH] AI search term extraction failed: {e}")
+        print(f"[PREFETCH] ⚠️ AI extraction failed: {e}")
 
-    # Fallback to regex-based extraction
-    return _extract_image_search_terms_fallback(content, slide_title)
-
-
-def _extract_image_search_terms_fallback(content: str, slide_title: str) -> List[str]:
-    """Fallback regex-based extraction if AI fails."""
-    return _extract_image_search_terms(content, slide_title)
-
-
-def _extract_image_search_terms(content: str, slide_title: str) -> List[str]:
-    """
-    Extract HIGH QUALITY, SPECIFIC image search terms from slide content.
-
-    Focuses on:
-    - Named entities (people, places, products, companies)
-    - Specific brands, products, and organizations
-    - Concrete, visualizable concepts (NOT abstract terms)
-
-    Avoids:
-    - Generic business buzzwords (synergy, strategy, alignment)
-    - Abstract concepts (success, growth, innovation)
-    - Common verbs and adjectives
-
-    Returns list of search terms, most specific first.
-    """
-    terms = []
-    combined_text = f"{slide_title}\n{content}"
-
-    # Words to NEVER use as search terms (too generic, produce bad results)
-    BLACKLIST = {
-        # Abstract business terms
-        'team', 'teamwork', 'alignment', 'strategy', 'synergy', 'growth', 'success',
-        'innovation', 'collaboration', 'partnership', 'leadership', 'excellence',
-        'solution', 'solutions', 'approach', 'methodology', 'framework', 'process',
-        'efficiency', 'productivity', 'performance', 'optimization', 'transformation',
-        'digital', 'agile', 'scalable', 'robust', 'seamless', 'holistic', 'proactive',
-        'stakeholder', 'stakeholders', 'initiative', 'initiatives', 'deliverable',
-        'leverage', 'synergize', 'streamline', 'optimize', 'maximize', 'minimize',
-        'empower', 'enable', 'facilitate', 'implement', 'integrate', 'execute',
-        # Generic slide terms
-        'overview', 'introduction', 'summary', 'agenda', 'conclusion', 'questions',
-        'thank', 'thanks', 'slide', 'presentation', 'deck', 'section', 'chapter',
-        # Common words
-        'the', 'and', 'for', 'with', 'about', 'your', 'our', 'their', 'this', 'that',
-        'new', 'key', 'main', 'important', 'critical', 'essential', 'top', 'best',
-        'next', 'steps', 'action', 'items', 'point', 'points', 'benefit', 'benefits',
-        'feature', 'features', 'advantage', 'advantages', 'goal', 'goals', 'objective',
-        'meeting', 'meetings', 'discussion', 'review', 'update', 'status', 'progress',
-    }
-
-    # 1. Extract company/product names (capitalized multi-word phrases)
-    # Match: "Tesla Motors", "Google Cloud", "Microsoft Azure", "Elon Musk"
-    proper_nouns = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', combined_text)
-    for noun in proper_nouns:
-        # Only add if none of the words are blacklisted
-        words = noun.lower().split()
-        if not any(w in BLACKLIST for w in words):
-            terms.append(noun)
-
-    # 2. Extract quoted terms (usually specific names/products)
-    quoted = re.findall(r'"([^"]{3,40})"', combined_text)
-    for q in quoted:
-        if q.lower() not in BLACKLIST and len(q.split()) <= 4:
-            terms.append(q)
-
-    # 3. Extract specific technology/product patterns
-    tech_patterns = [
-        r'\b(GPT-\d+|ChatGPT|Claude|Gemini|DALL-E|Midjourney|Stable Diffusion)\b',
-        r'\b(iPhone \d+|iPad Pro|MacBook|Apple Watch|AirPods)\b',
-        r'\b(Tesla Model [SXY3]|Cybertruck|Roadster)\b',
-        r'\b(AWS|Azure|Google Cloud|GCP|Kubernetes|Docker|Terraform)\b',
-        r'\b(React|Vue|Angular|Next\.js|Node\.js|Python|TypeScript)\b',
-        r'\b(OpenAI|Anthropic|Google DeepMind|Meta AI)\b',
-        r'\b(Netflix|Spotify|Uber|Airbnb|Stripe|Shopify)\b',
-        r'\b(CEO|CTO|CFO)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\b',  # "CEO Tim Cook"
-    ]
-    for pattern in tech_patterns:
-        matches = re.findall(pattern, combined_text, re.IGNORECASE)
-        for match in matches:
-            if isinstance(match, tuple):
-                terms.extend([m for m in match if m])
-            else:
-                terms.append(match)
-
-    # 4. Extract single capitalized words that are likely brands/names
-    # These appear mid-sentence (not at start)
-    single_caps = re.findall(r'(?<=[a-z]\s)([A-Z][a-z]{2,})\b', combined_text)
-    for cap in single_caps:
-        if cap.lower() not in BLACKLIST and len(cap) >= 4:
-            terms.append(cap)
-
-    # 5. Extract terms from bold/emphasized text (often important)
-    bold = re.findall(r'\*\*([^*]{3,30})\*\*', combined_text)
-    for b in bold:
-        words = b.lower().split()
-        if not all(w in BLACKLIST for w in words):
-            terms.append(b)
-
-    # 6. Use slide title ONLY if it contains specific terms
-    if slide_title:
-        title_words = slide_title.split()
-        # Check if title has any non-blacklisted words
-        specific_words = [w for w in title_words if w.lower() not in BLACKLIST and len(w) > 3]
-        if specific_words:
-            # Use just the specific words from title
-            terms.append(' '.join(specific_words[:3]))
-
-    # 7. If we still don't have good terms, extract nouns from content
-    if len(terms) < 2:
-        # Look for concrete nouns (things you can photograph)
-        concrete_nouns = re.findall(r'\b(office|building|computer|laptop|phone|car|robot|factory|warehouse|store|restaurant|hospital|school|university|city|mountain|ocean|forest|desert)\b', combined_text, re.IGNORECASE)
-        terms.extend(list(set(concrete_nouns)))
-
-    # Deduplicate while preserving order (most specific first)
-    seen = set()
-    unique_terms = []
-    for term in terms:
-        term_clean = term.strip()
-        term_lower = term_clean.lower()
-        if term_lower and term_lower not in seen and term_lower not in BLACKLIST:
-            # Skip if too short or too long
-            if len(term_clean) < 3 or len(term_clean) > 50:
-                continue
-            seen.add(term_lower)
-            unique_terms.append(term_clean)
-
-    # If we have very few terms, add the title as a last resort
-    if len(unique_terms) < 2 and slide_title:
-        # Clean the title of blacklisted words
-        clean_title = ' '.join([w for w in slide_title.split() if w.lower() not in BLACKLIST])
-        if clean_title and clean_title not in seen:
-            unique_terms.append(clean_title)
-
-    return unique_terms
+    # No fallback - return empty if AI fails (better than bad regex terms)
+    return []
 
 
 def _term_to_prop_name(term: str) -> str:
@@ -1263,7 +1219,7 @@ class CustomComponentGenerator:
                             active_model,
                             messages,
                             None,  # No response model - raw text
-                            16000,  # max_tokens
+                            32000,  # max_tokens - increased to handle large components
                             self.temperature
                         ),
                         timeout=self.generation_timeout
@@ -1285,7 +1241,7 @@ class CustomComponentGenerator:
                                     fallback_model,
                                     messages,
                                     None,  # No response model - raw text
-                                    16000,  # max_tokens
+                                    32000,  # max_tokens - increased to handle large components
                                     self.temperature
                                 ),
                                 timeout=self.generation_timeout
@@ -1325,7 +1281,7 @@ class CustomComponentGenerator:
                                     fallback_model,
                                     messages,
                                     None,  # No response model - raw text
-                                    16000,  # max_tokens
+                                    32000,  # max_tokens - increased to handle large components
                                     self.temperature
                                 ),
                                 timeout=self.generation_timeout
@@ -1359,7 +1315,7 @@ class CustomComponentGenerator:
                             fallback_model,
                             messages,
                             None,  # No response model - raw text
-                            16000,  # max_tokens
+                            32000,  # max_tokens - increased to handle large components
                             self.temperature
                         ),
                         timeout=self.generation_timeout
@@ -1424,7 +1380,9 @@ class CustomComponentGenerator:
                 if image_props_from_html:
                     print(f"[CUSTOM_COMPONENT] 🔎 Searching SERP API with image picker queries: {[q for _, q in image_props_from_html]}")
                     # Search SERP API with those exact queries (same as image picker would use)
-                    prefetched_images = await _search_images_for_props(image_props_from_html, theme)
+                    # Pass slide context for AI query enhancement of vague terms
+                    slide_search_context = f"{slide_title}: {content[:300]}" if slide_title else content[:400]
+                    prefetched_images = await _search_images_for_props(image_props_from_html, theme, slide_search_context)
                     if prefetched_images:
                         image_count = len([k for k in prefetched_images if not k.endswith('_query')])
                         print(f"[CUSTOM_COMPONENT] ✅ SERP search found {image_count} images (random pick from top 10)")
@@ -1535,7 +1493,9 @@ class CustomComponentGenerator:
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} / {body_font}
-IMAGES: Use <img src="placeholder" alt="search term"> - we auto-fetch real images from the alt text.{logo_info}"""
+IMAGES: Use <img src="placeholder" alt="photographable scene description 3-6 words"> - we auto-fetch real images from the alt text.
+ALT TEXT MUST be a specific photographable scene: "person doing X", "object in Y setting". Examples: "software developer coding on laptop", "business team around conference table", "Tesla charging station parking lot".
+BAD alt text: "technology", "growth", "business" (too vague).{logo_info}"""
 
         if slide_mode == 'static':
             # Traditional PPT - beautiful, clean, professional (static but elegant with entrance animations)
@@ -2042,7 +2002,8 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
             alt_text = prefetched_images.get(f"{key}_query", key[4:].replace('_', ' '))
             if not alt_text:
                 continue
-            # Match img tags with this alt text and replace src
+            # Match img tags with alt text that STARTS WITH our query (not exact match!)
+            # This is needed because the query is limited to 5 words but HTML may have full alt text
             escaped_alt = re.escape(alt_text)
             def replace_by_alt_first(match, url=url, alt_text=alt_text):
                 nonlocal images_injected
@@ -2054,7 +2015,8 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
                     images_injected += 1
                     print(f"[IMAGE_INJECT] ✅ ALT-MATCH: '{alt_text}' -> {url[:40]}...")
                 return new_tag
-            alt_pattern = rf'<img[^>]*alt=["\'](?:{escaped_alt})["\'][^>]*>'
+            # Use starts-with match: alt text that begins with our query (allows longer alt texts)
+            alt_pattern = rf'<img[^>]*alt=["\']({escaped_alt}[^"\']*)["\'][^>]*>'
             result = re.sub(alt_pattern, replace_by_alt_first, result, flags=re.IGNORECASE)
 
         # PATTERN 1: Replace ${propName} patterns with real URLs
@@ -2387,10 +2349,29 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         def is_our_url(url: str) -> bool:
             return any(domain in url.lower() for domain in OUR_BUCKET_DOMAINS)
 
-        # Find all external image URLs in img tags - simpler, more robust pattern
+        # Find all external image URLs in img tags - robust pattern that handles various HTML formats
         # Match: <img ... src="URL" ...> or <img ... src='URL' ...>
-        img_pattern = r'<img\s+[^>]*?src=(["\'])(https?://[^"\']+)\1[^>]*>'
+        # Use \s* instead of \s+ to handle minified HTML and edge cases
+        img_pattern = r'<img\s*[^>]*?src=(["\'])(https?://[^"\']+)\1[^>]*>'
         matches = list(re.finditer(img_pattern, html, flags=re.IGNORECASE))
+
+        # Also try a simpler fallback pattern that doesn't require matching quotes
+        if not matches:
+            fallback_pattern = r'<img[^>]*src=["\']?(https?://[^\s"\'<>]+)["\']?[^>]*>'
+            fallback_matches = list(re.finditer(fallback_pattern, html, flags=re.IGNORECASE))
+            if fallback_matches:
+                logger.info(f"[BUCKET_UPLOAD] Fallback pattern found {len(fallback_matches)} additional img tags")
+                for fm in fallback_matches:
+                    # Create a pseudo-match that has .group(2) returning the URL
+                    class FallbackMatch:
+                        def __init__(self, m):
+                            self._m = m
+                        def group(self, n):
+                            if n == 2: return self._m.group(1)
+                            return self._m.group(n)
+                        def __getattr__(self, name):
+                            return getattr(self._m, name)
+                    matches.append(FallbackMatch(fm))
 
         logger.info(f"[BUCKET_UPLOAD] Scanning HTML ({len(html)} chars), found {len(matches)} img tags with http(s) URLs")
         print(f"[BUCKET_UPLOAD] 🔍 Found {len(matches)} img tags with URLs")
@@ -2891,7 +2872,8 @@ Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
 - Logo: z-index: 80+
 
 {mode_instruction}
-IMAGES (optional): If a stunning image would help, use <img src="placeholder" alt="simple search term">.
+IMAGES (optional): If a stunning image would help, use <img src="placeholder" alt="photographable scene 3-6 words">.
+Alt text must be a specific scene: "software developer coding on laptop" NOT "technology".
 Use CSS variables. Fill 1920x1080."""
 
     def _build_title_slide_user_prompt(

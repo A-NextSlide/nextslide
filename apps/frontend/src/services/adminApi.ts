@@ -491,7 +491,7 @@ class AdminApi {
     }
   }
 
-  // Get user trends for the past week
+  // Get user trends for the past week (legacy)
   async getUserTrends(): Promise<Array<{ date: string; signups: number; logins: number }>> {
     try {
       const response = await this.request<any>('/admin/analytics/user-trends');
@@ -502,7 +502,7 @@ class AdminApi {
     }
   }
 
-  // Get deck creation trends for the past week
+  // Get deck creation trends for the past week (legacy)
   async getDeckTrends(): Promise<Array<{ date: string; created: number }>> {
     try {
       const response = await this.request<any>('/admin/analytics/deck-trends');
@@ -513,50 +513,121 @@ class AdminApi {
     }
   }
 
-  // Get analytics overview
+  // Get analytics overview (legacy)
   async getAnalyticsOverview(): Promise<AnalyticsOverview> {
     try {
       return await this.request<AnalyticsOverview>('/admin/analytics/overview');
     } catch (error) {
       console.error('Error fetching analytics overview:', error);
-      // Return default values if API fails
       return {
-        users: {
-          total: 0,
-          active24h: 0,
-          active7d: 0,
-          active30d: 0,
-          growthRate: 0,
-          newToday: 0,
-          newThisWeek: 0,
-          newThisMonth: 0,
-        },
-        decks: {
-          total: 0,
-          createdToday: 0,
-          createdThisWeek: 0,
-          createdThisMonth: 0,
-          averagePerUser: 0,
-          totalSlides: 0,
-          averageSlidesPerDeck: 0,
-        },
-        storage: {
-          totalUsed: 0,
-          averagePerUser: 0,
-          averagePerDeck: 0,
-        },
-        collaboration: {
-          activeSessions: 0,
-          totalCollaborations: 0,
-          averageCollaboratorsPerDeck: 0,
-        },
-        activity: {
-          loginsToday: 0,
-          apiCallsToday: 0,
-          errorRate: 0,
-        },
+        users: { total: 0, active24h: 0, active7d: 0, active30d: 0, growthRate: 0, newToday: 0, newThisWeek: 0, newThisMonth: 0 },
+        decks: { total: 0, createdToday: 0, createdThisWeek: 0, createdThisMonth: 0, averagePerUser: 0, totalSlides: 0, averageSlidesPerDeck: 0 },
+        storage: { totalUsed: 0, averagePerUser: 0, averagePerDeck: 0 },
+        collaboration: { activeSessions: 0, totalCollaborations: 0, averageCollaboratorsPerDeck: 0 },
+        activity: { loginsToday: 0, apiCallsToday: 0, errorRate: 0 },
       };
     }
+  }
+
+  // ==================== NEW COMPREHENSIVE ANALYTICS API ====================
+
+  // Get comprehensive overview with date range and comparison
+  async getAnalyticsOverviewV2(startDate: string, endDate: string, compare = true): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, compare: String(compare) });
+    return this.request<any>(`/admin/analytics/overview?${params.toString()}`);
+  }
+
+  // Get user time series data
+  async getUserTimeseries(
+    startDate: string,
+    endDate: string,
+    granularity: 'hour' | 'day' | 'week' | 'month' = 'day',
+    metric: 'signups' | 'logins' | 'active' | 'cumulative' = 'signups'
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, granularity, metric });
+    return this.request<any>(`/admin/analytics/timeseries/users?${params.toString()}`);
+  }
+
+  // Get deck time series data
+  async getDeckTimeseries(
+    startDate: string,
+    endDate: string,
+    granularity: 'hour' | 'day' | 'week' | 'month' = 'day',
+    metric: 'created' | 'cumulative' | 'slides' = 'created'
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, granularity, metric });
+    return this.request<any>(`/admin/analytics/timeseries/decks?${params.toString()}`);
+  }
+
+  // Get credit time series data
+  async getCreditTimeseries(
+    startDate: string,
+    endDate: string,
+    granularity: 'hour' | 'day' | 'week' | 'month' = 'day'
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, granularity });
+    return this.request<any>(`/admin/analytics/timeseries/credits?${params.toString()}`);
+  }
+
+  // Get user segments
+  async getUserSegments(
+    startDate: string,
+    endDate: string,
+    segmentBy: 'activity' | 'plan' | 'role' | 'signup_source' = 'activity'
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, segment_by: segmentBy });
+    return this.request<any>(`/admin/analytics/users/segments?${params.toString()}`);
+  }
+
+  // Get cohort retention analysis
+  async getUserCohorts(
+    startDate: string,
+    endDate: string,
+    cohortSize: 'day' | 'week' | 'month' = 'week'
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, cohort_size: cohortSize });
+    return this.request<any>(`/admin/analytics/users/cohorts?${params.toString()}`);
+  }
+
+  // Get top users by metric
+  async getTopUsers(
+    startDate: string,
+    endDate: string,
+    metric: 'decks' | 'credits' | 'logins' | 'shares' = 'decks',
+    limit = 20
+  ): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, metric, limit: String(limit) });
+    return this.request<any>(`/admin/analytics/users/top?${params.toString()}`);
+  }
+
+  // Get content distribution analytics
+  async getContentDistribution(startDate: string, endDate: string): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+    return this.request<any>(`/admin/analytics/content/distribution?${params.toString()}`);
+  }
+
+  // Get sharing analytics
+  async getSharingAnalytics(startDate: string, endDate: string): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+    return this.request<any>(`/admin/analytics/content/sharing?${params.toString()}`);
+  }
+
+  // Get credit breakdown
+  async getCreditBreakdown(startDate: string, endDate: string): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+    return this.request<any>(`/admin/analytics/credits/breakdown?${params.toString()}`);
+  }
+
+  // Get recent activity feed
+  async getRecentActivity(limit = 50): Promise<any> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    return this.request<any>(`/admin/analytics/activity/recent?${params.toString()}`);
+  }
+
+  // Export analytics data
+  async exportAnalytics(startDate: string, endDate: string, format: 'json' | 'csv' = 'json'): Promise<any> {
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, format });
+    return this.request<any>(`/admin/analytics/export?${params.toString()}`);
   }
 
   // User actions

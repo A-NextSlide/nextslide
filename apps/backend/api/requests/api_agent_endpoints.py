@@ -482,7 +482,11 @@ async def apply_edit(edit_id: str, token: Optional[str] = Depends(get_auth_heade
         "sessionId": edit["session_id"],
         "messageId": None,
         "timestamp": int(datetime.utcnow().timestamp() * 1000),
-        "data": {"editId": edit_id, "deckRevision": deck_revision}
+        "data": {
+            "editId": edit_id,
+            "deckRevision": deck_revision,
+            "deck_diff": diff  # CRITICAL: Include deck_diff for frontend real-time updates
+        }
     }))
 
     return {"edit": {"id": edit_id, "status": "applied"}, "deckRevision": deck_revision}

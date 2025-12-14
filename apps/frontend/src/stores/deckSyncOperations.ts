@@ -340,14 +340,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
             }
           }
 
-          // Log the decision
-          console.log('[Realtime][UPDATE] Processing decision:', {
-            updateInProgress,
-            subscriptionPaused: get().subscriptionManager.paused,
-            isSignificantlyNewer,
-            willProcess: true
-          });
-
           // Always process updates - database is source of truth
           // Removed complex timestamp validation - just accept the update
 
@@ -370,7 +362,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
                   (window as any).__isSlideOperationInProgress === true
                 );
                 if (activeSlideOperation) {
-                  console.log('[Realtime][UPDATE] Skipped due to active slide operation (drag/duplicate/delete)');
                   return;
                 }
               } catch {}
@@ -384,7 +375,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
                     (window as any).__isResizingCharts === true
                   );
                   if (interacting) {
-                    console.log('[Realtime][UPDATE] Skipped due to active interaction (drag/resize)');
                     return;
                   }
                 } catch {}
@@ -415,7 +405,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
                       const propsChanged = JSON.stringify(current.props || {}) !== JSON.stringify(ic.props || {});
 
                       if (isCustomComponent || typeChanged || propsChanged) {
-                        console.log(`[Realtime] Updating ${ic.type} ${ic.id} in drafts`);
                         editorStore.updateDraftComponent(slideId, ic.id, { type: ic.type, props: ic.props || {} }, true);
                       }
                     });
@@ -443,7 +432,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
                     }
                     if (newLastModified) deckLevelUpdates.lastModified = newLastModified;
                     if ((payload.new as any)?.version) deckLevelUpdates.version = (payload.new as any).version;
-                    console.log('[Realtime][UPDATE] Updated deckData from database');
                     set({ deckData: deckLevelUpdates });
                   } catch {}
                 } catch {}
@@ -457,13 +445,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
                 // Carry forward server-provided version/last modified for proper ordering
                 if ((payload.new as any)?.version) updates.version = (payload.new as any).version;
                 updates.lastModified = newLastModified || new Date().toISOString();
-                console.log('[Realtime][UPDATE] Merging slides from payload via guarded update', {
-                  slideCount: incomingSlides.length,
-                  hasOutline: !!(payload.new as any)?.outline,
-                  hasNotes: !!(payload.new as any)?.notes,
-                  hasData: !!incomingDataField,
-                  newLastModified: updates.lastModified
-                });
                 // Use guarded update to prevent clobbering completed slides with empty/stale data
                 try {
                   get().updateDeckData(updates, { isRealtimeUpdate: true, skipBackend: true });
@@ -479,7 +460,6 @@ export const createSyncOperations = (set: Function, get: Function) => {
           // The refetch was causing reverts by fetching stale data from backend
           const hasIncomingSlides = Array.isArray((payload.new as any)?.slides) && (payload.new as any).slides.length > 0;
           if (hasIncomingSlides) {
-            console.log('[Realtime][UPDATE] Skipping refetch - slides already applied from realtime payload');
             return; // Don't refetch if we already have the data
           }
 
@@ -499,12 +479,10 @@ export const createSyncOperations = (set: Function, get: Function) => {
               // CRITICAL: Sort slides by their order field when loading from backend
               if (updatedDeck.slides && Array.isArray(updatedDeck.slides)) {
                 updatedDeck.slides = updatedDeck.slides.sort((a, b) => (a.order || 0) - (b.order || 0));
-                console.log(`[Realtime][REFETCH] Sorted ${updatedDeck.slides.length} slides by order field`);
               }
 
               // SIMPLIFIED: Always update from database (source of truth)
               // Same logic for both edit mode and view mode
-              console.log('[Realtime][REFETCH] Updating from database');
 
               // Update editor drafts if in edit mode
               if (isEditing) {
