@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
 import { ComponentInstance } from "@/types/components";
 import { createComponentStyles, rendererRegistry, RendererProps } from "./index";
@@ -47,8 +47,9 @@ type Props = {
 /**
  * Main component renderer that delegates to specialized renderers.
  * Handles positioning, selection, dragging, resizing, and rotation.
+ * Wrapped in React.memo with custom comparison to prevent unnecessary re-renders.
  */
-export const ComponentRenderer: React.FC<Props> = ({
+export const ComponentRenderer: React.FC<Props> = memo(({
   component,
   isSelected = false,
   onSelect = () => { }, // Provide default empty function
@@ -599,5 +600,29 @@ export const ComponentRenderer: React.FC<Props> = ({
       )}
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for performance - only re-render when necessary
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.isThumbnail !== nextProps.isThumbnail) return false;
+  if (prevProps.component.id !== nextProps.component.id) return false;
+  if (prevProps.component.type !== nextProps.component.type) return false;
+
+  // Deep compare props that affect rendering
+  const prevComponentProps = prevProps.component.props || {};
+  const nextComponentProps = nextProps.component.props || {};
+
+  // Check position changes
+  if (prevComponentProps.position?.x !== nextComponentProps.position?.x) return false;
+  if (prevComponentProps.position?.y !== nextComponentProps.position?.y) return false;
+  if (prevComponentProps.width !== nextComponentProps.width) return false;
+  if (prevComponentProps.height !== nextComponentProps.height) return false;
+  if (prevComponentProps.rotation !== nextComponentProps.rotation) return false;
+
+  // For most visual changes, compare the stringified props (fast enough for most cases)
+  // This catches content changes, style changes, etc.
+  if (JSON.stringify(prevComponentProps) !== JSON.stringify(nextComponentProps)) return false;
+
+  // Skip allComponents comparison - it's used for snapping which doesn't need re-render
+  return true;
+});
 

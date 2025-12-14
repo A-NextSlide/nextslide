@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback } from "react";
+import React, { useRef, useEffect, RefObject, useMemo, useState, useCallback, memo } from "react";
 import { ComponentInstance } from "../../types/components";
 import { useComponentInstance } from "../../context/CustomComponentStateContext";
 import { useNavigation } from '../../context/NavigationContext';
@@ -71,6 +71,8 @@ class ErrorBoundary extends React.Component<
  * 1. Stable iframe rendering to prevent flashing
  * 2. Click-through overlay for selection in edit mode
  * 3. Proper content fitting
+ *
+ * Wrapped in React.memo with custom comparison to prevent unnecessary re-renders.
  */
 export const CustomComponentRenderer: React.FC<{
   component: ComponentInstance;
@@ -79,7 +81,7 @@ export const CustomComponentRenderer: React.FC<{
   isThumbnail?: boolean;
   isSelected?: boolean;
   isEditing?: boolean;
-}> = ({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
+}> = memo(({ component, baseStyles, containerRef, isThumbnail = false, isSelected = false, isEditing = false }) => {
   const renderCode = component.props.render as string;
 
   // Debug logging - only when DEBUG_CUSTOM_COMPONENT is enabled
@@ -3080,7 +3082,28 @@ export const CustomComponentRenderer: React.FC<{
       </div>
     </ErrorBoundary>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for CustomComponentRenderer - focus on what actually affects rendering
+  if (prevProps.isThumbnail !== nextProps.isThumbnail) return false;
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.isEditing !== nextProps.isEditing) return false;
+  if (prevProps.component.id !== nextProps.component.id) return false;
+
+  // The most important check - render code changes mean we need to re-render
+  const prevRender = prevProps.component.props?.render;
+  const nextRender = nextProps.component.props?.render;
+  if (prevRender !== nextRender) return false;
+
+  // Check position/size changes
+  const prevPos = prevProps.component.props?.position;
+  const nextPos = nextProps.component.props?.position;
+  if (prevPos?.x !== nextPos?.x || prevPos?.y !== nextPos?.y) return false;
+  if (prevProps.component.props?.width !== nextProps.component.props?.width) return false;
+  if (prevProps.component.props?.height !== nextProps.component.props?.height) return false;
+
+  // Skip baseStyles comparison - usually stable
+  return true;
+});
 
 /**
  * Function wrapper for consistency

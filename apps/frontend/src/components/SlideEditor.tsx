@@ -1054,34 +1054,37 @@ const SlideEditorContent: React.FC = () => {
                 console.log('[SlideEditor] Skipping auto-optimization dispatch: no active generation detected');
               }
               
-              // Force send completion message immediately (guard against duplicates)
-              if (prevStatus?.progress !== 100) {
-                setLastSystemMessageForChat({
-                  message: 'Your presentation is ready!',
-                  metadata: {
-                    type: 'generation_complete',
-                    stage: 'generation_complete',
-                    progress: 100,
-                    currentSlide: newStatus.totalSlides,
-                    totalSlides: newStatus.totalSlides,
-                    isStreamingUpdate: true
-                  }
-                });
-              }
-              
-              // Send the edit tip after a delay
-              setTimeout(() => {
-                if (lastMessageRef.current !== 'edit_tip_sent') {
-                  lastMessageRef.current = 'edit_tip_sent';
+              // Only send completion messages if there was an actual generation in this session
+              if (hadActiveGeneration) {
+                // Force send completion message immediately (guard against duplicates)
+                if (prevStatus?.progress !== 100) {
                   setLastSystemMessageForChat({
-                    message: `Ask me anything to edit your slides, or click directly on elements to modify them.`,
+                    message: 'Your presentation is ready!',
                     metadata: {
-                      type: 'info',
-                      isSystemEvent: true
+                      type: 'generation_complete',
+                      stage: 'generation_complete',
+                      progress: 100,
+                      currentSlide: newStatus.totalSlides,
+                      totalSlides: newStatus.totalSlides,
+                      isStreamingUpdate: true
                     }
                   });
                 }
-              }, 3000);
+
+                // Send the edit tip after a delay
+                setTimeout(() => {
+                  if (lastMessageRef.current !== 'edit_tip_sent') {
+                    lastMessageRef.current = 'edit_tip_sent';
+                    setLastSystemMessageForChat({
+                      message: "I can refine, redesign, or fix anything here. Drop an image for inspiration, data to chart, or a screenshot to inspire me. Try: 'Make this cleaner,' 'Redesign this slide,' or 'Add a chart from this data.'",
+                      metadata: {
+                        type: 'info',
+                        isSystemEvent: true
+                      }
+                    });
+                  }
+                }, 3000);
+              }
               
               // Always fetch the latest deck when generation completes
               console.log('[DeckStatus] Fetching deck after completion');
@@ -1995,7 +1998,7 @@ const SlideEditorContent: React.FC = () => {
                 onCollapseChange={handleCollapseChange}
                 opacity={chatOpacity}
                 newSystemMessage={lastSystemMessageForChat}
-                isExistingDeck={!isNewDeck && deckStatus?.state === 'completed'}
+                isExistingDeck={!isNewDeck || deckStatus?.state === 'completed'}
               />
             </div>
           </ResizablePanel>

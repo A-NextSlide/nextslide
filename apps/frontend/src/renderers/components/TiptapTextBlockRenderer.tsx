@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, memo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -37,7 +37,7 @@ interface TiptapTextBlockRendererProps extends RendererProps {
   component: ComponentInstance;
 }
 
-export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = ({
+export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = memo(({
   component,
   containerRef,
   isSelected = false,
@@ -643,7 +643,34 @@ export const TiptapTextBlockRenderer: React.FC<TiptapTextBlockRendererProps> = (
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for performance - Tiptap editor creation is expensive
+  // Return true if props are equal (skip re-render)
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.isThumbnail !== nextProps.isThumbnail) return false;
+  if (prevProps.slideId !== nextProps.slideId) return false;
+  if (prevProps.component.id !== nextProps.component.id) return false;
+
+  // Compare component props that affect rendering
+  const prevComponentProps = prevProps.component.props || {};
+  const nextComponentProps = nextProps.component.props || {};
+
+  // Check text content
+  if (JSON.stringify(prevComponentProps.texts) !== JSON.stringify(nextComponentProps.texts)) return false;
+
+  // Check style-related props
+  if (prevComponentProps.fontFamily !== nextComponentProps.fontFamily) return false;
+  if (prevComponentProps.fontSize !== nextComponentProps.fontSize) return false;
+  if (prevComponentProps.fontWeight !== nextComponentProps.fontWeight) return false;
+  if (prevComponentProps.lineHeight !== nextComponentProps.lineHeight) return false;
+  if (prevComponentProps.letterSpacing !== nextComponentProps.letterSpacing) return false;
+  if (prevComponentProps.textColor !== nextComponentProps.textColor) return false;
+  if (prevComponentProps.alignment !== nextComponentProps.alignment) return false;
+  if (prevComponentProps.verticalAlignment !== nextComponentProps.verticalAlignment) return false;
+  if (prevComponentProps.padding !== nextComponentProps.padding) return false;
+
+  return true;
+});
 
 // Register the renderer
 const TiptapTextBlockRendererWrapper: RendererFunction = (props) => {

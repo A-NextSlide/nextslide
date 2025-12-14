@@ -67,6 +67,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   const isToolRow = metadata?.type === 'agent_tool';
   const isPlanRow = metadata?.type === 'agent_plan';
   const isEditAppliedRow = metadata?.type === 'edit_applied';
+  const isCompletionRow = metadata?.type === 'generation_complete' || metadata?.stage === 'generation_complete';
   const isCompactMetaRow = Boolean(
     metadata?.compactRow ||
     // Note: isPlanRow is NOT compact anymore - we show full planning text
@@ -74,7 +75,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     // Only compact agent progress rows; deck generation streaming should keep full padding
     (metadata?.type === 'progress' && !metadata?.isStreamingUpdate) ||
     metadata?.type === 'agent_selection' ||
-    isEditAppliedRow
+    isEditAppliedRow ||
+    isCompletionRow
   );
   
   // Debug logging for images_collected events
@@ -322,9 +324,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           type === 'user'
             ? 'bg-transparent text-foreground border border-zinc-700/70 dark:border-[#929292]/80 max-w-[80%]'
             : type === 'system'
-            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress')
+            ? (metadata?.type === 'agent_plan' || metadata?.type === 'agent_tool' || metadata?.type === 'agent_selection' || metadata?.type === 'edit_applied' || metadata?.type === 'progress' || metadata?.type === 'generation_complete' || metadata?.stage === 'generation_complete')
               ? 'bg-transparent max-w-[80%]'
               : 'bg-muted max-w-[80%]'
+            : isCompletionRow
+            ? 'bg-transparent max-w-[80%]'
             : isStreamingMessage && !isCompleted
             ? 'border border-[#929292] bg-transparent w-full'
             : 'glass-panel border border-[#929292] max-w-[80%] shadow-none'
@@ -510,10 +514,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   <div className="inline-flex items-center max-w-full text-[11px] text-muted-foreground">
                     {message}
                   </div>
+                ) : isCompletionRow ? (
+                  <div className="inline-flex items-center gap-2 text-[11px]" style={{ fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif' }}>
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full ring-1 ring-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400">
+                      <CheckCircle2 className="w-3 h-3" />
+                    </span>
+                    <span className="font-semibold tracking-wide text-green-600 dark:text-green-400">
+                      Ready to edit
+                    </span>
+                  </div>
                 ) : type === 'ai' ? (
                   <TypewriterText
                     text={primaryMessage}
-                    delay={8}
+                    delay={18}
                     uppercase={false}
                     fontSizePx={12}
                     fontWeight={400}

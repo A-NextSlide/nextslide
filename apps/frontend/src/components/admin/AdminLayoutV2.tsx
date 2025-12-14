@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,14 +34,20 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
   };
 
+  // Reset scroll position and close mobile menu on route change
   useEffect(() => {
     setMobileMenuOpen(false);
+    // Reset scroll to top when navigating
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0;
+    }
   }, [location.pathname]);
 
   return (
@@ -137,7 +143,7 @@ const AdminLayoutV2: React.FC<AdminLayoutV2Props> = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <main className="pt-12 flex-1 w-full h-[calc(100vh-3rem)] overflow-auto">
+      <main ref={mainRef} className="pt-12 flex-1 w-full h-[calc(100vh-3rem)] overflow-auto">
         <div className="w-full h-full px-4 py-4">
           {children}
         </div>

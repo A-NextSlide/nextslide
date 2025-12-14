@@ -2132,11 +2132,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     }
                   }
                 }
-                // NOTE: Even if backend provided a deckRevision, don't force loadDeck()
-                // Let Supabase realtime handle it naturally since guards are cleared
-                // Forcing a reload here can fetch stale data and replace the locally applied changes
-                if (deckRevision) {
-                }
+                // NOTE: Don't force reload here.
+                // Let Supabase realtime handle it naturally since guards are cleared.
+                // Forcing a reload can fetch stale data and replace the locally applied changes.
               } catch { }
 
               // Extra safety: for structural edits (add/remove/reorder slides), schedule a lightweight refetch.
@@ -3201,7 +3199,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           const instructionMessage: ExtendedChatMessageProps = {
             id: `instruction-${Date.now()}`,
             type: 'ai',
-            message: 'Ask me anything to edit your slides, or click directly on elements to modify them.',
+            message: "I can refine, redesign, or fix anything here. Drop an image for inspiration, data to chart, or a screenshot to inspire me. Try: 'Make this cleaner,' 'Redesign this slide,' or 'Add a chart from this data.'",
             timestamp: new Date(),
             feedback: null,
             metadata: { type: 'info', isSystemEvent: true }

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState, memo } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import {
   ContextMenu,
@@ -30,7 +30,7 @@ interface ThumbnailItemProps {
   onDragEnd: () => void;
 }
 
-const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
+const ThumbnailItem = memo<ThumbnailItemProps>(({
   slide,
   index,
   isSelected,
@@ -122,7 +122,26 @@ const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
       </ContextMenuContent>
     </ContextMenu>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for performance
+  // Return true if props are equal (skip re-render)
+  if (prevProps.index !== nextProps.index) return false;
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  if (prevProps.slide?.id !== nextProps.slide?.id) return false;
+
+  // Compare slide components to detect content changes
+  const prevComponents = prevProps.slide?.components || [];
+  const nextComponents = nextProps.slide?.components || [];
+  if (prevComponents.length !== nextComponents.length) return false;
+
+  // Shallow comparison of component props (fast check)
+  for (let i = 0; i < prevComponents.length; i++) {
+    if (prevComponents[i].id !== nextComponents[i].id) return false;
+    if (JSON.stringify(prevComponents[i].props) !== JSON.stringify(nextComponents[i].props)) return false;
+  }
+
+  return true;
+});
 
 interface ThumbnailNavigatorProps {
   slides: SlideData[];
@@ -389,6 +408,21 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     }, 2000);
   }, []);
 
+  // Memoized styles to prevent re-renders
+  const containerStyle = useMemo(() => ({
+    minHeight: '130px',
+    marginTop: 'auto',
+    zIndex: 10,
+    scrollbarWidth: 'none' as const,
+    msOverflowStyle: 'none' as const,
+    overscrollBehavior: 'contain' as const
+  }), []);
+
+  const dropZoneStyle = useMemo(() => ({
+    height: '96px',
+    alignSelf: 'center' as const
+  }), []);
+
   // Scroll current thumbnail into view
   React.useEffect(() => {
     if (!containerRef.current) return;
@@ -410,14 +444,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     <div
       ref={containerRef}
       className="p-4 pt-5 pb-5 flex flex-nowrap items-center gap-3 overflow-x-auto overflow-y-hidden scrollbar-hide max-w-full"
-      style={{
-        minHeight: '130px',
-        marginTop: 'auto',
-        zIndex: 10,
-        scrollbarWidth: 'none',
-        msOverflowStyle: 'none',
-        overscrollBehavior: 'contain'
-      }}
+      style={containerStyle}
       onWheel={(e) => {
         if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && containerRef.current) {
           containerRef.current.scrollLeft += e.deltaY;
@@ -445,7 +472,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                       exit={{ width: 0, opacity: 0 }}
                       transition={{ duration: 0.15 }}
                       className="flex-shrink-0 bg-primary rounded-sm"
-                      style={{ height: '96px', alignSelf: 'center' }}
+                      style={dropZoneStyle}
                     />
                   )}
                 </AnimatePresence>
@@ -490,7 +517,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                         exit={{ width: 0, opacity: 0 }}
                         transition={{ duration: 0.15 }}
                         className="flex-shrink-0 bg-primary rounded-sm"
-                        style={{ height: '96px', alignSelf: 'center' }}
+                        style={dropZoneStyle}
                       />
                     )}
                   </AnimatePresence>

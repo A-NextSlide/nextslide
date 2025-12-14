@@ -7,7 +7,6 @@ import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { DeckStatus } from '@/types/DeckTypes';
 import { useMultiSelection } from '@/hooks/useMultiSelection';
 import SelectionRectangle from '@/components/SelectionRectangle';
-import { useEditorStore } from '@/stores/editorStore';
 import GroupContextMenu from '@/components/GroupContextMenu';
 import SimpleSlideDisplay from './SimpleSlideDisplay';
 import SlideGeneratingUI from '../../common/SlideGeneratingUI';
@@ -116,9 +115,6 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   //     selectionRectangle
   //   });
   // }, [isEditing, currentSlide?.id, selectionRectangle]);
-  
-  // Get editor store methods
-  const { isComponentSelected } = useEditorStore();
   
   // Log the entire slides array received as a prop
   if (slides) {

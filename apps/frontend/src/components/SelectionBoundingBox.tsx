@@ -108,21 +108,25 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
     const displayToActualRatioX = slideRect.width / slideWidth;
     const displayToActualRatioY = slideRect.height / slideHeight;
     
+    // Throttle resize updates using requestAnimationFrame
+    let rafId: number | null = null;
+    let pendingResize: { width: number; height: number; position: { x: number; y: number } } | null = null;
+
     // Function to handle mouse movement during resize
     const handleMouseMove = (moveEvent: MouseEvent) => {
       // Calculate how far the mouse has moved in pixels
       const deltaX = moveEvent.clientX - startMouseX;
       const deltaY = moveEvent.clientY - startMouseY;
-      
+
       // Convert screen pixels to actual slide pixels
       const actualDeltaX = deltaX / displayToActualRatioX;
       const actualDeltaY = deltaY / displayToActualRatioY;
-      
+
       // Calculate new width, height, and position based on resize direction
       let newWidth = startWidth;
       let newHeight = startHeight;
       let newPosition = { ...startPosition };
-      
+
       // Handle different resize directions
       switch (direction) {
         // Corner cases - these affect position
@@ -146,7 +150,7 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
           newHeight = Math.max(50, startHeight + actualDeltaY);
           newPosition.x = startPosition.x + (startWidth - newWidth);
           break;
-          
+
         // Edge cases - these only affect position on specific edges
         case 'n':
           newHeight = Math.max(50, startHeight - actualDeltaY);
@@ -163,19 +167,39 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
           newPosition.x = startPosition.x + (startWidth - newWidth);
           break;
       }
-      
-      // Call the onResize callback with new dimensions and position
-      onResize(newWidth, newHeight, newPosition);
+
+      // Store pending resize and schedule RAF update
+      pendingResize = { width: newWidth, height: newHeight, position: newPosition };
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          if (pendingResize) {
+            onResize(pendingResize.width, pendingResize.height, pendingResize.position);
+          }
+          rafId = null;
+        });
+      }
     };
-    
+
     // Define up handler to end resize
     const handleMouseUp = () => {
+      // Cancel any pending RAF
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
+      // Apply any pending resize immediately
+      if (pendingResize) {
+        onResize(pendingResize.width, pendingResize.height, pendingResize.position);
+        pendingResize = null;
+      }
+
       setIsResizing(false);
       setResizeDirection(null);
-      
+
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-      
+
       // Signal resize end by calling onResize with -1 values
       if (onResize) {
         onResize(-1, -1);
@@ -225,6 +249,8 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
     // --- End of history logic ---
 
     let lastCalculatedRotation = startRotation; // Ref to store the latest rotation value
+    let rotationRafId: number | null = null;
+    let pendingRotation: number | null = null;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const currentAngle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX) * (180 / Math.PI);
@@ -242,24 +268,39 @@ const SelectionBoundingBox: React.FC<SelectionBoundingBoxProps> = ({
       if (newRotation === 360) newRotation = 0;
 
       lastCalculatedRotation = newRotation; // Update the latest calculated rotation
+      pendingRotation = newRotation;
 
-      const rotationEvent = new CustomEvent('component:rotate', {
-        bubbles: true,
-        detail: { componentId: component.id, rotation: newRotation, position: originalPosition }
-      });
-      document.dispatchEvent(rotationEvent);
+      // Throttle rotation events using RAF
+      if (!rotationRafId) {
+        rotationRafId = requestAnimationFrame(() => {
+          if (pendingRotation !== null) {
+            const rotationEvent = new CustomEvent('component:rotate', {
+              bubbles: true,
+              detail: { componentId: component.id, rotation: pendingRotation, position: originalPosition }
+            });
+            document.dispatchEvent(rotationEvent);
+          }
+          rotationRafId = null;
+        });
+      }
     };
-    
+
     const handleMouseUp = () => {
+      // Cancel any pending RAF
+      if (rotationRafId) {
+        cancelAnimationFrame(rotationRafId);
+        rotationRafId = null;
+      }
+
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-      
+
       const rotationEndEvent = new CustomEvent('component:rotate-end', {
         bubbles: true,
         detail: {
           componentId: component.id,
           rotation: lastCalculatedRotation, // Use the last rotation calculated during mouse move
-          position: originalPosition 
+          position: originalPosition
         }
       });
       document.dispatchEvent(rotationEndEvent);
