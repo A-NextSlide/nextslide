@@ -42,43 +42,64 @@ class DeckSharingService:
     ) -> Dict[str, Any]:
         """
         Create a new share link for a deck.
-        
+
         Args:
             deck_uuid: The UUID of the deck to share
             user_id: The ID of the user creating the share
             share_type: 'view' for read-only, 'edit' for collaboration
             expires_in_hours: Optional expiration time in hours
             metadata: Optional metadata (e.g., password protection settings)
-        
+
         Returns:
             Dict containing the share link details
         """
         try:
-            # Use the database function to create share link
-            result = self.supabase.rpc(
-                'create_deck_share_link',
-                {
-                    'p_deck_uuid': deck_uuid,
-                    'p_share_type': share_type,
-                    'p_created_by': user_id,
-                    'p_expires_in_hours': expires_in_hours,
-                    'p_metadata': metadata
-                }
-            ).execute()
-            
+            # Generate a unique short code
+            short_code = self.generate_short_code()
+
+            # Ensure short code is unique (retry if collision)
+            for _ in range(5):
+                existing = self.supabase.table('deck_shares').select('id').eq('short_code', short_code).execute()
+                if not existing.data:
+                    break
+                short_code = self.generate_short_code()
+
+            # Calculate expiration if provided
+            expires_at = None
+            if expires_in_hours:
+                expires_at = (datetime.utcnow() + timedelta(hours=expires_in_hours)).isoformat()
+
+            # Insert directly into deck_shares table
+            insert_data = {
+                'deck_uuid': deck_uuid,
+                'short_code': short_code,
+                'share_type': share_type,
+                'created_by': user_id,
+                'is_active': True,
+                'access_count': 0
+            }
+
+            if expires_at:
+                insert_data['expires_at'] = expires_at
+
+            if metadata:
+                insert_data['metadata'] = metadata
+
+            result = self.supabase.table('deck_shares').insert(insert_data).execute()
+
             if result.data and len(result.data) > 0:
                 share_data = result.data[0]
-                logger.info(f"Created share link for deck {deck_uuid}: {share_data['short_code']}")
+                logger.info(f"Created share link for deck {deck_uuid}: {short_code}")
                 return {
                     'id': share_data['id'],
-                    'short_code': share_data['short_code'],
+                    'short_code': short_code,
                     'share_type': share_type,
-                    'expires_at': share_data['expires_at'],
-                    'share_url': share_data['share_url']
+                    'expires_at': share_data.get('expires_at'),
+                    'share_url': f"/p/{short_code}" if share_type == 'view' else f"/e/{short_code}"
                 }
             else:
-                raise Exception("Failed to create share link")
-                
+                raise Exception("Failed to create share link - no data returned")
+
         except Exception as e:
             logger.error(f"Error creating share link: {str(e)}")
             raise
@@ -87,45 +108,62 @@ class DeckSharingService:
         """
         Get deck information using a share code.
         Records the access and returns deck data if valid.
-        
+
         Args:
             short_code: The short code from the share URL
-            
+
         Returns:
             Deck data if valid share code, None otherwise
         """
         try:
-            # Record access and get deck UUID
-            result = self.supabase.rpc(
-                'record_share_access',
-                {'p_short_code': short_code}
-            ).execute()
-            
-            if result.data:
-                deck_uuid = result.data
-                
-                # Get the deck data
-                deck_response = self.supabase.table('decks').select('*').eq('uuid', deck_uuid).execute()
-                
-                if deck_response.data and len(deck_response.data) > 0:
-                    deck = deck_response.data[0]
-                    
-                    # Get share details for additional info
-                    share_response = self.supabase.table('deck_shares').select(
-                        'share_type, created_by, metadata'
-                    ).eq('short_code', short_code).eq('is_active', True).execute()
-                    
-                    if share_response.data:
-                        share_info = share_response.data[0]
-                        deck['share_info'] = {
-                            'share_type': share_info['share_type'],
-                            'is_editable': share_info['share_type'] == 'edit'
-                        }
-                    
-                    return deck
-            
+            # Get the share link and verify it's active
+            share_response = self.supabase.table('deck_shares').select(
+                'id, deck_uuid, share_type, created_by, metadata, expires_at, is_active, access_count'
+            ).eq('short_code', short_code).execute()
+
+            if not share_response.data or len(share_response.data) == 0:
+                logger.warning(f"Share code not found: {short_code}")
+                return None
+
+            share_info = share_response.data[0]
+
+            # Check if share is active
+            if not share_info.get('is_active', False):
+                logger.warning(f"Share link is inactive: {short_code}")
+                return None
+
+            # Check if share has expired
+            if share_info.get('expires_at'):
+                expires_at = datetime.fromisoformat(share_info['expires_at'].replace('Z', '+00:00'))
+                if datetime.now(expires_at.tzinfo) > expires_at:
+                    logger.warning(f"Share link has expired: {short_code}")
+                    return None
+
+            deck_uuid = share_info['deck_uuid']
+
+            # Update access count and last_accessed_at
+            try:
+                self.supabase.table('deck_shares').update({
+                    'access_count': (share_info.get('access_count', 0) or 0) + 1,
+                    'last_accessed_at': datetime.utcnow().isoformat()
+                }).eq('id', share_info['id']).execute()
+            except Exception as e:
+                logger.warning(f"Failed to update access count: {e}")
+
+            # Get the deck data
+            deck_response = self.supabase.table('decks').select('*').eq('uuid', deck_uuid).execute()
+
+            if deck_response.data and len(deck_response.data) > 0:
+                deck = deck_response.data[0]
+                deck['share_info'] = {
+                    'share_type': share_info['share_type'],
+                    'is_editable': share_info['share_type'] == 'edit',
+                    'metadata': share_info.get('metadata')
+                }
+                return deck
+
             return None
-            
+
         except Exception as e:
             logger.error(f"Error accessing deck by share code: {str(e)}")
             return None
