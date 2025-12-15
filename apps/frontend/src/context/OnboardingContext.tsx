@@ -98,8 +98,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('[OnboardingContext] Error fetching onboarding state:', error);
-      // Always set default state on error to prevent crashes
-      setState(defaultState);
+      // Only set default state if we don't already have state loaded
+      // This prevents network errors from resetting flags and re-showing modals
+      setState(prev => prev ?? defaultState);
     } finally {
       setLoading(false);
     }

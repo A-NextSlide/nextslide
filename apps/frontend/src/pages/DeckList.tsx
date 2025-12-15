@@ -1950,7 +1950,7 @@ const DeckList: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300 dark:bg-zinc-950">
+                <div className="w-screen h-screen flex relative overflow-hidden font-sans text-slate-900 dark:text-zinc-100 selection:bg-orange-100 dark:selection:bg-orange-900/30 selection:text-orange-900 dark:selection:text-orange-300">
                   {/* Particle Background */}
 
 

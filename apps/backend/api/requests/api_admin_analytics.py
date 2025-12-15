@@ -3,8 +3,9 @@ Comprehensive Admin Analytics API
 Provides deep analytics capabilities for data-driven decision making
 """
 import logging
+import os
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel
 from services.supabase import get_supabase_client
@@ -70,21 +71,40 @@ class CreditUsageByType(BaseModel):
 # ============================================================================
 
 def parse_date(date_str: str) -> datetime:
-    """Parse date string to datetime"""
+    """Parse date string to datetime with UTC timezone"""
     try:
-        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-    except:
-        return datetime.strptime(date_str, "%Y-%m-%d")
+        # Handle ISO format with timezone
+        if 'Z' in date_str or '+' in date_str or '-' in date_str[10:]:
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+        # Handle simple YYYY-MM-DD format
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.replace(tzinfo=timezone.utc)
+    except Exception as e:
+        logger.warning(f"Date parse error for '{date_str}': {e}")
+        # Return current date as fallback
+        return datetime.now(timezone.utc)
 
 
 def get_date_range_filter(start_date: str, end_date: str):
-    """Convert date strings to datetime objects for filtering"""
+    """Convert date strings to datetime objects for filtering with proper timezone handling"""
     start = parse_date(start_date)
     end = parse_date(end_date)
-    # Ensure end date includes the full day
-    if end.hour == 0 and end.minute == 0:
-        end = end.replace(hour=23, minute=59, second=59)
+
+    # Ensure start is at beginning of day
+    start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Ensure end date includes the full day (23:59:59.999999)
+    end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+
     return start, end
+
+
+def format_datetime_for_db(dt: datetime) -> str:
+    """Format datetime for PostgreSQL queries - use ISO format with timezone"""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 def calculate_change(current: float, previous: float) -> tuple:
@@ -120,6 +140,33 @@ def generate_date_series(start: datetime, end: datetime, granularity: str) -> Li
     return dates
 
 
+def safe_count_query(supabase, table: str, column: str, filters: Dict[str, Any] = None) -> int:
+    """Execute a count query with error handling and timeout protection"""
+    try:
+        query = supabase.table(table).select(column, count="exact")
+
+        if filters:
+            for key, value in filters.items():
+                if key.startswith("gte_"):
+                    query = query.gte(key[4:], value)
+                elif key.startswith("lte_"):
+                    query = query.lte(key[4:], value)
+                elif key.startswith("lt_"):
+                    query = query.lt(key[3:], value)
+                elif key.startswith("eq_"):
+                    query = query.eq(key[3:], value)
+                elif key.startswith("is_"):
+                    query = query.is_(key[3:], value)
+                else:
+                    query = query.eq(key, value)
+
+        result = query.limit(0).execute()
+        return result.count if result.count is not None else 0
+    except Exception as e:
+        logger.warning(f"Count query error on {table}: {e}")
+        return 0
+
+
 # ============================================================================
 # OVERVIEW METRICS
 # ============================================================================
@@ -141,70 +188,89 @@ async def get_analytics_overview(
         period_days = (end - start).days + 1
 
         # Previous period for comparison
-        prev_end = start - timedelta(days=1)
+        prev_end = start - timedelta(seconds=1)
         prev_start = prev_end - timedelta(days=period_days - 1)
+        prev_start = prev_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Format dates for DB queries
+        start_str = format_datetime_for_db(start)
+        end_str = format_datetime_for_db(end)
+        prev_start_str = format_datetime_for_db(prev_start)
+        prev_end_str = format_datetime_for_db(prev_end)
 
         metrics = {}
 
         # ---- USER METRICS ----
-        # Current period signups
-        signups_current = supabase.table("users").select("id", count="exact").gte(
-            "created_at", start.isoformat()
-        ).lte("created_at", end.isoformat()).execute()
+        signups_current_count = safe_count_query(supabase, "users", "id", {
+            "gte_created_at": start_str,
+            "lte_created_at": end_str
+        })
 
-        # Previous period signups
-        signups_prev = supabase.table("users").select("id", count="exact").gte(
-            "created_at", prev_start.isoformat()
-        ).lte("created_at", prev_end.isoformat()).execute()
+        signups_prev_count = safe_count_query(supabase, "users", "id", {
+            "gte_created_at": prev_start_str,
+            "lte_created_at": prev_end_str
+        }) if compare else 0
 
-        signups_change, signups_trend = calculate_change(
-            signups_current.count or 0,
-            signups_prev.count or 0
-        )
+        signups_change, signups_trend = calculate_change(signups_current_count, signups_prev_count)
 
-        # Total users
-        total_users = supabase.table("users").select("id", count="exact").execute()
+        # Total users (all time)
+        total_users_count = safe_count_query(supabase, "users", "id")
 
-        # Active users in period
-        active_users = supabase.table("users").select("id", count="exact").gte(
-            "last_sign_in_at", start.isoformat()
-        ).execute()
+        # Active users in period (logged in during this period)
+        active_users_count = safe_count_query(supabase, "users", "id", {
+            "gte_last_sign_in_at": start_str
+        })
 
         metrics["users"] = {
-            "total": total_users.count or 0,
+            "total": total_users_count,
             "new_signups": {
-                "current": signups_current.count or 0,
-                "previous": signups_prev.count or 0,
+                "current": signups_current_count,
+                "previous": signups_prev_count,
                 "change_percent": signups_change,
                 "trend": signups_trend
             },
-            "active_in_period": active_users.count or 0
+            "active_in_period": active_users_count
         }
 
         # ---- DECK METRICS ----
-        decks_current = supabase.table("decks").select("uuid", count="exact").gte(
-            "created_at", start.isoformat()
-        ).lte("created_at", end.isoformat()).execute()
+        decks_current_count = safe_count_query(supabase, "decks", "uuid", {
+            "gte_created_at": start_str,
+            "lte_created_at": end_str
+        })
 
-        decks_prev = supabase.table("decks").select("uuid", count="exact").gte(
-            "created_at", prev_start.isoformat()
-        ).lte("created_at", prev_end.isoformat()).execute()
+        decks_prev_count = safe_count_query(supabase, "decks", "uuid", {
+            "gte_created_at": prev_start_str,
+            "lte_created_at": prev_end_str
+        }) if compare else 0
 
-        decks_change, decks_trend = calculate_change(
-            decks_current.count or 0,
-            decks_prev.count or 0
-        )
+        decks_change, decks_trend = calculate_change(decks_current_count, decks_prev_count)
 
-        total_decks = supabase.table("decks").select("uuid", count="exact").execute()
+        total_decks_count = safe_count_query(supabase, "decks", "uuid")
+
+        # Calculate total slides (with timeout protection)
+        total_slides = 0
+        avg_slides_per_deck = 0
+        try:
+            # Only count slides for recent decks to avoid timeout
+            recent_decks = supabase.table("decks").select("slides").limit(100).execute()
+            if recent_decks.data:
+                slide_counts = [len(d.get("slides", [])) for d in recent_decks.data]
+                if slide_counts:
+                    avg_slides_per_deck = round(sum(slide_counts) / len(slide_counts), 1)
+                    total_slides = int(avg_slides_per_deck * total_decks_count)
+        except Exception as e:
+            logger.warning(f"Error counting slides: {e}")
 
         metrics["decks"] = {
-            "total": total_decks.count or 0,
+            "total": total_decks_count,
             "created": {
-                "current": decks_current.count or 0,
-                "previous": decks_prev.count or 0,
+                "current": decks_current_count,
+                "previous": decks_prev_count,
                 "change_percent": decks_change,
                 "trend": decks_trend
-            }
+            },
+            "total_slides": total_slides,
+            "avg_slides_per_deck": avg_slides_per_deck
         }
 
         # ---- CREDIT METRICS ----
@@ -212,19 +278,23 @@ async def get_analytics_overview(
             credits_used_current = supabase.table("credit_transactions").select(
                 "amount"
             ).lt("amount", 0).gte(
-                "created_at", start.isoformat()
-            ).lte("created_at", end.isoformat()).execute()
+                "created_at", start_str
+            ).lte("created_at", end_str).execute()
 
             credits_used_prev = supabase.table("credit_transactions").select(
                 "amount"
             ).lt("amount", 0).gte(
-                "created_at", prev_start.isoformat()
-            ).lte("created_at", prev_end.isoformat()).execute()
+                "created_at", prev_start_str
+            ).lte("created_at", prev_end_str).execute() if compare else None
 
             current_credits = abs(sum(t.get("amount", 0) for t in credits_used_current.data)) if credits_used_current.data else 0
-            prev_credits = abs(sum(t.get("amount", 0) for t in credits_used_prev.data)) if credits_used_prev.data else 0
+            prev_credits = abs(sum(t.get("amount", 0) for t in (credits_used_prev.data if credits_used_prev else []))) if compare else 0
 
             credits_change, credits_trend = calculate_change(current_credits, prev_credits)
+
+            # Get total credits in system
+            total_credits_result = supabase.table("credit_transactions").select("amount").execute()
+            total_credits_balance = sum(t.get("amount", 0) for t in (total_credits_result.data or []))
 
             metrics["credits"] = {
                 "used": {
@@ -232,37 +302,47 @@ async def get_analytics_overview(
                     "previous": prev_credits,
                     "change_percent": credits_change,
                     "trend": credits_trend
-                }
+                },
+                "total_balance": total_credits_balance
             }
         except Exception as e:
             logger.warning(f"Could not fetch credit metrics: {e}")
-            metrics["credits"] = {"used": {"current": 0, "previous": 0, "change_percent": 0, "trend": "flat"}}
+            metrics["credits"] = {"used": {"current": 0, "previous": 0, "change_percent": 0, "trend": "flat"}, "total_balance": 0}
 
         # ---- SHARING METRICS ----
         try:
-            shares_current = supabase.table("deck_shares").select("id", count="exact").gte(
-                "created_at", start.isoformat()
-            ).lte("created_at", end.isoformat()).execute()
+            shares_current_count = safe_count_query(supabase, "deck_shares", "id", {
+                "gte_created_at": start_str,
+                "lte_created_at": end_str
+            })
 
-            shares_prev = supabase.table("deck_shares").select("id", count="exact").gte(
-                "created_at", prev_start.isoformat()
-            ).lte("created_at", prev_end.isoformat()).execute()
+            shares_prev_count = safe_count_query(supabase, "deck_shares", "id", {
+                "gte_created_at": prev_start_str,
+                "lte_created_at": prev_end_str
+            }) if compare else 0
 
-            shares_change, shares_trend = calculate_change(
-                shares_current.count or 0,
-                shares_prev.count or 0
-            )
+            shares_change, shares_trend = calculate_change(shares_current_count, shares_prev_count)
+
+            # Total share views
+            total_views = 0
+            try:
+                views_result = supabase.table("deck_shares").select("access_count").execute()
+                total_views = sum(s.get("access_count", 0) for s in (views_result.data or []))
+            except:
+                pass
 
             metrics["sharing"] = {
                 "shares_created": {
-                    "current": shares_current.count or 0,
-                    "previous": shares_prev.count or 0,
+                    "current": shares_current_count,
+                    "previous": shares_prev_count,
                     "change_percent": shares_change,
                     "trend": shares_trend
-                }
+                },
+                "total_views": total_views
             }
-        except:
-            metrics["sharing"] = {"shares_created": {"current": 0, "previous": 0, "change_percent": 0, "trend": "flat"}}
+        except Exception as e:
+            logger.warning(f"Could not fetch sharing metrics: {e}")
+            metrics["sharing"] = {"shares_created": {"current": 0, "previous": 0, "change_percent": 0, "trend": "flat"}, "total_views": 0}
 
         await log_admin_action(admin["id"], "view_analytics_overview", request)
 

@@ -2773,7 +2773,8 @@ MODEL_PRICING = {
     "gemini-2.5-flash": {"input": 0.075, "output": 0.30, "provider": "google"},
     "gemini-2.5-flash-lite": {"input": 0.0375, "output": 0.15, "provider": "google"},
     "gemini-2.5-pro": {"input": 1.25, "output": 10.00, "provider": "google"},
-    "gemini-3-pro": {"input": 1.25, "output": 10.00, "provider": "google"},
+    "gemini-3-pro": {"input": 2.00, "output": 12.00, "provider": "google"},
+    "gemini-3-pro-preview": {"input": 2.00, "output": 12.00, "provider": "google"},
 
     # OpenAI models
     "gpt-4o-mini": {"input": 0.15, "output": 0.60, "provider": "openai"},
@@ -3021,18 +3022,25 @@ async def estimate_costs(
         "outline_output": 1000,
     }
 
-    # Get models from config
+    # Get models from config - use actual task mappings, not legacy aliases
     try:
         from agents.config import (
-            THEME_STYLE_MODEL, COMPOSER_MODEL, OUTLINE_PLANNING_MODEL,
-            PERPLEXITY_RESEARCH_MODEL, CUSTOM_COMPONENT_MODEL
+            MODEL_HARD, MODEL_RESEARCH, CUSTOM_COMPONENT_MODEL, GEMINI_3_PRO
         )
+        # These are the actual models used for each operation:
+        # - Theme generation: MODEL_HARD (gemini-3-pro-preview)
+        # - Slide generation: MODEL_HARD (gemini-3-pro-preview)
+        # - Outline/research: MODEL_RESEARCH (perplexity-sonar-pro)
+        # - Custom components: CUSTOM_COMPONENT_MODEL (gemini-3-pro-preview)
+        THEME_MODEL_ACTUAL = MODEL_HARD  # gemini-3-pro-preview
+        SLIDE_MODEL_ACTUAL = MODEL_HARD  # gemini-3-pro-preview
+        OUTLINE_MODEL_ACTUAL = MODEL_RESEARCH  # perplexity-sonar-pro
+        CUSTOM_MODEL_ACTUAL = CUSTOM_COMPONENT_MODEL  # gemini-3-pro-preview
     except ImportError:
-        THEME_STYLE_MODEL = "claude-haiku-4-5"
-        COMPOSER_MODEL = "claude-haiku-4-5"
-        OUTLINE_PLANNING_MODEL = "perplexity-sonar"
-        PERPLEXITY_RESEARCH_MODEL = "perplexity-sonar"
-        CUSTOM_COMPONENT_MODEL = "gemini-3-pro"
+        THEME_MODEL_ACTUAL = "gemini-3-pro-preview"
+        SLIDE_MODEL_ACTUAL = "gemini-3-pro-preview"
+        OUTLINE_MODEL_ACTUAL = "perplexity-sonar-pro"
+        CUSTOM_MODEL_ACTUAL = "gemini-3-pro-preview"
 
     decks_per_month = decks_per_day * 30
     slides_per_month = decks_per_month * slides_per_deck
@@ -3049,7 +3057,7 @@ async def estimate_costs(
     }
 
     # Theme generation (1 per deck)
-    theme_model = THEME_STYLE_MODEL
+    theme_model = THEME_MODEL_ACTUAL
     if theme_model in MODEL_PRICING:
         pricing = MODEL_PRICING[theme_model]
         input_cost = (TOKENS_PER_SLIDE["theme_input"] * decks_per_month / 1_000_000) * pricing["input"]
@@ -3065,7 +3073,7 @@ async def estimate_costs(
         estimates["total_monthly_usd"] += total
 
     # Outline generation (1 per deck)
-    outline_model = OUTLINE_PLANNING_MODEL
+    outline_model = OUTLINE_MODEL_ACTUAL
     if outline_model in MODEL_PRICING:
         pricing = MODEL_PRICING[outline_model]
         if pricing.get("per_request"):
@@ -3084,7 +3092,7 @@ async def estimate_costs(
         estimates["total_monthly_usd"] += total
 
     # Slide generation (1 per slide)
-    slide_model = COMPOSER_MODEL
+    slide_model = SLIDE_MODEL_ACTUAL
     if slide_model in MODEL_PRICING:
         pricing = MODEL_PRICING[slide_model]
         input_cost = (TOKENS_PER_SLIDE["slide_input"] * slides_per_month / 1_000_000) * pricing["input"]
@@ -3101,7 +3109,7 @@ async def estimate_costs(
 
     # Custom components (estimate 30% of slides have custom components)
     custom_slides = int(slides_per_month * 0.3)
-    custom_model = CUSTOM_COMPONENT_MODEL
+    custom_model = CUSTOM_MODEL_ACTUAL
     if custom_model in MODEL_PRICING:
         pricing = MODEL_PRICING[custom_model]
         input_cost = (2000 * custom_slides / 1_000_000) * pricing["input"]

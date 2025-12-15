@@ -127,10 +127,10 @@ const ParticleAnimation: React.FC<ParticleAnimationProps> = ({ isTyping = false,
                 const dy = p.y - cy;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                // Determine swirl speed: Loading = Fast (2.0), Typing = Slow (0.2)
-                let baseSwirlSpeed = 2.0;
+                // Determine swirl speed: Loading = Fast (1.6), Typing = Slow (0.34)
+                let baseSwirlSpeed = 1.6;
                 if (isTypingRef.current && !isLoadingRef.current) {
-                    baseSwirlSpeed = 0.2;
+                    baseSwirlSpeed = 0.34;
                 }
                 const swirlSpeed = baseSwirlSpeed * depth;
 

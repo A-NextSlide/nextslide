@@ -13,6 +13,7 @@ import {
   Palette,
   Server,
   BarChart3,
+  DollarSign,
   ExternalLink,
 } from 'lucide-react';
 
@@ -23,6 +24,7 @@ interface AdminLayoutV2Props {
 const navItems = [
   { title: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { title: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+  { title: 'Costs', href: '/admin/costs', icon: DollarSign },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },
   { title: 'Brands', href: '/admin/brands', icon: Palette },

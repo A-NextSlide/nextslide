@@ -1,5 +1,11 @@
+"""
+Supabase utilities for database operations.
+
+This module re-exports the robust Supabase client from services/supabase.py
+and provides convenience functions for common database operations.
+"""
 import os
-from supabase import create_client, Client
+from supabase import Client, create_client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 import uuid
@@ -10,53 +16,31 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 # Load environment variables
 load_dotenv()
 
-# Get Supabase credentials from environment variables
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-# Use service key if available, otherwise fall back to anon key
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+# Re-export from the robust services module
+from services.supabase import (
+    get_supabase_client,
+    reset_supabase_client,
+    get_supabase_stats,
+    execute_with_retry,
+    with_supabase_retry,
+    check_supabase_health,
+    SUPABASE_URL,
+    SUPABASE_KEY,
+)
 
-# Create separate clients for different purposes
-_service_client = None
+# Get credentials for local use
+_SUPABASE_URL = os.getenv("SUPABASE_URL")
+_SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+
+# Anon client for frontend operations (separate from service client)
 _anon_client = None
-
-def get_supabase_client() -> Client:
-    """
-    Create and return a Supabase client instance.
-    This will use the service key if available to bypass RLS.
-    
-    Returns:
-        Client: A configured Supabase client instance
-        
-    Raises:
-        ValueError: If SUPABASE_URL or SUPABASE_KEY environment variables are not set
-    """
-    global _service_client
-    
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
-    
-    if _service_client is None:
-        _service_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
-    return _service_client
-
-def reset_supabase_client() -> None:
-    """
-    Reset the cached Supabase client so a fresh connection pool is created on next use.
-    Helpful to recover from HTTP/2 stream resets and SSL EOFs.
-    """
-    global _service_client
-    try:
-        _service_client = None
-        logging.getLogger(__name__).info("Supabase client has been reset")
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Failed to reset Supabase client: {e}")
 
 def perform_supabase_operation_with_retry(operation, description: str = "operation", max_attempts: int = 3, timeout_seconds: float = 8.0):
     """
     Execute a blocking Supabase SDK operation with timeout and retries.
-    - Runs the callable in a thread to enforce a timeout.
-    - Retries on transient transport errors (HTTP/2 stream reset, SSL EOF) and timeouts.
+
+    This is a wrapper around execute_with_retry from services/supabase.py
+    for backwards compatibility.
 
     Args:
         operation: Zero-arg callable that performs the Supabase request synchronously and returns the result
@@ -70,32 +54,12 @@ def perform_supabase_operation_with_retry(operation, description: str = "operati
     Raises:
         The last exception if all attempts fail
     """
-    logger = logging.getLogger(__name__)
-    last_error = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(operation)
-                return future.result(timeout=timeout_seconds)
-        except FutureTimeoutError as e:
-            last_error = e
-            logger.warning(f"Supabase {description} timed out on attempt {attempt}/{max_attempts}")
-            # Reset client before next attempt to drop any bad connections
-            reset_supabase_client()
-        except Exception as e:
-            last_error = e
-            message = str(e)
-            logger.warning(f"Supabase {description} failed on attempt {attempt}/{max_attempts}: {message}")
-            # Reset client on common transient protocol errors
-            if any(err in message for err in [
-                "StreamReset", "UNEXPECTED_EOF_WHILE_READING", "EOF occurred in violation of protocol",
-                "RemoteProtocolError", "ConnectionResetError", "ReadError"
-            ]):
-                reset_supabase_client()
-            # Small backoff
-            time.sleep(0.2 * (2 ** (attempt - 1)))
-    # Exhausted attempts
-    raise last_error
+    return execute_with_retry(
+        operation=operation,
+        description=description,
+        max_attempts=max_attempts,
+        timeout_seconds=timeout_seconds
+    )
 
 def get_anon_supabase_client() -> Client:
     """

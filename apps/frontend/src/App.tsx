@@ -68,6 +68,8 @@ function UserRecordInitializer() {
 
 // Component to show welcome reward on first visit (only once per session)
 // Shows to any user where welcome_shown=false in database
+const WELCOME_SHOWN_SESSION_KEY = 'nextslide_welcome_shown_session';
+
 function WelcomeRewardController() {
   const { shouldShowWelcome, markWelcomeShown, state } = useOnboarding();
   const { user } = useAuth();
@@ -79,16 +81,20 @@ function WelcomeRewardController() {
   // Show reward when:
   // 1. User is logged in
   // 2. Onboarding state says welcome not shown
-  // 3. Haven't triggered yet this session
+  // 3. Haven't triggered yet this session (ref + sessionStorage backup)
   useEffect(() => {
     // Wait for onboarding state to load
     if (!user || !state) return;
     if (hasTriggeredReward.current) return;
 
+    // Check sessionStorage as a backup (survives component remounts during disconnects)
+    if (sessionStorage.getItem(WELCOME_SHOWN_SESSION_KEY) === 'true') return;
+
     // Show to any user who hasn't seen the welcome yet
     // The welcome_shown flag in the database is the source of truth
     if (shouldShowWelcome) {
       hasTriggeredReward.current = true;
+      sessionStorage.setItem(WELCOME_SHOWN_SESSION_KEY, 'true');
 
       // Show the welcome bonus reward
       showReward(REWARD_CONFIGS.welcomeBonus);
