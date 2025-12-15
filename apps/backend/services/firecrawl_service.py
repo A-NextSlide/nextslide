@@ -14,11 +14,18 @@ Docs: https://docs.firecrawl.dev/introduction
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from setup_logging_optimized import get_logger
 
 logger = get_logger(__name__)
+
+# Module-level screenshot cache: {domain: (screenshot_b64, timestamp)}
+# TTL: 30 minutes - prevents duplicate Firecrawl calls within a session
+_SCREENSHOT_CACHE: Dict[str, Tuple[str, float]] = {}
+_SCREENSHOT_CACHE_TTL = 30 * 60  # 30 minutes
 
 
 class _FirecrawlService:
@@ -35,6 +42,32 @@ class _FirecrawlService:
         except Exception:
             self._SDK = None
             self._sdk_available = False
+
+    def _normalize_domain(self, url: str) -> str:
+        """Extract and normalize domain from URL for cache key."""
+        if not url.startswith(('http://', 'https://')):
+            url = f'https://{url}'
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace('www.', '')
+        return domain
+
+    def _get_cached_screenshot(self, domain: str) -> Optional[str]:
+        """Get screenshot from cache if still valid."""
+        if domain in _SCREENSHOT_CACHE:
+            screenshot, ts = _SCREENSHOT_CACHE[domain]
+            if time.time() - ts < _SCREENSHOT_CACHE_TTL:
+                logger.info(f"[FIRECRAWL_CACHE] ✅ Screenshot cache HIT for {domain}")
+                return screenshot
+            else:
+                # Expired, remove from cache
+                del _SCREENSHOT_CACHE[domain]
+                logger.info(f"[FIRECRAWL_CACHE] Screenshot cache EXPIRED for {domain}")
+        return None
+
+    def _cache_screenshot(self, domain: str, screenshot: str) -> None:
+        """Store screenshot in cache."""
+        _SCREENSHOT_CACHE[domain] = (screenshot, time.time())
+        logger.info(f"[FIRECRAWL_CACHE] 💾 Cached screenshot for {domain} ({len(screenshot)} chars)")
 
     def is_configured(self) -> bool:
         return bool(self.api_key)
@@ -424,8 +457,13 @@ class _FirecrawlService:
             - personality: {tone, energy, targetAudience}
             - source_url: The analyzed URL
         """
+        # Check screenshot cache first (saves ~20s API call)
+        domain = self._normalize_domain(url)
+        cached_screenshot = self._get_cached_screenshot(domain) if include_screenshot else None
+
         formats = ["branding"]
-        if include_screenshot:
+        if include_screenshot and not cached_screenshot:
+            # Only request screenshot if not cached
             formats.append("screenshot@fullPage")
 
         try:
@@ -441,7 +479,10 @@ class _FirecrawlService:
                 "timeout": 60000,
             }
 
-            logger.info(f"[BRAND_DESIGN] Fetching brand design from {url} with formats={formats}")
+            if cached_screenshot:
+                logger.info(f"[BRAND_DESIGN] Fetching brand design from {url} (screenshot CACHED, skipping screenshot request)")
+            else:
+                logger.info(f"[BRAND_DESIGN] Fetching brand design from {url} with formats={formats}")
 
             resp = requests.post(
                 f"{self.base_url}/v1/scrape",
@@ -495,17 +536,24 @@ class _FirecrawlService:
                 "personality": branding.get("personality", {}),
             }
 
-            # Add screenshot if requested and available
+            # Add screenshot if requested - check cache first, then API response
             if include_screenshot:
-                screenshot = data.get("screenshot")
-                if screenshot:
-                    # Compress screenshot to prevent token inflation
-                    # Firecrawl returns base64-encoded PNG which can be 1-2MB+
-                    compressed_screenshot = self._compress_screenshot(screenshot)
-                    brand_design["screenshot"] = compressed_screenshot
-                    logger.info(f"[BRAND_DESIGN] Got screenshot ({len(screenshot)} chars -> {len(compressed_screenshot)} chars after compression)")
+                if cached_screenshot:
+                    # Use cached screenshot (already compressed)
+                    brand_design["screenshot"] = cached_screenshot
+                    logger.info(f"[BRAND_DESIGN] Using CACHED screenshot ({len(cached_screenshot)} chars)")
                 else:
-                    logger.warning("[BRAND_DESIGN] Screenshot requested but not returned")
+                    screenshot = data.get("screenshot")
+                    if screenshot:
+                        # Compress screenshot to prevent token inflation
+                        # Firecrawl returns base64-encoded PNG which can be 1-2MB+
+                        compressed_screenshot = self._compress_screenshot(screenshot)
+                        brand_design["screenshot"] = compressed_screenshot
+                        # Cache for future requests
+                        self._cache_screenshot(domain, compressed_screenshot)
+                        logger.info(f"[BRAND_DESIGN] Got screenshot ({len(screenshot)} chars -> {len(compressed_screenshot)} chars after compression)")
+                    else:
+                        logger.warning("[BRAND_DESIGN] Screenshot requested but not returned")
 
             # Filter out None values from colors
             brand_design["colors"] = {

@@ -1063,6 +1063,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Try to use the store and navigation hooks, but catch any errors
   let slides: SlideData[] = [];
   let currentSlideIndex = 0;
+  let setCurrentSlideIndexSafe: (index: number) => void = () => {};
 
   try {
     // Use Zustand store directly
@@ -1073,6 +1074,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     const navigationContext = useNavigation();
     currentSlideIndex = navigationContext.currentSlideIndex;
+    setCurrentSlideIndexSafe = navigationContext.setCurrentSlideIndex;
   } catch (error) {
     console.error("ChatPanel: Context hook error (possibly rendered outside providers)", error);
     // Continue with default values if hook fails
@@ -1843,7 +1845,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     const slides = deckStore.deckData?.slides || [];
                     const newSlideIndex = slides.findIndex((s: any) => s.id === editedSlideId);
                     if (newSlideIndex >= 0) {
-                      deckStore.setCurrentSlideIndex(newSlideIndex);
+                      setCurrentSlideIndexSafe(newSlideIndex);
                     }
                   } catch (e) {
                     console.warn('[AgentChat] Failed to auto-navigate to new slide:', e);
@@ -2210,7 +2212,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             const { messages: historyMessages } = await client.getMessages(sid, 50);
             if (historyMessages && historyMessages.length > 0) {
               const restoredMessages: ExtendedChatMessageProps[] = historyMessages
-                .map((msg: any) => {
+                .map((msg: any): ExtendedChatMessageProps | null => {
                   // Check for slideSnapshot attachment (for version restore)
                   const snapshotAttachment = msg.attachments?.find((a: any) => a.type === 'slide_snapshot');
                   if (snapshotAttachment) {
@@ -2244,9 +2246,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }
 
                   // Regular message (user or meaningful AI response)
+                  const msgType: 'user' | 'ai' = msg.role === 'user' ? 'user' : 'ai';
                   return {
                     id: msg.id,
-                    type: msg.role === 'user' ? 'user' : 'ai',
+                    type: msgType,
                     message: msg.text || '',
                     timestamp: new Date(msg.created_at),
                     feedback: null,
@@ -2825,7 +2828,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     setTimeout(() => {
                       const newSlideIndex = deckStore.deckData?.slides?.findIndex((s: any) => s.id === editedSlideId);
                       if (newSlideIndex !== undefined && newSlideIndex >= 0) {
-                        deckStore.setCurrentSlideIndex(newSlideIndex);
+                        setCurrentSlideIndexSafe(newSlideIndex);
                       }
                     }, 700);
                   }
@@ -2951,7 +2954,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             const { messages: historyMessages } = await client.getMessages(sid, 50);
             if (historyMessages && historyMessages.length > 0) {
               const restoredMessages: ExtendedChatMessageProps[] = historyMessages
-                .map((msg: any) => {
+                .map((msg: any): ExtendedChatMessageProps | null => {
                   // Check for slideSnapshot attachment (for version restore)
                   const snapshotAttachment = msg.attachments?.find((a: any) => a.type === 'slide_snapshot');
                   if (snapshotAttachment) {
@@ -2985,9 +2988,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   }
 
                   // Regular message (user or meaningful AI response)
+                  const msgType: 'user' | 'ai' = msg.role === 'user' ? 'user' : 'ai';
                   return {
                     id: msg.id,
-                    type: msg.role === 'user' ? 'user' : 'ai',
+                    type: msgType,
                     message: msg.text || '',
                     timestamp: new Date(msg.created_at),
                     feedback: null,
