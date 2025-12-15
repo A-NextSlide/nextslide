@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState, memo } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import {
   ContextMenu,
@@ -30,7 +30,7 @@ interface ThumbnailItemProps {
   onDragEnd: () => void;
 }
 
-const ThumbnailItem = memo<ThumbnailItemProps>(({
+const ThumbnailItem: React.FC<ThumbnailItemProps> = ({
   slide,
   index,
   isSelected,
@@ -122,26 +122,7 @@ const ThumbnailItem = memo<ThumbnailItemProps>(({
       </ContextMenuContent>
     </ContextMenu>
   );
-}, (prevProps, nextProps) => {
-  // Custom comparison for performance
-  // Return true if props are equal (skip re-render)
-  if (prevProps.index !== nextProps.index) return false;
-  if (prevProps.isSelected !== nextProps.isSelected) return false;
-  if (prevProps.slide?.id !== nextProps.slide?.id) return false;
-
-  // Compare slide components to detect content changes
-  const prevComponents = prevProps.slide?.components || [];
-  const nextComponents = nextProps.slide?.components || [];
-  if (prevComponents.length !== nextComponents.length) return false;
-
-  // Shallow comparison of component props (fast check)
-  for (let i = 0; i < prevComponents.length; i++) {
-    if (prevComponents[i].id !== nextComponents[i].id) return false;
-    if (JSON.stringify(prevComponents[i].props) !== JSON.stringify(nextComponents[i].props)) return false;
-  }
-
-  return true;
-});
+};
 
 interface ThumbnailNavigatorProps {
   slides: SlideData[];
@@ -153,6 +134,38 @@ interface ThumbnailNavigatorProps {
   isNewDeck?: boolean;
 }
 
+// Placeholder thumbnail component for generating slides
+const PlaceholderThumbnail: React.FC<{ index: number; isSelected: boolean; onSelect: (index: number) => void }> = ({
+  index,
+  isSelected,
+  onSelect,
+}) => (
+  <div
+    className={cn(
+      "slide-thumbnail w-40 h-24 rounded flex-shrink-0 cursor-pointer transition-all relative",
+      isSelected
+        ? 'border-2 border-primary shadow-sm'
+        : 'border border-border hover:border-primary/50'
+    )}
+    onClick={() => onSelect(index)}
+  >
+    {/* Slide number */}
+    <div className="absolute -top-5 w-full text-center text-[10px] text-gray-500 z-40">
+      {index + 1}
+    </div>
+
+    {/* Placeholder content - animated gradient */}
+    <div className="w-full h-full rounded-sm overflow-hidden bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-1">
+        <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+        <div className="text-[9px] font-medium text-orange-600 dark:text-orange-400">
+          Generating...
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 // Throttle constant for slide operations
 const OPERATION_THROTTLE_MS = 800;
 
@@ -161,7 +174,11 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
   currentSlideIndex,
   onThumbnailClick,
   onSlideDelete,
+  deckStatus,
 }) => {
+  // Check if deck is generating
+  const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
+  const totalExpectedSlides = deckStatus?.totalSlides || 0;
   // Store operations
   const removeSlide = useDeckStore(state => state.removeSlide);
   const duplicateSlide = useDeckStore(state => state.duplicateSlide);
@@ -408,21 +425,6 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     }, 2000);
   }, []);
 
-  // Memoized styles to prevent re-renders
-  const containerStyle = useMemo(() => ({
-    minHeight: '130px',
-    marginTop: 'auto',
-    zIndex: 10,
-    scrollbarWidth: 'none' as const,
-    msOverflowStyle: 'none' as const,
-    overscrollBehavior: 'contain' as const
-  }), []);
-
-  const dropZoneStyle = useMemo(() => ({
-    height: '96px',
-    alignSelf: 'center' as const
-  }), []);
-
   // Scroll current thumbnail into view
   React.useEffect(() => {
     if (!containerRef.current) return;
@@ -444,7 +446,14 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
     <div
       ref={containerRef}
       className="p-4 pt-5 pb-5 flex flex-nowrap items-center gap-3 overflow-x-auto overflow-y-hidden scrollbar-hide max-w-full"
-      style={containerStyle}
+      style={{
+        minHeight: '130px',
+        marginTop: 'auto',
+        zIndex: 10,
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        overscrollBehavior: 'contain'
+      }}
       onWheel={(e) => {
         if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && containerRef.current) {
           containerRef.current.scrollLeft += e.deltaY;
@@ -457,6 +466,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
           layout
           transition={{ layout: { type: "spring", stiffness: 350, damping: 30 } }}
         >
+          {/* Render existing slides */}
           {displaySlides.map((slide, index) => {
             const showDropZoneBefore = dropZoneIndex === index && draggedIndex !== null;
             const isDragged = draggedIndex === index;
@@ -472,7 +482,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                       exit={{ width: 0, opacity: 0 }}
                       transition={{ duration: 0.15 }}
                       className="flex-shrink-0 bg-primary rounded-sm"
-                      style={dropZoneStyle}
+                      style={{ height: '96px', alignSelf: 'center' }}
                     />
                   )}
                 </AnimatePresence>
@@ -507,8 +517,8 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                   />
                 </motion.div>
 
-                {/* Drop zone indicator after last slide */}
-                {index === displaySlides.length - 1 && (
+                {/* Drop zone indicator after last slide (only when not generating placeholders) */}
+                {index === displaySlides.length - 1 && !isGenerating && (
                   <AnimatePresence>
                     {dropZoneIndex === index + 1 && draggedIndex !== null && (
                       <motion.div
@@ -517,7 +527,7 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
                         exit={{ width: 0, opacity: 0 }}
                         transition={{ duration: 0.15 }}
                         className="flex-shrink-0 bg-primary rounded-sm"
-                        style={dropZoneStyle}
+                        style={{ height: '96px', alignSelf: 'center' }}
                       />
                     )}
                   </AnimatePresence>
@@ -525,6 +535,36 @@ const ThumbnailNavigator: React.FC<ThumbnailNavigatorProps> = ({
               </React.Fragment>
             );
           })}
+
+          {/* Render placeholder thumbnails for slides being generated */}
+          {isGenerating && totalExpectedSlides > displaySlides.length && (
+            <>
+              {Array.from({ length: totalExpectedSlides - displaySlides.length }, (_, i) => {
+                const index = displaySlides.length + i;
+                return (
+                  <motion.div
+                    key={`placeholder-${index}`}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2, delay: i * 0.05 }}
+                  >
+                    <PlaceholderThumbnail
+                      index={index}
+                      isSelected={index === currentSlideIndex}
+                      onSelect={onThumbnailClick}
+                    />
+                  </motion.div>
+                );
+              })}
+            </>
+          )}
+
+          {/* Show initial placeholder when no slides and no expected count yet */}
+          {displaySlides.length === 0 && !isGenerating && (
+            <div className="w-40 h-24 rounded flex-shrink-0 border border-dashed border-border flex items-center justify-center text-muted-foreground text-xs">
+              No slides
+            </div>
+          )}
         </motion.div>
       </div>
 

@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { ThemeProvider } from "./context/ThemeContext";
 import { SupabaseAuthProvider } from "./context/SupabaseAuthContext";
@@ -39,7 +39,6 @@ import { useEnsureUserRecord } from './hooks/useEnsureUserRecord';
 const DevPerformanceHUD = import.meta.env.PROD ? null : React.lazy(() => import('./components/dev/PerformanceHUD'));
 
 // Admin imports
-import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminUserDetail from './pages/admin/AdminUserDetail';
 import AdminDecks from './pages/admin/AdminDecks';
@@ -461,14 +460,19 @@ const AppContent = () => {
                   </ProtectedRoute>
                 }
               />
-              {/* Admin routes */}
+              {/* Admin routes - Analytics is now the main dashboard */}
               <Route
                 path="/admin"
                 element={
                   <AdminProtectedRoute>
-                    <AdminDashboard />
+                    <AdminAnalytics />
                   </AdminProtectedRoute>
                 }
+              />
+              {/* Redirect old analytics path to new dashboard */}
+              <Route
+                path="/admin/analytics"
+                element={<Navigate to="/admin" replace />}
               />
               <Route
                 path="/admin/users"
@@ -515,14 +519,6 @@ const AppContent = () => {
                 element={
                   <AdminProtectedRoute>
                     <AdminCosts />
-                  </AdminProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/analytics"
-                element={
-                  <AdminProtectedRoute>
-                    <AdminAnalytics />
                   </AdminProtectedRoute>
                 }
               />

@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { googleIntegrationApi, GooglePresentationFile } from '@/services/googleIntegrationApi';
+import { googleIntegrationApi, GooglePresentationFile, JobProgress } from '@/services/googleIntegrationApi';
 import { useDeckStore } from '@/stores/deckStore';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, LogIn, RefreshCw, FileText, Clock, User as UserIcon } from 'lucide-react';
+import { Loader2, LogIn, RefreshCw, Clock, Layers, AlertCircle, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { deckSyncService } from '@/lib/deckSyncService';
+import { Progress } from '@/components/ui/progress';
+
+const MAX_SLIDES_LIMIT = 50;
 
 interface GoogleSlidesImportModalProps {
   open: boolean;
@@ -18,7 +19,6 @@ interface GoogleSlidesImportModalProps {
 
 const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open, onOpenChange }) => {
   const { toast } = useToast();
-  const navigate = useNavigate();
   const createDefaultDeck = useDeckStore((state) => state.createDefaultDeck);
   const updateDeckData = useDeckStore((state) => state.updateDeckData);
 
@@ -38,9 +38,11 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
   const didInitialFetchRef = useRef<boolean>(false);
   type ThumbMeta = { url: string; width: number; height: number };
   const [thumbMeta, setThumbMeta] = useState<Record<string, ThumbMeta>>({});
+  const [slideCountMeta, setSlideCountMeta] = useState<Record<string, number>>({});
   const retryCountsRef = useRef<Record<string, number>>({});
   const fetchingRef = useRef<Set<string>>(new Set());
   const isFetchingRef = useRef<boolean>(false);
+  const [importProgress, setImportProgress] = useState<JobProgress | null>(null);
 
   // Debounce query input
   useEffect(() => {
@@ -55,7 +57,7 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
       const status = await googleIntegrationApi.getAuthStatus();
       setIsConnected(!!status.connected);
       setConnectedEmail(status.email);
-    } catch (e: any) {
+    } catch {
       setIsConnected(false);
     } finally {
       setAuthLoading(false);
@@ -70,7 +72,6 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
 
   const handleConnect = useCallback(async () => {
     try {
-      // Temporary hotfix: don't pass redirectUri until backend uses it only in state
       const url = await googleIntegrationApi.initiateAuth();
       window.location.href = url;
     } catch (e: any) {
@@ -80,7 +81,7 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
 
   const listFiles = useCallback(async (reset: boolean = true) => {
     if (!isConnected) return;
-    if (!reset && !nextPageToken) return; // don't refetch first page repeatedly
+    if (!reset && !nextPageToken) return;
     if (reset) {
       setFiles([]);
       setNextPageToken(undefined);
@@ -107,12 +108,12 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
     }
   }, [isConnected, debouncedQuery, nextPageToken, toast, scope]);
 
-  // Load first page on open (once per open)
+  // Load first page on open
   useEffect(() => {
     if (!open) {
       didInitialFetchRef.current = false;
-      fetchingRef.current.clear(); // Clear fetching set when modal closes
-      isFetchingRef.current = false; // Reset fetching flag
+      fetchingRef.current.clear();
+      isFetchingRef.current = false;
       return;
     }
     if (open && isConnected && !didInitialFetchRef.current) {
@@ -121,21 +122,21 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
     }
   }, [open, isConnected]);
 
-  // Reload when debounced query changes (only if modal is open)
+  // Reload when debounced query changes
   useEffect(() => {
     if (open && isConnected) {
       listFiles(true);
     }
   }, [debouncedQuery]);
 
-  // Reload when scope changes (only if modal is open)
+  // Reload when scope changes
   useEffect(() => {
     if (open && isConnected) {
       listFiles(true);
     }
   }, [scope]);
 
-  // Infinite scroll observer (throttled)
+  // Infinite scroll observer
   useEffect(() => {
     if (!open || !isConnected) return;
     if (observerRef.current) observerRef.current.disconnect();
@@ -153,41 +154,27 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
     return () => observerRef.current?.disconnect();
   }, [open, isConnected, hasMore, isListing, nextPageToken, listFiles]);
 
-  // Prefetch per-page thumbnails for the first few items (batch for speed)
+  // Prefetch thumbnails
   useEffect(() => {
     if (!open || !isConnected || files.length === 0) return;
     const abortController = new AbortController();
     let timeoutId: NodeJS.Timeout;
 
-    // Find files that need thumbnails and aren't already being fetched
     const needsApiThumbnail = (f: GooglePresentationFile) => {
       const meta = thumbMeta[f.id];
-      // Need API thumbnail if no meta, or if it's using the low-res Drive thumbnail
       return !meta || (meta.url === f.thumbnailLink);
     };
-    
-    console.log('[Thumbnails] Files:', files.length, 'Current thumbMeta:', Object.keys(thumbMeta).length);
 
     (async () => {
-      // Prevent multiple simultaneous fetches
-      if (isFetchingRef.current) {
-        console.log('[Thumbnails] Already fetching, skipping');
-        return;
-      }
-      
+      if (isFetchingRef.current) return;
+
       const toPrefetch = files.filter(f => needsApiThumbnail(f) && !fetchingRef.current.has(f.id)).slice(0, 4);
-      console.log('[Thumbnails] To prefetch:', toPrefetch.map(f => f.name));
-      if (toPrefetch.length === 0) {
-        console.log('[Thumbnails] Nothing to prefetch');
-        return;
-      }
-      
+      if (toPrefetch.length === 0) return;
+
       isFetchingRef.current = true;
-      
-      // Mark these as being fetched
       toPrefetch.forEach(f => fetchingRef.current.add(f.id));
-      
-      // Seed UI with Drive thumbnails first if available to avoid spinner
+
+      // Seed with Drive thumbnails first
       setThumbMeta(prev => {
         const next = { ...prev } as Record<string, ThumbMeta>;
         toPrefetch.forEach(f => {
@@ -197,35 +184,24 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
         });
         return next;
       });
+
       try {
-        // Fetch a smaller batch of MEDIUM PNG thumbnails for faster loading
-        console.log('[Thumbnails] Calling API for:', toPrefetch.map(f => f.id));
         const results = await googleIntegrationApi.getSlidePageThumbnailsBatch(
           toPrefetch.map(f => ({ presentationId: f.id, pageId: 'first' })),
           { size: 'MEDIUM', mime: 'PNG' }
         );
-        console.log('[Thumbnails] API response:', results);
-        if (!Array.isArray(results)) {
-          console.log('[Thumbnails] Invalid results format');
-          return;
-        }
+        if (!Array.isArray(results)) return;
+
         const byId: Record<string, { url?: string; width?: number; height?: number; ok?: boolean }> = {};
         results.forEach((r: any) => {
           const pid = r?.presentationId;
           if (!pid) return;
-          
-          // Parse the response structure
           const thumbnail = r?.thumbnail;
           if (thumbnail && thumbnail.contentUrl && thumbnail.width && thumbnail.height) {
-            byId[pid] = { 
-              url: thumbnail.contentUrl, 
-              width: thumbnail.width, 
-              height: thumbnail.height, 
-              ok: true 
-            };
+            byId[pid] = { url: thumbnail.contentUrl, width: thumbnail.width, height: thumbnail.height, ok: true };
           }
         });
-        console.log('[Thumbnails] API results:', Object.keys(byId).length, 'successful');
+
         setThumbMeta(prev => {
           const next = { ...prev } as Record<string, ThumbMeta>;
           toPrefetch.forEach((f) => {
@@ -233,15 +209,12 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
             if (r && r.ok && r.url && r.width && r.height) {
               next[f.id] = { url: r.url, width: r.width, height: r.height };
             } else if (!next[f.id] && f.thumbnailLink) {
-              // Fallback to Drive thumbnail if API result not ok
               next[f.id] = { url: f.thumbnailLink, width: 1600, height: 900 };
             }
           });
           return next;
         });
-      } catch (error) {
-        console.error('[Thumbnails] API error:', error);
-        // Silent; UI will fallback to Drive thumbnails where available
+      } catch {
         setThumbMeta(prev => {
           const next = { ...prev } as Record<string, ThumbMeta>;
           toPrefetch.forEach(f => {
@@ -252,16 +225,13 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
           return next;
         });
       } finally {
-        // Remove from fetching set
         toPrefetch.forEach(f => fetchingRef.current.delete(f.id));
         isFetchingRef.current = false;
-        
-        // Check if there are more to fetch after a small delay
+
         if (!abortController.signal.aborted) {
           timeoutId = setTimeout(() => {
             const remaining = files.filter(f => needsApiThumbnail(f) && !fetchingRef.current.has(f.id));
             if (remaining.length > 0) {
-              // Trigger a re-render to fetch the next batch
               setThumbMeta(prev => ({ ...prev }));
             }
           }, 500);
@@ -269,23 +239,48 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
       }
     })();
 
-    return () => { 
+    return () => {
       abortController.abort();
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [open, isConnected, files, thumbMeta]);
 
+  // Fetch slide counts
+  useEffect(() => {
+    if (!open || !isConnected || files.length === 0) return;
+
+    const abortController = new AbortController();
+    const needsSlideCount = files.filter(f => slideCountMeta[f.id] === undefined).slice(0, 6);
+    if (needsSlideCount.length === 0) return;
+
+    (async () => {
+      for (const file of needsSlideCount) {
+        if (abortController.signal.aborted) break;
+        try {
+          const metadata = await googleIntegrationApi.getPresentationMetadata(file.id);
+          if (!abortController.signal.aborted) {
+            setSlideCountMeta(prev => ({ ...prev, [file.id]: metadata.slideCount }));
+          }
+        } catch {
+          // Ignore errors
+        }
+        await new Promise(r => setTimeout(r, 200));
+      }
+    })();
+
+    return () => abortController.abort();
+  }, [open, isConnected, files, slideCountMeta]);
+
   const handleImgError = useCallback(async (f: GooglePresentationFile) => {
     const key = f.id;
     const retries = retryCountsRef.current[key] || 0;
-    if (retries >= 2) return; // avoid infinite retries
+    if (retries >= 2) return;
     retryCountsRef.current[key] = retries + 1;
     try {
       const fresh = await googleIntegrationApi.getSlidePageThumbnail(f.id, 'first', { size: 'MEDIUM', mime: 'PNG' });
       const nocacheUrl = `${fresh.contentUrl}${fresh.contentUrl.includes('?') ? '&' : '?'}ts=${Date.now()}`;
       setThumbMeta(prev => ({ ...prev, [key]: { url: nocacheUrl, width: fresh.width, height: fresh.height } }));
     } catch {
-      // fallback to drive thumb if available
       if (f.thumbnailLink) {
         setThumbMeta(prev => ({ ...prev, [key]: { url: f.thumbnailLink!, width: 1600, height: 900 } }));
       }
@@ -294,39 +289,76 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
 
   const handleImport = useCallback(async (file: GooglePresentationFile) => {
     setIsImportingId(file.id);
+    setImportProgress(null);
     let createdDeckId: string | null = null;
+
     try {
-      // 1) Create placeholder deck immediately and announce to deck list
+      // Fetch metadata to check slide count
+      let slideCount = slideCountMeta[file.id];
+      if (!slideCount) {
+        try {
+          const metadata = await googleIntegrationApi.getPresentationMetadata(file.id);
+          slideCount = metadata.slideCount;
+          setSlideCountMeta(prev => ({ ...prev, [file.id]: slideCount }));
+        } catch {
+          slideCount = 0;
+        }
+      }
+
+      // Validate slide limit
+      if (slideCount > MAX_SLIDES_LIMIT) {
+        toast({
+          variant: 'destructive',
+          title: 'Too many slides',
+          description: `This presentation has ${slideCount} slides. Maximum allowed is ${MAX_SLIDES_LIMIT} slides.`
+        });
+        setIsImportingId(null);
+        return;
+      }
+
+      // Create placeholder deck for import (with empty slides - will be replaced by imported content)
       const baseDeck = await createDefaultDeck();
       if (!baseDeck || !baseDeck.uuid) throw new Error('Failed to create base deck');
       createdDeckId = baseDeck.uuid;
 
-      // Update its name quickly so backend has a meaningful title during import
       const importingName = `${file.name}`;
-      updateDeckData({ ...baseDeck, name: importingName, lastModified: new Date().toISOString() }, { skipBackend: true });
-      try { await deckSyncService.saveDeck({ ...baseDeck, name: importingName, lastModified: new Date().toISOString() } as any); } catch {}
+      // Clear the default slide - it will be replaced by imported slides
+      const emptyBaseDeck = { ...baseDeck, name: importingName, slides: [], lastModified: new Date().toISOString() };
+      updateDeckData(emptyBaseDeck, { skipBackend: true });
+      try { await deckSyncService.saveDeck(emptyBaseDeck as any); } catch {}
 
-      // Announce placeholder so DeckList shows loading card
       try {
         window.dispatchEvent(new CustomEvent('deck_created', {
           detail: { deckId: baseDeck.uuid, isGenerating: true, isImporting: true, name: importingName, progress: 5 }
         }));
       } catch {}
 
-      // Close modal immediately
       onOpenChange(false);
-      toast({ title: 'Import started', description: `Importing "${file.name}"…` });
+      toast({ title: 'Import started', description: `Importing "${file.name}" (${slideCount} slides)…` });
 
-      // 2) Start import job and poll in background
       const jobId = await googleIntegrationApi.startImportSlides(file.id);
 
-      // Spinner-only design: no periodic progress events
+      const job = await googleIntegrationApi.pollJob<{ deck: any }>(jobId, {
+        intervalMs: 1500,
+        timeoutMs: 300000,
+        onProgress: (progress) => {
+          setImportProgress(progress);
+          try {
+            window.dispatchEvent(new CustomEvent('deck_progress', {
+              detail: {
+                deckId: baseDeck.uuid,
+                progress: progress.progress,
+                currentSlide: progress.currentSlide,
+                totalSlides: progress.totalSlides
+              }
+            }));
+          } catch {}
+        }
+      });
 
-      const job = await googleIntegrationApi.pollJob<{ deck: any }>(jobId, { intervalMs: 1500, timeoutMs: 180000 });
       const deckJson = (job.result as any)?.deck || job.result;
       if (!deckJson) throw new Error('No deck result returned');
 
-      // 3) Sanitize and save into the created deck
       const sanitizeImportedDeck = (deck: any) => {
         const clone = JSON.parse(JSON.stringify(deck));
         for (const slide of clone.slides || []) {
@@ -352,43 +384,40 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
       };
 
       const cleanedDeckJson = sanitizeImportedDeck(deckJson);
+      // Build final deck - explicitly set slides to imported content only (no default slide)
       const finalDeck = {
-        ...baseDeck,
         uuid: baseDeck.uuid,
         name: cleanedDeckJson.name || importingName,
         slides: cleanedDeckJson.slides || [],
+        size: cleanedDeckJson.size || { width: 1920, height: 1080 },
         lastModified: new Date().toISOString(),
+        createdAt: baseDeck.createdAt,
+        version: baseDeck.version,
       } as any;
 
-      updateDeckData(finalDeck, { skipBackend: true });
+      // Update store and save to backend with imported slides only
+      updateDeckData(finalDeck, { skipBackend: false });
       await deckSyncService.saveDeck(finalDeck);
 
-      // 4) Notify deck list to replace placeholder
       try {
-        // Ensure any loading state turns off immediately
         window.dispatchEvent(new CustomEvent('deck_progress', {
           detail: { deckId: baseDeck.uuid, progress: 100, currentSlide: 1, totalSlides: 1 }
         }));
         window.dispatchEvent(new CustomEvent('deck_created', {
           detail: { deckId: baseDeck.uuid, isGenerating: false }
         }));
-        // Announce import completion for chat suggestion (font optimization)
         window.dispatchEvent(new CustomEvent('deck_import_complete', {
           detail: { deckId: baseDeck.uuid, name: cleanedDeckJson.name || importingName }
         }));
-        try {
-          // Stash a pending message in case user opens the deck later
-          (window as any).__pendingImportMessage = {
-            deckId: baseDeck.uuid,
-            name: cleanedDeckJson.name || importingName,
-            timestamp: Date.now()
-          };
-        } catch {}
+        (window as any).__pendingImportMessage = {
+          deckId: baseDeck.uuid,
+          name: cleanedDeckJson.name || importingName,
+          timestamp: Date.now()
+        };
       } catch {}
 
       toast({ title: 'Import complete', description: `Imported "${file.name}"` });
     } catch (e: any) {
-      // Notify of error so placeholder updates
       if (createdDeckId) {
         try {
           window.dispatchEvent(new CustomEvent('deck_error', { detail: { deckId: createdDeckId, message: e?.message } }));
@@ -396,129 +425,255 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
       }
       toast({ variant: 'destructive', title: 'Import failed', description: e?.message || 'Please try again.' });
     } finally {
-      // Nothing to clean up for spinner-only design
       setIsImportingId(null);
     }
-  }, [createDefaultDeck, updateDeckData, toast, onOpenChange]);
+  }, [createDefaultDeck, updateDeckData, toast, onOpenChange, slideCountMeta]);
 
   const isFirstLoad = files.length === 0 && isListing;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden">
-        <DialogHeader className="p-6 pb-2">
-          <DialogTitle>Import from Google Slides</DialogTitle>
-          <DialogDescription>Connect your Google account, search your Drive presentations, and import a deck.</DialogDescription>
-        </DialogHeader>
-        <div className="px-6 pb-6">
-          {authLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking connection…</div>
-          ) : !isConnected ? (
-            <div className="border rounded-lg p-4 flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium">Connect your Google account</div>
-                <div className="text-xs text-muted-foreground">Enable listing and importing your Google Slides.</div>
-              </div>
-              <Button size="sm" onClick={handleConnect} className="gap-2"><LogIn className="h-4 w-4" /> Connect</Button>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-xs text-muted-foreground">Connected as {connectedEmail || 'your Google account'}</div>
-                <Button variant="ghost" size="icon" onClick={() => listFiles(true)} aria-label="Refresh">
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex items-center gap-2 mb-4">
-                <Input
-                  placeholder="Search presentations by title…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <Select value={scope} onValueChange={(v) => setScope(v as any)}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Mine" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mine">Mine</SelectItem>
-                    <SelectItem value="shared">Shared</SelectItem>
-                    <SelectItem value="all">All</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" onClick={() => listFiles(true)} disabled={isListing}>{isListing ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching…</>) : 'Search'}</Button>
-              </div>
-              {lastError && (
-                <div className="mb-3 text-xs text-red-600 flex items-center justify-between">
-                  <span className="truncate pr-2">{lastError}</span>
-                  <Button size="sm" variant="outline" onClick={handleConnect}>Reconnect Google</Button>
+      <DialogContent
+        hideCloseButton
+        className="p-0 border-0 bg-transparent shadow-none outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+        style={{ width: '720px', maxWidth: '95vw' }}
+      >
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden shadow-2xl relative" style={{ width: '720px', maxWidth: '100%' }}>
+          {/* Close button */}
+          <button
+            onClick={() => onOpenChange(false)}
+            className="absolute top-4 right-4 z-10 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          {/* Orange gradient bar */}
+          <div className="h-[3px] bg-gradient-to-r from-[#FF6B00] via-[#FF8533] to-[#FF6B00]" />
+
+          {/* Header */}
+          <DialogHeader className="px-6 pt-5 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+            <DialogTitle
+              className="text-lg text-zinc-900"
+              style={{
+                fontFamily: '"HK Grotesk Wide", "Hanken Grotesk", sans-serif',
+                fontWeight: 700,
+                letterSpacing: '-0.01em'
+              }}
+            >
+              Import from Google Slides
+            </DialogTitle>
+            <p className="text-sm text-zinc-500 mt-1">
+              Select a presentation to import. Maximum {MAX_SLIDES_LIMIT} slides per import.
+            </p>
+          </DialogHeader>
+
+          {/* Content */}
+          <div className="px-6 py-4" style={{ height: '500px' }}>
+            {authLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex items-center gap-2 text-sm text-zinc-500">
+                  <Loader2 className="h-5 w-5 animate-spin text-[#FF6B00]" />
+                  Checking connection…
                 </div>
-              )}
-              <div className="grid grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-1">
-                {isFirstLoad && Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="border rounded-lg overflow-hidden animate-pulse">
-                    <div className="aspect-[4/3] bg-muted/40" />
-                    <div className="p-3 space-y-2">
-                      <div className="h-3 bg-muted/40 rounded w-3/4" />
-                      <div className="h-2 bg-muted/30 rounded w-1/2" />
-                    </div>
+              </div>
+            ) : !isConnected ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#FF6B00]/10 flex items-center justify-center">
+                    <LogIn className="h-8 w-8 text-[#FF6B00]" />
                   </div>
-                ))}
-                {!isFirstLoad && files.length === 0 && !isListing && (
-                  <div className="col-span-3 text-sm text-muted-foreground">No presentations found.</div>
+                  <h3 className="text-lg font-semibold text-zinc-900 mb-2">Connect Google Account</h3>
+                  <p className="text-sm text-zinc-500 mb-4 max-w-xs">
+                    Connect your Google account to import presentations directly from Google Slides.
+                  </p>
+                  <Button
+                    onClick={handleConnect}
+                    className="bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white font-semibold shadow-lg shadow-orange-500/20"
+                  >
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Connect Google
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col h-full">
+                {/* Search bar */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Search presentations…"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      className="h-9 text-sm bg-zinc-50 border-zinc-200 focus:border-[#FF6B00] focus:ring-[#FF6B00]/20"
+                    />
+                  </div>
+                  <Select value={scope} onValueChange={(v) => setScope(v as any)}>
+                    <SelectTrigger className="w-[100px] h-9 text-sm bg-zinc-50 border-zinc-200">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mine">Mine</SelectItem>
+                      <SelectItem value="shared">Shared</SelectItem>
+                      <SelectItem value="all">All</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => listFiles(true)}
+                    disabled={isListing}
+                    className="h-9 w-9 text-zinc-400 hover:text-zinc-900"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isListing ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+
+                {/* Connected email */}
+                <div className="text-xs text-zinc-400 mb-3">
+                  Connected as {connectedEmail || 'your Google account'}
+                </div>
+
+                {lastError && (
+                  <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center justify-between">
+                    <span className="text-sm text-red-600">{lastError}</span>
+                    <Button size="sm" variant="outline" onClick={handleConnect} className="text-xs">
+                      Reconnect
+                    </Button>
+                  </div>
                 )}
-                {files.map((f) => (
-                  <div key={f.id} className="group relative border rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
-                    <div
-                      className="w-full bg-muted/30 flex items-center justify-center overflow-hidden"
-                      style={{ aspectRatio: thumbMeta[f.id] ? `${thumbMeta[f.id].width} / ${thumbMeta[f.id].height}` : '16 / 9' }}
-                    >
-                      {thumbMeta[f.id]?.url || f.thumbnailLink ? (
-                        <img
-                          src={(thumbMeta[f.id]?.url || f.thumbnailLink)!}
-                          width={thumbMeta[f.id]?.width || 1600}
-                          height={thumbMeta[f.id]?.height || 900}
-                          alt={f.name}
-                          className="w-full h-full object-contain"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={() => handleImgError(f)}
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center text-muted-foreground">
-                          <Loader2 className="h-6 w-6 animate-spin" />
-                          <span className="text-xs mt-2">Preview loading…</span>
+
+                {/* Grid */}
+                <div className="flex-1 overflow-y-auto">
+                  <div className="grid grid-cols-3 gap-3">
+                    {isFirstLoad && Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="rounded-xl overflow-hidden border border-zinc-200 animate-pulse bg-zinc-50">
+                        <div style={{ aspectRatio: '16 / 9' }} className="bg-zinc-200" />
+                        <div className="p-3 space-y-2">
+                          <div className="h-3 bg-zinc-200 rounded w-3/4" />
+                          <div className="h-2 bg-zinc-100 rounded w-1/2" />
+                        </div>
+                      </div>
+                    ))}
+
+                    {!isFirstLoad && files.length === 0 && !isListing && (
+                      <div className="col-span-3 flex flex-col items-center justify-center py-12 text-zinc-400">
+                        <Layers className="h-12 w-12 mb-3 opacity-30" />
+                        <p className="text-sm">No presentations found</p>
+                      </div>
+                    )}
+
+                    {files.map((f) => {
+                      const slideCount = slideCountMeta[f.id];
+                      const exceedsLimit = slideCount !== undefined && slideCount > MAX_SLIDES_LIMIT;
+
+                      return (
+                        <div
+                          key={f.id}
+                          className={`group rounded-xl overflow-hidden border transition-all ${
+                            exceedsLimit
+                              ? 'border-red-200 bg-red-50/50 opacity-70'
+                              : 'border-zinc-200 bg-white hover:border-[#FF6B00]/50 hover:shadow-md'
+                          }`}
+                        >
+                          {/* Thumbnail */}
+                          <div className="relative" style={{ aspectRatio: '16 / 9' }}>
+                            {thumbMeta[f.id]?.url || f.thumbnailLink ? (
+                              <img
+                                src={(thumbMeta[f.id]?.url || f.thumbnailLink)!}
+                                alt={f.name}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                onError={() => handleImgError(f)}
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-zinc-100 flex items-center justify-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-zinc-300" />
+                              </div>
+                            )}
+
+                            {/* Slide count badge */}
+                            {slideCount !== undefined && (
+                              <div className={`absolute bottom-2 right-2 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${
+                                exceedsLimit ? 'bg-red-500 text-white' : 'bg-black/60 text-white'
+                              }`}>
+                                <Layers className="h-3 w-3" />
+                                {slideCount}
+                              </div>
+                            )}
+
+                            {/* Exceeds limit warning */}
+                            {exceedsLimit && (
+                              <div className="absolute top-2 left-2 right-2">
+                                <div className="bg-red-500 text-white text-[10px] font-medium px-2 py-1 rounded flex items-center gap-1">
+                                  <AlertCircle className="h-3 w-3" />
+                                  Exceeds {MAX_SLIDES_LIMIT} slide limit
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="p-3">
+                            <div className="text-sm font-medium text-zinc-900 truncate mb-1" title={f.name}>
+                              {f.name}
+                            </div>
+                            <div className="text-[10px] text-zinc-400 flex items-center gap-2 mb-3">
+                              {f.modifiedTime && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {new Date(f.modifiedTime).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Import button */}
+                            {isImportingId === f.id && importProgress ? (
+                              <div className="space-y-1.5">
+                                <Progress value={importProgress.progress} className="h-1.5" />
+                                <div className="text-[10px] text-zinc-500 text-center">
+                                  Slide {importProgress.currentSlide} of {importProgress.totalSlides}
+                                </div>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className={`w-full h-8 text-xs font-semibold ${
+                                  exceedsLimit
+                                    ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-[#FF6B00] to-[#FF8533] hover:from-[#E65D00] hover:to-[#E67420] text-white shadow-sm'
+                                }`}
+                                onClick={() => handleImport(f)}
+                                disabled={isImportingId === f.id || exceedsLimit}
+                              >
+                                {isImportingId === f.id ? (
+                                  <><Loader2 className="h-3 w-3 animate-spin mr-1" />Checking…</>
+                                ) : exceedsLimit ? (
+                                  'Too Many Slides'
+                                ) : (
+                                  'Import'
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Sentinel for infinite scroll */}
+                    <div ref={sentinelRef} className="col-span-3 h-8 flex items-center justify-center">
+                      {hasMore && isListing && files.length > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-zinc-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading more…
                         </div>
                       )}
                     </div>
-                    <div className="p-3">
-                      <div className="text-sm font-medium truncate" title={f.name}>{f.name}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-2">
-                        {f.modifiedTime && (
-                          <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(f.modifiedTime).toLocaleString()}</span>
-                        )}
-                        {f.owners?.[0]?.emailAddress && (
-                          <span className="inline-flex items-center gap-1"><UserIcon className="h-3 w-3" />{f.owners[0].emailAddress}</span>
-                        )}
-                      </div>
-                      <div className="mt-2 flex justify-end">
-                        <Button size="sm" onClick={() => handleImport(f)} disabled={isImportingId === f.id}>
-                          {isImportingId === f.id ? (<><Loader2 className="h-4 w-4 animate-spin mr-2" />Importing…</>) : 'Import'}
-                        </Button>
-                      </div>
-                    </div>
                   </div>
-                ))}
-                {/* Sentinel */}
-                <div ref={sentinelRef} className="col-span-3 h-8 flex items-center justify-center">
-                  {hasMore && isListing && files.length > 0 && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading more…
-                    </div>
-                  )}
                 </div>
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -526,5 +681,3 @@ const GoogleSlidesImportModal: React.FC<GoogleSlidesImportModalProps> = ({ open,
 };
 
 export default GoogleSlidesImportModal;
-
-

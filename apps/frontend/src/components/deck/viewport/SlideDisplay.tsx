@@ -7,6 +7,7 @@ import { DEFAULT_SLIDE_WIDTH, DEFAULT_SLIDE_HEIGHT } from '@/utils/deckUtils';
 import { DeckStatus } from '@/types/DeckTypes';
 import { useMultiSelection } from '@/hooks/useMultiSelection';
 import SelectionRectangle from '@/components/SelectionRectangle';
+import { useEditorStore } from '@/stores/editorStore';
 import GroupContextMenu from '@/components/GroupContextMenu';
 import SimpleSlideDisplay from './SimpleSlideDisplay';
 import SlideGeneratingUI from '../../common/SlideGeneratingUI';
@@ -83,6 +84,14 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
     slide.components && slide.components.length > 0 && slide.status === 'completed'
   );
 
+  // Check if current slide has real content (not just background)
+  const currentSlideHasRealContent = React.useMemo(() => {
+    if (!currentSlide?.components) return false;
+    return currentSlide.components.some(
+      (c) => c.type !== 'Background' && !c.id?.toLowerCase().includes('background')
+    );
+  }, [currentSlide?.components]);
+
   // Check if generation is still in progress - deckStatus takes priority over slide content
   // This ensures SVG animation shows even if some slides are already generated
   const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating' || deckStatus?.state === 'pending';
@@ -115,6 +124,9 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
   //     selectionRectangle
   //   });
   // }, [isEditing, currentSlide?.id, selectionRectangle]);
+  
+  // Get editor store methods
+  const { isComponentSelected } = useEditorStore();
   
   // Log the entire slides array received as a prop
   if (slides) {
@@ -340,8 +352,9 @@ const SlideDisplay: React.FC<SlideDisplayProps> = memo(({
         </div>
       );
     }
-    // Check if deck is generating but we have no slides at all
-    if (isGenerating && deckStatus && deckStatus.totalSlides > 0 && slides.length === 0) {
+    // Check if deck is generating and we need to show the generating UI
+    // Show when: generating AND (no slides OR current slide has no real content)
+    if (isGenerating && deckStatus && deckStatus.totalSlides > 0 && (slides.length === 0 || !currentSlideHasRealContent)) {
       // Only create placeholders if we truly have no slides
       const placeholderSlides = Array.from({ length: deckStatus.totalSlides }, (_, index) => ({
         id: `placeholder-${index}`,

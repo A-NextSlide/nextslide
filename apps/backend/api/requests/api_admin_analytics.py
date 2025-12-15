@@ -590,40 +590,56 @@ async def get_user_segments(
         segments = []
 
         if segment_by == "activity":
-            # Segment by activity level
+            # Segment by activity level - use deck activity as proxy (more reliable than last_sign_in_at)
             total = supabase.table("users").select("id", count="exact").execute()
             total_count = total.count or 1
 
-            # Power users (logged in last 7 days AND have 5+ decks)
-            now = datetime.utcnow()
-            week_ago = now - timedelta(days=7)
+            now = datetime.now(timezone.utc)
+            week_ago = (now - timedelta(days=7)).isoformat()
+            month_ago = (now - timedelta(days=30)).isoformat()
 
-            active_recent = supabase.table("users").select("id", count="exact").gte(
-                "last_sign_in_at", week_ago.isoformat()
+            # Get all users
+            all_users = supabase.table("users").select("id").execute()
+            all_user_ids = set(u.get("id") for u in (all_users.data or []))
+
+            # Active in last 7 days: users who created or updated decks recently
+            active_7d_decks = supabase.table("decks").select("user_id").gte(
+                "updated_at", week_ago
             ).execute()
+            active_7d_users = set(d.get("user_id") for d in (active_7d_decks.data or []) if d.get("user_id"))
 
-            month_ago = now - timedelta(days=30)
-            active_month = supabase.table("users").select("id", count="exact").gte(
-                "last_sign_in_at", month_ago.isoformat()
-            ).lt("last_sign_in_at", week_ago.isoformat()).execute()
+            # Active in last 30 days (but not 7 days)
+            active_30d_decks = supabase.table("decks").select("user_id").gte(
+                "updated_at", month_ago
+            ).lt("updated_at", week_ago).execute()
+            active_30d_users = set(d.get("user_id") for d in (active_30d_decks.data or []) if d.get("user_id"))
+            # Remove users who are already in 7d active
+            active_30d_users = active_30d_users - active_7d_users
 
-            inactive = supabase.table("users").select("id", count="exact").lt(
-                "last_sign_in_at", month_ago.isoformat()
-            ).execute()
+            # Users with any deck activity (ever)
+            any_deck_users = supabase.table("decks").select("user_id").execute()
+            users_with_decks = set(d.get("user_id") for d in (any_deck_users.data or []) if d.get("user_id"))
 
-            never_active = supabase.table("users").select("id", count="exact").is_(
-                "last_sign_in_at", "null"
-            ).execute()
+            # Inactive: have decks but no activity in 30 days
+            inactive_users = users_with_decks - active_7d_users - active_30d_users
+
+            # Never active: no decks at all
+            never_active_users = all_user_ids - users_with_decks
+
+            active_7d_count = len(active_7d_users)
+            active_30d_count = len(active_30d_users)
+            inactive_count = len(inactive_users)
+            never_count = len(never_active_users)
 
             segments = [
-                {"segment": "Active (7d)", "count": active_recent.count or 0,
-                 "percentage": round(((active_recent.count or 0) / total_count) * 100, 1)},
-                {"segment": "Recent (30d)", "count": active_month.count or 0,
-                 "percentage": round(((active_month.count or 0) / total_count) * 100, 1)},
-                {"segment": "Inactive", "count": inactive.count or 0,
-                 "percentage": round(((inactive.count or 0) / total_count) * 100, 1)},
-                {"segment": "Never Active", "count": never_active.count or 0,
-                 "percentage": round(((never_active.count or 0) / total_count) * 100, 1)},
+                {"segment": "Active (7d)", "count": active_7d_count,
+                 "percentage": round((active_7d_count / total_count) * 100, 1)},
+                {"segment": "Recent (30d)", "count": active_30d_count,
+                 "percentage": round((active_30d_count / total_count) * 100, 1)},
+                {"segment": "Inactive", "count": inactive_count,
+                 "percentage": round((inactive_count / total_count) * 100, 1)},
+                {"segment": "Never Active", "count": never_count,
+                 "percentage": round((never_count / total_count) * 100, 1)},
             ]
 
         elif segment_by == "plan":
@@ -1242,4 +1258,228 @@ async def export_analytics(
 
     except Exception as e:
         logger.error(f"Export error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# FINANCIAL ENDPOINTS
+# ============================================================================
+
+class FinancialActualsResponse(BaseModel):
+    """Response model for financial actuals"""
+    period: Dict[str, str]
+    users: Dict[str, Any]
+    decks: Dict[str, Any]
+    credits: Dict[str, Any]
+    revenue: Dict[str, Any]
+    monthly_history: List[Dict[str, Any]]
+
+
+class UsagePatternsResponse(BaseModel):
+    """Response model for usage patterns"""
+    avg_decks_per_user: float
+    avg_slides_per_deck: float
+    avg_edits_per_deck: float
+    avg_research_calls_per_deck: float
+    custom_component_rate: float
+
+
+@router.get("/financial/actuals")
+async def get_financial_actuals(
+    request: Request,
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+) -> Dict[str, Any]:
+    """
+    Get financial actuals including users, decks, credits, and revenue data.
+    Pulls real data from the database for financial planning.
+    """
+    try:
+        supabase = get_supabase_client()
+        start, end = get_date_range_filter(start_date, end_date)
+
+        # Get user counts
+        total_users = supabase.table("users").select("id", count="exact").execute()
+        new_users = supabase.table("users").select("id", count="exact").gte(
+            "created_at", start.isoformat()
+        ).lte("created_at", end.isoformat()).execute()
+
+        # Active users (based on last_sign_in_at in period)
+        active_users = supabase.table("users").select("id", count="exact").gte(
+            "last_sign_in_at", start.isoformat()
+        ).execute()
+
+        # Get deck counts
+        total_decks = supabase.table("decks").select("id", count="exact").execute()
+        new_decks = supabase.table("decks").select("id", count="exact").gte(
+            "created_at", start.isoformat()
+        ).lte("created_at", end.isoformat()).execute()
+
+        # Get total slides (count from slides array in decks)
+        decks_with_slides = supabase.table("decks").select("slides").execute()
+        total_slides = 0
+        for deck in (decks_with_slides.data or []):
+            slides = deck.get("slides")
+            if slides and isinstance(slides, list):
+                total_slides += len(slides)
+
+        # Get credit usage
+        credit_usage = supabase.table("credit_transactions").select(
+            "amount"
+        ).lt("amount", 0).gte(
+            "created_at", start.isoformat()
+        ).lte("created_at", end.isoformat()).execute()
+
+        credits_used = abs(sum(t.get("amount", 0) for t in (credit_usage.data or [])))
+
+        # Get revenue from subscriptions table (if exists)
+        # Calculate MRR from plan_id since we store plan names not dollar amounts
+        plan_prices = {
+            "starter": 9,
+            "pro": 19,
+            "team": 49,
+            "enterprise": 99,
+        }
+        mrr = 0
+        paid_users = 0
+        try:
+            subs = supabase.table("subscriptions").select(
+                "id, plan_id, status"
+            ).eq("status", "active").neq("plan_id", "free").execute()
+
+            if subs.data:
+                paid_users = len(subs.data)
+                mrr = sum(plan_prices.get(s.get("plan_id", ""), 0) for s in subs.data)
+        except Exception as sub_err:
+            logger.warning(f"No subscriptions table or error: {sub_err}")
+
+        # Calculate averages
+        user_count = total_users.count or 1
+        deck_count = total_decks.count or 1
+
+        avg_decks_per_user = deck_count / user_count if user_count > 0 else 0
+        avg_slides_per_deck = total_slides / deck_count if deck_count > 0 else 0
+
+        # Calculate ARPU (Average Revenue Per User)
+        arpu = mrr / paid_users if paid_users > 0 else 0
+
+        # Get monthly history (last 6 months)
+        monthly_history = []
+        for i in range(6):
+            month_end = datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)
+            month_end = month_end.replace(day=1) - timedelta(days=30 * i)
+            month_start = month_end.replace(day=1)
+
+            month_users = supabase.table("users").select("id", count="exact").lte(
+                "created_at", month_end.isoformat()
+            ).execute()
+
+            month_decks = supabase.table("decks").select("id", count="exact").gte(
+                "created_at", month_start.isoformat()
+            ).lte("created_at", month_end.isoformat()).execute()
+
+            monthly_history.append({
+                "month": month_start.strftime("%Y-%m"),
+                "users": month_users.count or 0,
+                "decks": month_decks.count or 0,
+                "revenue": 0,  # Would pull from subscriptions
+                "costs": 0,    # Would calculate from usage
+            })
+
+        monthly_history.reverse()  # Oldest first
+
+        return {
+            "period": {"start": start_date, "end": end_date},
+            "users": {
+                "total": total_users.count or 0,
+                "active_30d": active_users.count or 0,
+                "new_this_month": new_users.count or 0,
+                "churned_this_month": 0,  # Would track from status changes
+            },
+            "decks": {
+                "total": total_decks.count or 0,
+                "created_this_month": new_decks.count or 0,
+                "avg_per_user": round(avg_decks_per_user, 2),
+                "avg_slides_per_deck": round(avg_slides_per_deck, 1),
+                "total_slides": total_slides,
+            },
+            "credits": {
+                "used_this_month": credits_used,
+                "avg_per_deck": round(credits_used / max(1, new_decks.count or 1), 1),
+                "avg_per_user": round(credits_used / max(1, user_count), 1),
+            },
+            "revenue": {
+                "mrr": mrr,
+                "arr": mrr * 12,
+                "paid_users": paid_users,
+                "arpu": round(arpu, 2),
+            },
+            "monthly_history": monthly_history,
+        }
+
+    except Exception as e:
+        logger.error(f"Financial actuals error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/financial/usage-patterns")
+async def get_usage_patterns(
+    request: Request,
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+) -> Dict[str, Any]:
+    """
+    Get usage patterns for cost estimation.
+    Returns averages for decks/user, slides/deck, etc.
+    """
+    try:
+        supabase = get_supabase_client()
+        start, end = get_date_range_filter(start_date, end_date)
+
+        # Get user and deck counts
+        total_users = supabase.table("users").select("id", count="exact").execute()
+        total_decks = supabase.table("decks").select("id", count="exact").execute()
+
+        # Get total slides
+        decks_with_slides = supabase.table("decks").select("slides").execute()
+        total_slides = 0
+        for deck in (decks_with_slides.data or []):
+            slides = deck.get("slides")
+            if slides and isinstance(slides, list):
+                total_slides += len(slides)
+
+        user_count = total_users.count or 1
+        deck_count = total_decks.count or 1
+
+        avg_decks_per_user = deck_count / user_count if user_count > 0 else 0
+        avg_slides_per_deck = total_slides / deck_count if deck_count > 0 else 10  # Default 10
+
+        # Estimate edits per deck (could be tracked in audit logs if available)
+        # For now, use reasonable defaults based on typical usage
+        avg_edits_per_deck = 3.0  # Typical: create, refine, polish
+
+        # Research calls per deck (1 for outline + 1-2 for research)
+        avg_research_calls = 2.0
+
+        # Custom component rate (percentage of slides with custom components)
+        custom_component_rate = 0.30  # 30% of slides have custom components
+
+        return {
+            "avg_decks_per_user": round(avg_decks_per_user, 2),
+            "avg_slides_per_deck": round(avg_slides_per_deck, 1),
+            "avg_edits_per_deck": avg_edits_per_deck,
+            "avg_research_calls_per_deck": avg_research_calls,
+            "custom_component_rate": custom_component_rate,
+            "period": {"start": start_date, "end": end_date},
+            "sample_size": {
+                "users": user_count,
+                "decks": deck_count,
+                "slides": total_slides,
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Usage patterns error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

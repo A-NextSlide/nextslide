@@ -13,6 +13,20 @@ export interface GooglePresentationFile {
   modifiedTime?: string;
   owners?: Array<{ emailAddress?: string }>;
   thumbnailLink?: string;
+  slideCount?: number; // Added for UI display
+}
+
+export interface PresentationMetadata {
+  presentationId: string;
+  title: string;
+  slideCount: number;
+  pageSize?: { width?: { magnitude?: number }; height?: { magnitude?: number } };
+}
+
+export interface JobProgress {
+  currentSlide: number;
+  totalSlides: number;
+  progress: number; // 0-100
 }
 
 export interface JobResponse<T = any> {
@@ -21,6 +35,7 @@ export interface JobResponse<T = any> {
   status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
   result?: T;
   error?: string;
+  progress?: JobProgress;
 }
 
 // Simple in-memory thumbnail cache (30-minute URL TTL is handled server-side)
@@ -57,6 +72,12 @@ async function listPresentations(params?: { query?: string; pageToken?: string; 
   return res.data as { files: GooglePresentationFile[]; nextPageToken?: string };
 }
 
+async function getPresentationMetadata(presentationId: string): Promise<PresentationMetadata> {
+  const res = await apiClient.get<PresentationMetadata>(`/google/slides/${encodeURIComponent(presentationId)}/metadata`, { noHardResetOn401: true });
+  if (!res.ok) throw new Error(res.error || 'Failed to get presentation metadata');
+  return res.data as PresentationMetadata;
+}
+
 async function startImportSlides(presentationId: string) {
   const res = await apiClient.post<{ jobId: string }>(`/import/slides`, { presentationId });
   if (!res.ok) throw new Error(res.error || 'Failed to start import');
@@ -69,13 +90,24 @@ async function getJob(jobId: string) {
   return res.data as JobResponse;
 }
 
-async function pollJob<T = any>(jobId: string, opts: { intervalMs?: number; timeoutMs?: number } = {}) {
+async function pollJob<T = any>(
+  jobId: string,
+  opts: {
+    intervalMs?: number;
+    timeoutMs?: number;
+    onProgress?: (progress: JobProgress) => void;
+  } = {}
+) {
   const intervalMs = opts.intervalMs ?? 1500;
-  const timeoutMs = opts.timeoutMs ?? 120000;
+  const timeoutMs = opts.timeoutMs ?? 180000; // 3 min default
   const start = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const job = await getJob(jobId);
+    // Report progress if callback provided
+    if (opts.onProgress && job.progress) {
+      opts.onProgress(job.progress);
+    }
     if (job.status === 'SUCCEEDED') return job as JobResponse<T>;
     if (job.status === 'FAILED') throw new Error(job.error || 'Job failed');
     if (Date.now() - start > timeoutMs) throw new Error('Job timed out');
@@ -100,6 +132,7 @@ export const googleIntegrationApi = {
   initiateAuth,
   disconnect,
   listPresentations,
+  getPresentationMetadata,
   startImportSlides,
   getJob,
   pollJob,

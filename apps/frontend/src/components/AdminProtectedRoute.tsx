@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { API_CONFIG } from '@/config/environment';
+import { AdminDataProvider } from '@/context/AdminDataContext';
 
 interface AdminProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +12,44 @@ interface AdminProtectedRouteProps {
 // Cache admin verification to avoid re-checking on every route change
 let cachedVerification: { userId: string; verified: boolean; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Minimal admin layout shell for loading states (prevents layout jump)
+const AdminLoadingShell: React.FC = () => {
+  return (
+    <div className="min-h-screen w-full bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col">
+      {/* Top Bar */}
+      <header className="h-12 bg-white dark:bg-[#111] border-b border-[#eaeaea] dark:border-[#333] fixed top-0 left-0 right-0 z-40">
+        <div className="h-full flex items-center justify-between px-4">
+          <div className="flex items-center gap-6">
+            <Link to="/admin" className="flex items-center gap-2">
+              <span className="font-semibold text-sm">nextslide</span>
+              <span className="text-[#666] dark:text-[#888] text-xs">/</span>
+              <span className="text-[#666] dark:text-[#888] text-sm">admin</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+      {/* Main Content - Loading skeleton */}
+      <main className="pt-12 flex-1 w-full h-[calc(100vh-3rem)] overflow-auto">
+        <div className="w-full h-full px-4 py-4">
+          <div className="space-y-3 animate-pulse">
+            <div className="h-6 w-32 bg-zinc-200 dark:bg-zinc-800 rounded" />
+            <div className="grid grid-cols-4 gap-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-20 bg-zinc-200 dark:bg-zinc-800 rounded" />
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[...Array(2)].map((_, i) => (
+                <div key={i} className="h-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
 
 const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) => {
   const { user, isLoading: authLoading, isAdmin, adminRole, isAdminLoading, refreshAdminStatus } = useAuth();
@@ -101,14 +140,14 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
     })();
   }, [authLoading, user?.id, hasAdminAccess]);
 
-  // Show loading only on initial auth check, not on cached verification
+  // Show loading shell during initial auth check (prevents layout jump)
   if (authLoading || isAdminLoading) {
-    return null; // Let the layout show, avoid full-screen loading flash
+    return <AdminLoadingShell />;
   }
 
-  // Only show loading during active verification (first time)
+  // Show loading shell during active verification (first time)
   if (verifying && verified === null) {
-    return null; // Avoid loading flash, let pages handle their own loading
+    return <AdminLoadingShell />;
   }
 
   if (!user) {
@@ -119,12 +158,12 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
     return <Navigate to="/app" replace />;
   }
 
-  // Allow rendering while verification completes if we have cached/context admin status
+  // Show loading shell while verification completes if we don't have cached/context admin status
   if (verified === null && !hasAdminAccess) {
-    return null;
+    return <AdminLoadingShell />;
   }
 
-  return <>{children}</>;
+  return <AdminDataProvider>{children}</AdminDataProvider>;
 };
 
 export default AdminProtectedRoute;

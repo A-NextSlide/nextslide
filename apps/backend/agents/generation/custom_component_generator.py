@@ -1603,6 +1603,7 @@ EVERY INTERACTIVE ELEMENT MUST:
 - DO something visible when clicked/hovered
 - Provide satisfying feedback (animations, state changes)
 - Be discoverable and intuitive
+- For professional/business presentations: Keep it polished and impressive with sleek animations, elegant transitions, and stunning visuals - but NO confetti, party effects, or childish gimmicks unless explicitly requested
 
 Z-INDEX LAYERING (CRITICAL - titles must ALWAYS be visible):
 - Background/decorative elements: z-index: 1-10
@@ -2394,10 +2395,26 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
         # Upload each external URL to our bucket
         result = html
         uploaded_count = 0
+        removed_count = 0
+
+        # Deprecated/broken services that should be removed immediately
+        BROKEN_SERVICES = ['source.unsplash.com']
 
         try:
             async with ImageStorageService() as storage:
                 for match, external_url in external_urls:
+                    old_tag = match.group(0)
+
+                    # Check for known broken services (deprecated APIs, etc.)
+                    is_broken_service = any(svc in external_url.lower() for svc in BROKEN_SERVICES)
+                    if is_broken_service:
+                        logger.warning(f"[BUCKET_UPLOAD] Removing broken service URL: {external_url[:50]}...")
+                        print(f"[BUCKET_UPLOAD] 🗑️ Removing deprecated URL: {external_url[:40]}...")
+                        # Remove the entire img tag
+                        result = result.replace(old_tag, '', 1)
+                        removed_count += 1
+                        continue
+
                     try:
                         logger.info(f"[BUCKET_UPLOAD] Uploading: {external_url[:70]}...")
                         # Upload to our bucket
@@ -2407,7 +2424,6 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
                             bucket_url = upload_result['url']
 
                             # Simply replace the URL in the matched img tag
-                            old_tag = match.group(0)
                             new_tag = old_tag.replace(external_url, bucket_url)
 
                             # Replace in result
@@ -2418,12 +2434,18 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
                             print(f"[BUCKET_UPLOAD] ✅ {external_url[:30]}... -> bucket")
                         else:
                             error_msg = upload_result.get('error', 'Unknown error')
-                            logger.warning(f"[BUCKET_UPLOAD] Failed to upload: {external_url[:50]}... - {error_msg}")
-                            print(f"[BUCKET_UPLOAD] ⚠️ Failed: {external_url[:30]}... - {error_msg}")
+                            logger.warning(f"[BUCKET_UPLOAD] Failed to upload, removing img: {external_url[:50]}... - {error_msg}")
+                            print(f"[BUCKET_UPLOAD] ⚠️ Failed, removing: {external_url[:30]}...")
+                            # Remove the broken img tag
+                            result = result.replace(old_tag, '', 1)
+                            removed_count += 1
 
                     except Exception as e:
                         logger.error(f"[BUCKET_UPLOAD] Exception uploading {external_url[:50]}: {e}", exc_info=True)
-                        print(f"[BUCKET_UPLOAD] ❌ Error: {external_url[:30]}... - {e}")
+                        print(f"[BUCKET_UPLOAD] ❌ Error, removing: {external_url[:30]}... - {e}")
+                        # Remove the broken img tag
+                        result = result.replace(old_tag, '', 1)
+                        removed_count += 1
         except Exception as e:
             logger.error(f"[BUCKET_UPLOAD] Failed to create ImageStorageService: {e}", exc_info=True)
             print(f"[BUCKET_UPLOAD] ❌ Storage service error: {e}")
@@ -2452,11 +2474,14 @@ OUTPUT: Complete HTML starting with <!DOCTYPE html>"""
                 except Exception as e:
                     logger.error(f"[BUCKET_UPLOAD] Exception uploading BG {url[:50]}: {e}")
 
-        if uploaded_count > 0:
-            logger.info(f"[BUCKET_UPLOAD] Successfully uploaded {uploaded_count} images to bucket")
-            print(f"[BUCKET_UPLOAD] 🎉 Uploaded {uploaded_count} images to bucket!")
+        if uploaded_count > 0 or removed_count > 0:
+            logger.info(f"[BUCKET_UPLOAD] Uploaded {uploaded_count}, removed {removed_count} images")
+            if uploaded_count > 0:
+                print(f"[BUCKET_UPLOAD] 🎉 Uploaded {uploaded_count} images to bucket!")
+            if removed_count > 0:
+                print(f"[BUCKET_UPLOAD] 🗑️ Removed {removed_count} broken/external images")
         else:
-            logger.warning("[BUCKET_UPLOAD] No images were successfully uploaded")
+            logger.debug("[BUCKET_UPLOAD] No external images found to process")
 
         return result
 

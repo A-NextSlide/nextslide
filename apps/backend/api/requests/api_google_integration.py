@@ -7,7 +7,7 @@ import hashlib
 import logging
 import tempfile
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import asyncio
 
 import httpx
@@ -528,9 +528,13 @@ class JobStatus:
 
 class ConversionJobs:
     def __init__(self):
-        from utils.supabase import get_supabase_client
+        # In-memory progress cache for quick updates without DB writes
+        self._progress_cache: Dict[str, Dict[str, Any]] = {}
 
-        self.supabase = get_supabase_client()
+    def _get_client(self):
+        """Get a fresh Supabase client for each operation to avoid stale connections."""
+        from utils.supabase import get_supabase_client
+        return get_supabase_client()
 
     def create(self, user_id: str, job_type: str, input_payload: Dict[str, Any]) -> str:
         job_id = str(uuid.uuid4())
@@ -543,7 +547,8 @@ class ConversionJobs:
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
         }
-        self.supabase.table("conversion_jobs").insert(row).execute()
+        self._get_client().table("conversion_jobs").insert(row).execute()
+        self._progress_cache[job_id] = {"currentSlide": 0, "totalSlides": 0, "progress": 0}
         return job_id
 
     def update(self, job_id: str, status: str, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> None:
@@ -552,1245 +557,1555 @@ class ConversionJobs:
             payload["result"] = result
         if error is not None:
             payload["error"] = error
-        self.supabase.table("conversion_jobs").update(payload).eq("id", job_id).execute()
+        self._get_client().table("conversion_jobs").update(payload).eq("id", job_id).execute()
+        # Clear progress cache on completion
+        if status in (JobStatus.SUCCEEDED, JobStatus.FAILED):
+            self._progress_cache.pop(job_id, None)
+
+    def update_progress(self, job_id: str, current_slide: int, total_slides: int) -> None:
+        """Update job progress (in-memory only for speed)."""
+        progress = int((current_slide / total_slides) * 100) if total_slides > 0 else 0
+        self._progress_cache[job_id] = {
+            "currentSlide": current_slide,
+            "totalSlides": total_slides,
+            "progress": progress
+        }
 
     def get(self, job_id: str) -> Optional[Dict[str, Any]]:
-        res = self.supabase.table("conversion_jobs").select("*").eq("id", job_id).limit(1).execute()
+        res = self._get_client().table("conversion_jobs").select("*").eq("id", job_id).limit(1).execute()
         if not res.data:
             return None
-        return res.data[0]
+        job = res.data[0]
+        # Merge in-memory progress data
+        if job_id in self._progress_cache:
+            job["progress"] = self._progress_cache[job_id]
+        return job
 
 
 jobs_store = ConversionJobs()
 
 
-async def _map_slides_to_internal(presentation: Dict[str, Any]) -> Dict[str, Any]:
-    def _to_hex_color(color: Dict[str, Any], default: str = "#000000FF") -> str:
+# ==============================================================================
+# Google Slides to CustomComponent Converter
+# ==============================================================================
+#
+# This module converts Google Slides presentations directly to CustomComponents.
+# Each slide becomes a single CustomComponent that renders the slide as HTML/CSS,
+# providing perfect visual fidelity without needing to map to individual components.
+# ==============================================================================
+
+
+async def _convert_google_slides_to_custom_components(
+    presentation: Dict[str, Any],
+    user_id: str,
+    access_token: str,
+    job_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Convert a Google Slides presentation to a deck using CustomComponents.
+
+    Uses DIRECT DATA PARSING - no vision AI. Reads exact positions, sizes, fonts,
+    colors from Google Slides API and generates deterministic HTML.
+
+    Args:
+        presentation: The Google Slides API presentation data
+        user_id: The user's ID for authentication
+        access_token: OAuth access token for downloading images
+        job_id: Optional job ID for progress tracking
+
+    Returns:
+        A deck dictionary with slides containing CustomComponents
+    """
+    # Get presentation metadata
+    title = presentation.get("title", "Imported Presentation")
+    presentation_id = presentation.get("presentationId", "")
+    slides_data = presentation.get("slides", [])
+
+    # Get page size for coordinate conversion
+    page_size = presentation.get("pageSize", {})
+    page_width_emu = page_size.get("width", {}).get("magnitude", 9144000)
+    page_height_emu = page_size.get("height", {}).get("magnitude", 5143500)
+
+    logger.info(f"[GoogleSlidesImport] ===== STARTING IMPORT =====")
+    logger.info(f"[GoogleSlidesImport] Presentation: {title} ({presentation_id})")
+    logger.info(f"[GoogleSlidesImport] Page size: {page_width_emu} x {page_height_emu} EMU")
+    logger.info(f"[GoogleSlidesImport] Slide count: {len(slides_data)}")
+
+    # Extract theme colors for reference
+    theme_colors = _extract_theme_colors(presentation)
+    logger.info(f"[GoogleSlidesImport] Theme colors: {theme_colors}")
+
+    slides_out = []
+    total_slides = len(slides_data)
+
+    for idx, slide in enumerate(slides_data):
+        slide_id = slide.get("objectId", str(uuid.uuid4()))
+        slide_title = _extract_slide_title(slide) or f"Slide {idx + 1}"
+
+        logger.info(f"[GoogleSlidesImport] ----- Processing slide {idx + 1}/{total_slides}: {slide_id} -----")
+
         try:
-            if not isinstance(color, dict):
-                return default
-            rgb = None
-            alpha = 1.0
-            if "rgbColor" in color:
-                rgb = color.get("rgbColor") or {}
-            elif "themeColor" in color:
-                # Approximate common Google theme colors
-                tc = str(color.get("themeColor") or "").upper()
-                theme_map = {
-                    "BACKGROUND": "#FFFFFFFF",
-                    "TEXT": "#000000FF",
-                    "ACCENT1": "#1A73E8FF",
-                    "ACCENT2": "#FBBC04FF",
-                    "ACCENT3": "#34A853FF",
-                    "ACCENT4": "#EA4335FF",
-                    "ACCENT5": "#A142F4FF",
-                    "ACCENT6": "#00ACC1FF",
-                    "LINK": "#1A73E8FF",
-                    "THEME_COLOR_UNSPECIFIED": default,
-                }
-                return theme_map.get(tc, default)
-            # Google may use separate alpha
-            if "alpha" in color:
-                try:
-                    alpha = float(color.get("alpha"))
-                except Exception:
-                    alpha = 1.0
-            r = int(round(float(rgb.get("red", 0)) * 255)) if rgb else 0
-            g = int(round(float(rgb.get("green", 0)) * 255)) if rgb else 0
-            b = int(round(float(rgb.get("blue", 0)) * 255)) if rgb else 0
-            a = int(round(alpha * 255))
-            return f"#{r:02X}{g:02X}{b:02X}{a:02X}"
-        except Exception:
-            return default
+            # Generate HTML from slide data (deterministic, no AI)
+            html_content = await _generate_slide_html_from_data(
+                slide=slide,
+                slide_index=idx,
+                page_width_emu=page_width_emu,
+                page_height_emu=page_height_emu,
+                theme_colors=theme_colors,
+                access_token=access_token
+            )
 
-    def _magnitude(value: Optional[Dict[str, Any]]) -> float:
-        if not isinstance(value, dict):
-            return 0.0
-        try:
-            return float(value.get("magnitude", 0))
-        except Exception:
-            return 0.0
-
-    def _dim_to_points(dim: Optional[Dict[str, Any]]) -> float:
-        if not isinstance(dim, dict):
-            return 0.0
-        mag = _magnitude(dim)
-        unit = str(dim.get("unit") or "PT").upper()
-        if unit == "EMU":
-            return float(mag) / 12700.0
-        # PT or unknown fallback
-        return float(mag)
-
-    def _pt_to_px(pt: float) -> int:
-        # 1pt = 1/72 inch; assuming 96 DPI, px = pt * (96/72)
-        try:
-            return int(round(float(pt) * (96.0 / 72.0)))
-        except Exception:
-            return int(round(float(pt) or 0.0))
-
-    def _to_points(value: float, unit: Optional[str]) -> float:
-        # Convert EMU to PT when needed (1pt = 12700 EMU)
-        if unit and str(unit).upper() == "EMU":
-            return float(value) / 12700.0
-        return float(value)
-
-    def _compute_bounds(el: Dict[str, Any], page_w_pt: float, page_h_pt: float) -> Dict[str, float]:
-        # Compute axis-aligned bounding box by transforming the four corners in page space
-        tr = el.get("transform") or {}
-        # Infer unit
-        unit = tr.get("unit")
-        if isinstance(unit, str):
-            unit = unit.upper()
-        else:
-            try:
-                tx_raw = float(tr.get("translateX", 0) or 0.0)
-                ty_raw = float(tr.get("translateY", 0) or 0.0)
-                size = el.get("size") or {}
-                w_mag = _magnitude(size.get("width"))
-                h_mag = _magnitude(size.get("height"))
-                unit = "EMU" if max(abs(tx_raw), abs(ty_raw), w_mag, h_mag) > 5000 else "PT"
-            except Exception:
-                unit = "PT"
-        unit = (unit or "PT").upper()
-
-        # Base size (pt)
-        size = el.get("size") or {}
-        w_pt = _dim_to_points(size.get("width"))
-        h_pt = _dim_to_points(size.get("height"))
-
-        # Transform the four corners into page coordinates (pt)
-        corners = [
-            _apply_transform_point(tr, 0.0, 0.0, unit),
-            _apply_transform_point(tr, w_pt or 0.0, 0.0, unit),
-            _apply_transform_point(tr, 0.0, h_pt or 0.0, unit),
-            _apply_transform_point(tr, w_pt or 0.0, h_pt or 0.0, unit),
-        ]
-        min_x_pt = min(c["x"] for c in corners)
-        max_x_pt = max(c["x"] for c in corners)
-        min_y_pt = min(c["y"] for c in corners)
-        max_y_pt = max(c["y"] for c in corners)
-
-        # Convert to our canvas
-        nx = int(round((min_x_pt / max(1.0, page_w_pt)) * 1920))
-        ny = int(round((min_y_pt / max(1.0, page_h_pt)) * 1080))
-        nw = int(round(((max_x_pt - min_x_pt) / max(1.0, page_w_pt)) * 1920))
-        nh = int(round(((max_y_pt - min_y_pt) / max(1.0, page_h_pt)) * 1080))
-
-        # Rotation from matrix
-        import math as _math
-        sx = float(tr.get("scaleX", 1.0) or 1.0)
-        shy = float(tr.get("shearY", 0.0) or 0.0)
-        try:
-            angle_deg = int(round(_math.degrees(_math.atan2(shy, sx))))
-        except Exception:
-            angle_deg = 0
-
-        # Clamp
-        nx = max(0, min(1920, nx))
-        ny = max(0, min(1080, ny))
-        nw = max(1, min(1920, nw))
-        nh = max(1, min(1080, nh))
-        return {"x": nx, "y": ny, "width": nw, "height": nh, "rotation": angle_deg}
-
-    def _apply_transform_point(tr: Dict[str, Any], x_pt: float, y_pt: float, unit: str) -> Dict[str, float]:
-        # x' = sx*x + shx*y + tx ; y' = shy*x + sy*y + ty
-        sx = float(tr.get("scaleX", 1.0) or 1.0)
-        sy = float(tr.get("scaleY", 1.0) or 1.0)
-        shx = float(tr.get("shearX", 0.0) or 0.0)
-        shy = float(tr.get("shearY", 0.0) or 0.0)
-        tx = _to_points(float(tr.get("translateX", 0.0) or 0.0), unit)
-        ty = _to_points(float(tr.get("translateY", 0.0) or 0.0), unit)
-        x_prime = (sx * x_pt) + (shx * y_pt) + tx
-        y_prime = (shy * x_pt) + (sy * y_pt) + ty
-        return {"x": x_prime, "y": y_prime}
-
-    def _line_endpoints_px(el: Dict[str, Any], page_w_pt: float, page_h_pt: float, group_offset_px: Optional[Dict[str, int]] = None) -> Dict[str, Dict[str, int]]:
-        size = el.get("size") or {}
-        w_pt = _dim_to_points(size.get("width"))
-        h_pt = _dim_to_points(size.get("height"))
-        tr = el.get("transform") or {}
-        unit = str(tr.get("unit") or "PT").upper()
-        # Canonical endpoints in element space
-        if (w_pt or 0) >= (h_pt or 0):
-            # Horizontal canonical line at mid-height
-            p1 = {"x": 0.0, "y": (h_pt or 0.0) / 2.0}
-            p2 = {"x": (w_pt or 0.0), "y": (h_pt or 0.0) / 2.0}
-        else:
-            # Vertical canonical line at mid-width
-            p1 = {"x": (w_pt or 0.0) / 2.0, "y": 0.0}
-            p2 = {"x": (w_pt or 0.0) / 2.0, "y": (h_pt or 0.0)}
-        # Transform to page coords (pt)
-        tp1 = _apply_transform_point(tr, p1["x"], p1["y"], unit)
-        tp2 = _apply_transform_point(tr, p2["x"], p2["y"], unit)
-        # Convert to px relative to slide
-        s_px = {
-            "x": int(round((tp1["x"] / max(1.0, page_w_pt)) * 1920)),
-            "y": int(round((tp1["y"] / max(1.0, page_h_pt)) * 1080))
-        }
-        e_px = {
-            "x": int(round((tp2["x"] / max(1.0, page_w_pt)) * 1920)),
-            "y": int(round((tp2["y"] / max(1.0, page_h_pt)) * 1080))
-        }
-        # Adjust to group-relative if requested
-        if group_offset_px:
-            s_px = {"x": s_px["x"] - int(group_offset_px.get("x", 0)), "y": s_px["y"] - int(group_offset_px.get("y", 0))}
-            e_px = {"x": e_px["x"] - int(group_offset_px.get("x", 0)), "y": e_px["y"] - int(group_offset_px.get("y", 0))}
-        return {"start": s_px, "end": e_px}
-
-    def _extract_plain_text(text_obj: Dict[str, Any]) -> str:
-        try:
-            elements = (text_obj or {}).get("textElements") or []
-            parts: List[str] = []
-            for te in elements:
-                run = te.get("textRun") if isinstance(te, dict) else None
-                if not run:
-                    continue
-                content = (run.get("content") or "").replace("\r", "").replace("\n", "\n")
-                parts.append(content)
-            return ("".join(parts)).strip()
-        except Exception:
-            return ""
-
-    def _map_text_block(shape: Dict[str, Any], bounds: Dict[str, float]) -> Optional[Dict[str, Any]]:
-        text = (shape.get("text") or {})
-        elements = text.get("textElements") or []
-        segments: List[Dict[str, Any]] = []
-        # Paragraph alignment / line spacing from first paragraph marker
-        alignment = "left"
-        line_height = None
-        root_text_color = None
-        for te in elements:
-            pm = te.get("paragraphMarker") if isinstance(te, dict) else None
-            if not pm:
-                continue
-            pstyle = pm.get("style") or {}
-            align = (pstyle.get("alignment") or "").lower()
-            if align in ("start", "left"):
-                alignment = "left"
-            elif align in ("end", "right"):
-                alignment = "right"
-            elif align in ("center",):
-                alignment = "center"
-            lh = pstyle.get("lineSpacing")
-            if lh is not None:
-                try:
-                    line_height = float(lh) / 100.0
-                except Exception:
-                    line_height = None
-            break
-        for te in elements:
-            run = te.get("textRun") if isinstance(te, dict) else None
-            if not run:
-                continue
-            content = (run.get("content") or "").replace("\r", "").replace("\n", "\n")
-            if not content.strip():
-                continue
-            style = run.get("style") or {}
-            seg_style: Dict[str, Any] = {}
-            if "foregroundColor" in style:
-                seg_style["textColor"] = _to_hex_color(style.get("foregroundColor"))
-                # Track a root textColor from the first colored run
-                if not root_text_color:
-                    root_text_color = seg_style["textColor"]
-            if "bold" in style:
-                seg_style["bold"] = bool(style.get("bold"))
-            if "italic" in style:
-                seg_style["italic"] = bool(style.get("italic"))
-            if "underline" in style:
-                seg_style["underline"] = bool(style.get("underline"))
-            if "strikethrough" in style:
-                seg_style["strike"] = bool(style.get("strikethrough"))
-            if "fontSize" in style:
-                try:
-                    pt = _dim_to_points(style.get("fontSize"))
-                    seg_style["fontSize"] = _pt_to_px(pt)
-                except Exception:
-                    pass
-            if "weightedFontFamily" in style:
-                fam = (style.get("weightedFontFamily") or {}).get("fontFamily")
-                if fam:
-                    seg_style["fontFamily"] = fam
-                weight = (style.get("weightedFontFamily") or {}).get("weight")
-                if weight:
-                    try:
-                        seg_style["fontWeight"] = str(weight)
-                    except Exception:
-                        pass
-            # Defaults required by schema for inline style
-            if "backgroundColor" not in seg_style:
-                seg_style["backgroundColor"] = "#00000000"
-            if "bold" not in seg_style:
-                seg_style["bold"] = False
-            if "italic" not in seg_style:
-                seg_style["italic"] = False
-            if "underline" not in seg_style:
-                seg_style["underline"] = False
-            if "strike" not in seg_style:
-                seg_style["strike"] = False
-            segments.append({"text": content, "style": seg_style})
-        if not segments:
-            return None
-        # Compute dominant fontFamily for props-level hint
-        from collections import Counter as _Counter
-        fams = [s.get("style", {}).get("fontFamily") for s in segments if s.get("style", {}).get("fontFamily")]
-        dominant_family = None
-        if fams:
-            dominant_family = _Counter(fams).most_common(1)[0][0]
-        # Compute dominant font size (px). If none present, estimate from bounds height
-        present_sizes = [s.get("style", {}).get("fontSize") for s in segments if isinstance(s.get("style"), dict) and isinstance(s.get("style", {}).get("fontSize"), (int, float))]
-        if present_sizes:
-            dominant_size_px = int(max(present_sizes))
-        else:
-            # Estimate: 25% of box height for single-line headline
-            dominant_size_px = max(16, min(200, int(round(bounds["height"] * 0.25))))
-        # Backfill missing fontSize on segments
-        for s in segments:
-            st = s.get("style") or {}
-            if "fontSize" not in st or not isinstance(st.get("fontSize"), (int, float)):
-                st["fontSize"] = dominant_size_px
-                s["style"] = st
-        comp = {
-            "id": str(uuid.uuid4()),
-            "type": "TiptapTextBlock",
-            "props": {
-                "position": {"x": bounds["x"], "y": bounds["y"]},
-                "width": bounds["width"],
-                "height": bounds["height"],
-                "texts": segments,
-                # Defaults to help schema
-                "alignment": alignment,
-                "verticalAlignment": "top",
-                "padding": 0,
-                "opacity": 1,
-                "rotation": bounds.get("rotation", 0),
-                "textColor": root_text_color or "#000000ff",
-                **({"lineHeight": line_height} if line_height else {}),
-                **({"fontFamily": dominant_family} if dominant_family else {}),
-                **({"fontSize": dominant_size_px} if dominant_size_px else {}),
-            }
-        }
-        return comp
-
-    def _map_shape(shape: Dict[str, Any], elem: Dict[str, Any], bounds: Dict[str, float]) -> Optional[Dict[str, Any]]:
-        props = shape.get("shapeProperties") or {}
-        fill = props.get("shapeBackgroundFill") or {}
-        solid = fill.get("solidFill") or {}
-        gradient = fill.get("gradientFill") or {}
-        outline = props.get("outline") or {}
-        ofill = (outline.get("outlineFill") or {}).get("solidFill") or {}
-        fill_color = _to_hex_color(solid.get("color"), default="#00000000")
-        stroke_w_pt = _dim_to_points(outline.get("weight") if isinstance(outline.get("weight"), dict) else {}) if isinstance(outline, dict) else 0.0
-        stroke_w = max(0, _pt_to_px(stroke_w_pt))
-        stroke_color = _to_hex_color(ofill.get("color"), default=("#000000ff" if stroke_w > 0 else "#00000000"))
-        # Map Slides shapeType to our schema
-        stype = (shape.get("shapeType") or "").upper()
-        shape_type = "rectangle"
-        if stype in ("ELLIPSE", "CIRCLE", "OVAL"):
-            try:
-                # Prefer pageElement size (pre-transform) to detect perfect circles
-                esize = (elem.get("size") or {}) if isinstance(elem, dict) else {}
-                w_pt = _dim_to_points(esize.get("width"))
-                h_pt = _dim_to_points(esize.get("height"))
-                wv = float(w_pt or bounds.get("width") or 0)
-                hv = float(h_pt or bounds.get("height") or 0)
-                if max(wv, hv) > 0:
-                    ratio = abs(wv - hv) / max(wv, hv)
-                    # Be lenient: Slides often stores nearly-equal radii for circles after transforms
-                    shape_type = "circle" if ratio <= 0.05 else "ellipse"
-                else:
-                    shape_type = "ellipse"
-            except Exception:
-                shape_type = "ellipse"
-        elif stype in ("ROUNDED_RECTANGLE",):
-            shape_type = "rectangle"
-        elif stype in ("DIAMOND",):
-            shape_type = "diamond"
-        elif "ARROW" in stype:
-            shape_type = "arrow"
-        elif stype in ("ISOSCELES_TRIANGLE", "RIGHT_TRIANGLE", "TRIANGLE"):
-            shape_type = "triangle"
-        elif stype in ("HEART",):
-            shape_type = "heart"
-        elif stype in ("HEXAGON",):
-            shape_type = "hexagon"
-        elif stype in ("PENTAGON",):
-            shape_type = "pentagon"
-        elif stype in ("STAR", "STAR_5", "STAR_6", "STAR_7", "STAR_8", "STAR_10", "STAR_12"):
-            shape_type = "star"
-        # Border radius for rounded rectangles if provided
-        border_radius = 0
-        try:
-            # Some presentations include a cornerRadius magnitude (pt); approximate to px
-            cr = props.get("cornerRadius")
-            if isinstance(cr, dict):
-                border_radius = max(0, _pt_to_px(_dim_to_points(cr)))
-            elif stype == "ROUNDED_RECTANGLE":
-                border_radius = max(4, int(min(bounds["width"], bounds["height"]) * 0.08))
-        except Exception:
-            border_radius = 0
-        # Detect inline text inside shapes (non-TEXT_BOX)
-        has_text = False
-        texts = []
-        root_text_color = None
-        try:
-            if shape.get("text") and shape.get("text").get("textElements"):
-                has_text = True
-                elements = shape.get("text").get("textElements") or []
-                for te in elements:
-                    run = te.get("textRun") if isinstance(te, dict) else None
-                    if not run:
-                        continue
-                    content = (run.get("content") or "").replace("\r", "").replace("\n", "\n")
-                    if not content.strip():
-                        continue
-                    style = run.get("style") or {}
-                    seg_style: Dict[str, Any] = {}
-                    if "foregroundColor" in style:
-                        seg_style["textColor"] = _to_hex_color(style.get("foregroundColor"))
-                        if not root_text_color:
-                            root_text_color = seg_style["textColor"]
-                    if "bold" in style:
-                        seg_style["bold"] = bool(style.get("bold"))
-                    if "italic" in style:
-                        seg_style["italic"] = bool(style.get("italic"))
-                    if "fontSize" in style:
-                        try:
-                            pt = _dim_to_points(style.get("fontSize"))
-                            seg_style["fontSize"] = _pt_to_px(pt)
-                        except Exception:
-                            pass
-                    # Fill in required text style defaults for Shape schema
-                    if "backgroundColor" not in seg_style:
-                        seg_style["backgroundColor"] = "#00000000"
-                    if "underline" not in seg_style:
-                        seg_style["underline"] = False
-                    if "strike" not in seg_style:
-                        seg_style["strike"] = False
-                    # Additional required keys in Shape.texts[].style schema
-                    seg_style.setdefault("highlight", False)
-                    seg_style.setdefault("subscript", False)
-                    seg_style.setdefault("superscript", False)
-                    # Provide both color and textColor to satisfy some schema variants
-                    seg_style.setdefault("color", seg_style.get("textColor", "#000000ff"))
-                    seg_style.setdefault("link", False)
-                    seg_style.setdefault("href", "")
-                    texts.append({"text": content, "style": seg_style})
-        except Exception:
-            has_text = False
-            texts = []
-        # Convert Slides gradient to our gradient object if present
-        gradient_obj = None
-        try:
-            if isinstance(gradient, dict) and (gradient.get("stops") or gradient.get("type")):
-                gtype = str((gradient.get("type") or "LINEAR").lower())
-                angle = int(round(float(gradient.get("angle", 0)))) if isinstance(gradient.get("angle"), (int, float)) else 0
-                stops_in = gradient.get("stops") or []
-                stops = []
-                for st in stops_in:
-                    col = _to_hex_color((st or {}).get("color"), default="#000000ff")
-                    pos = float((st or {}).get("position", 0)) * 100.0 if isinstance((st or {}).get("position"), (int, float)) and (st or {}).get("position") <= 1 else float((st or {}).get("position", 0))
-                    stops.append({"color": col, "position": pos})
-                if stops:
-                    gradient_obj = {"type": ("linear" if "lin" in gtype else "radial"), "angle": angle, "stops": stops}
-        except Exception:
-            gradient_obj = None
-
-        # Resolve final fill color for compatibility-only consumers
-        # - If gradient-only, use first stop as a non-transparent fallback fill
-        # - If fully transparent and no stroke/gradient, choose a neutral grey
-        fill_color_final = fill_color
-        try:
-            if gradient_obj and isinstance(gradient_obj.get("stops"), list) and gradient_obj["stops"]:
-                first_stop = gradient_obj["stops"][0]
-                col = first_stop.get("color")
-                if isinstance(col, str) and col:
-                    fill_color_final = col
-        except Exception:
-            pass
-        if (str(fill_color_final).upper() in ("#00000000", "#00000000FF", "#00000000")) and (not gradient_obj) and (stroke_w == 0):
-            fill_color_final = "#CCCCCCFF"
-
-        comp = {
-            "id": str(uuid.uuid4()),
-            "type": "Shape",
-            "props": {
-                "position": {"x": bounds["x"], "y": bounds["y"]},
-                "width": bounds["width"],
-                "height": bounds["height"],
-                "rotation": bounds.get("rotation", 0),
-                "shapeType": shape_type,
-                # Provide both keys for broader renderer compatibility
-                "shape": shape_type,
-                "fill": fill_color_final,
-                "backgroundColor": fill_color_final,
-                **({"gradient": gradient_obj} if gradient_obj else {}),
-                "stroke": stroke_color,
-                "strokeWidth": stroke_w,
-                "borderColor": stroke_color,
-                "borderWidth": stroke_w,
-                "opacity": 1,
-                "zIndex": 1,
-                **({"borderRadius": border_radius} if border_radius else {}),
-                **({"hasText": True, "texts": texts, "textColor": root_text_color or "#000000ff"} if has_text else {}),
-            }
-        }
-        return comp
-
-    def _map_image(img: Dict[str, Any], bounds: Dict[str, float], alt_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        source = img.get("sourceUri") or img.get("contentUrl") or img.get("imageUri")
-        if not source:
-            return None
-        # Normalize googleusercontent thumbnails to direct fetchable URLs where possible
-        try:
-            if isinstance(source, str) and "=w" in source and source.startswith("http"):
-                # Leave as-is; storage layer will fetch and cache
-                pass
-        except Exception:
-            pass
-        # Crop (best-effort)
-        crop_rect = None
-        try:
-            ip = img.get("imageProperties") or {}
-            cp = ip.get("cropProperties") or {}
-            # Support multiple possible keys
-            left = cp.get("left") if cp.get("left") is not None else cp.get("leftOffset")
-            right = cp.get("right") if cp.get("right") is not None else cp.get("rightOffset")
-            top = cp.get("top") if cp.get("top") is not None else cp.get("topOffset")
-            bottom = cp.get("bottom") if cp.get("bottom") is not None else cp.get("bottomOffset")
-            def _clamp01(v: Any) -> float:
-                try:
-                    return max(0.0, min(1.0, float(v)))
-                except Exception:
-                    return 0.0
-            if any(v is not None for v in [left, right, top, bottom]):
-                crop_rect = {
-                    "left": _clamp01(left or 0),
-                    "top": _clamp01(top or 0),
-                    "right": _clamp01(right or 0),
-                    "bottom": _clamp01(bottom or 0),
-                }
-        except Exception:
-            crop_rect = None
-        # Flip/opacity (best-effort from transform and transparency)
-        flip_x = False
-        flip_y = False
-        try:
-            tr = (img.get("transform") or {})
-            sx = float(tr.get("scaleX", 1.0) or 1.0)
-            sy = float(tr.get("scaleY", 1.0) or 1.0)
-            flip_x = sx < 0
-            flip_y = sy < 0
-        except Exception:
-            pass
-        opacity_val = 1
-        try:
-            ip = img.get("imageProperties") or {}
-            trans = ip.get("transparency")
-            if isinstance(trans, (int, float)):
-                # Google transparency is 0..1 (fraction transparent). Convert to opacity (1 - transparency)
-                opacity_val = max(0, min(1, 1 - float(trans)))
-        except Exception:
-            pass
-
-        comp = {
-            "id": str(uuid.uuid4()),
-            "type": "Image",
-            "props": {
-                "position": {"x": bounds["x"], "y": bounds["y"]},
-                "width": bounds["width"],
-                "height": bounds["height"],
-                "src": source,
-                # Default to cover to match Slides default; allow contain if aspect requires
-                "objectFit": "cover",
-                # Border/shadow defaults safe per schema
-                "borderRadius": 0,
-                "borderWidth": 0,
-                "borderColor": "#000000ff",
-                "opacity": opacity_val,
-                **({"cropRect": crop_rect} if crop_rect else {}),
-                **({"alt": alt_text} if alt_text else {}),
-                **({"rotation": bounds.get("rotation", 0)} if bounds.get("rotation") else {}),
-                **({"flipX": flip_x} if flip_x else {}),
-                **({"flipY": flip_y} if flip_y else {}),
-            }
-        }
-        return comp
-
-    def _map_table(table: Dict[str, Any], bounds: Dict[str, float]) -> Optional[Dict[str, Any]]:
-        try:
-            rows_in = (table.get("tableRows") or [])
-            data: List[List[str]] = []
-            headers_detected: List[str] = []
-            show_header = False
-            # Extract cell text and attempt header detection from first row styles
-            first_row_styles_bold_count = 0
-            for r in rows_in:
-                cells = (r.get("tableCells") or [])
-                row_vals: List[str] = []
-                for ci, c in enumerate(cells):
-                    txt = _extract_plain_text((c.get("text") or {}))
-                    if not headers_detected and cells:
-                        # Check bold style in first row cells
-                        try:
-                            elements = (c.get("text") or {}).get("textElements") or []
-                            for te in elements:
-                                run = te.get("textRun") if isinstance(te, dict) else None
-                                if run and (run.get("style") or {}).get("bold"):
-                                    first_row_styles_bold_count += 1
-                                    break
-                        except Exception:
-                            pass
-                    row_vals.append(txt)
-                data.append(row_vals)
-            headers: List[str] = []
-            # Heuristic header detection: non-empty first row and majority bold
-            if data:
-                prospective = data[0]
-                non_empty = sum(1 for v in prospective if (v or '').strip())
-                if non_empty >= max(1, int(len(prospective) * 0.6)) and first_row_styles_bold_count >= max(1, int(len(prospective) * 0.5)):
-                    headers = prospective
-                    show_header = True
-                    data = data[1:]
-            comp = {
+            custom_component = {
                 "id": str(uuid.uuid4()),
-                "type": "Table",
+                "type": "CustomComponent",
                 "props": {
-                    "position": {"x": bounds["x"], "y": bounds["y"]},
-                    "width": bounds["width"],
-                    "height": bounds["height"],
+                    "position": {"x": 0, "y": 0},
+                    "width": 1920,
+                    "height": 1080,
+                    "rotation": 0,
                     "opacity": 1,
-                    "rotation": bounds.get("rotation", 0),
                     "zIndex": 1,
-                    "textColor": "#000000ff",
-                    **({"headers": headers} if headers else {}),
-                    **({"showHeader": True} if show_header else {}),
-                    "data": data,
-                    # Minimal TableStyles to satisfy schema; renderer/validator can enrich
-                    "tableStyles": {
-                        "fontFamily": "Inter",
-                        "fontSize": 14,
-                        "borderColor": "#e2e8f0",
-                        "borderWidth": 1,
-                        "cellPadding": 8,
-                        "headerBackgroundColor": "#f8fafc",
-                        "headerTextColor": "#334155",
-                        "cellBackgroundColor": "#ffffff",
-                        "textColor": "#334155",
-                        "alignment": "left",
-                        "alternatingRowColor": False,
-                        "hoverEffect": False
-                    },
-                    "cellStyles": [],
+                    "render": html_content,
+                    "props": {
+                        "slideIndex": idx,
+                        "sourceType": "google_slides_parsed"
+                    }
                 }
             }
-            return comp
-        except Exception:
-            return None
 
-    def _map_sheets_chart(sc: Dict[str, Any], bounds: Dict[str, float]) -> Optional[Dict[str, Any]]:
-        # Fallback map as Image using content URL if provided
-        src = sc.get("contentUrl") or sc.get("thumbnailUrl") or sc.get("url")
-        if not src:
-            return None
-        return {
-            "id": str(uuid.uuid4()),
-            "type": "Image",
-            "props": {
-                "position": {"x": bounds["x"], "y": bounds["y"]},
-                "width": bounds["width"],
-                "height": bounds["height"],
-                "src": src,
-                "objectFit": "contain",
-                "borderRadius": 0,
-                "borderWidth": 0,
-                "borderColor": "#000000ff",
-                **({"rotation": bounds.get("rotation", 0)} if bounds.get("rotation") else {}),
-            }
-        }
+            slides_out.append({
+                "id": slide_id,
+                "title": slide_title,
+                "components": [custom_component]
+            })
 
-    def _map_video(video: Dict[str, Any], bounds: Dict[str, float]) -> Optional[Dict[str, Any]]:
-        src = None
-        try:
-            source_type = (video.get("source") or "").upper()
-            vid = video.get("id") or video.get("videoId") or video.get("sourceId")
-            if source_type == "YOUTUBE" and vid:
-                src = f"https://www.youtube.com/watch?v={vid}"
-            elif source_type == "DRIVE" and vid:
-                src = f"https://drive.google.com/file/d/{vid}/preview"
-            else:
-                src = video.get("url") or video.get("contentUrl")
-        except Exception:
-            src = video.get("url") or video.get("contentUrl")
-        if not src:
-            return None
-        return {
-            "id": str(uuid.uuid4()),
-            "type": "Video",
-            "props": {
-                "position": {"x": bounds["x"], "y": bounds["y"]},
-                "width": bounds["width"],
-                "height": bounds["height"],
-                "opacity": 1,
-                "rotation": bounds.get("rotation", 0),
-                "zIndex": 1,
-                "src": src,
-                "autoplay": False,
-                "controls": True,
-                "loop": False,
-                "muted": False,
-            }
-        }
+            logger.info(f"[GoogleSlidesImport] Slide {idx + 1} converted successfully")
 
-    # Page size from presentation for normalization
-    page_size = (presentation.get("pageSize") or presentation.get("size") or {})
-    page_w = _dim_to_points(page_size.get("width") if isinstance(page_size, dict) else None)
-    page_h = _dim_to_points(page_size.get("height") if isinstance(page_size, dict) else None)
-    # Sensible defaults if missing
-    if page_w <= 0 or page_h <= 0:
-        page_w, page_h = 1920.0, 1080.0
+        except Exception as e:
+            logger.error(f"[GoogleSlidesImport] ERROR on slide {idx + 1}: {e}", exc_info=True)
+            slides_out.append({
+                "id": str(uuid.uuid4()),
+                "title": f"Slide {idx + 1} (Error)",
+                "components": [_create_error_slide_component(str(e))]
+            })
 
-    slides_out: List[Dict[str, Any]] = []
-    slides_in = presentation.get("slides") or []
-    for idx, slide in enumerate(slides_in):
-        components: List[Dict[str, Any]] = []
-        # Build lookup for group children resolution
-        elements = slide.get("pageElements") or []
-        id_to_element = { (e.get("objectId") or str(i)): e for i, e in enumerate(elements) if isinstance(e, dict) }
-        consumed_ids: set[str] = set()
-        # Pre-scan: collect all child element IDs that belong to any group so we don't double-process them as top-level
-        group_child_ids_global: set[str] = set()
-        try:
-            for el2 in elements:
-                if not isinstance(el2, dict):
-                    continue
-                if "group" in el2 and isinstance(el2.get("group"), dict):
-                    grp2 = el2.get("group") or {}
-                    raw_children2 = grp2.get("children") or grp2.get("pageElements") or grp2.get("childrenObjectIds") or []
-                    for ch2 in raw_children2:
-                        if isinstance(ch2, dict):
-                            cid2 = ch2.get("objectId")
-                            if cid2:
-                                group_child_ids_global.add(cid2)
-                        elif isinstance(ch2, str):
-                            group_child_ids_global.add(ch2)
-        except Exception:
-            pass
-        # Determine slide title from placeholder TITLE if available
-        slide_title = None
-        try:
-            for el in elements:
-                shp = (el.get("shape") or {}) if isinstance(el, dict) else {}
-                placeholder = (shp.get("placeholder") or {}) if isinstance(shp, dict) else {}
-                ptype = (placeholder.get("type") or "").upper()
-                if ptype in ("TITLE", "CENTERED_TITLE"):
-                    t = _extract_plain_text(shp.get("text") or {})
-                    if t:
-                        slide_title = t
-                        break
-            if not slide_title:
-                # Fallback: first non-empty text box
-                for el in elements:
-                    shp = (el.get("shape") or {}) if isinstance(el, dict) else {}
-                    if (shp.get("shapeType") or "").upper() in ("TEXT_BOX",):
-                        t = _extract_plain_text(shp.get("text") or {})
-                        if t:
-                            slide_title = t
-                            break
-        except Exception:
-            slide_title = None
-        if not slide_title:
-            slide_title = f"Slide {idx + 1}"
-        # Background from pageProperties
-        try:
-            page_props = (slide.get("pageProperties") or {})
-            pbg = page_props.get("pageBackgroundFill") or {}
-            # Ensure we emit exactly one background with all required canonical fields
-            bg_added = False
+        # Update progress
+        if job_id:
+            jobs_store.update_progress(job_id, idx + 1, total_slides)
 
-            # Prefer gradient > image > solid
-            grad = pbg.get("gradientFill") or {}
-            if not bg_added and isinstance(grad, dict) and (grad.get("stops") or grad.get("type")):
-                gtype = str((grad.get("type") or "LINEAR")).lower()
-                angle = int(round(float(grad.get("angle", 0)))) if isinstance(grad.get("angle"), (int, float)) else 0
-                stops_in = grad.get("stops") or []
-                stops = []
-                for st in stops_in:
-                    col = _to_hex_color((st or {}).get("color"), default="#000000ff")
-                    pos = float((st or {}).get("position", 0)) * 100.0 if isinstance((st or {}).get("position"), (int, float)) and (st or {}).get("position") <= 1 else float((st or {}).get("position", 0))
-                    stops.append({"color": col, "position": pos})
-                components.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "Background",
-                    "props": {
-                        "position": {"x": 0, "y": 0},
-                        "width": 1920,
-                        "height": 1080,
-                        "opacity": 1,
-                        "rotation": 0,
-                        "zIndex": 0,
-                        "backgroundType": "gradient",
-                        "backgroundColor": "#E8F4FDff",
-                        "gradient": {"type": ("linear" if "lin" in gtype else "radial"), "angle": angle, "stops": stops},
-                        "isAnimated": False,
-                        "animationSpeed": 1,
-                        "backgroundImageUrl": None,
-                        "backgroundImageSize": "cover",
-                        "backgroundImageRepeat": "no-repeat",
-                        "backgroundImageOpacity": 1,
-                        "patternType": None,
-                        "patternColor": "#ccccccff",
-                        "patternScale": 5,
-                        "patternOpacity": 0.5,
-                        "kind": "background"
-                    }
-                })
-                bg_added = True
+    logger.info(f"[GoogleSlidesImport] ===== IMPORT COMPLETE: {len(slides_out)} slides =====")
 
-            pic = pbg.get("stretchedPictureFill") or {}
-            img_url = pic.get("contentUrl") or pic.get("imageUrl") or pic.get("sourceUrl")
-            if not bg_added and img_url:
-                components.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "Background",
-                    "props": {
-                        "position": {"x": 0, "y": 0},
-                        "width": 1920,
-                        "height": 1080,
-                        "opacity": 1,
-                        "rotation": 0,
-                        "zIndex": 0,
-                        "backgroundType": "image",
-                        "backgroundColor": "#E8F4FDff",
-                        "gradient": None,
-                        "isAnimated": False,
-                        "animationSpeed": 1,
-                        "backgroundImageUrl": img_url,
-                        "backgroundImageSize": "cover",
-                        "backgroundImageRepeat": "no-repeat",
-                        "backgroundImageOpacity": 1,
-                        "patternType": None,
-                        "patternColor": "#ccccccff",
-                        "patternScale": 5,
-                        "patternOpacity": 0.5,
-                        "kind": "background"
-                    }
-                })
-                bg_added = True
-
-            solid = pbg.get("solidFill") or {}
-            if not bg_added and isinstance(solid, dict):
-                bg_color = _to_hex_color(solid.get("color"), default="#FFFFFFFF")
-                components.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "Background",
-                    "props": {
-                        "position": {"x": 0, "y": 0},
-                        "width": 1920,
-                        "height": 1080,
-                        "opacity": 1,
-                        "rotation": 0,
-                        "zIndex": 0,
-                        "backgroundType": "color",
-                        "backgroundColor": bg_color,
-                        "gradient": None,
-                        "isAnimated": False,
-                        "animationSpeed": 1,
-                        "backgroundImageUrl": None,
-                        "backgroundImageSize": "cover",
-                        "backgroundImageRepeat": "no-repeat",
-                        "backgroundImageOpacity": 1,
-                        "patternType": None,
-                        "patternColor": "#ccccccff",
-                        "patternScale": 5,
-                        "patternOpacity": 0.5,
-                        "kind": "background"
-                    }
-                })
-                bg_added = True
-        except Exception:
-            pass
-
-        # Elements
-        z_cursor = 1
-        for el in elements:
-            if not isinstance(el, dict):
-                continue
-            obj_id = el.get("objectId")
-            if obj_id and (obj_id in consumed_ids or obj_id in group_child_ids_global):
-                continue
-            bounds = _compute_bounds(el, page_w, page_h)
-            if "shape" in el and isinstance(el.get("shape"), dict):
-                shp = el.get("shape")
-                shape_type = (shp.get("shapeType") or "").upper()
-                # Only Slides TEXT_BOX should map to text; other shapes with text remain Shape with inline texts
-                if shape_type == "TEXT_BOX":
-                    comp = _map_text_block(shp, bounds)
-                    if comp:
-                        comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                        components.append(comp)
-                    continue
-                # Else map as Shape (rect/ellipse/circle/etc.)
-                comp = _map_shape(shp, el, bounds)
-                if comp:
-                    comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                    components.append(comp)
-                continue
-            if "group" in el and isinstance(el.get("group"), dict):
-                # We'll compute group bounding box from children (global coords)
-                grp = el.get("group") or {}
-                raw_children = grp.get("children") or grp.get("pageElements") or grp.get("childrenObjectIds") or []
-                child_elements: List[Dict[str, Any]] = []
-                child_ids: List[str] = []
-                for ch in raw_children:
-                    if isinstance(ch, dict):
-                        child_el = ch
-                        cid = child_el.get("objectId") or None
-                    elif isinstance(ch, str):
-                        cid = ch
-                        child_el = id_to_element.get(ch)
-                        if not child_el:
-                            continue
-                    else:
-                        continue
-                    child_elements.append(child_el)
-                    if cid:
-                        child_ids.append(cid)
-                # First pass: compute bounds and group bbox
-                min_x = 10**9; min_y = 10**9; max_x = -10**9; max_y = -10**9
-                child_bounds: List[Dict[str, Any]] = []
-                for cel in child_elements:
-                    cb = _compute_bounds(cel, page_w, page_h)
-                    child_bounds.append({"el": cel, "b": cb})
-                    min_x = min(min_x, cb["x"])
-                    min_y = min(min_y, cb["y"])
-                    max_x = max(max_x, cb["x"] + cb["width"])
-                    max_y = max(max_y, cb["y"] + cb["height"])
-                group_offset_px = {"x": int(min_x if min_x < 10**9 else 0), "y": int(min_y if min_y < 10**9 else 0)}
-                # Second pass: create children with relative positions
-                group_child_component_ids: List[str] = []
-                child_z_indices: List[int] = []
-                for item in child_bounds:
-                    cel = item["el"]
-                    cb = item["b"]
-                    if "shape" in cel and isinstance(cel.get("shape"), dict):
-                        shp2 = cel.get("shape")
-                        st2 = (shp2.get("shapeType") or "").upper()
-                        if st2 == "TEXT_BOX":
-                            # Keep children absolute coordinates
-                            comp = _map_text_block(shp2, cb)
-                            if comp:
-                                comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                                components.append(comp)
-                                group_child_component_ids.append(comp["id"])
-                        else:
-                            comp = _map_shape(shp2, cel, cb)
-                            if comp:
-                                comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                                components.append(comp)
-                                group_child_component_ids.append(comp["id"])
-                    elif "line" in cel and isinstance(cel.get("line"), dict):
-                        line = cel.get("line")
-                        lp = line.get("lineProperties") or {}
-                        solid = (lp.get("lineFill") or {}).get("solidFill") or {}
-                        stroke_color = _to_hex_color(solid.get("color"), default="#000000FF")
-                        weight_pt = _dim_to_points(lp.get("weight")) if isinstance(lp.get("weight"), dict) else 1.0
-                        stroke_w_px = max(1, _pt_to_px(weight_pt))
-                        # Dash style mapping
-                        dash = (lp.get("dashStyle") or "").upper()
-                        dash_map = {
-                            "DOT": "2,6",
-                            "DASH": "6,6",
-                            "DASH_DOT": "6,4,2,4",
-                            "LONG_DASH": "10,6",
-                            "LONG_DASH_DOT": "10,6,2,6",
-                        }
-                        endpoints = _line_endpoints_px(cel, page_w, page_h, group_offset_px=None)
-                        start = endpoints["start"]
-                        end = endpoints["end"]
-                        comp = {
-                            "id": str(uuid.uuid4()),
-                            "type": "Lines",
-                            "props": {
-                                "position": {"x": min(start["x"], end["x"]), "y": min(start["y"], end["y"])},
-                                "width": abs(end["x"] - start["x"]) or 1,
-                                "height": abs(end["y"] - start["y"]) or 1,
-                                "startPoint": {"x": start["x"], "y": start["y"]},
-                                "endPoint": {"x": end["x"], "y": end["y"]},
-                                "connectionType": "straight",
-                                "stroke": stroke_color,
-                                "strokeWidth": stroke_w_px,
-                                "startShape": "none",
-                                "endShape": "none",
-                                "opacity": 1,
-                                "rotation": 0,
-                                **({"strokeDasharray": dash_map.get(dash, "none")} if dash and dash != "SOLID" else {}),
-                            }
-                        }
-                        comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                        components.append(comp)
-                        group_child_component_ids.append(comp["id"])
-                    elif "image" in cel and isinstance(cel.get("image"), dict):
-                        comp = _map_image(cel.get("image"), cb, alt_text=(cel.get("title") or cel.get("description")))
-                        if comp:
-                            comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                            components.append(comp)
-                            group_child_component_ids.append(comp["id"])
-                    elif "table" in cel and isinstance(cel.get("table"), dict):
-                        comp = _map_table(cel.get("table"), cb)
-                        if comp:
-                            comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                            components.append(comp)
-                            group_child_component_ids.append(comp["id"])
-                    elif "sheetsChart" in cel and isinstance(cel.get("sheetsChart"), dict):
-                        comp = _map_sheets_chart(cel.get("sheetsChart"), cb)
-                        if comp:
-                            comp["props"]["zIndex"] = z_cursor; child_z_indices.append(z_cursor); z_cursor += 1
-                            components.append(comp)
-                            group_child_component_ids.append(comp["id"])
-                    elif "video" in cel and isinstance(cel.get("video"), dict):
-                        comp = _map_video(cel.get("video"), cb)
-                        if comp:
-                            comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                            components.append(comp)
-                            group_child_component_ids.append(comp["id"])
-                # Mark consumed child element IDs if present in top-level list
-                for cid in child_ids:
-                    consumed_ids.add(cid)
-                # Create Group component using computed bbox
-                group_bounds = {
-                    "x": int(min_x if min_x < 10**9 else 0),
-                    "y": int(min_y if min_y < 10**9 else 0),
-                    "width": int(max(1, (max_x - min_x) if max_x > -10**9 and min_x < 10**9 else 0)),
-                    "height": int(max(1, (max_y - min_y) if max_y > -10**9 and min_y < 10**9 else 0))
-                }
-                # Compute group z-index behind children to avoid overlaying them
-                min_child_z = min(child_z_indices) if child_z_indices else z_cursor
-                group_z = max(0, min_child_z - 1)
-                group_comp = {
-                    "id": str(uuid.uuid4()),
-                    "type": "Group",
-                    "props": {
-                        "position": {"x": group_bounds["x"], "y": group_bounds["y"]},
-                        "width": group_bounds["width"],
-                        "height": group_bounds["height"],
-                        "children": group_child_component_ids,
-                        "opacity": 1,
-                        "rotation": 0,
-                        "zIndex": group_z,
-                        "locked": False
-                    }
-                }
-                # Do not advance z_cursor for group container; it's not a visible overlay
-                components.append(group_comp)
-                continue
-            if "line" in el and isinstance(el.get("line"), dict):
-                line = el.get("line")
-                lp = line.get("lineProperties") or {}
-                solid = (lp.get("lineFill") or {}).get("solidFill") or {}
-                stroke_color = _to_hex_color(solid.get("color"), default="#000000FF")
-                weight_pt = _dim_to_points(lp.get("weight")) if isinstance(lp.get("weight"), dict) else 1.0
-                stroke_w_px = max(1, _pt_to_px(weight_pt))
-                dash = (lp.get("dashStyle") or "").upper()
-                dash_map = {
-                    "DOT": "2,6",
-                    "DASH": "6,6",
-                    "DASH_DOT": "6,4,2,4",
-                    "LONG_DASH": "10,6",
-                    "LONG_DASH_DOT": "10,6,2,6",
-                }
-                endpoints = _line_endpoints_px(el, page_w, page_h)
-                start = endpoints["start"]
-                end = endpoints["end"]
-                # Arrowheads: default none; set if explicitly present
-                def _arrow_shape(val: Any) -> str:
-                    v = str(val or "NONE").upper()
-                    return "arrow" if v not in ("NONE", "ARROW_TYPE_UNSPECIFIED") else "none"
-                start_shape = "none"
-                end_shape = "none"
-                for k in ("startArrow", "arrowStart", "startHead", "startMarker"):
-                    if k in lp:
-                        start_shape = _arrow_shape(lp.get(k))
-                        break
-                for k in ("endArrow", "arrowEnd", "endHead", "endMarker"):
-                    if k in lp:
-                        end_shape = _arrow_shape(lp.get(k))
-                        break
-                # Connection type mapping if available
-                connection_type = "straight"
-                try:
-                    cat = str((el.get("line") or {}).get("lineCategory") or "").upper()
-                    if cat in ("BENT", "ELBOW"):
-                        connection_type = "elbow"
-                    elif cat in ("CURVED",):
-                        connection_type = "curved"
-                except Exception:
-                    connection_type = "straight"
-                comp = {
-                    "id": str(uuid.uuid4()),
-                    "type": "Lines",
-                    "props": {
-                        "position": {"x": min(start["x"], end["x"]), "y": min(start["y"], end["y"])},
-                        "width": abs(end["x"] - start["x"]) or 1,
-                        "height": abs(end["y"] - start["y"]) or 1,
-                        "startPoint": {"x": start["x"], "y": start["y"]},
-                        "endPoint": {"x": end["x"], "y": end["y"]},
-                        "connectionType": connection_type,
-                        "stroke": stroke_color,
-                        "strokeWidth": stroke_w_px,
-                        "startShape": start_shape,
-                        "endShape": end_shape,
-                        "opacity": 1,
-                        "rotation": 0,
-                        **({"strokeDasharray": dash_map.get(dash, "none")} if dash and dash != "SOLID" else {}),
-                    }
-                }
-                comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                components.append(comp)
-                continue
-            if "image" in el and isinstance(el.get("image"), dict):
-                comp = _map_image(el.get("image"), bounds, alt_text=(el.get("title") or el.get("description")))
-                if comp:
-                    comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                    components.append(comp)
-                continue
-            if "table" in el and isinstance(el.get("table"), dict):
-                comp = _map_table(el.get("table"), bounds)
-                if comp:
-                    comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                    components.append(comp)
-                continue
-            if "sheetsChart" in el and isinstance(el.get("sheetsChart"), dict):
-                comp = _map_sheets_chart(el.get("sheetsChart"), bounds)
-                if comp:
-                    comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                    components.append(comp)
-                continue
-            if "video" in el and isinstance(el.get("video"), dict):
-                comp = _map_video(el.get("video"), bounds)
-                if comp:
-                    comp["props"]["zIndex"] = z_cursor; z_cursor += 1
-                    components.append(comp)
-                continue
-            # TODO: wordArt/audio/other element types can be supported in next iterations
-
-        slides_out.append({
-            "id": slide.get("objectId") or str(uuid.uuid4()),
-            "title": slide_title,
-            "components": components
-        })
-
-    deck = {
+    return {
         "uuid": str(uuid.uuid4()),
-        "name": presentation.get("title", "Imported"),
+        "name": title,
         "slides": slides_out,
         "size": {"width": 1920, "height": 1080},
+        "metadata": {
+            "source": "google_slides_parsed",
+            "import_stats": {
+                "slides": len(slides_out),
+                "method": "data_parsing"
+            }
+        }
     }
-    return deck
+
+
+async def _generate_slide_html_from_data(
+    slide: Dict[str, Any],
+    slide_index: int,
+    page_width_emu: int,
+    page_height_emu: int,
+    theme_colors: Dict[str, str],
+    access_token: str
+) -> str:
+    """
+    Generate HTML for a slide by parsing the Google Slides API data directly.
+    No AI - deterministic HTML generation from exact positions and styles.
+    """
+    import html as html_module
+
+    # Output dimensions
+    OUT_WIDTH = 1920
+    OUT_HEIGHT = 1080
+
+    # Calculate font scale factor
+    # Google Slides uses points (1/72 inch). We need to scale to our output canvas.
+    # Formula: output_width / (page_width_in_inches * 72)
+    EMU_PER_INCH = 914400
+    page_width_inches = page_width_emu / EMU_PER_INCH
+    font_scale = OUT_WIDTH / (page_width_inches * 72)
+    logger.info(f"[GoogleSlidesImport] Font scale: {font_scale:.3f} (page {page_width_inches:.2f}\" wide, 12pt -> {round(12 * font_scale)}px)")
+
+    # Track all fonts used in this slide for dynamic Google Fonts loading
+    fonts_used: Set[str] = set()
+
+    def emu_to_px_x(emu: float) -> float:
+        """Convert EMU to pixels (X axis)."""
+        return (emu / page_width_emu) * OUT_WIDTH
+
+    def emu_to_px_y(emu: float) -> float:
+        """Convert EMU to pixels (Y axis)."""
+        return (emu / page_height_emu) * OUT_HEIGHT
+
+    def rgb_to_hex(rgb: Dict[str, Any]) -> str:
+        """Convert Google RGB (0-1) to hex color."""
+        if not rgb:
+            return "#000000"
+        r = int((rgb.get("red", 0) or 0) * 255)
+        g = int((rgb.get("green", 0) or 0) * 255)
+        b = int((rgb.get("blue", 0) or 0) * 255)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    def resolve_color(color_obj: Dict[str, Any]) -> str:
+        """Resolve a Google Slides color object to hex."""
+        if not color_obj:
+            return "#000000"
+
+        # RGB color
+        rgb_color = color_obj.get("rgbColor")
+        if rgb_color:
+            return rgb_to_hex(rgb_color)
+
+        # Theme color reference
+        theme_ref = color_obj.get("themeColor")
+        if theme_ref and theme_ref in theme_colors:
+            return theme_colors[theme_ref]
+
+        return "#000000"
+
+    def get_element_bounds(el: Dict[str, Any], parent_transform: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Extract position and size from element, accounting for transform and parent transform.
+        Returns bounds dict with left, top, width, height, and optional rotation/flip transforms.
+        """
+        import math
+
+        # Size in EMU
+        size = el.get("size", {})
+        width_emu = size.get("width", {}).get("magnitude", 0) or 0
+        height_emu = size.get("height", {}).get("magnitude", 0) or 0
+
+        # Transform matrix
+        transform = el.get("transform", {})
+        scale_x = transform.get("scaleX", 1) or 1
+        scale_y = transform.get("scaleY", 1) or 1
+        shear_x = transform.get("shearX", 0) or 0
+        shear_y = transform.get("shearY", 0) or 0
+        translate_x = transform.get("translateX", 0) or 0
+        translate_y = transform.get("translateY", 0) or 0
+
+        # Apply parent transform if in a group
+        if parent_transform:
+            parent_scale_x = parent_transform.get("scaleX", 1) or 1
+            parent_scale_y = parent_transform.get("scaleY", 1) or 1
+            parent_translate_x = parent_transform.get("translateX", 0) or 0
+            parent_translate_y = parent_transform.get("translateY", 0) or 0
+
+            # Combine transforms: apply child transform then parent transform
+            translate_x = translate_x * parent_scale_x + parent_translate_x
+            translate_y = translate_y * parent_scale_y + parent_translate_y
+            scale_x = scale_x * parent_scale_x
+            scale_y = scale_y * parent_scale_y
+
+        # Calculate rotation from shear values (when shear_x = -sin(θ), shear_y = sin(θ))
+        rotation_deg = 0
+        if shear_x != 0 or shear_y != 0:
+            # For pure rotation: shear_y = sin(θ), and scale_x = cos(θ)
+            rotation_rad = math.atan2(shear_y, scale_x)
+            rotation_deg = math.degrees(rotation_rad)
+
+        # Check for flips (negative scale without shear usually means flip)
+        flip_x = scale_x < 0 and shear_x == 0 and shear_y == 0
+        flip_y = scale_y < 0 and shear_x == 0 and shear_y == 0
+
+        # Apply scale to size, translate to position
+        actual_width_emu = width_emu * abs(scale_x)
+        actual_height_emu = height_emu * abs(scale_y)
+
+        bounds = {
+            "left": emu_to_px_x(translate_x),
+            "top": emu_to_px_y(translate_y),
+            "width": emu_to_px_x(actual_width_emu),
+            "height": emu_to_px_y(actual_height_emu),
+            "rotation": rotation_deg,
+            "flip_x": flip_x,
+            "flip_y": flip_y
+        }
+
+        logger.debug(f"[GoogleSlidesImport] Element bounds: size={width_emu}x{height_emu} EMU, "
+                    f"scale={scale_x},{scale_y}, shear={shear_x},{shear_y}, "
+                    f"rotation={rotation_deg:.1f}°, flip=({flip_x},{flip_y}), "
+                    f"result={bounds}")
+
+        return bounds
+
+    def get_outline_style(outline: Dict[str, Any]) -> str:
+        """Extract outline/border style from shape properties."""
+        if not outline:
+            return ""
+
+        # Check if outline should be rendered
+        property_state = outline.get("propertyState", "")
+        if property_state == "NOT_RENDERED":
+            return ""
+
+        outline_fill = outline.get("outlineFill", {})
+        if not outline_fill:
+            return ""
+
+        # Get outline color
+        outline_color = "#000000"
+        if "solidFill" in outline_fill:
+            outline_color = resolve_color(outline_fill["solidFill"].get("color", {}))
+
+        # Get outline weight - Google Slides uses EMU where 9525 EMU = 1 point
+        # Scale to our canvas: 1 point at 72 DPI in a 1920px wide canvas
+        weight = outline.get("weight", {})
+        weight_px = 1
+        if weight and weight.get("magnitude"):
+            weight_emu = weight.get("magnitude", 9525)
+            weight_pt = weight_emu / 9525  # EMU to points
+            weight_px = max(1, weight_pt * font_scale)  # Scale to canvas
+
+        # Get dash style
+        dash_style = outline.get("dashStyle", "SOLID")
+        border_style = "solid"
+        if dash_style == "DASH":
+            border_style = "dashed"
+        elif dash_style == "DOT":
+            border_style = "dotted"
+
+        return f"border: {weight_px:.1f}px {border_style} {outline_color};"
+
+    def get_transform_css(bounds: Dict[str, Any]) -> str:
+        """Generate CSS transform string for rotation and flipping."""
+        transforms = []
+        rotation = bounds.get("rotation", 0)
+        flip_x = bounds.get("flip_x", False)
+        flip_y = bounds.get("flip_y", False)
+
+        if rotation != 0:
+            transforms.append(f"rotate({rotation:.1f}deg)")
+        if flip_x:
+            transforms.append("scaleX(-1)")
+        if flip_y:
+            transforms.append("scaleY(-1)")
+
+        if transforms:
+            return f"transform: {' '.join(transforms)}; transform-origin: center center;"
+        return ""
+
+    async def process_element(el: Dict[str, Any], el_idx: int, parent_transform: Optional[Dict[str, Any]] = None) -> str:
+        """Process a single page element and return HTML."""
+        nonlocal fonts_used
+
+        el_id = el.get("objectId", f"el_{el_idx}")
+        bounds = get_element_bounds(el, parent_transform)
+
+        # Skip elements with no size (but allow very small elements)
+        if bounds["width"] < 1 and bounds["height"] < 1:
+            logger.warning(f"[GoogleSlidesImport] Skipping element {el_id}: too small")
+            return ""
+
+        element_html = ""
+
+        # Handle grouped elements recursively
+        element_group = el.get("elementGroup", {})
+        if element_group:
+            children = element_group.get("children", [])
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Group with {len(children)} children")
+
+            # Get group transform to apply to children
+            group_transform = el.get("transform", {})
+
+            group_children_html = []
+            for child_idx, child in enumerate(children):
+                child_html = await process_element(child, f"{el_idx}_{child_idx}", group_transform)
+                if child_html:
+                    group_children_html.append(child_html)
+
+            if group_children_html:
+                element_html = "\n".join(group_children_html)
+            return element_html
+
+        # Shape with text or plain shape
+        shape = el.get("shape", {})
+        if shape:
+            shape_type = shape.get("shapeType", "RECTANGLE")
+            shape_props = shape.get("shapeProperties", {})
+            text_obj = shape.get("text", {})
+
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Shape type={shape_type}, "
+                       f"bounds=({bounds['left']:.0f},{bounds['top']:.0f},{bounds['width']:.0f}x{bounds['height']:.0f})")
+
+            # Shape fill - check propertyState to determine if fill should be rendered
+            fill_color = None
+            outline = shape_props.get("outline", {})
+            shape_bg = shape_props.get("shapeBackgroundFill", {})
+            property_state = shape_bg.get("propertyState", "")
+
+            should_apply_fill = False
+            if "solidFill" in shape_bg:
+                if property_state == "RENDERED":
+                    should_apply_fill = True
+                elif property_state == "NOT_RENDERED":
+                    should_apply_fill = False
+                elif property_state == "INHERIT":
+                    should_apply_fill = shape_type != "TEXT_BOX"
+                else:
+                    should_apply_fill = shape_type != "TEXT_BOX"
+
+            if should_apply_fill:
+                solid_fill = shape_bg["solidFill"]
+                fill_color = resolve_color(solid_fill.get("color", {}))
+                alpha = solid_fill.get("alpha")
+                if alpha is not None and alpha < 1.0:
+                    if fill_color.startswith("#"):
+                        r = int(fill_color[1:3], 16)
+                        g = int(fill_color[3:5], 16)
+                        b = int(fill_color[5:7], 16)
+                        fill_color = f"rgba({r},{g},{b},{alpha:.2f})"
+                logger.info(f"[GoogleSlidesImport] Shape {el_idx} fill: {fill_color} (state={property_state})")
+            else:
+                logger.debug(f"[GoogleSlidesImport] Shape {el_idx} no fill (state={property_state}, type={shape_type})")
+
+            # Border radius for certain shapes
+            border_radius = ""
+            if shape_type == "ELLIPSE":
+                border_radius = "border-radius: 50%;"
+            elif shape_type == "ROUND_RECTANGLE":
+                border_radius = "border-radius: 8px;"
+
+            # Get outline style
+            outline_style = get_outline_style(outline)
+
+            # Process text content
+            text_html = ""
+            if text_obj and text_obj.get("textElements"):
+                text_html = _process_text_elements_with_fonts(text_obj, theme_colors, resolve_color, fonts_used, font_scale)
+                logger.debug(f"[GoogleSlidesImport] Text content: {text_html[:100] if text_html else 'empty'}...")
+
+            # Get content alignment (vertical alignment within shape)
+            content_alignment = shape_props.get("contentAlignment", "TOP")
+            justify_content = "flex-start"  # TOP
+            if content_alignment == "MIDDLE":
+                justify_content = "center"
+            elif content_alignment == "BOTTOM":
+                justify_content = "flex-end"
+
+            # Generate element HTML with proper text container
+            # Google Slides default text box internal padding is ~0.05" (~5px)
+            transform_css = get_transform_css(bounds)
+            style = (
+                f"position: absolute; "
+                f"left: {bounds['left']:.1f}px; "
+                f"top: {bounds['top']:.1f}px; "
+                f"width: {bounds['width']:.1f}px; "
+                f"height: {bounds['height']:.1f}px; "
+                f"overflow: hidden; "
+                f"display: flex; "
+                f"flex-direction: column; "
+                f"justify-content: {justify_content}; "
+                f"padding: 5px; "
+                f"box-sizing: border-box; "
+            )
+            if fill_color and fill_color.upper() != "#00000000":
+                style += f"background-color: {fill_color}; "
+            if border_radius:
+                style += border_radius
+            if outline_style:
+                style += outline_style
+            if transform_css:
+                style += transform_css
+
+            element_html = f'<div style="{style}">{text_html}</div>'
+
+        # Image
+        image = el.get("image", {})
+        if image:
+            # Try multiple URL sources - contentUrl is preferred, but sourceUrl may work for some images
+            content_url = image.get("contentUrl", "")
+            source_url = image.get("sourceUrl", "")
+
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Image, contentUrl={content_url[:60] if content_url else 'none'}..., sourceUrl={source_url[:60] if source_url else 'none'}...")
+
+            # Try content URL first (usually Google-hosted), then source URL
+            image_data_url = None
+            if content_url:
+                image_data_url = await _download_and_encode_image(content_url, access_token)
+
+            if not image_data_url and source_url:
+                logger.info(f"[GoogleSlidesImport] Trying sourceUrl for image...")
+                image_data_url = await _download_and_encode_image(source_url, access_token)
+
+            if image_data_url:
+                # Check for image crop properties
+                image_props = image.get("imageProperties", {})
+                crop = image_props.get("cropProperties", {})
+
+                # Crop values are ratios (0-1) of how much to cut from each side
+                left_offset = crop.get("leftOffset", 0) or 0
+                right_offset = crop.get("rightOffset", 0) or 0
+                top_offset = crop.get("topOffset", 0) or 0
+                bottom_offset = crop.get("bottomOffset", 0) or 0
+
+                has_crop = left_offset or right_offset or top_offset or bottom_offset
+
+                if has_crop:
+                    # Calculate the visible portion of the image
+                    # visible_width_ratio = 1 - left_offset - right_offset
+                    # visible_height_ratio = 1 - top_offset - bottom_offset
+                    visible_width_ratio = max(0.01, 1 - left_offset - right_offset)
+                    visible_height_ratio = max(0.01, 1 - top_offset - bottom_offset)
+
+                    # The image needs to be scaled up so the visible portion fills the bounds
+                    # Then positioned so the crop offsets are applied
+                    img_width = bounds['width'] / visible_width_ratio
+                    img_height = bounds['height'] / visible_height_ratio
+                    img_left = -left_offset * img_width
+                    img_top = -top_offset * img_height
+
+                    # Use a container div for the crop
+                    transform_css = get_transform_css(bounds)
+                    container_style = (
+                        f"position: absolute; "
+                        f"left: {bounds['left']:.1f}px; "
+                        f"top: {bounds['top']:.1f}px; "
+                        f"width: {bounds['width']:.1f}px; "
+                        f"height: {bounds['height']:.1f}px; "
+                        f"overflow: hidden; "
+                    )
+                    if transform_css:
+                        container_style += transform_css
+                    img_style = (
+                        f"position: absolute; "
+                        f"left: {img_left:.1f}px; "
+                        f"top: {img_top:.1f}px; "
+                        f"width: {img_width:.1f}px; "
+                        f"height: {img_height:.1f}px; "
+                    )
+                    element_html = f'<div style="{container_style}"><img src="{image_data_url}" style="{img_style}" /></div>'
+                    logger.debug(f"[GoogleSlidesImport] Cropped image: offsets=({left_offset:.2f},{top_offset:.2f},{right_offset:.2f},{bottom_offset:.2f})")
+                else:
+                    # No crop - use object-fit to fill the bounds
+                    transform_css = get_transform_css(bounds)
+                    style = (
+                        f"position: absolute; "
+                        f"left: {bounds['left']:.1f}px; "
+                        f"top: {bounds['top']:.1f}px; "
+                        f"width: {bounds['width']:.1f}px; "
+                        f"height: {bounds['height']:.1f}px; "
+                        f"object-fit: fill; "
+                    )
+                    if transform_css:
+                        style += transform_css
+                    element_html = f'<img src="{image_data_url}" style="{style}" />'
+            else:
+                logger.warning(f"[GoogleSlidesImport] Failed to download image: {content_url[:60] if content_url else source_url[:60] if source_url else 'no url'}")
+
+        # Line
+        line = el.get("line", {})
+        if line:
+            line_props = line.get("lineProperties", {})
+            stroke_color = "#000000"
+            stroke_width = 1
+
+            line_fill = line_props.get("lineFill", {})
+            if "solidFill" in line_fill:
+                stroke_color = resolve_color(line_fill["solidFill"].get("color", {}))
+
+            weight = line_props.get("weight", {})
+            if weight and weight.get("magnitude"):
+                weight_emu = weight.get("magnitude", 9525)
+                weight_pt = weight_emu / 9525  # EMU to points
+                stroke_width = max(1, weight_pt * font_scale)  # Scale to canvas
+
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Line, color={stroke_color}, width={stroke_width}")
+
+            # Determine line direction from start and end connections or transform
+            line_type = line.get("lineType", "STRAIGHT_LINE")
+            line_category = line.get("lineCategory", "STRAIGHT")
+
+            style = (
+                f"position: absolute; "
+                f"left: {bounds['left']:.1f}px; "
+                f"top: {bounds['top']:.1f}px; "
+                f"width: {bounds['width']:.1f}px; "
+                f"height: {max(stroke_width, 1):.1f}px; "
+                f"background-color: {stroke_color}; "
+            )
+            element_html = f'<div style="{style}"></div>'
+
+        # Table
+        table = el.get("table", {})
+        if table:
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Table")
+            element_html = _process_table_element(table, bounds, theme_colors, resolve_color, font_scale)
+
+        # SheetsChart - render as placeholder or fetch chart image
+        sheets_chart = el.get("sheetsChart", {})
+        if sheets_chart:
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: SheetsChart")
+            # Try to get the rendered chart image
+            content_url = sheets_chart.get("contentUrl", "")
+            if content_url:
+                image_data_url = await _download_and_encode_image(content_url, access_token)
+                if image_data_url:
+                    style = (
+                        f"position: absolute; "
+                        f"left: {bounds['left']:.1f}px; "
+                        f"top: {bounds['top']:.1f}px; "
+                        f"width: {bounds['width']:.1f}px; "
+                        f"height: {bounds['height']:.1f}px; "
+                        f"object-fit: contain; "
+                    )
+                    element_html = f'<img src="{image_data_url}" style="{style}" />'
+
+        # Video - render as placeholder with thumbnail
+        video = el.get("video", {})
+        if video:
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: Video")
+            thumb_url = video.get("thumbnail", {}).get("contentUrl", "")
+            if thumb_url:
+                image_data_url = await _download_and_encode_image(thumb_url, access_token)
+                if image_data_url:
+                    style = (
+                        f"position: absolute; "
+                        f"left: {bounds['left']:.1f}px; "
+                        f"top: {bounds['top']:.1f}px; "
+                        f"width: {bounds['width']:.1f}px; "
+                        f"height: {bounds['height']:.1f}px; "
+                        f"object-fit: cover; "
+                    )
+                    element_html = f'<div style="{style}; display: flex; align-items: center; justify-content: center; background: #000;"><img src="{image_data_url}" style="max-width: 100%; max-height: 100%;" /><div style="position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.8); border-radius: 50%; display: flex; align-items: center; justify-content: center;">▶</div></div>'
+
+        # WordArt
+        word_art = el.get("wordArt", {})
+        if word_art:
+            rendered_text = word_art.get("renderedText", "")
+            logger.info(f"[GoogleSlidesImport] Element {el_idx}: WordArt - '{rendered_text[:30]}'")
+            style = (
+                f"position: absolute; "
+                f"left: {bounds['left']:.1f}px; "
+                f"top: {bounds['top']:.1f}px; "
+                f"width: {bounds['width']:.1f}px; "
+                f"height: {bounds['height']:.1f}px; "
+                f"display: flex; align-items: center; justify-content: center; "
+                f"font-size: {bounds['height'] * 0.6:.0f}px; font-weight: bold; "
+            )
+            element_html = f'<div style="{style}">{html_module.escape(rendered_text)}</div>'
+
+        return element_html
+
+    # Extract background color and image
+    bg_color = "#FFFFFF"
+    bg_image_url = None
+    page_props = slide.get("pageProperties", {})
+    page_bg = page_props.get("pageBackgroundFill", {})
+
+    if "solidFill" in page_bg:
+        bg_color = resolve_color(page_bg["solidFill"].get("color", {}))
+    elif "stretchedPictureFill" in page_bg:
+        bg_image_url = page_bg["stretchedPictureFill"].get("contentUrl", "")
+
+    logger.info(f"[GoogleSlidesImport] Slide {slide_index + 1} background: color={bg_color}, image={'yes' if bg_image_url else 'no'}")
+
+    # Process all page elements using the new recursive function
+    elements_html = []
+    page_elements = slide.get("pageElements", [])
+    logger.info(f"[GoogleSlidesImport] Slide {slide_index + 1} has {len(page_elements)} elements")
+
+    for el_idx, el in enumerate(page_elements):
+        element_html = await process_element(el, el_idx)
+        if element_html:
+            elements_html.append(element_html)
+
+    # Build complete HTML document with dynamic Google Fonts
+    elements_str = "\n    ".join(elements_html)
+
+    # Generate Google Fonts link for all fonts used in this slide
+    fonts_link = ""
+    if fonts_used:
+        # Format fonts for Google Fonts API
+        # Only skip generic CSS font families, load everything else from Google Fonts
+        google_fonts = []
+        generic_fonts = {"sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace"}
+        for font in fonts_used:
+            font_lower = font.lower().strip()
+            if font_lower not in generic_fonts and font_lower:
+                # URL encode font name and add all common weights + italic variants
+                font_clean = font.strip()
+                font_param = font_clean.replace(" ", "+") + ":ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900"
+                google_fonts.append(font_param)
+
+        if google_fonts:
+            fonts_param = "&family=".join(google_fonts)
+            fonts_link = f'<link href="https://fonts.googleapis.com/css2?family={fonts_param}&display=swap" rel="stylesheet">'
+            logger.info(f"[GoogleSlidesImport] Loading Google Fonts: {list(fonts_used)}")
+
+    # Handle background image if present
+    bg_style = f"background-color: {bg_color};"
+    if bg_image_url:
+        bg_image_data = await _download_and_encode_image(bg_image_url, access_token)
+        if bg_image_data:
+            bg_style = f"background-image: url('{bg_image_data}'); background-size: cover; background-position: center;"
+
+    html_output = f'''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  {fonts_link}
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    html, body {{ width: 100%; height: 100%; overflow: hidden; }}
+    .slide-container {{
+      position: relative;
+      width: {OUT_WIDTH}px;
+      height: {OUT_HEIGHT}px;
+      {bg_style}
+      font-family: Arial, sans-serif;
+    }}
+  </style>
+</head>
+<body>
+  <div class="slide-container">
+    {elements_str}
+  </div>
+</body>
+</html>'''
+
+    return html_output
+
+
+def _process_text_elements(text_obj: Dict[str, Any], theme_colors: Dict[str, str], resolve_color) -> str:
+    """Process Google Slides text object into HTML with proper formatting."""
+    import html as html_module
+
+    paragraphs_html = []
+    current_paragraph = []
+
+    text_elements = text_obj.get("textElements", [])
+
+    for te in text_elements:
+        # Paragraph marker - flush current paragraph
+        para_marker = te.get("paragraphMarker")
+        if para_marker:
+            if current_paragraph:
+                # Get paragraph style
+                para_style = para_marker.get("style", {})
+                alignment = para_style.get("alignment", "START")
+                text_align = "left"
+                if alignment == "CENTER":
+                    text_align = "center"
+                elif alignment == "END":
+                    text_align = "right"
+                elif alignment == "JUSTIFIED":
+                    text_align = "justify"
+
+                line_spacing = para_style.get("lineSpacing", 100)
+                line_height = line_spacing / 100 if line_spacing else 1.2
+
+                para_html = "".join(current_paragraph)
+                paragraphs_html.append(
+                    f'<p style="text-align: {text_align}; line-height: {line_height}; margin-bottom: 0.5em;">{para_html}</p>'
+                )
+                current_paragraph = []
+            continue
+
+        # Text run
+        text_run = te.get("textRun")
+        if text_run:
+            content = text_run.get("content", "")
+            if not content or content == "\n":
+                continue
+
+            content = html_module.escape(content.rstrip("\n"))
+
+            style = text_run.get("style", {})
+
+            # Font size
+            font_size_obj = style.get("fontSize", {})
+            font_size = font_size_obj.get("magnitude", 14) if font_size_obj else 14
+
+            # Font family
+            font_family = style.get("fontFamily", "Arial")
+            if font_family:
+                font_family = font_family.replace('"', '\\"')
+
+            # Text color
+            fg_color = style.get("foregroundColor", {})
+            opaque_color = fg_color.get("opaqueColor", {})
+            text_color = resolve_color(opaque_color) if opaque_color else "#000000"
+
+            # Font weight and style
+            bold = style.get("bold", False)
+            italic = style.get("italic", False)
+            underline = style.get("underline", False)
+            strikethrough = style.get("strikethrough", False)
+
+            # Build inline style
+            inline_style = f'font-size: {font_size}px; color: {text_color}; font-family: "{font_family}", sans-serif;'
+            if bold:
+                inline_style += " font-weight: bold;"
+            if italic:
+                inline_style += " font-style: italic;"
+
+            text_decoration = []
+            if underline:
+                text_decoration.append("underline")
+            if strikethrough:
+                text_decoration.append("line-through")
+            if text_decoration:
+                inline_style += f" text-decoration: {' '.join(text_decoration)};"
+
+            current_paragraph.append(f'<span style="{inline_style}">{content}</span>')
+
+    # Flush any remaining paragraph
+    if current_paragraph:
+        para_html = "".join(current_paragraph)
+        paragraphs_html.append(f'<p style="margin-bottom: 0.5em;">{para_html}</p>')
+
+    return "".join(paragraphs_html)
+
+
+def _process_text_elements_with_fonts(text_obj: Dict[str, Any], theme_colors: Dict[str, str], resolve_color, fonts_used: Set[str], font_scale: float = 2.667) -> str:
+    """Process Google Slides text object into HTML with proper formatting, tracking fonts used.
+
+    Args:
+        font_scale: Multiplier to convert points to pixels for the scaled output.
+                   Default 2.667 assumes standard 10" wide slide scaled to 1920px.
+    """
+    import html as html_module
+
+    paragraphs_html = []
+    current_paragraph = []
+    current_para_style = {}
+
+    text_elements = text_obj.get("textElements", [])
+    current_bullet = None  # Track current paragraph's bullet info
+
+    for te in text_elements:
+        # Paragraph marker - flush current paragraph and capture next paragraph's style
+        para_marker = te.get("paragraphMarker")
+        if para_marker:
+            if current_paragraph:
+                # Get paragraph style from current marker
+                para_style = current_para_style
+                alignment = para_style.get("alignment", "START")
+                text_align = "left"
+                if alignment == "CENTER":
+                    text_align = "center"
+                elif alignment == "END":
+                    text_align = "right"
+                elif alignment == "JUSTIFIED":
+                    text_align = "justify"
+
+                line_spacing = para_style.get("lineSpacing", 100)
+                line_height = line_spacing / 100 if line_spacing else 1.2
+
+                # Get indentation
+                indent_start = para_style.get("indentStart", {}).get("magnitude", 0) or 0
+                indent_first_line = para_style.get("indentFirstLine", {}).get("magnitude", 0) or 0
+
+                para_style_str = f"text-align: {text_align}; line-height: {line_height}; margin: 0; padding: 0;"
+
+                # Handle bullet lists
+                if current_bullet:
+                    nesting_level = current_bullet.get("nestingLevel", 0)
+                    glyph = current_bullet.get("glyph", "•")
+                    # Add indent based on nesting level
+                    indent_px = (nesting_level + 1) * 20
+                    para_style_str += f" margin-left: {indent_px}px; padding-left: 15px;"
+                    # Add bullet character
+                    bullet_html = f'<span style="position: absolute; left: {nesting_level * 20}px;">{html_module.escape(glyph)}</span>'
+                    para_html = bullet_html + "".join(current_paragraph)
+                    para_style_str += " position: relative;"
+                else:
+                    if indent_start:
+                        # Convert EMU to px (approximate)
+                        indent_px = indent_start / 9525  # EMU to points, approx
+                        para_style_str += f" margin-left: {indent_px:.0f}px;"
+                    para_html = "".join(current_paragraph)
+
+                paragraphs_html.append(f'<p style="{para_style_str}">{para_html}</p>')
+                current_paragraph = []
+
+            # Store this paragraph's style and bullet info for the next text runs
+            current_para_style = para_marker.get("style", {})
+            current_bullet = para_marker.get("bullet")
+            continue
+
+        # Text run
+        text_run = te.get("textRun")
+        if text_run:
+            content = text_run.get("content", "")
+            if not content or content == "\n":
+                continue
+
+            content = html_module.escape(content.rstrip("\n"))
+
+            style = text_run.get("style", {})
+
+            # Font size - handle different formats and scale from points to pixels
+            font_size_obj = style.get("fontSize", {})
+            if isinstance(font_size_obj, dict):
+                font_size_pt = font_size_obj.get("magnitude", 14) or 14
+            else:
+                font_size_pt = 14
+            # Scale font size from points to pixels for our output canvas
+            font_size = round(font_size_pt * font_scale)
+
+            # Font family - track it for Google Fonts loading
+            font_family = style.get("fontFamily", "Arial") or "Arial"
+            # Clean up font family name
+            font_family = font_family.replace('"', '').strip()
+            if font_family:
+                fonts_used.add(font_family)
+                logger.debug(f"[GoogleSlidesImport] Detected font: '{font_family}' at {font_size_pt}pt")
+
+            # Weighted font detection (e.g., "Roboto Bold" should be "Roboto" with bold)
+            weighted_bold = False
+            weighted_italic = False
+            font_parts = font_family.split()
+            if len(font_parts) > 1:
+                last_part = font_parts[-1].lower()
+                if last_part in ("bold", "black", "heavy"):
+                    weighted_bold = True
+                    font_family = " ".join(font_parts[:-1])
+                elif last_part in ("italic", "oblique"):
+                    weighted_italic = True
+                    font_family = " ".join(font_parts[:-1])
+                elif last_part in ("light", "thin", "medium"):
+                    # Keep the weight info but use base font family
+                    font_family = " ".join(font_parts[:-1])
+
+            # Text color
+            fg_color = style.get("foregroundColor", {})
+            opaque_color = fg_color.get("opaqueColor", {})
+            text_color = resolve_color(opaque_color) if opaque_color else "#000000"
+
+            # Font weight and style from explicit properties
+            bold = style.get("bold", False) or weighted_bold
+            italic = style.get("italic", False) or weighted_italic
+            underline = style.get("underline", False)
+            strikethrough = style.get("strikethrough", False)
+
+            # Get font weight value if specified
+            weight_value = style.get("weightedFontFamily", {}).get("weight", 400)
+            if bold and weight_value < 600:
+                weight_value = 700
+
+            # Build inline style
+            inline_style = f'font-size: {font_size}px; color: {text_color}; font-family: "{font_family}", sans-serif;'
+            if weight_value != 400:
+                inline_style += f" font-weight: {weight_value};"
+            elif bold:
+                inline_style += " font-weight: bold;"
+            if italic:
+                inline_style += " font-style: italic;"
+
+            text_decoration = []
+            if underline:
+                text_decoration.append("underline")
+            if strikethrough:
+                text_decoration.append("line-through")
+            if text_decoration:
+                inline_style += f" text-decoration: {' '.join(text_decoration)};"
+
+            # Handle baseline offset (subscript/superscript)
+            baseline_offset = style.get("baselineOffset", "NONE")
+            if baseline_offset == "SUPERSCRIPT":
+                inline_style += " vertical-align: super; font-size: 0.75em;"
+            elif baseline_offset == "SUBSCRIPT":
+                inline_style += " vertical-align: sub; font-size: 0.75em;"
+
+            # Handle links
+            link = style.get("link", {})
+            if link and link.get("url"):
+                current_paragraph.append(f'<a href="{html_module.escape(link["url"])}" style="{inline_style}" target="_blank">{content}</a>')
+            else:
+                current_paragraph.append(f'<span style="{inline_style}">{content}</span>')
+
+    # Flush any remaining paragraph with its style
+    if current_paragraph:
+        para_style = current_para_style
+        alignment = para_style.get("alignment", "START")
+        text_align = "left"
+        if alignment == "CENTER":
+            text_align = "center"
+        elif alignment == "END":
+            text_align = "right"
+        elif alignment == "JUSTIFIED":
+            text_align = "justify"
+
+        line_spacing = para_style.get("lineSpacing", 100)
+        line_height = line_spacing / 100 if line_spacing else 1.2
+
+        para_style_str = f"text-align: {text_align}; line-height: {line_height}; margin: 0; padding: 0;"
+
+        # Handle bullet lists for remaining paragraph
+        if current_bullet:
+            nesting_level = current_bullet.get("nestingLevel", 0)
+            glyph = current_bullet.get("glyph", "•")
+            indent_px = (nesting_level + 1) * 20
+            para_style_str += f" margin-left: {indent_px}px; padding-left: 15px; position: relative;"
+            bullet_html = f'<span style="position: absolute; left: {nesting_level * 20}px;">{html_module.escape(glyph)}</span>'
+            para_html = bullet_html + "".join(current_paragraph)
+        else:
+            para_html = "".join(current_paragraph)
+
+        paragraphs_html.append(f'<p style="{para_style_str}">{para_html}</p>')
+
+    return "".join(paragraphs_html)
+
+
+def _process_table_element(table: Dict[str, Any], bounds: Dict[str, float], theme_colors: Dict[str, str], resolve_color, font_scale: float = 2.667) -> str:
+    """Process a table element into HTML."""
+    rows = table.get("tableRows", [])
+    if not rows:
+        return ""
+
+    # Dummy fonts set for tables (we don't track fonts from tables currently)
+    dummy_fonts: Set[str] = set()
+
+    table_html = []
+    table_html.append(f'<table style="position: absolute; left: {bounds["left"]:.1f}px; top: {bounds["top"]:.1f}px; '
+                     f'width: {bounds["width"]:.1f}px; height: {bounds["height"]:.1f}px; border-collapse: collapse;">')
+
+    for row in rows:
+        table_html.append("<tr>")
+        cells = row.get("tableCells", [])
+        for cell in cells:
+            # Cell text - use the font-scaled version
+            text_obj = cell.get("text", {})
+            cell_text = ""
+            if text_obj:
+                cell_text = _process_text_elements_with_fonts(text_obj, theme_colors, resolve_color, dummy_fonts, font_scale)
+
+            # Cell background
+            cell_props = cell.get("tableCellProperties", {})
+            cell_bg = cell_props.get("tableCellBackgroundFill", {})
+            bg_color = ""
+            if "solidFill" in cell_bg:
+                bg_color = f"background-color: {resolve_color(cell_bg['solidFill'].get('color', {}))};"
+
+            table_html.append(f'<td style="border: 1px solid #ccc; padding: 8px; {bg_color}">{cell_text}</td>')
+        table_html.append("</tr>")
+
+    table_html.append("</table>")
+    return "".join(table_html)
+
+
+async def _download_and_encode_image(url: str, access_token: str) -> Optional[str]:
+    """Download an image and return as data URL with multiple fallback strategies."""
+    if not url:
+        return None
+
+    logger.info(f"[GoogleSlidesImport] Downloading image: {url[:80]}...")
+
+    async def try_download(headers: Dict[str, str]) -> Optional[httpx.Response]:
+        """Attempt to download with given headers."""
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(url, headers=headers, follow_redirects=True)
+                if response.status_code == 200 and len(response.content) > 0:
+                    return response
+                else:
+                    logger.debug(f"[GoogleSlidesImport] Download attempt failed: status={response.status_code}, size={len(response.content)}")
+                    return None
+        except Exception as e:
+            logger.debug(f"[GoogleSlidesImport] Download attempt error: {e}")
+            return None
+
+    response = None
+
+    # Strategy 1: Try with OAuth token for Google URLs
+    is_google_url = any(domain in url.lower() for domain in [
+        "googleusercontent.com",
+        "google.com",
+        "googleapis.com",
+        "ggpht.com",
+        "lh3.google",
+        "lh4.google",
+        "lh5.google",
+        "lh6.google"
+    ])
+
+    if is_google_url and access_token:
+        logger.debug("[GoogleSlidesImport] Trying with OAuth token...")
+        response = await try_download({"Authorization": f"Bearer {access_token}"})
+
+    # Strategy 2: Try without auth (for public images)
+    if not response:
+        logger.debug("[GoogleSlidesImport] Trying without auth...")
+        response = await try_download({})
+
+    # Strategy 3: Try with a common user agent
+    if not response:
+        logger.debug("[GoogleSlidesImport] Trying with User-Agent header...")
+        response = await try_download({
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        })
+
+    # Strategy 4: For Google Drive URLs, try to convert to direct download format
+    if not response and "drive.google.com" in url:
+        # Convert sharing URL to direct download
+        import re
+        file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if file_id_match:
+            file_id = file_id_match.group(1)
+            direct_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            logger.debug(f"[GoogleSlidesImport] Trying Drive direct URL: {direct_url}")
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.get(
+                        direct_url,
+                        headers={"Authorization": f"Bearer {access_token}"} if access_token else {},
+                        follow_redirects=True
+                    )
+                    if response.status_code != 200 or len(response.content) == 0:
+                        response = None
+            except Exception:
+                response = None
+
+    if response and response.status_code == 200 and len(response.content) > 100:
+        content_type = response.headers.get("content-type", "image/png")
+        if ";" in content_type:
+            content_type = content_type.split(";")[0].strip()
+
+        # Validate content type is an image
+        if not content_type.startswith("image/"):
+            # Try to detect from content
+            content = response.content[:20]
+            if content.startswith(b'\x89PNG'):
+                content_type = "image/png"
+            elif content.startswith(b'\xff\xd8\xff'):
+                content_type = "image/jpeg"
+            elif content.startswith(b'GIF'):
+                content_type = "image/gif"
+            elif content.startswith(b'RIFF') and b'WEBP' in content:
+                content_type = "image/webp"
+            elif b'<svg' in content.lower():
+                content_type = "image/svg+xml"
+            else:
+                content_type = "image/png"  # Default fallback
+
+        b64 = base64.b64encode(response.content).decode("utf-8")
+        logger.info(f"[GoogleSlidesImport] Image downloaded successfully: {len(response.content)} bytes, type={content_type}")
+        return f"data:{content_type};base64,{b64}"
+    else:
+        logger.warning(f"[GoogleSlidesImport] All image download strategies failed for: {url[:80]}")
+        return None
+
+
+def _extract_slide_title(slide: Dict[str, Any]) -> Optional[str]:
+    """Extract the title from a Google Slides slide."""
+    try:
+        for el in slide.get("pageElements", []):
+            shape = el.get("shape", {})
+            placeholder = shape.get("placeholder", {})
+            ptype = (placeholder.get("type") or "").upper()
+
+            if ptype in ("TITLE", "CENTERED_TITLE"):
+                text = shape.get("text", {})
+                return _extract_plain_text_from_google(text)
+
+        # Fallback: first text box
+        for el in slide.get("pageElements", []):
+            shape = el.get("shape", {})
+            if (shape.get("shapeType") or "").upper() == "TEXT_BOX":
+                text = shape.get("text", {})
+                extracted = _extract_plain_text_from_google(text)
+                if extracted:
+                    return extracted[:100]  # Limit title length
+    except Exception:
+        pass
+    return None
+
+
+def _extract_plain_text_from_google(text_obj: Dict[str, Any]) -> str:
+    """Extract plain text from Google Slides text object."""
+    try:
+        elements = text_obj.get("textElements", [])
+        parts = []
+        for te in elements:
+            run = te.get("textRun") if isinstance(te, dict) else None
+            if run:
+                content = (run.get("content") or "").strip()
+                if content:
+                    parts.append(content)
+        return " ".join(parts).strip()
+    except Exception:
+        return ""
+
+
+def _preprocess_slide_for_ai(slide: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pre-process Google Slide data into a cleaner format for AI.
+    Extracts key visual elements with positions, sizes, colors, and text.
+    """
+    # Standard slide size in EMU
+    SLIDE_WIDTH_EMU = 9144000
+    SLIDE_HEIGHT_EMU = 5143500
+
+    def emu_to_percent(emu: float, is_width: bool = True) -> float:
+        """Convert EMU to percentage of slide."""
+        base = SLIDE_WIDTH_EMU if is_width else SLIDE_HEIGHT_EMU
+        return round((emu / base) * 100, 2)
+
+    def get_transform_position(el: Dict[str, Any]) -> Dict[str, float]:
+        """Extract position from element transform."""
+        transform = el.get("transform", {})
+        tx = transform.get("translateX", 0) or 0
+        ty = transform.get("translateY", 0) or 0
+        return {
+            "left": emu_to_percent(tx, True),
+            "top": emu_to_percent(ty, False)
+        }
+
+    def get_size(el: Dict[str, Any]) -> Dict[str, float]:
+        """Extract size from element."""
+        size = el.get("size", {})
+        w = size.get("width", {}).get("magnitude", 0) or 0
+        h = size.get("height", {}).get("magnitude", 0) or 0
+        return {
+            "width": emu_to_percent(w, True),
+            "height": emu_to_percent(h, False)
+        }
+
+    def rgb_to_hex(rgb: Dict[str, Any]) -> str:
+        """Convert Google RGB to hex color."""
+        if not rgb:
+            return "#000000"
+        r = int((rgb.get("red", 0) or 0) * 255)
+        g = int((rgb.get("green", 0) or 0) * 255)
+        b = int((rgb.get("blue", 0) or 0) * 255)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    def extract_text_content(text_obj: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract text runs with formatting."""
+        runs = []
+        for el in text_obj.get("textElements", []):
+            text_run = el.get("textRun")
+            if text_run:
+                content = text_run.get("content", "").strip()
+                if content:
+                    style = text_run.get("style", {})
+                    font_size = style.get("fontSize", {}).get("magnitude", 14)
+                    runs.append({
+                        "text": content,
+                        "fontSize": font_size,
+                        "bold": style.get("bold", False),
+                        "italic": style.get("italic", False),
+                        "color": rgb_to_hex(style.get("foregroundColor", {}).get("opaqueColor", {}).get("rgbColor", {}))
+                    })
+        return runs
+
+    # Extract background
+    background = {"color": "#FFFFFF"}
+    page_props = slide.get("pageProperties", {})
+    bg_fill = page_props.get("pageBackgroundFill", {})
+    if "solidFill" in bg_fill:
+        rgb = bg_fill["solidFill"].get("color", {}).get("rgbColor", {})
+        background["color"] = rgb_to_hex(rgb)
+
+    # Extract elements
+    elements = []
+    for el in slide.get("pageElements", []):
+        pos = get_transform_position(el)
+        size = get_size(el)
+        element_id = el.get("objectId", "")
+
+        # Text box or shape with text
+        shape = el.get("shape", {})
+        if shape:
+            shape_type = shape.get("shapeType", "RECTANGLE")
+            text = shape.get("text", {})
+            text_runs = extract_text_content(text) if text else []
+
+            # Get shape fill color
+            shape_props = shape.get("shapeProperties", {})
+            fill = shape_props.get("shapeBackgroundFill", {})
+            fill_color = None
+            if "solidFill" in fill:
+                rgb = fill["solidFill"].get("color", {}).get("rgbColor", {})
+                fill_color = rgb_to_hex(rgb)
+
+            elements.append({
+                "type": "shape" if not text_runs else "text",
+                "shapeType": shape_type,
+                "position": pos,
+                "size": size,
+                "text": text_runs,
+                "backgroundColor": fill_color
+            })
+
+        # Image
+        image = el.get("image", {})
+        if image:
+            elements.append({
+                "type": "image",
+                "position": pos,
+                "size": size,
+                "contentUrl": image.get("contentUrl", "")
+            })
+
+        # Line
+        line = el.get("line", {})
+        if line:
+            line_props = line.get("lineProperties", {})
+            elements.append({
+                "type": "line",
+                "position": pos,
+                "size": size,
+                "strokeColor": rgb_to_hex(line_props.get("lineFill", {}).get("solidFill", {}).get("color", {}).get("rgbColor", {})),
+                "strokeWidth": line_props.get("weight", {}).get("magnitude", 1)
+            })
+
+    return {
+        "background": background,
+        "elements": elements
+    }
+
+
+def _extract_theme_colors(presentation: Dict[str, Any]) -> Dict[str, str]:
+    """Extract theme colors from a Google Slides presentation."""
+    # Default theme colors as fallback
+    theme_colors = {
+        "DARK1": "#000000",
+        "LIGHT1": "#FFFFFF",
+        "DARK2": "#333333",
+        "LIGHT2": "#F5F5F5",
+        "ACCENT1": "#1A73E8",
+        "ACCENT2": "#FBBC04",
+        "ACCENT3": "#34A853",
+        "ACCENT4": "#EA4335",
+        "ACCENT5": "#A142F4",
+        "ACCENT6": "#00ACC1",
+        "HYPERLINK": "#1155CC",
+        "FOLLOWED_HYPERLINK": "#6611CC",
+        # Legacy mappings
+        "BACKGROUND": "#FFFFFF",
+        "TEXT": "#000000",
+    }
+
+    def rgb_to_hex(rgb: Dict[str, Any]) -> str:
+        """Convert Google RGB (0-1) to hex color."""
+        if not rgb:
+            return "#000000"
+        r = int((rgb.get("red", 0) or 0) * 255)
+        g = int((rgb.get("green", 0) or 0) * 255)
+        b = int((rgb.get("blue", 0) or 0) * 255)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    try:
+        masters = presentation.get("masters", [])
+        if masters:
+            master = masters[0]
+            master_props = master.get("masterProperties", {})
+
+            # Try to get colors from page elements (text styles, etc.)
+            page_elements = master.get("pageElements", [])
+            for el in page_elements:
+                shape = el.get("shape", {})
+                if shape:
+                    text = shape.get("text", {})
+                    if text:
+                        for te in text.get("textElements", []):
+                            text_run = te.get("textRun", {})
+                            style = text_run.get("style", {})
+                            fg_color = style.get("foregroundColor", {})
+                            opaque = fg_color.get("opaqueColor", {})
+                            if "themeColor" in opaque:
+                                tc_name = opaque.get("themeColor", "")
+                                rgb_color = opaque.get("rgbColor", {})
+                                if tc_name and rgb_color:
+                                    theme_colors[tc_name] = rgb_to_hex(rgb_color)
+
+            # Also check page properties for background colors
+            page_props = master.get("pageProperties", {})
+            color_scheme = page_props.get("colorScheme", {})
+            if color_scheme:
+                colors = color_scheme.get("colors", [])
+                for color_entry in colors:
+                    color_type = color_entry.get("type", "")
+                    rgb_color = color_entry.get("color", {}).get("rgbColor", {})
+                    if color_type and rgb_color:
+                        theme_colors[color_type] = rgb_to_hex(rgb_color)
+
+        # Also check layouts for color scheme
+        layouts = presentation.get("layouts", [])
+        for layout in layouts:
+            page_props = layout.get("pageProperties", {})
+            color_scheme = page_props.get("colorScheme", {})
+            if color_scheme:
+                colors = color_scheme.get("colors", [])
+                for color_entry in colors:
+                    color_type = color_entry.get("type", "")
+                    rgb_color = color_entry.get("color", {}).get("rgbColor", {})
+                    if color_type and rgb_color:
+                        theme_colors[color_type] = rgb_to_hex(rgb_color)
+                break  # Only need one layout for color scheme
+
+        logger.debug(f"[GoogleSlidesImport] Extracted theme colors: {theme_colors}")
+
+    except Exception as e:
+        logger.warning(f"[GoogleSlidesImport] Error extracting theme colors: {e}")
+
+    return theme_colors
+
+
+def _create_fallback_render_function(slide: Dict[str, Any], theme_colors: Dict[str, str]) -> str:
+    """Create a basic fallback HTML when AI generation fails."""
+    import html as html_module
+
+    # Pre-process the slide to get clean data
+    processed = _preprocess_slide_for_ai(slide)
+    bg_color = processed.get("background", {}).get("color", "#FFFFFF")
+
+    # Build HTML elements for the fallback
+    elements_html = []
+    for i, el in enumerate(processed.get("elements", [])[:15]):  # Limit to 15 elements
+        left = el.get("position", {}).get("left", 0)
+        top = el.get("position", {}).get("top", 0)
+        width = el.get("size", {}).get("width", 50)
+        height = el.get("size", {}).get("height", 10)
+
+        if el.get("type") == "text" and el.get("text"):
+            # Combine all text runs
+            text_content = " ".join([run.get("text", "") for run in el.get("text", [])])
+            text_content = html_module.escape(text_content)
+            first_run = el.get("text", [{}])[0]
+            font_size = first_run.get("fontSize", 24)
+            color = first_run.get("color", "#000000")
+            bold = "font-bold" if first_run.get("bold", False) else ""
+
+            elements_html.append(f'''<div class="absolute {bold}" style="left: {left}%; top: {top}%; width: {width}%; font-size: {font_size}px; color: {color};">{text_content}</div>''')
+
+        elif el.get("type") == "shape" and el.get("backgroundColor"):
+            bg = el.get("backgroundColor", "#CCCCCC")
+            radius = "rounded-full" if el.get("shapeType") == "ELLIPSE" else ""
+            elements_html.append(f'''<div class="absolute {radius}" style="left: {left}%; top: {top}%; width: {width}%; height: {height}%; background-color: {bg};"></div>''')
+
+        elif el.get("type") == "image" and el.get("contentUrl"):
+            src = el.get("contentUrl", "")
+            elements_html.append(f'''<img class="absolute object-contain" style="left: {left}%; top: {top}%; width: {width}%; height: {height}%;" src="{src}" />''')
+
+    elements_str = "\n    ".join(elements_html)
+
+    return f'''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    html, body {{ width: 100%; height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; }}
+  </style>
+</head>
+<body>
+  <div class="relative w-full h-full" style="background-color: {bg_color};">
+    {elements_str}
+  </div>
+</body>
+</html>'''
+
+
+def _create_error_slide_component(error_message: str) -> Dict[str, Any]:
+    """Create a CustomComponent that displays an error message."""
+    import html as html_module
+    safe_error = html_module.escape(error_message[:200])
+
+    render_code = f'''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    html, body {{ width: 100%; height: 100%; overflow: hidden; }}
+  </style>
+</head>
+<body class="bg-red-50 flex flex-col items-center justify-center h-full font-sans">
+  <div class="text-5xl mb-4">⚠️</div>
+  <div class="text-2xl font-semibold text-red-800 mb-2">Import Error</div>
+  <div class="text-sm text-red-700 text-center max-w-[80%]">{safe_error}</div>
+</body>
+</html>'''
+
+    return {
+        "id": str(uuid.uuid4()),
+        "type": "CustomComponent",
+        "props": {
+            "position": {"x": 0, "y": 0},
+            "width": 1920,
+            "height": 1080,
+            "rotation": 0,
+            "opacity": 1,
+            "zIndex": 1,
+            "render": render_code,
+            "props": {"error": True}
+        }
+    }
+
+
+# ==============================================================================
+# Import Job Functions
+# ==============================================================================
 
 
 async def _run_import_slides_job(user_id: str, job_id: str, presentation_id: str) -> None:
+    """
+    Import Google Slides using the new CustomComponent-based approach.
+
+    This replaces the old PPTX-export approach with direct conversion to
+    CustomComponents for perfect visual fidelity.
+    """
     oauth = GoogleOAuthService()
     api = GoogleApiClient(oauth)
     jobs_store.update(job_id, JobStatus.RUNNING)
-    
-    temp_file_path = None
+
     try:
-        # Step 1: Export Google Slides as PPTX
-        logger.info(f"Exporting Google Slides {presentation_id} as PPTX")
-        
-        # Get presentation title for naming
-        presentation = await api.slides_get_presentation(user_id, presentation_id)
-        title = presentation.get("title", "Untitled")
-        
-        # Export as PPTX using Google Drive export
-        # Try the direct export URL first
-        export_url = f"https://docs.google.com/presentation/d/{presentation_id}/export/pptx"
-        
-        # Get access token for the user
+        # Get access token
         access_token = await oauth.refresh_access_token(user_id)
         if not access_token:
             raise HTTPException(status_code=401, detail="Google authentication required")
-            
-        logger.info(f"Exporting presentation {presentation_id} as PPTX")
-        
-        # Download the PPTX file with proper headers
-        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
-            # First attempt with the export URL
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "User-Agent": "Mozilla/5.0 (compatible; SlideApp/1.0)"
-            }
-            
-            response = await client.get(export_url, headers=headers)
-            
-            # If we get a 403/404, try the Drive API export endpoint
-            if response.status_code in [403, 404]:
-                logger.info("Direct export failed, trying Drive API export endpoint")
-                drive_export_url = f"https://www.googleapis.com/drive/v3/files/{presentation_id}/export?mimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                response = await client.get(drive_export_url, headers=headers)
-            
-            if response.status_code != 200:
-                logger.error(f"Export failed with status {response.status_code}: {response.text[:500]}")
-                if response.status_code == 401:
-                    raise HTTPException(status_code=401, detail="Google authentication expired. Please reconnect your Google account.")
-                elif response.status_code == 403:
-                    raise HTTPException(status_code=403, detail="Access denied. Please ensure you have access to this presentation.")
-                elif response.status_code == 404:
-                    raise HTTPException(status_code=404, detail="Presentation not found.")
-                else:
-                    raise HTTPException(status_code=response.status_code, detail=f"Failed to export Google Slides: {response.status_code}")
-                    
-            response.raise_for_status()
-            
-            # Save to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
-                tmp.write(response.content)
-                temp_file_path = tmp.name
-                
-        # Step 2: Import the PPTX file using vision-based importer
-        logger.info("[IMPORT_SLIDES] Starting vision-based PPTX import...")
-        from services.vision_pptx_importer import VisionPPTXImporter
-        importer = VisionPPTXImporter()
-        deck = await importer.import_file(temp_file_path)
 
-        # Update deck name from Google Slides title
-        deck["name"] = title
+        # Get the full presentation data from Google Slides API
+        presentation = await api.slides_get_presentation(user_id, presentation_id)
+
+        # Convert directly to CustomComponents using data parsing (no AI)
+        logger.info(f"[GoogleSlidesImport] Converting to CustomComponents using data parsing...")
+        deck = await _convert_google_slides_to_custom_components(
+            presentation=presentation,
+            user_id=user_id,
+            access_token=access_token,
+            job_id=job_id
+        )
 
         # Upload any embedded images to storage
-        logger.info("[IMPORT_SLIDES] Uploading images to storage...")
+        logger.info("[GoogleSlidesImport] Uploading images to storage...")
         deck = await _upload_deck_images_to_storage(deck)
 
         # Add import metadata
         result_data = {
             "deck": deck,
             "importMetadata": {
-                "source": "google_slides_via_vision",
+                "source": "google_slides_custom_component",
                 "presentation_id": presentation_id,
                 **deck.pop("metadata", {})
             }
         }
 
         jobs_store.update(job_id, JobStatus.SUCCEEDED, result_data)
-        logger.info(f"[IMPORT_SLIDES] Completed: {len(deck.get('slides', []))} slides")
-        
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            error_msg = "Google authentication expired. Please reconnect your Google account."
-        else:
-            error_msg = f"Failed to export Google Slides: {e.response.status_code}"
-        logger.error(error_msg)
-        jobs_store.update(job_id, JobStatus.FAILED, error=error_msg)
+        logger.info(f"[GoogleSlidesImport] Completed: {len(deck.get('slides', []))} slides")
+
     except Exception as e:
-        logger.exception("IMPORT_SLIDES job failed")
+        logger.exception("[GoogleSlidesImport] Job failed")
         jobs_store.update(job_id, JobStatus.FAILED, error=str(e))
-    finally:
-        # Clean up temp file
-        if temp_file_path:
-            try:
-                os.unlink(temp_file_path)
-            except:
-                pass
 
 
 async def _run_import_pptx_job(user_id: str, job_id: str, uploaded_file_path: str) -> None:
@@ -2087,6 +2402,40 @@ async def list_spreadsheets(
         raise
     except Exception as e:
         logger.error(f"Drive list spreadsheets failed: {e}")
+        raise HTTPException(status_code=500, detail={"error": {"code": "TRANSIENT_GOOGLE_ERROR", "message": str(e)}})
+
+
+# ============================
+# Endpoints: Presentation Metadata
+# ============================
+
+
+@router.get("/google/slides/{presentationId}/metadata")
+async def get_presentation_metadata(
+    presentationId: str,
+    token: Optional[str] = Depends(get_auth_header)
+):
+    """Get presentation metadata including slide count."""
+    auth_service = get_auth_service()
+    user = auth_service.get_user_with_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    user_id = user["id"]
+    oauth = GoogleOAuthService()
+    api = GoogleApiClient(oauth)
+    try:
+        presentation = await api.slides_get_presentation(user_id=user_id, presentation_id=presentationId)
+        slides = presentation.get("slides", [])
+        return {
+            "presentationId": presentationId,
+            "title": presentation.get("title", ""),
+            "slideCount": len(slides),
+            "pageSize": presentation.get("pageSize", {})
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get presentation metadata failed: {e}")
         raise HTTPException(status_code=500, detail={"error": {"code": "TRANSIENT_GOOGLE_ERROR", "message": str(e)}})
 
 

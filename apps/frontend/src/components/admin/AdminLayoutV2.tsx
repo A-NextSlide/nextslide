@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/SupabaseAuthContext';
 import {
   LayoutDashboard,
@@ -12,7 +11,6 @@ import {
   X,
   Palette,
   Server,
-  BarChart3,
   DollarSign,
   ExternalLink,
 } from 'lucide-react';
@@ -22,8 +20,7 @@ interface AdminLayoutV2Props {
 }
 
 const navItems = [
-  { title: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { title: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+  { title: 'Overview', href: '/admin', icon: LayoutDashboard },
   { title: 'Costs', href: '/admin/costs', icon: DollarSign },
   { title: 'Users', href: '/admin/users', icon: Users },
   { title: 'Decks', href: '/admin/decks', icon: FileStack },

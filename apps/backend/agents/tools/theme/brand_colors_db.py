@@ -105,27 +105,48 @@ async def _get_brand_colors_async(brand_name: str) -> Optional[Dict[str, Any]]:
             color_categories = {}  # Map hex to category (background, text, accent)
             labeled_colors = {}  # Store explicitly labeled colors from admin
 
+            def extract_hex_color(value):
+                """Extract hex color string from various formats."""
+                if not value:
+                    return None
+                # Already a hex string
+                if isinstance(value, str) and value.startswith('#'):
+                    return value
+                # List format - could be ["#hex"] or [{"hex": "#hex", ...}]
+                if isinstance(value, list) and value:
+                    first = value[0]
+                    if isinstance(first, str) and first.startswith('#'):
+                        return first
+                    if isinstance(first, dict) and first.get('hex'):
+                        hex_val = first['hex']
+                        return hex_val if isinstance(hex_val, str) else None
+                    # Nested list [[...]]
+                    if isinstance(first, list) and first:
+                        return extract_hex_color(first)
+                # Dict format - {"hex": "#hex", ...}
+                if isinstance(value, dict) and value.get('hex'):
+                    hex_val = value['hex']
+                    return hex_val if isinstance(hex_val, str) else None
+                return None
+
             if colors_data and isinstance(colors_data, dict):
                 # Check for labeled format first (from admin panel edits)
                 # Format: { background: "#...", text: "#...", accent: "#...", accent2: "#..." }
                 if colors_data.get('background') or colors_data.get('accent'):
                     logger.info(f"[BRANDFETCH DB] Found labeled colors format")
+                    # Extract hex strings from various possible formats
                     labeled_colors = {
-                        'background': colors_data.get('background'),
-                        'text': colors_data.get('text'),
-                        'accent': colors_data.get('accent'),
-                        'accent2': colors_data.get('accent2'),
+                        'background': extract_hex_color(colors_data.get('background')),
+                        'text': extract_hex_color(colors_data.get('text')),
+                        'accent': extract_hex_color(colors_data.get('accent')),
+                        'accent2': extract_hex_color(colors_data.get('accent2')),
                     }
                     # Build colors list from labeled values
                     for key in ['accent', 'accent2', 'background', 'text']:
                         color_value = labeled_colors.get(key)
-                        # Handle case where color might be a list instead of string
-                        if color_value:
-                            if isinstance(color_value, list):
-                                color_value = color_value[0] if color_value else None
-                            if color_value and isinstance(color_value, str):
-                                colors.append(color_value)
-                                color_categories[color_value] = key
+                        if color_value and isinstance(color_value, str):
+                            colors.append(color_value)
+                            color_categories[color_value] = key
                 elif colors_data.get('hex_list'):
                     colors = colors_data['hex_list']
 

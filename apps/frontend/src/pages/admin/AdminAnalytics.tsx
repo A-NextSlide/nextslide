@@ -1,14 +1,20 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import AdminLayoutV2 from '@/components/admin/AdminLayoutV2';
 import { Button } from '@/components/ui/button';
 import {
   RefreshCw, Users, FileStack, Calendar, CreditCard, Share2, BarChart3, Activity,
   Download, ChevronDown, ArrowUpRight, ArrowDownRight, Minus, UserPlus, Zap,
   AlertTriangle, CheckCircle, Target, DollarSign, TrendingUp, Cpu, Database,
-  Clock, Eye, Layers, PieChart, Settings2
+  Clock, Eye, Layers, PieChart, Settings2, ArrowRight, Palette, Server
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { adminApi } from '@/services/adminApi';
+import { useAdminData, DATE_RANGE_PRESETS, GRANULARITY_OPTIONS } from '@/context/AdminDataContext';
+import {
+  useAdminOverview, useUserTimeseries, useDeckTimeseries, useUserSegments,
+  useTopUsers, useContentDistribution, useCreditBreakdown, useRecentActivity,
+  useServiceHealth, useCostEstimate, invalidateAllAdminData, useAdminQueryClient
+} from '@/hooks/useAdminQueries';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   BarChart, Bar, LineChart, Line, CartesianGrid, ReferenceLine,
@@ -35,6 +41,7 @@ interface Milestone {
 }
 
 // Actual token pricing per million tokens (USD) - Updated Dec 2025
+// Gemini 3 Pro Preview: $2.00 input, $12.00 output (includes thinking tokens)
 const TOKEN_PRICING = {
   'gemini-3-pro': { input: 2.00, output: 12.00, label: 'Gemini 3 Pro Preview' },
   'claude-4.5-haiku': { input: 0.80, output: 4.00, label: 'Claude 4.5 Haiku' },
@@ -42,14 +49,19 @@ const TOKEN_PRICING = {
   'perplexity-sonar-pro': { input: 1.00, output: 5.00, label: 'Perplexity Sonar Pro' },
 };
 
-// Actual operations and which models they use (from agents/config.py)
+// ACTUAL token usage from production logs (Dec 2025)
+// Slide generation: ~848 input, ~5831 output, ~1899 thinking (thinking billed as output)
+// Total billable output = candidatesTokenCount (5831) + thoughtsTokenCount (1899) = 7730
+// Edits also use 5-7k output tokens
 const MODEL_USAGE = {
-  slideGenerate: { model: 'gemini-3-pro', avgInputTokens: 3000, avgOutputTokens: 5000 },
-  componentCreate: { model: 'gemini-3-pro', avgInputTokens: 2500, avgOutputTokens: 4000 },
-  customComponent: { model: 'gemini-3-pro', avgInputTokens: 2000, avgOutputTokens: 3500 },
-  themeGenerate: { model: 'gemini-3-pro', avgInputTokens: 1500, avgOutputTokens: 2000 },
-  research: { model: 'perplexity-sonar-pro', avgInputTokens: 500, avgOutputTokens: 2000 },
-  simpleTasks: { model: 'claude-4.5-haiku', avgInputTokens: 800, avgOutputTokens: 500 },
+  slideGenerate: { model: 'gemini-3-pro', avgInputTokens: 850, avgOutputTokens: 7700 },  // includes thinking
+  slideEdit: { model: 'gemini-3-pro', avgInputTokens: 1500, avgOutputTokens: 6500 },     // edits are similar
+  componentCreate: { model: 'gemini-3-pro', avgInputTokens: 800, avgOutputTokens: 5500 },
+  customComponent: { model: 'gemini-3-pro', avgInputTokens: 850, avgOutputTokens: 7700 }, // same as slides
+  themeGenerate: { model: 'gemini-3-pro', avgInputTokens: 500, avgOutputTokens: 2000 },   // theme is lighter
+  research: { model: 'perplexity-sonar-pro', avgInputTokens: 500, avgOutputTokens: 2500 },
+  simpleTasks: { model: 'claude-4.5-haiku', avgInputTokens: 500, avgOutputTokens: 300 },  // routing/validation
+  chat: { model: 'claude-4.5-haiku', avgInputTokens: 800, avgOutputTokens: 600 },         // outline chat
 };
 
 // Startup milestones with revenue projections
@@ -72,17 +84,9 @@ const getTargets = (totalUsers: number) => ({
   avgSlidesPerDeck: { target: 8, warning: 5, danger: 3 },
 });
 
-const DATE_PRESETS = [
-  { label: 'Today', days: 0 },
-  { label: 'Yesterday', days: 1 },
-  { label: 'Last 7 days', days: 7 },
-  { label: 'Last 30 days', days: 30 },
-  { label: 'Last 90 days', days: 90 },
-];
-
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 
-type TabType = 'overview' | 'users' | 'content' | 'credits' | 'economics' | 'activity';
+type TabType = 'overview' | 'users' | 'content' | 'credits' | 'activity';
 
 // ============================================================================
 // HELPER COMPONENTS
@@ -266,26 +270,93 @@ const CostBreakdownChart: React.FC<{ breakdown: Array<{ name: string; cost: numb
 // MAIN COMPONENT
 // ============================================================================
 
-const AdminAnalytics: React.FC = () => {
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [datePreset, setDatePreset] = useState('Last 30 days');
-  const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0]; });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
+// Quick access cards for dashboard
+const QUICK_ACCESS_CARDS = [
+  { title: 'Users', description: 'Manage user accounts', href: '/admin/users', icon: Users, color: 'text-blue-500' },
+  { title: 'Decks', description: 'Browse all decks', href: '/admin/decks', icon: FileStack, color: 'text-emerald-500' },
+  { title: 'Brands', description: 'Manage brand styles', href: '/admin/brands', icon: Palette, color: 'text-purple-500' },
+  { title: 'Services', description: 'Monitor services', href: '/admin/services', icon: Server, color: 'text-amber-500' },
+];
 
-  // Data states
-  const [overview, setOverview] = useState<any>(null);
-  const [userTimeseries, setUserTimeseries] = useState<any>(null);
-  const [deckTimeseries, setDeckTimeseries] = useState<any>(null);
-  const [userSegments, setUserSegments] = useState<any>(null);
-  const [topUsers, setTopUsers] = useState<any>(null);
-  const [contentDist, setContentDist] = useState<any>(null);
-  const [creditBreakdown, setCreditBreakdown] = useState<any>(null);
-  const [recentActivity, setRecentActivity] = useState<any>(null);
-  const [costEstimate, setCostEstimate] = useState<any>(null);
+// System health banner component
+const SystemHealthBanner: React.FC<{ health: any; isLoading: boolean }> = ({ health, isLoading }) => {
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3 animate-pulse">
+        <div className="h-4 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
+      </div>
+    );
+  }
+
+  const services = health?.services || [];
+  const operationalCount = services.filter((s: any) => s.status === 'operational').length;
+  const totalCount = services.length;
+  const allOperational = operationalCount === totalCount && totalCount > 0;
+
+  return (
+    <div className={cn(
+      "rounded-lg p-3 flex items-center justify-between",
+      allOperational
+        ? "bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30"
+        : "bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
+    )}>
+      <div className="flex items-center gap-2">
+        {allOperational ? (
+          <CheckCircle className="h-4 w-4 text-emerald-500" />
+        ) : (
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+        )}
+        <span className={cn("text-xs font-medium", allOperational ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400")}>
+          {allOperational ? 'All Systems Operational' : 'Some Services Need Attention'}
+        </span>
+        <span className="text-[10px] text-[#888]">
+          {operationalCount}/{totalCount} services running
+        </span>
+      </div>
+      <Link to="/admin/services" className="text-[10px] text-[#888] hover:text-[#333] dark:hover:text-white flex items-center gap-1">
+        View details <ArrowRight className="h-3 w-3" />
+      </Link>
+    </div>
+  );
+};
+
+// Quick access card component
+const QuickAccessCard: React.FC<{ title: string; description: string; href: string; icon: any; color: string }> = ({ title, description, href, icon: Icon, color }) => (
+  <Link to={href} className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3 hover:border-[#ccc] dark:hover:border-[#555] transition-colors group">
+    <div className="flex items-start justify-between">
+      <div>
+        <Icon className={cn("h-4 w-4 mb-2", color)} />
+        <h3 className="text-xs font-medium">{title}</h3>
+        <p className="text-[10px] text-[#888] mt-0.5">{description}</p>
+      </div>
+      <ArrowRight className="h-3.5 w-3.5 text-[#888] group-hover:text-[#333] dark:group-hover:text-white transition-colors" />
+    </div>
+  </Link>
+);
+
+const AdminAnalytics: React.FC = () => {
+  const queryClient = useAdminQueryClient();
+  const { dateRange, setPreset, granularity, setGranularity, refreshAllData, isRefreshing } = useAdminData();
+  const { startDate, endDate, preset } = dateRange;
+
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // React Query hooks - data is prefetched by AdminDataProvider
+  const { data: overview, isLoading: overviewLoading } = useAdminOverview(startDate, endDate);
+  const { data: userTimeseries } = useUserTimeseries(startDate, endDate, granularity, 'signups');
+  const { data: deckTimeseries } = useDeckTimeseries(startDate, endDate, granularity, 'created');
+  const { data: userSegments } = useUserSegments(startDate, endDate, 'activity');
+  const { data: serviceHealth, isLoading: healthLoading } = useServiceHealth();
+  const { data: costEstimate } = useCostEstimate(10, 10);
+
+  // Tab-specific data - only fetched when tab is active
+  const { data: topUsers } = useTopUsers(startDate, endDate, 'decks', 10, activeTab === 'users');
+  const { data: contentDist } = useContentDistribution(startDate, endDate, activeTab === 'content');
+  const { data: creditBreakdown } = useCreditBreakdown(startDate, endDate, activeTab === 'credits');
+  const { data: recentActivity } = useRecentActivity(50, activeTab === 'activity');
+
+  const loading = overviewLoading && !overview;
 
   // Adjustable economics settings
   const [economicsSettings, setEconomicsSettings] = useState({
@@ -299,176 +370,137 @@ const AdminAnalytics: React.FC = () => {
     avgUserLifetimeMonths: 12,
   });
 
-  // Debug: Log when overview state changes
-  useEffect(() => {
-    console.log('[Analytics] Overview state updated:', overview);
-    console.log('[Analytics] Computed totalUsers:', overview?.metrics?.users?.total || 0);
-  }, [overview]);
-
   // Computed values
   const totalUsers = overview?.metrics?.users?.total || 0;
   const targets = useMemo(() => getTargets(totalUsers), [totalUsers]);
 
-  // Calculate unit economics using actual model pricing and adjustable settings
+  // Calculate unit economics using ACTUAL model pricing and production token data
   const unitEconomics = useMemo(() => {
-    const { avgSlidesPerDeck, researchCallsPerDeck, customComponentsPerDeck, arpu, paidConversionRate, cac, avgUserLifetimeMonths } = economicsSettings;
+    const { avgSlidesPerDeck, decksPerUserPerMonth, researchCallsPerDeck, customComponentsPerDeck, arpu, paidConversionRate, cac, avgUserLifetimeMonths } = economicsSettings;
     const decksPerMonth = (overview?.metrics?.decks?.created?.current || 0) * (30 / Math.max(1, overview?.period?.days || 30));
     const slidesPerDeck = overview?.metrics?.decks?.avg_slides_per_deck || avgSlidesPerDeck;
 
-    // Calculate cost per operation using actual models
+    // Calculate cost per operation using actual models and real token counts
     const calcOpCost = (op: keyof typeof MODEL_USAGE) => {
-      const { model, avgInputTokens, avgOutputTokens } = MODEL_USAGE[op];
-      const pricing = TOKEN_PRICING[model as keyof typeof TOKEN_PRICING];
-      return (avgInputTokens * pricing.input / 1_000_000) + (avgOutputTokens * pricing.output / 1_000_000);
+      const usage = MODEL_USAGE[op];
+      const pricing = TOKEN_PRICING[usage.model as keyof typeof TOKEN_PRICING];
+      if (!pricing) return 0;
+      const inputCost = (usage.avgInputTokens * pricing.input) / 1_000_000;
+      const outputCost = (usage.avgOutputTokens * pricing.output) / 1_000_000;
+      return inputCost + outputCost;
     };
 
-    const costPerSlide = calcOpCost('slideGenerate');
-    const costPerComponent = calcOpCost('componentCreate');
-    const costPerCustomComponent = calcOpCost('customComponent');
-    const costPerTheme = calcOpCost('themeGenerate');
-    const costPerResearch = calcOpCost('research');
-    const costPerSimpleTask = calcOpCost('simpleTasks');
+    // ACTUAL costs per operation (calculated from real token data)
+    const costPerSlide = calcOpCost('slideGenerate');     // ~$0.094 per slide (850*2 + 7700*12)/1M
+    const costPerEdit = calcOpCost('slideEdit');          // ~$0.081 per edit
+    const costPerCustomComponent = calcOpCost('customComponent'); // ~$0.094 (same as slide)
+    const costPerTheme = calcOpCost('themeGenerate');     // ~$0.025
+    const costPerResearch = calcOpCost('research');       // ~$0.013 (Perplexity is cheaper)
+    const costPerSimpleTask = calcOpCost('simpleTasks');  // ~$0.002 (Haiku is very cheap)
+    const costPerChat = calcOpCost('chat');               // ~$0.003
 
-    // Cost per deck = theme + (slides * slideGenerate) + (custom components) + (research calls) + simple tasks (routing, validation)
-    const costPerDeck = costPerTheme +
-      (costPerSlide * slidesPerDeck) +
-      (costPerCustomComponent * customComponentsPerDeck) +
-      (costPerResearch * researchCallsPerDeck) +
-      (costPerSimpleTask * 3); // ~3 simple tasks per deck (routing, validation, etc)
+    // REALISTIC deck generation cost breakdown:
+    // 1 theme + (avgSlides * slide generation) + (1 research call for outline) + (2-3 routing/validation calls)
+    // Custom components are rare (~10% of slides have them, counted separately)
+    const customComponentsPerSlide = 0.10; // Only 10% of slides need custom components
+    const routingCalls = 3; // orchestrator routing, validation, context building
+    const chatTurns = 2; // outline conversation
 
-    const monthlyCost = costPerDeck * decksPerMonth;
-    const costPerUser = totalUsers > 0 ? monthlyCost / totalUsers : 0;
+    const costPerDeck =
+      costPerTheme +                                               // Theme: $0.025
+      (costPerSlide * slidesPerDeck) +                            // Slides: $0.094 * 10 = $0.94
+      (costPerCustomComponent * slidesPerDeck * customComponentsPerSlide) + // Custom: $0.01
+      (costPerResearch * researchCallsPerDeck) +                  // Research: $0.026
+      (costPerSimpleTask * routingCalls) +                        // Routing: $0.006
+      (costPerChat * chatTurns);                                  // Chat: $0.006
 
-    // Revenue calculations using adjustable settings
+    // Edit operations (average 2 edits per deck after initial generation)
+    const avgEditsPerDeck = 2;
+    const costPerDeckWithEdits = costPerDeck + (costPerEdit * avgEditsPerDeck);
+
+    const monthlyCost = costPerDeckWithEdits * decksPerMonth;
+
+    // Per-user cost calculation
+    const activeUsers = overview?.metrics?.users?.active_in_period || Math.ceil(totalUsers * 0.1);
+    const decksPerActiveUser = activeUsers > 0 ? decksPerMonth / activeUsers : decksPerUserPerMonth;
+    const costPerActiveUser = costPerDeckWithEdits * decksPerActiveUser;
+
+    // Revenue calculations
     const paidUsers = totalUsers * (paidConversionRate / 100);
     const estimatedMRR = paidUsers * arpu;
-    const ltv = arpu * avgUserLifetimeMonths * (paidConversionRate / 100);
-    const grossMargin = arpu > 0 ? ((arpu - costPerUser) / arpu) * 100 : 0;
+    const ltv = arpu * avgUserLifetimeMonths; // LTV per paying user
+    const ltvPerUser = ltv * (paidConversionRate / 100); // LTV blended across all users
+    const grossMargin = arpu > 0 ? ((arpu - costPerActiveUser) / arpu) * 100 : 0;
+    const ltvCacRatio = cac > 0 ? ltv / cac : 0;
 
     return {
       costPerDeck,
-      costPerUser,
+      costPerDeckWithEdits,
+      costPerSlide,
+      costPerEdit,
+      costPerActiveUser,
       revenuePerUser: arpu,
       ltv,
+      ltvPerUser,
       cac,
+      ltvCacRatio,
       grossMargin,
       monthlyCost,
       estimatedMRR,
-      // Detailed breakdown
+      // Detailed breakdown for a single deck
       costBreakdown: {
         theme: costPerTheme,
         slides: costPerSlide * slidesPerDeck,
-        customComponents: costPerCustomComponent * customComponentsPerDeck,
+        customComponents: costPerCustomComponent * slidesPerDeck * customComponentsPerSlide,
         research: costPerResearch * researchCallsPerDeck,
-        simpleTasks: costPerSimpleTask * 3,
+        routing: costPerSimpleTask * routingCalls,
+        chat: costPerChat * chatTurns,
+        edits: costPerEdit * avgEditsPerDeck,
       }
     };
   }, [overview, totalUsers, economicsSettings]);
 
-  // API cost breakdown by model
+  // API cost breakdown by model (monthly costs)
   const apiCostBreakdown = useMemo(() => {
     const decksPerMonth = Math.max(1, (overview?.metrics?.decks?.created?.current || 1) * (30 / Math.max(1, overview?.period?.days || 30)));
 
-    // Calculate actual costs per model
+    // Gemini 3 Pro: theme + slides + custom components + edits
     const geminiCost = decksPerMonth * (
       unitEconomics.costBreakdown.theme +
       unitEconomics.costBreakdown.slides +
-      unitEconomics.costBreakdown.customComponents
+      unitEconomics.costBreakdown.customComponents +
+      unitEconomics.costBreakdown.edits
     );
+
+    // Perplexity: research/outline calls
     const perplexityCost = decksPerMonth * unitEconomics.costBreakdown.research;
-    const haikuCost = decksPerMonth * unitEconomics.costBreakdown.simpleTasks;
+
+    // Claude Haiku: routing, validation, chat
+    const haikuCost = decksPerMonth * (
+      unitEconomics.costBreakdown.routing +
+      unitEconomics.costBreakdown.chat
+    );
+
+    const total = geminiCost + perplexityCost + haikuCost;
 
     return [
-      { name: 'Gemini 3 Pro', cost: geminiCost, color: '#8b5cf6' },
-      { name: 'Perplexity Sonar Pro', cost: perplexityCost, color: '#10b981' },
-      { name: 'Claude 4.5 Haiku', cost: haikuCost, color: '#f59e0b' },
+      { name: 'Gemini 3 Pro', cost: geminiCost, percentage: total > 0 ? (geminiCost / total) * 100 : 0, color: '#8b5cf6' },
+      { name: 'Perplexity Sonar Pro', cost: perplexityCost, percentage: total > 0 ? (perplexityCost / total) * 100 : 0, color: '#10b981' },
+      { name: 'Claude 4.5 Haiku', cost: haikuCost, percentage: total > 0 ? (haikuCost / total) * 100 : 0, color: '#f59e0b' },
     ];
   }, [overview, unitEconomics]);
 
-  const applyDatePreset = useCallback((preset: typeof DATE_PRESETS[0]) => {
-    const end = new Date();
-    let start = new Date();
-    if (preset.days === 0) start = new Date();
-    else if (preset.days === 1) { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
-    else start.setDate(start.getDate() - preset.days);
-    setStartDate(start.toISOString().split('T')[0]);
-    setEndDate(end.toISOString().split('T')[0]);
-    setDatePreset(preset.label);
-    setShowDatePicker(false);
-  }, []);
-
-  // Core data fetch - only depends on date range and granularity
-  const fetchCoreData = useCallback(async (showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    else setLoading(true);
-    try {
-      console.log('[Analytics] Fetching data for:', startDate, 'to', endDate);
-      const [overviewData, userTs, deckTs, segments, costEst] = await Promise.all([
-        adminApi.getAnalyticsOverviewV2(startDate, endDate),
-        adminApi.getUserTimeseries(startDate, endDate, granularity, 'signups'),
-        adminApi.getDeckTimeseries(startDate, endDate, granularity, 'created'),
-        adminApi.getUserSegments(startDate, endDate, 'activity'),
-        adminApi.getCostEstimate(10, 10).catch(() => null),
-      ]);
-      console.log('[Analytics] Overview data received:', overviewData);
-      console.log('[Analytics] Overview data type:', typeof overviewData);
-      console.log('[Analytics] Overview metrics:', overviewData?.metrics);
-      console.log('[Analytics] Users object:', overviewData?.metrics?.users);
-      console.log('[Analytics] Total users value:', overviewData?.metrics?.users?.total, 'type:', typeof overviewData?.metrics?.users?.total);
-      console.log('[Analytics] Decks object:', overviewData?.metrics?.decks);
-      console.log('[Analytics] Total decks value:', overviewData?.metrics?.decks?.total, 'type:', typeof overviewData?.metrics?.decks?.total);
-      setOverview(overviewData);
-      setUserTimeseries(userTs);
-      setDeckTimeseries(deckTs);
-      setUserSegments(segments);
-      setCostEstimate(costEst);
-    } catch (error) {
-      console.error('Error fetching core analytics:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [startDate, endDate, granularity]);
-
-  // Tab-specific data fetch
-  const fetchTabData = useCallback(async () => {
-    try {
-      if (activeTab === 'users' && !topUsers) {
-        const topUsersData = await adminApi.getTopUsers(startDate, endDate, 'decks', 10);
-        setTopUsers(topUsersData);
-      }
-      if (activeTab === 'content' && !contentDist) {
-        const contentData = await adminApi.getContentDistribution(startDate, endDate);
-        setContentDist(contentData);
-      }
-      if ((activeTab === 'credits' || activeTab === 'economics') && !creditBreakdown) {
-        const creditData = await adminApi.getCreditBreakdown(startDate, endDate);
-        setCreditBreakdown(creditData);
-      }
-      if (activeTab === 'activity' && !recentActivity) {
-        const activityData = await adminApi.getRecentActivity(50);
-        setRecentActivity(activityData);
-      }
-    } catch (error) {
-      console.error('Error fetching tab data:', error);
-    }
-  }, [activeTab, startDate, endDate, topUsers, contentDist, creditBreakdown, recentActivity]);
-
-  // Fetch core data on mount and date change
-  useEffect(() => { fetchCoreData(); }, [fetchCoreData]);
-
-  // Fetch tab-specific data when tab changes
-  useEffect(() => { fetchTabData(); }, [fetchTabData]);
-
-  // Manual refresh fetches everything
+  // Handle refresh - invalidates all queries and refetches
   const handleRefresh = useCallback(() => {
-    // Clear tab-specific data to force refetch
-    setTopUsers(null);
-    setContentDist(null);
-    setCreditBreakdown(null);
-    setRecentActivity(null);
-    fetchCoreData(true);
-  }, [fetchCoreData]);
+    invalidateAllAdminData(queryClient);
+    refreshAllData();
+  }, [queryClient, refreshAllData]);
+
+  // Handle date preset selection
+  const handleDatePresetChange = useCallback((presetValue: string) => {
+    setPreset(presetValue as any);
+    setShowDatePicker(false);
+  }, [setPreset]);
 
   const formatNumber = (n: number) => {
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -478,7 +510,6 @@ const AdminAnalytics: React.FC = () => {
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'overview', label: 'Overview', icon: <BarChart3 className="h-3.5 w-3.5" /> },
-    { id: 'economics', label: 'Economics', icon: <DollarSign className="h-3.5 w-3.5" /> },
     { id: 'users', label: 'Users', icon: <Users className="h-3.5 w-3.5" /> },
     { id: 'content', label: 'Content', icon: <FileStack className="h-3.5 w-3.5" /> },
     { id: 'credits', label: 'Credits', icon: <CreditCard className="h-3.5 w-3.5" /> },
@@ -504,29 +535,44 @@ const AdminAnalytics: React.FC = () => {
       <div className="space-y-3">
         {/* Header - Compact */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-base font-semibold">Analytics Dashboard</h1>
+          <h1 className="text-base font-semibold">Admin Dashboard</h1>
           <div className="flex items-center gap-1.5 flex-wrap">
             <div className="relative">
               <Button variant="outline" size="sm" onClick={() => setShowDatePicker(!showDatePicker)} className="h-7 text-[11px] gap-1 px-2">
-                <Calendar className="h-3 w-3" />{datePreset}<ChevronDown className="h-2.5 w-2.5" />
+                <Calendar className="h-3 w-3" />
+                {DATE_RANGE_PRESETS.find(p => p.value === preset)?.label || 'Last 30 days'}
+                <ChevronDown className="h-2.5 w-2.5" />
               </Button>
               {showDatePicker && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg shadow-lg p-2 min-w-[220px]">
-                  <div className="grid grid-cols-2 gap-1">
-                    {DATE_PRESETS.map((preset) => (
-                      <button key={preset.label} onClick={() => applyDatePreset(preset)} className={cn("px-2 py-1 text-[10px] rounded hover:bg-[#f5f5f5] dark:hover:bg-[#222] text-left", datePreset === preset.label && "bg-[#f5f5f5] dark:bg-[#222] font-medium")}>{preset.label}</button>
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg shadow-lg p-2 min-w-[180px]">
+                  <div className="space-y-0.5">
+                    {DATE_RANGE_PRESETS.map((p) => (
+                      <button
+                        key={p.value}
+                        onClick={() => handleDatePresetChange(p.value)}
+                        className={cn(
+                          "w-full px-2 py-1.5 text-[11px] rounded hover:bg-[#f5f5f5] dark:hover:bg-[#222] text-left",
+                          preset === p.value && "bg-[#f5f5f5] dark:bg-[#222] font-medium"
+                        )}
+                      >
+                        {p.label}
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-            <select value={granularity} onChange={(e) => setGranularity(e.target.value as any)} className="h-7 px-1.5 text-[11px] border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#111]">
-              <option value="day">Daily</option>
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
+            <select
+              value={granularity}
+              onChange={(e) => setGranularity(e.target.value as any)}
+              className="h-7 px-1.5 text-[11px] border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#111]"
+            >
+              {GRANULARITY_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="h-7 w-7 p-0">
-              <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing} className="h-7 w-7 p-0">
+              <RefreshCw className={cn("h-3 w-3", isRefreshing && "animate-spin")} />
             </Button>
           </div>
         </div>
@@ -543,6 +589,9 @@ const AdminAnalytics: React.FC = () => {
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-3">
+            {/* System Health Banner */}
+            <SystemHealthBanner health={serviceHealth} isLoading={healthLoading} />
+
             {/* Milestone tracker */}
             <MilestoneTracker milestones={MILESTONES} currentUsers={totalUsers} currentMRR={unitEconomics.estimatedMRR} />
 
@@ -629,166 +678,14 @@ const AdminAnalytics: React.FC = () => {
               <UnitEconomicsCard {...unitEconomics} />
               <CostBreakdownChart breakdown={apiCostBreakdown} />
             </div>
-          </div>
-        )}
 
-        {/* Economics Tab */}
-        {activeTab === 'economics' && (
-          <div className="space-y-3">
-            {/* Key Metrics */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-              <CompactMetric label="Cost per Deck" value={`$${unitEconomics.costPerDeck.toFixed(4)}`} icon={<DollarSign className="h-3 w-3" />} />
-              <CompactMetric label="Cost per User/mo" value={`$${unitEconomics.costPerUser.toFixed(4)}`} icon={<Users className="h-3 w-3" />} />
-              <CompactMetric label="Est. Monthly Cost" value={`$${unitEconomics.monthlyCost.toFixed(2)}`} icon={<Cpu className="h-3 w-3" />} />
-              <CompactMetric label="Gross Margin" value={`${unitEconomics.grossMargin.toFixed(0)}%`} status={unitEconomics.grossMargin >= 70 ? 'healthy' : unitEconomics.grossMargin >= 50 ? 'warning' : 'danger'} icon={<TrendingUp className="h-3 w-3" />} />
-            </div>
-
-            {/* Adjustable Settings */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-              <div className="flex items-center gap-1.5 mb-3">
-                <Settings2 className="h-3.5 w-3.5 text-purple-500" />
-                <span className="text-xs font-medium">Adjustable Economics Settings</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Avg Slides/Deck</label>
-                  <input type="number" value={economicsSettings.avgSlidesPerDeck} onChange={(e) => setEconomicsSettings(s => ({ ...s, avgSlidesPerDeck: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={1} max={50} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Custom Components/Deck</label>
-                  <input type="number" value={economicsSettings.customComponentsPerDeck} onChange={(e) => setEconomicsSettings(s => ({ ...s, customComponentsPerDeck: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={0} max={20} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Research Calls/Deck</label>
-                  <input type="number" value={economicsSettings.researchCallsPerDeck} onChange={(e) => setEconomicsSettings(s => ({ ...s, researchCallsPerDeck: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={0} max={10} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">ARPU ($/mo)</label>
-                  <input type="number" value={economicsSettings.arpu} onChange={(e) => setEconomicsSettings(s => ({ ...s, arpu: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={0} max={100} step={0.5} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Paid Conversion %</label>
-                  <input type="number" value={economicsSettings.paidConversionRate} onChange={(e) => setEconomicsSettings(s => ({ ...s, paidConversionRate: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={0} max={100} step={0.5} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">CAC ($)</label>
-                  <input type="number" value={economicsSettings.cac} onChange={(e) => setEconomicsSettings(s => ({ ...s, cac: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={0} max={500} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Avg User Lifetime (mo)</label>
-                  <input type="number" value={economicsSettings.avgUserLifetimeMonths} onChange={(e) => setEconomicsSettings(s => ({ ...s, avgUserLifetimeMonths: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={1} max={60} />
-                </div>
-                <div>
-                  <label className="text-[10px] text-[#888] block mb-1">Decks/User/Month</label>
-                  <input type="number" value={economicsSettings.decksPerUserPerMonth} onChange={(e) => setEconomicsSettings(s => ({ ...s, decksPerUserPerMonth: Number(e.target.value) }))} className="w-full h-7 px-2 text-xs border border-[#eaeaea] dark:border-[#333] rounded bg-white dark:bg-[#0a0a0a]" min={1} max={50} />
-                </div>
-              </div>
-            </div>
-
-            {/* Model Pricing & Operations */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-                <div className="text-xs font-medium mb-2">Model Pricing (per 1M tokens)</div>
-                <div className="space-y-2">
-                  {Object.entries(TOKEN_PRICING).map(([model, pricing]) => (
-                    <div key={model} className="flex items-center justify-between py-1.5 border-b border-[#eaeaea] dark:border-[#333] last:border-0">
-                      <span className="text-[11px] font-medium">{pricing.label}</span>
-                      <div className="text-[11px]">
-                        <span className="text-emerald-500">${pricing.input.toFixed(2)}</span>
-                        <span className="text-[#888] mx-1">/</span>
-                        <span className="text-blue-500">${pricing.output.toFixed(2)}</span>
-                        <span className="text-[9px] text-[#888] ml-1">(in/out)</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-                <div className="text-xs font-medium mb-2">Cost per Operation</div>
-                <div className="space-y-2">
-                  {Object.entries(MODEL_USAGE).map(([op, config]) => {
-                    const pricing = TOKEN_PRICING[config.model as keyof typeof TOKEN_PRICING];
-                    const cost = (config.avgInputTokens * pricing.input / 1_000_000) + (config.avgOutputTokens * pricing.output / 1_000_000);
-                    return (
-                      <div key={op} className="flex items-center justify-between py-1.5 border-b border-[#eaeaea] dark:border-[#333] last:border-0">
-                        <div>
-                          <span className="text-[11px] font-medium capitalize">{op.replace(/([A-Z])/g, ' $1').trim()}</span>
-                          <span className="text-[9px] text-[#888] ml-1">({pricing.label})</span>
-                        </div>
-                        <span className="text-[11px] font-mono text-emerald-500">${cost.toFixed(5)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Cost Breakdown & Break-Even */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-              <CostBreakdownChart breakdown={apiCostBreakdown} />
-              <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-                <div className="text-xs font-medium mb-2">Break-Even Analysis</div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#888]">Monthly API Cost</span>
-                    <span className="font-medium">${unitEconomics.monthlyCost.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#888]">Est. MRR ({economicsSettings.paidConversionRate}% of {totalUsers} users @ ${economicsSettings.arpu})</span>
-                    <span className="font-medium text-emerald-500">${unitEconomics.estimatedMRR.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#888]">LTV:CAC Ratio</span>
-                    <span className={cn("font-medium", unitEconomics.ltv / unitEconomics.cac >= 3 ? "text-emerald-500" : unitEconomics.ltv / unitEconomics.cac >= 1 ? "text-amber-500" : "text-red-500")}>
-                      {(unitEconomics.ltv / unitEconomics.cac).toFixed(1)}x
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#888]">Break-even Paid Users (@ ${economicsSettings.arpu}/mo)</span>
-                    <span className="font-medium">{Math.ceil(unitEconomics.monthlyCost / (economicsSettings.arpu * 0.7))} users</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-[#888]">Profit/Loss per Month</span>
-                    <span className={cn("font-medium", unitEconomics.estimatedMRR - unitEconomics.monthlyCost >= 0 ? "text-emerald-500" : "text-red-500")}>
-                      ${(unitEconomics.estimatedMRR - unitEconomics.monthlyCost).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Milestones with Revenue */}
-            <div className="bg-white dark:bg-[#111] border border-[#eaeaea] dark:border-[#333] rounded-lg p-3">
-              <div className="text-xs font-medium mb-2">Revenue Milestones</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="text-[#888] border-b border-[#eaeaea] dark:border-[#333]">
-                      <th className="text-left py-1.5 pr-2">Milestone</th>
-                      <th className="text-right py-1.5 px-2">Users</th>
-                      <th className="text-right py-1.5 px-2">MRR Target</th>
-                      <th className="text-right py-1.5 px-2">Est. API Cost</th>
-                      <th className="text-right py-1.5 pl-2">Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {MILESTONES.map((m) => {
-                      const estCost = m.users * unitEconomics.costPerUser;
-                      const margin = m.revenue > 0 ? ((m.revenue - estCost) / m.revenue * 100) : 0;
-                      const achieved = totalUsers >= m.users;
-                      return (
-                        <tr key={m.name} className={cn("border-b border-[#eaeaea] dark:border-[#333] last:border-0", achieved && "bg-emerald-500/5")}>
-                          <td className="py-1.5 pr-2 font-medium">{achieved && <CheckCircle className="h-3 w-3 text-emerald-500 inline mr-1" />}{m.name}</td>
-                          <td className="text-right py-1.5 px-2">{m.users.toLocaleString()}</td>
-                          <td className="text-right py-1.5 px-2">${m.revenue.toLocaleString()}</td>
-                          <td className="text-right py-1.5 px-2">${estCost.toFixed(0)}</td>
-                          <td className={cn("text-right py-1.5 pl-2 font-medium", margin >= 70 ? "text-emerald-500" : margin >= 50 ? "text-amber-500" : "text-red-500")}>{margin.toFixed(0)}%</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {/* Quick Access Cards */}
+            <div className="mt-4">
+              <h2 className="text-xs font-medium text-[#888] mb-2">Quick Access</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                {QUICK_ACCESS_CARDS.map((card) => (
+                  <QuickAccessCard key={card.href} {...card} />
+                ))}
               </div>
             </div>
           </div>

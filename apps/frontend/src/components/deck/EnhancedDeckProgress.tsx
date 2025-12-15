@@ -36,69 +36,75 @@ export const EnhancedDeckProgress: React.FC<EnhancedDeckProgressProps> = ({
   ];
 
   // Smooth animated progress that creeps up
-  const [animatedProgress, setAnimatedProgress] = useState(0);
-  const [highWaterMark, setHighWaterMark] = useState(0); // Track the highest progress we've seen
-  const [localProgress, setLocalProgress] = useState(0);
+  const [animatedProgress, setAnimatedProgress] = useState(progress || 0);
+  const [highWaterMark, setHighWaterMark] = useState(progress || 0); // Track the highest progress we've seen
+  const [localProgress, setLocalProgress] = useState(progress || 0);
   const [lastPhase, setLastPhase] = useState(phase);
-  const [creepProgress, setCreepProgress] = useState(0); // For slow creep during initial phases
-
+  
   // Find current phase
   const currentPhaseIndex = phases.findIndex(p => phase === p.key);
   const currentPhaseData = phases[currentPhaseIndex] || phases[0];
-
-  // Slow creep timer for pre-slide phases
-  useEffect(() => {
-    // Only creep during early phases (before slide_generation)
-    const isEarlyPhase = ['initialization', 'theme_generation', 'layout_design', 'image_collection'].includes(phase);
-
-    if (isEarlyPhase && creepProgress < 20) {
-      // Slow creep: increment by 0.5% every 500ms (takes ~20 seconds to reach 20%)
-      const timer = setInterval(() => {
-        setCreepProgress(prev => Math.min(prev + 0.5, 20));
-      }, 500);
-      return () => clearInterval(timer);
+  
+  // Calculate actual progress based on phase and backend progress
+  const calculateActualProgress = (backendProgress: number, currentPhase: string) => {
+    const phaseData = phases.find(p => p.key === currentPhase);
+    if (!phaseData) return backendProgress;
+    
+    // If backend sends phase-specific progress (0-100 within phase)
+    // convert it to overall progress
+    if (backendProgress <= 100) {
+      const phaseSize = phaseData.maxProgress - phaseData.minProgress;
+      const phaseProgress = (backendProgress / 100) * phaseSize;
+      return Math.min(phaseData.minProgress + phaseProgress, phaseData.maxProgress);
     }
-  }, [phase, creepProgress]);
-
-  // Calculate progress based on phase
-  // Pre-slide phases: use slow creep (0-20%)
-  // Slide generation: use (100 - totalSlides + completedSlides) approach
+    
+    return backendProgress;
+  };
+  
+  // Update progress from backend
   useEffect(() => {
-    let calculatedProgress = 0;
+    console.log(`[EnhancedDeckProgress] Progress update:`, {
+      backendProgress: progress,
+      phase,
+      currentHighWaterMark: highWaterMark
+    });
 
-    if (phase === 'slide_generation' && totalSlides > 0) {
-      // Once slides start generating: base is (100 - totalSlides), then add completed slides
-      // e.g., 12 slides: starts at 88%, each slide adds ~1%
-      const baseProgress = Math.max(20, 100 - totalSlides); // At least 20% to show progress
-      const slideProgress = completedSlides.size;
-      calculatedProgress = Math.min(baseProgress + slideProgress, 99); // Cap at 99% until finalization
-    } else if (phase === 'finalization' || phase === 'generation_complete' || phase === 'complete') {
-      calculatedProgress = 100;
-    } else {
-      // Early phases: use slow creep
-      calculatedProgress = creepProgress;
-    }
+    // Use backend progress directly - backend already calculates correct percentages
+    const actualProgress = progress;
 
     // Never go backwards
-    if (calculatedProgress > highWaterMark) {
-      setHighWaterMark(calculatedProgress);
-      setLocalProgress(calculatedProgress);
+    if (actualProgress >= highWaterMark) {
+      setHighWaterMark(actualProgress);
+      setLocalProgress(actualProgress);
     }
-  }, [phase, totalSlides, completedSlides.size, creepProgress, highWaterMark]);
+  }, [progress, phase, totalSlides, completedSlides.size]);
   
   // Handle phase transitions
   useEffect(() => {
     if (phase !== lastPhase) {
+      console.log(`[Progress] Phase transition: ${lastPhase} -> ${phase}`);
       setLastPhase(phase);
-
-      // When entering slide_generation, jump to base progress if we haven't already
-      if (phase === 'slide_generation' && totalSlides > 0 && highWaterMark < 20) {
-        const baseProgress = Math.max(20, 100 - totalSlides);
-        setHighWaterMark(baseProgress);
-        setLocalProgress(baseProgress);
+      
+      // When transitioning to a new phase, ensure we're at least at the phase minimum
+      const minForNewPhase = currentPhaseData.minProgress;
+      
+      // Only update if we need to move forward to the new phase minimum
+      if (highWaterMark < minForNewPhase) {
+        console.log(`[Progress] Advancing to phase minimum: ${minForNewPhase}`);
+        setLocalProgress(minForNewPhase);
+        setHighWaterMark(minForNewPhase);
       }
     }
-  }, [phase, lastPhase, totalSlides, highWaterMark]);
+  }, [phase, lastPhase, currentPhaseData.minProgress, highWaterMark]);
+  
+  // No auto-increment - backend sends accurate real-time progress updates
+  useEffect(() => {
+    // Only ensure completion at 100%
+    if (phase === 'generation_complete' || phase === 'finalization' || phase === 'complete' || localProgress >= 100) {
+      setLocalProgress(100);
+      return;
+    }
+  }, [phase, localProgress]);
   
   // Smoothly animate to the local progress
   useEffect(() => {

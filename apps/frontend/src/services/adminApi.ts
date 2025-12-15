@@ -893,6 +893,32 @@ class AdminApi {
       throw error;
     }
   }
+
+  // ==================== Financial Endpoints ====================
+
+  async getFinancialActuals(startDate: string, endDate: string): Promise<FinancialActualsResponse> {
+    try {
+      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      return await this.request<FinancialActualsResponse>(
+        `/admin/analytics/financial/actuals?${params.toString()}`
+      );
+    } catch (error) {
+      console.error('Error fetching financial actuals:', error);
+      throw error;
+    }
+  }
+
+  async getUsagePatterns(startDate: string, endDate: string): Promise<UsagePatternsResponse> {
+    try {
+      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      return await this.request<UsagePatternsResponse>(
+        `/admin/analytics/financial/usage-patterns?${params.toString()}`
+      );
+    } catch (error) {
+      console.error('Error fetching usage patterns:', error);
+      throw error;
+    }
+  }
 }
 
 export interface Brand {
@@ -999,6 +1025,55 @@ export interface CostEstimateResponse {
   breakdown: CostBreakdownItem[];
   total_monthly_usd: number;
   by_provider: Record<string, number>;
+}
+
+export interface FinancialActualsResponse {
+  period: { start: string; end: string };
+  users: {
+    total: number;
+    active_30d: number;
+    new_this_month: number;
+    churned_this_month: number;
+  };
+  decks: {
+    total: number;
+    created_this_month: number;
+    avg_per_user: number;
+    avg_slides_per_deck: number;
+    total_slides: number;
+  };
+  credits: {
+    used_this_month: number;
+    avg_per_deck: number;
+    avg_per_user: number;
+  };
+  revenue: {
+    mrr: number;
+    arr: number;
+    paid_users: number;
+    arpu: number;
+  };
+  monthly_history: Array<{
+    month: string;
+    users: number;
+    decks: number;
+    revenue: number;
+    costs: number;
+  }>;
+}
+
+export interface UsagePatternsResponse {
+  avg_decks_per_user: number;
+  avg_slides_per_deck: number;
+  avg_edits_per_deck: number;
+  avg_research_calls_per_deck: number;
+  custom_component_rate: number;
+  period: { start: string; end: string };
+  sample_size: {
+    users: number;
+    decks: number;
+    slides: number;
+  };
 }
 
 export const adminApi = new AdminApi();

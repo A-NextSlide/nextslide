@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, memo, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SlideData } from '@/types/SlideTypes';
 import Slide from '@/components/Slide';
 import { EditorStateProvider } from '@/context/EditorStateContext';
@@ -17,8 +17,8 @@ interface MiniSlideProps {
 }
 
 // This component renders a miniature version of the slide directly
-const MiniSlide: React.FC<MiniSlideProps> = memo(({
-  slide,
+const MiniSlide: React.FC<MiniSlideProps> = ({ 
+  slide, 
   width: fixedWidth,
   height: fixedHeight,
   className = '',
@@ -29,37 +29,6 @@ const MiniSlide: React.FC<MiniSlideProps> = memo(({
   const [dimensions, setDimensions] = useState({ width: fixedWidth || 160, height: fixedHeight || 90 });
   const [isReady, setIsReady] = useState(!responsive); // If not responsive, ready immediately
   
-  // Throttled dimension update to prevent excessive re-renders
-  const updateDimensions = useCallback(() => {
-    if (!containerRef.current) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const containerWidth = rect.width;
-    const containerHeight = rect.height;
-
-    if (containerWidth > 0 && containerHeight > 0) {
-      // Calculate dimensions maintaining aspect ratio
-      const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
-      let width = containerWidth;
-      let height = containerWidth / aspectRatio;
-
-      // If calculated height exceeds container, scale based on height
-      if (height > containerHeight) {
-        height = containerHeight;
-        width = containerHeight * aspectRatio;
-      }
-
-      setDimensions(prev => {
-        // Only update if dimensions actually changed (avoid unnecessary re-renders)
-        if (Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1) {
-          return prev;
-        }
-        return { width, height };
-      });
-      setIsReady(true);
-    }
-  }, []);
-
   // Use ResizeObserver to track container size changes when responsive
   useEffect(() => {
     if (!responsive || !containerRef.current) {
@@ -68,29 +37,42 @@ const MiniSlide: React.FC<MiniSlideProps> = memo(({
       }
       return;
     }
-
+    
+    const updateDimensions = () => {
+      if (!containerRef.current) return;
+      
+      const rect = containerRef.current.getBoundingClientRect();
+      const containerWidth = rect.width;
+      const containerHeight = rect.height;
+      
+      if (containerWidth > 0 && containerHeight > 0) {
+        // Calculate dimensions maintaining aspect ratio
+        const aspectRatio = DEFAULT_SLIDE_WIDTH / DEFAULT_SLIDE_HEIGHT;
+        let width = containerWidth;
+        let height = containerWidth / aspectRatio;
+        
+        // If calculated height exceeds container, scale based on height
+        if (height > containerHeight) {
+          height = containerHeight;
+          width = containerHeight * aspectRatio;
+        }
+        
+        setDimensions({ width, height });
+        setIsReady(true);
+      }
+    };
+    
     // Initial calculation
     updateDimensions();
-
-    // Throttle ResizeObserver updates for performance
-    let rafId: number | null = null;
-    const throttledUpdate = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        updateDimensions();
-        rafId = null;
-      });
-    };
-
-    // Set up ResizeObserver with throttling
-    const resizeObserver = new ResizeObserver(throttledUpdate);
+    
+    // Set up ResizeObserver
+    const resizeObserver = new ResizeObserver(updateDimensions);
     resizeObserver.observe(containerRef.current);
-
+    
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
     };
-  }, [responsive, fixedWidth, fixedHeight, updateDimensions]);
+  }, [responsive, fixedWidth, fixedHeight]);
   
   // Calculate scale based on current dimensions
   const scale = Math.min(
@@ -257,34 +239,6 @@ const MiniSlide: React.FC<MiniSlideProps> = memo(({
       </div>
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Custom comparison for performance
-  // Return true if props are equal (skip re-render)
-  if (prevProps.responsive !== nextProps.responsive) return false;
-  if (prevProps.width !== nextProps.width) return false;
-  if (prevProps.height !== nextProps.height) return false;
-  if (prevProps.className !== nextProps.className) return false;
-
-  // Compare slide data - most important for thumbnail updates
-  if (prevProps.slide?.id !== nextProps.slide?.id) return false;
-
-  // Compare components by creating a hash of their essential properties
-  const prevComponents = prevProps.slide?.components || [];
-  const nextComponents = nextProps.slide?.components || [];
-
-  if (prevComponents.length !== nextComponents.length) return false;
-
-  // Deep compare components only if lengths match
-  for (let i = 0; i < prevComponents.length; i++) {
-    const prev = prevComponents[i];
-    const next = nextComponents[i];
-    if (prev.id !== next.id) return false;
-    if (prev.type !== next.type) return false;
-    // Use JSON comparison for props as a fallback (expensive but accurate)
-    if (JSON.stringify(prev.props) !== JSON.stringify(next.props)) return false;
-  }
-
-  return true;
-});
+};
 
 export default MiniSlide; 

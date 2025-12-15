@@ -547,44 +547,62 @@ class SimpleDeckComposer(IDeckComposer):
             # Also preserve reference_images even when regenerating theme due to default colors
             preserved_reference_images = []  # Will be set if we need to preserve brand screenshots
 
-            # CRITICAL: Fetch brand screenshot EARLY if we have a vibeContext domain
-            # This ensures we get the screenshot regardless of theme regeneration path
-            try:
-                style_prefs_early = getattr(deck_outline, 'stylePreferences', None)
-                if style_prefs_early:
-                    vibe_context_early = getattr(style_prefs_early, 'vibeContext', None)
-                    if vibe_context_early and '.' in vibe_context_early and ' ' not in vibe_context_early:
-                        # It's a domain - fetch brand screenshot
-                        from services.firecrawl_service import get_firecrawl_service
-                        firecrawl_svc = get_firecrawl_service()
-                        if firecrawl_svc.is_configured():
-                            brand_url = vibe_context_early if vibe_context_early.startswith('http') else f"https://{vibe_context_early}"
-                            logger.info(f"[DECK COMPOSER] 📸 EARLY: Fetching brand screenshot for {brand_url}")
-                            brand_result = firecrawl_svc.extract_brand_design(brand_url, include_screenshot=True)
-                            if brand_result.get('success') and brand_result.get('data', {}).get('screenshot'):
-                                screenshot = brand_result['data']['screenshot']
-                                preserved_reference_images = [screenshot]
-                                logger.info(f"[DECK COMPOSER] 📸 EARLY: Got brand screenshot ({len(screenshot)} chars) for design reference")
-                            else:
-                                logger.warning(f"[DECK COMPOSER] 📸 EARLY: No screenshot returned for {brand_url}")
-            except Exception as fc_early_err:
-                logger.warning(f"[DECK COMPOSER] 📸 EARLY: Firecrawl screenshot fetch failed: {fc_early_err}")
-
+            # FIRST: Check if reference_images already exist in outline.notes.theme (from conversational onboarding)
+            # This avoids duplicate firecrawl calls
             try:
                 outline_notes = getattr(deck_outline, 'notes', None)
                 logger.info(f"[DECK COMPOSER] DEBUG: outline_notes type: {type(outline_notes)}")
                 if isinstance(outline_notes, dict):
                     logger.info(f"[DECK COMPOSER] DEBUG: outline_notes keys: {list(outline_notes.keys())}")
+                    outline_theme = outline_notes.get('theme')
+                    if isinstance(outline_theme, dict) and outline_theme.get('reference_images'):
+                        preserved_reference_images = outline_theme.get('reference_images', [])
+                        logger.info(f"[DECK COMPOSER] 📸 EARLY: Found {len(preserved_reference_images)} existing reference_images from outline (skipping firecrawl)")
+            except Exception as ref_check_err:
+                logger.warning(f"[DECK COMPOSER] 📸 EARLY: Error checking existing reference_images: {ref_check_err}")
 
+            # ALSO check database theme for reference_images (from earlier /theme API call)
+            if not preserved_reference_images:
+                try:
+                    from utils.supabase import get_deck_theme
+                    db_theme = get_deck_theme(deck_uuid)
+                    if db_theme and db_theme.get('reference_images'):
+                        preserved_reference_images = db_theme.get('reference_images', [])
+                        logger.info(f"[DECK COMPOSER] 📸 EARLY: Found {len(preserved_reference_images)} reference_images in DATABASE (skipping firecrawl)")
+                except Exception as db_ref_err:
+                    logger.warning(f"[DECK COMPOSER] 📸 EARLY: Error checking database reference_images: {db_ref_err}")
+
+            # ONLY fetch brand screenshot if none exist from outline OR database
+            if not preserved_reference_images:
+                try:
+                    style_prefs_early = getattr(deck_outline, 'stylePreferences', None)
+                    if style_prefs_early:
+                        vibe_context_early = getattr(style_prefs_early, 'vibeContext', None)
+                        if vibe_context_early and '.' in vibe_context_early and ' ' not in vibe_context_early:
+                            # It's a domain - fetch brand screenshot
+                            from services.firecrawl_service import get_firecrawl_service
+                            firecrawl_svc = get_firecrawl_service()
+                            if firecrawl_svc.is_configured():
+                                brand_url = vibe_context_early if vibe_context_early.startswith('http') else f"https://{vibe_context_early}"
+                                logger.info(f"[DECK COMPOSER] 📸 EARLY: Fetching brand screenshot for {brand_url}")
+                                brand_result = firecrawl_svc.extract_brand_design(brand_url, include_screenshot=True)
+                                if brand_result.get('success') and brand_result.get('data', {}).get('screenshot'):
+                                    screenshot = brand_result['data']['screenshot']
+                                    preserved_reference_images = [screenshot]
+                                    logger.info(f"[DECK COMPOSER] 📸 EARLY: Got brand screenshot ({len(screenshot)} chars) for design reference")
+                                else:
+                                    logger.warning(f"[DECK COMPOSER] 📸 EARLY: No screenshot returned for {brand_url}")
+                except Exception as fc_early_err:
+                    logger.warning(f"[DECK COMPOSER] 📸 EARLY: Firecrawl screenshot fetch failed: {fc_early_err}")
+
+            try:
+                outline_notes = getattr(deck_outline, 'notes', None)
+                if isinstance(outline_notes, dict):
                     if outline_notes.get('theme'):
                         outline_theme = outline_notes.get('theme')
                         logger.info(f"[DECK COMPOSER] DEBUG: Found theme in outline.notes: {type(outline_theme)}")
                         if isinstance(outline_theme, dict):
-                            # CRITICAL: Extract reference_images from theme BEFORE potentially clearing it
-                            # These are brand screenshots fetched via Firecrawl that should be preserved
-                            if outline_theme.get('reference_images'):
-                                preserved_reference_images = outline_theme.get('reference_images', [])
-                                logger.info(f"[DECK COMPOSER] 📸 Preserving {len(preserved_reference_images)} reference_images from outline.notes.theme")
+                            # reference_images already extracted above - no need to re-extract
 
                             # CRITICAL: Check if fun topic with boring fonts!
                             # Use word boundary matching to avoid false positives like "fun" in "fundraising"
@@ -1108,8 +1126,32 @@ class SimpleDeckComposer(IDeckComposer):
                         brand_accents = []
 
                         # If no font/logo in stylePreferences, try to get from brand database
+                        # ONLY if the identifier looks like a brand/domain (not generic style descriptions)
                         brand_identifier = vibe_context or getattr(style_prefs, 'initialIdea', None)
-                        if brand_identifier:
+
+                        def looks_like_brand(identifier: str) -> bool:
+                            """Check if identifier looks like a brand name or domain."""
+                            if not identifier:
+                                return False
+                            identifier = identifier.strip().lower()
+                            # Has a domain extension = definitely a brand/domain
+                            if '.' in identifier and ' ' not in identifier:
+                                return True
+                            # Generic style words that are NOT brands
+                            generic_words = ['vibrant', 'colorful', 'educational', 'professional', 'modern',
+                                           'minimalist', 'bold', 'elegant', 'creative', 'corporate',
+                                           'clean', 'simple', 'dark', 'light', 'playful', 'serious']
+                            words = identifier.split()
+                            # If ALL words are generic style words, it's not a brand
+                            if all(w in generic_words for w in words):
+                                return False
+                            # If it has 3+ words, probably not a brand name
+                            if len(words) >= 3:
+                                return False
+                            # Single or two-word identifier could be a brand
+                            return True
+
+                        if brand_identifier and looks_like_brand(brand_identifier):
                             try:
                                 from agents.tools.theme.brand_colors_db import get_brand_colors
                                 db_brand_data = get_brand_colors(brand_identifier)

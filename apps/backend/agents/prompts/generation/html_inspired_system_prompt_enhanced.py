@@ -342,12 +342,16 @@ BEST PRACTICE: Use for stat callouts, key metrics, CTAs only
     "position": { "x": 960, "y": 200 },
     "width": 880,
     "height": 680,
-    "src": "https://images.unsplash.com/photo-...",
+    "src": "placeholder",
+    "alt": "professional business meeting",
     "objectFit": "cover",
     "borderRadius": 16,
     "effects": { "kenBurns": { "enabled": true, "zoom": 1.15 } }
   }
 }
+
+⚠️ IMPORTANT: Always use src="placeholder" with descriptive alt text!
+🚫 NEVER use external URLs (unsplash.com, pexels.com, etc.) - they will be removed!
 
 SIZE GUIDELINES:
 • Hero images: 800-1200px width (50-60% of slide)
