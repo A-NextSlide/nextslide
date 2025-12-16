@@ -491,6 +491,38 @@ class AdminApi {
     }
   }
 
+  // Get a single deck with all slides for admin preview
+  async getDeckWithSlides(deckId: string): Promise<DeckSummary | null> {
+    try {
+      const response = await this.request<any>(`/admin/decks/${deckId}/full`);
+      if (!response) return null;
+
+      return {
+        id: response.id || response.uuid,
+        uuid: response.uuid || response.id,
+        name: response.name,
+        description: response.description,
+        slideCount: response.slideCount || response.slide_count || (response.slides ? response.slides.length : 0),
+        createdAt: response.createdAt || response.created_at,
+        updatedAt: response.updatedAt || response.updated_at,
+        lastModified: response.lastModified || response.last_modified,
+        visibility: response.visibility,
+        thumbnailUrl: response.thumbnailUrl,
+        size: response.size || { width: 1920, height: 1080 },
+        sharing: response.sharing || { isShared: false, sharedWith: 0, shareType: undefined },
+        analytics: response.analytics || { viewCount: 0, editCount: 0, shareCount: 0 },
+        slides: response.slides || [],
+        first_slide: response.first_slide,
+        userId: response.user_id || response.userId,
+        userEmail: response.userEmail || response.user_email,
+        userFullName: response.userFullName || response.user_full_name,
+      };
+    } catch (error) {
+      console.error('Error fetching deck with slides:', error);
+      return null;
+    }
+  }
+
   // Get user trends for the past week (legacy)
   async getUserTrends(): Promise<Array<{ date: string; signups: number; logins: number }>> {
     try {

@@ -1054,6 +1054,101 @@ async def list_all_decks(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/decks/{deck_id}/full")
+async def get_deck_with_slides(
+    deck_id: str,
+    request: Request,
+    admin: Dict[str, Any] = Depends(verify_admin_role)
+):
+    """
+    Get a single deck with all slides for admin preview
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Fetch deck with all slides
+        response = supabase.table("decks").select(
+            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,slide_count,visibility,data"
+        ).eq("uuid", deck_id).single().execute()
+
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Deck not found")
+
+        deck = response.data
+
+        # Get user info
+        user_info = None
+        if deck.get("user_id"):
+            user_response = supabase.table("users").select("id,email,full_name").eq("id", deck["user_id"]).single().execute()
+            user_info = user_response.data if user_response.data else None
+
+        # Handle JSON status field
+        status = "draft"
+        if deck.get("status"):
+            if isinstance(deck["status"], dict):
+                status = deck["status"].get("status", "draft")
+            else:
+                status = deck.get("status", "draft")
+
+        # Handle JSON visibility field
+        visibility = "private"
+        if deck.get("visibility"):
+            if isinstance(deck["visibility"], dict):
+                visibility = deck["visibility"].get("visibility", "private")
+            else:
+                visibility = deck.get("visibility", "private")
+
+        # Get slides from deck data
+        slides = deck.get("slides", [])
+        slide_count = deck.get("slide_count") or len(slides)
+        first_slide = slides[0] if slides else None
+
+        # Format deck object
+        deck_obj = {
+            "id": deck["uuid"],
+            "uuid": deck["uuid"],
+            "name": deck["name"],
+            "description": deck.get("description", ""),
+            "status": status,
+            "visibility": visibility,
+            "is_owner": True,
+            "slides": slides,
+            "slide_count": slide_count,
+            "slideCount": slide_count,
+            "first_slide": first_slide,
+            "data": deck.get("data", {}),
+            "theme": deck.get("data", {}).get("theme", {}) if deck.get("data") else {},
+            "createdAt": deck["created_at"],
+            "updatedAt": deck.get("updated_at"),
+            "lastModified": deck.get("last_modified") or deck.get("updated_at"),
+            "size": deck.get("data", {}).get("metadata", {}).get("size", {"width": 1920, "height": 1080}),
+            "sharing": {"isShared": False, "sharedWith": 0, "shareType": None},
+            "analytics": {"viewCount": 0, "editCount": 0, "shareCount": 0},
+            "userId": deck.get("user_id"),
+            "user_id": deck.get("user_id"),
+        }
+
+        if user_info:
+            deck_obj["userEmail"] = user_info.get("email")
+            deck_obj["userFullName"] = user_info.get("full_name")
+
+        # Log the action
+        await log_admin_action(
+            admin_user_id=admin["id"],
+            action="view_deck_detail",
+            request=request,
+            target_deck_id=deck_id
+        )
+
+        return deck_obj
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get deck with slides error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/audit-logs", response_model=AuditLogsResponse)
 async def get_audit_logs(
     request: Request,

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, X, Eye, Edit, Share2, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Eye, Edit, Share2, ExternalLink, Maximize2, Minimize2, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { DeckSummary } from '@/services/adminApi';
+import { DeckSummary, adminApi } from '@/services/adminApi';
 import { useNavigate } from 'react-router-dom';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import MiniSlide from '@/components/deck/MiniSlide';
@@ -28,34 +28,68 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
 }) => {
   const navigate = useNavigate();
   const [currentDeck, setCurrentDeck] = useState<DeckSummary | null>(null);
+  const [fullDeckData, setFullDeckData] = useState<DeckSummary | null>(null);
+  const [isLoadingSlides, setIsLoadingSlides] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Update current deck when index changes
   useEffect(() => {
     if (decks[currentIndex]) {
       const newDeck = decks[currentIndex];
       if (newDeck.id !== currentDeck?.id) {
         setCurrentDeck(newDeck);
+        setFullDeckData(null); // Reset full data when switching decks
         setCurrentSlideIndex(0);
       }
     }
   }, [currentIndex, decks, currentDeck?.id]);
 
+  // Fetch full deck data with all slides when modal opens or deck changes
+  useEffect(() => {
+    if (!isOpen || !currentDeck?.id) return;
+
+    // If we already have slides loaded, don't refetch
+    if (fullDeckData?.id === currentDeck.id && fullDeckData.slides && fullDeckData.slides.length > 0) {
+      return;
+    }
+
+    const fetchFullDeck = async () => {
+      setIsLoadingSlides(true);
+      try {
+        const fullDeck = await adminApi.getDeckWithSlides(currentDeck.id);
+        if (fullDeck) {
+          setFullDeckData(fullDeck);
+        }
+      } catch (error) {
+        console.error('Failed to fetch full deck data:', error);
+      } finally {
+        setIsLoadingSlides(false);
+      }
+    };
+
+    fetchFullDeck();
+  }, [isOpen, currentDeck?.id, fullDeckData?.id, fullDeckData?.slides]);
+
   useEffect(() => {
     if (!isOpen) {
       setIsFullscreen(false);
+      setFullDeckData(null);
     }
   }, [isOpen]);
+
+  // Use fullDeckData for slides if available, otherwise fall back to currentDeck
+  const displayDeck = fullDeckData || currentDeck;
 
   const handlePreviousDeck = () => onNavigate(Math.max(0, currentIndex - 1));
   const handleNextDeck = () => onNavigate(Math.min(decks.length - 1, currentIndex + 1));
 
   const handlePreviousSlide = () => setCurrentSlideIndex(prev => Math.max(0, prev - 1));
-  const handleNextSlide = () => {
-    if (currentDeck && currentDeck.slides) {
-      setCurrentSlideIndex(prev => Math.min(currentDeck.slides.length - 1, prev + 1));
+  const handleNextSlide = useCallback(() => {
+    if (displayDeck && displayDeck.slides) {
+      setCurrentSlideIndex(prev => Math.min(displayDeck.slides.length - 1, prev + 1));
     }
-  };
+  }, [displayDeck]);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => !prev);
@@ -66,7 +100,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
       if (currentSlideIndex > 0) handlePreviousSlide();
       else handlePreviousDeck();
     } else if (e.key === 'ArrowRight') {
-      if (currentDeck?.slides && currentSlideIndex < currentDeck.slides.length - 1) handleNextSlide();
+      if (displayDeck?.slides && currentSlideIndex < displayDeck.slides.length - 1) handleNextSlide();
       else handleNextDeck();
     } else if (e.key === 'Escape') {
       if (isFullscreen) {
@@ -77,7 +111,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
     } else if (e.key === 'f' || e.key === 'F') {
       toggleFullscreen();
     }
-  }, [currentSlideIndex, currentDeck, isFullscreen, onClose, toggleFullscreen]);
+  }, [currentSlideIndex, displayDeck, isFullscreen, onClose, toggleFullscreen, handleNextSlide]);
 
   useEffect(() => {
     if (isOpen) {
@@ -93,7 +127,15 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
     return format(new Date(dateString), 'MMM d, yyyy');
   };
 
-  const hasSlides = currentDeck.slides && currentDeck.slides.length > 0;
+  const formatDateTime = (dateString: string) => {
+    if (!dateString || isNaN(new Date(dateString).getTime())) return '-';
+    return format(new Date(dateString), 'MMM d, yyyy h:mm a');
+  };
+
+  const hasSlides = displayDeck?.slides && displayDeck.slides.length > 0;
+  const rawSlide = hasSlides ? displayDeck.slides[currentSlideIndex] : null;
+  // Ensure the slide has valid data (id is required for rendering)
+  const currentSlide = rawSlide && rawSlide.id ? rawSlide : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -102,7 +144,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
           "p-0 gap-0 flex flex-col transition-all duration-200 overflow-hidden",
           isFullscreen
             ? "max-w-none w-screen h-screen rounded-none border-0"
-            : "max-w-5xl w-full h-[85vh]"
+            : "max-w-7xl w-full h-[90vh]"
         )}
       >
         {/* Compact Header */}
@@ -185,9 +227,14 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
           )}>
             {/* Slide Container */}
             <div className="relative w-full h-full flex items-center justify-center">
-              {hasSlides ? (
+              {isLoadingSlides ? (
+                <div className="flex flex-col items-center gap-3 text-white/60">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="text-sm">Loading slides...</span>
+                </div>
+              ) : currentSlide ? (
                 <MiniSlide
-                  slide={currentDeck.slides![currentSlideIndex]}
+                  slide={currentSlide}
                   responsive={true}
                   className="max-w-full max-h-full object-contain rounded shadow-2xl"
                 />
@@ -200,7 +247,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
             </div>
 
             {/* Slide Navigation Arrows */}
-            {hasSlides && currentDeck.slides.length > 1 && (
+            {currentSlide && displayDeck?.slides && displayDeck.slides.length > 1 && (
               <>
                 <button
                   onClick={handlePreviousSlide}
@@ -216,7 +263,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
                 </button>
                 <button
                   onClick={handleNextSlide}
-                  disabled={currentSlideIndex === currentDeck.slides.length - 1}
+                  disabled={currentSlideIndex === displayDeck.slides.length - 1}
                   className={cn(
                     "absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all",
                     "bg-black/40 hover:bg-black/60 text-white disabled:opacity-20 disabled:cursor-not-allowed",
@@ -232,7 +279,7 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
                   "absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white rounded-full px-3 py-1 text-xs tabular-nums",
                   isFullscreen && "text-sm px-4 py-1.5"
                 )}>
-                  {currentSlideIndex + 1} / {currentDeck.slides.length}
+                  {currentSlideIndex + 1} / {displayDeck.slides.length}
                 </div>
               </>
             )}
@@ -269,11 +316,11 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Created</span>
-                    <span>{formatDate(currentDeck.createdAt)}</span>
+                    <span>{formatDateTime(currentDeck.createdAt)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Modified</span>
-                    <span>{formatDate(currentDeck.lastModified)}</span>
+                    <span>{formatDateTime(currentDeck.lastModified)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Size</span>
