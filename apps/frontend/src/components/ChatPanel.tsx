@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Sparkles, XCircle, Plus, Image as ImageIcon, ChevronUp, ChevronDown, ChevronRight, Loader2, FileText, Table, Presentation, File, History } from 'lucide-react';
 import { VoiceRecorder } from '@/components/voice/VoiceRecorder';
 import ChatMessage, { ChatMessageProps, FeedbackType } from './ChatMessage';
@@ -777,9 +777,113 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [formatSelectionLabel]);
 
+  // Friendly action-oriented tool name variations for display
+  const funToolNames: Record<string, string[]> = useMemo(() => ({
+    'custom_component_str_replace': [
+      'Making a quick tweak',
+      'Sprucing up the content',
+      'Polishing the details',
+      'Touching things up',
+    ],
+    'custom_component_rewrite': [
+      'Giving it a fresh look',
+      'Reworking the design',
+      'Shaking things up',
+      'Breathing new life into it',
+    ],
+    'apply_theme_to_custom_components': [
+      'Spreading the style love',
+      'Making everything match',
+      'Syncing up the styles',
+      'Painting with your palette',
+    ],
+    'apply_theme': [
+      'Setting the mood',
+      'Dressing things up',
+      'Adding some flair',
+      'Styling it out',
+    ],
+    'edit_slide': [
+      'Working on your slide',
+      'Giving it some attention',
+      'Spicing things up',
+      'Making it shine',
+    ],
+    'create_slide': [
+      'Crafting a new slide',
+      'Spinning up fresh content',
+      'Building something new',
+      'Whipping up a slide',
+    ],
+    'delete_slide': [
+      'Tidying up the deck',
+      'Clearing that out',
+      'Making some room',
+    ],
+    'search_images': [
+      'Hunting for the perfect image',
+      'Scouting some visuals',
+      'Finding you something nice',
+      'Browsing the gallery',
+    ],
+    'edit_image_with_ai': [
+      'Working some AI magic',
+      'Transforming your image',
+      'Giving the image a makeover',
+      'Letting AI do its thing',
+    ],
+    'replace_image': [
+      'Swapping in a new image',
+      'Freshening up the visuals',
+      'Switching things out',
+    ],
+    'view_component': [
+      'Taking a closer look',
+      'Scoping out the details',
+      'Checking things out',
+    ],
+    'edit_component': [
+      'Fine-tuning the element',
+      'Tweaking the details',
+      'Making some adjustments',
+    ],
+    'component_prop_update': [
+      'Dialing in the settings',
+      'Adjusting the knobs',
+      'Fine-tuning things',
+    ],
+    'duplicate_slide': [
+      'Making a copy',
+      'Cloning the slide',
+      'Doubling up',
+    ],
+    'reorder_slides': [
+      'Shuffling things around',
+      'Rearranging the deck',
+      'Finding the right order',
+    ],
+    'create_component': [
+      'Adding something new',
+      'Dropping in an element',
+      'Building a new piece',
+    ],
+    'delete_component': [
+      'Clearing that out',
+      'Tidying things up',
+      'Making some space',
+    ],
+  }), []);
+
+  const getFunToolName = useCallback((tool: string): string => {
+    const variations = funToolNames[tool];
+    if (variations && variations.length > 0) {
+      return variations[Math.floor(Math.random() * variations.length)];
+    }
+    // Fallback: format nicely
+    return tool.replace(/_/g, ' ').replace(/\./g, ' › ');
+  }, [funToolNames]);
+
   const appendToolRow = useCallback((tool: string, status: string) => {
-    // SEAMLESS UX: Don't show tool start/finish messages - they're too technical
-    // Just track state for internal use (e.g., style tools)
     const now = Date.now();
     if (now < agentFlowLockoutUntilRef.current) return;
     const key = `${status}:${tool}`;
@@ -787,8 +891,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (now - last < TOOL_DEDUP_WINDOW_MS) return;
     toolDedupRef.current.set(key, now);
     toolDedupRef.current.forEach((t, k) => { if (now - t > TOOL_DEDUP_WINDOW_MS * 3) toolDedupRef.current.delete(k); });
-    // Silent tracking only - no visible message added
-  }, []);
+
+    // Show tool calls for transparency - helps users understand what the agent is doing
+    if (status === 'start' && tool) {
+      // Get fun tool name with random variation
+      const funName = getFunToolName(tool);
+      setMessages(prev => [...prev, {
+        id: `tool-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'system',
+        message: funName,
+        timestamp: new Date(),
+        feedback: null,
+        metadata: { type: 'agent_tool', tool, status }
+      }]);
+    }
+  }, [getFunToolName]);
 
   const isStyleTool = useCallback((toolName?: string): boolean => {
     const t = (toolName || '').toLowerCase();
@@ -970,11 +1087,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Apply compact preview slides without refreshing whole deck
   const applyPreviewSlidesRespectingEditMode = useCallback((previewSlides: any[], isAgentEdit = false) => {
     if (!Array.isArray(previewSlides) || previewSlides.length === 0) return;
-    // HARD GUARD: If deck is already completed, do not apply preview slides
+    // HARD GUARD: If deck is already completed and this is NOT an agent edit, do not apply preview slides
+    // Agent edits should ALWAYS be applied to show thumbnails and changes in chat
     try {
       const deckData = (useDeckStore as any).getState().deckData;
       const allCompleted = Array.isArray(deckData?.slides) && deckData.slides.length > 0 && deckData.slides.every((s: any) => s.status === 'completed');
-      if (allCompleted) {
+      if (allCompleted && !isAgentEdit) {
         setIsGenerating(false);
         return;
       }
@@ -1086,6 +1204,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollHeightBeforeLoadRef = useRef<number>(0);
+
+  // Reliable scroll to bottom function
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    });
+  }, []);
 
   // Handler for "Load older messages" - saves scroll height before loading
   const handleLoadOlderMessages = useCallback(() => {
@@ -1304,8 +1429,72 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     window.addEventListener('add_system_message', handleAddSystemMessage as EventListener);
 
+    // Also listen for deck_finalized as a backup to ensure completion message is shown
+    const handleDeckFinalized = (event: CustomEvent) => {
+      const { deckId } = event.detail || {};
+      console.log('[ChatPanel] Received deck_finalized event:', deckId);
+
+      // Mark generation as complete
+      setIsGenerating(false);
+
+      // Check if we already have a completion message
+      setMessages(prev => {
+        const hasCompletion = prev.some(m =>
+          m.metadata?.type === 'generation_complete' ||
+          (typeof m.message === 'string' && m.message.includes('Your presentation is ready!'))
+        );
+        if (hasCompletion) return prev;
+
+        // No completion message yet - add one
+        const completionMessage: ExtendedChatMessageProps = {
+          id: 'generation-complete',
+          type: 'ai',
+          message: 'Your presentation is ready!',
+          timestamp: new Date(),
+          feedback: null,
+          metadata: { type: 'generation_complete', stage: 'generation_complete', progress: 100, deckId }
+        } as any;
+
+        // Find and replace the progress message
+        const progressIdx = prev.findIndex(msg => msg.id === 'generation-progress');
+        if (progressIdx !== -1) {
+          const updated = [...prev];
+          updated[progressIdx] = completionMessage;
+          return updated;
+        }
+        // If no progress message found, just add completion
+        return [...prev, completionMessage];
+      });
+      setCurrentPhase('generation_complete');
+
+      // After showing completion, add the welcome/typing message with a delay
+      // This creates the same experience as when entering the slide editor
+      setTimeout(() => {
+        setMessages(prev => {
+          // Don't add if we already have a welcome message
+          const hasWelcome = prev.some(m => m.id === 'post-generation-welcome');
+          if (hasWelcome) return prev;
+
+          // Add the welcome message that invites users to edit
+          const welcomeMessage: ExtendedChatMessageProps = {
+            id: 'post-generation-welcome',
+            type: 'ai',
+            message: getWelcomeMessage(false, true), // true = existing deck
+            timestamp: new Date(),
+            feedback: null,
+            metadata: { isTyping: false }
+          } as any;
+
+          return [...prev, welcomeMessage];
+        });
+      }, 800); // Small delay after completion message
+    };
+
+    window.addEventListener('deck_finalized', handleDeckFinalized as EventListener);
+
     return () => {
       window.removeEventListener('add_system_message', handleAddSystemMessage as EventListener);
+      window.removeEventListener('deck_finalized', handleDeckFinalized as EventListener);
     };
   }, []);
 
@@ -1545,7 +1734,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [currentPhase, themePreview]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change or are updated
+  // Track message changes with a hash of the last message
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageHash = lastMessage ? `${lastMessage.id}-${typeof lastMessage.message === 'string' ? lastMessage.message.length : 0}-${lastMessage.metadata?.isTyping}` : '';
+
   useEffect(() => {
     // Check if we're just updating an existing images_collected message
     const isJustUpdatingImages = messages.length === previousMessageCountRef.current &&
@@ -1554,16 +1747,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
     // Only scroll if we're not just updating images
     if (!isJustUpdatingImages) {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'smooth'
-      });
+      scrollToBottom();
     }
 
     // Update refs for next comparison
     previousMessageCountRef.current = messages.length;
-    const lastMessage = messages[messages.length - 1];
     lastMessageTypeRef.current = lastMessage?.metadata?.type || null;
-  }, [messages]);
+  }, [messages.length, lastMessageHash, scrollToBottom]);
+
+  // Also scroll during active streaming/typing - poll every 500ms
+  useEffect(() => {
+    const isStreaming = lastMessage?.metadata?.isTyping || lastMessage?.metadata?.isStreamingUpdate;
+    if (!isStreaming) return;
+
+    const interval = setInterval(() => {
+      scrollToBottom();
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [lastMessage?.metadata?.isTyping, lastMessage?.metadata?.isStreamingUpdate, scrollToBottom]);
 
   // Sync local collapse state with parent component
   useEffect(() => {
@@ -1672,7 +1874,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             }
             // Tool lifecycle - append one minimal line per event
             if (evt.type?.startsWith('agent.tool.')) {
-              const { tool, status } = (evt as any).data || {};
+              const { tool } = (evt as any).data || {};
+              // Extract status from event type (e.g., 'agent.tool.start' -> 'start')
+              const statusFromType = evt.type.replace('agent.tool.', '');
+              const status = (evt as any).data?.status || statusFromType;
+              console.log('[ChatPanel] Tool event:', { type: evt.type, tool, status });
               appendToolRow(tool, status);
               if (isStyleTool(tool)) {
                 if (status === 'start') {
@@ -1857,21 +2063,22 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 editSummary
               };
 
-              // SIMPLE: Just get the current slide from the store
+              // Get the EDITED slide from the store (not the current viewed slide)
               let immediateSnapshot = null;
               try {
                 const deckStore = useDeckStore.getState();
                 const slides = deckStore.deckData?.slides || [];
-                const currentIdx = deckStore.currentSlideIndex || 0;
 
                 // For new slides, use the diff data directly
                 if (isNewSlide && diffSlidesToAdd[0]) {
                   immediateSnapshot = JSON.parse(JSON.stringify(diffSlidesToAdd[0]));
                 } else {
-                  // Otherwise just get the current slide
-                  const currentSlide = slides[currentIdx] || slides[0];
-                  if (currentSlide) {
-                    immediateSnapshot = JSON.parse(JSON.stringify(currentSlide));
+                  // Find the edited slide by ID, fall back to current view slide
+                  const editedSlide = editedSlideId ? slides.find((s: any) => s.id === editedSlideId) : null;
+                  const currentIdx = deckStore.currentSlideIndex || 0;
+                  const targetSlide = editedSlide || slides[currentIdx] || slides[0];
+                  if (targetSlide) {
+                    immediateSnapshot = JSON.parse(JSON.stringify(targetSlide));
                   }
                 }
               } catch (e) {
@@ -2720,7 +2927,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               return;
             }
             if (evt.type?.startsWith('agent.tool.')) {
-              const { tool, status } = (evt as any).data || {};
+              const { tool } = (evt as any).data || {};
+              // Extract status from event type (e.g., 'agent.tool.start' -> 'start')
+              const statusFromType = evt.type.replace('agent.tool.', '');
+              const status = (evt as any).data?.status || statusFromType;
+              console.log('[ChatPanel] Tool event (secondary):', { type: evt.type, tool, status });
               appendToolRow(tool, status);
               if (isStyleTool(tool)) {
                 if (status === 'start') {
@@ -4701,6 +4912,91 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [outlineMode, useOutlineAgent]);
 
+  // Pre-compute edit_applied pairings and sorted messages for rendering
+  const { sortedMessages, editAppliedMap } = useMemo(() => {
+    // Build a map of AI message IDs to their edit_applied data
+    const editAppliedMap = new Map<string, any>();
+
+    // Iterate through edit_applied messages and find the BEST AI message to pair with
+    // Key: prefer AI messages with actual content over empty ones
+    for (let editIdx = 0; editIdx < messages.length; editIdx++) {
+      const editMsg = messages[editIdx];
+      if (editMsg?.metadata?.type !== 'edit_applied') continue;
+
+      // Find nearby AI messages (within 5 positions forward and backward)
+      // Include BOTH streaming (ai-stream-*) and final (ai-*) messages
+      const candidates: Array<{ idx: number; msg: any; hasContent: boolean; distance: number; isStreaming: boolean }> = [];
+
+      // Search backward
+      for (let lookBack = 1; lookBack <= 5 && editIdx - lookBack >= 0; lookBack++) {
+        const candidateMsg = messages[editIdx - lookBack];
+        if (candidateMsg?.type === 'user') break; // Stop at user message boundary
+        if (candidateMsg?.type === 'ai') {
+          const text = typeof candidateMsg.message === 'string' ? candidateMsg.message : '';
+          const isStreaming = candidateMsg.id?.startsWith('ai-stream-') || false;
+          candidates.push({
+            idx: editIdx - lookBack,
+            msg: candidateMsg,
+            hasContent: text.trim().length > 0,
+            distance: lookBack,
+            isStreaming
+          });
+        }
+      }
+
+      // Search forward
+      for (let lookAhead = 1; lookAhead <= 5 && editIdx + lookAhead < messages.length; lookAhead++) {
+        const candidateMsg = messages[editIdx + lookAhead];
+        if (candidateMsg?.type === 'user') break; // Stop at user message boundary
+        if (candidateMsg?.type === 'ai') {
+          const text = typeof candidateMsg.message === 'string' ? candidateMsg.message : '';
+          const isStreaming = candidateMsg.id?.startsWith('ai-stream-') || false;
+          candidates.push({
+            idx: editIdx + lookAhead,
+            msg: candidateMsg,
+            hasContent: text.trim().length > 0,
+            distance: lookAhead,
+            isStreaming
+          });
+        }
+      }
+
+      // Sort candidates: prefer content > non-streaming > closer distance
+      candidates.sort((a, b) => {
+        // First priority: has content
+        if (a.hasContent && !b.hasContent) return -1;
+        if (!a.hasContent && b.hasContent) return 1;
+        // Second priority: prefer non-streaming (final messages) if both have content
+        if (a.hasContent && b.hasContent) {
+          if (!a.isStreaming && b.isStreaming) return -1;
+          if (a.isStreaming && !b.isStreaming) return 1;
+        }
+        // Third priority: closer distance
+        return a.distance - b.distance;
+      });
+
+      // Pair with the best candidate that hasn't been paired yet
+      for (const candidate of candidates) {
+        if (!editAppliedMap.has(candidate.msg.id)) {
+          editAppliedMap.set(candidate.msg.id, editMsg.metadata);
+          break;
+        }
+      }
+    }
+
+    // Sort messages by timestamp - purely chronological, newest at bottom
+    // This ensures every new message appears at the end naturally
+    const sortedMessages = [...messages].sort((a, b) => {
+      const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() :
+                   typeof a.timestamp === 'number' ? a.timestamp : 0;
+      const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() :
+                   typeof b.timestamp === 'number' ? b.timestamp : 0;
+      return timeA - timeB;
+    });
+
+    return { sortedMessages, editAppliedMap };
+  }, [messages, messages.length, messages.map(m => `${m.id}:${m.type}:${m.metadata?.type || ''}:${(m.message || '').slice(0, 20)}`).join(',')]);
+
   return (
     <div
       data-tour="chat-panel"
@@ -4749,19 +5045,72 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 return null;
               }
 
-              // Skip standalone edit_applied messages - they'll be rendered within the preceding AI bubble
+              // Skip standalone edit_applied messages - they'll be rendered within a nearby AI bubble
               if (msg.metadata?.type === 'edit_applied') {
                 const prevMsg = idx > 0 ? oldMessages[idx - 1] : null;
                 if (prevMsg?.type === 'ai') {
                   return null;
                 }
+                // Look forward for final AI message (handles: ai-stream → edit_applied → ai-final order)
+                const nextMsg = idx + 1 < oldMessages.length ? oldMessages[idx + 1] : null;
+                if (nextMsg?.type === 'ai' && !nextMsg.id?.startsWith('ai-stream-')) {
+                  return null;
+                }
               }
 
-              // Look ahead: if this is an AI message and next is edit_applied, pass edit data
-              const nextMsg = idx < oldMessages.length - 1 ? oldMessages[idx + 1] : null;
-              const editAppliedData = (msg.type === 'ai' && nextMsg?.metadata?.type === 'edit_applied')
-                ? nextMsg.metadata
-                : null;
+              // Look for nearby edit_applied that belongs to this AI message
+              let editAppliedData: any = null;
+              if (msg.type === 'ai') {
+                const isStreamingMsg = msg.id?.startsWith('ai-stream-');
+                const isFinalMsg = !isStreamingMsg;
+
+                // Search forward (up to 3 messages)
+                for (let lookAhead = 1; lookAhead <= 3 && idx + lookAhead < oldMessages.length; lookAhead++) {
+                  const candidate = oldMessages[idx + lookAhead];
+                  if (candidate?.metadata?.type === 'edit_applied') {
+                    let claimedByCloserAI = false;
+                    for (let between = 1; between < lookAhead; between++) {
+                      const betweenMsg = oldMessages[idx + between];
+                      if (betweenMsg?.type === 'ai' && !betweenMsg.id?.startsWith('ai-stream-')) {
+                        claimedByCloserAI = true;
+                        break;
+                      }
+                    }
+                    if (!claimedByCloserAI) {
+                      editAppliedData = candidate.metadata;
+                      break;
+                    }
+                  }
+                  if (candidate?.type === 'user') break;
+                }
+
+                // Search backward (for final messages only)
+                if (!editAppliedData && isFinalMsg) {
+                  for (let lookBack = 1; lookBack <= 3 && idx - lookBack >= 0; lookBack++) {
+                    const candidate = oldMessages[idx - lookBack];
+                    if (candidate?.metadata?.type === 'edit_applied') {
+                      const beforeEditApplied = idx - lookBack > 0 ? oldMessages[idx - lookBack - 1] : null;
+                      const isFromSameResponse = beforeEditApplied?.type === 'ai' &&
+                        beforeEditApplied.id?.startsWith('ai-stream-');
+                      if (isFromSameResponse) {
+                        editAppliedData = candidate.metadata;
+                        break;
+                      }
+                    }
+                    if (candidate?.type === 'user') break;
+                  }
+                }
+
+                // If streaming message but final message exists nearby, don't claim
+                if (editAppliedData && isStreamingMsg) {
+                  const nextMsg = idx + 1 < oldMessages.length ? oldMessages[idx + 1] : null;
+                  const nextNextMsg = idx + 2 < oldMessages.length ? oldMessages[idx + 2] : null;
+                  if ((nextMsg?.type === 'ai' && !nextMsg.id?.startsWith('ai-stream-')) ||
+                      (nextNextMsg?.type === 'ai' && !nextNextMsg.id?.startsWith('ai-stream-'))) {
+                    editAppliedData = null;
+                  }
+                }
+              }
 
               // Get slide number for user-friendly naming
               const getSlideNumber = (slideId: string | undefined): number | null => {
@@ -4775,7 +5124,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 : null;
 
               return (
-                <div key={msg.id} className="opacity-70">
+                <div key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`} className="opacity-70">
                   <ChatMessage
                     {...msg}
                     onFeedback={(feedback) => handleMessageFeedback(msg.id, feedback)}
@@ -4794,40 +5143,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               </div>
             )}
 
-            {/* DEBUG: Log edit_applied messages in array */}
-            {(() => {
-              const editAppliedMsgs = messages.filter(m => m.metadata?.type === 'edit_applied');
-              if (editAppliedMsgs.length > 0) {
-                console.log('[ChatPanel:render] Found edit_applied messages:', editAppliedMsgs.map(m => ({
-                  id: m.id,
-                  hasSnapshot: !!m.metadata?.slideSnapshot,
-                  snapshotId: m.metadata?.slideSnapshot?.id,
-                  componentCount: m.metadata?.slideSnapshot?.components?.length
-                })));
-              }
-              return null;
-            })()}
-            {messages.map((msg, idx) => {
+            {/* Render sorted messages with pre-computed edit_applied pairings */}
+            {sortedMessages.map((msg) => {
               // Skip transient numeric-only AI/system crumbs (e.g., "0")
               const txt = typeof msg.message === 'string' ? msg.message : '';
               if ((msg.type === 'ai' || msg.type === 'system') && /^\s*\d+\s*$/.test(txt)) {
                 return null;
               }
 
-              // Skip standalone edit_applied messages - they'll be rendered within the preceding AI bubble
+              // Skip edit_applied messages - they're rendered within AI bubbles
               if (msg.metadata?.type === 'edit_applied') {
-                // Check if the previous message was an AI message - if so, skip (it's grouped)
-                const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                if (prevMsg?.type === 'ai') {
-                  return null;
-                }
+                return null;
               }
 
-              // Look ahead: if this is an AI message and next is edit_applied, pass edit data
-              const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
-              const editAppliedData = (msg.type === 'ai' && nextMsg?.metadata?.type === 'edit_applied')
-                ? nextMsg.metadata
-                : null;
+              // Get edit_applied data from pre-computed map
+              const editAppliedData = msg.type === 'ai' ? editAppliedMap.get(msg.id) : null;
 
               // Otherwise render normal chat message
               const inline = (msg.metadata?.isStreamingUpdate && themePreview) ? (
@@ -4931,7 +5261,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
               return (
                 <ChatMessage
-                  key={msg.id}
+                  key={`${msg.id}-${editAppliedData ? 'with-edit' : 'no-edit'}`}
                   {...msg}
                   // Override message to show thinking status with nice formatting
                   message={isThinkingStatus && msg.message ? msg.message : msg.message}

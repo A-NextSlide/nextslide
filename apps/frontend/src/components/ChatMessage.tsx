@@ -70,8 +70,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   const isCompletionRow = metadata?.type === 'generation_complete' || metadata?.stage === 'generation_complete';
   const isCompactMetaRow = Boolean(
     metadata?.compactRow ||
-    // Note: isPlanRow is NOT compact anymore - we show full planning text
-    isToolRow ||
+    // Note: isPlanRow and isToolRow are NOT compact anymore - we show full planning-style text
     // Only compact agent progress rows; deck generation streaming should keep full padding
     (metadata?.type === 'progress' && !metadata?.isStreamingUpdate) ||
     metadata?.type === 'agent_selection' ||
@@ -179,8 +178,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   
   
   // Hide truly empty messages unless we're explicitly showing a loader or a streaming/progress UI
+  // BUT: don't hide if we have editAppliedData with a slideSnapshot to display
   if (!isLoading && !isStreamingMessage && !metadata?.isCreditsExhausted) {
-    if (safeMessage.trim().length === 0) {
+    if (safeMessage.trim().length === 0 && !editAppliedData?.slideSnapshot) {
       return null;
     }
   }
@@ -287,7 +287,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   }
 
   // Hide stray numeric-only messages for AI/system (prevents lone "0")
-  if ((type === 'ai' || type === 'system') && isNumericOnlyMessage && !isStreamingMessage) {
+  // BUT: don't hide if we have editAppliedData with a slideSnapshot to display
+  if ((type === 'ai' || type === 'system') && isNumericOnlyMessage && !isStreamingMessage && !editAppliedData?.slideSnapshot) {
     return null;
   }
 
@@ -296,10 +297,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       className={cn(
         'flex w-full items-start animate-fade-in min-w-0',
         type === 'user' ? 'justify-end' : 'justify-start',
-        isCompactMetaRow ? 'mb-1' : 'mb-2'
+        (isCompactMetaRow || isToolRow || isPlanRow) ? 'mb-1' : 'mb-2'
       )}
     >
-      {type !== 'user' && !isCompactMetaRow && !isPlanRow && (
+      {type !== 'user' && !isCompactMetaRow && !isPlanRow && !isToolRow && (
         <div className="flex-shrink-0 mr-2">
           <div className={cn(
             "w-8 h-8 rounded-full text-white flex items-center justify-center"
@@ -467,9 +468,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     </motion.div>
                   </div>
                  ) : metadata?.type === 'agent_tool' ? (
-                  <div className="inline-flex items-center max-w-full text-[11px] gap-2">
-                    <span className="text-xs text-muted-foreground">{message}</span>
-                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.6 }}
+                    className="flex items-center gap-1 max-w-full text-[10px] whitespace-normal break-words min-w-0 pl-2 border-l border-orange-500/30"
+                    style={planStyle}
+                  >
+                    <span className="w-1 h-1 rounded-full bg-orange-500 animate-pulse flex-shrink-0" />
+                    <span className="text-foreground/70">{message}</span>
+                  </motion.div>
                  ) : metadata?.type === 'agent_selection' ? (
                   <div className="inline-flex items-center max-w-full text-[11px] gap-2">
                     <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-300/60 dark:border-orange-700/60">{message}</span>
