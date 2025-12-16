@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '@/config/apiEndpoints';
 import { authService } from '@/services/authService';
 import { GenerationProgressTracker } from './GenerationProgressTracker';
 import { useDeckStore } from '@/stores/deckStore';
+import { useInteractionStore } from '@/stores/interactionStore';
 
 export interface GenerationOptions {
   deckId: string;
@@ -15,6 +16,8 @@ export interface GenerationOptions {
   onProgress?: (event: any) => void;
   onComplete?: () => void;
   onError?: (error: Error) => void;
+  // Internal flag: skip status reset (used when called from generateFromOutline)
+  _skipStatusReset?: boolean;
 }
 
 interface GenerationMetadata {
@@ -24,6 +27,7 @@ interface GenerationMetadata {
   options: GenerationOptions;
   service?: SlideGenerationService;
   abortController?: AbortController;
+  skipStatusReset?: boolean;
 }
 
 /**
@@ -122,12 +126,22 @@ export class GenerationCoordinator extends EventTarget {
       startTime: Date.now(),
       requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       options,
-      abortController: new AbortController()
+      abortController: new AbortController(),
+      skipStatusReset: options._skipStatusReset
     };
 
     // Register generation atomically
     this.activeGenerations.set(deckId, metadata);
     this.generationHistory.set(deckId, Date.now());
+
+    // Set deck status to 'generating' to block saves (prevents 409 conflicts)
+    // Skip if called from generateFromOutline (it already set the status)
+    if (!options._skipStatusReset) {
+      useInteractionStore.getState().setDeckStatus({ state: 'generating' });
+      if (typeof window !== 'undefined') {
+        (window as any).__deckStatus = 'generating';
+      }
+    }
 
     // Log for debugging
     console.log(`[GenerationCoordinator] Starting generation for ${deckId}`, {
@@ -283,14 +297,29 @@ export class GenerationCoordinator extends EventTarget {
     
     // Update last generation time
     this.lastOutlineGeneration = Date.now();
-    
+
+    // Set deck status to 'generating' early to block saves (prevents 409 conflicts)
+    useInteractionStore.getState().setDeckStatus({ state: 'generating' });
+    if (typeof window !== 'undefined') {
+      (window as any).__deckStatus = 'generating';
+    }
+
+    // Helper to reset status on error
+    const resetStatus = () => {
+      useInteractionStore.getState().setDeckStatus({ state: 'idle' });
+      if (typeof window !== 'undefined') {
+        (window as any).__deckStatus = 'idle';
+      }
+    };
+
+    try {
     // Reset progress tracker for new generation
     this.progressTracker.reset();
-    
+
     // Validate outline before sending
     const validatedOutline = this.validateOutline(outline);
     console.log('[GenerationCoordinator] Validated outline:', validatedOutline);
-    
+
     // Create deck via API first
     const response = await fetch(API_ENDPOINTS.getFullUrl('/deck/create-from-outline'), {
       method: 'POST',
@@ -378,7 +407,8 @@ export class GenerationCoordinator extends EventTarget {
                   detailLevel: 'standard',
                   slideCount: 6,
                   onProgress: (evt) => this.handleProgress(deckId, evt, onProgress),
-                  onError: (err) => this.handleError(deckId, err, undefined)
+                  onError: (err) => this.handleError(deckId, err, undefined),
+                  _skipStatusReset: true  // generateFromOutline handles status reset
                 }).catch(e => console.warn('[GenerationCoordinator] compose-stream start failed:', e?.message || e));
               }
             }
@@ -387,10 +417,41 @@ export class GenerationCoordinator extends EventTarget {
             // Use known deckId or fallback to event-provided ids
             this.handleProgress(deckId || data.deck_id || data.deck_uuid || '', data, onProgress);
 
-            // Handle completion
-            if (data.type === 'deck_complete' || data.type === 'complete' || data.type === 'composition_complete' || data.type === 'slides_generation_complete') {
+            // Handle completion - only return on final completion events
+            // DO NOT return on slides_generation_complete as backend still needs to finalize
+            // and release the deck lock (otherwise frontend saves get 409 errors)
+            if (data.type === 'deck_complete' || data.type === 'complete' || data.type === 'composition_complete') {
               console.log('[GenerationCoordinator] Generation completed:', data.type);
+              // Small delay before enabling saves to ensure backend lock is fully released
+              // Backend releases lock before sending completion event, but this is a safety buffer
+              await new Promise(resolve => setTimeout(resolve, 100));
+              // Reset deck status to allow saves
+              useInteractionStore.getState().setDeckStatus({ state: 'completed' });
+              if (typeof window !== 'undefined') {
+                (window as any).__deckStatus = 'idle';
+                // CRITICAL: Dispatch completion event to ChatPanel directly
+                // The normal event flow may not propagate correctly, so dispatch directly
+                window.dispatchEvent(new CustomEvent('add_system_message', {
+                  detail: {
+                    message: 'Your presentation is ready!',
+                    metadata: {
+                      type: 'generation_complete',
+                      stage: 'generation_complete',
+                      phase: 'generation_complete',
+                      progress: 100,
+                      isStreamingUpdate: true
+                    }
+                  }
+                }));
+                console.log('[GenerationCoordinator] Dispatched completion message to ChatPanel');
+              }
               return { deckId, deckUrl };
+            }
+
+            // slides_generation_complete means slides are done but finalization is still in progress
+            if (data.type === 'slides_generation_complete') {
+              console.log('[GenerationCoordinator] Slides generated, waiting for finalization...');
+              // Continue reading the stream - don't return yet
             }
 
             // Handle errors (treat non-fatal errors as informational)
@@ -450,13 +511,18 @@ export class GenerationCoordinator extends EventTarget {
     // The deck name is already set during creation
     if (validatedOutline.title && deckId) {
       console.log('[GenerationCoordinator] Deck created with name:', validatedOutline.title);
-      
+
       // Update the deck name in the store to match the outline title
       const { updateDeckData } = useDeckStore.getState();
       updateDeckData({ name: validatedOutline.title });
     }
 
     return { deckId, deckUrl };
+    } catch (error) {
+      // Reset status on any error to allow saves again
+      resetStatus();
+      throw error;
+    }
   }
 
   /**
@@ -481,6 +547,12 @@ export class GenerationCoordinator extends EventTarget {
 
     // Clean up
     this.activeGenerations.delete(deckId);
+
+    // Reset deck status to allow saves again
+    useInteractionStore.getState().setDeckStatus({ state: 'idle' });
+    if (typeof window !== 'undefined') {
+      (window as any).__deckStatus = 'idle';
+    }
 
     // Emit cancelled event
     this.dispatchEvent(new CustomEvent('generation:cancelled', {
@@ -529,13 +601,24 @@ export class GenerationCoordinator extends EventTarget {
       try { delete (window as any).__activeGenerationDeckId; } catch {}
     }
 
+    // Reset deck status to allow saves again
+    // Skip if called from generateFromOutline (it handles status reset itself)
+    if (!metadata.skipStatusReset) {
+      useInteractionStore.getState().setDeckStatus({ state: 'idle' });
+      if (typeof window !== 'undefined') {
+        (window as any).__deckStatus = 'idle';
+      }
+    }
+
     // Emit complete event
     this.dispatchEvent(new CustomEvent('generation:completed', {
       detail: { deckId, metadata, duration }
     }));
 
-    // Pause progress tracker when idle
-    try { this.progressTracker.pause(); } catch {}
+    // Pause progress tracker when idle (only if not skipping - generateFromOutline will do it)
+    if (!metadata.skipStatusReset) {
+      try { this.progressTracker.pause(); } catch {}
+    }
 
     // Call user callback
     callback?.();
@@ -558,13 +641,24 @@ export class GenerationCoordinator extends EventTarget {
       try { delete (window as any).__activeGenerationDeckId; } catch {}
     }
 
+    // Reset deck status to allow saves again (even on error)
+    // Skip if called from generateFromOutline (it handles status reset itself)
+    if (!metadata.skipStatusReset) {
+      useInteractionStore.getState().setDeckStatus({ state: 'idle' });
+      if (typeof window !== 'undefined') {
+        (window as any).__deckStatus = 'idle';
+      }
+    }
+
     // Emit error event
     this.dispatchEvent(new CustomEvent('generation:failed', {
       detail: { deckId, metadata, error }
     }));
 
-    // Pause progress tracker on failure as well
-    try { this.progressTracker.pause(); } catch {}
+    // Pause progress tracker on failure as well (only if not skipping)
+    if (!metadata.skipStatusReset) {
+      try { this.progressTracker.pause(); } catch {}
+    }
 
     // Call user callback
     callback?.(error);

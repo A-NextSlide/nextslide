@@ -1037,7 +1037,7 @@ export function useSlideGeneration(deckId: string, options: UseSlideGenerationOp
       } else if (event.type === 'slide_started' || event.type === 'slide_generated' || event.type === 'slide_completed') {
         phase = 'slide_generation';
       } else if (event.type === 'deck_complete' || event.type === 'composition_complete') {
-        phase = 'finalization';
+        phase = 'generation_complete';
       }
     }
     

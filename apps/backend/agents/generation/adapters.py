@@ -547,6 +547,92 @@ class SimpleDeckComposer(IDeckComposer):
             # Also preserve reference_images even when regenerating theme due to default colors
             preserved_reference_images = []  # Will be set if we need to preserve brand screenshots
 
+            # HIGHEST PRIORITY: Check stylePreferences.deck_theme FIRST (from ConversationalOnboarding)
+            # This is the theme generated during onboarding - it should ALWAYS take precedence over database/cached themes
+            try:
+                style_prefs = getattr(deck_outline, 'stylePreferences', None)
+                if style_prefs:
+                    deck_theme_from_prefs = getattr(style_prefs, 'deck_theme', None)
+                    if not deck_theme_from_prefs and isinstance(style_prefs, dict):
+                        deck_theme_from_prefs = style_prefs.get('deck_theme')
+
+                    if deck_theme_from_prefs and isinstance(deck_theme_from_prefs, dict):
+                        logger.info(f"[DECK COMPOSER] 🎯 PRIORITY: Found deck_theme in stylePreferences - using it FIRST!")
+
+                        # Extract all theme data from deck_theme
+                        typography = deck_theme_from_prefs.get('typography', {})
+                        color_palette = deck_theme_from_prefs.get('color_palette', {})
+
+                        brand_fonts = typography.get('hero_title', {}).get('family', 'Montserrat')
+                        body_font = typography.get('body_text', {}).get('family', 'Roboto')
+
+                        # Get colors
+                        final_brand_colors = color_palette.get('colors', [])
+                        if not final_brand_colors:
+                            bg = color_palette.get('primary_background', '#FFFFFF')
+                            text = color_palette.get('primary_text', '#1A1A1A')
+                            a1 = color_palette.get('accent_1', '#333333')
+                            a2 = color_palette.get('accent_2', '#666666')
+                            final_brand_colors = [a1, a2, bg, text]
+
+                        # Get logo
+                        logo_url = None
+                        if deck_theme_from_prefs.get('logo') and isinstance(deck_theme_from_prefs.get('logo'), dict):
+                            logo_url = deck_theme_from_prefs['logo'].get('url')
+                        if not logo_url:
+                            logo_url = color_palette.get('metadata', {}).get('logo_url')
+                        if not logo_url:
+                            logo_url = getattr(style_prefs, 'logoUrl', None)
+
+                        # Build color_palette dict with metadata
+                        color_palette_dict = {
+                            "primary_background": color_palette.get('primary_background', '#FFFFFF'),
+                            "secondary_background": color_palette.get('secondary_background', '#F5F5F5'),
+                            "primary_text": color_palette.get('primary_text', '#1A1A1A'),
+                            "accent_1": color_palette.get('accent_1', final_brand_colors[0] if final_brand_colors else '#333333'),
+                            "accent_2": color_palette.get('accent_2', final_brand_colors[1] if len(final_brand_colors) > 1 else '#666666'),
+                            "colors": final_brand_colors,
+                            "backgrounds": color_palette.get('backgrounds', [color_palette.get('primary_background', '#FFFFFF')]),
+                        }
+                        if logo_url:
+                            color_palette_dict["metadata"] = {"logo_url": logo_url, "logo_url_light": logo_url}
+
+                        brand_info = {}
+                        if logo_url:
+                            brand_info["logoUrl"] = logo_url
+
+                        theme_dict = {
+                            "theme_name": deck_theme_from_prefs.get('theme_name', 'Onboarding Theme'),
+                            "design_philosophy": deck_theme_from_prefs.get('design_philosophy', ''),
+                            "color_palette": color_palette_dict,
+                            "typography": {
+                                "hero_title": {"family": brand_fonts},
+                                "body_text": {"family": body_font}
+                            },
+                            "brandInfo": brand_info,
+                            "visual_style": deck_theme_from_prefs.get('visual_style', {}),
+                            "reference_images": deck_theme_from_prefs.get('reference_images', [])
+                        }
+
+                        theme = ThemeSpec.from_dict(theme_dict)
+                        palette = {
+                            "colors": final_brand_colors,
+                            "fonts": [brand_fonts, body_font] if brand_fonts else [],
+                            "logo_url": logo_url
+                        }
+
+                        # Preserve reference images from deck_theme
+                        if deck_theme_from_prefs.get('reference_images'):
+                            preserved_reference_images = deck_theme_from_prefs.get('reference_images', [])
+
+                        logger.info(f"[DECK COMPOSER] ✅ Using PRE-GENERATED theme from ConversationalOnboarding!")
+                        logger.info(f"[DECK COMPOSER]   Theme: {theme.theme_name}")
+                        logger.info(f"[DECK COMPOSER]   Fonts: {brand_fonts} / {body_font}")
+                        logger.info(f"[DECK COMPOSER]   Colors: {final_brand_colors[:3] if final_brand_colors else 'none'}...")
+                        logger.info(f"[DECK COMPOSER]   Logo: {logo_url[:50] if logo_url else 'none'}...")
+            except Exception as deck_theme_err:
+                logger.warning(f"[DECK COMPOSER] Error checking stylePreferences.deck_theme: {deck_theme_err}")
+
             # FIRST: Check if reference_images already exist in outline.notes.theme (from conversational onboarding)
             # This avoids duplicate firecrawl calls
             try:
@@ -721,12 +807,16 @@ class SimpleDeckComposer(IDeckComposer):
             
             # CRITICAL: Theme generation happens FIRST, before anything else
             logger.info("[DECK COMPOSER] Starting theme generation phase...")
-            
+
             # New: If a theme is already provided in the outline (notes.theme), prefer it
             # First: Prefer existing theme already persisted on deck (single source of truth)
+            # SKIP if theme was already set from stylePreferences.deck_theme
+            if theme is not None:
+                logger.info(f"[DECK COMPOSER] ✅ Theme already set from stylePreferences.deck_theme - skipping database/outline theme checks")
+
             try:
                 from utils.supabase import get_deck_theme, get_deck
-                existing_theme_data = get_deck_theme(deck_uuid)
+                existing_theme_data = get_deck_theme(deck_uuid) if theme is None else None
                 if existing_theme_data:
                     # CRITICAL: Extract reference_images from database theme (Firecrawl brand screenshots)
                     # The theme API stores reference_images here, not in outline.notes.theme
@@ -1964,11 +2054,6 @@ class SimpleDeckComposer(IDeckComposer):
             if 'color_palette' in theme_dict:
                 logger.info(f"  - Primary color: {theme_dict['color_palette'].get('primary', 'Not set')}")
 
-            # SKIP Layout Architect - CustomComponent generator creates full HTML slides
-            # and doesn't use the blueprints anyway. This saves an AI call per deck.
-            logger.info("[DECK COMPOSER] ⏭️ Skipping LayoutArchitect - using CustomComponent full-slide mode")
-            logger.debug("[DECK COMPOSER] Skipping LayoutArchitect (CustomComponent full-slide mode)")
-
             # Process tagged media to upload base64 images to Supabase
             # Check if any media needs processing
             needs_media_processing = False
@@ -2329,23 +2414,42 @@ class SimpleDeckComposer(IDeckComposer):
             
             # === FINALIZATION PHASE ===
             logger.info("🏁 [DECK COMPOSER] Starting finalization phase...")
-            
+            print(f"🏁 [DECK COMPOSER] Starting finalization phase for deck {deck_uuid}")
+
             # Theme is already ready at this point, no need to check again
+            finalization_success = True
 
             # Reconcile slides with latest persistence before final save
             logger.info(f"🔄 [DECK COMPOSER] Reconciling slides from database...")
             try:
-                latest = await self.persistence.get_deck(deck_uuid)
+                latest = await asyncio.wait_for(
+                    self.persistence.get_deck(deck_uuid),
+                    timeout=10.0  # 10 second timeout for database read
+                )
                 if latest and isinstance(latest.get('slides'), list) and latest['slides']:
                     deck_state.slides = latest['slides']
                     logger.info(f"✅ [DECK COMPOSER] Reconciled {len(deck_state.slides)} slides from persistence")
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ [DECK COMPOSER] Slide reconciliation timed out, continuing with current state")
             except Exception as _reconcile_err:
                 logger.warning(f"⚠️ [DECK COMPOSER] Slide reconciliation skipped: {_reconcile_err}")
-            
-            # Save final state
+
+            # Save final state with timeout
             logger.info(f"💾 [DECK COMPOSER] Saving final deck state...")
-            await self.persistence.save_deck(deck_state.to_dict())
-            
+            print(f"💾 [DECK COMPOSER] Saving final deck state for {deck_uuid}")
+            try:
+                await asyncio.wait_for(
+                    self.persistence.save_deck(deck_state.to_dict()),
+                    timeout=15.0  # 15 second timeout for database save
+                )
+                logger.info(f"✅ [DECK COMPOSER] First save completed")
+            except asyncio.TimeoutError:
+                logger.error(f"⚠️ [DECK COMPOSER] First save timed out for deck {deck_uuid}")
+                finalization_success = False
+            except Exception as save_err:
+                logger.error(f"⚠️ [DECK COMPOSER] First save failed: {save_err}")
+                finalization_success = False
+
             # Update final deck status
             logger.info(f"✅ [DECK COMPOSER] Marking deck as completed...")
             deck_state.status = {
@@ -2356,17 +2460,36 @@ class SimpleDeckComposer(IDeckComposer):
                 'progress': 100,
                 'phase': 'complete'
             }
-            
-            # Save final deck state
-            await self.persistence.save_deck(deck_state.to_dict())
-            logger.info(f"✅ [DECK COMPOSER] Deck {deck_uuid} marked as completed in database")
-            
-            # Complete - send single completion event
+
+            # Save final deck state with timeout
+            try:
+                await asyncio.wait_for(
+                    self.persistence.save_deck(deck_state.to_dict()),
+                    timeout=15.0  # 15 second timeout for database save
+                )
+                logger.info(f"✅ [DECK COMPOSER] Deck {deck_uuid} marked as completed in database")
+                print(f"✅ [DECK COMPOSER] Deck {deck_uuid} marked as completed in database")
+            except asyncio.TimeoutError:
+                logger.error(f"⚠️ [DECK COMPOSER] Final save timed out for deck {deck_uuid}")
+                finalization_success = False
+            except Exception as save_err:
+                logger.error(f"⚠️ [DECK COMPOSER] Final save failed: {save_err}")
+                finalization_success = False
+
+            # ALWAYS send completion event, even if saves failed
+            # This ensures the frontend knows generation is done
             logger.info(f"📤 [DECK COMPOSER] Sending deck_complete event...")
+            print(f"📤 [DECK COMPOSER] Sending deck_complete event for {deck_uuid}")
             completion_event = progress.complete(deck_uuid)
             logger.info(f"📤 [DECK COMPOSER] Completion event: {completion_event}")
             yield completion_event
-            logger.info(f"🎉 [DECK COMPOSER] Deck {deck_uuid} composition fully complete!")
+
+            if finalization_success:
+                logger.info(f"🎉 [DECK COMPOSER] Deck {deck_uuid} composition fully complete!")
+                print(f"🎉 [DECK COMPOSER] Deck {deck_uuid} composition fully complete!")
+            else:
+                logger.warning(f"⚠️ [DECK COMPOSER] Deck {deck_uuid} completed with finalization warnings")
+                print(f"⚠️ [DECK COMPOSER] Deck {deck_uuid} completed with finalization warnings")
             
         except Exception as e:
             logger.error(f"Error in deck composition: {e}")

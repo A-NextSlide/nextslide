@@ -92,8 +92,10 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
       }
       
       // Check if deck is generating
+      // Handle both string values ('generating') and object values ({ state: 'generating' })
       const deckStatus = (window as any).__deckStatus;
-      const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+      const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+      const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
       
       // Create a copy of the current deck data
       const currentDeckData = get().deckData;
@@ -186,8 +188,10 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
       // Validate that we have a valid deckData
       if (!deckData || !deckData.uuid) {
         // Don't log during generation
+        // Handle both string values ('generating') and object values ({ state: 'generating' })
         const deckStatus = (window as any).__deckStatus;
-        const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+        const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+        const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
         if (!isGenerating) {
           console.warn('[getSlideForEditing] No valid deck data');
         }
@@ -202,9 +206,11 @@ export const useDeckStore = create<DeckState>((set, get, store) => {
       }
       
       // Check if deck is generating before warning
-      const deckStatus = (window as any).__deckStatus;
-      const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
-      if (!isGenerating) {
+      // Handle both string values ('generating') and object values ({ state: 'generating' })
+      const deckStatus2 = (window as any).__deckStatus;
+      const statusState2 = typeof deckStatus2 === 'string' ? deckStatus2 : deckStatus2?.state;
+      const isGenerating2 = statusState2 === 'generating' || statusState2 === 'creating' || statusState2 === 'pending';
+      if (!isGenerating2) {
         console.warn(`[getSlideForEditing] Slide ${slideId} not found in current deck ${deckData.uuid}`);
       }
       return null;

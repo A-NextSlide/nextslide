@@ -1459,6 +1459,9 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
         if should_auto_apply:
             try:
                 logger.info(f"[DEBUG] Starting auto-apply process for deck_id={deck_id}")
+                # Get a fresh Supabase client for auto-apply to avoid "client closed" errors
+                # The original `sb` client may have been recycled during streaming
+                sb_apply = get_supabase_client()
                 # Compute updated slide ids from the diff so the UI can refresh precisely
                 try:
                     updated_slide_ids = list({sd.get("slide_id") for sd in (deck_diff_plain.get("slides_to_update") or []) if isinstance(sd, dict) and sd.get("slide_id")})
@@ -1477,7 +1480,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     "applied_by": user["id"],
                 }
                 logger.info(f"[DEBUG] Inserting applied record: session={session_id[:8]}..., deck={deck_id[:8] if deck_id else 'N/A'}..., slides={applied_rec.get('slide_ids', [])}, diff={_summarize_deck_diff(applied_rec.get('diff', {}))}")
-                e = sb.table("agent_edits").insert(applied_rec).execute().data[0]
+                e = sb_apply.table("agent_edits").insert(applied_rec).execute().data[0]
                 logger.info(f"[DEBUG] Applied record inserted with ID: {e.get('id')}")
 
                 # Apply to deck
@@ -1486,7 +1489,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                 deck_revision = await apply_deckdiff(deck_id, deck_diff_plain or {}, user_id=user["id"]) if deck_id else None
                 logger.info(f"[DEBUG] Deck diff applied, revision: {deck_revision}")
                 if deck_revision:
-                    sb.table("agent_edits").update({"deck_revision": str(deck_revision)}).eq("id", e["id"]).execute()
+                    sb_apply.table("agent_edits").update({"deck_revision": str(deck_revision)}).eq("id", e["id"]).execute()
 
                 # Build optional updated slide payloads for immediate UI patch on applied event
                 updated_slides_payload = []
@@ -1523,7 +1526,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                         "summary": summary  # Include summary for frontend message display
                     }
                 })
-                sb.table("agent_events").insert({
+                sb_apply.table("agent_events").insert({
                     "session_id": session_id,
                     "user_id": user["id"],
                     "message_id": message_id,
@@ -1546,7 +1549,7 @@ This is a TARGETED EDIT request. Apply the user's changes to the selected Custom
                     "timestamp": int(datetime.utcnow().timestamp() * 1000),
                     "data": {"messageId": message_id}
                 })
-                sb.table("agent_events").insert({
+                sb_apply.table("agent_events").insert({
                     "session_id": session_id,
                     "user_id": user["id"],
                     "message_id": message_id,

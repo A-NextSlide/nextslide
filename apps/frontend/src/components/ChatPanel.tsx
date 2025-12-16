@@ -1240,6 +1240,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const handleAddSystemMessage = (event: CustomEvent) => {
       const { message, metadata } = event.detail;
 
+      // Check if this is a completion message
+      const isCompletion = metadata?.type === 'generation_complete' ||
+                          metadata?.stage === 'generation_complete' ||
+                          metadata?.progress === 100;
+
+      if (isCompletion) {
+        // CRITICAL: Replace the progress message with completion message
+        // Don't add a new message - update the existing 'generation-progress' one
+        setIsGenerating(false);
+        setMessages(prev => {
+          // Check if we already have a completion message
+          const hasCompletion = prev.some(m =>
+            m.metadata?.type === 'generation_complete' ||
+            (typeof m.message === 'string' && m.message.includes('Your presentation is ready!'))
+          );
+          if (hasCompletion) return prev; // Don't add duplicate
+
+          const completionMessage: ExtendedChatMessageProps = {
+            id: 'generation-complete',
+            type: 'ai',
+            message: 'Your presentation is ready!',
+            timestamp: new Date(),
+            feedback: null,
+            metadata: { ...metadata, type: 'generation_complete', stage: 'generation_complete', progress: 100 }
+          } as any;
+
+          // Find and replace the progress message
+          const progressIdx = prev.findIndex(msg => msg.id === 'generation-progress');
+          if (progressIdx !== -1) {
+            const updated = [...prev];
+            updated[progressIdx] = completionMessage;
+            return updated;
+          }
+          // If no progress message found, just add completion
+          return [...prev, completionMessage];
+        });
+        setCurrentPhase('generation_complete');
+        return;
+      }
+
       // Add the system message to the chat
       const newMessage: ExtendedChatMessageProps = {
         id: `system-${Date.now()}`,
@@ -1249,8 +1289,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         metadata,
         feedback: null
       };
-
-
 
       setMessages(prev => [...prev, newMessage]);
 

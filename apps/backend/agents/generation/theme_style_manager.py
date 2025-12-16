@@ -1216,7 +1216,12 @@ Create a cohesive design system for this {vibe} presentation about {title}.
 
 Based on the chosen colors and fonts, define:
 
-1. **Visual Style** (choose one):
+1. **Design Philosophy** (CRITICAL - 1-2 sentences describing the design approach):
+   - What tone should the slides convey? (e.g., "Clean, authoritative, clinical" for medical; "Bold, energetic, disruptive" for startups)
+   - Should it be playful or serious? Dramatic or understated?
+   - Consider the audience and content when deciding the tone
+
+2. **Visual Style** (choose one):
    - Minimalist: Clean, lots of white space, subtle
    - Maximalist: Bold, full, rich with visuals
    - Editorial: Magazine-style, asymmetric, sophisticated
@@ -1224,28 +1229,28 @@ Based on the chosen colors and fonts, define:
    - Organic: Flowing, natural, soft edges
    - Geometric: Sharp, mathematical, structured
 
-2. **Image Treatment**:
+3. **Image Treatment**:
    - Prominence: 0-100% (how much of slides have images)
    - Style: Full-bleed, masked, framed, scattered
    - Effects: Ken-burns, parallax, fade, none
 
-3. **Typography Scale**:
+4. **Typography Scale**:
    - Hero titles: Size multiplier (1.5x-3x base)
    - Visual hierarchy strength (subtle/moderate/extreme)
 
-4. **Emphasis Techniques**:
+5. **Emphasis Techniques**:
    - Primary: Size, color, position, or mixed
    - Animations: None, subtle, moderate, dramatic
 
-5. **Layout Philosophy**:
+6. **Layout Philosophy**:
    - Grid-based, asymmetric, centered, dynamic
 
-6. **Special Effects**:
+7. **Special Effects**:
    - Gradients: None, subtle, bold
    - Shadows: None, subtle, dramatic
    - Shapes: Minimal, moderate, abundant
 
-Provide specific recommendations that create a cohesive, memorable design system.
+Provide specific recommendations that create a cohesive design system appropriate for the content and audience.
 """
             
                 design_response = await self._async_invoke(
@@ -1266,42 +1271,43 @@ Provide specific recommendations that create a cohesive, memorable design system
                 """Generate per-slide image search terms in parallel"""
                 logger.info("[THEME PARALLEL] Task 4: Starting per-slide search terms generation...")
 
-                # Step 4: Get slide-specific search terms using photographable scene guidance
-                image_prompt = f"""Generate specific image search terms for EACH slide listed below.
+                # Step 4: Get slide-specific search terms - use the right strategy per content type
+                image_prompt = f"""Generate specific Google Image search terms for EACH slide listed below.
 
 Deck: {title}
 
 SLIDES TO ANALYZE:
 {first_slides}
 
-REQUIREMENTS PER SLIDE:
-1. Generate 1-2 search terms for EACH slide
-2. Each term must be a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words)
-3. Describe a REAL scene: "person doing X", "object in Y setting"
-4. Include specific visual details that a photographer could capture
+CRITICAL RULE - Use the RIGHT strategy based on content:
 
-TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
-- "analytics" → "data analyst reviewing dashboard on monitor"
-- "electric car" → "Tesla charging station parking lot"
-- "sustainability" → "wind turbines on green hillside"
-- "teamwork" → "business team around conference table"
-- "growth" → "startup founders celebrating in office"
-- "technology" → "software developer coding on laptop"
+🎯 FOR NAMED ENTITIES (characters, people, brands, places, products) - USE THE ACTUAL NAME!
+- Slide about Krillin → "Krillin Dragon Ball" (NOT "bald anime martial artist monk")
+- Slide about Goku → "Goku Super Saiyan Dragon Ball" (NOT "spiky hair anime fighter")
+- Slide about Bulma → "Bulma Dragon Ball" (NOT "blue hair anime girl")
+- Slide about Elon Musk → "Elon Musk portrait"
+- Slide about Tesla → "Tesla Model S"
+- Slide about Pac-Man → "Pac-Man arcade game"
+- Slide about Nintendo → "Nintendo Switch console"
+
+📷 FOR GENERIC CONCEPTS - Use descriptive photographable scenes (3-6 words):
+- "analytics" → "data analyst reviewing dashboard"
+- "teamwork" → "business team meeting"
+- "sustainability" → "wind turbines hillside"
+
+⚠️ IMPORTANT: Google Images CANNOT find descriptions of famous things!
+- "bald anime martial artist in orange gi" = WRONG (Google can't find this)
+- "Krillin Dragon Ball" = CORRECT (finds actual images of Krillin)
 
 OUTPUT FORMAT:
 For each slide, write:
-Slide N: scene description 1, scene description 2
+Slide N: search term 1, search term 2
 
-GOOD EXAMPLES (photographable scenes):
-Slide 1: gamer holding controller in dark room, retro arcade machines neon lights
-Slide 2: pac-man arcade cabinet closeup, space invaders game screen
-Slide 3: nintendo switch on wooden table, gaming setup with multiple monitors
-Slide 4: 3d graphics card computer build, game developer at workstation
-
-BAD EXAMPLES (too vague - avoid these):
-Slide 1: gaming, history, evolution (not photographable)
-Slide 2: arcade (single word, no scene)
-Slide 3: technology, innovation (abstract concepts)
+EXAMPLES:
+Slide 1: Goku Super Saiyan, Dragon Ball power up (uses character NAME)
+Slide 2: Krillin Dragon Ball, Krillin Destructo Disc (uses character NAME)
+Slide 3: Master Roshi Dragon Ball, Turtle School martial arts
+Slide 4: Dragon Ball tournament arena, World Martial Arts Tournament
 
 Generate terms for the first {min(10, len(deck_outline.slides))} slides:"""
             
@@ -3196,16 +3202,38 @@ VISUAL RULES:
         else:
             design['white_space'] = 'generous'
         
-        # Design philosophy
-        if 'unforgettable' in response_lower:
-            design['philosophy'] = 'Make every slide unforgettable'
-        elif 'bold' in response_lower:
-            design['philosophy'] = 'Be bold, break conventions'
-        elif 'clean' in response_lower:
-            design['philosophy'] = 'Clean design speaks loudest'
+        # Design philosophy - try to extract from the response
+        import re
+        # Look for design philosophy section in the response
+        philosophy_patterns = [
+            r'design philosophy[:\s]*["\']?([^"\'.\n]+)["\']?',
+            r'philosophy[:\s]*["\']?([^"\'.\n]+)["\']?',
+            r'tone[:\s]*["\']?([^"\'.\n]+)["\']?',
+        ]
+
+        philosophy_found = None
+        for pattern in philosophy_patterns:
+            match = re.search(pattern, response_lower)
+            if match:
+                philosophy_found = match.group(1).strip()
+                # Capitalize first letter
+                if philosophy_found:
+                    philosophy_found = philosophy_found[0].upper() + philosophy_found[1:]
+                break
+
+        if philosophy_found and len(philosophy_found) > 10:
+            design['philosophy'] = philosophy_found
         else:
-            design['philosophy'] = 'Transform information into experiences'
-        
+            # Fallback based on keywords
+            if 'clinical' in response_lower or 'medical' in response_lower or 'professional' in response_lower:
+                design['philosophy'] = 'Clean, professional design that conveys authority and trust'
+            elif 'playful' in response_lower or 'fun' in response_lower or 'energetic' in response_lower:
+                design['philosophy'] = 'Bold, energetic design with creative flair'
+            elif 'minimal' in response_lower or 'clean' in response_lower:
+                design['philosophy'] = 'Clean, minimal design focused on clarity'
+            else:
+                design['philosophy'] = 'Professional, polished design appropriate for the content'
+
         return design 
 
     def _extract_colors_from_vibe(self, vibe: str) -> List[str]:

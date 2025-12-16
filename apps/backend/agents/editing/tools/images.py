@@ -92,27 +92,28 @@ async def _enhance_query_with_ai(query: str, slide_context: Dict[str, str]) -> s
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Transform this vague image search query into a SPECIFIC, VISUAL query.
+        prompt = f"""Optimize this image search query for Google Images.
 
 ORIGINAL QUERY: {query}
 SLIDE TITLE: {slide_context.get('title', 'Unknown')}
 SLIDE CONTENT: {slide_context.get('content', '')[:300]}
 
-RULES:
-1. Return ONE specific, photographable scene (3-6 words)
-2. Describe a REAL scene: "person doing X", "object in Y setting"
-3. Include specific details: "data analyst reviewing dashboard on monitor" NOT "analytics"
-4. For companies/products, be specific: "Tesla charging station" NOT "electric car"
-5. For concepts like sustainability: "wind turbines on hillside" NOT "sustainability"
+🎯 CRITICAL RULES:
+1. If query contains a NAMED ENTITY (character, person, brand, place) - KEEP THE NAME!
+   - "Krillin" → "Krillin Dragon Ball" (NOT "bald martial artist")
+   - "Goku" → "Goku Dragon Ball" (NOT "anime fighter")
+   - "Elon Musk" → "Elon Musk portrait"
+   - "Tesla" → "Tesla Model S"
 
-GOOD EXAMPLES:
-- "software developer coding on laptop"
-- "warehouse robots moving packages"
-- "modern office conference room meeting"
-- "solar panels on rooftop building"
-- "business handshake close-up"
+2. ONLY for vague/generic concepts, transform into visual terms:
+   - "analytics" → "business analytics dashboard"
+   - "sustainability" → "wind turbines hillside"
 
-Return ONLY the enhanced query (3-6 words), nothing else."""
+3. Google Images CANNOT find descriptions - it needs ACTUAL NAMES!
+   - "bald anime martial artist in orange gi" = WRONG
+   - "Krillin Dragon Ball" = CORRECT
+
+Return ONLY the optimized query (2-4 words). If input has a name, KEEP IT!"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(

@@ -97,12 +97,23 @@ ALWAYS use placeholder src with a descriptive alt text that describes WHAT to se
 ```
 
 **THE ALT TEXT = GOOGLE IMAGE SEARCH QUERY**
-Write alt text as if you're searching Google Images. Be SPECIFIC to the slide content:
+Write alt text as if you're searching Google Images. Use the RIGHT strategy based on content:
+
+🎯 **NAMED ENTITIES (characters, people, brands, places) - USE THE ACTUAL NAME!**
+• Character slide about Krillin → alt="Krillin Dragon Ball" (NOT "bald anime martial artist monk")
+• Slide about Goku → alt="Goku Super Saiyan Dragon Ball" (NOT "spiky hair anime fighter")
+• Slide about Elon Musk → alt="Elon Musk" (NOT "tech entrepreneur in suit")
+• Slide about Tesla → alt="Tesla Model S" (NOT "electric car sedan")
+• Slide about Paris → alt="Eiffel Tower Paris" (NOT "tall metal tower in city")
+• Slide about Nintendo → alt="Nintendo Switch console" (NOT "handheld gaming device")
+
+📷 **GENERIC CONCEPTS - Use descriptive photographable scenes:**
 • Data viz slide about sales → alt="sales growth bar chart" or alt="revenue dashboard"
-• Slide about AI → alt="artificial intelligence neural network" or alt="robot machine learning"
-• Slide about team → alt="diverse business team meeting" or alt="CEO executive portrait"
-• Slide about product → alt="[actual product name] product photo"
-• Slide about company → alt="[actual company name] office building" or logo
+• Slide about teamwork → alt="diverse business team meeting"
+• Slide about technology → alt="software developer coding on laptop"
+
+⚠️ **RULE: If the content mentions a SPECIFIC NAME, CHARACTER, BRAND, or PLACE - USE THAT NAME in the alt text!**
+Google Images finds "Krillin Dragon Ball" perfectly - it CANNOT find "bald anime martial artist monk in orange gi"
 
 🚫 NEVER use: image0, image1, visualization, dataname, photo, picture, graphic, visual, background
 🚫 NEVER use external URLs: unsplash.com, source.unsplash.com, pexels.com, pixabay.com - ALWAYS use src="placeholder"

@@ -180,6 +180,7 @@ def _extract_image_props_from_html(html: str) -> List[Tuple[str, str]]:
 async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> str:
     """
     Use AI to enhance a vague image query into a specific, photographable scene.
+    IMPORTANT: Preserves named entities (characters, people, brands) - only enhances generic concepts.
     Returns the original query if enhancement fails.
     """
     from agents.ai.clients import get_client, invoke
@@ -188,23 +189,28 @@ async def _enhance_image_query_with_ai(query: str, slide_context: str = "") -> s
     try:
         client, model_name = get_client(IMAGE_SEARCH_MODEL)
 
-        prompt = f"""Transform this image search query into a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words).
+        prompt = f"""Optimize this image search query for Google Images.
 
 ORIGINAL QUERY: {query}
-CONTEXT: {slide_context[:300] if slide_context else 'Business presentation slide'}
+CONTEXT: {slide_context[:300] if slide_context else 'Presentation slide'}
 
-REQUIREMENTS:
-1. Return ONE specific, photographable scene (3-6 words)
-2. Describe a REAL scene: "person doing X", "object in Y setting"
-3. Include visual details a photographer could capture
+CRITICAL RULES:
+1. If the query contains a NAMED ENTITY (character name, person name, brand, place), KEEP THE NAME!
+   - "Krillin" → "Krillin Dragon Ball" (NOT "bald anime martial artist")
+   - "Goku fighting" → "Goku Dragon Ball fighting" (NOT "spiky hair anime fighter")
+   - "Elon Musk" → "Elon Musk portrait" (keep the name!)
+   - "Tesla car" → "Tesla Model S" (keep brand name!)
 
-TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
-- "analytics" → "data analyst reviewing dashboard on monitor"
-- "growth" → "startup founders celebrating in office"
-- "teamwork" → "business team around conference table"
-- "technology" → "software developer coding on laptop"
+2. ONLY for vague/generic concepts, transform into photographable scenes:
+   - "analytics" → "data analyst reviewing dashboard"
+   - "growth" → "business growth chart"
+   - "teamwork" → "business team meeting"
 
-Return ONLY the enhanced query (3-6 words), nothing else."""
+3. Google Images CANNOT find descriptions of famous things - it needs the ACTUAL NAME!
+   - "bald anime martial artist in orange gi" = WRONG (can't find this)
+   - "Krillin Dragon Ball" = CORRECT (finds actual images)
+
+Return ONLY the optimized query (2-5 words). If input has a specific name, KEEP IT."""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -220,7 +226,7 @@ Return ONLY the enhanced query (3-6 words), nothing else."""
 
         enhanced = str(response).strip().strip('"\'')
         if enhanced:
-            print(f"[POST_SEARCH] 🤖 AI enhanced query: '{query}' -> '{enhanced}'")
+            print(f"[POST_SEARCH] 🤖 AI optimized query: '{query}' -> '{enhanced}'")
             return enhanced
     except Exception as e:
         print(f"[POST_SEARCH] ⚠️ AI enhancement failed: {e}")
@@ -741,42 +747,39 @@ Instead, focus on OTHER visual content the slide needs (products, people, concep
         if has_brand_logo:
             print(f"[PREFETCH] ✅ Has Brandfetch logo - will skip logo searches")
 
-        prompt = f"""Generate image search terms for this slide. Each term must be a SPECIFIC, PHOTOGRAPHABLE SCENE (3-6 words).
+        prompt = f"""Generate Google Image search terms for this slide.
 
 SLIDE TITLE: {slide_title}
 CONTENT: {content[:1200]}
 {logo_instruction}
 
-REQUIREMENTS:
-1. Each term must describe a REAL, photographable scene (3-6 words)
-2. Use format: "person doing X", "object in Y setting", "specific thing in context"
-3. Include visual details a photographer could capture
+🎯 CRITICAL - Use the RIGHT strategy based on content:
 
-TRANSFORM VAGUE CONCEPTS INTO VISUAL SCENES:
-- "analytics" → "data analyst reviewing dashboard on monitor"
-- "growth" → "startup founders celebrating in office"
-- "teamwork" → "business team around conference table"
-- "technology" → "software developer coding on laptop"
-- "Tesla" → "Tesla charging station parking lot"
-- "iPhone" → "person holding iPhone in coffee shop"
+FOR NAMED ENTITIES (characters, people, brands, products, places) → USE THE ACTUAL NAME!
+- Slide about Krillin → "Krillin Dragon Ball" (NOT "bald martial artist monk")
+- Slide about Goku → "Goku Dragon Ball" (NOT "anime fighter spiky hair")
+- Slide about Bulma → "Bulma Dragon Ball" (NOT "blue hair anime scientist")
+- Slide about Tesla → "Tesla Model S" or "Tesla Cybertruck" (NOT "electric car sedan")
+- Slide about Elon Musk → "Elon Musk" (NOT "tech entrepreneur in suit")
+- Slide about iPhone → "iPhone 15 Pro" (NOT "smartphone in hand")
+- Slide about Nintendo → "Nintendo Switch" (NOT "gaming console")
 
-GOOD EXAMPLES (photographable scenes):
-- "warehouse robots moving packages"
-- "modern office conference room meeting"
-- "solar panels on rooftop building"
-- "business handshake close-up"
+FOR GENERIC CONCEPTS → Use short descriptive terms:
+- "analytics" → "business analytics dashboard"
+- "teamwork" → "business team meeting"
+- "growth" → "business growth chart"
 
-BAD EXAMPLES (too vague - avoid):
-- "growth", "technology", "innovation" (abstract)
-- "iPhone", "Tesla" (product name only, no scene)
-- "business", "professional" (generic)
+⚠️ IMPORTANT:
+- Google Images CANNOT find "bald anime martial artist in orange gi" - but it CAN find "Krillin Dragon Ball"
+- If the content mentions a SPECIFIC NAME, CHARACTER, PERSON, BRAND - USE THAT NAME!
+- Keep search terms SHORT (2-4 words), don't over-describe
 
 SKIP images only for:
 - Pure quote slides with just text
 - Slides listing only numbers/stats with no context
 
-Return JSON array with 1-3 photographable scene descriptions:
-["scene description 1", "scene description 2"]"""
+Return JSON array with 1-3 search terms:
+["search term 1", "search term 2"]"""
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -975,6 +978,7 @@ class CustomComponentGenerator:
             colors = theme.get('color_palette', {})
             typography = theme.get('typography', {})
             style_keywords = theme.get('style_keywords', [])
+            design_philosophy = theme.get('design_philosophy', '')
 
             # Debug: Log what typography we received
             logger.info(f"[CUSTOM_COMPONENT] Theme typography keys: {list(typography.keys()) if typography else 'None'}")
@@ -998,9 +1002,6 @@ class CustomComponentGenerator:
             # This uses the exact same search terms as the image picker
             print(f"[CUSTOM_COMPONENT] 🆕 Using simplified image system (post-generation SERP search)")
 
-            # Detect if this is a title slide
-            is_title_slide = self._is_title_slide(slide_context)
-
             # Get slide_mode from context: 'interactive' (NextGen) or 'static' (Traditional PPT)
             slide_mode = slide_context.get('slide_mode', 'interactive')
             is_educational = slide_context.get('is_educational', False)
@@ -1018,26 +1019,11 @@ class CustomComponentGenerator:
             else:
                 logger.debug("[CUSTOM_COMPONENT] No logo URL in theme")
 
-            # Build the system prompt (specialized for title slides)
-            if is_title_slide:
-                system_prompt = self._build_title_slide_system_prompt(colors, typography, style_keywords, logo_url, slide_mode, logo_needs_invert)
-            else:
-                system_prompt = self._build_system_prompt(colors, typography, style_keywords, slide_mode, logo_url, logo_needs_invert, is_educational)
+            # Build the system prompt - model will determine appropriate design based on slide_type and content
+            system_prompt = self._build_system_prompt(colors, typography, style_keywords, design_philosophy, slide_mode, logo_url, logo_needs_invert, is_educational)
 
             # Build the user prompt with full context
-            if is_title_slide:
-                user_prompt = self._build_title_slide_user_prompt(
-                    content=content,
-                    slide_context=slide_context,
-                    colors=colors,
-                    typography=typography,
-                    width=width,
-                    height=height,
-                    logo_url=logo_url,
-                    logo_needs_invert=logo_needs_invert
-                )
-            else:
-                user_prompt = self._build_user_prompt(
+            user_prompt = self._build_user_prompt(
                     content=content,
                     slide_context=slide_context,
                     component_purpose=component_purpose,
@@ -1467,6 +1453,7 @@ class CustomComponentGenerator:
         colors: Dict[str, str],
         typography: Dict[str, str],
         style_keywords: list,
+        design_philosophy: str = '',
         slide_mode: str = 'interactive',
         logo_url: Optional[str] = None,
         logo_needs_invert: bool = False,
@@ -1475,6 +1462,9 @@ class CustomComponentGenerator:
         """Build the system prompt for CustomComponent generation."""
 
         style_desc = ", ".join(style_keywords) if style_keywords else "modern, professional"
+
+        # Use design philosophy from theme, or default
+        design_guidance = design_philosophy if design_philosophy else "Create visually compelling, professional slides appropriate for the content and audience."
 
         accent = colors.get('accent_1', '#6366f1')
         secondary = colors.get('accent_2', '#8b5cf6')
@@ -1493,9 +1483,21 @@ class CustomComponentGenerator:
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
 FONTS: {hero_font} / {body_font}
-IMAGES: Use <img src="placeholder" alt="photographable scene description 3-6 words"> - we auto-fetch real images from the alt text.
-ALT TEXT MUST be a specific photographable scene: "person doing X", "object in Y setting". Examples: "software developer coding on laptop", "business team around conference table", "Tesla charging station parking lot".
-BAD alt text: "technology", "growth", "business" (too vague).{logo_info}"""
+IMAGES: Use <img src="placeholder" alt="Google Image search query"> - we auto-fetch real images from the alt text.
+
+🎯 ALT TEXT RULES - Use the RIGHT strategy:
+FOR NAMED ENTITIES (characters, people, brands, places) → USE THE ACTUAL NAME!
+- Slide about Krillin → alt="Krillin Dragon Ball" (NOT "bald anime martial artist")
+- Slide about Goku → alt="Goku Dragon Ball" (NOT "spiky hair anime fighter")
+- Slide about Bulma → alt="Bulma Dragon Ball" (NOT "blue hair anime scientist")
+- Slide about Elon Musk → alt="Elon Musk" (NOT "tech entrepreneur")
+- Slide about Tesla → alt="Tesla Model S" (NOT "electric car sedan")
+
+FOR GENERIC CONCEPTS → Use short descriptive scenes:
+- alt="data analyst dashboard", alt="business team meeting"
+
+⚠️ CRITICAL: Google Images CANNOT find "bald anime martial artist in orange gi" - but it CAN find "Krillin Dragon Ball"!
+If the slide mentions a specific NAME, CHARACTER, PERSON, BRAND - USE THAT NAME in alt text!{logo_info}"""
 
         if slide_mode == 'static':
             # Traditional PPT - beautiful, clean, professional (static but elegant with entrance animations)
@@ -1582,11 +1584,11 @@ EDUCATIONAL DESIGN PRINCIPLES:
 
 """
 
-            return f"""You are an elite creative technologist. Build INTERACTIVE experiences that make people say "WOW!"
+            return f"""You are a professional slide designer. {design_guidance}
 
 {theme_info}
 {educational_section}
-INTERACTIVE ARSENAL - use these:
+INTERACTIVE ARSENAL - use these when appropriate:
 • Animated diagrams that BUILD on click
 • Interactive timelines - click nodes to reveal content
 • Quizzes with clickable answers, feedback, confetti
@@ -2798,169 +2800,6 @@ THINK LIKE A DESIGNER:
 "How would Apple or Stripe present this?"
 "What's unexpected but appropriate for this message?"
 """
-
-    def _is_title_slide(self, slide_context: Dict[str, Any]) -> bool:
-        """Detect if this is a title/cover slide."""
-        slide_index = slide_context.get('slide_index', 0)
-        slide_type = slide_context.get('slide_type', '').lower()
-        total_slides = slide_context.get('total_slides', 1)
-
-        # Explicit title/cover layout
-        if any(t in slide_type for t in ['title', 'cover']):
-            return True
-
-        # For single-slide decks, user wants content, not just a title
-        if total_slides == 1:
-            return False
-
-        # First slide of multi-slide decks is the title slide
-        if slide_index == 0:
-            return True
-
-        return False
-
-    def _build_title_slide_system_prompt(
-        self,
-        colors: Dict[str, str],
-        typography: Dict[str, str],
-        style_keywords: list,
-        logo_url: Optional[str] = None,
-        slide_mode: str = 'interactive',
-        logo_needs_invert: bool = False
-    ) -> str:
-        """Build specialized system prompt for stunning title slides."""
-
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
-        bg_color = colors.get('primary_background', '#0a0e27')
-        hero_font, body_font = _extract_fonts_from_typography(typography)
-
-        # Logo instructions for title slides
-        logo_info = ""
-        if logo_url:
-            invert_note = " Apply CSS filter: invert(1) to the <img> for contrast!" if logo_needs_invert else ""
-            logo_info = f"\n🏢 LOGO (MANDATORY): Include the brand logo in a corner or header area (height: 40-60px, z-index: 100).{invert_note} THE LOGO IS NON-NEGOTIABLE!"
-
-        # Mode-specific instructions
-        if slide_mode == 'static':
-            mode_instruction = """✅ TRADITIONAL MODE - Elegant entrance animations ONLY:
-- Entrance animations ALLOWED: fadeIn, slideIn (from any direction), scale reveal
-- Use @keyframes with animation-fill-mode: forwards (element stays after animation)
-- Stagger delays for polish: 0.1s, 0.2s, 0.3s...
-- Keep animations SHORT: 0.4s-0.8s, ease-out
-
-⛔ FORBIDDEN:
-- NO <script> tags, onclick, onmouseover, or event handlers
-- NO hover effects or :hover pseudo-class
-- NO looping/infinite animations - entrance only, then STILL
-- NO animated particles or continuous motion
-
-OUTPUT: Complete HTML/CSS starting with <!DOCTYPE html>"""
-        else:
-            mode_instruction = """✨ INTERACTIVE MODE - Add elegant animations:
-- Entrance animations (fade, slide, reveal, scale)
-- Floating particles and light streaks
-- Smooth CSS transitions
-
-OUTPUT: Complete HTML/CSS/JS starting with <!DOCTYPE html>
-Use smooth animations (cubic-bezier)."""
-
-        return f"""You are an award-winning designer. Create BREATHTAKING title slides.
-
-THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
-FONTS: {hero_font} (hero) / {body_font} (body){logo_info}
-
-DESIGN PHILOSOPHY:
-- Cinematic, editorial, high-fashion quality
-- Dramatic typography as the hero (120-200px titles)
-- Atmospheric backgrounds (gradients, glows, blur effects)
-- REQUIRED elements: brand logo (corner or header), title, optional subtitle, optional accent
-
-TYPOGRAPHY CRAFT:
-- Tight letter-spacing (-0.02em to -0.05em)
-- Gradient text or dramatic shadows for depth
-- Strategic use of font weights (light vs black contrast)
-
-ATMOSPHERE (vary each slide - never repeat the same style):
-- Geometric shapes, diagonal lines, or grid patterns
-- Noise/grain textures, duotone overlays
-- Gradient meshes, aurora effects
-- Minimalist negative space, typography-only designs
-- Abstract shapes (NOT always corner blobs)
-
-Z-INDEX LAYERING (CRITICAL - title must ALWAYS be visible):
-- Background gradients/effects: z-index: 1-5
-- Decorative elements: z-index: 10-30
-- TITLE TEXT: z-index: 100+ (ALWAYS on top, never obscured)
-- Subtitle/presenter: z-index: 90+
-- Logo: z-index: 80+
-
-{mode_instruction}
-IMAGES (optional): If a stunning image would help, use <img src="placeholder" alt="photographable scene 3-6 words">.
-Alt text must be a specific scene: "software developer coding on laptop" NOT "technology".
-Use CSS variables. Fill 1920x1080."""
-
-    def _build_title_slide_user_prompt(
-        self,
-        content: str,
-        slide_context: Dict[str, Any],
-        colors: Dict[str, str],
-        typography: Dict[str, str],
-        width: int,
-        height: int,
-        logo_url: Optional[str] = None,
-        logo_needs_invert: bool = False
-    ) -> str:
-        """Build user prompt specifically for title slides."""
-
-        title = slide_context.get('title', 'Presentation Title')
-        accent = colors.get('accent_1', '#6366f1')
-        secondary = colors.get('accent_2', '#8b5cf6')
-        text_color = colors.get('primary_text', '#ffffff')
-        bg_color = colors.get('primary_background', '#0a0e27')
-        hero_font, body_font = _extract_fonts_from_typography(typography)
-
-        # Parse content for subtitle/presenter info
-        subtitle = ""
-        presenter = ""
-        if content:
-            lines = content.strip().split('\n')
-            if lines:
-                subtitle = lines[0] if len(lines) > 0 else ""
-                presenter = lines[1] if len(lines) > 1 else ""
-
-        # Build logo section for title slides
-        logo_section = ""
-        if logo_url:
-            invert_style = ' style="filter: invert(1);"' if logo_needs_invert else ''
-            invert_note = " (with filter: invert(1) for contrast)" if logo_needs_invert else ""
-
-            logo_section = f"""
-🏢 BRAND LOGO (REQUIRED - DO NOT SKIP):
-URL: {logo_url}
-HTML example: <img src="{logo_url}" alt="Logo"{invert_style} style="height: 50px; position: absolute; top: 30px; z-index: 100;">
-Position: Any corner or header area that fits the design{invert_note}
-⚠️ THIS LOGO MUST APPEAR ON THE SLIDE - IT IS THE BRAND'S IDENTITY!
-"""
-
-        return f"""TITLE SLIDE: "{title}"
-{f'Subtitle: "{subtitle}"' if subtitle else ''}
-{f'Presenter: "{presenter}"' if presenter else ''}
-
-SIZE: {width}x{height}px
-
-COLORS: accent={accent}, secondary={secondary}, text={text_color}, bg={bg_color}
-FONTS: {hero_font} / {body_font}
-{logo_section}
-Create a cinematic, editorial-quality title slide. Think movie poster, fashion magazine, Apple keynote.
-
-Be creative with:
-- Dramatic typography (150px+, tight tracking, gradient or shadow)
-- Elegant animations (reveals, fades, subtle motion)
-- Unique backgrounds: geometric, textured, gradient mesh, minimal, or bold color blocks
-
-Keep it minimal - the title is everything. Maximum {4 if logo_url else 3} visual elements total."""
 
     def _wrap_in_html(self, content: str) -> str:
         """Wrap partial HTML in a complete document."""

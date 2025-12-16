@@ -176,6 +176,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const [themeBlock, setThemeBlock] = useState<ThemeEditorData | null>(null);
   const [themeBlockCollapsed, setThemeBlockCollapsed] = useState(true); // Start collapsed
   const [isThemeLoading, setIsThemeLoading] = useState(false); // Track theme generation
+  const isThemeLoadingRef = useRef(false); // Ref for async access
   const [outlineBlock, setOutlineBlock] = useState<OutlinePreviewData | null>(null);
   const [outlineBlockCollapsed, setOutlineBlockCollapsed] = useState(true); // Start collapsed
 
@@ -197,6 +198,11 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync ref with state for async access in proceedWithGeneration
+  useEffect(() => {
+    isThemeLoadingRef.current = isThemeLoading;
+  }, [isThemeLoading]);
 
   // Helper to add thinking step
   const addThinkingStep = useCallback((status: string, message?: string, query?: string) => {
@@ -872,7 +878,7 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
   };
 
   // Proceed with generation after credit check passes
-  const proceedWithGeneration = (slideMode: 'interactive' | 'static') => {
+  const proceedWithGeneration = async (slideMode: 'interactive' | 'static') => {
     const modeLabel = slideMode === 'interactive'
       ? 'NextGen'
       : 'Traditional';
@@ -890,11 +896,14 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
     addAgentMessage(confirmMessage);
 
+    // Theme loading wait is now handled in handleButtonClick before this function is called
+
     setTimeout(() => {
       console.log('[ConversationalOnboarding] Passing outline data to onComplete:');
       console.log('[ConversationalOnboarding] - outlineFlow?.slides:', outlineFlow?.slides?.length, 'slides');
       console.log('[ConversationalOnboarding] - outlineFlow?.topic:', outlineFlow?.topic);
       console.log('[ConversationalOnboarding] - style sources: brandContext=', outlineFlow?.brandContext, 'vibeContext=', outlineFlow?.stylePreferences?.vibeContext, 'style=', outlineFlow?.style);
+      console.log('[ConversationalOnboarding] - themeBlock fonts:', themeBlock?.typography.headingFont, '/', themeBlock?.typography.bodyFont);
 
       // Build stylePreferences from theme block if available
       const stylePreferencesFromTheme = themeBlock ? {
@@ -944,6 +953,31 @@ const ConversationalOnboarding: React.FC<ConversationalOnboardingProps> = ({
 
       // Set processing state immediately for UI feedback
       setIsProcessing(true);
+
+      // Wait for theme to finish loading before proceeding
+      if (isThemeLoadingRef.current) {
+        console.log('[ConversationalOnboarding] ⏳ Waiting for theme to finish loading before proceeding...');
+        setStatusMessage('Finalizing theme...');
+        setStatusPhase('thinking');
+        setIsAgentTyping(true);
+
+        // Wait up to 15 seconds for theme to load
+        const maxWait = 15000;
+        const startTime = Date.now();
+        while (isThemeLoadingRef.current && (Date.now() - startTime) < maxWait) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        setIsAgentTyping(false);
+        setStatusMessage(null);
+        setStatusPhase(null);
+
+        if (isThemeLoadingRef.current) {
+          console.warn('[ConversationalOnboarding] ⚠️ Theme still loading after timeout, proceeding with current theme');
+        } else {
+          console.log('[ConversationalOnboarding] ✅ Theme finished loading, proceeding');
+        }
+      }
 
       // Check credits BEFORE proceeding with generation
       const numSlides = outlineFlow?.slides?.length || outlineBlock?.slides?.length || collectedData.slideCount || 5;

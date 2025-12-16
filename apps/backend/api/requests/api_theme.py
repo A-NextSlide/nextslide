@@ -409,17 +409,22 @@ async def stream_theme_from_outline(
                             data_field["style_spec"]["palette"] = palette
 
                     # IMPORTANT: Persist only theme data to avoid overwriting concurrent slide updates
-                    payload = {
-                        "uuid": deck_id,
-                        "name": outline.title,
-                        "data": data_field,
-                    }
-                    upload_deck(payload, deck_id)
-                    yield _sse({
-                        "type": "theme_stored",
-                        "timestamp": datetime.now().isoformat(),
-                        "deck_id": deck_id,
-                    })
+                    # Skip persistence for temp UUIDs (e.g., "temp-1234567890") - they're not valid database UUIDs
+                    is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
+                    if is_temp_uuid:
+                        logger.info(f"[THEME API] Skipping persistence for temp UUID: {deck_id} - theme will be passed via stylePreferences")
+                    else:
+                        payload = {
+                            "uuid": deck_id,
+                            "name": outline.title,
+                            "data": data_field,
+                        }
+                        upload_deck(payload, deck_id)
+                        yield _sse({
+                            "type": "theme_stored",
+                            "timestamp": datetime.now().isoformat(),
+                            "deck_id": deck_id,
+                        })
                 except Exception as e:
                     logger.warning(f"Failed to persist theme for deck {deck_id}: {e}")
 
@@ -704,8 +709,9 @@ async def theme_from_outline_json(
         except Exception:
             palette = None
 
-        # Optionally persist
-        if deck_id and isinstance(deck_theme, dict):
+        # Optionally persist (skip for temp UUIDs)
+        is_temp_uuid = deck_id.startswith('temp-') if deck_id else True
+        if deck_id and isinstance(deck_theme, dict) and not is_temp_uuid:
             try:
                 from utils.supabase import get_deck, upload_deck
                 existing = get_deck(deck_id) or {}
@@ -724,6 +730,8 @@ async def theme_from_outline_json(
                 upload_deck(payload, deck_id)
             except Exception as e:
                 logger.warning(f"Failed to persist theme for deck {deck_id}: {e}")
+        elif is_temp_uuid:
+            logger.info(f"[THEME API JSON] Skipping persistence for temp UUID: {deck_id}")
 
         response = JSONResponse({
             "success": True,

@@ -34,7 +34,7 @@ class ThemeSpec:
     background_variations: List[Dict[str, Any]] = field(default_factory=list)
     slide_templates: Dict[str, Any] = field(default_factory=dict)
     design_rules: Dict[str, Any] = field(default_factory=dict)
-    slide_themes: Dict[str, Any] = field(default_factory=dict)  # LayoutArchitect blueprints
+    slide_themes: Dict[str, Any] = field(default_factory=dict)  # Per-slide theme variations
     # Brand information including logo URL
     brandInfo: Dict[str, Any] = field(default_factory=dict)
     # Design reference images (e.g., brand website screenshots from Firecrawl)

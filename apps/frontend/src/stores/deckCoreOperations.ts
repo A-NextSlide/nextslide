@@ -74,8 +74,11 @@ export const createCoreDeckOperations = (set, get) => {
     }
 
     // Don't save while AI is generating slides - backend will reject with 409
-    const deckStatus = get().deckStatus;
-    const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+    // Check window.__deckStatus (set by GenerationCoordinator) as primary source
+    // Handle both string values ('generating') and object values ({ state: 'generating' })
+    const deckStatus = typeof window !== 'undefined' ? (window as any).__deckStatus : null;
+    const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+    const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
     if (isGenerating) {
       logger.debug('[Store] Skipping save - AI is generating slides');
       return;

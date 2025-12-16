@@ -178,8 +178,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (draft) return draft;
     
     // Check if deck is generating
+    // Handle both string values ('generating') and object values ({ state: 'generating' })
     const deckStatus = (window as any).__deckStatus;
-    const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+    const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+    const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
     
     // Suppress warnings during deck generation
     const slide = isGenerating 
@@ -515,8 +517,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const slide = useDeckStore.getState().getSlideForEditing(currentSlideId);
       
       // CRITICAL FIX: Check if deck is generating
+      // Handle both string values ('generating') and object values ({ state: 'generating' })
       const deckStatus = (window as any).__deckStatus;
-      const isGenerating = deckStatus?.state === 'generating' || deckStatus?.state === 'creating';
+      const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+      const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
       
       if (!slide) {
         // If deck is generating and slide is not yet available, don't set empty draft

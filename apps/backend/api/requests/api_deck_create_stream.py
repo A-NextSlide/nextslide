@@ -593,15 +593,16 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 # Track completion state so we don't close the stream early
                 composition_completed = False
                 emitted_error = False
+                slides_complete = False
                 print(f"\n🟡🟡🟡 [API] About to start composition for deck {deck_uuid}")
                 logger.info(f"Starting composition for deck {deck_uuid} with new structured approach")
-                
+
                 # Track composition phase
                 with sentry_sdk.start_span(op="deck.compose", description="Compose deck"):
                     # Use new compose_deck_stream with structured three-phase approach
                     print(f"🟡🟡🟡 [API] Calling compose_deck_stream")
                     async for update in compose_deck_stream(
-                        deck_outline, registry, deck_uuid, 
+                        deck_outline, registry, deck_uuid,
                         max_parallel=max_parallel_val, delay_between_slides=delay_val,
                         async_images=request.async_images,
                         enable_visual_analysis=None,  # Will use config default (currently False)
@@ -612,6 +613,10 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                             utype = update.get('type')
                             if utype in ('deck_complete', 'composition_complete', 'complete'):
                                 composition_completed = True
+                                print(f"✅ [API] Received completion event: {utype}")
+                            elif utype == 'slides_generation_complete':
+                                slides_complete = True
+                                print(f"✅ [API] Slides generation complete, waiting for finalization...")
                             elif utype == 'progress':
                                 data = update.get('data') or {}
                                 phase = (data.get('phase') or update.get('phase'))
@@ -629,6 +634,17 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                         yield _sse(update)
                         await asyncio.sleep(0.01)
 
+                print(f"🟢 [API] compose_deck_stream loop exited. composition_completed={composition_completed}, slides_complete={slides_complete}")
+
+                # CRITICAL: Release the deck lock BEFORE sending completion event
+                # This prevents 409 errors when frontend tries to save after receiving completion
+                if 'deck_lock_acquired' in locals() and deck_lock_acquired:
+                    from agents.generation.concurrency_manager import concurrency_manager
+                    concurrency_manager.release_deck_lock(deck_uuid)
+                    deck_lock_acquired = False  # Mark as released so finally block doesn't double-release
+                    logger.info(f"✅ Released deck lock for {deck_uuid} (before completion event)")
+                    print(f"✅ [API] Released deck lock for {deck_uuid} (before completion event)")
+
                 # Send a final summary event without duplicating the 'deck_complete' event
                 response_data = {
                     'type': 'composition_complete',
@@ -637,6 +653,7 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 }
                 yield _sse(response_data)
                 composition_completed = True
+                print(f"✅ [API] Sent composition_complete event for deck {deck_uuid}")
                 
             except asyncio.CancelledError:
                 # Client likely disconnected or server is shutting down; just log and exit quietly
@@ -658,23 +675,40 @@ def stream_deck_creation(request: CreateDeckFromOutlineRequest, registry: Compon
                 emitted_error = True
             
             finally:
-                # Always release the deck lock
-                if 'deck_lock_acquired' in locals() and deck_lock_acquired:
+                print(f"🔵 [API] Entering finally block for deck {deck_uuid}")
+                # Always release the deck lock FIRST before sending any events
+                # This prevents 409 errors when frontend tries to save after receiving events
+                lock_was_held = 'deck_lock_acquired' in locals() and deck_lock_acquired
+                if lock_was_held:
                     from agents.generation.concurrency_manager import concurrency_manager
                     concurrency_manager.release_deck_lock(deck_uuid)
-                    logger.info(f"✅ Released deck lock for {deck_uuid}")
+                    deck_lock_acquired = False
+                    logger.info(f"✅ Released deck lock for {deck_uuid} (in finally)")
+                    print(f"✅ [API] Released deck lock for {deck_uuid} (in finally)")
                 # If we reached here without a completion or error, emit an explicit incomplete signal
                 if not emitted_error:
                     try:
                         if not locals().get('composition_completed', False):
+                            print(f"⚠️ [API] Stream ended before composition completed for deck {deck_uuid}")
                             yield _sse({'type': 'error', 'error': 'stream_incomplete', 'message': 'Stream ended before composition completed', 'deck_uuid': deck_uuid})
-                    except Exception:
+                            # Also send a fallback composition_complete so frontend can proceed
+                            yield _sse({
+                                'type': 'composition_complete',
+                                'deck_uuid': deck_uuid,
+                                'version': SCHEMA_VERSION,
+                                'warning': 'Finalization may be incomplete'
+                            })
+                            print(f"⚠️ [API] Sent fallback composition_complete for deck {deck_uuid}")
+                    except Exception as e:
+                        print(f"❌ [API] Error in finally block: {e}")
                         pass
                 # Emit an explicit end-of-stream marker to close SSE cleanly
                 try:
                     yield _sse({'type': 'end', 'message': 'Stream complete'})
+                    print(f"🏁 [API] Stream ended for deck {deck_uuid}")
                 except Exception:
                     # If client disconnected, just return
+                    print(f"❌ [API] Client disconnected, cannot send end event")
                     return
     
     return generate() 
