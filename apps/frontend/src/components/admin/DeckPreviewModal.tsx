@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, X, Eye, Edit, Share2, Download, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Eye, Edit, Share2, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { DeckSummary } from '@/services/adminApi';
 import { useNavigate } from 'react-router-dom';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import DeckThumbnail from '@/components/deck/DeckThumbnail';
 import MiniSlide from '@/components/deck/MiniSlide';
 import { CompleteDeckData } from '@/types/DeckTypes';
@@ -43,7 +41,6 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
     }
   }, [currentIndex, decks, currentDeck?.id]);
 
-  // Reset fullscreen when modal closes
   useEffect(() => {
     if (!isOpen) {
       setIsFullscreen(false);
@@ -102,230 +99,212 @@ const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
         className={cn(
-          "p-0 flex flex-col transition-all duration-300",
+          "p-0 gap-0 flex flex-col transition-all duration-200 overflow-hidden",
           isFullscreen
-            ? "max-w-none w-screen h-screen rounded-none"
-            : "max-w-7xl w-full h-[95vh]"
+            ? "max-w-none w-screen h-screen rounded-none border-0"
+            : "max-w-5xl w-full h-[85vh]"
         )}
       >
-        {/* Header */}
+        {/* Compact Header */}
         <div className={cn(
-          "flex items-center justify-between px-6 py-4 border-b flex-shrink-0 transition-colors",
-          isFullscreen && "bg-black/90 border-transparent"
+          "flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0",
+          isFullscreen ? "bg-black border-white/10" : "bg-muted/30"
         )}>
-           <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <h2 className={cn(
-              "text-lg font-semibold truncate",
+              "text-sm font-medium truncate max-w-[300px]",
               isFullscreen && "text-white"
             )} title={currentDeck.name}>{currentDeck.name}</h2>
             {!isFullscreen && (
               <>
-                <Badge variant="outline">{currentDeck.visibility}</Badge>
-                <span className="text-sm text-muted-foreground">{currentDeck.slideCount} slides</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{currentDeck.visibility}</Badge>
+                <span className="text-xs text-muted-foreground">{currentDeck.slideCount} slides</span>
               </>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
+
+          {/* Deck Navigation */}
+          <div className="flex items-center gap-1">
+            <button
               onClick={handlePreviousDeck}
               disabled={currentIndex === 0}
-              className={cn(isFullscreen && "text-white hover:bg-white/20")}
+              className={cn(
+                "p-1.5 rounded hover:bg-black/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors",
+                isFullscreen && "hover:bg-white/10 text-white"
+              )}
+              title="Previous deck"
             >
               <ChevronLeft className="h-4 w-4" />
-            </Button>
+            </button>
             <span className={cn(
-              "text-sm",
-              isFullscreen ? "text-white/70" : "text-muted-foreground"
-            )}>{currentIndex + 1} / {decks.length}</span>
-            <Button
-              variant="ghost"
-              size="icon"
+              "text-xs tabular-nums px-1",
+              isFullscreen ? "text-white/60" : "text-muted-foreground"
+            )}>{currentIndex + 1}/{decks.length}</span>
+            <button
               onClick={handleNextDeck}
               disabled={currentIndex === decks.length - 1}
-              className={cn(isFullscreen && "text-white hover:bg-white/20")}
+              className={cn(
+                "p-1.5 rounded hover:bg-black/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors",
+                isFullscreen && "hover:bg-white/10 text-white"
+              )}
+              title="Next deck"
             >
               <ChevronRight className="h-4 w-4" />
-            </Button>
-            <div className="w-px h-6 bg-border mx-2" />
-            <Button
-              variant="ghost"
-              size="icon"
+            </button>
+
+            <div className={cn("w-px h-4 mx-2", isFullscreen ? "bg-white/20" : "bg-border")} />
+
+            <button
               onClick={toggleFullscreen}
-              className={cn(isFullscreen && "text-white hover:bg-white/20")}
+              className={cn(
+                "p-1.5 rounded hover:bg-black/10 transition-colors",
+                isFullscreen && "hover:bg-white/10 text-white"
+              )}
               title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
             >
               {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={isFullscreen ? () => setIsFullscreen(false) : onClose}
-              className={cn(isFullscreen && "text-white hover:bg-white/20")}
+            </button>
+            <button
+              onClick={onClose}
+              className={cn(
+                "p-1.5 rounded hover:bg-black/10 transition-colors",
+                isFullscreen && "hover:bg-white/10 text-white"
+              )}
+              title="Close"
             >
               <X className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Main Content */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          {/* Main Slide View */}
           <div className={cn(
-            "flex-1 p-4 lg:p-8 flex flex-col justify-center items-center relative transition-colors",
-            isFullscreen ? "bg-black" : "bg-muted/20"
+            "flex-1 flex items-center justify-center relative",
+            isFullscreen ? "bg-black p-4" : "bg-neutral-900/95 p-6"
           )}>
-            <div className="w-full h-full flex items-center justify-center">
+            {/* Slide Container */}
+            <div className="relative w-full h-full flex items-center justify-center">
               {hasSlides ? (
                 <MiniSlide
                   slide={currentDeck.slides![currentSlideIndex]}
                   responsive={true}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full object-contain rounded shadow-2xl"
                 />
               ) : (
                 <DeckThumbnail
                   deck={currentDeck as CompleteDeckData}
-                  className="w-full h-full object-contain"
+                  className="max-w-full max-h-full object-contain rounded shadow-2xl"
                 />
               )}
             </div>
+
+            {/* Slide Navigation Arrows */}
             {hasSlides && currentDeck.slides.length > 1 && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "absolute left-4 top-1/2 -translate-y-1/2 text-white",
-                    isFullscreen
-                      ? "bg-white/10 hover:bg-white/20 h-14 w-14"
-                      : "bg-black/30 hover:bg-black/50"
-                  )}
+                <button
                   onClick={handlePreviousSlide}
                   disabled={currentSlideIndex === 0}
-                >
-                  <ChevronLeft className={cn(isFullscreen ? "h-8 w-8" : "h-6 w-6")} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
                   className={cn(
-                    "absolute right-4 top-1/2 -translate-y-1/2 text-white",
-                    isFullscreen
-                      ? "bg-white/10 hover:bg-white/20 h-14 w-14"
-                      : "bg-black/30 hover:bg-black/50"
+                    "absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all",
+                    "bg-black/40 hover:bg-black/60 text-white disabled:opacity-20 disabled:cursor-not-allowed",
+                    isFullscreen && "p-3"
                   )}
+                  title="Previous slide"
+                >
+                  <ChevronLeft className={cn(isFullscreen ? "h-6 w-6" : "h-5 w-5")} />
+                </button>
+                <button
                   onClick={handleNextSlide}
                   disabled={currentSlideIndex === currentDeck.slides.length - 1}
+                  className={cn(
+                    "absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all",
+                    "bg-black/40 hover:bg-black/60 text-white disabled:opacity-20 disabled:cursor-not-allowed",
+                    isFullscreen && "p-3"
+                  )}
+                  title="Next slide"
                 >
-                  <ChevronRight className={cn(isFullscreen ? "h-8 w-8" : "h-6 w-6")} />
-                </Button>
+                  <ChevronRight className={cn(isFullscreen ? "h-6 w-6" : "h-5 w-5")} />
+                </button>
+
+                {/* Slide Counter */}
                 <div className={cn(
-                  "absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white rounded-full px-3 py-1",
-                  isFullscreen ? "text-sm" : "text-xs"
+                  "absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white rounded-full px-3 py-1 text-xs tabular-nums",
+                  isFullscreen && "text-sm px-4 py-1.5"
                 )}>
-                  Slide {currentSlideIndex + 1} of {currentDeck.slides.length}
-                  {isFullscreen && <span className="ml-2 text-white/50">• Press F to exit fullscreen</span>}
+                  {currentSlideIndex + 1} / {currentDeck.slides.length}
                 </div>
               </>
             )}
           </div>
 
-          {/* Sidebar - hidden in fullscreen */}
+          {/* Compact Sidebar */}
           {!isFullscreen && (
-            <div className="w-[380px] border-l bg-card flex flex-col flex-shrink-0">
-              <div className="flex-1 p-6 overflow-y-auto">
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="font-semibold mb-2 text-base">Description</h3>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
-                      {currentDeck.description || 'No description available'}
-                    </p>
+            <div className="w-[280px] border-l bg-card flex flex-col flex-shrink-0 overflow-hidden">
+              <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                {/* Owner Info */}
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Owner</div>
+                  <div className="text-sm font-medium truncate">{currentDeck.userFullName || 'Unknown'}</div>
+                  <div className="text-xs text-muted-foreground truncate">{currentDeck.userEmail || 'N/A'}</div>
+                </div>
+
+                {/* Stats Row */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <Eye className="h-3.5 w-3.5 mx-auto mb-1 text-muted-foreground" />
+                    <div className="text-sm font-semibold">{currentDeck.analytics.viewCount}</div>
                   </div>
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                     <h3 className="font-semibold text-base">Details</h3>
-                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Owner</span>
-                      <span className="font-medium truncate">{currentDeck.userFullName || 'Unknown'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm items-center">
-                      <span className="text-muted-foreground">Email</span>
-                      <span className="text-xs truncate">{currentDeck.userEmail || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Created</span>
-                      <span>{formatDate(currentDeck.createdAt)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Last Modified</span>
-                      <span>{formatDate(currentDeck.lastModified)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Dimensions</span>
-                      <span>{currentDeck.size.width} × {currentDeck.size.height}</span>
-                    </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <Edit className="h-3.5 w-3.5 mx-auto mb-1 text-muted-foreground" />
+                    <div className="text-sm font-semibold">{currentDeck.analytics.editCount}</div>
                   </div>
-
-                  <Separator />
-
-                  <div>
-                    <h3 className="font-semibold mb-3 text-base">Analytics</h3>
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div className="bg-muted/50 rounded p-3">
-                        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground mb-1">
-                          <Eye className="h-4 w-4" />
-                          Views
-                        </div>
-                        <div className="text-xl font-bold">{currentDeck.analytics.viewCount}</div>
-                      </div>
-                      <div className="bg-muted/50 rounded p-3">
-                        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground mb-1">
-                          <Edit className="h-4 w-4" />
-                          Edits
-                        </div>
-                        <div className="text-xl font-bold">{currentDeck.analytics.editCount}</div>
-                      </div>
-                      <div className="bg-muted/50 rounded p-3">
-                        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground mb-1">
-                          <Share2 className="h-4 w-4" />
-                          Shares
-                        </div>
-                        <div className="text-xl font-bold">{currentDeck.analytics.shareCount}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="pt-2 space-y-3">
-                    <h3 className="font-semibold text-base">Actions</h3>
-                    <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={() => {
-                        onClose();
-                        navigate(`/app/decks/${currentDeck.id}`);
-                      }}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Deck in Editor
-                    </Button>
-                    <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={toggleFullscreen}
-                    >
-                      <Maximize2 className="h-4 w-4 mr-2" />
-                      Fullscreen (F)
-                    </Button>
-                    <Button className="w-full" variant="outline" disabled>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download (Coming Soon)
-                    </Button>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <Share2 className="h-3.5 w-3.5 mx-auto mb-1 text-muted-foreground" />
+                    <div className="text-sm font-semibold">{currentDeck.analytics.shareCount}</div>
                   </div>
                 </div>
+
+                {/* Details */}
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Created</span>
+                    <span>{formatDate(currentDeck.createdAt)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Modified</span>
+                    <span>{formatDate(currentDeck.lastModified)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Size</span>
+                    <span>{currentDeck.size.width}×{currentDeck.size.height}</span>
+                  </div>
+                </div>
+
+                {/* Description */}
+                {currentDeck.description && (
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Description</div>
+                    <p className="text-xs text-muted-foreground line-clamp-3">
+                      {currentDeck.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Button */}
+              <div className="p-3 border-t">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    onClose();
+                    navigate(`/app/decks/${currentDeck.id}`);
+                  }}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                  Open in Editor
+                </Button>
               </div>
             </div>
           )}

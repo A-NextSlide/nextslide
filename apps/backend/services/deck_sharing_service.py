@@ -19,14 +19,21 @@ class DuplicateCollaboratorError(Exception):
 
 class DeckSharingService:
     """Service for creating and managing deck share links."""
-    
+
     # Characters to use in short codes (excluding similar looking ones)
     SHORT_CODE_CHARS = string.ascii_letters + string.digits
     # Remove ambiguous characters
     SHORT_CODE_CHARS = SHORT_CODE_CHARS.replace('0', '').replace('O', '').replace('l', '').replace('I', '')
-    
+
     def __init__(self):
-        self.supabase = get_supabase_client()
+        # Don't cache the supabase client - get fresh one for each operation
+        # to avoid stale connections in long-running production processes
+        pass
+
+    @property
+    def supabase(self):
+        """Get a fresh Supabase client for each operation."""
+        return get_supabase_client()
     
     def generate_short_code(self, length: int = 8) -> str:
         """Generate a random short code for URLs."""
@@ -151,10 +158,7 @@ class DeckSharingService:
                 logger.warning(f"Failed to update access count: {e}")
 
             # Get the deck data
-            logger.info(f"Looking up deck with uuid: {deck_uuid}")
             deck_response = self.supabase.table('decks').select('*').eq('uuid', deck_uuid).execute()
-
-            logger.info(f"Deck lookup result: found={bool(deck_response.data)}, count={len(deck_response.data) if deck_response.data else 0}")
 
             if deck_response.data and len(deck_response.data) > 0:
                 deck = deck_response.data[0]
@@ -165,12 +169,10 @@ class DeckSharingService:
                 }
                 return deck
 
-            logger.warning(f"Deck not found for uuid: {deck_uuid}")
             return None
 
         except Exception as e:
-            import traceback
-            logger.error(f"Error accessing deck by share code: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Error accessing deck by share code: {str(e)}")
             return None
     
     def get_user_share_links(self, user_id: str, deck_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
