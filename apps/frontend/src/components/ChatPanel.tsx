@@ -144,6 +144,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Track if welcome message has been shown
   const welcomeMessageShownRef = useRef(false);
 
+  // Track if generation actually started in this session (prevents showing completion for existing decks)
+  const generationStartedInSessionRef = useRef(false);
+
   // Track pending messages by ID for parallel processing (replaces single isLoading boolean)
   // Using ref + forceUpdate pattern to avoid closure issues with state batching
   const pendingMessageIdsRef = useRef<Set<string>>(new Set());
@@ -3187,6 +3190,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       const text = String(newSystemMessage.message || '');
       const looksLikeDone = (typeof percent === 'number' && percent >= 100) || /generated\s+\d+\s+of\s+\d+\s+slides/i.test(text) || /\b100%\b/.test(text);
       if (looksLikeDone) {
+        // CRITICAL: Skip completion messages if generation didn't start in this session
+        // This prevents showing "Your presentation is ready!" when opening existing decks
+        if (!generationStartedInSessionRef.current && isExistingDeck) {
+          console.log('[ChatPanel] Skipping completion message - existing deck, no generation in session');
+          return;
+        }
         // Convert to a single completion message + immediate instructions
         setIsGenerating(false);
         setMessages(prevMessages => {
@@ -3348,6 +3357,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           } else if (systemMessageToAdd.metadata?.type === 'generation_status' ||
             systemMessageToAdd.metadata?.stage) {
             setIsGenerating(true);
+            // Mark that generation actually started in this session
+            generationStartedInSessionRef.current = true;
           }
         }
 
@@ -3450,6 +3461,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
         // Handle completion messages specially
         if (isCompletionMessage) {
+          // CRITICAL: Skip completion messages if generation didn't start in this session
+          if (!generationStartedInSessionRef.current && isExistingDeck) {
+            console.log('[ChatPanel] Skipping completion message (secondary) - existing deck');
+            return prevMessages;
+          }
+
           console.log('📍 Processing completion message:', {
             message: systemMessageToAdd.message,
             metadata: systemMessageToAdd.metadata

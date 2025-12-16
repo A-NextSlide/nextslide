@@ -1038,12 +1038,21 @@ Respond with the tool_calls to execute."""
                 deck_diff = deck_diff.merge(dd2)
                 edit_summaries.extend(summaries2)
                 logger.info(f"[ORCHESTRATOR] 🔄 Follow-up complete: {len(summaries2)} summaries, empty_diff={_is_empty_deckdiff(deck_diff)}")
+                # Use follow-up message if provided
+                followup_msg = getattr(followup, 'message', '') or ''
+                if followup_msg:
+                    response.message = followup_msg
             else:
                 # Log debug info when no tool calls are returned
                 obs_str = json.dumps(observations, ensure_ascii=False)
                 followup_msg = getattr(followup, 'message', '') or ''
                 logger.warning(f"[ORCHESTRATOR] 🔄 Follow-up returned NO tool calls - agent may need more guidance")
                 logger.warning(f"[ORCHESTRATOR] 🔄 Observations length: {len(obs_str)} chars, followup message: {followup_msg[:200] if followup_msg else '(empty)'}")
+                # Use follow-up message if provided, otherwise ask for clarification
+                if followup_msg:
+                    response.message = followup_msg
+                else:
+                    response.message = "I looked at the slide but I'm not sure what specific changes you'd like. Could you tell me more about what you want to change?"
         except Exception as e:
             logger.warning(f"[ORCHESTRATOR] Follow-up after observation failed: {e}")
             import traceback
@@ -1051,6 +1060,17 @@ Respond with the tool_calls to execute."""
 
     # Extract the conversational message from the response
     agent_message = getattr(response, 'message', '') or ''
+
+    # CRITICAL: Ensure there's ALWAYS a response message - never leave user hanging
+    if not agent_message and not edit_summaries:
+        # No tool calls and no message - generate a helpful response
+        if _is_empty_deckdiff(deck_diff):
+            agent_message = "I'm not sure what changes you'd like me to make. Could you give me more details? For example, you can ask me to change colors, replace images, edit text, or redesign the slide."
+        else:
+            agent_message = "I've made the requested changes to your slide."
+    elif not agent_message and edit_summaries:
+        # Tools executed but no message - summarize what was done
+        agent_message = f"Done! I've {edit_summaries[0].lower() if edit_summaries else 'updated the slide'}."
 
     # Emit the conversational message to the frontend
     if event_cb and agent_message:
