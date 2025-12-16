@@ -151,7 +151,10 @@ class DeckSharingService:
                 logger.warning(f"Failed to update access count: {e}")
 
             # Get the deck data
+            logger.info(f"Looking up deck with uuid: {deck_uuid}")
             deck_response = self.supabase.table('decks').select('*').eq('uuid', deck_uuid).execute()
+
+            logger.info(f"Deck lookup result: found={bool(deck_response.data)}, count={len(deck_response.data) if deck_response.data else 0}")
 
             if deck_response.data and len(deck_response.data) > 0:
                 deck = deck_response.data[0]
@@ -162,10 +165,12 @@ class DeckSharingService:
                 }
                 return deck
 
+            logger.warning(f"Deck not found for uuid: {deck_uuid}")
             return None
 
         except Exception as e:
-            logger.error(f"Error accessing deck by share code: {str(e)}")
+            import traceback
+            logger.error(f"Error accessing deck by share code: {str(e)}\n{traceback.format_exc()}")
             return None
     
     def get_user_share_links(self, user_id: str, deck_uuid: Optional[str] = None) -> List[Dict[str, Any]]:

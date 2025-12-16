@@ -124,8 +124,9 @@ async def create_share_link(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating share link: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create share link")
+        import traceback
+        logger.error(f"Error creating share link: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to create share link: {str(e)}")
 
 
 @router.get("/{deck_uuid}/shares", response_model=ShareLinksListResponse)

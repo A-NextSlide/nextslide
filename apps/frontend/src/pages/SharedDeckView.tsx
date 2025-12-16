@@ -804,8 +804,8 @@ const SharedDeckView: React.FC = () => {
     );
   }
 
-  if (!deck) {
-    console.log('[SharedDeckView] No deck data, returning null');
+  if (!deck || !deck.slides || !Array.isArray(deck.slides)) {
+    console.log('[SharedDeckView] No deck data or slides, returning null', { hasDeck: !!deck, hasSlides: !!deck?.slides });
     return null;
   }
 
