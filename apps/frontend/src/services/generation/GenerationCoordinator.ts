@@ -388,7 +388,8 @@ export class GenerationCoordinator extends EventTarget {
             this.handleProgress(deckId || data.deck_id || data.deck_uuid || '', data, onProgress);
 
             // Handle completion
-            if (data.type === 'deck_complete' || data.type === 'complete') {
+            if (data.type === 'deck_complete' || data.type === 'complete' || data.type === 'composition_complete' || data.type === 'slides_generation_complete') {
+              console.log('[GenerationCoordinator] Generation completed:', data.type);
               return { deckId, deckUrl };
             }
 

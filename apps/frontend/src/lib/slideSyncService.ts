@@ -294,41 +294,49 @@ export class SlideSyncService {
   }
 
   /**
-   * Gets all slides from all decks
+   * Gets all slides from the current deck (from store)
    * @returns Array of SlideData objects
    */
   async getSlides(): Promise<SlideData[]> {
     if (this.useSupabase) {
       try {
-        // Fetch all decks and extract slides
-        const { data: decks, error } = await supabase
-          .from('decks')
-          .select('*');
-        
-        if (error) {
-          console.error('Error fetching decks from Supabase:', error);
-          return [];
+        // Get slides from the deck store instead of querying all decks
+        const { useDeckStore } = await import('@/stores/deckStore');
+        const deckStore = useDeckStore.getState();
+        const deckUuid = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+
+        // If we have a deck in the store, use its slides directly
+        if (deckStore.deckData?.slides) {
+          return deckStore.deckData.slides.map((slide: any) => this.formatSupabaseToSlide(slide));
         }
-        
-        // Collect all slides from all decks
-        let allSlides: SlideData[] = [];
-        
-        for (const deck of decks) {
-          if (deck.slides && Array.isArray(deck.slides)) {
-            // Add slides from this deck to the collection
-            // Format each slide to ensure consistent structure
-            const formattedSlides = deck.slides.map((slide: any) => this.formatSupabaseToSlide(slide));
-            allSlides = [...allSlides, ...formattedSlides];
+
+        // If we have a deck UUID but no slides loaded, fetch just that deck
+        if (deckUuid) {
+          const { data: deck, error } = await supabase
+            .from('decks')
+            .select('slides')
+            .eq('uuid', deckUuid)
+            .single();
+
+          if (error) {
+            console.error('Error fetching deck from Supabase:', error);
+            return [];
+          }
+
+          if (deck?.slides && Array.isArray(deck.slides)) {
+            return deck.slides.map((slide: any) => this.formatSupabaseToSlide(slide));
           }
         }
-        
-        return allSlides;
+
+        // No deck loaded - return empty (don't query all decks!)
+        console.warn('getSlides called with no deck loaded in store');
+        return [];
       } catch (err) {
-        console.error('Failed to fetch slides from Supabase decks:', err);
+        console.error('Failed to fetch slides from Supabase:', err);
         return [];
       }
     }
-    
+
     try {
       const response = await fetch(`${this.baseUrl}/slides`);
       const data = await response.json();
@@ -340,48 +348,62 @@ export class SlideSyncService {
   }
 
   /**
-   * Gets a specific slide from a deck
+   * Gets a specific slide from the current deck
    * @param slideId The ID of the slide to fetch
    * @returns The SlideData object
    */
   async getSlide(slideId: string): Promise<SlideData> {
     if (this.useSupabase) {
       try {
-        // Fetch all decks
-        const { data: decks, error } = await supabase
-          .from('decks')
-          .select('*');
-        
-        if (error) {
-          console.error('Error fetching decks from Supabase:', error);
-          throw new Error(`Error fetching decks: ${error.message}`);
-        }
-        
-        // Find the slide in any deck
-        for (const deck of decks) {
-          if (!deck.slides || !Array.isArray(deck.slides)) continue;
-          
-          const slide = deck.slides.find((s: any) => s.id === slideId);
+        // Get slides from the deck store instead of querying all decks
+        const { useDeckStore } = await import('@/stores/deckStore');
+        const deckStore = useDeckStore.getState();
+        const deckUuid = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+
+        // First check if slide is in the current deck in store
+        if (deckStore.deckData?.slides) {
+          const slide = deckStore.deckData.slides.find((s: any) => s.id === slideId);
           if (slide) {
             return this.formatSupabaseToSlide(slide);
           }
         }
-        
-        // If we get here, the slide wasn't found
-        throw new Error(`Slide ${slideId} not found in any deck`);
+
+        // If we have a deck UUID, fetch just that deck
+        if (deckUuid) {
+          const { data: deck, error } = await supabase
+            .from('decks')
+            .select('slides')
+            .eq('uuid', deckUuid)
+            .single();
+
+          if (error) {
+            console.error('Error fetching deck from Supabase:', error);
+            throw new Error(`Error fetching deck: ${error.message}`);
+          }
+
+          if (deck?.slides && Array.isArray(deck.slides)) {
+            const slide = deck.slides.find((s: any) => s.id === slideId);
+            if (slide) {
+              return this.formatSupabaseToSlide(slide);
+            }
+          }
+        }
+
+        // Slide not found in current deck
+        throw new Error(`Slide ${slideId} not found in current deck`);
       } catch (err) {
         console.error(`Failed to fetch slide ${slideId} from Supabase:`, err);
         throw err;
       }
     }
-    
+
     try {
       const response = await fetch(`${this.baseUrl}/slides/${slideId}`);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch slide ${slideId}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       return data.slide;
     } catch (err) {
@@ -462,64 +484,74 @@ export class SlideSyncService {
   }
 
   /**
-   * Deletes a slide from its deck
+   * Deletes a slide from the current deck
    * @param slideId The ID of the slide to delete
    * @returns True if successful, false otherwise
    */
   async deleteSlide(slideId: string) {
     // Record the delete operation
     await this.recordEdit(slideId, { id: slideId }, 'slide_delete');
-    
+
     if (this.useSupabase) {
       try {
-        // Find which deck contains this slide
-        const { data: decks, error: deckError } = await supabase
-          .from('decks')
-          .select('*');
-        
-        if (deckError) {
-          console.error('Error fetching decks to delete slide:', deckError);
+        // Get the deck from store instead of querying all decks
+        const { useDeckStore } = await import('@/stores/deckStore');
+        const deckStore = useDeckStore.getState();
+        const deckUuid = deckStore.deckData?.uuid || (deckStore.deckData as any)?.id;
+
+        if (!deckUuid) {
+          console.error('No deck UUID available - cannot delete slide');
           return false;
         }
-        
-        // Find the deck containing the slide
-        let targetDeck = null;
-        let targetSlideIndex = -1;
-        
-        for (const deck of decks) {
-          if (!deck.slides || !Array.isArray(deck.slides)) continue;
-          
-          const slideIndex = deck.slides.findIndex((s: any) => s.id === slideId);
-          if (slideIndex !== -1) {
-            targetDeck = deck;
-            targetSlideIndex = slideIndex;
-            break;
+
+        // Get slides from store or fetch the specific deck
+        let slides = deckStore.deckData?.slides;
+
+        if (!slides) {
+          // Fetch just this deck's slides
+          const { data: deck, error: fetchError } = await supabase
+            .from('decks')
+            .select('slides')
+            .eq('uuid', deckUuid)
+            .single();
+
+          if (fetchError || !deck) {
+            console.error('Error fetching deck for slide deletion:', fetchError);
+            return false;
           }
+          slides = deck.slides;
         }
-        
-        if (!targetDeck) {
-          console.error(`Slide ${slideId} not found in any deck for deletion`);
+
+        if (!slides || !Array.isArray(slides)) {
+          console.error(`No slides found in deck ${deckUuid}`);
           return false;
         }
-        
-        // Remove the slide from the deck's slides array
-        const updatedSlides = [...targetDeck.slides];
-        updatedSlides.splice(targetSlideIndex, 1);
-        
+
+        // Find the slide index
+        const slideIndex = slides.findIndex((s: any) => s.id === slideId);
+        if (slideIndex === -1) {
+          console.error(`Slide ${slideId} not found in deck ${deckUuid}`);
+          return false;
+        }
+
+        // Remove the slide from the slides array
+        const updatedSlides = [...slides];
+        updatedSlides.splice(slideIndex, 1);
+
         // Update the deck with the modified slides array
         const { error } = await supabase
           .from('decks')
           .update({
             slides: updatedSlides,
-            last_modified: new Date().toISOString()  // snake_case to match PostgreSQL column
+            last_modified: new Date().toISOString()
           })
-          .eq('uuid', targetDeck.uuid);
-        
+          .eq('uuid', deckUuid);
+
         if (error) {
           console.error(`Error updating deck after deleting slide ${slideId}:`, error);
           return false;
         }
-        
+
         return true;
       } catch (err) {
         console.error(`Failed to delete slide ${slideId}:`, err);
@@ -539,34 +571,24 @@ export class SlideSyncService {
     }
   }
 
-  // Helper function to find the deck associated with the first slide
-  private async findDeckForSlides(slides: SlideData[]): Promise<{ uuid: string; name: string; version: string; lastModified: string } | null> {
-    if (!slides || slides.length === 0) return null;
-    const firstSlideId = slides[0].id;
-
+  // Helper function to get deck info from the store (no database query needed)
+  private async findDeckForSlides(_slides: SlideData[]): Promise<{ uuid: string; name: string; version: string; lastModified: string } | null> {
     try {
-      const { data: decks, error } = await supabase
-        .from('decks')
-        .select('uuid, name, version, last_modified, slides');
+      // Get deck info from store instead of querying all decks
+      const { useDeckStore } = await import('@/stores/deckStore');
+      const deckStore = useDeckStore.getState();
+      const deckData = deckStore.deckData;
 
-      if (error) {
-        console.error('Error fetching decks to find deck info:', error);
-        return null;
+      if (deckData) {
+        return {
+          uuid: deckData.uuid || (deckData as any)?.id || '',
+          name: deckData.name || 'Untitled Deck',
+          version: deckData.version || '1.0',
+          lastModified: deckData.lastModified || new Date().toISOString()
+        };
       }
 
-      for (const deck of decks) {
-        if (deck.slides && Array.isArray(deck.slides)) {
-          if (deck.slides.some((s: any) => s.id === firstSlideId)) {
-            return {
-              uuid: deck.uuid,
-              name: deck.name || 'Untitled Deck',
-              version: deck.version || '1.0',
-              lastModified: deck.last_modified || new Date().toISOString()
-            };
-          }
-        }
-      }
-      return null; // Deck not found
+      return null;
     } catch (err) {
       console.error('Error in findDeckForSlides:', err);
       return null;

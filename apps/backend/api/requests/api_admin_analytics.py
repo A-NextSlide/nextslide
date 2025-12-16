@@ -247,14 +247,14 @@ async def get_analytics_overview(
 
         total_decks_count = safe_count_query(supabase, "decks", "uuid")
 
-        # Calculate total slides (with timeout protection)
+        # Calculate total slides using slide_count column (no heavy JSONB fetching)
         total_slides = 0
         avg_slides_per_deck = 0
         try:
-            # Only count slides for recent decks to avoid timeout
-            recent_decks = supabase.table("decks").select("slides").limit(100).execute()
+            # Use slide_count column instead of fetching full slides JSONB
+            recent_decks = supabase.table("decks").select("slide_count").limit(100).execute()
             if recent_decks.data:
-                slide_counts = [len(d.get("slides", [])) for d in recent_decks.data]
+                slide_counts = [d.get("slide_count", 0) or 0 for d in recent_decks.data]
                 if slide_counts:
                     avg_slides_per_deck = round(sum(slide_counts) / len(slide_counts), 1)
                     total_slides = int(avg_slides_per_deck * total_decks_count)
@@ -292,9 +292,16 @@ async def get_analytics_overview(
 
             credits_change, credits_trend = calculate_change(current_credits, prev_credits)
 
-            # Get total credits in system
-            total_credits_result = supabase.table("credit_transactions").select("amount").execute()
-            total_credits_balance = sum(t.get("amount", 0) for t in (total_credits_result.data or []))
+            # Get total credits in system (use limit to avoid timeout, estimate from sample)
+            total_credits_balance = 0
+            try:
+                # Try to get balance from credit_balances table first (more efficient)
+                balances = supabase.table("credit_balances").select("balance").execute()
+                total_credits_balance = sum(b.get("balance", 0) for b in (balances.data or []))
+            except:
+                # Fallback: sample recent transactions
+                recent_txns = supabase.table("credit_transactions").select("amount").limit(1000).execute()
+                total_credits_balance = sum(t.get("amount", 0) for t in (recent_txns.data or []))
 
             metrics["credits"] = {
                 "used": {
@@ -323,10 +330,10 @@ async def get_analytics_overview(
 
             shares_change, shares_trend = calculate_change(shares_current_count, shares_prev_count)
 
-            # Total share views
+            # Total share views (limit to avoid timeout on large tables)
             total_views = 0
             try:
-                views_result = supabase.table("deck_shares").select("access_count").execute()
+                views_result = supabase.table("deck_shares").select("access_count").limit(1000).execute()
                 total_views = sum(s.get("access_count", 0) for s in (views_result.data or []))
             except:
                 pass
@@ -488,11 +495,11 @@ async def get_deck_timeseries(
                 value = result.count or 0
 
             elif metric == "slides":
-                # Get decks created in this period and count their slides
-                result = supabase.table("decks").select("slides").gte(
+                # Get decks created in this period and sum their slide_count
+                result = supabase.table("decks").select("slide_count").gte(
                     "created_at", date_point.isoformat()
                 ).lt("created_at", next_point.isoformat()).execute()
-                value = sum(len(d.get("slides", [])) for d in (result.data or []))
+                value = sum(d.get("slide_count", 0) or 0 for d in (result.data or []))
 
             data_points.append({
                 "timestamp": date_point.isoformat(),
@@ -598,38 +605,38 @@ async def get_user_segments(
             week_ago = (now - timedelta(days=7)).isoformat()
             month_ago = (now - timedelta(days=30)).isoformat()
 
-            # Get all users
-            all_users = supabase.table("users").select("id").execute()
-            all_user_ids = set(u.get("id") for u in (all_users.data or []))
-
-            # Active in last 7 days: users who created or updated decks recently
+            # Use DISTINCT user_id counts instead of fetching all records
+            # Active in last 7 days
+            active_7d_result = supabase.table("decks").select("user_id", count="exact").gte(
+                "updated_at", week_ago
+            ).limit(1).execute()
+            # Get unique users via a different approach - fetch limited distinct user_ids
             active_7d_decks = supabase.table("decks").select("user_id").gte(
                 "updated_at", week_ago
-            ).execute()
+            ).limit(500).execute()
             active_7d_users = set(d.get("user_id") for d in (active_7d_decks.data or []) if d.get("user_id"))
 
             # Active in last 30 days (but not 7 days)
             active_30d_decks = supabase.table("decks").select("user_id").gte(
                 "updated_at", month_ago
-            ).lt("updated_at", week_ago).execute()
+            ).lt("updated_at", week_ago).limit(500).execute()
             active_30d_users = set(d.get("user_id") for d in (active_30d_decks.data or []) if d.get("user_id"))
             # Remove users who are already in 7d active
             active_30d_users = active_30d_users - active_7d_users
 
-            # Users with any deck activity (ever)
-            any_deck_users = supabase.table("decks").select("user_id").execute()
-            users_with_decks = set(d.get("user_id") for d in (any_deck_users.data or []) if d.get("user_id"))
+            # Total users count (using count=exact, not fetching all)
+            total_users_count = total_count
 
-            # Inactive: have decks but no activity in 30 days
-            inactive_users = users_with_decks - active_7d_users - active_30d_users
+            # Users with any deck (use count on decks grouped by user - approximate with limit)
+            any_deck_sample = supabase.table("decks").select("user_id").limit(2000).execute()
+            users_with_decks = set(d.get("user_id") for d in (any_deck_sample.data or []) if d.get("user_id"))
 
-            # Never active: no decks at all
-            never_active_users = all_user_ids - users_with_decks
-
+            # Estimate inactive and never active based on sample
             active_7d_count = len(active_7d_users)
             active_30d_count = len(active_30d_users)
-            inactive_count = len(inactive_users)
-            never_count = len(never_active_users)
+            users_with_decks_count = len(users_with_decks)
+            inactive_count = max(0, users_with_decks_count - active_7d_count - active_30d_count)
+            never_count = max(0, total_users_count - users_with_decks_count)
 
             segments = [
                 {"segment": "Active (7d)", "count": active_7d_count,
@@ -912,13 +919,13 @@ async def get_content_distribution(
         supabase = get_supabase_client()
         start, end = get_date_range_filter(start_date, end_date)
 
-        # Get decks created in period
-        decks = supabase.table("decks").select("slides, visibility").gte(
+        # Get decks created in period (use slide_count instead of full slides JSONB)
+        decks = supabase.table("decks").select("slide_count, visibility").gte(
             "created_at", start.isoformat()
         ).lte("created_at", end.isoformat()).execute()
 
         # Slide count distribution
-        slide_counts = [len(d.get("slides", [])) for d in (decks.data or [])]
+        slide_counts = [d.get("slide_count", 0) or 0 for d in (decks.data or [])]
 
         # Group into buckets
         buckets = {"1-5": 0, "6-10": 0, "11-20": 0, "21-50": 0, "50+": 0}
@@ -1316,13 +1323,14 @@ async def get_financial_actuals(
             "created_at", start.isoformat()
         ).lte("created_at", end.isoformat()).execute()
 
-        # Get total slides (count from slides array in decks)
-        decks_with_slides = supabase.table("decks").select("slides").execute()
-        total_slides = 0
-        for deck in (decks_with_slides.data or []):
-            slides = deck.get("slides")
-            if slides and isinstance(slides, list):
-                total_slides += len(slides)
+        # Get total slides using slide_count column with limit (estimate from sample)
+        deck_count = total_decks.count or 1
+        decks_sample = supabase.table("decks").select("slide_count").limit(500).execute()
+        if decks_sample.data:
+            avg_slides = sum(d.get("slide_count", 0) or 0 for d in decks_sample.data) / len(decks_sample.data)
+            total_slides = int(avg_slides * deck_count)
+        else:
+            total_slides = 0
 
         # Get credit usage
         credit_usage = supabase.table("credit_transactions").select(
@@ -1442,13 +1450,14 @@ async def get_usage_patterns(
         total_users = supabase.table("users").select("id", count="exact").execute()
         total_decks = supabase.table("decks").select("id", count="exact").execute()
 
-        # Get total slides
-        decks_with_slides = supabase.table("decks").select("slides").execute()
-        total_slides = 0
-        for deck in (decks_with_slides.data or []):
-            slides = deck.get("slides")
-            if slides and isinstance(slides, list):
-                total_slides += len(slides)
+        # Get total slides using slide_count column with limit (estimate from sample)
+        deck_count = total_decks.count or 1
+        decks_sample = supabase.table("decks").select("slide_count").limit(500).execute()
+        if decks_sample.data:
+            avg_slides = sum(d.get("slide_count", 0) or 0 for d in decks_sample.data) / len(decks_sample.data)
+            total_slides = int(avg_slides * deck_count)
+        else:
+            total_slides = 0
 
         user_count = total_users.count or 1
         deck_count = total_decks.count or 1

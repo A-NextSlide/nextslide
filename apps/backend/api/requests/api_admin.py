@@ -569,12 +569,10 @@ async def get_user_details(
             total_slides = slide_count_query.data[0]["total_slides"] if slide_count_query.data else 0
         except Exception as e:
             logger.warning(f"Slide count RPC failed, using direct query: {str(e)}")
-            # Fallback: count slides from decks
-            decks_response = supabase.table("decks").select("slides").eq("user_id", user_id).execute()
+            # Fallback: use slide_count column instead of fetching full slides JSONB
+            decks_response = supabase.table("decks").select("slide_count").eq("user_id", user_id).execute()
             if decks_response.data:
-                for deck in decks_response.data:
-                    if deck.get("slides") and isinstance(deck["slides"], list):
-                        total_slides += len(deck["slides"])
+                total_slides = sum(d.get("slide_count", 0) or 0 for d in decks_response.data)
         
         # Parse metadata safely (it might be TEXT or JSONB)
         metadata_obj = {}
@@ -923,10 +921,9 @@ async def list_all_decks(
         supabase = get_supabase_client()
         
         # Build query - select deck data
-        # TODO: PostgREST doesn't support array slicing or cardinality in select.
-        # For now, fetching full slides array but only using first slide.
+        # Use first_slide and slide_count columns instead of full slides array
         query = supabase.table("decks").select(
-            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,visibility,data",
+            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,visibility,data",
             count="exact"
         )
         
@@ -976,9 +973,10 @@ async def list_all_decks(
                 else:
                     visibility = deck.get("visibility", "private")
             
-            # Get slides data for thumbnails
-            slides_data = deck.get("slides", [])
-            
+            # Get first_slide and slide_count from optimized columns
+            first_slide = deck.get("first_slide")
+            slide_count = deck.get("slide_count", 0) or 0
+
             # Create deck object similar to regular deck list API
             # Include all the fields the frontend expects
             deck_obj = {
@@ -993,18 +991,18 @@ async def list_all_decks(
                 "status": status,
                 "visibility": visibility,
                 "is_owner": True,  # Admin can see all decks
-                
-                # Include slide data for thumbnails
-                "slides": slides_data,  # Full slides array for DeckThumbnail
-                "slide_count": len(slides_data),
-                "first_slide": slides_data[0] if slides_data else None,
-                
+
+                # Include slide data for thumbnails (use optimized first_slide column)
+                "slides": [first_slide] if first_slide else [],  # Only first slide for thumbnail
+                "slide_count": slide_count,
+                "first_slide": first_slide,
+
                 # Include data which contains theme info
                 "data": deck.get("data", {}),
                 "theme": deck.get("data", {}).get("theme", {}) if deck.get("data") else {},
-                
+
                 # Admin-specific fields
-                "slideCount": len(slides_data),
+                "slideCount": slide_count,
                 "createdAt": deck["created_at"],
                 "updatedAt": deck.get("updated_at"),
                 "lastModified": deck.get("last_modified", deck.get("updated_at")),
@@ -1141,11 +1139,9 @@ async def get_user_decks(
         user_response = supabase.table("users").select("email, full_name").eq("id", user_id).single().execute()
         user_info = user_response.data if user_response.data else None
         
-        # Build query - use explicit columns to avoid non-existent columns
-        # Note: PostgreSQL array syntax (slides[0:1], cardinality) doesn't work through PostgREST
-        # We need to fetch the full slides array and process it in Python
+        # Build query - use first_slide and slide_count columns instead of full slides array
         query = supabase.table("decks").select(
-            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,visibility,data",
+            "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count,visibility,data",
             count="exact"
         ).eq("user_id", user_id)
         
@@ -1178,9 +1174,10 @@ async def get_user_decks(
                 else:
                     visibility = deck.get("visibility", "private")
             
-            # Get slides data for thumbnails
-            slides_data = deck.get("slides", [])
-            
+            # Get first_slide and slide_count from optimized columns
+            first_slide = deck.get("first_slide")
+            slide_count = deck.get("slide_count", 0) or 0
+
             # Create deck object similar to regular deck list API
             # Include all the fields the frontend expects
             deck_obj = {
@@ -1195,18 +1192,18 @@ async def get_user_decks(
                 "status": status,
                 "visibility": visibility,
                 "is_owner": True,  # Admin can see all decks
-                
-                # Include slide data for thumbnails
-                "slides": slides_data,  # Full slides array for DeckThumbnail
-                "slide_count": len(slides_data),
-                "first_slide": slides_data[0] if slides_data else None,
-                
+
+                # Include slide data for thumbnails (use optimized first_slide column)
+                "slides": [first_slide] if first_slide else [],  # Only first slide for thumbnail
+                "slide_count": slide_count,
+                "first_slide": first_slide,
+
                 # Include data which contains theme info
                 "data": deck.get("data", {}),
                 "theme": deck.get("data", {}).get("theme", {}) if deck.get("data") else {},
-                
+
                 # Admin-specific fields
-                "slideCount": len(slides_data),
+                "slideCount": slide_count,
                 "createdAt": deck["created_at"],
                 "updatedAt": deck.get("updated_at"),
                 "lastModified": deck.get("last_modified", deck.get("updated_at")),
@@ -2541,16 +2538,18 @@ async def get_services_usage(
     except Exception as e:
         logger.error(f"Error getting user usage: {e}")
 
-    # Font storage
+    # Font storage (limit to avoid timeout on large tables)
     try:
-        fonts_query = supabase.table("brandfetch_cache").select("api_response").execute()
+        fonts_query = supabase.table("brandfetch_cache").select("api_response").limit(200).execute()
         font_count = 0
         for brand in (fonts_query.data or []):
-            fonts = brand.get("api_response", {}).get("fonts", {})
-            if isinstance(fonts, dict):
-                files = fonts.get("files", [])
-                for f in files:
-                    font_count += len(f.get("variants", {}))
+            api_resp = brand.get("api_response")
+            if api_resp and isinstance(api_resp, dict):
+                fonts = api_resp.get("fonts", {})
+                if isinstance(fonts, dict):
+                    files = fonts.get("files", [])
+                    for f in files:
+                        font_count += len(f.get("variants", {}))
         usage["fonts"] = {
             "uploaded_font_files": font_count
         }

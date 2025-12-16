@@ -752,14 +752,19 @@ const DeckList: React.FC = () => {
         console.log('[DeckList] 🎨 genStylePrefs fonts:', genStylePrefs.font, genStylePrefs.bodyFont);
         console.log('[DeckList] 🎨 genStylePrefs logoUrl:', genStylePrefs.logoUrl);
 
+        // Track if we've already navigated to prevent duplicate navigation
+        let hasNavigated = false;
+
         const result = await coordinator.generateFromOutline(
           newOutline,
           genStylePrefs,
           (event) => {
-            // Navigate to deck when we get the deck ID
+            // Navigate to deck when we get the deck ID (only once)
+            if (hasNavigated) return;
             const emittedDeckId = (event as any).deck_id || (event as any).deck_uuid || (event as any).deckId;
             if (emittedDeckId) {
-              console.log('[DeckList] 🚀 Got deck ID, navigating:', emittedDeckId);
+              hasNavigated = true;
+              console.log('[DeckList] 🚀 Navigating to deck:', emittedDeckId);
               // Clear pending outline since generation succeeded
               localStorage.removeItem('nextslide_pending_outline');
               navigate(`/deck/${emittedDeckId}?new=true`);
@@ -768,7 +773,8 @@ const DeckList: React.FC = () => {
         );
 
         // Fallback navigation if event didn't trigger it
-        if (result.deckId) {
+        if (result.deckId && !hasNavigated) {
+          hasNavigated = true;
           // Clear pending outline since generation succeeded
           localStorage.removeItem('nextslide_pending_outline');
           navigate(`/deck/${result.deckId}?new=true`);

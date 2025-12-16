@@ -1025,6 +1025,16 @@ If the user says "build it", "create it", "I'm done", "looks good", "generate ou
 5. Do NOT describe the buttons in text (e.g. "I've created buttons for you"). The UI will show them automatically when you output the JSON.
 6. **STOP after outputting generate_outline JSON** - Do NOT continue with theme updates or other actions in the same response.
 
+**🚨 OUTPUT FORMAT - NO THINKING OUT LOUD:**
+Your response should be CLEAN and CONCISE. DO NOT:
+- Say "Let me research...", "Perfect! Let me...", "I'll search for..."
+- Narrate your internal process ("First, I'll look up... Then I'll...")
+- Output verbose status updates about what you're doing
+- Show raw JSON to the user - always wrap JSON in ```json code fences
+
+When you need to search, just DO IT silently. When outputting JSON actions, just OUTPUT THE JSON.
+The user should see: a brief conversational message + the JSON action. Nothing else.
+
 **FATAL ERROR WARNING:**
 If you say "Done!", "Your presentation is ready!", "I've set that up!", or "All set!" but DO NOT output the `generate_outline` JSON, the user will see NOTHING and will be stuck.
 You MUST output the `generate_outline` JSON block whenever you reach a point of agreement or completion.
@@ -1860,6 +1870,25 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
         # Run the model and collect response
         full_response = ""
         in_json_block = False
+        streamed_text = ""  # Track what we've already streamed
+
+        # Patterns that indicate "thinking" text we shouldn't stream
+        THINKING_PATTERNS = [
+            "let me research", "let me search", "let me look", "let me find",
+            "i'll research", "i'll search", "i'll look up", "i'll find",
+            "researching", "searching for", "looking up", "gathering",
+            "i've gathered", "i've researched", "i've found",
+            "now let me", "first, let me", "perfect!", "great!",
+        ]
+
+        def is_thinking_text(text: str) -> bool:
+            """Check if text is internal 'thinking' that shouldn't be shown."""
+            lower = text.lower()
+            return any(pattern in lower for pattern in THINKING_PATTERNS)
+
+        def contains_json_start(text: str) -> bool:
+            """Check if text contains the start of JSON (fenced or raw)."""
+            return '```json' in text or '{"action"' in text or '"action":' in text
 
         async for result in call_model_with_tools(messages):
             if isinstance(result, str) and result.startswith("data:"):
@@ -1870,14 +1899,16 @@ async def stream_agent_response(request: OutlineAgentRequest) -> AsyncGenerator[
                 text = result[1]
                 full_response += text
 
-                # Stream text, but detect JSON blocks
-                if '```json' in full_response and not in_json_block:
+                # Detect JSON blocks (fenced or raw)
+                if contains_json_start(full_response) and not in_json_block:
                     in_json_block = True
-                    text_before_json = full_response.split('```json')[0].strip()
-                    if text_before_json:
-                        yield f"data: {json.dumps({'type': 'text', 'content': text_before_json})}\n\n"
+                    # Don't stream text before JSON - it's usually "thinking" text
+                    logger.info(f"[OutlineAgent] Detected JSON block, suppressing pre-JSON text")
                 elif not in_json_block:
-                    yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
+                    # Only stream text that isn't "thinking" and isn't about to be JSON
+                    if not is_thinking_text(text) and not contains_json_start(text):
+                        yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
+                        streamed_text += text
 
         # After streaming, extract JSON and any text after it
         # Find ALL JSON blocks to handle cases where agent outputs multiple actions

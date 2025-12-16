@@ -634,8 +634,8 @@ class SupabaseAuthService:
             # This avoids issues with Supabase/Cloudflare ilike queries
             if search_query:
                 print(f"[get_user_decks] Fetching decks for search: '{search_query}'")
-                # Include slides for thumbnail generation
-                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides"
+                # Use first_slide and slide_count instead of full slides array
+                select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
                 # Fetch a larger batch and filter locally
                 query = self.supabase.table("decks").select(select_columns).eq("user_id", user_id).order("created_at", desc=True).limit(200)
                 owned_response = query.execute()
@@ -657,24 +657,24 @@ class SupabaseAuthService:
                 owned_response = MockResponse(paginated_data, len(filtered_data))
             else:
                 # Try to use optimized view first, fallback to regular table
-                # The optimized view only returns the first slide and includes slide_count
+                # Use first_slide and slide_count columns instead of full slides array
                 try:
                     # Attempt to use the optimized view
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides,slide_count"
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
                     query = self.supabase.table("decks_optimized").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
                     print(f"[get_user_decks] Using optimized view")
                 except Exception as e:
-                    # Fallback to regular table on any view error/timeout – include slides for thumbnails
+                    # Fallback to regular table - use first_slide and slide_count columns
                     print(f"[get_user_decks] Optimized view unavailable or timed out, using fallback on decks: {str(e)}")
-                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,slides"
+                    select_columns = "uuid,name,created_at,updated_at,last_modified,user_id,status,description,first_slide,slide_count"
                     query = self.supabase.table("decks").select(select_columns, count="planned").eq("user_id", user_id)
                     owned_response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
             
             total_count = owned_response.count if hasattr(owned_response, 'count') else 0
             print(f"[get_user_decks] Found {len(owned_response.data)} owned decks for user {user_id} (total: {total_count})")
             
-            # Process decks - slides array now only contains first slide
+            # Process decks - use first_slide and slide_count columns directly
             decks = []
             for deck in owned_response.data:
                 deck_data = {
@@ -686,19 +686,12 @@ class SupabaseAuthService:
                     "user_id": deck.get("user_id"),
                     "status": deck.get("status"),
                     "description": deck.get("description"),
-                    "is_owner": True
+                    "is_owner": True,
+                    # Use first_slide and slide_count columns directly
+                    "first_slide": deck.get("first_slide"),
+                    "slide_count": deck.get("slide_count", 0) or 0
                 }
-                
-                # Include only the first slide for thumbnail
-                slides = deck.get("slides", [])
-                if slides and len(slides) > 0:
-                    deck_data["first_slide"] = slides[0]
-                    # Use slide_count from view if available, otherwise count slides
-                    deck_data["slide_count"] = deck.get("slide_count", len(slides))
-                else:
-                    deck_data["first_slide"] = None
-                    deck_data["slide_count"] = deck.get("slide_count", 0)
-                
+
                 decks.append(deck_data)
             
             print(f"[get_user_decks] Returning {len(decks)} decks (total: {total_count})")

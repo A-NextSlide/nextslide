@@ -158,102 +158,96 @@ const AdminDecks: React.FC = () => {
   };
 
   const DeckGridItem: React.FC<{ deck: DeckSummary; index: number }> = ({ deck, index }) => (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer h-full w-full">
-      <div 
-        className="aspect-video bg-muted relative group"
-        onClick={() => handleDeckClick(deck, index)}>
-        <DeckThumbnail 
-          deck={{
-            ...deck,
-            slides: deck.slides || []
-          } as CompleteDeckData} 
-        />
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-          <Button size="sm" variant="secondary" asChild>
-            <Link to={`/deck/${deck.uuid}`}>
-              <Eye className="h-4 w-4 mr-1" />
-              View
-            </Link>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="secondary">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/deck/${deck.uuid}`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open in Editor
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="text-destructive"
-                onClick={() => openDeleteDialog(deck)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+    <div
+      className="relative aspect-[16/10] rounded-lg overflow-hidden cursor-pointer group shadow-sm hover:shadow-md transition-shadow"
+      onClick={() => handleDeckClick(deck, index)}
+    >
+      {/* Thumbnail */}
+      <DeckThumbnail
+        deck={{
+          ...deck,
+          slides: deck.slides || []
+        } as CompleteDeckData}
+      />
+
+      {/* Visibility badge */}
+      <Badge
+        variant="secondary"
+        className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 bg-black/60 text-white backdrop-blur-sm border-0"
+      >
+        {deck.visibility}
+      </Badge>
+
+      {/* Bottom gradient overlay with metadata */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-8 pb-2 px-3">
+        <h3 className="font-medium text-sm text-white truncate">{deck.name}</h3>
+        <div className="flex items-center justify-between text-[11px] text-white/80 mt-0.5">
+          <span className="truncate max-w-[50%]">
+            {deck.userFullName ||
+             deck.userEmail ||
+             (deck.userId && deck.userId.length >= 8 ? `#${deck.userId.slice(0, 8)}` : 'Unknown')}
+          </span>
+          <span className="flex-shrink-0">{deck.slideCount} slides</span>
         </div>
-      </div>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="font-semibold truncate flex-1">{deck.name}</h3>
-          <Badge variant="outline" className="ml-2 text-xs">
-            {deck.visibility}
-          </Badge>
-        </div>
-        {deck.description && (
-          <p className="text-sm text-muted-foreground truncate mb-3">
-            {deck.description}
-          </p>
-        )}
-        <div className="space-y-2 text-sm text-muted-foreground">
+        <div className="flex items-center justify-between text-[10px] text-white/60 mt-1">
+          <span>{deck.createdAt && !isNaN(new Date(deck.createdAt).getTime())
+            ? format(new Date(deck.createdAt), 'MMM d')
+            : '-'
+          }</span>
           <div className="flex items-center gap-2">
-            <User className="h-3 w-3" />
-            <span className="truncate">
-              {deck.userFullName || 
-               deck.userEmail || 
-               (deck.userId && deck.userId.length >= 8 ? `User #${deck.userId.slice(0, 8)}` : 
-                deck.id && deck.id.length >= 8 ? `User #${deck.id.slice(0, 8)}` : 
-                'Unknown User')}
+            <span className="flex items-center gap-0.5" title="Views">
+              <Eye className="h-2.5 w-2.5" />
+              {deck.analytics.viewCount}
+            </span>
+            <span className="flex items-center gap-0.5" title="Edits">
+              <Edit className="h-2.5 w-2.5" />
+              {deck.analytics.editCount}
+            </span>
+            <span className="flex items-center gap-0.5" title="Shares">
+              <Share2 className="h-2.5 w-2.5" />
+              {deck.analytics.shareCount}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3 w-3" />
-            <span>{deck.createdAt && !isNaN(new Date(deck.createdAt).getTime())
-              ? format(new Date(deck.createdAt), 'MMM d, yyyy')
-              : '-'
-            }</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>{deck.slideCount} slides</span>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                {deck.analytics.viewCount}
-              </div>
-              <div className="flex items-center gap-1">
-                <Edit className="h-3 w-3" />
-                {deck.analytics.editCount}
-              </div>
-              <div className="flex items-center gap-1">
-                <Share2 className="h-3 w-3" />
-                {deck.analytics.shareCount}
-              </div>
-            </div>
-          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* Hover overlay with actions */}
+      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+        <Button size="sm" variant="secondary" asChild>
+          <Link to={`/deck/${deck.uuid}`}>
+            <Eye className="h-3.5 w-3.5 mr-1" />
+            View
+          </Link>
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="secondary">
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link to={`/deck/${deck.uuid}`}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open in Editor
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={() => openDeleteDialog(deck)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
   );
 
   const DeckListItem: React.FC<{ deck: DeckSummary; index: number }> = ({ deck, index }) => (
@@ -411,29 +405,9 @@ const AdminDecks: React.FC = () => {
           <CardContent className="p-4">
             {isLoading && !isTransitioning ? (
               viewMode === 'grid' ? (
-                <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {[...Array(24)].map((_, i) => (
-                    <Card key={i} className="overflow-hidden h-full">
-                      <Skeleton className="aspect-video w-full" />
-                      <CardContent className="p-4 space-y-3">
-                        <Skeleton className="h-5 w-3/4" />
-                        <Skeleton className="h-4 w-full" />
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-2">
-                            <Skeleton className="h-4 w-4 rounded-full" />
-                            <Skeleton className="h-3 w-20" />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Skeleton className="h-4 w-4" />
-                            <Skeleton className="h-3 w-12" />
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between pt-2">
-                          <Skeleton className="h-3 w-24" />
-                          <Skeleton className="h-6 w-16 rounded-full" />
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <Skeleton key={i} className="aspect-[16/10] w-full rounded-lg" />
                   ))}
                 </div>
               ) : (
@@ -473,7 +447,7 @@ const AdminDecks: React.FC = () => {
                 isTransitioning ? "opacity-50" : "opacity-100"
               )}>
                 {viewMode === 'grid' ? (
-                  <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {decks.map((deck, index) => (
                       <DeckGridItem key={deck.id} deck={deck} index={index} />
                     ))}

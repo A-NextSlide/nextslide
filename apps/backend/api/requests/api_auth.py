@@ -435,21 +435,18 @@ async def get_deck_thumbnails(
         supabase = auth_service.supabase
         thumbnails = {}
         
-        # Fetch only the first slide for each deck
+        # Fetch only first_slide and slide_count (not full slides array)
         response = supabase.table("decks").select(
-            "uuid,slides"
+            "uuid,first_slide,slide_count,user_id"
         ).in_("uuid", deck_uuids).execute()
-        
+
         for deck in response.data:
             # Only include if user has access
             if deck.get("user_id") == user["id"]:
-                slides = deck.get("slides", [])
-                if slides and len(slides) > 0:
-                    # Only send the first slide for thumbnail
-                    thumbnails[deck["uuid"]] = {
-                        "first_slide": slides[0],
-                        "slide_count": len(slides)
-                    }
+                thumbnails[deck["uuid"]] = {
+                    "first_slide": deck.get("first_slide"),
+                    "slide_count": deck.get("slide_count", 0) or 0
+                }
         
         return {"thumbnails": thumbnails}
         
