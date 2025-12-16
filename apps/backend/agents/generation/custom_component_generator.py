@@ -23,7 +23,6 @@ from agents.config import (
     IMAGE_SEARCH_MODEL
 )
 from agents.generation.exceptions import AIRateLimitError
-from utils.color_utils import get_relative_luminance
 from utils.logo_extractor import get_logo_with_inversion
 
 # Provider name for rate limit tracking
@@ -1009,18 +1008,16 @@ class CustomComponentGenerator:
             logger.info(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({mode_desc})")
             print(f"[CUSTOM_COMPONENT] 🎛️ Mode: {slide_mode} ({mode_desc})")
 
-            # Extract logo URL from theme - pass background color for light/dark selection
-            background_color = colors.get('primary_background') or colors.get('primary_bg') or colors.get('backgrounds', [None])[0]
-            logo_url, logo_needs_invert = get_logo_with_inversion(theme, background_color=background_color)
+            # Extract logo URL from theme
+            logo_url, _ = get_logo_with_inversion(theme)
             if logo_url:
-                invert_msg = " [WILL INVERT]" if logo_needs_invert else ""
-                logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...{invert_msg}")
-                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}... (bg: {background_color}){invert_msg}")
+                logger.info(f"[CUSTOM_COMPONENT] 🖼️ Logo URL found: {logo_url[:60]}...")
+                print(f"[CUSTOM_COMPONENT] 🖼️ Logo: {logo_url[:60]}...")
             else:
                 logger.debug("[CUSTOM_COMPONENT] No logo URL in theme")
 
             # Build the system prompt - model will determine appropriate design based on slide_type and content
-            system_prompt = self._build_system_prompt(colors, typography, style_keywords, design_philosophy, slide_mode, logo_url, logo_needs_invert, is_educational)
+            system_prompt = self._build_system_prompt(colors, typography, style_keywords, design_philosophy, slide_mode, logo_url, is_educational)
 
             # Build the user prompt with full context
             user_prompt = self._build_user_prompt(
@@ -1036,7 +1033,6 @@ class CustomComponentGenerator:
                     prefetched_images=prefetched_images,
                     reference_images=reference_images,
                     logo_url=logo_url,
-                    logo_needs_invert=logo_needs_invert,
                     available_videos=available_videos
                 )
 
@@ -1456,7 +1452,6 @@ class CustomComponentGenerator:
         design_philosophy: str = '',
         slide_mode: str = 'interactive',
         logo_url: Optional[str] = None,
-        logo_needs_invert: bool = False,
         is_educational: bool = False
     ) -> str:
         """Build the system prompt for CustomComponent generation."""
@@ -1475,10 +1470,7 @@ class CustomComponentGenerator:
         # Logo instructions if available
         logo_info = ""
         if logo_url:
-            if logo_needs_invert:
-                logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header. IMPORTANT: Apply CSS filter: invert(1) to the logo img for proper contrast against the background!"
-            else:
-                logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header when appropriate"
+            logo_info = f"\nLOGO: Available at props.logoUrl - place in corner or header when appropriate"
 
         # Base theme info (same for all modes)
         theme_info = f"""THEME: --accent: {accent}; --secondary: {secondary}; --text: {text_color}; --bg: {bg_color}
@@ -1638,7 +1630,6 @@ OUTPUT: Complete interactive HTML/CSS/JS starting with <!DOCTYPE html>"""
         prefetched_images: Optional[Dict[str, str]] = None,
         reference_images: Optional[List[str]] = None,
         logo_url: Optional[str] = None,
-        logo_needs_invert: bool = False,
         available_videos: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """Build the user prompt with full context."""
@@ -1854,25 +1845,9 @@ RULES:
         # Build logo section if logo URL is available
         logo_section = ""
         if logo_url:
-            # Check for potential white logo on white background issue
-            bg_luminance = get_relative_luminance(bg_color) if bg_color else 0.5
-            is_light_bg = bg_luminance > 0.5
-
-            # Detect if logo URL suggests it might be white/light colored
-            logo_is_potentially_white = (
-                'logo.svg' in logo_url.lower() or
-                'logo_light' in logo_url.lower() or
-                'for_dark' in logo_url.lower() or
-                '_white' in logo_url.lower()
-            )
-
-            contrast_warning = ""
-            if is_light_bg and logo_is_potentially_white:
-                contrast_warning = """ ⚠️ Note: If the logo appears invisible (white on white), apply: filter: invert(1) or add a dark background behind it."""
-
             logo_section = f"""
 BRAND LOGO (include if there's space): {logo_url}
-Position: corner placement, 40-60px height, no overlap with content.{contrast_warning}
+Position: corner placement, 40-60px height, no overlap with content.
 """
 
         # Add tone guidance only if no explicit style hint was provided

@@ -181,22 +181,25 @@ const SlideContainer: React.FC<SlideContainerProps> = ({
     };
     
     const handleGenerationComplete = () => {
+      console.log('[SlideContainer] Generation complete, marking all slides as completed');
       setSlidesInProgress(new Set());
       // Mark all slides as completed
       if (deckStatus?.totalSlides) {
         setCompletedSlides(new Set(Array.from({ length: deckStatus.totalSlides }, (_, i) => i)));
       }
     };
-    
+
     window.addEventListener('slide_started', handleSlideStarted);
     window.addEventListener('slide_completed', handleSlideCompleted);
     window.addEventListener('deck_complete', handleGenerationComplete);
-    
+    window.addEventListener('deck_finalized', handleGenerationComplete); // Also listen for deck_finalized
+
     return () => {
       tracker.off('update', handleUpdate);
       window.removeEventListener('slide_started', handleSlideStarted);
       window.removeEventListener('slide_completed', handleSlideCompleted);
       window.removeEventListener('deck_complete', handleGenerationComplete);
+      window.removeEventListener('deck_finalized', handleGenerationComplete);
     };
   }, [deckStatus?.totalSlides]);
   

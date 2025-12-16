@@ -260,11 +260,31 @@ RULES:
 4. You can and SHOULD call multiple tools in one response when needed
 5. Always provide a conversational response with your tool calls
 
-IMAGE REPLACEMENT (IMPORTANT):
-- For "replace images", "fix images", "new images" → call search_images directly
+IMAGE REPLACEMENT (search_images):
+- For "replace images", "fix images", "new images", "find a different image" → call search_images
 - DON'T call view_component first - you can see the slide from the screenshot attachment
 - Call search_images ONCE per image you need to replace
 - Use image_index (0, 1, 2, ...) to target each image separately
+
+AI IMAGE EDITING (edit_image_with_ai) - VERY SPECIFIC USE CASE:
+⚠️ ONLY use edit_image_with_ai when user explicitly asks to MODIFY/EDIT an EXISTING IMAGE with AI:
+- "Make this image green" → edit_image_with_ai
+- "Remove the background from this image" → edit_image_with_ai
+- "Add a gradient to the image" → edit_image_with_ai
+- "Make the image look more professional" → edit_image_with_ai
+
+❌ DO NOT use edit_image_with_ai for:
+- Replacing images with different ones → use search_images instead
+- Changing colors of text/elements → use custom_component_str_replace
+- General slide edits → use other tools
+
+⚠️ Each edit_image_with_ai call edits ONE image. Be specific with image_index if multiple images exist.
+
+ANALYZING SLIDES BEFORE COMPLEX EDITS:
+- For COMPLEX edits (restructuring, multiple changes), call view_component FIRST to understand the slide
+- For SIMPLE edits (single color change, single text edit), you can proceed directly
+- Simple = changing ONE thing (color, text, single image)
+- Complex = anything involving multiple elements, layout changes, or structural modifications
 
 GENERATING SEARCH QUERIES (KEEP IT SIMPLE):
 ⚠️ CRITICAL: Use SHORT, SIMPLE queries (2-4 words MAX). Long queries get worse results!
@@ -335,7 +355,7 @@ STAY ON THEME (CRITICAL):
 - If user says "make it red", apply red while keeping other theme elements
 
 TOOL SELECTION:
-- custom_component_str_replace: ⭐ PREFERRED - Targeted edit for single changes (logo, color, text, image)
+- custom_component_str_replace: ⭐ PREFERRED - Targeted edit for single changes (logo, color, text, image URL)
 - edit_slide: Full rewrite (ONLY for major redesigns, NOT for single fixes)
 - create_slide: Create a NEW slide
 - delete_slide: Remove a slide
@@ -344,7 +364,9 @@ TOOL SELECTION:
 - delete_component: Remove a component
 - apply_theme: Change colors/fonts across deck
 - component_prop_update: Mechanical prop update for an existing component
-- view_component: Inspect a component's current props/HTML preview
+- view_component: Inspect a component BEFORE complex edits
+- search_images: Find and REPLACE images with different ones from the web
+- edit_image_with_ai: MODIFY an existing image with AI (color changes, effects, background removal)
 
 NOTE: Visual context (screenshot) is automatically provided when relevant.
 """
@@ -667,6 +689,20 @@ AVAILABLE TOOLS:
    - Replace an Image component with a specific URL
    - WHEN: After search_images, or when user provides a URL
    - Args: { "component_id": str, "image_url": str, "alt": optional str }
+
+16. edit_image_with_ai ⚠️ SPECIFIC USE CASE - AI IMAGE MODIFICATION
+   - ONLY use when user explicitly wants to MODIFY/EDIT an EXISTING IMAGE using AI
+   - ✅ USE FOR: "make this image green/blue/red", "remove the background", "add effects"
+   - ✅ USE FOR: "make the image look more X", "change image colors", "edit the photo"
+   - ❌ DO NOT USE FOR: replacing images (use search_images), changing text colors, general edits
+   - Works with BOTH Image components AND images inside CustomComponents
+   - Downloads image → AI edits it → uploads new version → replaces URL in HTML
+   - Args: { "instruction": str, "image_index": optional int }
+   - instruction: What to do to the image (e.g., "change colors to green", "remove background")
+   - image_index: REQUIRED if multiple images - which image to edit (0=first, 1=second, etc.)
+   - ⚠️ IMPORTANT: Only edits ONE image per call. Use image_index to target specific images.
+   - Example: {"instruction": "change the blue colors to green", "image_index": 0}
+   - Example: {"instruction": "make it look more vibrant", "image_index": 1}
 """
 
 
@@ -846,7 +882,7 @@ Respond with the tool_calls to execute."""
             # This prevents each operation from reading stale original HTML
             effective_slide = current_slide
             # Tools that modify CustomComponent HTML and should use accumulated state
-            html_modifying_tools = {"custom_component_str_replace", "search_images", "custom_component_rewrite"}
+            html_modifying_tools = {"custom_component_str_replace", "search_images", "custom_component_rewrite", "edit_image_with_ai"}
             if tool_name in html_modifying_tools and accumulated_props:
                 comp_id = tool_args.get("component_id")
                 # CRITICAL: Auto-detect CustomComponent ID if not in tool_args

@@ -622,11 +622,13 @@ export class GenerationProgressTracker extends EventEmitter {
   }
   
   private handleDeckComplete(event: any) {
+    console.log('[GenerationProgressTracker] Handling deck_complete event:', event?.type);
+
     this.setTargetProgress(100);
     this.state.phase = 'finalization';
     this.state.message = 'Your presentation is ready!';
 
-    // Mark all slides as completed
+    // Mark all slides as completed in tracker state
     this.state.slides.forEach(slide => {
       slide.status = 'completed';
       slide.progress = 100;
@@ -636,6 +638,16 @@ export class GenerationProgressTracker extends EventEmitter {
     window.dispatchEvent(new CustomEvent('deck_complete', {
       detail: event
     }));
+
+    // Also emit internal event for listeners
+    this.emit('complete', {
+      phase: 'complete',
+      progress: 100,
+      message: 'Your presentation is ready!',
+      slidesCompleted: this.state.slides.length
+    });
+
+    console.log('[GenerationProgressTracker] Deck completion processed, all slides marked complete');
   }
   
   private handleError(event: any) {

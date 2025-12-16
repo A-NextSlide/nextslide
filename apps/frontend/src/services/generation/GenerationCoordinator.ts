@@ -422,13 +422,24 @@ export class GenerationCoordinator extends EventTarget {
             // and release the deck lock (otherwise frontend saves get 409 errors)
             if (data.type === 'deck_complete' || data.type === 'complete' || data.type === 'composition_complete') {
               console.log('[GenerationCoordinator] Generation completed:', data.type);
+
               // Small delay before enabling saves to ensure backend lock is fully released
               // Backend releases lock before sending completion event, but this is a safety buffer
-              await new Promise(resolve => setTimeout(resolve, 100));
+              await new Promise(resolve => setTimeout(resolve, 150));
+
+              // CRITICAL: Perform frontend finalization before allowing saves
+              await this.finalizeDeck(deckId);
+
               // Reset deck status to allow saves
               useInteractionStore.getState().setDeckStatus({ state: 'completed' });
               if (typeof window !== 'undefined') {
                 (window as any).__deckStatus = 'idle';
+
+                // Dispatch deck_finalized event for components to react
+                window.dispatchEvent(new CustomEvent('deck_finalized', {
+                  detail: { deckId, deckUrl }
+                }));
+
                 // CRITICAL: Dispatch completion event to ChatPanel directly
                 // The normal event flow may not propagate correctly, so dispatch directly
                 window.dispatchEvent(new CustomEvent('add_system_message', {
@@ -439,7 +450,8 @@ export class GenerationCoordinator extends EventTarget {
                       stage: 'generation_complete',
                       phase: 'generation_complete',
                       progress: 100,
-                      isStreamingUpdate: true
+                      isStreamingUpdate: true,
+                      deckId
                     }
                   }
                 }));
@@ -665,13 +677,77 @@ export class GenerationCoordinator extends EventTarget {
   }
 
   /**
+   * Finalize deck after generation completes
+   * This marks all slides as completed and triggers a save
+   */
+  private async finalizeDeck(deckId: string): Promise<void> {
+    console.log(`[GenerationCoordinator] Starting finalization for deck ${deckId}`);
+
+    try {
+      const store = useDeckStore.getState();
+      const deckData = store.deckData;
+
+      if (!deckData || !deckData.slides || deckData.slides.length === 0) {
+        console.warn('[GenerationCoordinator] No slides found in deck during finalization');
+        return;
+      }
+
+      // Mark all slides as completed
+      const finalizedSlides = deckData.slides.map(slide => ({
+        ...slide,
+        status: 'completed' as const
+      }));
+
+      // Update local state with all slides marked as completed
+      store.updateDeckData(
+        {
+          slides: finalizedSlides,
+          status: {
+            state: 'completed',
+            progress: 100,
+            phase: 'complete'
+          }
+        },
+        { skipBackend: true }
+      );
+
+      console.log(`[GenerationCoordinator] Marked ${finalizedSlides.length} slides as completed`);
+
+      // Small delay before saving to ensure backend lock is fully released
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Now trigger a save to the backend with the finalized state
+      // This is safe because the backend has released the lock
+      try {
+        const { deckSyncService } = await import('@/lib/deckSyncService');
+        const updatedDeckData = useDeckStore.getState().deckData;
+
+        await deckSyncService.saveDeck(updatedDeckData);
+        console.log(`[GenerationCoordinator] Successfully saved finalized deck ${deckId}`);
+      } catch (saveError) {
+        console.error(`[GenerationCoordinator] Error saving finalized deck:`, saveError);
+        // Don't throw - the deck is still usable locally
+      }
+
+      // Pause progress tracker as generation is complete
+      try { this.progressTracker.pause(); } catch {}
+
+      console.log(`[GenerationCoordinator] Finalization complete for deck ${deckId}`);
+
+    } catch (error) {
+      console.error(`[GenerationCoordinator] Finalization failed for deck ${deckId}:`, error);
+      // Don't throw - allow the completion flow to continue
+    }
+  }
+
+  /**
    * Clean up all active generations (for app cleanup)
    */
   async cleanup(): Promise<void> {
     console.log('[GenerationCoordinator] Cleaning up all active generations');
-    
-    const promises = Array.from(this.activeGenerations.keys()).map(deckId => 
-      this.stopGeneration(deckId).catch(e => 
+
+    const promises = Array.from(this.activeGenerations.keys()).map(deckId =>
+      this.stopGeneration(deckId).catch(e =>
         console.error(`[GenerationCoordinator] Error stopping generation for ${deckId}:`, e)
       )
     );

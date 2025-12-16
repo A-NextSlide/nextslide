@@ -46,6 +46,12 @@ export class SlideCompletionHandler {
       return;
     }
 
+    // Check if generation is in progress - if so, only update local state, don't save to backend
+    // This prevents 409 conflicts during generation
+    const deckStatus = typeof window !== 'undefined' ? (window as any).__deckStatus : null;
+    const statusState = typeof deckStatus === 'string' ? deckStatus : deckStatus?.state;
+    const isGenerating = statusState === 'generating' || statusState === 'creating' || statusState === 'pending';
+
     // Get current deck data
     const deckData = useDeckStore.getState().deckData;
     if (!deckData || !deckData.slides) {
@@ -73,14 +79,10 @@ export class SlideCompletionHandler {
 
     // Update the slide status to 'completed'
     if (slide.status !== 'completed') {
-      // Check if user is currently viewing this slide
-      try {
-        await useDeckStore.getState().updateSlide(slide.id, {
-          status: 'completed',
-          // Preserve existing components to prevent any loss
-          components: slide.components
-        });
-        // Immediately harden status against regressions by re-applying deck-level merge
+      // During generation, only update local state without backend save
+      // After generation completes, the finalization will handle the final save
+      if (isGenerating) {
+        // Update local state only - skip backend save to prevent 409 errors
         try {
           const store = useDeckStore.getState();
           const data = store.deckData;
@@ -91,9 +93,32 @@ export class SlideCompletionHandler {
             slides[idx] = hardened;
             store.updateDeckData({ slides }, { skipBackend: true });
           }
-        } catch {}
-      } catch (error) {
-        console.error('[SlideCompletionHandler] Error updating slide status:', error);
+        } catch (error) {
+          console.error('[SlideCompletionHandler] Error updating local slide status:', error);
+        }
+      } else {
+        // Not generating - safe to save to backend
+        try {
+          await useDeckStore.getState().updateSlide(slide.id, {
+            status: 'completed',
+            // Preserve existing components to prevent any loss
+            components: slide.components
+          });
+          // Immediately harden status against regressions by re-applying deck-level merge
+          try {
+            const store = useDeckStore.getState();
+            const data = store.deckData;
+            const idx = data.slides.findIndex((s: any) => s.id === slide.id);
+            if (idx >= 0) {
+              const hardened = { ...data.slides[idx], status: 'completed' as const };
+              const slides = [...data.slides];
+              slides[idx] = hardened;
+              store.updateDeckData({ slides }, { skipBackend: true });
+            }
+          } catch {}
+        } catch (error) {
+          console.error('[SlideCompletionHandler] Error updating slide status:', error);
+        }
       }
     }
   }

@@ -730,7 +730,7 @@ Return a JSON object with:
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_model=_ReplacePlan,
-        max_tokens=2500,
+        max_tokens=8000,  # Increased from 2500 to handle larger HTML replacements for style changes
     )
 
     _dbg("B", "slide_tools.py:_targeted_custom_component_edit", "replace_plan", {"slide_id": slide_id, "component_id": comp_id, "ops": len(plan.ops), "note": plan.note[:200]}, runId="pre-fix")
@@ -995,7 +995,6 @@ IMPORTANT:
             style_keywords=[],
             slide_mode=slide_mode,
             logo_url=None,
-            logo_needs_invert=False,
         )
     except Exception as e:
         system_prompt = "You are an expert HTML/CSS designer. Modify the CustomComponent with high quality and theme consistency. Fill 1920x1080."

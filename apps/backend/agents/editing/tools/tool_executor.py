@@ -58,6 +58,7 @@ def execute_tool(
     from agents.editing.tools.images import (
         search_images,
         replace_image_from_search,
+        edit_image_with_ai,
     )
 
     # Tool map
@@ -78,6 +79,7 @@ def execute_tool(
         "view_component": view_component,
         "search_images": search_images,
         "replace_image": replace_image_from_search,
+        "edit_image_with_ai": edit_image_with_ai,
     }
 
     if tool_name not in TOOLS:

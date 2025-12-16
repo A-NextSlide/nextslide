@@ -339,91 +339,44 @@ def get_logo_with_inversion(
     background_color: Optional[str] = None
 ) -> Tuple[Optional[str], bool]:
     """
-    Extract logo URL from theme dict, selecting light/dark variant based on background.
+    Extract logo URL from theme dict.
 
-    Handles multiple possible structures and determines if CSS inversion is needed
-    when only one variant is available but doesn't match the background.
-
-    Logo naming convention from Brandfetch:
-    - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
-    - "logo_for_dark_bg" = logo designed FOR dark backgrounds = typically LIGHT/WHITE colored
+    Simply returns the first available logo URL without any manipulation.
+    The second return value is always False (kept for API compatibility).
 
     Args:
         theme: Theme dictionary
-        background_color: Optional hex color of the background (e.g. "#FFFFFF")
-                         Used to select light vs dark logo variant
+        background_color: Ignored (kept for API compatibility)
 
     Returns:
-        Tuple of (logo_url, needs_inversion):
-        - logo_url: Best logo URL for the background, or None if not found
-        - needs_inversion: True if CSS filter:invert(1) should be applied for contrast
+        Tuple of (logo_url, False):
+        - logo_url: First available logo URL, or None if not found
+        - False: Always False (no inversion logic)
     """
-    from utils.color_utils import get_relative_luminance
-
     if not theme:
         return None, False
 
-    # IMPORTANT: Logo naming convention from Brandfetch:
-    # - "logo_for_light_bg" = logo designed FOR light backgrounds = typically DARK colored
-    # - "logo_for_dark_bg" = logo designed FOR dark backgrounds = typically LIGHT/WHITE colored
-    logo_for_light_bg = None  # Dark colored logo, use on light backgrounds
-    logo_for_dark_bg = None   # Light/white colored logo, use on dark backgrounds
+    logo_url = None
 
-    # Try brandInfo.logoUrl / logoUrlDark (from frontend)
-    # Note: logoUrl = logo FOR light backgrounds (dark colored)
-    #       logoUrlDark = logo FOR dark backgrounds (light colored) - confusing name!
+    # Try brandInfo.logoUrl first
     brand_info = theme.get('brandInfo', {})
     if isinstance(brand_info, dict):
-        logo_for_light_bg = brand_info.get('logoUrl') or brand_info.get('logoUrlLight')
-        logo_for_dark_bg = brand_info.get('logoUrlDark')
+        logo_url = brand_info.get('logoUrl') or brand_info.get('logoUrlLight') or brand_info.get('logoUrlDark')
 
-    # Try color_palette.metadata.logo_url_light / logo_url_dark
-    if not logo_for_light_bg and not logo_for_dark_bg:
+    # Try color_palette.metadata.logo_url
+    if not logo_url:
         color_palette = theme.get('color_palette', {})
         if isinstance(color_palette, dict):
             metadata = color_palette.get('metadata', {})
             if isinstance(metadata, dict):
-                logo_for_light_bg = metadata.get('logo_url_light') or metadata.get('logo_url')
-                logo_for_dark_bg = metadata.get('logo_url_dark')
+                logo_url = metadata.get('logo_url') or metadata.get('logo_url_light') or metadata.get('logo_url_dark')
 
-    # Try theme.logo.url or theme.logo (direct string) - assume it's for light backgrounds
-    if not logo_for_light_bg and not logo_for_dark_bg:
+    # Try theme.logo.url or theme.logo (direct string)
+    if not logo_url:
         logo = theme.get('logo')
         if isinstance(logo, dict):
-            logo_for_light_bg = logo.get('url')
+            logo_url = logo.get('url')
         elif isinstance(logo, str) and logo.startswith('http'):
-            logo_for_light_bg = logo
+            logo_url = logo
 
-    # If no logos found at all
-    if not logo_for_light_bg and not logo_for_dark_bg:
-        return None, False
-
-    # Determine background luminance if provided
-    bg_is_light = True  # Default assumption
-    if background_color:
-        try:
-            luminance = get_relative_luminance(background_color)
-            bg_is_light = luminance > 0.5
-        except Exception:
-            bg_is_light = True
-
-    # If only one variant available, use it but INVERT if needed for contrast
-    if logo_for_light_bg and not logo_for_dark_bg:
-        # We have logo for light backgrounds (dark colored logo)
-        # If background is DARK, we need to INVERT to make it light/white
-        needs_invert = not bg_is_light if background_color else False
-        return logo_for_light_bg, needs_invert
-
-    if logo_for_dark_bg and not logo_for_light_bg:
-        # We have logo for dark backgrounds (light/white colored logo)
-        # If background is LIGHT, we need to INVERT to make it dark
-        needs_invert = bg_is_light if background_color else False
-        return logo_for_dark_bg, needs_invert
-
-    # Both variants available - select based on background luminance (no inversion needed)
-    if bg_is_light:
-        # Light background - use the logo designed FOR light backgrounds (dark colored logo)
-        return logo_for_light_bg, False
-    else:
-        # Dark background - use the logo designed FOR dark backgrounds (light colored logo)
-        return logo_for_dark_bg, False
+    return logo_url, False

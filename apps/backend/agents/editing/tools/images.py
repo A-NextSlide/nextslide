@@ -548,6 +548,315 @@ def search_images(
         return DeckDiff(DeckDiffBase(slides_to_update=[]))
 
 
+async def _download_image_bytes(url: str) -> Optional[bytes]:
+    """Download image from URL and return as bytes."""
+    import aiohttp
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                else:
+                    logger.warning(f"[EDIT_IMAGE_AI] Failed to download image: status {resp.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"[EDIT_IMAGE_AI] Error downloading image: {e}")
+        return None
+
+
+def edit_image_with_ai(
+    args: Dict[str, Any],
+    deck_data: Dict,
+    current_slide: Dict,
+    registry=None,
+    attachments: List[Dict] = None,
+) -> DeckDiff:
+    """
+    Edit an image using AI (Gemini) based on natural language instructions.
+
+    This tool uses Gemini's image editing capabilities to modify existing images
+    on a slide. It can handle requests like:
+    - "Make the background blue"
+    - "Remove the text from this image"
+    - "Add a subtle gradient overlay"
+    - "Make it look more professional"
+    - "Change the color scheme to match our brand"
+
+    Args in dict:
+        instruction: str - Natural language description of the edit (e.g., "make it blue", "remove the person")
+        component_id: Optional[str] - If provided, edit image in this component (auto-detects CustomComponent)
+        slide_id: Optional[str] - Slide containing the component (defaults to current slide)
+        image_index: Optional[int] - 0-based index of which image to edit if multiple exist
+        image_url: Optional[str] - Specific image URL to edit (if known)
+    """
+    instruction = args.get("instruction", "")
+    component_id = args.get("component_id")
+    slide_id = args.get("slide_id") or (current_slide.get("id") if current_slide else None)
+    image_index = args.get("image_index")
+    target_url = args.get("image_url")
+
+    if not instruction:
+        logger.warning("[EDIT_IMAGE_AI] No instruction provided")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    logger.info(f"[EDIT_IMAGE_AI] Instruction: '{instruction}', component_id={component_id}, image_index={image_index}")
+
+    # Auto-detect CustomComponent if no component_id provided
+    render_html = ""
+    if not component_id and current_slide:
+        components = current_slide.get("components", [])
+        for c in components:
+            if c.get("type") == "CustomComponent":
+                component_id = c.get("id")
+                render_html = c.get("props", {}).get("render", "")
+                logger.info(f"[EDIT_IMAGE_AI] Auto-detected CustomComponent: {component_id}")
+                break
+            elif c.get("type") == "Image":
+                # Handle Image component directly
+                component_id = c.get("id")
+                target_url = c.get("props", {}).get("src", "")
+                logger.info(f"[EDIT_IMAGE_AI] Auto-detected Image component: {component_id}")
+                break
+
+    if not component_id:
+        logger.warning("[EDIT_IMAGE_AI] No component found to edit")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    # Get event loop
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Find the target slide and component
+    target_slide = current_slide if current_slide and current_slide.get("id") == slide_id else None
+    if not target_slide:
+        for s in deck_data.get("slides", []):
+            if s.get("id") == slide_id:
+                target_slide = s
+                break
+
+    if not target_slide:
+        logger.warning(f"[EDIT_IMAGE_AI] Slide {slide_id} not found")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    target_component = None
+    for c in target_slide.get("components", []):
+        if c.get("id") == component_id:
+            target_component = c
+            break
+
+    if not target_component:
+        logger.warning(f"[EDIT_IMAGE_AI] Component {component_id} not found")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+    comp_type = target_component.get("type")
+
+    # Handle Image component
+    if comp_type == "Image":
+        target_url = target_component.get("props", {}).get("src", "")
+        if not target_url:
+            logger.warning("[EDIT_IMAGE_AI] Image component has no src")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        # Download, edit, and upload
+        async def process_image():
+            from services.gemini_image_service import GeminiImageService
+            from services.image_storage_service import ImageStorageService
+
+            gemini = GeminiImageService()
+            if not gemini.is_available:
+                logger.error("[EDIT_IMAGE_AI] Gemini service not available")
+                return None
+
+            # Download image
+            img_bytes = await _download_image_bytes(target_url)
+            if not img_bytes:
+                return None
+
+            # Edit with Gemini
+            result = await gemini.edit_image(instruction, img_bytes)
+            if "error" in result:
+                logger.error(f"[EDIT_IMAGE_AI] Gemini edit failed: {result['error']}")
+                return None
+
+            # Upload to Supabase
+            import base64
+            b64_data = result.get("b64_json")
+            if not b64_data:
+                return None
+
+            async with ImageStorageService() as storage:
+                import uuid as uuid_mod
+                filename = f"ai-edited-{uuid_mod.uuid4().hex[:8]}.png"
+                upload_result = await storage.upload_image_from_base64(b64_data, filename, "image/png")
+                if "error" in upload_result:
+                    logger.error(f"[EDIT_IMAGE_AI] Upload failed: {upload_result['error']}")
+                    return None
+                return upload_result.get("url")
+
+        new_url = loop.run_until_complete(process_image())
+        if not new_url:
+            logger.error("[EDIT_IMAGE_AI] Failed to process image")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        logger.info(f"[EDIT_IMAGE_AI] ✅ Image edited successfully: {new_url[:60]}...")
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(
+                            id=component_id,
+                            props={"src": new_url}
+                        )
+                    ]
+                )
+            ]
+        ))
+
+    # Handle CustomComponent
+    elif comp_type == "CustomComponent":
+        props = target_component.get("props", {})
+        render_html = props.get("render", "")
+
+        if not render_html:
+            logger.warning("[EDIT_IMAGE_AI] CustomComponent has no HTML")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        # Strip frontend editing scripts
+        from agents.editing.orchestrator_v2 import strip_frontend_editing_scripts
+        render_html = strip_frontend_editing_scripts(render_html)
+
+        # Find images in HTML
+        img_pattern = r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>'
+        bg_pattern = r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)'
+
+        img_matches = list(re.finditer(img_pattern, render_html))
+        bg_matches = list(re.finditer(bg_pattern, render_html))
+
+        # Combine matches
+        all_matches = []
+        seen_urls = set()
+        for m in img_matches:
+            url = m.group(1)
+            if url not in seen_urls and url.startswith("http"):
+                all_matches.append((m.start(), m, 'img', url))
+                seen_urls.add(url)
+        for m in bg_matches:
+            url = m.group(1)
+            if url not in seen_urls and url.startswith("http"):
+                all_matches.append((m.start(), m, 'bg', url))
+                seen_urls.add(url)
+
+        all_matches.sort(key=lambda x: x[0])
+
+        if not all_matches:
+            logger.warning("[EDIT_IMAGE_AI] No images found in CustomComponent HTML")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        logger.info(f"[EDIT_IMAGE_AI] Found {len(all_matches)} images in HTML")
+
+        # Select target image
+        if target_url:
+            # Find specific URL
+            target_match = None
+            for _, m, _, url in all_matches:
+                if url == target_url:
+                    target_match = (m, url)
+                    break
+            if not target_match:
+                logger.warning(f"[EDIT_IMAGE_AI] Target URL not found in HTML: {target_url[:60]}")
+                return DeckDiff(DeckDiffBase(slides_to_update=[]))
+        elif image_index is not None and 0 <= image_index < len(all_matches):
+            _, m, _, url = all_matches[image_index]
+            target_match = (m, url)
+            logger.info(f"[EDIT_IMAGE_AI] Using image at index {image_index}: {url[:60]}...")
+        else:
+            # Default to first image
+            _, m, _, url = all_matches[0]
+            target_match = (m, url)
+            logger.info(f"[EDIT_IMAGE_AI] Using first image: {url[:60]}...")
+
+        match_obj, old_url = target_match
+
+        # Download, edit, and upload
+        async def process_image():
+            from services.gemini_image_service import GeminiImageService
+            from services.image_storage_service import ImageStorageService
+
+            gemini = GeminiImageService()
+            if not gemini.is_available:
+                logger.error("[EDIT_IMAGE_AI] Gemini service not available")
+                return None
+
+            # Download image
+            img_bytes = await _download_image_bytes(old_url)
+            if not img_bytes:
+                logger.error(f"[EDIT_IMAGE_AI] Failed to download image from {old_url[:60]}")
+                return None
+
+            logger.info(f"[EDIT_IMAGE_AI] Downloaded image ({len(img_bytes)} bytes), sending to Gemini...")
+
+            # Edit with Gemini
+            result = await gemini.edit_image(instruction, img_bytes)
+            if "error" in result:
+                logger.error(f"[EDIT_IMAGE_AI] Gemini edit failed: {result['error']}")
+                return None
+
+            logger.info(f"[EDIT_IMAGE_AI] Gemini edit successful, uploading to storage...")
+
+            # Upload to Supabase
+            import base64
+            b64_data = result.get("b64_json")
+            if not b64_data:
+                logger.error("[EDIT_IMAGE_AI] No b64_json in Gemini response")
+                return None
+
+            async with ImageStorageService() as storage:
+                import uuid as uuid_mod
+                filename = f"ai-edited-{uuid_mod.uuid4().hex[:8]}.png"
+                upload_result = await storage.upload_image_from_base64(b64_data, filename, "image/png")
+                if "error" in upload_result:
+                    logger.error(f"[EDIT_IMAGE_AI] Upload failed: {upload_result['error']}")
+                    return None
+                return upload_result.get("url")
+
+        new_url = loop.run_until_complete(process_image())
+        if not new_url:
+            logger.error("[EDIT_IMAGE_AI] Failed to process image")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        # Replace URL in HTML
+        new_html = render_html.replace(old_url, new_url, 1)
+
+        if new_html == render_html:
+            logger.warning("[EDIT_IMAGE_AI] HTML unchanged after replacement")
+            return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+        logger.info(f"[EDIT_IMAGE_AI] ✅ Image edited and replaced: {old_url[:40]}... -> {new_url[:40]}...")
+
+        return DeckDiff(DeckDiffBase(
+            slides_to_update=[
+                SlideDiffBase(
+                    slide_id=slide_id,
+                    components_to_update=[
+                        ComponentDiffBase(
+                            id=component_id,
+                            props={"render": new_html}
+                        )
+                    ]
+                )
+            ]
+        ))
+
+    else:
+        logger.warning(f"[EDIT_IMAGE_AI] Component type {comp_type} not supported")
+        return DeckDiff(DeckDiffBase(slides_to_update=[]))
+
+
 def replace_image_from_search(
     args: Dict[str, Any],
     deck_data: Dict,

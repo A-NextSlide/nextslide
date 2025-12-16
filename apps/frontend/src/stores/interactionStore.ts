@@ -120,7 +120,7 @@ export function syncGlobalsToStore() {
     if (win.__isResizingCharts !== undefined && win.__isResizingCharts !== state.isResizingCharts) {
       useInteractionStore.setState({ isResizingCharts: win.__isResizingCharts });
     }
-    if (win.__deckStatus !== undefined) {
+    if (win.__deckStatus && win.__deckStatus.state !== undefined) {
       const deckStatus = win.__deckStatus;
       if (deckStatus.state !== state.deckStatus.state) {
         useInteractionStore.setState({ deckStatus });
