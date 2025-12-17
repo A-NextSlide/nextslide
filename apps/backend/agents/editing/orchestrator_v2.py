@@ -260,6 +260,19 @@ RULES:
 4. You can and SHOULD call multiple tools in one response when needed
 5. Always provide a conversational response with your tool calls
 
+CONVERSATION CONTINUITY (RECENT CHAT):
+- The RECENT CHAT section shows the last few messages in this conversation
+- USE THIS to understand vague or contextual references like:
+  * "make it bigger" → what did you just edit? Make THAT bigger
+  * "actually, use blue instead" → change the color you just set to blue
+  * "do the same for the other one" → repeat the last action on another element
+  * "undo that" or "go back" → revert the last change you made
+  * "yes" or "perfect" → user is happy, no action needed - just acknowledge
+  * "no" or "not that" → user wants something different, ask for clarification
+- If the user's message is vague but chat history provides context, USE that context
+- If still unclear after checking history, ask a clarifying question instead of guessing wrong
+- Continue the conversation naturally - you're having an ongoing dialogue, not isolated requests
+
 VISUAL CONTEXT (screenshot attachment):
 - A screenshot of the current slide is automatically attached when a slide/component is selected
 - USE THIS to understand what the slide currently looks like before making changes
@@ -613,11 +626,11 @@ def build_context(
         att_list = [f"  - {a.get('name', 'file')}: {a.get('url', '')}" for a in attachments]
         att_str = f"\n\nATTACHMENTS (user uploaded):\n" + "\n".join(att_list)
 
-    # Chat history (brief)
+    # Chat history
     history_str = ""
     if chat_history:
-        recent = chat_history[-3:]  # Last 3 messages
-        history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:100]}" for m in recent]
+        recent = chat_history[-10:]  # Last 10 messages
+        history_lines = [f"  {m.get('role', 'user')}: {str(m.get('content', ''))[:250]}" for m in recent]
         history_str = f"\n\nRECENT CHAT:\n" + "\n".join(history_lines)
 
     context = f"""{theme_str}CURRENT SLIDE: {slide_id}
@@ -1024,7 +1037,24 @@ Respond with the tool_calls to execute."""
                                     parts.append(f"LinkedIn: {item['linkedin_url']}")
                                 if item.get("email"):
                                     parts.append(f"Email: {item['email']}")
+                                if item.get("phone"):
+                                    parts.append(f"Phone: {item['phone']}")
+                                if item.get("location"):
+                                    parts.append(f"Location: {item['location']}")
                                 item_lines.append(" | ".join(parts))
+
+                                # Add employment history as separate lines for better readability
+                                employment_history = item.get("employment_history")
+                                if employment_history and len(employment_history) > 0:
+                                    history_lines = ["Employment History:"]
+                                    for job in employment_history[:5]:  # Limit to 5 most recent
+                                        job_title = job.get("title", "Unknown Role")
+                                        job_company = job.get("company", "Unknown Company")
+                                        start = job.get("start_date", "")
+                                        end = job.get("end_date", "Present") if not job.get("current") else "Present"
+                                        date_range = f" ({start} - {end})" if start else ""
+                                        history_lines.append(f"  - {job_title} at {job_company}{date_range}")
+                                    item_lines.append("\n".join(history_lines))
 
                             elif data_type == "files" or data_type == "designs":
                                 # File/design data (Figma, Google Drive, etc.)

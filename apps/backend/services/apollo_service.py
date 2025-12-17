@@ -55,6 +55,27 @@ class CompanyInfo:
 
 
 @dataclass
+class EmploymentRecord:
+    """A single employment history entry"""
+    title: Optional[str] = None
+    organization_name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    current: bool = False
+    description: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "title": self.title,
+            "organization_name": self.organization_name,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "current": self.current,
+            "description": self.description
+        }
+
+
+@dataclass
 class PersonInfo:
     """Enriched person information"""
     name: str
@@ -67,6 +88,7 @@ class PersonInfo:
     state: Optional[str] = None
     country: Optional[str] = None
     photo_url: Optional[str] = None
+    employment_history: List['EmploymentRecord'] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -81,7 +103,8 @@ class PersonInfo:
                 "city": self.city,
                 "state": self.state,
                 "country": self.country
-            } if any([self.city, self.state, self.country]) else None
+            } if any([self.city, self.state, self.country]) else None,
+            "employment_history": [e.to_dict() for e in (self.employment_history or [])]
         }
 
 
@@ -314,12 +337,20 @@ class ApolloService:
 
             results = []
             for p in people:
-                # Handle obfuscated names (basic tier shows partial names)
+                person_id = p.get("id")
+
+                # If we have a person ID, enrich to get full data including employment_history
+                if person_id:
+                    enriched = self.enrich_person(person_id=person_id)
+                    if enriched:
+                        results.append(enriched)
+                        continue
+
+                # Fallback: use basic search data if enrichment fails
                 first_name = p.get("first_name", "")
                 last_name = p.get("last_name") or p.get("last_name_obfuscated", "")
                 full_name = p.get("name") or f"{first_name} {last_name}".strip()
 
-                # Skip if we only have obfuscated/empty name
                 if not full_name or full_name == "Unknown":
                     full_name = f"{first_name} {last_name}".strip() or "Unknown"
 
@@ -419,10 +450,11 @@ class ApolloService:
         email: Optional[str] = None,
         linkedin_url: Optional[str] = None,
         name: Optional[str] = None,
-        company: Optional[str] = None
+        company: Optional[str] = None,
+        person_id: Optional[str] = None
     ) -> Optional[PersonInfo]:
         """
-        Enrich person data from email or LinkedIn URL.
+        Enrich person data from email, LinkedIn URL, or Apollo person ID.
 
         NOTE: Requires paid Apollo plan.
 
@@ -431,6 +463,7 @@ class ApolloService:
             linkedin_url: Person's LinkedIn URL
             name: Person's name (helps matching)
             company: Company name (helps matching)
+            person_id: Apollo person ID (most reliable for full data)
 
         Returns:
             PersonInfo with enriched data, or None if not found
@@ -438,10 +471,12 @@ class ApolloService:
         if not self.is_configured():
             raise ValueError("Apollo API key not configured")
 
-        if not email and not linkedin_url:
-            raise ValueError("Either email or linkedin_url is required")
+        if not email and not linkedin_url and not person_id:
+            raise ValueError("Either email, linkedin_url, or person_id is required")
 
         params = {}
+        if person_id:
+            params["id"] = person_id
         if email:
             params["email"] = email
         if linkedin_url:
@@ -464,17 +499,29 @@ class ApolloService:
             title = person.get("title")
             company = person.get("organization", {}).get("name")
 
+            # Parse employment history into EmploymentRecord objects
+            raw_employment_history = person.get("employment_history", [])
+            employment_records = []
+            for job in raw_employment_history:
+                employment_records.append(EmploymentRecord(
+                    title=job.get("title"),
+                    organization_name=job.get("organization_name"),
+                    start_date=job.get("start_date"),
+                    end_date=job.get("end_date"),
+                    current=job.get("current", False),
+                    description=job.get("description")
+                ))
+
             # If no title/company, try to get from employment history
-            employment_history = person.get("employment_history", [])
-            if employment_history:
+            if raw_employment_history:
                 # Find current job or most recent
                 current_job = None
-                for job in employment_history:
+                for job in raw_employment_history:
                     if job.get("current"):
                         current_job = job
                         break
                 if not current_job:
-                    current_job = employment_history[0]  # Most recent
+                    current_job = raw_employment_history[0]  # Most recent
 
                 if not title:
                     title = current_job.get("title")
@@ -500,7 +547,8 @@ class ApolloService:
                 city=person.get("city"),
                 state=person.get("state"),
                 country=person.get("country"),
-                photo_url=person.get("photo_url")
+                photo_url=person.get("photo_url"),
+                employment_history=employment_records if employment_records else None
             )
         except PermissionError:
             logger.warning("People enrichment requires paid Apollo plan")

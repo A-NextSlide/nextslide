@@ -137,8 +137,91 @@ def linkedin_lookup(
         except Exception as e:
             logger.warning(f"[LinkedIn Tool] Failed to emit loading state: {e}")
 
-    # STEP 1: Web search to find LinkedIn URLs and photos
-    logger.info(f"[LinkedIn Tool] Step 1: Web search for LinkedIn URLs and photos")
+    # STEP 1: Try Apollo direct search first (uses search → enrich by ID for full data)
+    apollo = get_apollo_service()
+    formatted_profiles = []
+    photo_by_linkedin_url = {}
+
+    logger.info(f"[LinkedIn Tool] Apollo configured: {apollo.is_configured() if apollo else 'NO APOLLO'}")
+
+    if apollo and apollo.is_configured():
+        logger.info(f"[LinkedIn Tool] Step 1: Apollo direct search for {name}")
+        try:
+            # This uses search → enrich by ID, which returns full data including employment_history
+            apollo_results = apollo.search_linkedin_profiles(name=name, company=company, title=title)
+            logger.info(f"[LinkedIn Tool] Apollo search returned {len(apollo_results)} results")
+
+            for person in apollo_results[:5]:  # Limit to 5
+                if not person.name:
+                    continue
+
+                # Helper to detect LinkedIn placeholder/default images
+                def is_placeholder_photo(url: str) -> bool:
+                    if not url:
+                        return True
+                    placeholder_patterns = [
+                        "static.licdn.com/aero-v1/sc/h/",
+                        "static.licdn.com/sc/h/",
+                        "static-exp1.licdn.com/sc/h/",
+                    ]
+                    return any(pattern in url for pattern in placeholder_patterns)
+
+                photo_url = person.photo_url if not is_placeholder_photo(person.photo_url) else None
+
+                # Check confidence by company match
+                confidence = "low"
+                if company:
+                    if person.company and company.lower() in person.company.lower():
+                        confidence = "high"
+                    elif person.title and company.lower() in person.title.lower():
+                        confidence = "high"
+
+                # Format employment history
+                employment_history = []
+                if person.employment_history:
+                    for job in person.employment_history:
+                        job_entry = {
+                            "title": job.title,
+                            "company": job.organization_name,
+                            "start_date": job.start_date,
+                            "end_date": job.end_date,
+                            "current": job.current,
+                        }
+                        if job.description:
+                            job_entry["description"] = job.description
+                        employment_history.append(job_entry)
+                    logger.info(f"[LinkedIn Tool] Found {len(employment_history)} employment history entries for {person.name}")
+
+                profile_data = {
+                    "id": f"profile-apollo-{person.name.replace(' ', '-').lower()}" if person.name else "profile-unknown",
+                    "name": person.name,
+                    "title": person.title,
+                    "company": person.company,
+                    "headline": f"{person.title} at {person.company}" if person.title and person.company else person.title or person.company,
+                    "location": f"{person.city}, {person.state}" if person.city else None,
+                    "linkedin_url": person.linkedin_url,
+                    "photo_url": photo_url,  # May be None if placeholder
+                    "email": person.email,
+                    "phone": person.phone,
+                    "employment_history": employment_history if employment_history else None,
+                    "source": "apollo",
+                    "confidence": confidence,
+                }
+
+                # Track LinkedIn URL for photo fallback
+                if person.linkedin_url:
+                    photo_by_linkedin_url[person.linkedin_url] = {"url": None, "alt": ""}
+
+                formatted_profiles.append(profile_data)
+                logger.info(f"[LinkedIn Tool] Added profile: {person.name} - {person.title} at {person.company}")
+
+        except Exception as e:
+            logger.error(f"[LinkedIn Tool] Apollo search failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    # STEP 2: Web search for photos (supplement missing photos from Apollo)
+    logger.info(f"[LinkedIn Tool] Step 2: Web search for profile photos")
     try:
         try:
             loop = asyncio.get_running_loop()
@@ -153,130 +236,38 @@ def linkedin_lookup(
 
     logger.info(f"[LinkedIn Tool] Web search found {len(photos)} photos")
 
-    # Extract LinkedIn URLs from photo results
-    linkedin_urls_found = set()
-    photo_by_linkedin_url = {}
-
+    # Build photo lookup from web search
+    import re
     for photo in photos:
         page_url = photo.get("page_url", "")
         photo_url = photo.get("url", "")
         photo_alt = photo.get("alt", "")
 
         if page_url and "linkedin.com" in page_url:
-            # Extract username from LinkedIn URL
             post_match = re.search(r'linkedin\.com/posts/([a-zA-Z0-9-]+)_', page_url)
             profile_match = re.search(r'linkedin\.com/in/([a-zA-Z0-9-]+)', page_url)
 
+            linkedin_url = None
             if post_match:
-                username = post_match.group(1)
-                linkedin_url = f"https://www.linkedin.com/in/{username}"
-                linkedin_urls_found.add(linkedin_url)
-                if linkedin_url not in photo_by_linkedin_url:
-                    photo_by_linkedin_url[linkedin_url] = {"url": photo_url, "alt": photo_alt}
+                linkedin_url = f"https://www.linkedin.com/in/{post_match.group(1)}"
             elif profile_match:
-                username = profile_match.group(1)
-                linkedin_url = f"https://www.linkedin.com/in/{username}"
-                linkedin_urls_found.add(linkedin_url)
-                if linkedin_url not in photo_by_linkedin_url:
-                    photo_by_linkedin_url[linkedin_url] = {"url": photo_url, "alt": photo_alt}
+                linkedin_url = f"https://www.linkedin.com/in/{profile_match.group(1)}"
 
-    logger.info(f"[LinkedIn Tool] Found {len(linkedin_urls_found)} unique LinkedIn URLs")
+            if linkedin_url and linkedin_url not in photo_by_linkedin_url:
+                photo_by_linkedin_url[linkedin_url] = {"url": photo_url, "alt": photo_alt}
 
-    # STEP 2: Use Apollo people/match to enrich profiles with full data
-    formatted_profiles = []
-    apollo = get_apollo_service()
-
-    logger.info(f"[LinkedIn Tool] Apollo configured: {apollo.is_configured() if apollo else 'NO APOLLO'}")
-    logger.info(f"[LinkedIn Tool] LinkedIn URLs found: {len(linkedin_urls_found)}")
-
-    if apollo and apollo.is_configured() and linkedin_urls_found:
-        logger.info(f"[LinkedIn Tool] Step 2: Enriching {len(linkedin_urls_found)} profiles via Apollo")
-
-        # Helper to check if names match - STRICT: require BOTH first AND last name to match
-        def names_match(searched_name: str, found_name: str) -> bool:
-            if not searched_name or not found_name:
-                return False
-            searched_parts = [p.lower() for p in searched_name.split() if p]
-            found_parts = [p.lower() for p in found_name.split() if p]
-
-            # Need at least 2 name parts to do proper matching
-            if len(searched_parts) < 2 or len(found_parts) < 2:
-                # If single name, require exact match
-                return searched_parts == found_parts
-
-            # STRICT: Both first AND last name must match
-            # First name = first part, Last name = last part
-            searched_first = searched_parts[0]
-            searched_last = searched_parts[-1]
-            found_first = found_parts[0]
-            found_last = found_parts[-1]
-
-            # Both first and last name must match
-            first_match = searched_first == found_first
-            last_match = searched_last == found_last
-
-            if first_match and last_match:
-                return True
-
-            # Log why it didn't match for debugging
-            if not first_match and not last_match:
-                logger.debug(f"[LinkedIn Tool] Name mismatch: '{searched_name}' vs '{found_name}' (neither first nor last match)")
-            elif not first_match:
-                logger.debug(f"[LinkedIn Tool] First name mismatch: '{searched_first}' vs '{found_first}'")
-            elif not last_match:
-                logger.debug(f"[LinkedIn Tool] Last name mismatch: '{searched_last}' vs '{found_last}'")
-
-            return False
-
-        for linkedin_url in list(linkedin_urls_found)[:5]:  # Limit to 5 enrichments
-            try:
-                logger.info(f"[LinkedIn Tool] Enriching URL: {linkedin_url}")
-                person = apollo.enrich_person(linkedin_url=linkedin_url)
-                if person:
-                    logger.info(f"[LinkedIn Tool] Apollo returned: name={person.name}, title={person.title}, company={person.company}, photo={person.photo_url[:80] if person.photo_url else 'NONE'}...")
-                    # CRITICAL: Check if this is the right person by NAME match
-                    # Web search often returns profiles of random people
-                    if person.name and not names_match(name, person.name):
-                        logger.warning(f"[LinkedIn Tool] SKIPPING wrong person: searched for '{name}', found '{person.name}'")
-                        continue
-
-                    # ALWAYS prefer Apollo photo_url - it's from the actual LinkedIn profile
-                    # Web search photos are unreliable (often wrong person's photos)
-                    apollo_photo = person.photo_url
-                    if apollo_photo:
-                        photo_url = apollo_photo
-                        logger.info(f"[LinkedIn Tool] Using Apollo photo for {person.name}: {apollo_photo[:80]}...")
-                    else:
-                        # Only fall back to web search if Apollo has NO photo at all
-                        web_photo = photo_by_linkedin_url.get(linkedin_url, {})
-                        photo_url = web_photo.get("url")
-                        logger.warning(f"[LinkedIn Tool] Apollo has no photo for {person.name}, using web search fallback")
-
-                    # Check confidence by company match
-                    confidence = "low"
-                    if company:
-                        if person.company and company.lower() in person.company.lower():
-                            confidence = "high"
-                        elif person.title and company.lower() in person.title.lower():
-                            confidence = "high"
-
-                    profile_data = {
-                        "id": f"profile-apollo-{person.name.replace(' ', '-').lower()}" if person.name else f"profile-{linkedin_url}",
-                        "name": person.name or name,
-                        "title": person.title,
-                        "company": person.company,
-                        "headline": f"{person.title} at {person.company}" if person.title and person.company else person.title or person.company,
-                        "location": f"{person.city}, {person.state}" if person.city else None,
-                        "linkedin_url": person.linkedin_url or linkedin_url,
-                        "photo_url": photo_url,
-                        "email": person.email,
-                        "source": "apollo",
-                        "confidence": confidence,
-                    }
-                    formatted_profiles.append(profile_data)
-                    logger.info(f"[LinkedIn Tool] Enriched: {person.name} - {person.title} at {person.company}")
-            except Exception as e:
-                logger.warning(f"[LinkedIn Tool] Failed to enrich {linkedin_url}: {e}")
+    # Fill in missing photos from web search
+    for profile in formatted_profiles:
+        if not profile.get("photo_url") and profile.get("linkedin_url"):
+            # Try to find photo from web search
+            linkedin_url = profile["linkedin_url"]
+            # Normalize URL for matching
+            normalized = linkedin_url.replace("http://", "https://").rstrip("/")
+            for url, photo_data in photo_by_linkedin_url.items():
+                if url.replace("http://", "https://").rstrip("/") == normalized and photo_data.get("url"):
+                    profile["photo_url"] = photo_data["url"]
+                    logger.info(f"[LinkedIn Tool] Added web search photo for {profile['name']}")
+                    break
 
     # If Apollo enrichment found profiles, check if we have any good matches
     if formatted_profiles:

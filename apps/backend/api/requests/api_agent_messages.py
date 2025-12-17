@@ -1064,11 +1064,11 @@ async def send_message(session_id: str, body: Dict[str, Any], token: Optional[st
     if not current_slide and (deck_data.get("slides")):
         current_slide = deck_data["slides"][0]
 
-    # Minimal chat history (persisted messages in this session)
+    # Chat history (persisted messages in this session)
     # Order ascending by created_at (Supabase client expects desc flag, not asc)
     hist = sb.table("agent_messages").select("role,text,created_at").eq("session_id", session_id).order("created_at", desc=False).execute().data
     chat_history = []
-    for m in hist[-5:]:  # last 5 for prompt compactness
+    for m in hist[-10:]:  # last 10 messages
         chat_history.append({"content": m.get("text") or "", "role": m.get("role") or "user", "timestamp": datetime.utcnow()})
 
     thread_pool = ThreadPoolExecutor(max_workers=4)
